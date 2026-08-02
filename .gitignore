@@ -1,0 +1,12 @@
+# Ignore everything at the repo root by default
+/*
+
+# ...except these files
+!/.gitignore
+!/README.md
+
+# Directories the build will live in — un-ignored up front so
+# future code pushes without editing this file
+!/app/
+!/pipeline/
+!/.github/

@@ -1,0 +1,49 @@
+# Lusk — Observatoire des territoires bretons
+
+> *« Je transforme des données publiques éparses en intelligence territoriale — de l'idée à l'analyse, en passant par la donnée et le logiciel. »*
+
+Lusk is an **open territorial observatory for Brittany** — départements 22 · 29 · 35 · 56. Every commune, EPCI, and département gets a *fiche d'identité*: a compact portrait of the territory built from public open data, across four themes — **Mobilité**, **Démographie**, **Habitat**, **Économie/Emploi**.
+
+## What the app will do
+
+For each territory, the app assembles a fiche with 3–4 indicators per theme — the standard figures everyone recognises (densité, structure par âge, part de résidences secondaires, établissements par activité…). Every indicator carries its **rank-in-context** — its percentile within the EPCI, the département, or the région — and each theme ends with one signature story that goes deeper than the standard block.
+
+On top of the fiches:
+
+- **A map** of Brittany — communes, EPCIs, départements — as the entry point
+- **Search** — find a territory by name
+- **Freshness you can see** — every indicator shows its **vintage** (source, version, date), so the product never pretends to be fresher than it is
+
+## How it's built
+
+One person, two moving parts:
+
+```
+lusk/
+├── README.md       ← you are here
+├── pipeline/       → R data pipeline (download → compute → publish)   [to be built]
+└── app/            → Vue application (map, fiches, charts)            [to be built]
+```
+
+- **`pipeline/`** — an R pipeline that downloads the source datasets (INSEE, data.gouv.fr, data.bretagne.bzh), filters to Bretagne, computes the fiche indicators and ranks, records each dataset's vintage, and publishes the result. Idempotent, with a single documented entry point.
+- **`app/`** — a Vue application that renders the fiche payload: the map, search, territory pages, charts. The app renders; the pipeline computes.
+- **Automation** — the light themes refresh on a schedule (GitHub Actions); the flagship Mobilité analysis rebuilds on a slower clock. A vintage table is the seam that makes the freshness promise honest.
+
+All data is **open** (Licence Ouverte); the code is **public**; there are **no accounts**.
+
+## v1 scope
+
+- All of Brittany — ~1 200 communes, their EPCIs, the four départements, and the région
+- Four themes, each contributing a block to the fiche: **Mobilité** (the flagship — an existing accessibility analysis, ported), **Démographie**, **Habitat**, **Économie/Emploi**
+- A fiche d'identité per territory, the map, search, a methodology page
+- Scheduled refresh with visible vintage
+
+## Status
+
+- **v0 (now)** — the plan is set; this README is the public face of the project
+- **v1** — Bretagne, four themes, light themes automated
+- **After v1** — an AI query layer, France-wide coverage, finer-grained data
+
+---
+
+*Conçu par Calum Robertson — Docteur en économie urbaine.*
