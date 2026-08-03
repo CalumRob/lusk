@@ -351,7 +351,14 @@ reference_territoires <- function(territoires) {
 # format des sources sur les données réelles — une vague INSEE qui change de
 # structure se traduit ici par une erreur bruyante, pas par des chiffres faux
 # publiés silencieusement. Appelée à la sortie de compute_payload().
-validate_payload <- function(payload) {
+# Issue #9 : la validation s'appuie sur INDICATEURS_<theme> (toute clé du
+# payload doit y être déclarée, avec la bonne multiplicité) et sur la table
+# des vintages (chaque estampille doit égaler le vintage de la source de
+# référence déclarée). Une clé non déclarée ou une estampille hors source de
+# référence échoue fort.
+validate_payload <- function(payload,
+                             indicateurs = INDICATEURS_DEMOGRAPHIE,
+                             vintages = vintages_demographie()) {
   ind <- payload$indicateurs
   ref <- payload$territoires
 
@@ -362,17 +369,22 @@ validate_payload <- function(payload) {
          call. = FALSE)
   }
 
-  # 2. chaque territoire porte les 4 clés d'indicateur, structure = 7 tranches
+  # 2. la table des indicateurs fait foi : chaque clé du payload y est déclarée
+  # (issue #9), avec la bonne multiplicité par territoire.
+  declares <- stats::setNames(indicateurs$multiplicite, indicateurs$key)
   comptes <- table(ind$territoire, ind$key)
-  attendues <- c(densite = 1, structure_age = 7, evolution_1968 = 1,
-                 taille_menages = 1)
-  manquantes <- setdiff(names(attendues), colnames(comptes))
+  non_declarees <- setdiff(colnames(comptes), names(declares))
+  if (length(non_declarees) > 0) {
+    stop("Payload invalide : clé d'indicateur non déclarée : ",
+         paste(non_declarees, collapse = ", "), ".", call. = FALSE)
+  }
+  manquantes <- setdiff(names(declares), colnames(comptes))
   if (length(manquantes) > 0) {
     stop("Payload invalide : clés d'indicateur manquantes : ",
          paste(manquantes, collapse = ", "), ".", call. = FALSE)
   }
-  mal <- rownames(comptes)[apply(comptes[, names(attendues), drop = FALSE],
-                                 1, function(ligne) any(ligne != attendues))]
+  mal <- rownames(comptes)[apply(comptes[, names(declares), drop = FALSE],
+                                 1, function(ligne) any(ligne != declares))]
   if (length(mal) > 0) {
     stop("Payload invalide : clés d'indicateur inattendues pour ",
          paste(mal, collapse = ", "), ".", call. = FALSE)
@@ -397,7 +409,48 @@ validate_payload <- function(payload) {
     stop("Payload invalide : un rang sort de [0, 1].", call. = FALSE)
   }
 
-  # 6. la table de référence : une ligne par territoire, un nom partout
+  # 6. les estampilles égalent le vintage de la source de référence déclarée
+  # (issue #9). Une source de référence absente de la table des vintages est
+  # une erreur en soi ; une estampille qui ne vient pas de sa source de
+  # référence est une fraude à la fraîcheur — les deux échouent fort.
+  refs <- unique(indicateurs$source_reference)
+  sans_vintage <- setdiff(refs, vintages$id)
+  if (length(sans_vintage) > 0) {
+    stop("Payload invalide : source de référence absente des vintages : ",
+         paste(sans_vintage, collapse = ", "), ".", call. = FALSE)
+  }
+
+  attendus <- indicateurs %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id"))
+
+  joint <- ind %>%
+    dplyr::transmute(
+      key = key,
+      vintage_source = vintage_source,
+      vintage_version = vintage_version,
+      vintage_date_reference = vintage_date_reference,
+      vintage_date_publication = vintage_date_publication
+    ) %>%
+    dplyr::left_join(attendus, by = "key")
+
+  # deux NA comptent pour égaux (un vintage sans date de publication reste
+  # un vintage valide) — mais jamais NA face à une valeur déclarée
+  egal_na <- function(a, b) {
+    (is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b)
+  }
+  mauvaise_estampille <- !(
+    egal_na(joint$vintage_source, joint$source) &
+      egal_na(joint$vintage_version, joint$version) &
+      egal_na(joint$vintage_date_reference, joint$date_reference) &
+      egal_na(joint$vintage_date_publication, joint$date_publication)
+  )
+  if (any(mauvaise_estampille)) {
+    stop("Payload invalide : une estampille ne vient pas de la source de ",
+         "référence déclarée.", call. = FALSE)
+  }
+
+  # 7. la table de référence : une ligne par territoire, un nom partout
   if (anyDuplicated(ref$territoire)) {
     stop("Payload invalide : la table de référence a des territoires en double.",
          call. = FALSE)
@@ -440,4 +493,6 @@ compute_payload <- function(data, vintages = vintages_demographie()) {
   )
 
     # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là.
-  validate_payload(payload)}
+  # La validation reçoit la même table des vintages que l'estampillage — elle
+  # vérifie chaque estampille contre la source de référence déclarée (issue #9).
+  validate_payload(payload, vintages = vintages)}

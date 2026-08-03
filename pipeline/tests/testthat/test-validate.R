@@ -54,3 +54,36 @@ test_that("validate_payload : une évolution NA reste acceptée (point 2)", {
   fx$population_1968[fx$code == "22001"] <- NA
   expect_no_error(compute_payload(fx))
 })
+
+test_that("validate_payload : une clé non déclarée dans INDICATEURS_<theme> -> erreur (issue #9)", {
+  p <- compute_payload(load_fixture())
+  p$indicateurs$key[1] <- "superficie"  # jamais déclaré dans la table
+  expect_error(validate_payload(p), "non déclarée")
+})
+
+test_that("validate_payload : une estampille hors source de référence -> erreur (issue #9)", {
+  p <- compute_payload(load_fixture())
+  # structure_age déclare age_detail (PRINC) ; une estampille série historique
+  # est une fraude à la fraîcheur — la validation doit la rejeter.
+  p$indicateurs$vintage_source[p$indicateurs$key == "structure_age"] <-
+    "INSEE — Série historique du recensement"
+  expect_error(validate_payload(p), "source de référence")
+})
+
+test_that("validate_payload : un vintage falsifié (version) -> erreur (issue #9)", {
+  p <- compute_payload(load_fixture())
+  p$indicateurs$vintage_version[p$indicateurs$key == "densite"] <- "2024"
+  expect_error(validate_payload(p), "source de référence")
+})
+
+test_that("validate_payload : une source de référence absente des vintages -> erreur", {
+  p <- compute_payload(load_fixture())
+  v <- vintages_demographie()
+  v <- v[v$id != "age_detail", ]  # la référence de structure_age disparaît
+  expect_error(validate_payload(p, vintages = v), "absente des vintages")
+})
+
+test_that("validate_payload : les estampilles du fixture égalent les vintages déclarés", {
+  p <- compute_payload(load_fixture())
+  expect_no_error(validate_payload(p, vintages = vintages_demographie()))
+})
