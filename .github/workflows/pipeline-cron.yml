@@ -1,0 +1,297 @@
+# -----------------------------------------------------------------------------
+# Pipeline Démographie — run hebdomadaire automatisé (issue #7 + #11, ADR-0004)
+#
+# L'automatisation qui rend la promesse « alive » littéralement vraie : chaque
+# semaine (et à la demande via workflow_dispatch), le pipeline tourne en mode
+# « cron » sur ubuntu-latest et publie le payload (parquet + JSON + vintages +
+# rapport de run) vers public/data/ à la racine du dépôt, committé et servi
+# par l'hôte statique (Pages). L'orchestration est volontairement mince : toute
+# la logique de décision vit dans le package R (run_pipeline, detecter_changement,
+# run-report.json) et y est testée.
+#
+# Choix documentés :
+#
+# - Horaire : lundi 06:00 UTC. INSEE publie ses mises à jour en semaine ; un
+#   run du lundi matin capture les publications du vendredi et du week-end
+#   (06:00 UTC = 07:00 CET / 08:00 CEST en France) et remet le rapport (ou
+#   l'alerte) en début de semaine. Le cron GitHub est en UTC.
+#
+# - Tests d'abord : la suite testthat tourne AVANT le build ; une suite rouge
+#   arrête le run (pas de publication). Le réseau n'entre jamais dans la boucle
+#   de test.
+#
+# - Chemins : les étapes R tournent DEPUIS pipeline/ — le .Rprofile du paquet
+#   (source("renv/activate.R")) active renv automatiquement, y compris le
+#   bootstrap renv sur un runner à cache froid. Le cache brut est donc
+#   pipeline/data/raw (gitignoré par pipeline/.gitignore) et la sortie est
+#   explicite : ../public/data, le home public du payload à la racine du dépôt
+#   (les défauts de run_pipeline(), "data/raw" et "public/data", sont relatifs
+#   au CWD du process R — on rend les chemins explicites pour lever l'ambiguïté).
+#
+# - testthat/pkgload hors lock : renv.lock est en snapshot.type « explicit »
+#   avec package.dependency.fields = Imports/Depends/LinkingTo — les Suggests
+#   (testthat, et pkgload qu'il importe) n'y figurent PAS. Sur un runner neuf
+#   il n'y a pas de bibliothèque utilisateur : renv::restore() ne les installe
+#   donc pas. On les installe explicitement (étape « Outils de test »). Le
+#   build, lui, charge toujours le paquet dans sa version verrouillée.
+#
+# - Décision commit/skip : detecter_changement() (R, testée) compare le payload
+#   frais à l'instantané committé (extrait AVANT le build via git archive).
+#   run-report.json n'entre PAS dans la décision ; un run propre sans
+#   changement de donnée ne committe rien (« nothing to publish »). En
+#   revanche, un échec cron committe la trace (run-report.json seul) même sans
+#   changement de donnée — le rapport est le trace durable du run (ADR-0004),
+#   et la première exécution (pas de public/data à HEAD) compte comme un
+#   changement : tout le payload est committé.
+#
+# - Seam de notification : un échec cron est détecté dans run-report.json
+#   (écrit même quand le run s'arrête bruyamment, AVANT l'arrêt). Le seam
+#   ouvre/met à jour UNE issue d'alerte identifiée par le label fixe
+#   « automation:alert » — jamais une nouvelle issue par semaine (dédupe =
+#   ce label). Un run propre ferme une alerte ouverte et n'ouvre jamais rien.
+#
+# - Secrets : aucun. Les quatre sources Démographie sont des téléchargements
+#   publics sans clé (vérifié live, issue #7). Seul le GITHUB_TOKEN par défaut
+#   est utilisé (permissions contents: write pour le commit/push, issues: write
+#   pour le seam d'alerte).
+# -----------------------------------------------------------------------------
+
+name: Pipeline Démographie — cron hebdomadaire
+
+on:
+  schedule:
+    # lundi 06:00 UTC — voir le commentaire d'en-tête
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+# Un seul run à la fois : si un dispatch manuel croise le cron, il attend
+# (le run est idempotent — le second produira « nothing to publish »).
+concurrency:
+  group: pipeline-cron
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: R (version du renv.lock) + binaires PPM publics
+        uses: r-lib/actions/setup-r@v2
+        with:
+          working-directory: pipeline
+          r-version: renv
+          use-public-rspm: true
+
+      - name: Restauration renv (lock à froid sur runner neuf)
+        working-directory: pipeline
+        shell: Rscript {0}
+        run: renv::restore()
+
+      - name: Outils de test (testthat + pkgload, hors lock — voir en-tête)
+        working-directory: pipeline
+        shell: Rscript {0}
+        run: renv::install(c("testthat", "pkgload"))
+
+      - name: Tests (suite complète — un échec arrête le run)
+        working-directory: pipeline
+        shell: Rscript {0}
+        run: testthat::test_local(stop_on_failure = TRUE)
+
+      - name: Instantané du payload committé (avant le build)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/commite/public/data"
+          if git cat-file -e HEAD:public/data 2>/dev/null; then
+            git archive HEAD public/data | tar -x -C "$RUNNER_TEMP/commite"
+          fi
+
+      - name: Build en mode cron (exit capturé — le rapport s'écrit même sur échec)
+        id: build
+        working-directory: pipeline
+        shell: bash
+        run: |
+          set +e
+          Rscript -e "pkgload::load_all(); run_pipeline(mode = 'cron', cache = 'data/raw', sortie = '../public/data')"
+          status=$?
+          echo "build_exit=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Décision commit/skip (detecter_changement)
+        id: diff
+        working-directory: pipeline
+        shell: Rscript {0}
+        run: |
+          rt <- Sys.getenv("RUNNER_TEMP", unset = tempdir())
+          sortie <- "../public/data"
+          commite <- file.path(rt, "commite", "public", "data")
+          rapport_path <- file.path(sortie, "run-report.json")
+
+          # le paquet est chargé en mode dev (comme test_local) — les
+          # fonctions exportées (detecter_changement) sont disponibles
+          pkgload::load_all()
+
+          has_report <- file.exists(rapport_path)
+          echec <- FALSE
+          ts <- NA_character_
+          if (has_report) {
+            rapport <- jsonlite::fromJSON(rapport_path)
+            statuts <- rapport$statuts
+            ts <- rapport$timestamp
+            # statuts du rapport : cron -> « frais » / « échec », manuel ->
+            # « à traiter à la main ». Un seul « échec » déclenche l'alerte.
+            echec <- any(statuts$status == "\u00e9chec")
+          }
+
+          # décision de publication : le payload frais vs l'instantané committé,
+          # par contenu (md5), run-report.json exclu de la décision
+          changed <- FALSE
+          if (dir.exists(sortie)) {
+            changed <- detecter_changement(nouveau = sortie, commite = commite)
+          }
+
+          # Messages de commit : dates visibles (run + vintages) pour que la
+          # ligne « alive » soit littéralement vraie dans l'historique.
+          if (changed) {
+            lignes <- c(
+              sprintf("data: payload actualis\u00e9 \u2014 run cron du %s", ts),
+              "",
+              "Run hebdomadaire (mode cron).",
+              "Statuts par source :"
+            )
+            if (has_report) {
+              lignes <- c(lignes, sprintf("- %s : %s", statuts$id, statuts$status))
+            }
+            lignes <- c(lignes, "", "Vintages (source de r\u00e9f\u00e9rence par indicateur) :")
+            vintages_path <- file.path(sortie, "vintages.parquet")
+            if (file.exists(vintages_path)) {
+              vintages <- nanoparquet::read_parquet(vintages_path)
+              lignes <- c(lignes, sprintf(
+                "- %s : version %s (r\u00e9f. %s, publi\u00e9 %s)",
+                vintages$id, vintages$version,
+                vintages$date_reference, vintages$date_publication
+              ))
+            }
+            writeLines(lignes, file.path(rt, "message-data.txt"))
+          }
+
+          if (echec) {
+            ids_echec <- paste(statuts$id[statuts$status == "\u00e9chec"],
+                               collapse = ", ")
+            lignes <- c(
+              sprintf("data: run cron du %s \u2014 \u00e9chec de la source %s (trace)",
+                      ts, ids_echec),
+              "",
+              sprintf("Sources en \u00e9chec : %s.", ids_echec),
+              "Le run s'est arr\u00eat\u00e9 avant publication : le payload n'a pas chang\u00e9.",
+              "Ce commit ne trace que le rapport de run (run-report.json).",
+              "Statuts complets :"
+            )
+            if (has_report) {
+              lignes <- c(lignes, sprintf("- %s : %s", statuts$id, statuts$status))
+            }
+            writeLines(lignes, file.path(rt, "message-echec.txt"))
+          }
+
+          # sorties consommées par les étapes suivantes
+          con <- file(Sys.getenv("GITHUB_OUTPUT"), open = "a")
+          writeLines(c(
+            sprintf("changed=%s", tolower(changed)),
+            sprintf("echec=%s", tolower(echec)),
+            sprintf("has_report=%s", tolower(has_report))
+          ), con)
+          close(con)
+
+          cat(sprintf("changed=%s, echec=%s, has_report=%s\n",
+                      changed, echec, has_report))
+
+      - name: Commit et push (diff-and-skip)
+        if: ${{ steps.diff.outputs.changed == 'true' || steps.diff.outputs.echec == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "${{ steps.diff.outputs.changed }}" == "true" ]; then
+            git add public/data
+            git commit -F "$RUNNER_TEMP/message-data.txt"
+          else
+            # échec sans changement de donnée : seule la trace (le rapport)
+            # est committée
+            git add public/data/run-report.json
+            git commit -F "$RUNNER_TEMP/message-echec.txt"
+          fi
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD
+
+      # Un run propre sans changement de donnée ne committe rien ; le rapport
+      # de run (has_report) prouve que le build est allé au bout — si le build
+      # a planté avant d'écrire le rapport, l'étape finale rend le run rouge.
+      - name: Rien à publier
+        if: ${{ steps.diff.outputs.has_report == 'true' && steps.diff.outputs.changed == 'false' && steps.diff.outputs.echec == 'false' }}
+        run: echo "nothing to publish — le payload n'a pas changé (run cron propre)"
+
+      - name: Alerte — échec cron (créer ou mettre à jour l'issue)
+        if: ${{ steps.diff.outputs.has_report == 'true' && steps.diff.outputs.echec == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rapport="public/data/run-report.json"
+          ts=$(jq -r '.timestamp' "$rapport")
+          ids=$(jq -r '.statuts[] | select(.status == "\u00e9chec") | .id' "$rapport" \
+                | paste -sd ', ' -)
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          # le handle de l'alerte : le label fixe « automation:alert » — on met
+          # à jour l'issue ouverte existante au lieu d'en créer une chaque
+          # semaine (anti-spam). --force : idempotent si le label existe déjà.
+          gh label create automation:alert --force
+
+          corps=$(cat <<EOF
+          Le run cron du **$ts** a échoué pour la/les source(s) :
+          - $ids
+
+          Rapport complet committé : \`public/data/run-report.json\` (statuts + horodatage).
+          Run : $run_url
+          EOF
+          )
+
+          existing=$(gh issue list --label automation:alert --state open \
+                     --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$corps"
+            echo "Alerte mise à jour : issue #$existing"
+          else
+            gh issue create \
+              --title "Pipeline Démographie — échec d'une source (cron)" \
+              --label automation:alert \
+              --body "$corps"
+          fi
+
+      - name: Fermer l'alerte si le run est propre
+        if: ${{ steps.diff.outputs.has_report == 'true' && steps.diff.outputs.echec == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rapport="public/data/run-report.json"
+          ts=$(jq -r '.timestamp' "$rapport")
+          existing=$(gh issue list --label automation:alert --state open \
+                     --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" \
+              --comment "Run cron propre du $ts — plus d'échec de source, alerte fermée."
+            echo "Alerte fermée : issue #$existing"
+          fi
+
+      - name: Signaler l'échec du build (run rouge — l'arrêt bruyant d'ADR-0004)
+        if: ${{ steps.build.outputs.build_exit != '' && steps.build.outputs.build_exit != '0' }}
+        run: |
+          echo "::error::Le run cron a échoué (exit ${{ steps.build.outputs.build_exit }}). Le rapport de run est committé."
+          exit 1
