@@ -73,18 +73,81 @@ telecharger_fichier <- function(url, cible) {
   utils::download.file(url, cible, mode = "wb", quiet = TRUE)
 }
 
-# Télécharge les sources du manifeste vers le cache brut. Idempotent MAIS pas
-# naïf (point 3) : un fichier présent et intact est laissé ; un fichier
-# présent mais corrompu (partiel, zip invalide) est supprimé et re-téléchargé ;
-# un téléchargement qui échoue (réseau ou fichier invalide) est retenté une
-# fois, puis le pipeline s'arrête bruyamment.
-download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE, cache = "data/raw") {
+# erreur_telechargement --------------------------------------------------------
+# L'erreur portée par download_sources() quand un téléchargement échoue après
+# les retries. Classe S3 « condition » : le message reste celui d'origine, et
+# les statuts du run (dont le « échec » de la source fautive) sont attachés
+# dans le champ $statuts — le rapport de run (ticket #10) peut ainsi être
+# écrit malgré l'arrêt bruyant du run.
+erreur_telechargement <- function(statuts, url) {
+  structure(
+    list(
+      message = paste0(
+        "Téléchargement invalide après 2 essais : ", url,
+        " (échec réseau ou fichier partiel/corrompu)"
+      ),
+      call = NULL,
+      statuts = statuts
+    ),
+    class = c("erreur_telechargement", "error", "condition")
+  )
+}
+
+# download_sources ------------------------------------------------------------
+# Télécharge les sources du manifeste vers le cache brut, selon le mode du run
+# (issue #8, ADR-0004) :
+#   - mode = "full" (défaut, local) : tout est téléchargé, manuel compris ; un
+#     échec après les retries arrête le run bruyamment — comportement
+#     historique inchangé.
+#   - mode = "cron" (runner GitHub Actions) : seules les sources « cron » sont
+#     téléchargées ; les sources « manuel » sont sautées sans échec et
+#     enregistrées « à traiter à la main ». Un échec cron après les retries est
+#     enregistré « échec » puis le run s'arrête bruyamment.
+# Idempotent MAIS pas naïf (point 3) : un fichier présent et intact est laissé ;
+# un fichier présent mais corrompu (partiel, zip invalide) est supprimé et
+# re-téléchargé ; un téléchargement qui échoue (réseau ou fichier invalide) est
+# retenté une fois, puis le pipeline s'arrête bruyamment.
+# Retour : le tableau des statuts par source (id, mode, status) — une ligne par
+# source traitée, dans l'ordre du manifeste. En cas d'échec, le run s'arrête et
+# les statuts sont portés par l'erreur de classe « erreur_telechargement »
+# (champ $statuts). Un manifeste sans colonne `mode` est traité tout en « cron »
+# (comportement historique).
+download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
+                             cache = "data/raw",
+                             mode = c("full", "cron")) {
+  mode <- match.arg(mode)
   if (!dir.exists(cache)) dir.create(cache, recursive = TRUE)
 
+  # le mode de chaque source : la colonne `mode` du manifeste, ou « cron » par
+  # défaut si le manifeste ne la porte pas (manifestes antérieurs à l'issue #8)
+  mode_source <- if ("mode" %in% names(manifest)) {
+    manifest$mode
+  } else {
+    rep("cron", nrow(manifest))
+  }
+
+  statuts <- tibble::tibble(
+    id = character(0), mode = character(0), status = character(0)
+  )
+
   for (i in seq_len(nrow(manifest))) {
+    # en mode cron, une source « manuel » est sautée sans être touchée : jamais
+    # de réseau, jamais d'échec — enregistrée « à traiter à la main ».
+    if (mode == "cron" && mode_source[i] == "manuel") {
+      statuts <- tibble::add_row(
+        statuts, id = manifest$id[i], mode = "manuel", status = "à traiter à la main"
+      )
+      next
+    }
+
     cible <- file.path(cache, manifest$fichier[i])
 
-    if (file.exists(cible) && verifier_fichier(cible)) next
+    if (file.exists(cible) && verifier_fichier(cible)) {
+      statuts <- tibble::add_row(
+        statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
+      )
+      next
+    }
     if (file.exists(cible)) unlink(cible)  # corrompu : on repart propre
 
     ok <- FALSE
@@ -100,12 +163,17 @@ download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE, cache = "data/raw"
       unlink(cible)  # partiel/corrompu/échec : supprimer et réessayer
     }
     if (!ok) {
-      stop(
-        "Téléchargement invalide après 2 essais : ", manifest$url[i],
-        " (échec réseau ou fichier partiel/corrompu)", call. = FALSE
+      statuts <- tibble::add_row(
+        statuts, id = manifest$id[i], mode = mode_source[i], status = "échec"
       )
+      # la condition porte le message d'origine ET les statuts (le champ `call`
+      # est déjà NULL dans la condition — stop() ne reçoit qu'un argument)
+      stop(erreur_telechargement(statuts, manifest$url[i]))
     }
+    statuts <- tibble::add_row(
+      statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
+    )
   }
 
-  invisible(manifest)
+  statuts
 }
