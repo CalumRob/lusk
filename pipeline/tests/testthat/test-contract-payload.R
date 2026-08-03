@@ -94,14 +94,25 @@ test_that("la table de référence porte le département d'appartenance", {
   expect_true(is.na(tr$departement[tr$territoire == "53"]))
 })
 
-test_that("le payload porte les deux dates de vintage (référence + publication)", {
+test_that("chaque indicateur est estampillé depuis sa source de référence", {
   payload <- compute_payload(load_fixture())
-  # le tampon de fraîcheur : la date de référence de la donnée ET la date de
-  # mise en ligne réelle (point 5) — la fraîcheur n'est pas seulement l'étiquette.
+  # plus de tampon de thème (issue #9) : l'estampille nomme la source de
+  # référence de chaque indicateur — jamais un tampon commun.
+  references <- c(
+    densite = "INSEE — Série historique du recensement",
+    structure_age = "INSEE — Population par sexe et âge (PRINC)",
+    evolution_1968 = "INSEE — Série historique du recensement",
+    taille_menages = "INSEE — Ménages (dossier complet)"
+  )
+  for (cle in names(references)) {
+    srcs <- unique(payload$indicateurs$vintage_source[
+      payload$indicateurs$key == cle
+    ])
+    expect_equal(srcs, references[[cle]], info = cle)
+  }
+  # trois sources de référence distinctes dans le payload
+  expect_length(unique(payload$indicateurs$vintage_source), 3)
+  # chaque estampille porte les deux dates : référence ET publication (point 5)
   expect_true(all(payload$indicateurs$vintage_date_reference == "2023-01-01"))
   expect_true(all(payload$indicateurs$vintage_date_publication == "2026-06-30"))
-  expect_equal(
-    unique(payload$indicateurs$vintage_source),
-    "INSEE RP — dossier complet"
-  )
 })

@@ -5,17 +5,6 @@
 # (test-contract-payload.R). Le story classifier (soldes + classification 2x2)
 # arrive au ticket 4 (issue #5).
 
-# Vintage de référence du RP — les vintages réels arrivent du manifeste au
-# ticket 5 (issue #6). Ici, la source est unique et connue. Deux dates (point
-# 5) : date_reference (ce que « RP 2023 » veut dire) et date_publication (la
-# mise en ligne réelle — vérifiée sur data.gouv, 2026-06-30).
-VINTAGE_RP <- list(
-  source = "INSEE RP — dossier complet",
-  version = "2023",
-  date_reference = "2023-01-01",
-  date_publication = "2026-06-30"
-)
-
 # INDICATEURS_DEMOGRAPHIE ------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9) : chaque clé du
 # payload y est déclarée avec ses sources (ids du manifeste), sa source de
@@ -252,21 +241,30 @@ compute_ranks <- function(territoires, indicateurs) {
 # pour les multi-valeurs) et histoires (une ligne par territoire). C'est aussi
 # le schéma Supabase — rien de plus, rien de moins (docs/architecture.md).
 
+# L'estampille de chaque indicateur vient du vintage de SA source de référence
+# (déclarée dans INDICATEURS_<theme>) — jamais d'un tampon de thème (issue #9).
+# La jointure se fait sur l'id du manifeste (source_reference -> vintages$id),
+# jamais par un sous-ensemble implicite.
 assembler_indicateurs <- function(territoires, indicateurs, rangs,
-                                  vintage = VINTAGE_RP) {
+                                  indicateurs_table = INDICATEURS_DEMOGRAPHIE,
+                                  vintages = vintages_demographie()) {
+  tampons <- indicateurs_table %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+    dplyr::select(key,
+                  vintage_source = source,
+                  vintage_version = version,
+                  vintage_date_reference = date_reference,
+                  vintage_date_publication = date_publication)
+
   lapply(names(indicateurs), function(cle) {
     dplyr::left_join(indicateurs[[cle]], rangs[[cle]], by = c("code", "key"))
   }) %>%
     dplyr::bind_rows() %>%
     dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
     dplyr::rename(territoire = code) %>%
-    dplyr::mutate(
-      theme = "demographie",
-      vintage_source = vintage$source,
-      vintage_version = vintage$version,
-      vintage_date_reference = vintage$date_reference,
-      vintage_date_publication = vintage$date_publication
-    ) %>%
+    dplyr::mutate(theme = "demographie") %>%
+    dplyr::left_join(tampons, by = "key") %>%
     dplyr::select(territoire, type, theme, key, detail, value, unit,
                   rang_epci, rang_dep, rang_reg,
                   vintage_source, vintage_version,
@@ -421,9 +419,11 @@ validate_payload <- function(payload) {
 
 # compute_payload -------------------------------------------------------------
 # LE SEAM. Données filtrées (forme du fixture) -> payload de la fiche.
-# `vintage` est le tampon de fraîcheur du thème (source/version/dates) — par
-# défaut VINTAGE_RP ; run_pipeline() le tire de la table des vintages.
-compute_payload <- function(data, vintage = VINTAGE_RP) {
+# `vintages` est la table des vintages (issue #9) : chaque indicateur est
+# estampillé depuis le vintage de sa source de référence déclarée — plus de
+# tampon de fraîcheur du thème. Par défaut la table réelle du manifeste ;
+# run_pipeline() la passe explicitement. Pure : fixture + table -> payload.
+compute_payload <- function(data, vintages = vintages_demographie()) {
   territoires <- build_territoires(data)
   indicateurs <- list(
     densite = indicator_densite(territoires),
@@ -434,11 +434,10 @@ compute_payload <- function(data, vintage = VINTAGE_RP) {
   rangs <- compute_ranks(territoires, indicateurs)
 
   payload <- list(
-    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintage),
+    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintages = vintages),
     histoires = compute_histoires(territoires),
     territoires = reference_territoires(territoires)
   )
 
-  # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là
-  validate_payload(payload)
-}
+    # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là.
+  validate_payload(payload)}
