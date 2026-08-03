@@ -1,3 +1,6 @@
 # Package: lusk — light package, no roxygen. Exports are declared by hand.
 export(run_pipeline)
+export(publish)
+export(ecrire_rapport_run)
+export(detecter_changement)
 importFrom(magrittr, "%>%")
