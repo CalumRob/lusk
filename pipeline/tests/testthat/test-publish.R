@@ -125,6 +125,68 @@ test_that("publish est un upsert : relancer écrase sans dupliquer", {
   expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
 })
 
+# issue #19 : le layout par thème s'étend à Habitat — les faits partent en
+# indicateurs_habitat / histoires_habitat, la référence reste partagée, le
+# contrat JSON-égale-parquet couvre les nouveaux fichiers.
+
+test_that("le payload Habitat publie les fichiers par thème + la référence partagée", {
+  payload <- payload_habitat()
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible)
+
+  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
+    expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
+    expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
+  }
+  # aucun fichier Démographie écrit par un run Habitat
+  expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_demographie.parquet")))
+})
+
+test_that("le JSON Habitat se relit exactement comme les tables parquet — dérive impossible", {
+  # le contrat de non-dérive (issue #10, ADR-0004) appliqué au payload Habitat :
+  # la colonne nullable `n` (NA pour les stocks, entiers pour DVF/DPE) et les
+  # valeurs supprimées (NA) doivent survivre bit à bit aux deux sérialisations.
+  payload <- payload_habitat()
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible)
+
+  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
+    parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
+    json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
+    expect_identical(names(json), names(parquet), info = nom)
+    expect_equal(nrow(json), nrow(parquet), info = nom)
+    for (col in names(parquet)) {
+      if (is.numeric(parquet[[col]])) {
+        expect_identical(as.numeric(json[[col]]), as.numeric(parquet[[col]]),
+                         info = paste(nom, col))
+      } else {
+        expect_identical(json[[col]], parquet[[col]], info = paste(nom, col))
+      }
+    }
+  }
+})
+
+test_that("publish est un upsert pour le payload Habitat : relancer ne duplique pas", {
+  payload <- payload_habitat()
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible)
+  publish(payload, cible) # idempotent
+
+  indicateurs <- nanoparquet::read_parquet(
+    file.path(cible, "indicateurs_habitat.parquet"))
+  expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
+  histoires <- nanoparquet::read_parquet(
+    file.path(cible, "histoires_habitat.parquet"))
+  expect_equal(nrow(histoires), nrow(payload$histoires))
+})
+
 test_that("le backend supabase est un seam documenté, pas câblé", {
   payload <- compute_payload(load_fixture())
   expect_error(publish(payload, backend = "supabase"), "supabase")
