@@ -200,7 +200,8 @@ compute_ranks <- function(territoires, indicateurs) {
 # pour les multi-valeurs) et histoires (une ligne par territoire). C'est aussi
 # le schéma Supabase — rien de plus, rien de moins (docs/architecture.md).
 
-assembler_indicateurs <- function(territoires, indicateurs, rangs) {
+assembler_indicateurs <- function(territoires, indicateurs, rangs,
+                                  vintage = VINTAGE_RP) {
   lapply(names(indicateurs), function(cle) {
     dplyr::left_join(indicateurs[[cle]], rangs[[cle]], by = c("code", "key"))
   }) %>%
@@ -209,9 +210,9 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs) {
     dplyr::rename(territoire = code) %>%
     dplyr::mutate(
       theme = "demographie",
-      vintage_source = VINTAGE_RP$source,
-      vintage_version = VINTAGE_RP$version,
-      vintage_date = VINTAGE_RP$date
+      vintage_source = vintage$source,
+      vintage_version = vintage$version,
+      vintage_date = vintage$date
     ) %>%
     dplyr::select(territoire, type, theme, key, detail, value, unit,
                   rang_epci, rang_dep, rang_reg,
@@ -278,7 +279,9 @@ compute_histoires <- function(territoires) {
 
 # compute_payload -------------------------------------------------------------
 # LE SEAM. Données filtrées (forme du fixture) -> payload de la fiche.
-compute_payload <- function(data) {
+# `vintage` est le tampon de fraîcheur du thème (source/version/date) — par
+# défaut VINTAGE_RP ; run_pipeline() le tire de la table des vintages.
+compute_payload <- function(data, vintage = VINTAGE_RP) {
   territoires <- build_territoires(data)
   indicateurs <- list(
     densite = indicator_densite(territoires),
@@ -289,7 +292,7 @@ compute_payload <- function(data) {
   rangs <- compute_ranks(territoires, indicateurs)
 
   list(
-    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs),
+    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintage),
     histoires = compute_histoires(territoires)
   )
 }

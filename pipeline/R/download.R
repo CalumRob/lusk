@@ -6,26 +6,26 @@
 # exécutée contre le réseau dans la boucle de test.
 
 MANIFEST_DEMOGRAPHIE <- tibble::tribble(
-  ~id, ~source, ~url, ~fichier, ~vintage, ~licence, ~note,
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date, ~licence, ~note,
   "serie_historique",
   "INSEE — Série historique du recensement",
   "https://api.insee.fr/melodi/file/DS_RP_SERIE_HISTORIQUE/DS_RP_SERIE_HISTORIQUE_2023_CSV_FR",
-  "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip", "2023", "lov2",
+  "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip", "2023", "2023-01-01", "lov2",
   "Population 1968-2023 (POP), superficie (SUP, km2), naissances/décès cumulés entre recensements (BRTH/DEATH)",
   "menages",
   "INSEE — Ménages (dossier complet)",
   "https://api.insee.fr/melodi/file/DS_RP_MENAGES_COMP/DS_RP_MENAGES_COMP_2023_CSV_FR",
-  "DS_RP_MENAGES_COMP_2023_CSV_FR.zip", "2023", "lov2",
+  "DS_RP_MENAGES_COMP_2023_CSV_FR.zip", "2023", "2023-01-01", "lov2",
   "Nombre de ménages (DWELLINGS) et population des ménages (DWELLINGS_POPSIZE)",
   "age_detail",
   "INSEE — Population par sexe et âge (PRINC)",
   "https://api.insee.fr/melodi/file/DS_RP_POPULATION_PRINC/DS_RP_POPULATION_PRINC_2023_CSV_FR",
-  "DS_RP_POPULATION_PRINC_2023_CSV_FR.zip", "2023", "lov2",
+  "DS_RP_POPULATION_PRINC_2023_CSV_FR.zip", "2023", "2023-01-01", "lov2",
   "Structure par âge : 7 tranches exhaustives + agrégats (dont Y_LT20, moins de 20 ans)",
   "epci",
   "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
   "https://www.insee.fr/fr/statistiques/fichier/2510634/epci_au_01-01-2025.zip",
-  "epci_au_01-01-2025.zip", "2025", "lov2",
+  "epci_au_01-01-2025.zip", "2025", "2025-01-01", "lov2",
   "Feuille Composition_communale : CODGEO -> EPCI (SIREN), LIBEPCI, DEP, REG"
 )
 

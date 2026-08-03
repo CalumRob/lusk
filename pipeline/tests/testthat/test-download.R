@@ -1,7 +1,7 @@
 test_that("le manifeste liste les sources démographiques avec leurs métadonnées", {
   expect_s3_class(MANIFEST_DEMOGRAPHIE, "tbl_df")
-  expect_true(all(c("id", "source", "url", "fichier", "vintage", "licence", "note") %in%
-                    names(MANIFEST_DEMOGRAPHIE)))
+  expect_true(all(c("id", "source", "url", "fichier", "vintage", "date",
+                    "licence", "note") %in% names(MANIFEST_DEMOGRAPHIE)))
   expect_true(all(!duplicated(MANIFEST_DEMOGRAPHIE$id)))
   expect_true(all(startsWith(MANIFEST_DEMOGRAPHIE$url, "https://")))
   expect_true(all(MANIFEST_DEMOGRAPHIE$licence == "lov2"))
