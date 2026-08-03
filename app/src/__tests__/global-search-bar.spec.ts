@@ -7,6 +7,7 @@ import GlobalSearchBar from '../components/GlobalSearchBar.vue'
 import { territoiresFixture } from '../payload/fixtures'
 import type { Territoire } from '../payload/types'
 import { routes } from '../router'
+import AccueilView from '../views/AccueilView.vue'
 
 /**
  * GlobalSearchBar — the search into any fiche (ui-elements.md §Search).
@@ -273,5 +274,37 @@ describe('GlobalSearchBar — keyboard navigation and opening', () => {
     expect(router.currentRoute.value.path).toBe('/territoire/epci/200000002')
     const select = wrapper.emitted('select')
     expect(select?.[0][0]).toMatchObject({ territoire: '200000002', nom: 'EPCI Y' })
+  })
+})
+
+describe('AccueilView — demo placement (the header host lands with C1)', () => {
+  it('renders the search on the Accueil route while the payload loads', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    const wrapper = mount(AccueilView, { global: { plugins: [router] } })
+
+    const input = wrapper.find(INPUT)
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text())).toEqual([
+      'Entités',
+      'Données',
+      'Aléatoire',
+    ])
+  })
+
+  it('surfaces a payload failure through the search error state', async () => {
+    // fetch is stubbed to 404 (setup.ts) — the loader's typed error path
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    const wrapper = mount(AccueilView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.find(INPUT).trigger('focus')
+    await nextTick()
+
+    const etat = wrapper.find('.global-search__etat--erreur')
+    expect(etat.exists()).toBe(true)
+    expect(etat.text()).toContain('Impossible de charger les territoires.')
   })
 })
