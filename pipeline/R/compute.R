@@ -16,6 +16,33 @@ VINTAGE_RP <- list(
   date_publication = "2026-06-30"
 )
 
+# INDICATEURS_DEMOGRAPHIE ------------------------------------------------------
+# La table déclarative des indicateurs du thème (issue #9) : chaque clé du
+# payload y est déclarée avec ses sources (ids du manifeste), sa source de
+# référence et sa multiplicité. La source de référence est DÉCLARÉE, jamais
+# inférée : la règle est « la source du composant signature de l'indicateur,
+# jamais un dénominateur partagé » — structure_age prend ses tranches de
+# PRINC (age_detail) mais son dénominateur (la population) de la série
+# historique : sa référence est age_detail.
+INDICATEURS_DEMOGRAPHIE <- tibble::tibble(
+  key = c("densite", "structure_age", "evolution_1968", "taille_menages"),
+  libelle = c(
+    "Densité de population",
+    "Structure par âge",
+    "Évolution de la population depuis 1968",
+    "Taille moyenne des ménages"
+  ),
+  sources = list(
+    "serie_historique",
+    c("age_detail", "serie_historique"),
+    "serie_historique",
+    "menages"
+  ),
+  source_reference = c("serie_historique", "age_detail",
+                       "serie_historique", "menages"),
+  multiplicite = c(1L, 7L, 1L, 1L)
+)
+
 # departement_pluralite -------------------------------------------------------
 # La règle d'attribution d'un EPCI à cheval sur plusieurs départements
 # (décision 2026-08-03, point 6) : l'EPCI est attribué au département qui
