@@ -76,6 +76,30 @@ a:hover {
   }
 }
 
+/* Scroll lock while the mobile drawer is open (AppHeader — site-map.md §Navigation). */
+.tiroir-verrouille {
+  overflow: hidden;
+}
+
+/* Skeleton loading blocks (ui-elements.md §Loading) — pulse via opacity,
+   never layout (DESIGN.md §6). */
+.squelette {
+  border-radius: var(--radius-sm);
+  background: var(--surface-tertiary);
+  animation: pulsation-squelette 1.6s ease-in-out infinite;
+}
+
+@keyframes pulsation-squelette {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
 /* --------------------------------------------------------------------------
    Page scaffolding — used by placeholder views now, real views later.
    Content column: 1200px max (DESIGN.md §4), 16px mobile margin.

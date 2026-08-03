@@ -20,18 +20,18 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 
 ## Routes
 
-The site map lives in `src/router/index.ts` — one placeholder view per route, real views land in later tickets:
+The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The other routes are placeholders until their tickets land:
 
-| Route | Name | Placeholder title |
+| Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | Accueil |
-| `/carte` | `carte` | Carte |
-| `/communes` | `communes` | Communes |
-| `/epcis` | `epcis` | EPCI |
-| `/departements` | `departements` | Départements |
-| `/territoire/:type/:id` | `territoire` | Fiche d'identité |
-| `/methodologie` | `methodologie` | Méthodologie |
-| `/a-propos` | `a-propos` | À propos |
+| `/` | `accueil` | Placeholder |
+| `/carte` | `carte` | Placeholder |
+| `/communes` | `communes` | Placeholder |
+| `/epcis` | `epcis` | Placeholder |
+| `/departements` | `departements` | Placeholder |
+| `/territoire/:type/:id` | `territoire` | **Built** — fiche shell (#35) |
+| `/methodologie` | `methodologie` | Placeholder |
+| `/a-propos` | `a-propos` | Placeholder |
 
 ## Deploy path
 
