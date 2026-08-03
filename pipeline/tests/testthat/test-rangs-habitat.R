@@ -59,25 +59,27 @@ test_that("rangs : les agrégats prix — EPCI et départements", {
 
 test_that("rangs : le mix est classé par la part de secondaires", {
   p <- payload_habitat()
-  # parts : A1 5% < C 8.3% < D/B 13.3% (ex æquo) — classement par secondaires
+  # parts : A1 5% < C 8.3% < E 10% < D/B 13.3% (ex æquo) < F 15% — classement
+  # par secondaires
   r <- valeur_payload(p, "22001", "mix_logements")
   expect_equal(r$rang_reg[r$detail == "secondaires"], 0)
-  # l'ex æquo D/B à la région : 2 en dessous + 0.5 -> 2.5/4
+  # l'ex æquo D/B à la région : 3 en dessous + 0.5 -> 3.5/6
   expect_equal(valeur_payload(p, "22002", "mix_logements")$rang_reg[
-    valeur_payload(p, "22002", "mix_logements")$detail == "secondaires"], 0.625)
+    valeur_payload(p, "22002", "mix_logements")$detail == "secondaires"], 3.5 / 6)
   expect_equal(valeur_payload(p, "29001", "mix_logements")$rang_reg[
-    valeur_payload(p, "29001", "mix_logements")$detail == "secondaires"], 0.625)
+    valeur_payload(p, "29001", "mix_logements")$detail == "secondaires"], 3.5 / 6)
   # le rang est le même sur les trois lignes de catégorie
   expect_length(unique(valeur_payload(p, "22001", "mix_logements")$rang_reg), 1)
 })
 
 test_that("rangs : statut/ancienneté/taille est classé par la part de locataires", {
   p <- payload_habitat()
-  # parts de locataires : A1 250/850 < C 300/1000 < B 400/1200 < D 120/240
+  # parts de locataires : A1 250/850 < C 300/1000 = E 120/400 = F 90/300
+  # < B 400/1200 < D 120/240
   expect_equal(valeur_payload(p, "22001", "statut_anciennete_taille")$rang_reg[1], 0)
-  expect_equal(valeur_payload(p, "22002", "statut_anciennete_taille")$rang_reg[1], 0.75)
-  expect_equal(valeur_payload(p, "29001", "statut_anciennete_taille")$rang_reg[1], 0.5)
-  expect_equal(valeur_payload(p, "29002", "statut_anciennete_taille")$rang_reg[1], 0.25)
+  expect_equal(valeur_payload(p, "22002", "statut_anciennete_taille")$rang_reg[1], 5 / 6)
+  expect_equal(valeur_payload(p, "29001", "statut_anciennete_taille")$rang_reg[1], 2 / 3)
+  expect_equal(valeur_payload(p, "29002", "statut_anciennete_taille")$rang_reg[1], 1 / 3)
   # uniforme sur les 14 modalités
   expect_length(unique(valeur_payload(p, "22001",
                                       "statut_anciennete_taille")$rang_reg), 1)
@@ -85,19 +87,23 @@ test_that("rangs : statut/ancienneté/taille est classé par la part de locatair
 
 test_that("rangs : l'énergie est classée par la part F/G", {
   p <- payload_habitat()
-  # parts F/G : C 1/32 < A1 2/33 < B 12/33 ; D supprimée -> pas de rang
-  expect_equal(valeur_payload(p, "29002", "part_passoires")$rang_reg, 0)
-  expect_equal(valeur_payload(p, "22001", "part_passoires")$rang_reg, 1 / 3)
-  expect_equal(valeur_payload(p, "29001", "part_passoires")$rang_reg, 2 / 3)
+  # parts F/G : E 2/100 < C 1/32 < A1 2/33 < B 12/33 < F 30/35 ;
+  # D supprimée -> pas de rang
+  expect_equal(valeur_payload(p, "22003", "part_passoires")$rang_reg, 0)
+  expect_equal(valeur_payload(p, "29002", "part_passoires")$rang_reg, 1 / 5)
+  expect_equal(valeur_payload(p, "22001", "part_passoires")$rang_reg, 2 / 5)
+  expect_equal(valeur_payload(p, "29001", "part_passoires")$rang_reg, 3 / 5)
+  expect_equal(valeur_payload(p, "22004", "part_passoires")$rang_reg, 4 / 5)
   expect_true(is.na(valeur_payload(p, "22002", "part_passoires")$rang_reg))
 
   # la distribution A–G porte le MÊME classement (le composant signature du
   # graphique est la part F/G)
   expect_equal(valeur_payload(p, "29001", "distribution_dpe")$rang_reg,
-               rep(2 / 3, 7))
-  # agrégats : EPCI-Y (0.2) au-dessus d'EPCI-X (7/39)
-  expect_equal(valeur_payload(p, "200000002", "part_passoires")$rang_reg, 0.5)
-  expect_equal(valeur_payload(p, "200000001", "part_passoires")$rang_reg, 0)
-  expect_equal(valeur_payload(p, "29", "part_passoires")$rang_reg, 0.5)
-  expect_equal(valeur_payload(p, "22", "part_passoires")$rang_reg, 0)
+               rep(3 / 5, 7))
+  # agrégats : EPCI-X (39/174) au-dessus d'EPCI-Y (13/65) — E et F pèsent sur
+  # le 22 (EPCI-X) depuis l'extension du fixture (issue #18)
+  expect_equal(valeur_payload(p, "200000002", "part_passoires")$rang_reg, 0)
+  expect_equal(valeur_payload(p, "200000001", "part_passoires")$rang_reg, 0.5)
+  expect_equal(valeur_payload(p, "29", "part_passoires")$rang_reg, 0)
+  expect_equal(valeur_payload(p, "22", "part_passoires")$rang_reg, 0.5)
 })

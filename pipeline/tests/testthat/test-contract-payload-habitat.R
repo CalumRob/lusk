@@ -7,7 +7,7 @@
 test_that("le payload couvre chaque territoire du fixture", {
   p <- payload_habitat()
   territoires_attendus <- c(
-    "22001", "22002", "29001", "29002", # communes
+    "22001", "22002", "29001", "29002", "22003", "22004", # communes
     "200000001", "200000002",           # EPCIs
     "22", "29",                         # départements
     "53"                                # région Bretagne
@@ -62,13 +62,16 @@ test_that("la colonne n : publiée pour DVF/DPE, NA pour les stocks", {
   expect_true(all(is.na(tab$n[tab$key == "statut_anciennete_taille"])))
 })
 
-test_that("les histoires sont le stub de schéma (toutes valeurs NA, issue #18)", {
+test_that("les histoires portent le schéma de l'état énergétique du parc", {
   p <- payload_habitat()
   expect_true(all(p$histoires$story_key == "etat-energetique-du-parc"))
-  expect_true(all(is.na(p$histoires$classification)))
-  expect_true(all(is.na(p$histoires$part_passoires)))
-  expect_true(all(is.na(p$histoires$part_abc)))
-  expect_true(all(is.na(p$histoires$n_dpe)))
+  # le schéma (issue #18) : territoire, type, theme, story_key, classification,
+  # part_passoires, part_abc, n_dpe — la classification réelle et les parts de
+  # justification sont testées dans test-histoires-habitat.R
+  expect_named(p$histoires, c(
+    "territoire", "type", "theme", "story_key",
+    "classification", "part_passoires", "part_abc", "n_dpe"
+  ))
 })
 
 test_that("la table de référence porte les noms réels", {

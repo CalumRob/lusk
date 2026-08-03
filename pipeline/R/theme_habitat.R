@@ -13,7 +13,7 @@
 # builder de vintages, la construction des données, la construction de la table
 # des territoires (squelette partagé + colonnes d'agrégation du thème), les
 # constructeurs d'indicateurs, les scalaires de classement, le calcul de
-# l'Histoire (STUB de schéma — la classification réelle est l'issue #18) et les
+# l'Histoire (les 4 lectures de l'état énergétique du parc, issue #18) et les
 # validations spécifiques au thème.
 
 # MANIFEST_HABITAT ------------------------------------------------------------
@@ -473,23 +473,50 @@ scalaires_habitat <- list(
 )
 
 # compute_histoires_habitat ---------------------------------------------------
-# L'Histoire « L'état énergétique du parc » — STUB DE SCHÉMA (issue #17) : la
-# table est renvoyée avec le bon schéma (territoire, type, theme, story_key,
-# classification, part_passoires, part_abc, n_dpe) mais TOUTES les valeurs NA.
-# La classification réelle (les 4 lectures déterministes, spec #12) arrive à
-# l'issue #18 ; construire le schéma maintenant rend compute_payload testable
-# de bout en bout — le contrat du payload Habitat est posé.
+# L'Histoire « L'état énergétique du parc » — la classification DÉTERMINISTE de
+# la distribution DPE du territoire (spec #12, issue #18) : exactement une des
+# quatre lectures, calculées DANS L'ORDRE :
+#   1. parc-heterogene      — A/B/C >= 25 % ET F/G >= 25 % (bimodal : un
+#                              territoire à deux visages — vérifié EN PREMIER) ;
+#   2. passoire-energetique — sinon F/G >= 30 % (la queue F/G domine) ;
+#   3. parc-performant      — sinon A/B/C >= 50 % (concentré sur le bon bout) ;
+#   4. parc-intermediaire   — le résidu : un stock du milieu (C/D/E).
+# Les parts viennent des colonnes d'agrégation #17 de la table des territoires
+# (dpe_share_A..G, part_fg — la part F/G = F + G, part_abc = A + B + C) ; elles
+# sont déjà supprimées sous n < 30 (la même règle que l'indicateur) : quand
+# n_dpe < 30, la classification ET les parts de justification sont NA — le n,
+# lui, est publié. Seuils 25 / 30 / 50 % PROVISOIRES : fixés au premier run
+# réel (point de contrôle documenté, spec #12 « Further Notes » — si une
+# lecture s'effondre ou qu'un département entier tombe dans une, revoir).
+# Contrat déterministe : même territoire + mêmes données -> même lecture,
+# toujours.
 compute_histoires_habitat <- function(territoires) {
-  tibble::tibble(
-    territoire = territoires$code,
-    type = territoires$type,
-    theme = "habitat",
-    story_key = "etat-energetique-du-parc",
-    classification = NA_character_,
-    part_passoires = NA_real_,
-    part_abc = NA_real_,
-    n_dpe = NA_real_
-  )
+  territoires %>%
+    dplyr::mutate(
+      part_abc = dpe_share_A + dpe_share_B + dpe_share_C,
+      classification = dplyr::case_when(
+        # suppression (n < 30) : les parts sont NA — la classification aussi
+        is.na(part_fg) | is.na(part_abc) ~ NA_character_,
+        # 1. parc hétérogène : les deux extrémités présentes (vérifié 1er)
+        part_abc >= 0.25 & part_fg >= 0.25 ~ "parc-heterogene",
+        # 2. sinon passoire énergétique : la queue F/G >= 30 %
+        part_fg >= 0.30 ~ "passoire-energetique",
+        # 3. sinon parc performant : A/B/C >= 50 %
+        part_abc >= 0.50 ~ "parc-performant",
+        # 4. sinon le résidu : un stock du milieu (C/D/E)
+        TRUE ~ "parc-intermediaire"
+      )
+    ) %>%
+    dplyr::transmute(
+      territoire = code,
+      type = type,
+      theme = "habitat",
+      story_key = "etat-energetique-du-parc",
+      classification,
+      part_passoires = part_fg,
+      part_abc,
+      n_dpe = dpe_n
+    )
 }
 
 # Les validations spécifiques au thème ----------------------------------------
