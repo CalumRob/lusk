@@ -1,0 +1,21 @@
+numero_dpe,numero_dpe_remplace,numero_dpe_immeuble_associe,date_etablissement_dpe,date_derniere_modification_dpe,version_dpe,etiquette_dpe,etiquette_ges,type_batiment,nombre_appartement,position_logement_dans_immeuble,code_insee_ban,code_departement_ban,id_rnb
+IMM-A1,NA,NA,2024-01-01,NA,2.1,E,E,immeuble,30,NA,22001,22,RNB-A1
+M-A1,NA,NA,2024-02-01,NA,2.1,F,F,maison,NA,NA,22001,22,RNB-A2
+M-A2,NA,NA,2024-03-01,NA,2.1,G,G,maison,NA,NA,22001,22,RNB-A3
+M-A3,NA,NA,2024-04-01,NA,2.1,b,b,maison,NA,NA,22001,22,RNB-A4
+IMM-B1,NA,NA,2024-01-01,NA,2.1,C,C,immeuble,20,NA,29001,29,RNB-B1
+IMM-B2,NA,NA,2024-01-02,NA,2.1,F,F,immeuble,10,NA,29001,29,RNB-B2
+FLAT-B1,NA,IMM-B2,2024-02-01,NA,2.1,A,A,appartement,NA,ETAGE 1,29001,29,NA
+M-B1,NA,NA,2024-03-01,NA,2.1,G,G,maison,NA,NA,29001,29,RNB-B3
+M-B2,NA,NA,2024-04-01,NA,2.1,G,G,maison,NA,NA,29001,29,RNB-B4
+M-B3,NA,NA,2024-05-01,NA,2.1,F,F,maison,NA,NA,29001,29,RNB-B5
+M-C1,NA,NA,2023-01-01,NA,2.0,F,F,maison,NA,NA,29002,29,RNB-C1
+M-C2,NA,NA,2025-01-01,NA,2.1,B,B,maison,NA,NA,29002,29,RNB-C1
+IMM-C1,NA,NA,2024-01-01,NA,2.1,D,D,immeuble,28,NA,29002,29,RNB-C2
+M-C3,NA,NA,2024-02-01,NA,2.1,A,A,maison,NA,NA,29002,29,RNB-C3
+M-C4,NA,NA,2024-03-01,NA,2.1,G,G,maison,NA,NA,29002,29,RNB-C4
+M-C5,NA,NA,2024-04-01,NA,2.1,B,B,maison,NA,NA,29002,29,RNB-C5
+M-D1,NA,NA,2024-01-01,NA,2.1,F,F,maison,NA,NA,22002,22,RNB-D1
+M-D2,NA,NA,2024-02-01,NA,2.1,G,G,maison,NA,NA,22002,22,RNB-D2
+IMM-D1,NA,NA,2024-03-01,NA,2.1,F,F,immeuble,3,NA,22002,22,RNB-D3
+M-D3,NA,NA,2024-04-01,NA,2.1,A,A,maison,NA,NA,22002,22,RNB-D4

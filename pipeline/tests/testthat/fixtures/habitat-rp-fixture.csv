@@ -1,0 +1,5 @@
+code,nom,departement,epci,nom_epci,logements,logements_principales,logements_secondaires,logements_vacants,statut_proprietaire,statut_locataire,statut_loge_gratuit,anciennete_lt2,anciennete_2_4,anciennete_5_9,anciennete_10_19,anciennete_20_29,anciennete_30_plus,taille_r1,taille_r2,taille_r3,taille_r4,taille_5_plus
+22001,Commune A1,22,200000001,EPCI X,1000,850,50,100,500,250,100,150,200,150,150,100,100,100,150,200,200,200
+22002,Commune D,22,200000001,EPCI X,300,240,40,20,100,120,20,30,40,50,40,40,40,40,50,60,50,40
+29001,Commune B,29,200000002,EPCI Y,1500,1200,200,100,700,400,100,150,200,250,250,200,150,150,250,300,300,200
+29002,Commune C,29,200000002,EPCI Y,1200,1000,100,100,600,300,100,200,200,200,200,100,100,100,200,250,250,200
