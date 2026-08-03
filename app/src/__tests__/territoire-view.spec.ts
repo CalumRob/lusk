@@ -158,7 +158,7 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     expect(wrapper.find('[role="tabpanel"]').text()).toContain('À venir.')
   })
 
-  it('selects the theme from ?theme= and shows its placeholder', async () => {
+  it('selects the theme from ?theme= and renders its block', async () => {
     const { wrapper } = await monter(
       '/territoire/commune/29002?theme=demographie',
       chargerAvec(payloadDemographie),
@@ -167,8 +167,10 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     const demographie = wrapper.findAll('[role="tab"]')[1]
     expect(demographie.attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-demographie')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Démographie')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('À venir.')
+    const panneau = wrapper.find('[role="tabpanel"]')
+    expect(panneau.text()).toContain('Démographie')
+    expect(panneau.text()).toContain('Densité de population')
+    expect(panneau.text()).toContain('Les départs l’emportent sur les arrivées.')
   })
 
   it('writes ?theme= into the URL when a theme tab is chosen', async () => {

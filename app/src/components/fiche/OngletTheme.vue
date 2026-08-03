@@ -1,28 +1,99 @@
 <script setup lang="ts">
 /**
- * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock).
- * The shell's job is the theming (the theme -strong overline); C3 builds the
- * Démographie block (indicateurs + Story) in here. One theme visible at a
- * time — the ThemeTabs subheader is the navigation.
+ * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock): the
+ * theme overline (-strong) → the standard indicator figures (4, contract
+ * order) → one story angle (serif one-liner + one chart) → "comment lire" +
+ * Méthodes link. The block wears the theme's ramp — Démographie wears indigo;
+ * the page background -wash is the shell's (TerritoireView).
+ *
+ * The block consumes the payload selectors only — never raw JSON. The Story
+ * copy is keyed by the pipeline's classification (storyDemographie); a
+ * territory without a story renders the standard block and no invented
+ * one-liner.
  */
 import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 
+import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
+import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
+import { NOMS_INDICATEURS, NOMS_TRANCHES_AGE } from '@/fiche/indicateurs'
 import { NOMS_THEMES } from '@/fiche/onglets'
-import type { Theme } from '@/payload/types'
+import { storyDemographie } from '@/fiche/storyDemographie'
+import {
+  histoirePourTerritoire,
+  indicateursGroupeesPourTerritoire,
+  trouverTerritoire,
+} from '@/payload/selectors'
+import type { Payload, Theme } from '@/payload/types'
 
-const props = defineProps<{ theme: Theme }>()
+const props = defineProps<{
+  theme: Theme
+  payload: Payload
+  territoire: string
+}>()
 
 const nomTheme = computed(() => NOMS_THEMES[props.theme])
+
+const groupes = computed(() =>
+  indicateursGroupeesPourTerritoire(props.payload, props.theme, props.territoire),
+)
+
+const histoire = computed(() =>
+  histoirePourTerritoire(props.payload, props.theme, props.territoire),
+)
+
+const story = computed(() => storyDemographie(histoire.value?.classification ?? null))
+
+const nomTerritoire = computed(
+  () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
+)
+
+function libelleIndicateur(clef: string): string {
+  return NOMS_INDICATEURS[props.theme]?.[clef] ?? clef
+}
 </script>
 
 <template>
   <article
     class="onglet-theme"
     :class="`onglet-theme--${theme}`"
-    :style="{ '--couleur-overline': `var(--theme-${theme}-strong)` }"
+    :style="{
+      '--couleur-strong': `var(--theme-${theme}-strong)`,
+      '--couleur-soft': `var(--theme-${theme}-soft)`,
+      '--couleur-line': `var(--theme-${theme}-line)`,
+    }"
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
-    <p class="onglet-theme-vide">À venir.</p>
+
+    <div class="grille-indicateurs">
+      <IndicatorFigure
+        v-for="groupe in groupes"
+        :key="groupe.key"
+        :clef="groupe.key"
+        :lignes="groupe.lignes"
+        :libelle="libelleIndicateur(groupe.key)"
+        :labels-detail="NOMS_TRANCHES_AGE"
+        :signe="groupe.key === 'evolution_1968'"
+        :large="groupe.key === 'structure_age'"
+      />
+    </div>
+
+    <section v-if="story" class="angle-story">
+      <p class="angle-story-titre">{{ story.titre }}</p>
+      <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
+      <GraphiqueSoldes
+        v-if="histoire"
+        :solde-naturel="histoire.solde_naturel"
+        :solde-migratoire="histoire.solde_migratoire"
+        :classification="histoire.classification"
+        :nom="nomTerritoire"
+      />
+      <p class="angle-story-comment-lire">
+        <span class="angle-story-etiquette">Comment lire</span>
+        {{ story.commentLire }}
+      </p>
+      <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+    </section>
   </article>
 </template>
 
@@ -30,7 +101,25 @@ const nomTheme = computed(() => NOMS_THEMES[props.theme])
 .onglet-theme {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-8);
+  animation: entree-bloc 450ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes entree-bloc {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onglet-theme {
+    animation: none;
+  }
 }
 
 .onglet-theme-overline {
@@ -38,11 +127,72 @@ const nomTheme = computed(() => NOMS_THEMES[props.theme])
   font: var(--text-overline);
   letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
-  color: var(--couleur-overline);
+  color: var(--couleur-strong);
 }
 
-.onglet-theme-vide {
+.grille-indicateurs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-6) var(--space-8);
+}
+
+@media (max-width: 1024px) {
+  .grille-indicateurs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .grille-indicateurs {
+    grid-template-columns: 1fr;
+  }
+}
+
+.angle-story {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8);
+  border: 1px solid var(--couleur-line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-primary);
+  box-shadow: var(--shadow-subtle);
+}
+
+.angle-story-titre {
   margin: 0;
+  font: 600 1.1875rem/1.4 var(--font-serif);
+  color: var(--couleur-strong);
+}
+
+.angle-story-une-ligne {
+  margin: 0;
+  font: var(--text-display);
+  letter-spacing: var(--text-display-tracking);
+  color: var(--text-primary);
+}
+
+.angle-story-comment-lire {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  font: var(--text-body-sm);
   color: var(--text-secondary);
+}
+
+.angle-story-etiquette {
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
+  text-transform: uppercase;
+  color: var(--couleur-strong);
+}
+
+.angle-story-methodes {
+  align-self: flex-start;
+  font: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--couleur-strong);
+  text-underline-offset: 3px;
 }
 </style>
