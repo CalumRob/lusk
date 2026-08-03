@@ -34,18 +34,39 @@ mini_zip <- function(nom = "a.txt") {
 }
 
 # manifeste factice : URL qui échouerait si elle était touchée
-manifeste_factice <- function(fichier = "fichier-test.zip") {
+manifeste_factice <- function(fichier = "fichier-test.zip", mode = "cron") {
   tibble::tibble(
     id = "test", source = "test", url = "https://example.invalid/x",
     fichier = fichier, vintage = "2023", date_reference = "2023-01-01",
-    date_publication = "2026-06-30", licence = "lov2", note = "test"
+    date_publication = "2026-06-30", licence = "lov2", note = "test",
+    mode = mode
+  )
+}
+
+# manifeste mixte : 2 sources cron + 1 manuel — le contrat des tests du mode
+# cron (issue #8) : les cron sont téléchargées, la manuel est sautée et
+# enregistrée « à traiter à la main ».
+manifeste_mixte <- function() {
+  tibble::tibble(
+    id = c("cron_a", "manuel_b", "cron_c"),
+    source = c("test", "test", "test"),
+    url = c("https://example.invalid/a", "https://example.invalid/b",
+            "https://example.invalid/c"),
+    fichier = c("a.zip", "b.zip", "c.zip"),
+    vintage = c("2023", "2023", "2023"),
+    date_reference = c("2023-01-01", "2023-01-01", "2023-01-01"),
+    date_publication = c("2026-06-30", "2026-06-30", "2026-06-30"),
+    licence = c("lov2", "lov2", "lov2"),
+    note = c("test", "test", "test"),
+    mode = c("cron", "manuel", "cron")
   )
 }
 
 test_that("le manifeste liste les sources démographiques avec leurs métadonnées", {
   expect_s3_class(MANIFEST_DEMOGRAPHIE, "tbl_df")
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
-                    "date_reference", "date_publication", "licence", "note") %in%
+                    "date_reference", "date_publication", "licence", "note",
+                    "mode") %in%
                     names(MANIFEST_DEMOGRAPHIE)))
   expect_true(all(!duplicated(MANIFEST_DEMOGRAPHIE$id)))
   expect_true(all(startsWith(MANIFEST_DEMOGRAPHIE$url, "https://")))
@@ -60,6 +81,11 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
     c(serie_historique = "2023", menages = "2023", age_detail = "2023",
       epci = "2025")
   )
+
+  # mode de récupération (issue #8) : les 4 sources INSEE sont « cron » —
+  # téléchargement direct sans clé (vérifié en direct le 2026-08-03).
+  expect_true(all(MANIFEST_DEMOGRAPHIE$mode == "cron"))
+  expect_setequal(MANIFEST_DEMOGRAPHIE$mode, "cron")
 })
 
 test_that("verifier_fichier : un zip valide passe, un fichier corrompu non", {
