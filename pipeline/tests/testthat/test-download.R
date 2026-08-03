@@ -34,18 +34,39 @@ mini_zip <- function(nom = "a.txt") {
 }
 
 # manifeste factice : URL qui échouerait si elle était touchée
-manifeste_factice <- function(fichier = "fichier-test.zip") {
+manifeste_factice <- function(fichier = "fichier-test.zip", mode = "cron") {
   tibble::tibble(
     id = "test", source = "test", url = "https://example.invalid/x",
     fichier = fichier, vintage = "2023", date_reference = "2023-01-01",
-    date_publication = "2026-06-30", licence = "lov2", note = "test"
+    date_publication = "2026-06-30", licence = "lov2", note = "test",
+    mode = mode
+  )
+}
+
+# manifeste mixte : 2 sources cron + 1 manuel — le contrat des tests du mode
+# cron (issue #8) : les cron sont téléchargées, la manuel est sautée et
+# enregistrée « à traiter à la main ».
+manifeste_mixte <- function() {
+  tibble::tibble(
+    id = c("cron_a", "manuel_b", "cron_c"),
+    source = c("test", "test", "test"),
+    url = c("https://example.invalid/a", "https://example.invalid/b",
+            "https://example.invalid/c"),
+    fichier = c("a.zip", "b.zip", "c.zip"),
+    vintage = c("2023", "2023", "2023"),
+    date_reference = c("2023-01-01", "2023-01-01", "2023-01-01"),
+    date_publication = c("2026-06-30", "2026-06-30", "2026-06-30"),
+    licence = c("lov2", "lov2", "lov2"),
+    note = c("test", "test", "test"),
+    mode = c("cron", "manuel", "cron")
   )
 }
 
 test_that("le manifeste liste les sources démographiques avec leurs métadonnées", {
   expect_s3_class(MANIFEST_DEMOGRAPHIE, "tbl_df")
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
-                    "date_reference", "date_publication", "licence", "note") %in%
+                    "date_reference", "date_publication", "licence", "note",
+                    "mode") %in%
                     names(MANIFEST_DEMOGRAPHIE)))
   expect_true(all(!duplicated(MANIFEST_DEMOGRAPHIE$id)))
   expect_true(all(startsWith(MANIFEST_DEMOGRAPHIE$url, "https://")))
@@ -60,6 +81,11 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
     c(serie_historique = "2023", menages = "2023", age_detail = "2023",
       epci = "2025")
   )
+
+  # mode de récupération (issue #8) : les 4 sources INSEE sont « cron » —
+  # téléchargement direct sans clé (vérifié en direct le 2026-08-03).
+  expect_true(all(MANIFEST_DEMOGRAPHIE$mode == "cron"))
+  expect_setequal(MANIFEST_DEMOGRAPHIE$mode, "cron")
 })
 
 test_that("verifier_fichier : un zip valide passe, un fichier corrompu non", {
@@ -161,4 +187,124 @@ test_that("download_sources : un téléchargement corrompu est retenté, puis é
   )
   expect_equal(essais, 2)
   expect_false(file.exists(file.path(cache, "fichier-test.zip")))
+})
+
+# mode cron (issue #8, ADR-0004) ----------------------------------------------
+# En mode cron, download_sources télécharge les sources « cron », saute les
+# sources « manuel » sans échec (enregistrées « à traiter à la main »), et
+# renvoie un tableau de statuts par source (id, mode, status). Un échec cron
+# après les retries est enregistré « échec » puis le run s'arrête fort.
+
+test_that("en mode cron, download_sources saute les sources manuel et les enregistre", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  telecharge <- character(0)
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) {
+      telecharge <<- c(telecharge, url)
+      writeBin(mini_zip(), cible)
+    },
+    .package = "lusk"
+  )
+
+  statuts <- download_sources(manifeste_mixte(), cache, mode = "cron")
+
+  # seules les sources cron sont téléchargées ; la manuel jamais touchée
+  expect_equal(sort(telecharge),
+               c("https://example.invalid/a", "https://example.invalid/c"))
+  expect_false(file.exists(file.path(cache, "b.zip")))
+
+  # une ligne par source, dans l'ordre du manifeste : cron -> frais,
+  # manuel -> à traiter à la main
+  expect_equal(statuts$id, c("cron_a", "manuel_b", "cron_c"))
+  expect_equal(statuts$mode, c("cron", "manuel", "cron"))
+  expect_equal(statuts$status, c("frais", "à traiter à la main", "frais"))
+})
+
+test_that("en mode cron, une source cron déjà en cache est frais sans re-télécharger", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  # a.zip déjà présent et valide : laissé intact, jamais re-téléchargé
+  writeBin(mini_zip(), file.path(cache, "a.zip"))
+
+  telecharge <- character(0)
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) {
+      telecharge <<- c(telecharge, url)
+      writeBin(mini_zip(), cible)
+    },
+    .package = "lusk"
+  )
+
+  statuts <- download_sources(manifeste_mixte(), cache, mode = "cron")
+
+  expect_equal(telecharge, "https://example.invalid/c")  # seule cron_c à faire
+  expect_equal(statuts$status, c("frais", "à traiter à la main", "frais"))
+})
+
+test_that("en mode cron, un échec cron après retries est enregistré échec puis arrête fort", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) {
+      if (grepl("/c$", url)) stop("panne réseau") else writeBin(mini_zip(), cible)
+    },
+    .package = "lusk"
+  )
+
+  erreur <- tryCatch(
+    download_sources(manifeste_mixte(), cache, mode = "cron"),
+    error = function(e) e
+  )
+
+  expect_s3_class(erreur, "erreur_telechargement")
+  expect_match(conditionMessage(erreur), "Téléchargement invalide après 2 essais")
+  # les statuts du run sont portés par l'erreur, échec inclus — le rapport de
+  # run (ticket #10) peut être écrit malgré l'arrêt
+  expect_equal(erreur$statuts$id, c("cron_a", "manuel_b", "cron_c"))
+  expect_equal(erreur$statuts$mode, c("cron", "manuel", "cron"))
+  expect_equal(erreur$statuts$status, c("frais", "à traiter à la main", "échec"))
+  expect_false(file.exists(file.path(cache, "c.zip")))
+})
+
+test_that("en mode full (défaut), tout est téléchargé, y compris les sources manuel", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+
+  statuts <- download_sources(manifeste_mixte(), cache)
+
+  expect_true(file.exists(file.path(cache, "b.zip")))
+  expect_equal(statuts$status, c("frais", "frais", "frais"))
+  expect_equal(statuts$mode, c("cron", "manuel", "cron"))
+})
+
+test_that("un manifeste sans colonne mode est traité tout en cron (comportement historique)", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  ancien <- manifeste_factice()[, setdiff(names(manifeste_factice()), "mode")]
+
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+
+  statuts <- download_sources(ancien, cache, mode = "cron")
+
+  expect_true(file.exists(file.path(cache, "fichier-test.zip")))
+  expect_equal(statuts$mode, "cron")
+  expect_equal(statuts$status, "frais")
 })

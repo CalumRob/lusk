@@ -4,9 +4,16 @@
 # Idempotent par construction : les téléchargements sautent ce qui existe (et
 # valide), le rebuild est déterministe, la publication écrase (sémantique
 # d'upsert).
+# mode (issue #8, ADR-0004) : "full" (défaut, local) télécharge tout ; "cron"
+# (runner GitHub Actions) ne télécharge que les sources « cron » du manifeste,
+# saute les « manuel » (enregistrées « à traiter à la main ») et s'arrête
+# bruyamment si une source cron échoue après les retries. Transmis tel quel à
+# download_sources(), qui renvoie les statuts par source pour le rapport de run.
 
-run_pipeline <- function(cache = "data/raw", sortie = "data/processed") {
-  download_sources(MANIFEST_DEMOGRAPHIE, cache = cache)
+run_pipeline <- function(cache = "data/raw", sortie = "data/processed",
+                         mode = c("full", "cron")) {
+  mode <- match.arg(mode)
+  download_sources(MANIFEST_DEMOGRAPHIE, cache = cache, mode = mode)
 
   brut <- construire_donnees_brut(cache = cache)
 

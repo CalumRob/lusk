@@ -10,6 +10,9 @@ test_that("run_pipeline est l'entrée unique, sur les dossiers du dépôt", {
   # les chemins par défaut vivent dans le dépôt (jamais sur C:)
   expect_equal(formals(run_pipeline)$cache, "data/raw")
   expect_equal(formals(run_pipeline)$sortie, "data/processed")
+  # le mode de run (issue #8) : "full" par défaut (local), "cron" pour le runner
+  expect_true("mode" %in% names(formals(run_pipeline)))
+  expect_equal(formals(run_pipeline)$mode, quote(c("full", "cron")))
 })
 
 test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (point 11)", {
@@ -23,6 +26,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$vintage_vu <- NULL
   appels$payload_vu <- NULL
   appels$vintages_vus <- NULL
+  appels$mode_vu <- NULL
 
   faux_payload <- list(
     indicateurs = data.frame(x = 1),
@@ -39,8 +43,9 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   )
 
   local_mocked_bindings(
-    download_sources = function(manifest, cache) {
+    download_sources = function(manifest, cache, mode) {
       appels$download <- appels$download + 1
+      appels$mode_vu <- mode
       invisible(manifest)
     },
     construire_donnees_brut = function(cache) {
@@ -90,6 +95,43 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_identical(appels$payload_vu, faux_payload)
   expect_equal(nrow(appels$vintages_vus), 2)
 
+  # le mode par défaut est "full" — le comportement local est inchangé
+  expect_equal(appels$mode_vu, "full")
+
   # le retour est le payload
   expect_identical(resultat, faux_payload)
+})
+
+test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue #8)", {
+  mode_vu <- NULL
+  faux_vintages <- tibble::tibble(
+    id = "serie_historique",
+    source = "INSEE — Série historique du recensement",
+    version = "2023",
+    licence = "lov2",
+    date_reference = "2023-01-01",
+    date_publication = "2026-06-30"
+  )
+
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) {
+      mode_vu <<- mode
+      invisible(manifest)
+    },
+    construire_donnees_brut = function(cache) load_fixture(),
+    vintages_demographie = function() faux_vintages,
+    compute_payload = function(data, vintage = VINTAGE_RP) list(),
+    publish = function(payload, cible) invisible(payload),
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL),
+    .package = "nanoparquet"
+  )
+
+  run_pipeline(mode = "cron")
+  expect_equal(mode_vu, "cron")
+
+  run_pipeline()
+  expect_equal(mode_vu, "full")
 })
