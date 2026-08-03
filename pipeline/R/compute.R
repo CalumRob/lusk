@@ -86,7 +86,8 @@ indicator_densite <- function(territoires) {
 indicator_structure_age <- function(territoires) {
   territoires %>%
     tidyr::pivot_longer(
-      cols = c(age_0_19, age_20_39, age_40_59, age_60_74, age_75_plus),
+      cols = c(age_lt15, age_15_24, age_25_39, age_40_54,
+               age_55_64, age_65_79, age_80_plus),
       names_to = "bande",
       values_to = "effectif"
     ) %>%
@@ -94,8 +95,9 @@ indicator_structure_age <- function(territoires) {
       key = "structure_age",
       detail = dplyr::recode(
         bande,
-        age_0_19 = "0-19", age_20_39 = "20-39", age_40_59 = "40-59",
-        age_60_74 = "60-74", age_75_plus = "75+"
+        age_lt15 = "<15", age_15_24 = "15-24", age_25_39 = "25-39",
+        age_40_54 = "40-54", age_55_64 = "55-64", age_65_79 = "65-79",
+        age_80_plus = "80+"
       ),
       value = effectif / population,
       unit = "%"
@@ -119,7 +121,9 @@ indicator_taille_menages <- function(territoires) {
     code = territoires$code,
     key = "taille_menages",
     detail = NA_character_,
-    value = territoires$population / territoires$menages,
+    # Population des ménages / nombre de ménages (définition INSEE — les
+    # collectivités ne comptent pas dans la taille moyenne des ménages).
+    value = territoires$population_menages / territoires$menages,
     unit = "pers./ménage"
   )
 }
@@ -165,10 +169,11 @@ groupes_comparaison <- function(territoires) {
 }
 
 # Le scalaire classé par indicateur : la valeur elle-même, sauf la structure
-# par âge classée par la part des moins de 20 ans (documenté, Méthodes).
-scalaire_indic <- function(tab) {
-  if ("detail" %in% names(tab) && any(tab$detail == "0-19", na.rm = TRUE)) {
-    tab$value[tab$detail == "0-19"]
+# par âge classée par la part des moins de 20 ans (agrégat Y_LT20, présent
+# dans les données ; documenté, Méthodes).
+scalaire_pour <- function(cle, tab, territoires) {
+  if (cle == "structure_age") {
+    territoires$age_lt20 / territoires$population
   } else {
     tab$value
   }
@@ -179,7 +184,7 @@ compute_ranks <- function(territoires, indicateurs) {
 
   lapply(names(indicateurs), function(cle) {
     tab <- indicateurs[[cle]]
-    scalaire <- scalaire_indic(tab)
+    scalaire <- scalaire_pour(cle, tab, territoires)
     tibble::tibble(
       code = unique(tab$code),
       key = cle,

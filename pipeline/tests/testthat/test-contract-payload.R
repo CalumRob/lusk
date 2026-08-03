@@ -16,10 +16,10 @@ test_that("le payload couvre chaque territoire du fixture", {
   expect_setequal(unique(payload$histoires$territoire), territoires_attendus)
 })
 
-test_that("chaque territoire porte 4 clés d'indicateur (structure = 5 lignes)", {
+test_that("chaque territoire porte 4 clés d'indicateur (structure = 7 tranches)", {
   payload <- compute_payload(load_fixture())
 
-  attentes <- c(densite = 1, structure_age = 5, evolution_1968 = 1,
+  attentes <- c(densite = 1, structure_age = 7, evolution_1968 = 1,
                 taille_menages = 1)
   for (code in unique(payload$indicateurs$territoire)) {
     tab <- payload$indicateurs[payload$indicateurs$territoire == code, , drop = FALSE]

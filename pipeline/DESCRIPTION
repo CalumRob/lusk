@@ -13,6 +13,7 @@ RoxygenNote: 7.3.0
 Imports:
     dplyr,
     magrittr,
+    readxl,
     tidyr
 Suggests:
     testthat (>= 3.0.0),
