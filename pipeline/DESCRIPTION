@@ -1,0 +1,16 @@
+Package: lusk
+Title: Observatoire des territoires bretons — pipeline de données
+Version: 0.0.0.9000
+Authors@R:
+    person("Calum", "Robertson", email = "calum@calumrobertson.fr",
+           role = c("aut", "cre"))
+Description: Le pipeline R de Lusk — téléchargement, filtrage, calcul des
+    indicateurs et des rangs, vintages et publication de la fiche
+    d'identité. Thème pilote : Démographie (issue #1).
+License: MIT + file LICENSE
+Encoding: UTF-8
+RoxygenNote: 7.3.0
+Suggests:
+    testthat (>= 3.0.0),
+    readr
+Config/testthat/edition: 3
