@@ -14,13 +14,17 @@ test_that("validate_payload : des parts d'âge qui ne somment pas à 1 -> erreur
   p <- compute_payload(load_fixture())
   p$indicateurs$value[p$indicateurs$key == "structure_age" &
                         p$indicateurs$detail == "<15"] <- 0.9
-  expect_error(validate_payload(p), "somment pas")
+  # les validations de VALEUR sont déclarées par le thème (issue #13) — on les
+  # passe explicitement à la validation générique
+  expect_error(validate_payload(p, validations = validations_demographie),
+               "somment pas")
 })
 
 test_that("validate_payload : une densité non positive -> erreur", {
   p <- compute_payload(load_fixture())
   p$indicateurs$value[p$indicateurs$key == "densite"][1] <- -1
-  expect_error(validate_payload(p), "densité")
+  expect_error(validate_payload(p, validations = validations_demographie),
+               "densité")
 })
 
 test_that("validate_payload : un rang hors de [0, 1] -> erreur", {

@@ -66,7 +66,7 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
   expect_s3_class(MANIFEST_DEMOGRAPHIE, "tbl_df")
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
                     "date_reference", "date_publication", "licence", "note",
-                    "mode") %in%
+                    "mode", "type") %in%
                     names(MANIFEST_DEMOGRAPHIE)))
   expect_true(all(!duplicated(MANIFEST_DEMOGRAPHIE$id)))
   expect_true(all(startsWith(MANIFEST_DEMOGRAPHIE$url, "https://")))
@@ -86,6 +86,11 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
   # téléchargement direct sans clé (vérifié en direct le 2026-08-03).
   expect_true(all(MANIFEST_DEMOGRAPHIE$mode == "cron"))
   expect_setequal(MANIFEST_DEMOGRAPHIE$mode, "cron")
+
+  # type de récupération (issue #13) : les 4 sources sont des « fichier » —
+  # URL -> fichier, intégrité vérifiée (le type « api » arrive avec le pull
+  # DPE, thème Habitat).
+  expect_true(all(MANIFEST_DEMOGRAPHIE$type == "fichier"))
 })
 
 test_that("verifier_fichier : un zip valide passe, un fichier corrompu non", {
