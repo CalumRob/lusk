@@ -48,6 +48,14 @@ const vintageDemographie = {
   vintage_date_publication: '2026-06-30',
 }
 
+/** The ménages source — its own vintage (the reference source of taille_menages). */
+const vintageMenages = {
+  vintage_source: 'INSEE — Ménages (dossier complet)',
+  vintage_version: '2023',
+  vintage_date_reference: '2023-01-01',
+  vintage_date_publication: '2026-06-30',
+}
+
 export const indicateursDemographieFixture: Indicateur[] = [
   // densite — 9 territoires, ranks from the R fixture output
   { territoire: '22001', type: 'commune', theme: 'demographie', key: 'densite', detail: null, value: 200, unit: 'hab/km²', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageDemographie },
@@ -67,6 +75,26 @@ export const indicateursDemographieFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '55-64', value: 0.05, unit: '%', rang_epci: 0.2, rang_dep: 0.2, rang_reg: 0.3, ...vintageDemographie },
   { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '65-79', value: 0.1, unit: '%', rang_epci: 0.4, rang_dep: 0.4, rang_reg: 0.5, ...vintageDemographie },
   { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '80+', value: 0.05, unit: '%', rang_epci: 0.3, rang_dep: 0.3, rang_reg: 0.4, ...vintageDemographie },
+  // evolution_1968 — the long-run series (1968 → 2023), a fraction with unit '%'
+  { territoire: '22001', type: 'commune', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.33333333333333331, unit: '%', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageDemographie },
+  { territoire: '22002', type: 'commune', theme: 'demographie', key: 'evolution_1968', detail: null, value: -0.33333333333333331, unit: '%', rang_epci: 0, rang_dep: 0, rang_reg: 0, ...vintageDemographie },
+  { territoire: '29001', type: 'commune', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.25, unit: '%', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.5, ...vintageDemographie },
+  { territoire: '29002', type: 'commune', theme: 'demographie', key: 'evolution_1968', detail: null, value: -0.090909090909090912, unit: '%', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageDemographie },
+  { territoire: '200000001', type: 'epci', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.14285714285714285, unit: '%', rang_epci: null, rang_dep: 0, rang_reg: 0.5, ...vintageDemographie },
+  { territoire: '200000002', type: 'epci', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.052631578947368418, unit: '%', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageDemographie },
+  { territoire: '22', type: 'departement', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.14285714285714285, unit: '%', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageDemographie },
+  { territoire: '29', type: 'departement', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.052631578947368418, unit: '%', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageDemographie },
+  { territoire: '53', type: 'region', theme: 'demographie', key: 'evolution_1968', detail: null, value: 0.076923076923076927, unit: '%', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageDemographie },
+  // taille_menages — its own reference source (ménages)
+  { territoire: '22001', type: 'commune', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.2941176470588234, unit: 'pers./ménage', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageMenages },
+  { territoire: '22002', type: 'commune', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.2285714285714286, unit: 'pers./ménage', rang_epci: 0, rang_dep: 0, rang_reg: 0.5, ...vintageMenages },
+  { territoire: '29001', type: 'commune', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.0857142857142859, unit: 'pers./ménage', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.25, ...vintageMenages },
+  { territoire: '29002', type: 'commune', theme: 'demographie', key: 'taille_menages', detail: null, value: 1.9666666666666666, unit: 'pers./ménage', rang_epci: 0, rang_dep: 0, rang_reg: 0, ...vintageMenages },
+  { territoire: '200000001', type: 'epci', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.2829268292682925, unit: 'pers./ménage', rang_epci: null, rang_dep: 0, rang_reg: 0.5, ...vintageMenages },
+  { territoire: '200000002', type: 'epci', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.0241379310344829, unit: 'pers./ménage', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageMenages },
+  { territoire: '22', type: 'departement', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.2829268292682925, unit: 'pers./ménage', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageMenages },
+  { territoire: '29', type: 'departement', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.0241379310344829, unit: 'pers./ménage', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageMenages },
+  { territoire: '53', type: 'region', theme: 'demographie', key: 'taille_menages', detail: null, value: 2.0917197452229299, unit: 'pers./ménage', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageMenages },
 ]
 
 /**
