@@ -5,15 +5,31 @@
 # (test-contract-payload.R). Le story classifier (soldes + classification 2x2)
 # arrive au ticket 4 (issue #5).
 
-# Vintage de référence du RP — les vintages réels arrivent du manifeste au
-# ticket 5 (issue #6). Ici, la source est unique et connue. Deux dates (point
-# 5) : date_reference (ce que « RP 2023 » veut dire) et date_publication (la
-# mise en ligne réelle — vérifiée sur data.gouv, 2026-06-30).
-VINTAGE_RP <- list(
-  source = "INSEE RP — dossier complet",
-  version = "2023",
-  date_reference = "2023-01-01",
-  date_publication = "2026-06-30"
+# INDICATEURS_DEMOGRAPHIE ------------------------------------------------------
+# La table déclarative des indicateurs du thème (issue #9) : chaque clé du
+# payload y est déclarée avec ses sources (ids du manifeste), sa source de
+# référence et sa multiplicité. La source de référence est DÉCLARÉE, jamais
+# inférée : la règle est « la source du composant signature de l'indicateur,
+# jamais un dénominateur partagé » — structure_age prend ses tranches de
+# PRINC (age_detail) mais son dénominateur (la population) de la série
+# historique : sa référence est age_detail.
+INDICATEURS_DEMOGRAPHIE <- tibble::tibble(
+  key = c("densite", "structure_age", "evolution_1968", "taille_menages"),
+  libelle = c(
+    "Densité de population",
+    "Structure par âge",
+    "Évolution de la population depuis 1968",
+    "Taille moyenne des ménages"
+  ),
+  sources = list(
+    "serie_historique",
+    c("age_detail", "serie_historique"),
+    "serie_historique",
+    "menages"
+  ),
+  source_reference = c("serie_historique", "age_detail",
+                       "serie_historique", "menages"),
+  multiplicite = c(1L, 7L, 1L, 1L)
 )
 
 # departement_pluralite -------------------------------------------------------
@@ -225,21 +241,30 @@ compute_ranks <- function(territoires, indicateurs) {
 # pour les multi-valeurs) et histoires (une ligne par territoire). C'est aussi
 # le schéma Supabase — rien de plus, rien de moins (docs/architecture.md).
 
+# L'estampille de chaque indicateur vient du vintage de SA source de référence
+# (déclarée dans INDICATEURS_<theme>) — jamais d'un tampon de thème (issue #9).
+# La jointure se fait sur l'id du manifeste (source_reference -> vintages$id),
+# jamais par un sous-ensemble implicite.
 assembler_indicateurs <- function(territoires, indicateurs, rangs,
-                                  vintage = VINTAGE_RP) {
+                                  indicateurs_table = INDICATEURS_DEMOGRAPHIE,
+                                  vintages = vintages_demographie()) {
+  tampons <- indicateurs_table %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+    dplyr::select(key,
+                  vintage_source = source,
+                  vintage_version = version,
+                  vintage_date_reference = date_reference,
+                  vintage_date_publication = date_publication)
+
   lapply(names(indicateurs), function(cle) {
     dplyr::left_join(indicateurs[[cle]], rangs[[cle]], by = c("code", "key"))
   }) %>%
     dplyr::bind_rows() %>%
     dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
     dplyr::rename(territoire = code) %>%
-    dplyr::mutate(
-      theme = "demographie",
-      vintage_source = vintage$source,
-      vintage_version = vintage$version,
-      vintage_date_reference = vintage$date_reference,
-      vintage_date_publication = vintage$date_publication
-    ) %>%
+    dplyr::mutate(theme = "demographie") %>%
+    dplyr::left_join(tampons, by = "key") %>%
     dplyr::select(territoire, type, theme, key, detail, value, unit,
                   rang_epci, rang_dep, rang_reg,
                   vintage_source, vintage_version,
@@ -326,7 +351,14 @@ reference_territoires <- function(territoires) {
 # format des sources sur les données réelles — une vague INSEE qui change de
 # structure se traduit ici par une erreur bruyante, pas par des chiffres faux
 # publiés silencieusement. Appelée à la sortie de compute_payload().
-validate_payload <- function(payload) {
+# Issue #9 : la validation s'appuie sur INDICATEURS_<theme> (toute clé du
+# payload doit y être déclarée, avec la bonne multiplicité) et sur la table
+# des vintages (chaque estampille doit égaler le vintage de la source de
+# référence déclarée). Une clé non déclarée ou une estampille hors source de
+# référence échoue fort.
+validate_payload <- function(payload,
+                             indicateurs = INDICATEURS_DEMOGRAPHIE,
+                             vintages = vintages_demographie()) {
   ind <- payload$indicateurs
   ref <- payload$territoires
 
@@ -337,17 +369,22 @@ validate_payload <- function(payload) {
          call. = FALSE)
   }
 
-  # 2. chaque territoire porte les 4 clés d'indicateur, structure = 7 tranches
+  # 2. la table des indicateurs fait foi : chaque clé du payload y est déclarée
+  # (issue #9), avec la bonne multiplicité par territoire.
+  declares <- stats::setNames(indicateurs$multiplicite, indicateurs$key)
   comptes <- table(ind$territoire, ind$key)
-  attendues <- c(densite = 1, structure_age = 7, evolution_1968 = 1,
-                 taille_menages = 1)
-  manquantes <- setdiff(names(attendues), colnames(comptes))
+  non_declarees <- setdiff(colnames(comptes), names(declares))
+  if (length(non_declarees) > 0) {
+    stop("Payload invalide : clé d'indicateur non déclarée : ",
+         paste(non_declarees, collapse = ", "), ".", call. = FALSE)
+  }
+  manquantes <- setdiff(names(declares), colnames(comptes))
   if (length(manquantes) > 0) {
     stop("Payload invalide : clés d'indicateur manquantes : ",
          paste(manquantes, collapse = ", "), ".", call. = FALSE)
   }
-  mal <- rownames(comptes)[apply(comptes[, names(attendues), drop = FALSE],
-                                 1, function(ligne) any(ligne != attendues))]
+  mal <- rownames(comptes)[apply(comptes[, names(declares), drop = FALSE],
+                                 1, function(ligne) any(ligne != declares))]
   if (length(mal) > 0) {
     stop("Payload invalide : clés d'indicateur inattendues pour ",
          paste(mal, collapse = ", "), ".", call. = FALSE)
@@ -372,7 +409,48 @@ validate_payload <- function(payload) {
     stop("Payload invalide : un rang sort de [0, 1].", call. = FALSE)
   }
 
-  # 6. la table de référence : une ligne par territoire, un nom partout
+  # 6. les estampilles égalent le vintage de la source de référence déclarée
+  # (issue #9). Une source de référence absente de la table des vintages est
+  # une erreur en soi ; une estampille qui ne vient pas de sa source de
+  # référence est une fraude à la fraîcheur — les deux échouent fort.
+  refs <- unique(indicateurs$source_reference)
+  sans_vintage <- setdiff(refs, vintages$id)
+  if (length(sans_vintage) > 0) {
+    stop("Payload invalide : source de référence absente des vintages : ",
+         paste(sans_vintage, collapse = ", "), ".", call. = FALSE)
+  }
+
+  attendus <- indicateurs %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id"))
+
+  joint <- ind %>%
+    dplyr::transmute(
+      key = key,
+      vintage_source = vintage_source,
+      vintage_version = vintage_version,
+      vintage_date_reference = vintage_date_reference,
+      vintage_date_publication = vintage_date_publication
+    ) %>%
+    dplyr::left_join(attendus, by = "key")
+
+  # deux NA comptent pour égaux (un vintage sans date de publication reste
+  # un vintage valide) — mais jamais NA face à une valeur déclarée
+  egal_na <- function(a, b) {
+    (is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b)
+  }
+  mauvaise_estampille <- !(
+    egal_na(joint$vintage_source, joint$source) &
+      egal_na(joint$vintage_version, joint$version) &
+      egal_na(joint$vintage_date_reference, joint$date_reference) &
+      egal_na(joint$vintage_date_publication, joint$date_publication)
+  )
+  if (any(mauvaise_estampille)) {
+    stop("Payload invalide : une estampille ne vient pas de la source de ",
+         "référence déclarée.", call. = FALSE)
+  }
+
+  # 7. la table de référence : une ligne par territoire, un nom partout
   if (anyDuplicated(ref$territoire)) {
     stop("Payload invalide : la table de référence a des territoires en double.",
          call. = FALSE)
@@ -394,9 +472,11 @@ validate_payload <- function(payload) {
 
 # compute_payload -------------------------------------------------------------
 # LE SEAM. Données filtrées (forme du fixture) -> payload de la fiche.
-# `vintage` est le tampon de fraîcheur du thème (source/version/dates) — par
-# défaut VINTAGE_RP ; run_pipeline() le tire de la table des vintages.
-compute_payload <- function(data, vintage = VINTAGE_RP) {
+# `vintages` est la table des vintages (issue #9) : chaque indicateur est
+# estampillé depuis le vintage de sa source de référence déclarée — plus de
+# tampon de fraîcheur du thème. Par défaut la table réelle du manifeste ;
+# run_pipeline() la passe explicitement. Pure : fixture + table -> payload.
+compute_payload <- function(data, vintages = vintages_demographie()) {
   territoires <- build_territoires(data)
   indicateurs <- list(
     densite = indicator_densite(territoires),
@@ -407,11 +487,12 @@ compute_payload <- function(data, vintage = VINTAGE_RP) {
   rangs <- compute_ranks(territoires, indicateurs)
 
   payload <- list(
-    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintage),
+    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintages = vintages),
     histoires = compute_histoires(territoires),
     territoires = reference_territoires(territoires)
   )
 
-  # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là
-  validate_payload(payload)
-}
+    # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là.
+  # La validation reçoit la même table des vintages que l'estampillage — elle
+  # vérifie chaque estampille contre la source de référence déclarée (issue #9).
+  validate_payload(payload, vintages = vintages)}

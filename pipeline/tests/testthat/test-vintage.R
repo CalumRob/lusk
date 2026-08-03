@@ -33,3 +33,56 @@ test_that("la table des vintages est le seam du watchdog (ADR-0001)", {
   # une source par jeu de données, jamais de doublon
   expect_equal(nrow(v), length(unique(v$id)))
 })
+
+test_that("l'estampille vient de la source de référence, pas du dénominateur", {
+  # des vintages différenciés par source : si l'estampille suivait un tampon de
+  # thème (ou le dénominateur partagé), elle serait uniforme — ici chaque
+  # indicateur doit porter le vintage de SA source de référence.
+  vintages <- tibble::tibble(
+    id = c("serie_historique", "menages", "age_detail"),
+    source = c("Série historique", "Ménages", "PRINC détail"),
+    version = c("2023", "2023", "2023"),
+    licence = c("lov2", "lov2", "lov2"),
+    date_reference = c("2023-01-01", "2023-01-01", "2023-01-01"),
+    date_publication = c("2026-06-30", "2026-07-01", "2026-06-25")
+  )
+
+  p <- compute_payload(load_fixture(), vintages = vintages)
+
+  # densite et evolution_1968 : la série historique (POP/SUP/BRTH/DEATH)
+  for (cle in c("densite", "evolution_1968")) {
+    src <- unique(p$indicateurs$vintage_source[p$indicateurs$key == cle])
+    pub <- unique(p$indicateurs$vintage_date_publication[
+      p$indicateurs$key == cle
+    ])
+    expect_equal(src, "Série historique", info = cle)
+    expect_equal(pub, "2026-06-30", info = cle)
+  }
+
+  # taille_menages : la source ménages (DWELLINGS), pas la série historique
+  expect_equal(
+    unique(p$indicateurs$vintage_source[p$indicateurs$key == "taille_menages"]),
+    "Ménages"
+  )
+  expect_equal(
+    unique(p$indicateurs$vintage_date_publication[
+      p$indicateurs$key == "taille_menages"
+    ]),
+    "2026-07-01"
+  )
+
+  # structure_age : l'estampille vient de sa source de référence (PRINC/age_detail,
+  # le composant signature — les tranches), PAS du dénominateur partagé
+  # (la population, série historique). Si elle suivait le dénominateur, la date
+  # de publication serait "2026-06-30".
+  expect_equal(
+    unique(p$indicateurs$vintage_source[p$indicateurs$key == "structure_age"]),
+    "PRINC détail"
+  )
+  expect_equal(
+    unique(p$indicateurs$vintage_date_publication[
+      p$indicateurs$key == "structure_age"
+    ]),
+    "2026-06-25"
+  )
+})

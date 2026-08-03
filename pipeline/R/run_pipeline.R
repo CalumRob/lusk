@@ -18,19 +18,10 @@ run_pipeline <- function(cache = "data/raw", sortie = "data/processed",
   brut <- construire_donnees_brut(cache = cache)
 
   vintages <- vintages_demographie()
-  # Le tampon de fraîcheur du thème = la source de référence des indicateurs :
-  # la série historique (POP, SUP, BRTH/DEATH). Pointée par son id, jamais par
-  # un sous-ensemble implicite (point 9).
-  vintage_rp <- vintages[vintages$id == "serie_historique", ]
-  stopifnot(nrow(vintage_rp) == 1)
-  vintage_payload <- list(
-    source = vintage_rp$source,
-    version = vintage_rp$version,
-    date_reference = vintage_rp$date_reference,
-    date_publication = vintage_rp$date_publication
-  )
-
-  payload <- compute_payload(brut, vintage = vintage_payload)
+  # Issue #9 : la table des vintages entière passe au compute — chaque
+  # indicateur est estampillé depuis le vintage de sa source de référence
+  # déclarée (INDICATEURS_DEMOGRAPHIE), plus de tampon de fraîcheur du thème.
+  payload <- compute_payload(brut, vintages = vintages)
 
   publish(payload, sortie)
   nanoparquet::write_parquet(vintages, file.path(sortie, "vintages.parquet"))
