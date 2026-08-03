@@ -1,0 +1,26 @@
+{
+  "mode": "full",
+  "timestamp": "2026-08-03T22:03:28Z",
+  "statuts": [
+    {
+      "id": "serie_historique",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "menages",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "age_detail",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "epci",
+      "mode": "cron",
+      "status": "frais"
+    }
+  ]
+}
