@@ -21,11 +21,11 @@ One person, two moving parts:
 ```
 lusk/
 ├── README.md       ← you are here
-├── pipeline/       → R data pipeline (download → compute → publish)   [to be built]
+├── pipeline/       → R data pipeline (download → compute → publish)   ✅ built (Démographie)
 └── app/            → Vue application (map, fiches, charts)            [to be built]
 ```
 
-- **`pipeline/`** — an R pipeline that downloads the source datasets (INSEE, data.gouv.fr, data.bretagne.bzh), filters to Bretagne, computes the fiche indicators and ranks, records each dataset's vintage, and publishes the result. Idempotent, with a single documented entry point.
+- **`pipeline/`** — an R pipeline that downloads the source datasets (INSEE, data.gouv.fr, data.bretagne.bzh), filters to Bretagne, computes the fiche indicators and ranks, records each dataset's vintage (reference **and** publication dates), and publishes the result. Idempotent (re-runs never duplicate; corrupt downloads are re-fetched), with a single documented entry point and a testthat suite. Démographie is built and runs end-to-end; Habitat and Économie/Emploi replicate its skeleton.
 - **`app/`** — a Vue application that renders the fiche payload: the map, search, territory pages, charts. The app renders; the pipeline computes.
 - **Automation** — the light themes refresh on a schedule (GitHub Actions); the flagship Mobilité analysis rebuilds on a slower clock. A vintage table is the seam that makes the freshness promise honest.
 
@@ -40,8 +40,8 @@ The data is **open**: the bulk under Licence Ouverte, with OSM-derived layers un
 
 ## Status
 
-- **v0 (now)** — the plan is set; this README is the public face of the project
-- **v1** — Bretagne, four themes, light themes automated
+- **v0.5 (now)** — the plan is set, and the **Démographie pipeline is built**: it downloads the INSEE RP sources, filters to Bretagne, computes the four indicators with ranks-in-context and the "Attractive ou fertile ?" story, and publishes the fiche payload as parquet (1 269 territoires, testthat suite green). The app is not yet built.
+- **v1** — Bretagne, four themes, light themes automated, the app (map, fiches, charts)
 - **After v1** — an AI query layer, France-wide coverage, finer-grained data
 
 ---
