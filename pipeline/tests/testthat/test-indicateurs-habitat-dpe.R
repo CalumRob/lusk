@@ -52,11 +52,11 @@ test_that("distribution_dpe : les agrégats et la région", {
   expect_equal(v$value[v$detail == "D"], 28 / 65)
   expect_equal(v$value[v$detail == "A"], 2 / 65)
   expect_equal(unique(v$n), 65)
-  # la région : 104 équivalents, F = 15/104, G = 5/104
+  # la région : 239 équivalents (A1 + D + B + C + E + F), F = 36/239, G = 16/239
   vr <- valeur_payload(p, "53", "distribution_dpe")
-  expect_equal(unique(vr$n), 104)
-  expect_equal(vr$value[vr$detail == "F"], 15 / 104)
-  expect_equal(vr$value[vr$detail == "G"], 5 / 104)
+  expect_equal(unique(vr$n), 239)
+  expect_equal(vr$value[vr$detail == "F"], 36 / 239)
+  expect_equal(vr$value[vr$detail == "G"], 16 / 239)
 })
 
 test_that("distribution_dpe : la suppression suit part_passoires (n < 30)", {

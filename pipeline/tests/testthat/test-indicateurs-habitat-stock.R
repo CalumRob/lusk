@@ -19,13 +19,13 @@ test_that("mix de logements : une ligne par catégorie, part du total", {
 test_that("mix de logements : les agrégats somment les communes", {
   p <- payload_habitat()
   v <- valeur_payload(p, "200000001", "mix_logements")
-  # EPCI-X = A1 + D : 1300 logements, 1090 RP, 90 secondaires, 120 vacants
-  expect_equal(v$value[v$detail == "principales"], 1090 / 1300)
-  expect_equal(v$value[v$detail == "secondaires"], 90 / 1300)
-  expect_equal(v$value[v$detail == "vacants"], 120 / 1300)
-  # la région : 4000 logements au total
+  # EPCI-X = A1 + D + E + F : 2200 logements, 1790 RP, 200 secondaires, 210 vacants
+  expect_equal(v$value[v$detail == "principales"], 1790 / 2200)
+  expect_equal(v$value[v$detail == "secondaires"], 200 / 2200)
+  expect_equal(v$value[v$detail == "vacants"], 210 / 2200)
+  # la région : 4900 logements au total
   expect_equal(valeur_payload(p, "53", "mix_logements")$value[
-    valeur_payload(p, "53", "mix_logements")$detail == "principales"], 3290 / 4000)
+    valeur_payload(p, "53", "mix_logements")$detail == "principales"], 3990 / 4900)
 })
 
 test_that("statut / ancienneté / taille : 14 modalités en part des RP", {
