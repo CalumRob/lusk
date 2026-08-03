@@ -1,0 +1,13 @@
+# The fiche opens on an Aperçu tab — a cross-theme default ahead of the four themes
+
+The fiche was designed as a four-theme block with **Mobilité as the default tab** (`DESIGN.md` §ThemeTabs, `site-map.md`). Two facts collided with that design. First, the app ships fiche-first while only Démographie has real payload data (Habitat/Économie are `ready-for-agent`; Mobilité is ported, not yet in the tracker) — a default Mobilité tab would open on an empty block, and `principles.md` §1 forbids "under construction" states. Second, the fiche carries a cross-theme element — the KPI strip and **Programmes & financements** — that has no natural home *inside* any single theme block.
+
+**Decision (user, 2026-08-03):** the fiche gains a fifth, default tab — **Aperçu** — sitting before the four theme tabs. It is deliberately *not* a theme block: it holds the territory's basic stats (rendered from a pipeline-published `apercu` table — never derived client-side) and the **Programmes & financements** element. It runs on the general (brand) theme and is never an "under construction" state. Consequences for the tab bar:
+
+- The theme tab bar is **payload-driven**: it renders exactly the themes present in the payload, in canonical order (Mobilité · Démographie · Habitat · Économie), with **Aperçu always first**. Dead tabs never render; the full four-theme bar materializes as each theme's data lands. The default tab is Aperçu, not Mobilité.
+- The always-on cross-theme KPI strip above the theme blocks (from `layouts.md`) is removed — its content is Aperçu's.
+- `DESIGN.md` §ThemeTabs and `site-map.md` are amended accordingly.
+
+**Considered options:** (1) keep Mobilité as default with four always-rendered tabs — rejected: the flagship would open on an empty block at launch, and empty-tab copy violates the no-"under construction" principle; (2) payload-driven tabs without Aperçu, default = first live theme — rejected: leaves the cross-theme content (KPI strip, Programmes & financements) homeless; the Aperçu tab gives it a home and gives the fiche a landing view that works from day one; (3) **Aperçu as default, payload-driven theme bar — chosen**.
+
+**Consequences:** the fiche is buildable before any theme beyond Démographie exists; Aperçu needs a pipeline `apercu` table (population, densité, part 65+… — NA where a theme isn't built); the payload contract gains `territoires.epci` (the context switcher's ladder) so Aperçu's "which EPCI/département" basics can render from the reference table (ADR-0008 covers the geometry; this one covers the tab). Story *copy* lives in the app keyed by classification, provisional for the first build.
