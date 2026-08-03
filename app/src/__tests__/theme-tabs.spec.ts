@@ -13,14 +13,15 @@ import type { Theme } from '../payload/types'
  * emits the slug so the view owns the ?theme= URL.
  */
 
-let montee: ReturnType<typeof montage> | null = null
+let montee: ReturnType<typeof mount> | null = null
 
 function montage(themes: Theme[], selected: Theme | null = null) {
-  montee = mount(ThemeTabs, {
+  const wrapper = mount(ThemeTabs, {
     props: { themes, selected },
     attachTo: document.body, // le focus (roving tabindex) exige le DOM réel
   })
-  return montee
+  montee = wrapper
+  return wrapper
 }
 
 afterEach(() => {
@@ -29,7 +30,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-const textesOnglets = (wrapper: ReturnType<typeof montage>): string[] =>
+const textesOnglets = (wrapper: ReturnType<typeof mount>): string[] =>
   wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
 
 describe('ThemeTabs — the payload-driven tab bar', () => {

@@ -22,7 +22,6 @@ import {
   idOnglet,
   idPanneau,
 } from '@/fiche/onglets'
-import type { SlugOnglet } from '@/fiche/onglets'
 import type { Theme } from '@/payload/types'
 
 const props = defineProps<{

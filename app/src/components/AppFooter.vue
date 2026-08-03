@@ -15,7 +15,7 @@ import { computed } from 'vue'
 import { ligneFraicheur } from '@/payload/selectors'
 import { usePayload } from '@/payload/usePayload'
 
-const { payload, erreur, chargement } = usePayload()
+const { payload, erreur } = usePayload()
 
 const ligneFraicheurAffichée = computed(() => {
   if (erreur.value) return 'Données actualisées chaque semaine'

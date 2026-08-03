@@ -16,17 +16,18 @@ import { routes } from '../router'
  * dropdown to the three lists. No locale toggle (French-only v1).
  */
 
-let montee: ReturnType<typeof montage> | null = null
+let montee: ReturnType<typeof mount> | null = null
 
 async function montage(chemin = '/') {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(chemin)
   await router.isReady()
-  montee = mount(AppHeader, {
+  const wrapper = mount(AppHeader, {
     attachTo: document.body,
     global: { plugins: [router] },
   })
-  return { router, wrapper: montee }
+  montee = wrapper
+  return { router, wrapper }
 }
 
 afterEach(() => {
