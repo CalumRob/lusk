@@ -1,0 +1,9 @@
+# OSM-derived data stays ODbL — accepted; the product is intentionally less than 100% open
+
+OpenStreetMap data is licensed **ODbL 1.0** (share-alike + EU database rights), and the Licence Ouverte compatibility list does **not** include ODbL — so OSM-derived databases cannot be republished under Licence Ouverte. That legal fact is immutable. The original draft of this ADR framed the response as "keep OSM in a separated component so the whole product stays Licence Ouverte."
+
+**Decision (user, 2026-08-03):** full openness is not a hard requirement for Lusk. The project accepts that using OSM (a gold mine for Mobilité networks) makes the product **less than 100% open**. OSM-derived layers and databases stay ODbL with attribution ("© OpenStreetMap contributors" + ODbL link) and the extraction code published per ODbL §4.6; everything else (INSEE, DVF, BDNB, OCS GE, ADEME, BD TOPO) stays Licence Ouverte 2.0. No licence is violated; the product simply carries a licence mix, and the README's "all data is open" wording should reflect that honestly.
+
+**Considered options:** (1) exclude OSM — rejected: loses the best mobility-network and tourism geometry with no INSEE equivalent; (2) treat OSM-derived indicators as Licence Ouverte — rejected: incompatible, would be a licence violation; (3) relabel the whole product ODbL — rejected: drags share-alike across data that is Licence Ouverte by origin; (4) accept the mix — **chosen**.
+
+**Consequences:** every pipeline output declares its licence per component; the vintage table gains a `licence` field; the fiche's OSM-fed indicators carry the ODbL notice; the app's Méthodes page explains the split; README's openness claim is softened. Verified against the ODbL 1.0 legal text, Licence Ouverte 2.0 text, and OSMF attribution guidelines — see `docs/research/openstreetmap.md` §3.
