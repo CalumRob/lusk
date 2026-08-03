@@ -61,18 +61,32 @@ tirer_api <- function(pull, cible) {
   invisible(resultat)
 }
 
+# erreur_manifeste ------------------------------------------------------------
+# L'erreur de CONFIGURATION du manifeste (issue #13) : une source déclarée
+# « api » sans fonction de pull est une erreur de manifeste, pas un échec
+# réseau — elle s'arrête IMMÉDIATEMENT, sans retry (retenter ne répare pas un
+# manifeste mal déclaré) et sans être confondue avec un téléchargement invalide.
+erreur_manifeste <- function(id) {
+  structure(
+    list(
+      message = paste0("Source api sans fonction de pull : ", id, "."),
+      call = NULL
+    ),
+    class = c("erreur_manifeste", "error", "condition")
+  )
+}
+
 # tirer_source ----------------------------------------------------------------
 # Le dispatch du type de source (issue #13) : « fichier » -> télécharger_fichier
 # (URL vers fichier), « api » -> tirer_api (la fonction de pull de la source).
 # Un type inconnu est une erreur forte — une source mal déclarée doit être
-# visible, pas silencieuse.
+# visible, pas silencieuse. (L'absence de fonction de pull est détectée AVANT
+# la boucle de retry, dans download_sources — une erreur de manifeste ne se
+# retente pas.)
 tirer_source <- function(type, manifest, i, cible) {
   if (type %in% "fichier") {
     telecharger_fichier(manifest$url[i], cible)
   } else if (type %in% "api") {
-    if (!"pull" %in% names(manifest) || is.null(manifest$pull[[i]])) {
-      stop("Source api sans fonction de pull : ", manifest$id[i], call. = FALSE)
-    }
     tirer_api(manifest$pull[[i]], cible)
   } else {
     stop("Type de source inconnu : ", type, call. = FALSE)
@@ -158,6 +172,14 @@ download_sources <- function(manifest, cache = "data/raw",
     }
 
     cible <- file.path(cache, manifest$fichier[i])
+
+    # une erreur de MANIFESTE n'est pas retentée : une source « api » sans
+    # fonction de pull s'arrête immédiatement, avant la boucle de retry — elle
+    # ne doit pas être confondue avec un téléchargement invalide (issue #13)
+    if (type_source[i] %in% "api" &&
+        (!"pull" %in% names(manifest) || is.null(manifest$pull[[i]]))) {
+      stop(erreur_manifeste(manifest$id[i]))
+    }
 
     if (file.exists(cible) && verifier_fichier(cible)) {
       statuts <- tibble::add_row(
