@@ -1,25 +1,135 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-03T22:03:28Z",
+  "timestamp": "2026-08-03T23:07:37Z",
   "statuts": [
-    {
-      "id": "serie_historique",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "menages",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "age_detail",
-      "mode": "cron",
-      "status": "frais"
-    },
     {
       "id": "epci",
       "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "logements",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2021_dep22",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2021_dep29",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2021_dep35",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2021_dep56",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2022_dep22",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2022_dep29",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2022_dep35",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2022_dep56",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2023_dep22",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2023_dep29",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2023_dep35",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2023_dep56",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2024_dep22",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2024_dep29",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2024_dep35",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2024_dep56",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2025_dep22",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2025_dep29",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2025_dep35",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dvf_2025_dep56",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dpe_22",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dpe_29",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dpe_35",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "dpe_56",
+      "mode": "manuel",
       "status": "frais"
     }
   ]
