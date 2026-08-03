@@ -163,6 +163,10 @@ compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
 # (source_reference -> vintages$id), jamais par un sous-ensemble implicite.
 # Issue #13 : `theme` est le nom du thème (colonne du payload) et
 # `indicateurs_table` SA table déclarative — tout vient du descripteur.
+# Issue #17 : la colonne nullable `n` (le nombre d'observations des indicateurs
+# d'échantillon — DVF/DPE) est portée si (et seulement si) les tables
+# d'indicateurs du thème la déclarent — `any_of` : Démographie (pas de n)
+# garde exactement son contrat, Habitat la publie.
 assembler_indicateurs <- function(territoires, indicateurs, rangs,
                                   theme, indicateurs_table, vintages) {
   tampons <- indicateurs_table %>%
@@ -182,10 +186,13 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
     dplyr::rename(territoire = code) %>%
     dplyr::mutate(theme = theme) %>%
     dplyr::left_join(tampons, by = "key") %>%
-    dplyr::select(territoire, type, theme, key, detail, value, unit,
-                  rang_epci, rang_dep, rang_reg,
-                  vintage_source, vintage_version,
-                  vintage_date_reference, vintage_date_publication)
+    dplyr::select(dplyr::any_of(c(
+      "territoire", "type", "theme", "key", "detail", "value", "unit",
+      "rang_epci", "rang_dep", "rang_reg",
+      "vintage_source", "vintage_version",
+      "vintage_date_reference", "vintage_date_publication",
+      "n"
+    )))
 }
 
 # reference_territoires -------------------------------------------------------
