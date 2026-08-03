@@ -26,7 +26,7 @@ function servirPayloadEnDev(): Plugin {
       serveur.middlewares.use(async (req, res, suivant) => {
         if (!req.url?.startsWith('/data/')) return suivant()
         const relatif = req.url.slice('/data/'.length)
-        const chemin = path.resolve(racinePayload, `.${relatif}`)
+        const chemin = path.resolve(racinePayload, relatif)
         if (!chemin.startsWith(racinePayload + path.sep)) {
           res.statusCode = 403
           res.end('Hors du répertoire /data')
