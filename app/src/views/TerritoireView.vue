@@ -6,8 +6,9 @@
  * the themes present in the payload), the ?theme= URL state, correct
  * switching, correct theming (the page bg wears the selected theme's -wash),
  * the breadcrumb + H1 with the territory's real name (trouverTerritoire),
- * the type chip and the context switcher. C2/C3 slot their content into the
- * Aperçu and theme placeholders.
+ * the type chip and the context switcher. The Aperçu tab (C2) renders the
+ * territory's basic stats + Programmes & financements from the payload it
+ * receives here; C3 builds the theme blocks' content.
  *
  * States: skeleton while the payload loads; typed PayloadError with a Retry
  * button (ui-elements.md §Loading/empty/error — never a raw error string);
@@ -143,8 +144,12 @@ watch(
         :id="idPanneau(selection)"
         :aria-labelledby="idOnglet(selection)"
       >
-        <ApercuOnglet v-if="selection === null" />
-        <OngletTheme v-else :theme="selection" />
+        <ApercuOnglet
+          v-if="payload && selection === null"
+          :payload="payload"
+          :territoire="String(route.params.id)"
+        />
+        <OngletTheme v-else-if="selection" :theme="selection" />
       </div>
     </template>
   </section>

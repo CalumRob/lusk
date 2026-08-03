@@ -149,13 +149,15 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     expect(onglets).toEqual(['Aperçu', 'Démographie', 'Habitat'])
   })
 
-  it('opens on Aperçu by default (absent ?theme=) and shows its placeholder', async () => {
+  it('opens on Aperçu by default (absent ?theme=) and renders its content', async () => {
     const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
 
     const apercu = wrapper.findAll('[role="tab"]')[0]
     expect(apercu.attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-apercu')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('À venir.')
+    // the Aperçu tab's real content: basic stats + Programmes & financements
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Population')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Programmes & financements')
   })
 
   it('selects the theme from ?theme= and shows its placeholder', async () => {
