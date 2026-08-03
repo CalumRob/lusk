@@ -213,16 +213,62 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs) {
                   vintage_source, vintage_version, vintage_date)
 }
 
-assembler_histoires <- function(territoires) {
-  tibble::tibble(
-    territoire = territoires$code,
-    type = territoires$type,
-    theme = "demographie",
-    story_key = "attractive-ou-fertile",
-    solde_naturel = NA_real_,
-    solde_migratoire = NA_real_,
-    classification = NA_character_
-  )
+# compute_histoires ------------------------------------------------------------
+# L'Histoire « Attractive ou fertile ? » — une décomposition, une
+# classification 2x2 (ADR-0002, docs/themes/demographie.md).
+#
+# Décompose la variation récente de population en deux soldes :
+#   solde naturel    = naissances - décès
+#   solde migratoire = variation totale - solde naturel (le résidu)
+# puis classe chaque territoire dans l'un des quatre quadrants :
+#   - axe de croissance : le taux de variation, relatif à la médiane du groupe
+#     de comparaison (le même que pour les rangs — communes vs EPCIs vs
+#     départements, sur la région). La région, sans groupe, se compare à une
+#     croissance nulle.
+#   - axe de solde : le plus grand des deux |soldes| domine ; ex æquo -> le
+#     solde naturel.
+# Quatre lectures, une par quadrant : fertile (croît × naturel), attractive
+# (croît × migratoire), vieillissante (décroît × naturel), exode (décroît ×
+# migratoire). Règle déterministe documentée (Méthodes).
+compute_histoires <- function(territoires) {
+  groupe_reg <- groupes_comparaison(territoires)$reg
+
+  soldes <- territoires %>%
+    dplyr::mutate(
+      groupe_reg = groupe_reg,
+      solde_naturel = naissances - deces,
+      solde_migratoire = (population - population_precedente) - (naissances - deces),
+      taux_croissance = (population - population_precedente) / population_precedente
+    )
+
+  medianes <- soldes %>%
+    dplyr::filter(!is.na(groupe_reg)) %>%
+    dplyr::group_by(groupe_reg) %>%
+    dplyr::summarise(mediane = stats::median(taux_croissance), .groups = "drop")
+
+  soldes %>%
+    dplyr::left_join(medianes, by = "groupe_reg") %>%
+    dplyr::mutate(
+      croit = dplyr::if_else(is.na(mediane),
+                             taux_croissance > 0,
+                             taux_croissance > mediane),
+      migratoire_domine = abs(solde_migratoire) > abs(solde_naturel),
+      classification = dplyr::case_when(
+        croit & !migratoire_domine ~ "fertile",
+        croit & migratoire_domine ~ "attractive",
+        !croit & !migratoire_domine ~ "vieillissante",
+        !croit & migratoire_domine ~ "exode"
+      )
+    ) %>%
+    dplyr::transmute(
+      territoire = code,
+      type = type,
+      theme = "demographie",
+      story_key = "attractive-ou-fertile",
+      solde_naturel,
+      solde_migratoire,
+      classification
+    )
 }
 
 # compute_payload -------------------------------------------------------------
@@ -239,6 +285,6 @@ compute_payload <- function(data) {
 
   list(
     indicateurs = assembler_indicateurs(territoires, indicateurs, rangs),
-    histoires = assembler_histoires(territoires)
+    histoires = compute_histoires(territoires)
   )
 }
