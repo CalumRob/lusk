@@ -12,6 +12,7 @@ Encoding: UTF-8
 RoxygenNote: 7.3.0
 Imports:
     dplyr,
+    jsonlite,
     magrittr,
     nanoparquet,
     readr,
