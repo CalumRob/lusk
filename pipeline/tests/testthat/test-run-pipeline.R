@@ -69,7 +69,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       load_fixture()
     },
     vintages_demographie = function() faux_vintages,
-    compute_payload = function(data, vintages = NULL) {
+    compute_payload = function(data, theme = NULL, vintages = NULL) {
       appels$donnees_vues <- data
       appels$vintages_compute_vus <- vintages
       faux_payload
@@ -157,7 +157,7 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     },
     construire_donnees_brut = function(cache) load_fixture(),
     vintages_demographie = function() faux_vintages,
-    compute_payload = function(data, vintages = NULL) list(),
+    compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL)
       invisible(NULL),

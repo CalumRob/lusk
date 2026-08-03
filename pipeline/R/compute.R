@@ -2,35 +2,13 @@
 # Étape 3 : calcul. Dérive les indicateurs de la fiche, les rangs-en-contexte
 # et l'Histoire. Le SEAM de test : compute_payload() — la forme tabulaire du
 # payload (deux tables : indicateurs + histoires) est le contrat
-# (test-contract-payload.R). Le story classifier (soldes + classification 2x2)
-# arrive au ticket 4 (issue #5).
-
-# INDICATEURS_DEMOGRAPHIE ------------------------------------------------------
-# La table déclarative des indicateurs du thème (issue #9) : chaque clé du
-# payload y est déclarée avec ses sources (ids du manifeste), sa source de
-# référence et sa multiplicité. La source de référence est DÉCLARÉE, jamais
-# inférée : la règle est « la source du composant signature de l'indicateur,
-# jamais un dénominateur partagé » — structure_age prend ses tranches de
-# PRINC (age_detail) mais son dénominateur (la population) de la série
-# historique : sa référence est age_detail.
-INDICATEURS_DEMOGRAPHIE <- tibble::tibble(
-  key = c("densite", "structure_age", "evolution_1968", "taille_menages"),
-  libelle = c(
-    "Densité de population",
-    "Structure par âge",
-    "Évolution de la population depuis 1968",
-    "Taille moyenne des ménages"
-  ),
-  sources = list(
-    "serie_historique",
-    c("age_detail", "serie_historique"),
-    "serie_historique",
-    "menages"
-  ),
-  source_reference = c("serie_historique", "age_detail",
-                       "serie_historique", "menages"),
-  multiplicite = c(1L, 7L, 1L, 1L)
-)
+# (test-contract-payload.R).
+# Issue #13 : la machinerie ici est partagée — elle ne nomme jamais le thème.
+# Tout ce qui diffère d'un thème à l'autre (la table INDICATEURS_<theme>, la
+# construction des territoires, les constructeurs d'indicateurs, les scalaires
+# de classement, le calcul de l'Histoire, les validations spécifiques) vit
+# dans le module du thème (theme_demographie.R) et arrive via le descripteur
+# theme_demographie().
 
 # departement_pluralite -------------------------------------------------------
 # La règle d'attribution d'un EPCI à cheval sur plusieurs départements
@@ -46,32 +24,32 @@ departement_pluralite <- function(population, departement) {
     dplyr::pull(departement)
 }
 
-# build_territoires -----------------------------------------------------------
-# Une ligne par territoire (communes + agrégats EPCI / département / région),
-# mêmes colonnes partout. L'astuce du module profond : une fois que chaque
-# territoire est une ligne d'une seule table, les constructeurs d'indicateurs
-# s'appliquent uniformément — ils n'ont pas à savoir quel type de territoire
-# ils calculent.
-build_territoires <- function(communes) {
+# squelette_territoires -------------------------------------------------------
+# Le squelette PARTAGÉ de la table des territoires (issue #13) : une ligne par
+# territoire (communes + agrégats EPCI / département / région), avec les
+# colonnes d'identité — codes, vrais noms (LIBGEO/LIBEPCI), hiérarchie (type,
+# epci, departement) et la règle de pluralité départementale. Aucune colonne de
+# mesure : les colonnes d'agrégation du thème sont ajoutées par le module du
+# thème (build_territoires -> agreger_territoires_<theme>). `poids` est la
+# colonne qui pèse la pluralité départementale (la population par défaut — un
+# thème peut passer la sienne).
+squelette_territoires <- function(communes, poids = "population") {
   base <- communes %>%
     dplyr::mutate(
       type = "commune",
       dplyr::across(c(departement, epci), as.character)
     )
 
-  # Chaque niveau d'agrégat = un group_by + une somme des colonnes
-  # démographiques (population -> menages) : l'agrégat d'un territoire est
-  # la somme des lignes de ses communes. Le nom d'un EPCI est son LIBEPCI
-  # (porté par ses communes, point 1) ; son département est celui de la
-  # pluralité de sa population (point 6).
+  # Chaque niveau d'agrégat = un group_by des identifiants. Le nom d'un EPCI
+  # est son LIBEPCI (porté par ses communes, point 1) ; son département est
+  # celui de la pluralité de sa population (point 6).
   epcis <- base %>%
     dplyr::group_by(epci) %>%
     dplyr::summarise(
       code = dplyr::first(epci),
       nom = dplyr::first(nom_epci),
       type = "epci",
-      departement = departement_pluralite(population, departement),
-      dplyr::across(population:menages, sum),
+      departement = departement_pluralite(.data[[poids]], departement),
       .groups = "drop"
     )
 
@@ -83,7 +61,6 @@ build_territoires <- function(communes) {
       type = "departement",
       departement = dplyr::first(departement),
       epci = NA_character_,
-      dplyr::across(population:menages, sum),
       .groups = "drop"
     )
 
@@ -94,72 +71,14 @@ build_territoires <- function(communes) {
       type = "region",
       departement = NA_character_,
       epci = NA_character_,
-      dplyr::across(population:menages, sum),
       .groups = "drop"
     )
 
-  dplyr::bind_rows(base, epcis, deps, region)
-}
-
-# Les constructeurs d'indicateurs ---------------------------------------------
-# Mêmes entrées (la table des territoires), mêmes sorties : une table longue
-# code, key, detail, value, unit. Chaque indicateur est un petit module pur —
-# la structure que les thèmes suivants réutiliseront. `detail` ne sert qu'aux
-# indicateurs multi-valeurs (structure par âge : une ligne par tranche) ; il
-# est NA pour les indicateurs scalaires.
-
-indicator_densite <- function(territoires) {
-  tibble::tibble(
-    code = territoires$code,
-    key = "densite",
-    detail = NA_character_,
-    value = territoires$population / territoires$superficie_km2,
-    unit = "hab/km²"
-  )
-}
-
-indicator_structure_age <- function(territoires) {
-  territoires %>%
-    tidyr::pivot_longer(
-      cols = c(age_lt15, age_15_24, age_25_39, age_40_54,
-               age_55_64, age_65_79, age_80_plus),
-      names_to = "bande",
-      values_to = "effectif"
-    ) %>%
-    dplyr::mutate(
-      key = "structure_age",
-      detail = dplyr::recode(
-        bande,
-        age_lt15 = "<15", age_15_24 = "15-24", age_25_39 = "25-39",
-        age_40_54 = "40-54", age_55_64 = "55-64", age_65_79 = "65-79",
-        age_80_plus = "80+"
-      ),
-      value = effectif / population,
-      unit = "%"
-    ) %>%
-    dplyr::select(code, key, detail, value, unit)
-}
-
-indicator_evolution <- function(territoires) {
-  tibble::tibble(
-    code = territoires$code,
-    key = "evolution_1968",
-    detail = NA_character_,
-    value = (territoires$population - territoires$population_1968) /
-      territoires$population_1968,
-    unit = "%"
-  )
-}
-
-indicator_taille_menages <- function(territoires) {
-  tibble::tibble(
-    code = territoires$code,
-    key = "taille_menages",
-    detail = NA_character_,
-    # Population des ménages / nombre de ménages (définition INSEE — les
-    # collectivités ne comptent pas dans la taille moyenne des ménages).
-    value = territoires$population_menages / territoires$menages,
-    unit = "pers./ménage"
+  dplyr::bind_rows(
+    base[c("code", "nom", "type", "departement", "epci")],
+    epcis,
+    deps,
+    region
   )
 }
 
@@ -209,23 +128,20 @@ groupes_comparaison <- function(territoires) {
   list(epci = groupe_epci, dep = groupe_dep, reg = groupe_reg)
 }
 
-# Le scalaire classé par indicateur : la valeur elle-même, sauf la structure
-# par âge classée par la part des moins de 20 ans (agrégat Y_LT20, présent
-# dans les données ; documenté, Méthodes).
-scalaire_pour <- function(cle, tab, territoires) {
-  if (cle == "structure_age") {
-    territoires$age_lt20 / territoires$population
-  } else {
-    tab$value
-  }
-}
-
-compute_ranks <- function(territoires, indicateurs) {
+# compute_ranks : le scalaire classé par indicateur est la valeur elle-même,
+# sauf pour les indicateurs multi-valeurs du thème, qui déclarent leur scalaire
+# (issue #13 — `scalaires` : une liste nommée de fonctions, fournie par le
+# module du thème ; ex. structure_age classée par la part des moins de 20 ans).
+compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
   groupes <- groupes_comparaison(territoires)
 
   lapply(names(indicateurs), function(cle) {
     tab <- indicateurs[[cle]]
-    scalaire <- scalaire_pour(cle, tab, territoires)
+    scalaire <- if (!is.null(scalaires[[cle]])) {
+      scalaires[[cle]](territoires)
+    } else {
+      tab$value
+    }
     tibble::tibble(
       code = unique(tab$code),
       key = cle,
@@ -242,12 +158,13 @@ compute_ranks <- function(territoires, indicateurs) {
 # le schéma Supabase — rien de plus, rien de moins (docs/architecture.md).
 
 # L'estampille de chaque indicateur vient du vintage de SA source de référence
-# (déclarée dans INDICATEURS_<theme>) — jamais d'un tampon de thème (issue #9).
-# La jointure se fait sur l'id du manifeste (source_reference -> vintages$id),
-# jamais par un sous-ensemble implicite.
+# (déclarée dans la table INDICATEURS_<theme> du thème) — jamais d'un tampon de
+# thème (issue #9). La jointure se fait sur l'id du manifeste
+# (source_reference -> vintages$id), jamais par un sous-ensemble implicite.
+# Issue #13 : `theme` est le nom du thème (colonne du payload) et
+# `indicateurs_table` SA table déclarative — tout vient du descripteur.
 assembler_indicateurs <- function(territoires, indicateurs, rangs,
-                                  indicateurs_table = INDICATEURS_DEMOGRAPHIE,
-                                  vintages = vintages_demographie()) {
+                                  theme, indicateurs_table, vintages) {
   tampons <- indicateurs_table %>%
     dplyr::select(key, source_reference) %>%
     dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
@@ -263,7 +180,7 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
     dplyr::bind_rows() %>%
     dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
     dplyr::rename(territoire = code) %>%
-    dplyr::mutate(theme = "demographie") %>%
+    dplyr::mutate(theme = theme) %>%
     dplyr::left_join(tampons, by = "key") %>%
     dplyr::select(territoire, type, theme, key, detail, value, unit,
                   rang_epci, rang_dep, rang_reg,
@@ -271,71 +188,14 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
                   vintage_date_reference, vintage_date_publication)
 }
 
-# compute_histoires ------------------------------------------------------------
-# L'Histoire « Attractive ou fertile ? » — une décomposition, une
-# classification 2x2 (ADR-0002, docs/themes/demographie.md).
-#
-# Décompose la variation récente de population en deux soldes :
-#   solde naturel    = naissances - décès
-#   solde migratoire = variation totale - solde naturel (le résidu)
-# puis classe chaque territoire dans l'un des quatre quadrants :
-#   - axe de croissance : le taux de variation, relatif à la médiane du groupe
-#     de comparaison (le même que pour les rangs — communes vs EPCIs vs
-#     départements, sur la région). La région, sans groupe, se compare à une
-#     croissance nulle.
-#   - axe de solde : le plus grand des deux |soldes| domine ; ex æquo -> le
-#     solde naturel.
-# Quatre lectures, une par quadrant : fertile (croît × naturel), attractive
-# (croît × migratoire), vieillissante (décroît × naturel), exode (décroît ×
-# migratoire). Règle déterministe documentée (Méthodes).
-compute_histoires <- function(territoires) {
-  groupe_reg <- groupes_comparaison(territoires)$reg
-
-  soldes <- territoires %>%
-    dplyr::mutate(
-      groupe_reg = groupe_reg,
-      solde_naturel = naissances - deces,
-      solde_migratoire = (population - population_precedente) - (naissances - deces),
-      taux_croissance = (population - population_precedente) / population_precedente
-    )
-
-  medianes <- soldes %>%
-    dplyr::filter(!is.na(groupe_reg)) %>%
-    dplyr::group_by(groupe_reg) %>%
-    dplyr::summarise(mediane = stats::median(taux_croissance), .groups = "drop")
-
-  soldes %>%
-    dplyr::left_join(medianes, by = "groupe_reg") %>%
-    dplyr::mutate(
-      croit = dplyr::if_else(is.na(mediane),
-                             taux_croissance > 0,
-                             taux_croissance > mediane),
-      migratoire_domine = abs(solde_migratoire) > abs(solde_naturel),
-      classification = dplyr::case_when(
-        croit & !migratoire_domine ~ "fertile",
-        croit & migratoire_domine ~ "attractive",
-        !croit & !migratoire_domine ~ "vieillissante",
-        !croit & migratoire_domine ~ "exode"
-      )
-    ) %>%
-    dplyr::transmute(
-      territoire = code,
-      type = type,
-      theme = "demographie",
-      story_key = "attractive-ou-fertile",
-      solde_naturel,
-      solde_migratoire,
-      classification
-    )
-}
-
 # reference_territoires -------------------------------------------------------
 # La table de référence des territoires — les noms réels (LIBGEO/LIBEPCI) et
 # l'appartenance départementale, une ligne par territoire. C'est la dimension
-# que l'app joint aux deux tables de faits : elle rend (les noms), elle ne
-# calcule pas. Projetée depuis build_territoires() — jamais une seconde source
-# de noms. La région n'appartient à aucun département (NA) ; les EPCIs portent
-# le département de la pluralité (point 6).
+# que l'app joint aux tables de faits : elle rend (les noms), elle ne calcule
+# pas. Projetée depuis la table des territoires — jamais une seconde source de
+# noms. Issue #13 : le squelette étant partagé, UNE SEULE table de référence
+# sert tous les thèmes (la région n'appartient à aucun département — NA ; les
+# EPCIs portent le département de la pluralité, point 6).
 reference_territoires <- function(territoires) {
   territoires %>%
     dplyr::transmute(
@@ -351,14 +211,16 @@ reference_territoires <- function(territoires) {
 # format des sources sur les données réelles — une vague INSEE qui change de
 # structure se traduit ici par une erreur bruyante, pas par des chiffres faux
 # publiés silencieusement. Appelée à la sortie de compute_payload().
-# Issue #9 : la validation s'appuie sur INDICATEURS_<theme> (toute clé du
-# payload doit y être déclarée, avec la bonne multiplicité) et sur la table
+# Issue #9 : la validation s'appuie sur la table INDICATEURS_<theme> (toute clé
+# du payload doit y être déclarée, avec la bonne multiplicité) et sur la table
 # des vintages (chaque estampille doit égaler le vintage de la source de
-# référence déclarée). Une clé non déclarée ou une estampille hors source de
-# référence échoue fort.
+# référence déclarée). Issue #13 : les vérifications de VALEUR propres au
+# thème (densité positive, parts qui somment à 1...) sont déclarées par le
+# thème et exécutées après les vérifications génériques.
 validate_payload <- function(payload,
                              indicateurs = INDICATEURS_DEMOGRAPHIE,
-                             vintages = vintages_demographie()) {
+                             vintages = vintages_demographie(),
+                             validations = list()) {
   ind <- payload$indicateurs
   ref <- payload$territoires
 
@@ -369,8 +231,8 @@ validate_payload <- function(payload,
          call. = FALSE)
   }
 
-  # 2. la table des indicateurs fait foi : chaque clé du payload y est déclarée
-  # (issue #9), avec la bonne multiplicité par territoire.
+  # 2. la table des indicateurs du thème fait foi : chaque clé du payload y est
+  # déclarée (issue #9), avec la bonne multiplicité par territoire.
   declares <- stats::setNames(indicateurs$multiplicite, indicateurs$key)
   comptes <- table(ind$territoire, ind$key)
   non_declarees <- setdiff(colnames(comptes), names(declares))
@@ -390,26 +252,13 @@ validate_payload <- function(payload,
          paste(mal, collapse = ", "), ".", call. = FALSE)
   }
 
-  # 3. densité : finie et positive partout
-  dens <- ind$value[ind$key == "densite"]
-  if (any(!is.finite(dens) | dens <= 0)) {
-    stop("Payload invalide : densité non finie ou non positive.", call. = FALSE)
-  }
-
-  # 4. structure par âge : les parts somment à 1 par territoire
-  parts <- stats::aggregate(value ~ territoire, ind[ind$key == "structure_age", ],
-                            sum)
-  if (any(abs(parts$value - 1) > 1e-6)) {
-    stop("Payload invalide : les parts d'âge ne somment pas à 1.", call. = FALSE)
-  }
-
-  # 5. les rangs vivent dans [0, 1] (NA = groupe de comparaison absent)
+  # 3. les rangs vivent dans [0, 1] (NA = groupe de comparaison absent)
   rangs <- unlist(ind[c("rang_epci", "rang_dep", "rang_reg")])
   if (any(!is.na(rangs) & (rangs < 0 | rangs > 1))) {
     stop("Payload invalide : un rang sort de [0, 1].", call. = FALSE)
   }
 
-  # 6. les estampilles égalent le vintage de la source de référence déclarée
+  # 4. les estampilles égalent le vintage de la source de référence déclarée
   # (issue #9). Une source de référence absente de la table des vintages est
   # une erreur en soi ; une estampille qui ne vient pas de sa source de
   # référence est une fraude à la fraîcheur — les deux échouent fort.
@@ -450,7 +299,7 @@ validate_payload <- function(payload,
          "référence déclarée.", call. = FALSE)
   }
 
-  # 7. la table de référence : une ligne par territoire, un nom partout
+  # 5. la table de référence : une ligne par territoire, un nom partout
   if (anyDuplicated(ref$territoire)) {
     stop("Payload invalide : la table de référence a des territoires en double.",
          call. = FALSE)
@@ -467,32 +316,46 @@ validate_payload <- function(payload,
          paste(inconnus, collapse = ", "), ".", call. = FALSE)
   }
 
+  # 6. les validations de valeur déclarées par le thème (issue #13)
+  for (valider in validations) valider(payload)
+
   invisible(payload)
 }
 
 # compute_payload -------------------------------------------------------------
 # LE SEAM. Données filtrées (forme du fixture) -> payload de la fiche.
-# `vintages` est la table des vintages (issue #9) : chaque indicateur est
-# estampillé depuis le vintage de sa source de référence déclarée — plus de
-# tampon de fraîcheur du thème. Par défaut la table réelle du manifeste ;
-# run_pipeline() la passe explicitement. Pure : fixture + table -> payload.
-compute_payload <- function(data, vintages = vintages_demographie()) {
-  territoires <- build_territoires(data)
-  indicateurs <- list(
-    densite = indicator_densite(territoires),
-    structure_age = indicator_structure_age(territoires),
-    evolution_1968 = indicator_evolution(territoires),
-    taille_menages = indicator_taille_menages(territoires)
-  )
-  rangs <- compute_ranks(territoires, indicateurs)
+# `theme` est le descripteur du thème (issue #13) : par défaut Démographie —
+# tout (constructeurs, scalaires, Histoire, validations, table des indicateurs)
+# en vient. `vintages` est la table des vintages (issue #9) : chaque indicateur
+# est estampillé depuis le vintage de sa source de référence déclarée — plus de
+# tampon de fraîcheur du thème. Par défaut les vintages du thème (sa table
+# réelle) ; run_pipeline() les passe explicitement. Pure : fixture + thème +
+# table -> payload.
+compute_payload <- function(data, theme = theme_demographie(),
+                            vintages = NULL) {
+  territoires <- theme$construire_territoires(data)
+  indicateurs <- theme$construire_indicateurs(territoires)
+  rangs <- compute_ranks(territoires, indicateurs, scalaires = theme$scalaires)
+
+  if (is.null(vintages)) vintages <- theme$vintages()
 
   payload <- list(
-    indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintages = vintages),
-    histoires = compute_histoires(territoires),
+    indicateurs = assembler_indicateurs(
+      territoires, indicateurs, rangs,
+      theme = theme$theme,
+      indicateurs_table = theme$indicateurs,
+      vintages = vintages
+    ),
+    histoires = theme$compute_histoires(territoires),
     territoires = reference_territoires(territoires)
   )
 
-    # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là.
+  # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là.
   # La validation reçoit la même table des vintages que l'estampillage — elle
-  # vérifie chaque estampille contre la source de référence déclarée (issue #9).
-  validate_payload(payload, vintages = vintages)}
+  # vérifie chaque estampille contre la source de référence déclarée (issue #9)
+  # puis exécute les validations de valeur du thème (issue #13).
+  validate_payload(payload,
+                   indicateurs = theme$indicateurs,
+                   vintages = vintages,
+                   validations = theme$validations)
+}

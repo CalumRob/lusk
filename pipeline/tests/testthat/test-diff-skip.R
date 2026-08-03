@@ -25,9 +25,11 @@ test_that("une valeur changée est à publier", {
   publish(payload, a)
   publish(payload, b)
   # on change la valeur d'un indicateur dans b, puis on relit le parquet
-  indicateurs <- nanoparquet::read_parquet(file.path(b, "indicateurs.parquet"))
+  indicateurs <- nanoparquet::read_parquet(
+    file.path(b, "indicateurs_demographie.parquet"))
   indicateurs$value[1] <- indicateurs$value[1] + 1
-  nanoparquet::write_parquet(indicateurs, file.path(b, "indicateurs.parquet"))
+  nanoparquet::write_parquet(indicateurs,
+                             file.path(b, "indicateurs_demographie.parquet"))
 
   expect_true(detecter_changement(a, b))
 })

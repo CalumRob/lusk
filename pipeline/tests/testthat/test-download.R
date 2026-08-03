@@ -66,7 +66,7 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
   expect_s3_class(MANIFEST_DEMOGRAPHIE, "tbl_df")
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
                     "date_reference", "date_publication", "licence", "note",
-                    "mode") %in%
+                    "mode", "type") %in%
                     names(MANIFEST_DEMOGRAPHIE)))
   expect_true(all(!duplicated(MANIFEST_DEMOGRAPHIE$id)))
   expect_true(all(startsWith(MANIFEST_DEMOGRAPHIE$url, "https://")))
@@ -86,6 +86,11 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
   # téléchargement direct sans clé (vérifié en direct le 2026-08-03).
   expect_true(all(MANIFEST_DEMOGRAPHIE$mode == "cron"))
   expect_setequal(MANIFEST_DEMOGRAPHIE$mode, "cron")
+
+  # type de récupération (issue #13) : les 4 sources sont des « fichier » —
+  # URL -> fichier, intégrité vérifiée (le type « api » arrive avec le pull
+  # DPE, thème Habitat).
+  expect_true(all(MANIFEST_DEMOGRAPHIE$type == "fichier"))
 })
 
 test_that("verifier_fichier : un zip valide passe, un fichier corrompu non", {
@@ -307,4 +312,147 @@ test_that("un manifeste sans colonne mode est traité tout en cron (comportement
   expect_true(file.exists(file.path(cache, "fichier-test.zip")))
   expect_equal(statuts$mode, "cron")
   expect_equal(statuts$status, "frais")
+})
+
+# type "api" (issue #13) ------------------------------------------------------
+# Le dispatch du téléchargement sur la colonne `type` : « fichier » = URL ->
+# fichier, intégrité vérifiée (le comportement historique) ; « api » = une
+# fonction de pull mise en cache dans un .rds — le seam mockable du pull DPE
+# (Habitat, ticket ultérieur). Jamais de réseau dans la boucle de test : la
+# fonction de pull est un faux, et le fichier du manifeste mixte est mocké.
+
+# manifeste mixte : une source fichier + une source api avec sa fonction de
+# pull (un faux — jamais de réseau)
+manifeste_api <- function() {
+  tibble::tibble(
+    id = c("fichier_a", "api_b"),
+    source = c("test", "test"),
+    url = c("https://example.invalid/a", NA_character_),
+    fichier = c("a.zip", "b.rds"),
+    vintage = c("2023", "2023"),
+    date_reference = c("2023-01-01", "2023-01-01"),
+    date_publication = c("2026-06-30", "2026-06-30"),
+    licence = c("lov2", "lov2"),
+    note = c("test", "test"),
+    mode = c("cron", "cron"),
+    type = c("fichier", "api"),
+    pull = list(NULL, function() tibble::tibble(x = 1))
+  )
+}
+
+test_that("une source api appelle sa fonction de pull et met le résultat en cache", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+
+  statuts <- download_sources(manifeste_api(), cache)
+
+  # la fonction de pull a été appelée, son résultat est en cache (.rds)
+  expect_true(file.exists(file.path(cache, "b.rds")))
+  expect_equal(readRDS(file.path(cache, "b.rds")), tibble::tibble(x = 1))
+  # la source fichier, elle, a suivi le chemin historique
+  expect_true(verifier_fichier(file.path(cache, "a.zip")))
+  expect_equal(statuts$id, c("fichier_a", "api_b"))
+  expect_equal(statuts$mode, c("cron", "cron"))
+  expect_equal(statuts$status, c("frais", "frais"))
+})
+
+test_that("une source api déjà en cache n'est pas re-tirée (idempotent)", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  # b.rds déjà présent et valide : laissé intact, jamais re-tiré
+  readr::write_rds(tibble::tibble(x = 1), file.path(cache, "b.rds"))
+
+  tire <- 0
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+  manifest <- manifeste_api()
+  manifest$pull[[2]] <- function() {
+    tire <<- tire + 1
+    tibble::tibble(x = 2)
+  }
+
+  statuts <- download_sources(manifest, cache)
+
+  expect_equal(tire, 0)  # jamais re-tirée
+  expect_equal(readRDS(file.path(cache, "b.rds"))$x, 1)  # intacte
+  expect_equal(statuts$status, c("frais", "frais"))
+})
+
+test_that("un échec de pull api est retenté, puis échoue fort", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  essais <- 0
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+  manifest <- manifeste_api()
+  manifest$pull[[2]] <- function() {
+    essais <<- essais + 1
+    stop("panne API")
+  }
+
+  erreur <- tryCatch(
+    download_sources(manifest, cache),
+    error = function(e) e
+  )
+
+  expect_s3_class(erreur, "erreur_telechargement")
+  expect_match(conditionMessage(erreur), "Téléchargement invalide après 2 essais")
+  expect_equal(essais, 2)              # retenté exactement une fois
+  expect_false(file.exists(file.path(cache, "b.rds")))  # nettoyé
+  # les statuts du run sont portés par l'erreur, échec inclus
+  expect_equal(erreur$statuts$status, c("frais", "échec"))
+})
+
+test_that("un manifeste sans colonne type est traité tout en fichier (comportement historique)", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  tire <- character(0)
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) {
+      tire <<- c(tire, url)
+      writeBin(mini_zip(), cible)
+    },
+    .package = "lusk"
+  )
+
+  ancien <- manifeste_factice()[, setdiff(names(manifeste_factice()), "type")]
+
+  statuts <- download_sources(ancien, cache)
+
+  expect_equal(tire, "https://example.invalid/x")  # le chemin fichier a servi
+  expect_equal(statuts$status, "frais")
+})
+
+test_that("une source api sans fonction de pull s'arrête bruyamment", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+  manifest <- manifeste_api()
+  manifest$pull <- list(NULL, NULL)  # type "api" mais pas de fonction de pull
+
+  expect_error(
+    download_sources(manifest, cache),
+    "Source api sans fonction de pull"
+  )
 })

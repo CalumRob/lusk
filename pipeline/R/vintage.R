@@ -5,8 +5,11 @@
 # date_reference (ce que « RP 2023 » veut dire) et date_publication (la mise
 # en ligne réelle — ce que le watchdog comparera à data.gouv pour déclencher
 # le pipeline). `id` reste dans la table pour un pointage explicite par source.
+# Issue #13 : le build des vintages est générique — il se projette depuis le
+# manifeste DU THÈME ; le module du thème expose son builder (vintages_<theme>)
+# qui passe son propre manifeste.
 
-vintages_demographie <- function(manifest = MANIFEST_DEMOGRAPHIE) {
+vintages_depuis_manifest <- function(manifest) {
   manifest %>%
     dplyr::transmute(
       id = id,

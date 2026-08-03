@@ -1,63 +1,39 @@
 # download --------------------------------------------------------------------
-# Étape 1 : téléchargement. Lit le manifeste des sources, récupère les jeux de
-# données vers le cache brut (data/raw, dans le dépôt — jamais sur C:).
+# Étape 1 : téléchargement. Lit le manifeste des sources (le manifeste vit
+# dans le module du thème — issue #13), récupère les jeux de données vers le
+# cache brut (data/raw, dans le dépôt — jamais sur C:).
 # Le manifeste est le SEAM du téléchargement : une table de sources vérifiées
 # (docs/research/rp-dossier-complet.md), testée pour son intégrité, jamais
-# exécutée contre le réseau dans la boucle de test.
-
-# MANIFEST_DEMOGRAPHIE ---------------------------------------------------------
-# La table des sources vérifiées (docs/research/rp-dossier-complet.md). Deux
-# dates par source (point 5) :
-#   - date_reference   : la date de référence de la donnée (« RP 2023 » = au
-#     1er janvier 2023) — ce que le tampon de fraîcheur affiche.
-#   - date_publication : la date de mise en ligne réelle — ce que le watchdog
-#     comparera à data.gouv (ADR-0001). Vérifiée sur l'API data.gouv le
-#     2026-08-03 (created_at des ressources 2023 = 2026-06-30). La base des
-#     EPCI vit sur insee.fr, qui n'expose pas de date de fichier : NA, à
-#     compléter par le watchdog.
-# Et le mode de récupération (issue #8, ADR-0004) : « cron » = le runner
-# télécharge directement (petit fichier HTTP sans clé), « manuel » = trop gros
-# / outil de bureau / clé API (OSM, OCS GE, BDNB). Les 4 sources INSEE
-# Démographie sont toutes « cron » (vérifié en direct le 2026-08-03).
-MANIFEST_DEMOGRAPHIE <- tibble::tribble(
-  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference, ~date_publication, ~licence, ~note, ~mode,
-  "serie_historique",
-  "INSEE — Série historique du recensement",
-  "https://api.insee.fr/melodi/file/DS_RP_SERIE_HISTORIQUE/DS_RP_SERIE_HISTORIQUE_2023_CSV_FR",
-  "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip", "2023", "2023-01-01", "2026-06-30", "lov2",
-  "Population 1968-2023 (POP), superficie (SUP, km2), naissances/décès cumulés entre recensements (BRTH/DEATH)",
-  "cron",
-  "menages",
-  "INSEE — Ménages (dossier complet)",
-  "https://api.insee.fr/melodi/file/DS_RP_MENAGES_COMP/DS_RP_MENAGES_COMP_2023_CSV_FR",
-  "DS_RP_MENAGES_COMP_2023_CSV_FR.zip", "2023", "2023-01-01", "2026-06-30", "lov2",
-  "Nombre de ménages (DWELLINGS) et population des ménages (DWELLINGS_POPSIZE)",
-  "cron",
-  "age_detail",
-  "INSEE — Population par sexe et âge (PRINC)",
-  "https://api.insee.fr/melodi/file/DS_RP_POPULATION_PRINC/DS_RP_POPULATION_PRINC_2023_CSV_FR",
-  "DS_RP_POPULATION_PRINC_2023_CSV_FR.zip", "2023", "2023-01-01", "2026-06-30", "lov2",
-  "Structure par âge : 7 tranches exhaustives + agrégats (dont Y_LT20, moins de 20 ans)",
-  "cron",
-  "epci",
-  "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
-  "https://www.insee.fr/fr/statistiques/fichier/2510634/epci_au_01-01-2025.zip",
-  "epci_au_01-01-2025.zip", "2025", "2025-01-01", NA_character_, "lov2",
-  "Feuille Composition_communale : CODGEO -> EPCI (SIREN), LIBEPCI, DEP, REG",
-  "cron"
-)
+# exécutée contre le réseau dans la boucle de test. Chaque source déclare son
+# `type` (issue #13) :
+#   - "fichier" : URL -> fichier, intégrité vérifiée (le comportement
+#     historique) ;
+#   - "api"     : une fonction de pull, mise en cache dans un fichier — le
+#     seam mockable du pull DPE qui arrive dans un ticket ultérieur (Habitat),
+#     testé avec un faux, jamais contre le réseau.
+# Un manifeste sans colonne `type` est traité tout en « fichier » (manifestes
+# antérieurs à l'issue #13 — comportement historique).
 
 # verifier_fichier ------------------------------------------------------------
 # L'intégrité d'un fichier du cache : il existe, il n'est pas vide, et s'il
-# s'agit d'un zip il s'ouvre. C'est le garde-fou de l'idempotence (point 3) :
+# s'agit d'un zip il s'ouvre (ou d'un .rds il se relit — le format de cache
+# des sources api, issue #13). C'est le garde-fou de l'idempotence (point 3) :
 # un téléchargement partiel ou corrompu est détecté et re-téléchargé au lieu
 # d'être traité comme complet pour toujours.
 verifier_fichier <- function(chemin) {
   if (!file.exists(chemin)) return(FALSE)
   if (file.size(chemin) == 0) return(FALSE)
-  if (tools::file_ext(chemin) == "zip") {
+  ext <- tools::file_ext(chemin)
+  if (ext == "zip") {
     ok <- tryCatch({
       utils::unzip(chemin, list = TRUE)
+      TRUE
+    }, error = function(e) FALSE)
+    if (!ok) return(FALSE)
+  }
+  if (ext == "rds") {
+    ok <- tryCatch({
+      readRDS(chemin)
       TRUE
     }, error = function(e) FALSE)
     if (!ok) return(FALSE)
@@ -71,6 +47,50 @@ verifier_fichier <- function(chemin) {
 # téléchargement.
 telecharger_fichier <- function(url, cible) {
   utils::download.file(url, cible, mode = "wb", quiet = TRUE)
+}
+
+# tirer_api -------------------------------------------------------------------
+# Le seam du type "api" (issue #13) : appelle la fonction de pull de la source
+# et met son résultat en cache dans un .rds. Le VRAI pull (le pull paginé de
+# l'Observatoire DPE d'ADEME) arrive dans un ticket ultérieur — ici c'est le
+# stub mockable : la fonction de pull ne touche JAMAIS le réseau dans la boucle
+# de test, les tests fournissent un faux.
+tirer_api <- function(pull, cible) {
+  resultat <- pull()
+  readr::write_rds(resultat, cible)
+  invisible(resultat)
+}
+
+# erreur_manifeste ------------------------------------------------------------
+# L'erreur de CONFIGURATION du manifeste (issue #13) : une source déclarée
+# « api » sans fonction de pull est une erreur de manifeste, pas un échec
+# réseau — elle s'arrête IMMÉDIATEMENT, sans retry (retenter ne répare pas un
+# manifeste mal déclaré) et sans être confondue avec un téléchargement invalide.
+erreur_manifeste <- function(id) {
+  structure(
+    list(
+      message = paste0("Source api sans fonction de pull : ", id, "."),
+      call = NULL
+    ),
+    class = c("erreur_manifeste", "error", "condition")
+  )
+}
+
+# tirer_source ----------------------------------------------------------------
+# Le dispatch du type de source (issue #13) : « fichier » -> télécharger_fichier
+# (URL vers fichier), « api » -> tirer_api (la fonction de pull de la source).
+# Un type inconnu est une erreur forte — une source mal déclarée doit être
+# visible, pas silencieuse. (L'absence de fonction de pull est détectée AVANT
+# la boucle de retry, dans download_sources — une erreur de manifeste ne se
+# retente pas.)
+tirer_source <- function(type, manifest, i, cible) {
+  if (type %in% "fichier") {
+    telecharger_fichier(manifest$url[i], cible)
+  } else if (type %in% "api") {
+    tirer_api(manifest$pull[[i]], cible)
+  } else {
+    stop("Type de source inconnu : ", type, call. = FALSE)
+  }
 }
 
 # erreur_telechargement --------------------------------------------------------
@@ -107,13 +127,15 @@ erreur_telechargement <- function(statuts, url) {
 # un fichier présent mais corrompu (partiel, zip invalide) est supprimé et
 # re-téléchargé ; un téléchargement qui échoue (réseau ou fichier invalide) est
 # retenté une fois, puis le pipeline s'arrête bruyamment.
+# Issue #13 : chaque source est récupérée selon son `type` (fichier | api) —
+# le dispatch vit dans tirer_source(). Un manifeste sans colonne `type` est
+# traité tout en « fichier » (comportement historique).
 # Retour : le tableau des statuts par source (id, mode, status) — une ligne par
 # source traitée, dans l'ordre du manifeste. En cas d'échec, le run s'arrête et
 # les statuts sont portés par l'erreur de classe « erreur_telechargement »
 # (champ $statuts). Un manifeste sans colonne `mode` est traité tout en « cron »
 # (comportement historique).
-download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
-                             cache = "data/raw",
+download_sources <- function(manifest, cache = "data/raw",
                              mode = c("full", "cron")) {
   mode <- match.arg(mode)
   if (!dir.exists(cache)) dir.create(cache, recursive = TRUE)
@@ -124,6 +146,14 @@ download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
     manifest$mode
   } else {
     rep("cron", nrow(manifest))
+  }
+
+  # le type de chaque source : la colonne `type` du manifeste, ou « fichier »
+  # par défaut si le manifeste ne la porte pas (issue #13)
+  type_source <- if ("type" %in% names(manifest)) {
+    manifest$type
+  } else {
+    rep("fichier", nrow(manifest))
   }
 
   statuts <- tibble::tibble(
@@ -143,6 +173,14 @@ download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
 
     cible <- file.path(cache, manifest$fichier[i])
 
+    # une erreur de MANIFESTE n'est pas retentée : une source « api » sans
+    # fonction de pull s'arrête immédiatement, avant la boucle de retry — elle
+    # ne doit pas être confondue avec un téléchargement invalide (issue #13)
+    if (type_source[i] %in% "api" &&
+        (!"pull" %in% names(manifest) || is.null(manifest$pull[[i]]))) {
+      stop(erreur_manifeste(manifest$id[i]))
+    }
+
     if (file.exists(cible) && verifier_fichier(cible)) {
       statuts <- tibble::add_row(
         statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
@@ -154,7 +192,7 @@ download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
     ok <- FALSE
     for (essai in 1:2) {
       reussi <- tryCatch({
-        telecharger_fichier(manifest$url[i], cible)
+        tirer_source(type_source[i], manifest, i, cible)
         TRUE
       }, error = function(e) FALSE)
       if (reussi && verifier_fichier(cible)) {
@@ -167,9 +205,16 @@ download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
       statuts <- tibble::add_row(
         statuts, id = manifest$id[i], mode = mode_source[i], status = "échec"
       )
+      # l'étiquette de la source dans le message : l'URL pour un fichier, le
+      # nom de la source pour une api
+      etiquette <- if (type_source[i] %in% "api") {
+        paste0("api:", manifest$id[i])
+      } else {
+        manifest$url[i]
+      }
       # la condition porte le message d'origine ET les statuts (le champ `call`
       # est déjà NULL dans la condition — stop() ne reçoit qu'un argument)
-      stop(erreur_telechargement(statuts, manifest$url[i]))
+      stop(erreur_telechargement(statuts, etiquette))
     }
     statuts <- tibble::add_row(
       statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
