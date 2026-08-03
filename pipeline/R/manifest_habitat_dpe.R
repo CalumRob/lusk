@@ -115,6 +115,17 @@ pull_departement <- function(departement, base = URL_BASE_DPE, taille = 1000L,
   }
 
   brut <- if (length(lignes) > 0) {
+    # Le premier run réel (#22) : l'API data-fair ajoute `_score` (pertinence
+    # de recherche) à chaque ligne — hors CHAMPS_DPE, NULL sur les requêtes par
+    # filtre — et des champs DÉCLARÉS peuvent être NULL ligne à ligne (ex.
+    # nombre_appartement). tibble::as_tibble() refuse une colonne NULL. Seuls
+    # les champs DÉCLARÉS entrent dans le cache, dans l'ordre du manifeste ;
+    # une valeur absente de l'API est portée en NA, jamais en colonne NULL.
+    lignes <- lapply(lignes, function(ligne) {
+      gardes <- ligne[intersect(names(ligne), CHAMPS_DPE)]
+      gardes[lengths(gardes) == 0] <- NA
+      gardes
+    })
     dplyr::bind_rows(lapply(lignes, tibble::as_tibble))
   } else {
     # aucun DPE pour ce département : une table vide mais de forme stable

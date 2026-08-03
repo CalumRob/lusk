@@ -161,6 +161,44 @@ test_that("pull_departement pagine avec le curseur after et sélectionne les cha
   expect_match(urls[2], "after=abc123")
 })
 
+test_that("pull_departement ignore l'artefact `_score` de l'API et porte les valeurs manquantes en NA", {
+  # Le premier run réel (#22) a fait échouer le pull : l'API data-fair ajoute
+  # `_score` (pertinence de recherche, hors CHAMPS_DPE) à chaque ligne — NULL
+  # sur les requêtes par filtre qs — et tibble::as_tibble() refuse une colonne
+  # NULL. La forme réelle (vérifiée en direct le 2026-08-04) : `_score` NULL
+  # sur TOUTES les lignes, et des champs déclarés (nombre_appartement) NULL
+  # ligne à ligne. Seuls les champs DÉCLARÉS entrent dans le cache, les valeurs
+  # manquantes sont portées en NA.
+  local_mocked_bindings(
+    page_dpe = function(url) {
+      list(
+        results = list(
+          list(numero_dpe = "A1", etiquette_dpe = "F",
+               code_departement_ban = "22", code_insee_ban = "22001",
+               nombre_appartement = NULL, `_score` = NULL),
+          list(numero_dpe = "A2", etiquette_dpe = "D",
+               code_departement_ban = "22", code_insee_ban = "22002",
+               nombre_appartement = 3, `_score` = NULL)
+        ),
+        `next` = NULL
+      )
+    },
+    .package = "lusk"
+  )
+
+  res <- pull_departement("22", delai = 0)
+
+  # aucune colonne _score dans la table (l'artefact n'est pas une donnée DPE)
+  expect_false("_score" %in% names(res))
+  # les lignes passent, dans l'ordre, avec les valeurs portées
+  expect_equal(res$numero_dpe, c("A1", "A2"))
+  # une valeur absente de l'API est NA, jamais une colonne NULL
+  expect_true(is.na(res$nombre_appartement[1]))
+  expect_equal(res$nombre_appartement[2], 3)
+  # le filtre défensif par département continue de fonctionner
+  expect_setequal(res$code_departement_ban, "22")
+})
+
 test_that("pull_departement filtre défensivement sur le département (qs ignoré)", {
   local_mocked_bindings(
     page_dpe = function(url) {
