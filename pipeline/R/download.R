@@ -132,8 +132,9 @@ download_sources <- function(manifest = MANIFEST_DEMOGRAPHIE,
 
   for (i in seq_len(nrow(manifest))) {
     # en mode cron, une source « manuel » est sautée sans être touchée : jamais
-    # de réseau, jamais d'échec — enregistrée « à traiter à la main ».
-    if (mode == "cron" && mode_source[i] == "manuel") {
+    # de réseau, jamais d'échec — enregistrée « à traiter à la main ». (%in%
+    # plutôt que == : une valeur NA est traitée comme « cron », pas en erreur)
+    if (mode == "cron" && mode_source[i] %in% "manuel") {
       statuts <- tibble::add_row(
         statuts, id = manifest$id[i], mode = "manuel", status = "à traiter à la main"
       )
