@@ -74,17 +74,21 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
   payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible)
 
   # le payload complet du thème
-  expect_named(payload, c("indicateurs", "histoires", "territoires"))
+  expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "habitat"))
   expect_setequal(unique(payload$indicateurs$key),
                   c("mix_logements", "statut_anciennete_taille", "prix_m2",
                     "part_passoires", "distribution_dpe"))
   expect_true(all(payload$histoires$theme == "habitat"))
+  # l'Aperçu d'un run Habitat : la table du contrat, vide (gating par thème)
+  expect_named(payload$apercu, c("territoire", "type", "key", "value", "unit"))
+  expect_equal(nrow(payload$apercu), 0)
 
   # les fichiers par thème + la référence partagée + vintages + rapport
   for (f in c("indicateurs_habitat.parquet", "indicateurs_habitat.json",
               "histoires_habitat.parquet", "histoires_habitat.json",
               "territoires.parquet", "territoires.json",
+              "apercu.parquet", "apercu.json",
               "vintages.parquet", "run-report.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }

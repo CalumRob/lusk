@@ -6,7 +6,7 @@ test_that("validations_habitat : un payload valide passe", {
   p <- payload_habitat()
   expect_no_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                    vintages = vintages_habitat(),
-                                   validations = validations_habitat))
+                                   validations = validations_habitat, apercu = APERCU_HABITAT))
 })
 
 test_that("validations_habitat : des parts de mix qui ne somment pas à 1 -> erreur", {
@@ -15,7 +15,7 @@ test_that("validations_habitat : des parts de mix qui ne somment pas à 1 -> err
                         p$indicateurs$detail == "principales"] <- 0.9
   expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                 vintages = vintages_habitat(),
-                                validations = validations_habitat),
+                                validations = validations_habitat, apercu = APERCU_HABITAT),
                "mix")
 })
 
@@ -25,7 +25,7 @@ test_that("validations_habitat : une sous-métrique qui ne somme pas à 1 -> err
                         p$indicateurs$detail == "statut_proprietaire"] <- 0.5
   expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                 vintages = vintages_habitat(),
-                                validations = validations_habitat),
+                                validations = validations_habitat, apercu = APERCU_HABITAT),
                "statut")
 })
 
@@ -36,7 +36,7 @@ test_that("validations_habitat : la distribution DPE doit sommer à 1 (quand pub
                         p$indicateurs$territoire == "22001"] <- 0.5
   expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                 vintages = vintages_habitat(),
-                                validations = validations_habitat),
+                                validations = validations_habitat, apercu = APERCU_HABITAT),
                "distribution")
 })
 
@@ -48,7 +48,7 @@ test_that("validations_habitat : la distribution supprimée (toute NA) est accep
                         p$indicateurs$territoire == "22002"] <- NA_real_
   expect_no_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                    vintages = vintages_habitat(),
-                                   validations = validations_habitat))
+                                   validations = validations_habitat, apercu = APERCU_HABITAT))
 })
 
 test_that("validations_habitat : un prix au m² négatif -> erreur", {
@@ -57,7 +57,7 @@ test_that("validations_habitat : un prix au m² négatif -> erreur", {
                         is.na(p$indicateurs$detail)][1] <- -10
   expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                 vintages = vintages_habitat(),
-                                validations = validations_habitat),
+                                validations = validations_habitat, apercu = APERCU_HABITAT),
                "négatif")
 })
 

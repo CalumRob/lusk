@@ -1,8 +1,8 @@
 # compute ---------------------------------------------------------------------
 # Étape 3 : calcul. Dérive les indicateurs de la fiche, les rangs-en-contexte
 # et l'Histoire. Le SEAM de test : compute_payload() — la forme tabulaire du
-# payload (deux tables : indicateurs + histoires) est le contrat
-# (test-contract-payload.R).
+# payload (quatre tables : indicateurs + histoires + territoires + apercu) est
+# le contrat (test-contract-payload.R).
 # Issue #13 : la machinerie ici est partagée — elle ne nomme jamais le thème.
 # Tout ce qui diffère d'un thème à l'autre (la table INDICATEURS_<theme>, la
 # construction des territoires, les constructeurs d'indicateurs, les scalaires
@@ -42,7 +42,11 @@ squelette_territoires <- function(communes, poids = "population") {
 
   # Chaque niveau d'agrégat = un group_by des identifiants. Le nom d'un EPCI
   # est son LIBEPCI (porté par ses communes, point 1) ; son département est
-  # celui de la pluralité de sa population (point 6).
+  # celui de la pluralité de sa population (point 6). Issue #32 : les lignes
+  # EPCI portent epci = NA (la colonne epci ne concerne que les communes —
+  # miroir de `departement`, qui ne concerne que communes + EPCIs). Le
+  # group_by(epci) garderait la clé comme colonne : on l'écrase en NA
+  # explicitement, sinon l'EPCI « s'appartiendrait ».
   epcis <- base %>%
     dplyr::group_by(epci) %>%
     dplyr::summarise(
@@ -50,6 +54,7 @@ squelette_territoires <- function(communes, poids = "population") {
       nom = dplyr::first(nom_epci),
       type = "epci",
       departement = departement_pluralite(.data[[poids]], departement),
+      epci = NA_character_,
       .groups = "drop"
     )
 
@@ -153,9 +158,11 @@ compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
 }
 
 # assemble_payload ------------------------------------------------------------
-# Deux tables, le contrat : indicateurs (une ligne par territoire x clé, détail
-# pour les multi-valeurs) et histoires (une ligne par territoire). C'est aussi
-# le schéma Supabase — rien de plus, rien de moins (docs/architecture.md).
+# Quatre tables, le contrat : indicateurs (une ligne par territoire x clé,
+# détail pour les multi-valeurs), histoires (une ligne par territoire), la
+# référence des territoires (les noms réels) et apercu (les stats de base de
+# l'onglet Aperçu, une ligne par territoire x clé). C'est aussi le schéma
+# Supabase — rien de plus, rien de moins (docs/architecture.md).
 
 # L'estampille de chaque indicateur vient du vintage de SA source de référence
 # (déclarée dans la table INDICATEURS_<theme> du thème) — jamais d'un tampon de
@@ -195,6 +202,31 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
     )))
 }
 
+# assemble_apercu -------------------------------------------------------------
+# La table des stats de base de l'onglet Aperçu (issue #32, ADR-0007) : une
+# ligne par (territoire × clé), la forme du contrat (territoire | type | key |
+# value | unit). L'app la rend, elle ne la dérive jamais. Chaque thème déclare
+# SES clés (construire_apercu_<theme> + APERCU_<theme>) — le gating par thème :
+# un thème non construit ne déclare rien et la table est vide mais présente,
+# jamais un « under construction » (ADR-0007). La colonne `type` vient de la
+# table des territoires, comme pour les indicateurs.
+assemble_apercu <- function(territoires, apercu) {
+  if (length(apercu) == 0) {
+    return(tibble::tibble(
+      territoire = character(),
+      type = character(),
+      key = character(),
+      value = numeric(),
+      unit = character()
+    ))
+  }
+  apercu %>%
+    dplyr::bind_rows() %>%
+    dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
+    dplyr::rename(territoire = code) %>%
+    dplyr::select(territoire, type, key, value, unit)
+}
+
 # reference_territoires -------------------------------------------------------
 # La table de référence des territoires — les noms réels (LIBGEO/LIBEPCI) et
 # l'appartenance départementale, une ligne par territoire. C'est la dimension
@@ -203,13 +235,19 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
 # noms. Issue #13 : le squelette étant partagé, UNE SEULE table de référence
 # sert tous les thèmes (la région n'appartient à aucun département — NA ; les
 # EPCIs portent le département de la pluralité, point 6).
+# Issue #32 : la colonne epci — chaque commune porte l'EPCI dont elle est
+# membre (le SIREN — le nom vit dans la colonne nom), les EPCIs / départements
+# / région portent NA. Miroir de `departement` : c'est l'échelle du contexte
+# switcher (commune -> EPCI -> département -> région) qu'ADR-0007 branche sur
+# l'onglet Aperçu.
 reference_territoires <- function(territoires) {
   territoires %>%
     dplyr::transmute(
       territoire = code,
       type = type,
       nom = nom,
-      departement = departement
+      departement = departement,
+      epci = epci
     )
 }
 
@@ -227,7 +265,8 @@ reference_territoires <- function(territoires) {
 validate_payload <- function(payload,
                              indicateurs = INDICATEURS_DEMOGRAPHIE,
                              vintages = vintages_demographie(),
-                             validations = list()) {
+                             validations = list(),
+                             apercu = APERCU_DEMOGRAPHIE) {
   ind <- payload$indicateurs
   ref <- payload$territoires
 
@@ -323,6 +362,78 @@ validate_payload <- function(payload,
          paste(inconnus, collapse = ", "), ".", call. = FALSE)
   }
 
+  # 5bis. la colonne epci de la table de référence (issue #32) : chaque commune
+  # porte l'EPCI dont elle est membre (le SIREN — le nom vit dans la colonne
+  # nom), les EPCIs / départements / région portent NA — miroir de `departement`.
+  # L'intégrité référentielle de l'échelle (commune -> EPCI -> département ->
+  # région) est verrouillée : un EPCI de commune inconnu de la référence casse
+  # le contexte switcher — le payload est invalide.
+  if (!"epci" %in% names(ref)) {
+    stop("Payload invalide : la colonne epci manque à la table de référence.",
+         call. = FALSE)
+  }
+  communes_sans_epci <- ref$territoire[ref$type == "commune" & is.na(ref$epci)]
+  if (length(communes_sans_epci) > 0) {
+    stop("Payload invalide : une commune sans EPCI dans la table de référence : ",
+         paste(communes_sans_epci, collapse = ", "), ".", call. = FALSE)
+  }
+  agrega_avec_epci <- ref$territoire[ref$type != "commune" & !is.na(ref$epci)]
+  if (length(agrega_avec_epci) > 0) {
+    stop("Payload invalide : un territoire non-commune porte un EPCI : ",
+         paste(agrega_avec_epci, collapse = ", "), ".", call. = FALSE)
+  }
+  epcis_connus <- ref$territoire[ref$type == "epci"]
+  epci_inconnus <- setdiff(ref$epci[ref$type == "commune"], epcis_connus)
+  if (length(epci_inconnus) > 0) {
+    stop("Payload invalide : un EPCI de commune inconnu de la référence : ",
+         paste(epci_inconnus, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # 5ter. la table apercu (issue #32, ADR-0007) : présente, la forme du
+  # contrat, une ligne par (territoire × clé) — chaque clé déclarée par le
+  # thème (sa table APERCU_<theme>), chaque territoire couvert, aucune clé
+  # hors contrat. La table est le contrat de l'onglet Aperçu : l'app la rend,
+  # elle ne la dérive jamais — une clé manquante ou une clé fantôme casse
+  # l'onglet.
+  if (!"apercu" %in% names(payload)) {
+    stop("Payload invalide : la table apercu manque au payload.", call. = FALSE)
+  }
+  ap <- payload$apercu
+  if (!identical(names(ap), c("territoire", "type", "key", "value", "unit"))) {
+    stop("Payload invalide : la table apercu n'a pas la forme du contrat ",
+         "(territoire | type | key | value | unit).", call. = FALSE)
+  }
+  if (any(duplicated(ap[c("territoire", "key")]))) {
+    stop("Payload invalide : lignes apercu en double (territoire × key).",
+         call. = FALSE)
+  }
+  declares_ap <- stats::setNames(apercu$multiplicite, apercu$key)
+  comptes_ap <- table(ap$territoire, ap$key)
+  non_declarees_ap <- setdiff(colnames(comptes_ap), names(declares_ap))
+  if (length(non_declarees_ap) > 0) {
+    stop("Payload invalide : clé apercu non déclarée : ",
+         paste(non_declarees_ap, collapse = ", "), ".", call. = FALSE)
+  }
+  manquantes_ap <- setdiff(names(declares_ap), colnames(comptes_ap))
+  if (length(manquantes_ap) > 0) {
+    stop("Payload invalide : clés apercu manquantes : ",
+         paste(manquantes_ap, collapse = ", "), ".", call. = FALSE)
+  }
+  if (nrow(comptes_ap) > 0 && ncol(comptes_ap) > 0) {
+    mal_ap <- rownames(comptes_ap)[
+      apply(comptes_ap[, names(declares_ap), drop = FALSE],
+            1, function(ligne) any(ligne != declares_ap))]
+    if (length(mal_ap) > 0) {
+      stop("Payload invalide : clés apercu inattendues pour ",
+           paste(mal_ap, collapse = ", "), ".", call. = FALSE)
+    }
+  }
+  inconnus_ap <- setdiff(unique(ap$territoire), connus)
+  if (length(inconnus_ap) > 0) {
+    stop("Payload invalide : apercu pour un territoire inconnu : ",
+         paste(inconnus_ap, collapse = ", "), ".", call. = FALSE)
+  }
+
   # 6. les validations de valeur déclarées par le thème (issue #13)
   for (valider in validations) valider(payload)
 
@@ -354,15 +465,19 @@ compute_payload <- function(data, theme = theme_demographie(),
       vintages = vintages
     ),
     histoires = theme$compute_histoires(territoires),
-    territoires = reference_territoires(territoires)
+    territoires = reference_territoires(territoires),
+    apercu = assemble_apercu(territoires, theme$construire_apercu(territoires))
   )
 
   # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là.
   # La validation reçoit la même table des vintages que l'estampillage — elle
   # vérifie chaque estampille contre la source de référence déclarée (issue #9)
-  # puis exécute les validations de valeur du thème (issue #13).
+  # puis exécute les validations de valeur du thème (issue #13). Issue #32 :
+  # elle reçoit aussi la table déclarative APERCU_<theme> du thème — les clés
+  # de l'Aperçu sont vérifiées comme celles des indicateurs.
   validate_payload(payload,
                    indicateurs = theme$indicateurs,
                    vintages = vintages,
-                   validations = theme$validations)
+                   validations = theme$validations,
+                   apercu = theme$apercu)
 }

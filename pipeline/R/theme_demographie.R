@@ -8,10 +8,11 @@
 #
 # Le descripteur porte : le nom du thème (la colonne `theme` du payload et le
 # nom des fichiers publiés), le manifeste des sources, la table déclarative
-# des indicateurs, le builder de vintages, la construction des données, la
-# construction de la table des territoires (squelette partagé + colonnes
-# d'agrégation du thème), les constructeurs d'indicateurs, les scalaires de
-# classement, le calcul de l'Histoire et les validations spécifiques au thème.
+# des indicateurs ET celle des clés de l'Aperçu (issue #32), le builder de
+# vintages, la construction des données, la construction de la table des
+# territoires (squelette partagé + colonnes d'agrégation du thème), les
+# constructeurs d'indicateurs et d'Aperçu, les scalaires de classement, le
+# calcul de l'Histoire et les validations spécifiques au thème.
 
 # MANIFEST_DEMOGRAPHIE ---------------------------------------------------------
 # La table des sources vérifiées (docs/research/rp-dossier-complet.md). Deux
@@ -455,6 +456,70 @@ validations_demographie <- list(
   }
 )
 
+# APERCU_DEMOGRAPHIE -----------------------------------------------------------
+# La table déclarative des clés de l'Aperçu du thème (issue #32, ADR-0007) :
+# chaque clé y est déclarée avec sa multiplicité (une ligne par territoire —
+# la validation générique la vérifie). La table `apercu` du payload est
+# PARTAGÉE entre les thèmes (comme la référence) ; chaque thème déclare SES
+# clés — le gating par thème : les clés des thèmes non construits sont
+# absentes de la table, jamais un « under construction » (ADR-0007). Les
+# valeurs se dérivent des MÊMES colonnes que les indicateurs du thème (jamais
+# une seconde source de chiffres) : population et densité de la série
+# historique, part 65+ des tranches 65-79 + 80+ de la structure par âge.
+APERCU_DEMOGRAPHIE <- tibble::tibble(
+  key = c("population", "densite", "part_65_plus"),
+  libelle = c(
+    "Population",
+    "Densité de population",
+    "Part des 65 ans et plus"
+  ),
+  multiplicite = c(1L, 1L, 1L)
+)
+
+# Les constructeurs de l'Aperçu du thème --------------------------------------
+# Même forme que les constructeurs d'indicateurs : une table longue
+# code, key, value, unit par clé — assemble_apercu (compute.R) les lie en la
+# table du contrat (territoire | type | key | value | unit).
+
+apercu_population <- function(territoires) {
+  tibble::tibble(
+    code = territoires$code,
+    key = "population",
+    value = territoires$population,
+    unit = "hab."
+  )
+}
+
+apercu_densite <- function(territoires) {
+  tibble::tibble(
+    code = territoires$code,
+    key = "densite",
+    value = territoires$population / territoires$superficie_km2,
+    unit = "hab/km²"
+  )
+}
+
+apercu_part_65_plus <- function(territoires) {
+  tibble::tibble(
+    code = territoires$code,
+    key = "part_65_plus",
+    # la part 65+ se lit sur les tranches exhaustives de la structure par âge
+    # (65-79 + 80+), le dénominateur étant la population — la même source que
+    # l'indicateur structure_age, jamais une seconde paire de chiffres.
+    value = (territoires$age_65_79 + territoires$age_80_plus) /
+      territoires$population,
+    unit = "%"
+  )
+}
+
+construire_apercu_demographie <- function(territoires) {
+  list(
+    population = apercu_population(territoires),
+    densite = apercu_densite(territoires),
+    part_65_plus = apercu_part_65_plus(territoires)
+  )
+}
+
 # Le builder de vintages du thème ---------------------------------------------
 # Les vintages se projettent depuis le manifeste (vintages_depuis_manifest,
 # vintage.R) — le thème déclare simplement SON manifeste.
@@ -472,10 +537,12 @@ theme_demographie <- function() {
     theme = "demographie",
     manifest = MANIFEST_DEMOGRAPHIE,
     indicateurs = INDICATEURS_DEMOGRAPHIE,
+    apercu = APERCU_DEMOGRAPHIE,
     vintages = vintages_demographie,
     construire_donnees = construire_donnees_brut,
     construire_territoires = build_territoires,
     construire_indicateurs = construire_indicateurs_demographie,
+    construire_apercu = construire_apercu_demographie,
     scalaires = scalaires_demographie,
     compute_histoires = compute_histoires_demographie,
     validations = validations_demographie

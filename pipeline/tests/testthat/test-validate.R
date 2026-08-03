@@ -91,3 +91,51 @@ test_that("validate_payload : les estampilles du fixture égalent les vintages d
   p <- compute_payload(load_fixture())
   expect_no_error(validate_payload(p, vintages = vintages_demographie()))
 })
+
+test_that("validate_payload : une colonne epci manquante -> erreur (issue #32)", {
+  p <- compute_payload(load_fixture())
+  p$territoires$epci <- NULL
+  expect_error(validate_payload(p), "epci")
+})
+
+test_that("validate_payload : une commune sans EPCI -> erreur (issue #32)", {
+  p <- compute_payload(load_fixture())
+  p$territoires$epci[p$territoires$type == "commune"][1] <- NA_character_
+  expect_error(validate_payload(p), "EPCI")
+})
+
+test_that("validate_payload : un agrégat portant un EPCI -> erreur (issue #32)", {
+  p <- compute_payload(load_fixture())
+  p$territoires$epci[p$territoires$territoire == "53"] <- "200000001"
+  expect_error(validate_payload(p), "EPCI")
+})
+
+test_that("validate_payload : un EPCI de commune inconnu de la référence -> erreur", {
+  p <- compute_payload(load_fixture())
+  p$territoires$epci[p$territoires$territoire == "22001"] <- "999999999"
+  expect_error(validate_payload(p), "inconnu")
+})
+
+test_that("validate_payload : la table apercu absente -> erreur (issue #32)", {
+  p <- compute_payload(load_fixture())
+  p$apercu <- NULL
+  expect_error(validate_payload(p), "apercu")
+})
+
+test_that("validate_payload : une clé apercu manquante -> erreur (issue #32)", {
+  p <- compute_payload(load_fixture())
+  p$apercu <- p$apercu[p$apercu$key != "densite", ]
+  expect_error(validate_payload(p), "manquantes")
+})
+
+test_that("validate_payload : une clé apercu non déclarée -> erreur (issue #32)", {
+  p <- compute_payload(load_fixture())
+  p$apercu$key[1] <- "superficie"
+  expect_error(validate_payload(p), "non déclarée")
+})
+
+test_that("validate_payload : un doublon apercu (territoire × clé) -> erreur", {
+  p <- compute_payload(load_fixture())
+  p$apercu <- rbind(p$apercu, p$apercu[1, ])
+  expect_error(validate_payload(p), "double")
+})
