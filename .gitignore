@@ -11,6 +11,11 @@
 !/pipeline/
 !/.github/
 
+# The published payload (public/data/ at the repo root) is the product's
+# artifact — committed and served by the static host (ADR-0004). The
+# pipeline's raw and produced data (pipeline/data/) stays gitignored.
+!/public/
+
 # ADRs — the decisions the code cites — are versioned, like their
 # siblings (docs/adr/0001..0003); the rest of docs/ stays local
 !/docs/
