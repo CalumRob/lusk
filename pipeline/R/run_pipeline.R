@@ -42,7 +42,16 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
 
   brut <- theme$construire_donnees(cache = cache)
 
-  vintages <- theme$vintages()
+  # Issue #19 : le cache du run atteint le builder de vintages du thème —
+  # vintages_habitat(cache = ...) lit la date de pull des DPE (base roulante)
+  # sur le mtime des .rds du cache ; sans le cache, la date ne peut jamais
+  # être lue. vintages_demographie() ne prend pas de cache : on ne le passe
+  # que si le builder le déclare (signature du thème — Démographie intacte).
+  vintages <- if ("cache" %in% names(formals(theme$vintages))) {
+    theme$vintages(cache = cache)
+  } else {
+    theme$vintages()
+  }
   # Issue #9 : la table des vintages entière passe au compute — chaque
   # indicateur est estampillé depuis le vintage de sa source de référence
   # déclarée (la table INDICATEURS_<theme>), plus de tampon de fraîcheur du
