@@ -21,11 +21,11 @@ One person, two moving parts:
 ```
 lusk/
 ├── README.md       ← you are here
-├── pipeline/       → R data pipeline (download → compute → publish)   ✅ built (Démographie)
+├── pipeline/       → R data pipeline (download → compute → publish)   ✅ built (Démographie + Habitat)
 └── app/            → Vue application (map, fiches, charts)            [to be built]
 ```
 
-- **`pipeline/`** — an R pipeline that downloads the source datasets (INSEE, data.gouv.fr, data.bretagne.bzh), filters to Bretagne, computes the fiche indicators and ranks, records each dataset's vintage (reference **and** publication dates), and publishes the result. Idempotent (re-runs never duplicate; corrupt downloads are re-fetched), with a single documented entry point and a testthat suite. Démographie is built and runs end-to-end; Habitat and Économie/Emploi replicate its skeleton.
+- **`pipeline/`** — an R pipeline that downloads the source datasets (INSEE, data.gouv.fr, data.bretagne.bzh, data.ademe.fr), filters to Bretagne, computes the fiche indicators and ranks, records each dataset's vintage (reference **and** publication dates), and publishes the result. Idempotent (re-runs never duplicate; corrupt downloads are re-fetched), with a single documented entry point (`run_pipeline(theme = ...)`) and a testthat suite (1 089 expectations). Démographie and Habitat are built and run end-to-end; Économie/Emploi replicates the skeleton.
 - **`app/`** — a Vue application that renders the fiche payload: the map, search, territory pages, charts. The app renders; the pipeline computes.
 - **Automation** — the light themes refresh on a schedule (GitHub Actions); the flagship Mobilité analysis rebuilds on a slower clock. A vintage table is the seam that makes the freshness promise honest.
 
@@ -40,7 +40,7 @@ The data is **open**: the bulk under Licence Ouverte, with OSM-derived layers un
 
 ## Status
 
-- **v0.5 (now)** — the plan is set, and the **Démographie pipeline is built**: it downloads the INSEE RP sources, filters to Bretagne, computes the four indicators with ranks-in-context and the "Attractive ou fertile ?" story, and publishes the fiche payload as parquet (1 269 territoires, testthat suite green). The app is not yet built.
+- **v0.5 (now)** — the plan is set, and the **Démographie and Habitat pipelines are built**: both download their sources (INSEE RP for Démographie; RP Logements · DVF · ADEME DPE for Habitat), filter to Bretagne, compute the four indicators with ranks-in-context and their stories ("Attractive ou fertile ?" · "L'état énergétique du parc"), and publish the fiche payload as parquet per theme (1 269 territoires, testthat suite green — 1 089 expectations). The app is not yet built.
 - **v1** — Bretagne, four themes, light themes automated, the app (map, fiches, charts)
 - **After v1** — an AI query layer, France-wide coverage, finer-grained data
 
