@@ -12,8 +12,14 @@
 # écrire écrase, donc relancer ne duplique jamais. Le backend Supabase
 # s'arrête bruyamment — seam documenté, câblage à suivre (issue #6), même
 # interface, upsert par (territoire, key).
-# Trois tables : deux de faits (indicateurs, histoires) + la référence des
-# territoires (les noms réels — la dimension que l'app joint).
+# Issue #13 : les fichiers de FAITS sont par thème — indicateurs_<theme> et
+# histoires_<theme> (parquet + JSON) — pour que les thèmes ne se marchent
+# jamais dessus et que l'app récupère par thème. La référence des territoires
+# (les noms réels — la dimension que l'app joint) et les vintages restent
+# partagés : territoires.parquet/.json, vintages.parquet (écrit par
+# run_pipeline). Le thème se lit sur le payload lui-même (la colonne `theme`
+# des deux tables de faits) : publish ne peut pas écrire un thème différent de
+# celui des données.
 
 publish <- function(payload, cible = "public/data", backend = "static") {
   if (backend == "supabase") {
@@ -28,10 +34,19 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   }
   if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
 
+  # le thème du payload : exactement un — les faits sont publiés par thème
+  themes <- unique(payload$indicateurs$theme)
+  if (length(themes) != 1L) {
+    stop("publish : le payload porte ", length(themes),
+         " thèmes — la publication est par thème, un seul attendu.",
+         call. = FALSE)
+  }
+  theme <- themes[[1L]]
+
   nanoparquet::write_parquet(payload$indicateurs,
-                             file.path(cible, "indicateurs.parquet"))
+                             file.path(cible, paste0("indicateurs_", theme, ".parquet")))
   nanoparquet::write_parquet(payload$histoires,
-                             file.path(cible, "histoires.parquet"))
+                             file.path(cible, paste0("histoires_", theme, ".parquet")))
   nanoparquet::write_parquet(payload$territoires,
                              file.path(cible, "territoires.parquet"))
 
@@ -49,8 +64,8 @@ publish <- function(payload, cible = "public/data", backend = "static") {
                            dataframe = "rows", na = "null",
                            digits = 17, pretty = TRUE)
     }
-    ecrire_projection(payload$indicateurs, "indicateurs.json")
-    ecrire_projection(payload$histoires, "histoires.json")
+    ecrire_projection(payload$indicateurs, paste0("indicateurs_", theme, ".json"))
+    ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
     ecrire_projection(payload$territoires, "territoires.json")
   }
 
