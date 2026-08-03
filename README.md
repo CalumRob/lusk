@@ -6,7 +6,7 @@ Lusk is an **open territorial observatory for Brittany** — départements 22 ·
 
 ## What the app will do
 
-For each territory, the app assembles a fiche with 3–4 indicators per theme — the standard figures everyone recognises (densité, structure par âge, part de résidences secondaires, établissements par activité…). Every indicator carries its **rank-in-context** — its percentile within the EPCI, the département, or the région — and each theme ends with one signature story that goes deeper than the standard block.
+For each territory, the app assembles a fiche with 4 indicators per theme — the standard figures everyone recognises (densité, structure par âge, part de résidences secondaires, établissements par activité…). Every indicator carries its **rank-in-context** — its percentile within the EPCI, the département, or the région — and each theme ends with one signature story that goes deeper than the standard block.
 
 On top of the fiches:
 
@@ -29,7 +29,7 @@ lusk/
 - **`app/`** — a Vue application that renders the fiche payload: the map, search, territory pages, charts. The app renders; the pipeline computes.
 - **Automation** — the light themes refresh on a schedule (GitHub Actions); the flagship Mobilité analysis rebuilds on a slower clock. A vintage table is the seam that makes the freshness promise honest.
 
-All data is **open** (Licence Ouverte); the code is **public**; there are **no accounts**.
+The data is **open**: the bulk under Licence Ouverte, with OSM-derived layers under ODbL (attribution "© OpenStreetMap contributors"). The code is **public**; there are **no accounts**.
 
 ## v1 scope
 
