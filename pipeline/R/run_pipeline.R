@@ -15,11 +15,16 @@
 # run et l'entrée du seam de notification. Sur un échec cron, les statuts sont
 # portés par l'erreur (issue #8) : le rapport est écrit AVANT l'arrêt bruyant,
 # pour que l'échec reste tracé.
+# Issue #13 : `theme` est le descripteur du thème (theme_demographie() par
+# défaut) — le run compose les MÊMES étapes partagées avec les pièces du thème
+# (manifeste, construction des données, vintages, compute). Un thème suivant
+# (Habitat) tourne avec son propre descripteur, sans toucher à cette fonction.
 # La cible par défaut est le home public du payload (public/data/ à la racine
 # du dépôt, ADR-0004) : le cron écrit là où Pages et l'app lisent — parquet +
 # JSON (backend "static" par défaut de publish) + vintages + rapport de run.
 
-run_pipeline <- function(cache = "data/raw", sortie = "public/data",
+run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
+                         sortie = "public/data",
                          mode = c("full", "cron")) {
   mode <- match.arg(mode)
 
@@ -28,20 +33,21 @@ run_pipeline <- function(cache = "data/raw", sortie = "public/data",
   # l'erreur (issue #8) : on écrit le rapport AVANT de re-signaler — un échec
   # sans trace est un échec perdu.
   statuts <- tryCatch(
-    download_sources(MANIFEST_DEMOGRAPHIE, cache = cache, mode = mode),
+    download_sources(theme$manifest, cache = cache, mode = mode),
     erreur_telechargement = function(e) {
       ecrire_rapport_run(e$statuts, mode, sortie)
       stop(e)
     }
   )
 
-  brut <- construire_donnees_brut(cache = cache)
+  brut <- theme$construire_donnees(cache = cache)
 
-  vintages <- vintages_demographie()
+  vintages <- theme$vintages()
   # Issue #9 : la table des vintages entière passe au compute — chaque
   # indicateur est estampillé depuis le vintage de sa source de référence
-  # déclarée (INDICATEURS_DEMOGRAPHIE), plus de tampon de fraîcheur du thème.
-  payload <- compute_payload(brut, vintages = vintages)
+  # déclarée (la table INDICATEURS_<theme>), plus de tampon de fraîcheur du
+  # thème.
+  payload <- compute_payload(brut, theme = theme, vintages = vintages)
 
   # Le backend par défaut de publish est "static" : le run écrit l'artefact
   # complet du produit (parquet canonique + projections JSON de l'app).
