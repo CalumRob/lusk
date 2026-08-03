@@ -6,7 +6,7 @@ test_that("le fixture se charge avec la forme attendue", {
 
 test_that("le fixture porte toutes les colonnes du contrat", {
   expected <- c(
-    "code", "nom", "departement", "epci",
+    "code", "nom", "departement", "epci", "nom_epci",
     "population", "population_1968", "population_precedente",
     "superficie_km2", "naissances", "deces",
     "age_lt15", "age_15_24", "age_25_39", "age_40_54",
@@ -14,6 +14,13 @@ test_that("le fixture porte toutes les colonnes du contrat", {
     "population_menages", "menages"
   )
   expect_setequal(names(load_fixture()), expected)
+})
+
+test_that("le fixture porte le nom d'EPCI (LIBEPCI) par commune", {
+  fixture <- load_fixture()
+  expect_true(all(!is.na(fixture$nom_epci)))
+  expect_equal(fixture$nom_epci[fixture$epci == "200000001"], rep("EPCI X", 2))
+  expect_equal(fixture$nom_epci[fixture$epci == "200000002"], rep("EPCI Y", 2))
 })
 
 test_that("le fixture couvre 2 départements et 2 EPCIs", {

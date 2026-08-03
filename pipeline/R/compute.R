@@ -6,12 +6,29 @@
 # arrive au ticket 4 (issue #5).
 
 # Vintage de référence du RP — les vintages réels arrivent du manifeste au
-# ticket 5 (issue #6). Ici, la source est unique et connue.
+# ticket 5 (issue #6). Ici, la source est unique et connue. Deux dates (point
+# 5) : date_reference (ce que « RP 2023 » veut dire) et date_publication (la
+# mise en ligne réelle — vérifiée sur data.gouv, 2026-06-30).
 VINTAGE_RP <- list(
   source = "INSEE RP — dossier complet",
   version = "2023",
-  date = "2023-01-01"
+  date_reference = "2023-01-01",
+  date_publication = "2026-06-30"
 )
+
+# departement_pluralite -------------------------------------------------------
+# La règle d'attribution d'un EPCI à cheval sur plusieurs départements
+# (décision 2026-08-03, point 6) : l'EPCI est attribué au département qui
+# détient la pluralité de sa population — pas au premier de la liste. Ex æquo :
+# le plus petit code de département (règle déterministe, documentée).
+departement_pluralite <- function(population, departement) {
+  tibble::tibble(population, departement) %>%
+    dplyr::group_by(departement) %>%
+    dplyr::summarise(pop = sum(population), .groups = "drop") %>%
+    dplyr::arrange(dplyr::desc(pop), departement) %>%
+    dplyr::slice(1) %>%
+    dplyr::pull(departement)
+}
 
 # build_territoires -----------------------------------------------------------
 # Une ligne par territoire (communes + agrégats EPCI / département / région),
@@ -28,14 +45,16 @@ build_territoires <- function(communes) {
 
   # Chaque niveau d'agrégat = un group_by + une somme des colonnes
   # démographiques (population -> menages) : l'agrégat d'un territoire est
-  # la somme des lignes de ses communes.
+  # la somme des lignes de ses communes. Le nom d'un EPCI est son LIBEPCI
+  # (porté par ses communes, point 1) ; son département est celui de la
+  # pluralité de sa population (point 6).
   epcis <- base %>%
     dplyr::group_by(epci) %>%
     dplyr::summarise(
       code = dplyr::first(epci),
-      nom = paste0("EPCI ", dplyr::first(epci)),
+      nom = dplyr::first(nom_epci),
       type = "epci",
-      departement = dplyr::first(departement),
+      departement = departement_pluralite(population, departement),
       dplyr::across(population:menages, sum),
       .groups = "drop"
     )
@@ -132,13 +151,19 @@ indicator_taille_menages <- function(territoires) {
 # Les rangs-en-contexte : le percentile d'une valeur au sein de son groupe de
 # comparaison. Règle documentée (Méthodes) : part strictement inférieure +
 # moitié des ex æquo (autres que soi), sur le total du groupe — symétrique
-# pour les égalités ; un groupe à un seul membre donne 0.
+# pour les égalités ; un groupe à un seul membre donne 0. Point 2 : les
+# valeurs NA (commune sans population_1968, etc.) sont exclues du dénominateur
+# du groupe — elles n'empoisonnent pas les rangs des autres — et le territoire
+# NA lui-même n'a pas de rang (NA).
 percentile_par_groupe <- function(valeurs, groupes) {
   vapply(seq_along(valeurs), function(i) {
     g <- groupes[i]
     if (is.na(g)) return(NA_real_)
-    membres <- !is.na(groupes) & groupes == g
+    # le groupe de comparaison exclut les valeurs NA (point 2)
+    membres <- !is.na(groupes) & groupes == g & !is.na(valeurs)
     n <- sum(membres)
+    if (n == 0) return(NA_real_)
+    if (is.na(valeurs[i])) return(NA_real_)
     ex_aequo_autres <- sum(membres & valeurs == valeurs[i]) - 1
     (sum(membres & valeurs < valeurs[i]) + 0.5 * ex_aequo_autres) / n
   }, numeric(1))
@@ -212,11 +237,13 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
       theme = "demographie",
       vintage_source = vintage$source,
       vintage_version = vintage$version,
-      vintage_date = vintage$date
+      vintage_date_reference = vintage$date_reference,
+      vintage_date_publication = vintage$date_publication
     ) %>%
     dplyr::select(territoire, type, theme, key, detail, value, unit,
                   rang_epci, rang_dep, rang_reg,
-                  vintage_source, vintage_version, vintage_date)
+                  vintage_source, vintage_version,
+                  vintage_date_reference, vintage_date_publication)
 }
 
 # compute_histoires ------------------------------------------------------------
@@ -277,9 +304,97 @@ compute_histoires <- function(territoires) {
     )
 }
 
+# reference_territoires -------------------------------------------------------
+# La table de référence des territoires — les noms réels (LIBGEO/LIBEPCI) et
+# l'appartenance départementale, une ligne par territoire. C'est la dimension
+# que l'app joint aux deux tables de faits : elle rend (les noms), elle ne
+# calcule pas. Projetée depuis build_territoires() — jamais une seconde source
+# de noms. La région n'appartient à aucun département (NA) ; les EPCIs portent
+# le département de la pluralité (point 6).
+reference_territoires <- function(territoires) {
+  territoires %>%
+    dplyr::transmute(
+      territoire = code,
+      type = type,
+      nom = nom,
+      departement = departement
+    )
+}
+
+# validate_payload ------------------------------------------------------------
+# Point 7 : la validation de bon sens du payload. Attrape les dérives de
+# format des sources sur les données réelles — une vague INSEE qui change de
+# structure se traduit ici par une erreur bruyante, pas par des chiffres faux
+# publiés silencieusement. Appelée à la sortie de compute_payload().
+validate_payload <- function(payload) {
+  ind <- payload$indicateurs
+  ref <- payload$territoires
+
+  # 1. pas de ligne en double (territoire × key × detail)
+  dups <- duplicated(ind[c("territoire", "key", "detail")])
+  if (any(dups)) {
+    stop("Payload invalide : lignes en double (territoire × key × detail).",
+         call. = FALSE)
+  }
+
+  # 2. chaque territoire porte les 4 clés d'indicateur, structure = 7 tranches
+  comptes <- table(ind$territoire, ind$key)
+  attendues <- c(densite = 1, structure_age = 7, evolution_1968 = 1,
+                 taille_menages = 1)
+  manquantes <- setdiff(names(attendues), colnames(comptes))
+  if (length(manquantes) > 0) {
+    stop("Payload invalide : clés d'indicateur manquantes : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  mal <- rownames(comptes)[apply(comptes[, names(attendues), drop = FALSE],
+                                 1, function(ligne) any(ligne != attendues))]
+  if (length(mal) > 0) {
+    stop("Payload invalide : clés d'indicateur inattendues pour ",
+         paste(mal, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # 3. densité : finie et positive partout
+  dens <- ind$value[ind$key == "densite"]
+  if (any(!is.finite(dens) | dens <= 0)) {
+    stop("Payload invalide : densité non finie ou non positive.", call. = FALSE)
+  }
+
+  # 4. structure par âge : les parts somment à 1 par territoire
+  parts <- stats::aggregate(value ~ territoire, ind[ind$key == "structure_age", ],
+                            sum)
+  if (any(abs(parts$value - 1) > 1e-6)) {
+    stop("Payload invalide : les parts d'âge ne somment pas à 1.", call. = FALSE)
+  }
+
+  # 5. les rangs vivent dans [0, 1] (NA = groupe de comparaison absent)
+  rangs <- unlist(ind[c("rang_epci", "rang_dep", "rang_reg")])
+  if (any(!is.na(rangs) & (rangs < 0 | rangs > 1))) {
+    stop("Payload invalide : un rang sort de [0, 1].", call. = FALSE)
+  }
+
+  # 6. la table de référence : une ligne par territoire, un nom partout
+  if (anyDuplicated(ref$territoire)) {
+    stop("Payload invalide : la table de référence a des territoires en double.",
+         call. = FALSE)
+  }
+  if (any(is.na(ref$nom))) {
+    stop("Payload invalide : un territoire sans nom dans la table de référence.",
+         call. = FALSE)
+  }
+  # intégrité référentielle : les faits ne citent que des territoires connus
+  connus <- unique(ref$territoire)
+  inconnus <- setdiff(unique(ind$territoire), connus)
+  if (length(inconnus) > 0) {
+    stop("Payload invalide : indicateurs pour un territoire inconnu : ",
+         paste(inconnus, collapse = ", "), ".", call. = FALSE)
+  }
+
+  invisible(payload)
+}
+
 # compute_payload -------------------------------------------------------------
 # LE SEAM. Données filtrées (forme du fixture) -> payload de la fiche.
-# `vintage` est le tampon de fraîcheur du thème (source/version/date) — par
+# `vintage` est le tampon de fraîcheur du thème (source/version/dates) — par
 # défaut VINTAGE_RP ; run_pipeline() le tire de la table des vintages.
 compute_payload <- function(data, vintage = VINTAGE_RP) {
   territoires <- build_territoires(data)
@@ -291,8 +406,12 @@ compute_payload <- function(data, vintage = VINTAGE_RP) {
   )
   rangs <- compute_ranks(territoires, indicateurs)
 
-  list(
+  payload <- list(
     indicateurs = assembler_indicateurs(territoires, indicateurs, rangs, vintage),
-    histoires = compute_histoires(territoires)
+    histoires = compute_histoires(territoires),
+    territoires = reference_territoires(territoires)
   )
+
+  # le garde-fou du pipeline réel (point 7) : un payload invalide s'arrête là
+  validate_payload(payload)
 }

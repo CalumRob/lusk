@@ -86,9 +86,10 @@ assembler_communes <- function(serie, menages, age, epci) {
     dplyr::left_join(age, by = "GEO") %>%
     dplyr::inner_join(epci, by = c("GEO" = "CODGEO")) %>%
     dplyr::rename(
-      code = GEO, nom = LIBGEO, departement = DEP, epci = EPCI
+      code = GEO, nom = LIBGEO, departement = DEP, epci = EPCI,
+      nom_epci = LIBEPCI
     ) %>%
-    dplyr::select(code, nom, departement, epci,
+    dplyr::select(code, nom, departement, epci, nom_epci,
                   population, population_1968, population_precedente,
                   superficie_km2, naissances, deces,
                   age_lt15, age_15_24, age_25_39, age_40_54,
@@ -130,9 +131,12 @@ construire_donnees_brut <- function(cache = "data/raw",
   if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
 
-  # décompresse (idempotent : overwrite = FALSE)
+  # décompresse (idempotent : overwrite = FALSE — les fichiers déjà extraits
+  # sont laissés intacts, sans spammer de warning à chaque relance)
   for (f in MANIFEST_DEMOGRAPHIE$fichier) {
-    utils::unzip(file.path(cache, f), exdir = extrait, overwrite = FALSE)
+    suppressWarnings(
+      utils::unzip(file.path(cache, f), exdir = extrait, overwrite = FALSE)
+    )
   }
 
   serie <- lire_csv_long(
@@ -149,6 +153,11 @@ construire_donnees_brut <- function(cache = "data/raw",
   brut <- assembler_communes(
     pivoter_serie(serie), pivoter_menages(menages), pivoter_age(age), epci
   )
+
+  # L'étape « filter » documentée (docs/architecture.md) : la jointure EPCI
+  # (limitée à la Bretagne) est LE filtre ; filter_bretagne est la garde
+  # explicite du schéma — redondante mais défensive, elle coûte une ligne.
+  brut <- filter_bretagne(brut)
 
   readr::write_rds(brut, sortie)
   brut

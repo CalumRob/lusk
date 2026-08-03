@@ -14,9 +14,10 @@ Imports:
     dplyr,
     magrittr,
     nanoparquet,
+    readr,
     readxl,
+    tibble,
     tidyr
 Suggests:
-    testthat (>= 3.0.0),
-    readr
+    testthat (>= 3.0.0)
 Config/testthat/edition: 3

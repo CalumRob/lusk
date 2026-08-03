@@ -7,10 +7,14 @@ test_that("publish écrit le payload en parquet, lisible en retour", {
 
   indicateurs <- nanoparquet::read_parquet(file.path(cible, "indicateurs.parquet"))
   histoires <- nanoparquet::read_parquet(file.path(cible, "histoires.parquet"))
+  territoires <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
   expect_equal(nrow(histoires), nrow(payload$histoires))
+  expect_equal(nrow(territoires), nrow(payload$territoires))
   expect_equal(indicateurs$value, payload$indicateurs$value)
   expect_equal(histoires$classification, payload$histoires$classification)
+  # la référence porte les noms — c'est elle que l'app joint
+  expect_equal(territoires$nom, payload$territoires$nom)
 })
 
 test_that("publish est un upsert : relancer écrase sans dupliquer", {

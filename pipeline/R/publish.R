@@ -4,6 +4,8 @@
 # complet des fiches — écrire écrase, donc relancer ne duplique jamais. Le
 # backend Supabase viendra plus tard, même interface, upsert par
 # (territoire, key) — câblage à suivre (issue #6).
+# Trois tables : deux de faits (indicateurs, histoires) + la référence des
+# territoires (les noms réels — la dimension que l'app joint).
 
 publish <- function(payload, cible = "data/processed", backend = "parquet") {
   if (backend == "supabase") {
@@ -18,6 +20,8 @@ publish <- function(payload, cible = "data/processed", backend = "parquet") {
                              file.path(cible, "indicateurs.parquet"))
   nanoparquet::write_parquet(payload$histoires,
                              file.path(cible, "histoires.parquet"))
+  nanoparquet::write_parquet(payload$territoires,
+                             file.path(cible, "territoires.parquet"))
 
   invisible(payload)
 }

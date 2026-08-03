@@ -1,7 +1,52 @@
+# mini_zip --------------------------------------------------------------------
+# Un zip minimal valide (une entrée stockée, vide) — pour fabriquer un
+# « bon téléchargement » dans les tests sans réseau. Structure vérifiée :
+# utils::unzip(list = TRUE) l'accepte.
+mini_zip <- function(nom = "a.txt") {
+  nm <- charToRaw(nom)
+  n <- length(nm)
+  lh <- c(
+    as.raw(c(0x50, 0x4b, 0x03, 0x04, 20, 0, 0, 0, 0, 0, 0, 0, 0x21, 0)),
+    as.raw(c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+    as.raw(c(n, 0, 0, 0)),
+    nm
+  )
+  cd <- c(
+    as.raw(c(0x50, 0x4b, 0x01, 0x02, 20, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0x21, 0)),
+    as.raw(c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+    as.raw(c(n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)),
+    nm
+  )
+  eocd <- as.raw(c(0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 1, 0, 1, 0))
+  cd_size <- length(cd)
+  cd_off <- length(lh)
+  eocd <- c(
+    eocd,
+    as.raw(c(
+      cd_size %% 256, (cd_size %/% 256) %% 256,
+      (cd_size %/% 65536) %% 256, cd_size %/% 16777216,
+      cd_off %% 256, (cd_off %/% 256) %% 256,
+      (cd_off %/% 65536) %% 256, cd_off %/% 16777216,
+      0, 0
+    ))
+  )
+  c(lh, cd, eocd)
+}
+
+# manifeste factice : URL qui échouerait si elle était touchée
+manifeste_factice <- function(fichier = "fichier-test.zip") {
+  tibble::tibble(
+    id = "test", source = "test", url = "https://example.invalid/x",
+    fichier = fichier, vintage = "2023", date_reference = "2023-01-01",
+    date_publication = "2026-06-30", licence = "lov2", note = "test"
+  )
+}
+
 test_that("le manifeste liste les sources démographiques avec leurs métadonnées", {
   expect_s3_class(MANIFEST_DEMOGRAPHIE, "tbl_df")
-  expect_true(all(c("id", "source", "url", "fichier", "vintage", "date",
-                    "licence", "note") %in% names(MANIFEST_DEMOGRAPHIE)))
+  expect_true(all(c("id", "source", "url", "fichier", "vintage",
+                    "date_reference", "date_publication", "licence", "note") %in%
+                    names(MANIFEST_DEMOGRAPHIE)))
   expect_true(all(!duplicated(MANIFEST_DEMOGRAPHIE$id)))
   expect_true(all(startsWith(MANIFEST_DEMOGRAPHIE$url, "https://")))
   expect_true(all(MANIFEST_DEMOGRAPHIE$licence == "lov2"))
@@ -17,20 +62,103 @@ test_that("le manifeste liste les sources démographiques avec leurs métadonné
   )
 })
 
-test_that("download_sources est idempotent : ne touche pas ce qui existe", {
+test_that("verifier_fichier : un zip valide passe, un fichier corrompu non", {
   cache <- tempfile("cache-")
   dir.create(cache)
   on.exit(unlink(cache, recursive = TRUE))
 
-  # un manifeste factice dont l'URL échouerait si elle était touchée
-  factice <- tibble::tibble(
-    id = "test", source = "test", url = "https://example.invalid/x",
-    fichier = "fichier-test.zip", vintage = "2023", licence = "lov2",
-    note = "test"
-  )
-  cible <- file.path(cache, "fichier-test.zip")
-  writeLines("deja telecharge", cible)
+  # zip valide (mini_zip) -> vrai
+  bon <- file.path(cache, "bon.zip")
+  writeBin(mini_zip(), bon)
+  expect_true(verifier_fichier(bon))
 
-  expect_no_error(download_sources(factice, cache))
-  expect_equal(readLines(cible), "deja telecharge")
+  # fichier inexistant -> faux
+  expect_false(verifier_fichier(file.path(cache, "absent.zip")))
+
+  # fichier vide -> faux
+  vide <- file.path(cache, "vide.zip")
+  file.create(vide)
+  expect_false(verifier_fichier(vide))
+
+  # texte déguisé en zip (téléchargement partiel/corrompu) -> faux
+  corrompu <- file.path(cache, "corrompu.zip")
+  writeLines("pas un zip", corrompu)
+  expect_false(verifier_fichier(corrompu))
+})
+
+test_that("download_sources est idempotent : un fichier intact est laissé intact", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  # un zip valide déjà présent : l'URL factice ne doit jamais être touchée
+  cible <- file.path(cache, "fichier-test.zip")
+  writeBin(mini_zip(), cible)
+
+  expect_no_error(download_sources(manifeste_factice(), cache))
+  # intact : toujours un zip valide, même contenu
+  expect_true(verifier_fichier(cible))
+})
+
+test_that("download_sources : un fichier corrompu est re-téléchargé (point 3)", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  # un fichier corrompu déjà présent (texte déguisé en zip)
+  cible <- file.path(cache, "fichier-test.zip")
+  writeLines("deja telecharge mais corrompu", cible)
+
+  # le téléchargement est mocké : il écrit un vrai zip
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(mini_zip(), cible),
+    .package = "lusk"
+  )
+
+  expect_no_error(download_sources(manifeste_factice(), cache))
+  expect_true(verifier_fichier(cible))  # le corrompu a été remplacé
+})
+
+test_that("download_sources : un échec réseau est retenté, puis échoue fort", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  essais <- 0
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) {
+      essais <<- essais + 1
+      stop("panne réseau")
+    },
+    .package = "lusk"
+  )
+
+  expect_error(
+    download_sources(manifeste_factice(), cache),
+    "Téléchargement invalide après 2 essais"
+  )
+  expect_equal(essais, 2)          # retenté exactement une fois
+  expect_false(file.exists(file.path(cache, "fichier-test.zip")))  # nettoyé
+})
+
+test_that("download_sources : un téléchargement corrompu est retenté, puis échoue fort", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  essais <- 0
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) {
+      essais <<- essais + 1
+      writeLines("encore corrompu", cible)  # « réussit » mais invalide
+    },
+    .package = "lusk"
+  )
+
+  expect_error(
+    download_sources(manifeste_factice(), cache),
+    "Téléchargement invalide après 2 essais"
+  )
+  expect_equal(essais, 2)
+  expect_false(file.exists(file.path(cache, "fichier-test.zip")))
 })
