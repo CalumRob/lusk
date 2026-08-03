@@ -6,8 +6,9 @@ import {
   libelleApercu,
   libelleProgramme,
 } from '../fiche/apercu'
-import type { ApercuRow, Programme } from '../fiche/apercu'
+import type { Programme } from '../fiche/apercu'
 import { apercuFixture } from '../payload/fixtures'
+import type { ApercuRow } from '../payload/types'
 
 /**
  * The Aperçu tab's display vocabulary (app/src/fiche/apercu.ts) — the French
