@@ -1,0 +1,220 @@
+/* ============================================================================
+   Lusk — Design tokens
+   ============================================================================
+   The single source of truth for every visual decision in Lusk.
+   Source: DESIGN.md (repo root). No component is written without reading it;
+   no value here is invented — each line maps to a DESIGN.md section below.
+
+   Extracted from the shared design DNA of the legacy apps (Dashboard,
+   ACI_app) and tightened per docs/principles.md. Light-only for v1 (dark
+   mode is accepted debt — DESIGN.md §8).
+
+   The ramp/theme derivations use CSS color-mix in the OKLab space so the
+   intermediate steps follow the anchor: change one hex, the ramp follows.
+   ========================================================================== */
+
+:root {
+  /* ------------------------------------------------------------------------
+   * §2 Color — Palette
+   * ---------------------------------------------------------------------- */
+
+  /* Surface */
+  --surface-secondary: #F8FBFB; /* page background (mint-tinted white) */
+  --surface-primary: #FFFFFF;   /* cards, header */
+  --surface-tertiary: #F0F6F5;  /* alt panels, table headers, hover fills */
+  --surface-elevated: #FFFFFF;  /* modals, popovers, drawer (with border + shadow) */
+
+  /* Text */
+  --text-primary: #2D3748;   /* headlines, body */
+  --text-secondary: #718096; /* captions, hints, muted */
+  --text-tertiary: #A0AEC0;  /* disabled, placeholders */
+
+  /* Border */
+  --border-default: #E2E8F0; /* dividers, card outlines */
+  --border-subtle: #EDF1F1;  /* soft separations */
+
+  /* ------------------------------------------------------------------------
+   * §2 Color — Brand ramp (tightened)
+   * Identity steps fixed (extracted): 50/100/200/500. The intermediate steps
+   * derive from the anchor — change the anchor, the ramp follows.
+   * ---------------------------------------------------------------------- */
+
+  --brand-50: #F0F6F5;
+  --brand-100: #CCE3DE; /* the mint — original requested color */
+  --brand-200: #83ACA7;
+  --brand-300: color-mix(in oklab, var(--brand-500) 60%, #FFFFFF);
+  --brand-500: #57726F; /* the anchor */
+  --brand-600: color-mix(in oklab, var(--brand-500) 85%, #0C1B19); /* hover, primary button */
+  --brand-700: color-mix(in oklab, var(--brand-500) 62%, #0C1B19);
+  --brand-900: color-mix(in oklab, var(--brand-500) 35%, #0C1B19);
+
+  /* The old --brand-dark duplicate is resolved: one ramp now. */
+
+  /* ------------------------------------------------------------------------
+   * §2 Color — Interactive
+   * ---------------------------------------------------------------------- */
+
+  --accent-primary: var(--brand-500); /* links, active states, focus */
+  --accent-hover: var(--brand-600);   /* hover states */
+  --focus-ring: 2px solid var(--brand-500); /* visible focus (WCAG 2.2 AA) */
+
+  /* ------------------------------------------------------------------------
+   * §2 Color — Theme colors: one anchor per theme, ramp derived
+   * Four roles derive programmatically from each anchor (never hardcoded).
+   * The general theme (no ?theme=) is the brand ramp — no fifth system.
+   * ---------------------------------------------------------------------- */
+
+  /* Anchors (provisional, validated in the primitive showcase) */
+  --theme-mobilite: #6BA3B5;     /* teal */
+  --theme-demographie: #8E85C4;  /* indigo */
+  --theme-habitat: #C98F6E;      /* terracotta */
+  --theme-economie: #7FA875;     /* green */
+
+  /* wash — page bg whisper */
+  --theme-mobilite-wash: color-mix(in oklab, var(--theme-mobilite) 8%, var(--surface-secondary));
+  --theme-demographie-wash: color-mix(in oklab, var(--theme-demographie) 8%, var(--surface-secondary));
+  --theme-habitat-wash: color-mix(in oklab, var(--theme-habitat) 8%, var(--surface-secondary));
+  --theme-economie-wash: color-mix(in oklab, var(--theme-economie) 8%, var(--surface-secondary));
+
+  /* soft — fills, chips, hover */
+  --theme-mobilite-soft: color-mix(in oklab, var(--theme-mobilite) 16%, var(--surface-primary));
+  --theme-demographie-soft: color-mix(in oklab, var(--theme-demographie) 16%, var(--surface-primary));
+  --theme-habitat-soft: color-mix(in oklab, var(--theme-habitat) 16%, var(--surface-primary));
+  --theme-economie-soft: color-mix(in oklab, var(--theme-economie) 16%, var(--surface-primary));
+
+  /* line — underline, icons, legend */
+  --theme-mobilite-line: var(--theme-mobilite);
+  --theme-demographie-line: var(--theme-demographie);
+  --theme-habitat-line: var(--theme-habitat);
+  --theme-economie-line: var(--theme-economie);
+
+  /* strong — text, selected (darkened for contrast) */
+  --theme-mobilite-strong: color-mix(in oklab, var(--theme-mobilite) 62%, #0C1B19);
+  --theme-demographie-strong: color-mix(in oklab, var(--theme-demographie) 62%, #0C1B19);
+  --theme-habitat-strong: color-mix(in oklab, var(--theme-habitat) 62%, #0C1B19);
+  --theme-economie-strong: color-mix(in oklab, var(--theme-economie) 62%, #0C1B19);
+
+  /* ------------------------------------------------------------------------
+   * §2 Color — Modes (semantic, preserved from the original)
+   * ---------------------------------------------------------------------- */
+
+  --mode-transit: #448FA6; /* walk + transit */
+  --mode-bike: #2E6171;    /* bike */
+  --mode-car: #A94562;     /* car */
+  --gradient-modes: linear-gradient(90deg, #448FA6, #2E6171, #A94562);
+  --gradient-main: linear-gradient(90deg, #448FA6, #2E6171);
+
+  /* ------------------------------------------------------------------------
+   * §2 Color — Status
+   * ---------------------------------------------------------------------- */
+
+  --status-success: #2EA043;
+  --status-warning: #D97706;
+  --status-error: #CB2431;
+  --status-info: var(--brand-500);
+
+  /* ------------------------------------------------------------------------
+   * §3 Typography — stacks (Fontsource self-hosted variable, latin-ext)
+   * ---------------------------------------------------------------------- */
+
+  --font-sans: 'Manrope Variable', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Newsreader Variable', Georgia, 'Times New Roman', serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
+
+  /* ------------------------------------------------------------------------
+   * §3 Typography — scale
+   * Each level carries a font shorthand (weight size/line-height family)
+   * plus its tracking. `font: var(--text-h1); letter-spacing:
+   * var(--text-h1-tracking)` composes the full style.
+   * ---------------------------------------------------------------------- */
+
+  --text-display: 600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-serif); /* hero claim, fiche one-liner */
+  --text-display-tracking: -0.01em;
+
+  --text-h1: 700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-sans); /* page titles */
+  --text-h1-tracking: -0.015em;
+
+  --text-h2: 600 1.5rem/1.3 var(--font-sans); /* section headers */
+  --text-h2-tracking: -0.01em;
+
+  --text-h3: 600 1.1875rem/1.4 var(--font-sans); /* card titles, theme block titles */
+  --text-h3-tracking: 0;
+
+  --text-body-lg: 400 1.125rem/1.6 var(--font-sans); /* lead paragraphs */
+  --text-body-lg-tracking: 0;
+
+  --text-body: 400 1rem/1.6 var(--font-sans); /* default text */
+  --text-body-tracking: 0;
+
+  --text-body-sm: 400 0.875rem/1.5 var(--font-sans); /* secondary info */
+  --text-body-sm-tracking: 0;
+
+  --text-caption: 500 0.75rem/1.4 var(--font-sans); /* labels, metadata, vintage stamps */
+  --text-caption-tracking: 0.02em;
+
+  --text-overline: 600 0.6875rem/1.3 var(--font-sans); /* section labels, uppercase */
+  --text-overline-tracking: 0.08em;
+
+  /* Numeric — matches body sizes; digits never jitter */
+  --text-numeric-weight: 600;
+  --text-numeric-variant: tabular-nums;
+
+  /* ------------------------------------------------------------------------
+   * §4 Spacing & layout — base unit 4px
+   * ---------------------------------------------------------------------- */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* Grid & shell */
+  --content-max-width: 1200px; /* page content max width */
+  --header-max-width: 1400px;  /* header / full-bleed max */
+  --grid-columns: 12;
+  --grid-gutter: 24px;
+  --grid-margin-mobile: 16px;
+  --header-height: 60px; /* single source of truth */
+
+  /* Breakpoints */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  /* ------------------------------------------------------------------------
+   * §4 Radii / shadows / z-index
+   * ---------------------------------------------------------------------- */
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  --shadow-subtle: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-default: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+  --shadow-prominent: 0 8px 24px rgba(0,0,0,0.12);
+
+  --z-sticky: 100;
+  --z-header: 1000;
+  --z-drawer: 1100;
+  --z-overlay: 1200;
+  --z-popover: 1300;
+  --z-toast: 1400;
+
+  /* ------------------------------------------------------------------------
+   * §7 Depth & surface — chrome recipe (header, mobile backdrop)
+   * Used with @supports guard: rgba + backdrop-filter blur.
+   * ---------------------------------------------------------------------- */
+
+  --surface-chrome: rgba(255,255,255,0.8);
+  --blur-chrome: 12px;
+}
