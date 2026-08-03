@@ -1,7 +1,7 @@
-# Le SEAM de test : la forme du payload de la fiche (docs/architecture.md).
-# ROUGE par conception — compute_payload() arrive avec les tickets 3-4
-# (issues #4 et #5). Ce test EST la spécification du contrat qu'ils doivent
-# satisfaire : même fixture -> même payload, pour toujours.
+# Le SEAM de test : la forme tabulaire du payload de la fiche
+# (docs/architecture.md §Payload). Ce test EST le contrat : même fixture ->
+# même payload, pour toujours. Les valeurs d'histoires (soldes + classification)
+# arrivent au ticket 4 (issue #5).
 
 test_that("le payload couvre chaque territoire du fixture", {
   payload <- compute_payload(load_fixture())
@@ -12,27 +12,35 @@ test_that("le payload couvre chaque territoire du fixture", {
     "22", "29",                         # départements
     "53"                                # région Bretagne
   )
-  expect_setequal(names(payload$territoires), territoires_attendus)
+  expect_setequal(unique(payload$indicateurs$territoire), territoires_attendus)
+  expect_setequal(unique(payload$histoires$territoire), territoires_attendus)
 })
 
-test_that("chaque territoire porte le bloc démographie : 4 indicateurs + Histoire", {
+test_that("chaque territoire porte 4 clés d'indicateur (structure = 5 lignes)", {
   payload <- compute_payload(load_fixture())
 
-  for (code in names(payload$territoires)) {
-    themes <- payload$territoires[[code]]$themes
-    expect_true("demographie" %in% names(themes), info = code)
-    bloc <- themes$demographie
-
-    expect_length(bloc$indicateurs, 4, info = code)
-    for (indicateur in bloc$indicateurs) {
-      expect_named(
-        indicateur,
-        c("key", "value", "unit", "rank_in_context", "vintage"),
-        info = code
-      )
-      expect_named(indicateur$vintage, c("source", "version", "date"))
+  attentes <- c(densite = 1, structure_age = 5, evolution_1968 = 1,
+                taille_menages = 1)
+  for (code in unique(payload$indicateurs$territoire)) {
+    tab <- payload$indicateurs[payload$indicateurs$territoire == code, , drop = FALSE]
+    for (cle in names(attentes)) {
+      expect_equal(sum(tab$key == cle), attentes[[cle]], info = paste(code, cle))
     }
-
-    expect_named(bloc$histoire, c("key", "soldes", "classification"))
   }
+})
+
+test_that("la forme des deux tables est le contrat", {
+  payload <- compute_payload(load_fixture())
+
+  expect_named(payload$indicateurs, c(
+    "territoire", "type", "theme", "key", "detail", "value", "unit",
+    "rang_epci", "rang_dep", "rang_reg",
+    "vintage_source", "vintage_version", "vintage_date"
+  ))
+  expect_named(payload$histoires, c(
+    "territoire", "type", "theme", "story_key",
+    "solde_naturel", "solde_migratoire", "classification"
+  ))
+  expect_true(all(payload$indicateurs$theme == "demographie"))
+  expect_true(all(payload$histoires$theme == "demographie"))
 })

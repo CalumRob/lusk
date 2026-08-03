@@ -10,6 +10,10 @@ Description: Le pipeline R de Lusk — téléchargement, filtrage, calcul des
 License: MIT + file LICENSE
 Encoding: UTF-8
 RoxygenNote: 7.3.0
+Imports:
+    dplyr,
+    magrittr,
+    tidyr
 Suggests:
     testthat (>= 3.0.0),
     readr
