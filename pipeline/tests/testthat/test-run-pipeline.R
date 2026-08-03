@@ -4,13 +4,18 @@
 # mockées — le réseau et les vrais fichiers n'entrent jamais dans la boucle de
 # test. Issue #9 : la table des vintages entière passe au compute — les
 # estampilles sont par indicateur (source de référence déclarée), plus de
-# tampon de thème pointé par un id.
+# tampon de thème pointé par un id. Issue #10 : download_sources() renvoie les
+# statuts par source, run_pipeline les capture et écrit le rapport de run
+# (mode + horodatage + statuts) à côté du payload — et, sur un échec cron, le
+# rapport est écrit AVANT l'arrêt bruyant.
 
 test_that("run_pipeline est l'entrée unique, sur les dossiers du dépôt", {
   expect_type(run_pipeline, "closure")
   # les chemins par défaut vivent dans le dépôt (jamais sur C:)
   expect_equal(formals(run_pipeline)$cache, "data/raw")
-  expect_equal(formals(run_pipeline)$sortie, "data/processed")
+  # issue #10 : la cible par défaut est le home public du payload (public/data/
+  # à la racine du dépôt, ADR-0004) — le cron écrit là où Pages et l'app lisent
+  expect_equal(formals(run_pipeline)$sortie, "public/data")
   # le mode de run (issue #8) : "full" par défaut (local), "cron" pour le runner
   expect_true("mode" %in% names(formals(run_pipeline)))
   expect_equal(formals(run_pipeline)$mode, quote(c("full", "cron")))
@@ -28,11 +33,21 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$payload_vu <- NULL
   appels$vintages_vus <- NULL
   appels$mode_vu <- NULL
+  appels$publish_cible_vue <- NULL
+  appels$backend_vu <- NULL
+  appels$rapport_statuts_vus <- NULL
+  appels$rapport_mode_vu <- NULL
+  appels$rapport_cible_vue <- NULL
 
   faux_payload <- list(
     indicateurs = data.frame(x = 1),
     histoires = data.frame(y = 2),
     territoires = data.frame(territoire = "53", nom = "Bretagne")
+  )
+  faux_statuts <- tibble::tibble(
+    id = c("serie_historique", "menages", "age_detail", "epci"),
+    mode = c("cron", "cron", "cron", "cron"),
+    status = c("frais", "frais", "frais", "frais")
   )
   faux_vintages <- tibble::tibble(
     id = c("serie_historique", "menages"),
@@ -47,7 +62,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
     download_sources = function(manifest, cache, mode) {
       appels$download <- appels$download + 1
       appels$mode_vu <- mode
-      invisible(manifest)
+      faux_statuts
     },
     construire_donnees_brut = function(cache) {
       appels$construire <- appels$construire + 1
@@ -59,10 +74,18 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$vintages_compute_vus <- vintages
       faux_payload
     },
-    publish = function(payload, cible) {
+    publish = function(payload, cible, backend = "static") {
       appels$publish <- appels$publish + 1
       appels$payload_vu <- payload
+      appels$publish_cible_vue <- cible
+      appels$backend_vu <- backend
       invisible(payload)
+    },
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL) {
+      appels$rapport_statuts_vus <- statuts
+      appels$rapport_mode_vu <- mode
+      appels$rapport_cible_vue <- cible
+      invisible(NULL)
     },
     .package = "lusk"
   )
@@ -90,12 +113,22 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   # est par indicateur (source de référence déclarée), plus de tampon de thème
   expect_identical(appels$vintages_compute_vus, faux_vintages)
 
-  # publish reçoit le payload de compute ; les vintages partent en parquet
+  # publish reçoit le payload de compute, vers la cible du run, en "static"
+  # (issue #10 : le run écrit l'artefact complet — parquet + JSON) ; les
+  # vintages partent en parquet
   expect_identical(appels$payload_vu, faux_payload)
+  expect_equal(appels$publish_cible_vue, "public/data")
+  expect_equal(appels$backend_vu, "static")
   expect_equal(nrow(appels$vintages_vus), 2)
 
   # le mode par défaut est "full" — le comportement local est inchangé
   expect_equal(appels$mode_vu, "full")
+
+  # issue #10 : le rapport de run est écrit avec les statuts capturés depuis
+  # download_sources(), le mode du run et la même cible que le payload
+  expect_identical(appels$rapport_statuts_vus, faux_statuts)
+  expect_equal(appels$rapport_mode_vu, "full")
+  expect_equal(appels$rapport_cible_vue, "public/data")
 
   # le retour est le payload
   expect_identical(resultat, faux_payload)
@@ -103,6 +136,11 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
 
 test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue #8)", {
   mode_vu <- NULL
+  faux_statuts <- tibble::tibble(
+    id = "serie_historique",
+    mode = "cron",
+    status = "frais"
+  )
   faux_vintages <- tibble::tibble(
     id = "serie_historique",
     source = "INSEE — Série historique du recensement",
@@ -115,12 +153,14 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) {
       mode_vu <<- mode
-      invisible(manifest)
+      faux_statuts
     },
     construire_donnees_brut = function(cache) load_fixture(),
     vintages_demographie = function() faux_vintages,
     compute_payload = function(data, vintages = NULL) list(),
-    publish = function(payload, cible) invisible(payload),
+    publish = function(payload, cible, backend = NULL) invisible(payload),
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL)
+      invisible(NULL),
     .package = "lusk"
   )
   local_mocked_bindings(
@@ -133,4 +173,34 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
 
   run_pipeline()
   expect_equal(mode_vu, "full")
+})
+
+test_that("un échec cron écrit le rapport de run avant l'arrêt bruyant", {
+  # issue #10 : sur un échec cron, les statuts (dont le « échec » de la source
+  # fautive) sont portés par l'erreur (issue #8) — le rapport est écrit AVANT
+  # que run_pipeline re-signale l'erreur. L'échec reste tracé.
+  statuts_echec <- tibble::tibble(
+    id = c("serie_historique", "menages", "age_detail", "epci"),
+    mode = c("cron", "cron", "cron", "cron"),
+    status = c("frais", "frais", "frais", "échec")
+  )
+  ecrit <- NULL
+
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) {
+      stop(erreur_telechargement(statuts_echec, "https://example.invalid/epci.zip"))
+    },
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL) {
+      ecrit <<- list(statuts = statuts, mode = mode, cible = cible)
+      invisible(NULL)
+    },
+    .package = "lusk"
+  )
+
+  expect_error(run_pipeline(mode = "cron"), class = "erreur_telechargement")
+
+  # le rapport a été écrit avant l'arrêt, avec les statuts du run échoué
+  expect_identical(ecrit$statuts, statuts_echec)
+  expect_equal(ecrit$mode, "cron")
+  expect_equal(ecrit$cible, "public/data")
 })
