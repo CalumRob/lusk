@@ -151,37 +151,13 @@ function lireRang(ligne: LigneBrute, champ: string, fichier: string, i: number):
   return valeur
 }
 
-function indexerReference(territoires: Territoire[]): Map<string, TerritoireType> {
-  const index = new Map<string, TerritoireType>()
-  for (const t of territoires) index.set(t.territoire, t.type)
-  return index
-}
-
-function verifierReference(
-  ligne: LigneBrute,
-  reference: Map<string, TerritoireType>,
-  fichier: string,
-  i: number,
-): void {
-  const territoire = ligne['territoire']
-  exiger(estChaine(territoire), fichier, i, '« territoire » doit être une chaîne')
-  exiger(reference.has(territoire), fichier, i, `territoire inconnu « ${territoire} »`)
-  const type = ligne['type'] as unknown
-  exiger(
-    estUneDe(type, TYPES_TERRITOIRE) && reference.get(territoire) === type,
-    fichier,
-    i,
-    `« type » incohérent avec la référence pour « ${territoire} »`,
-  )
-}
-
 /** The reference table: unique territoires, real names, the EPCI ladder. */
 export function validerTerritoires(brut: unknown, fichier: string): Territoire[] {
   exiger(Array.isArray(brut), fichier, 0, 'la table de référence doit être un tableau')
   const lignes = brut as unknown[]
   const vus = new Set<string>()
 
-  return lignes.map((ligne, i) => {
+  const territoires = lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
     exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque ligne doit être un objet')
 
@@ -214,13 +190,10 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
 
     return { territoire, type, nom, departement, epci }
   })
-}
 
-function verifierEpcisConnus(
-  territoires: Territoire[],
-  fichier: string,
-): Map<string, TerritoireType> {
-  const reference = indexerReference(territoires)
+  // Intégrité référentielle de l'échelle (compute.R 5bis) : chaque EPCI porté
+  // par une commune est un territoire EPCI de la référence — sinon le
+  // contexte switcher (commune → EPCI → département → région) casse.
   const epcis = new Set(
     territoires.filter((t) => t.type === 'epci').map((t) => t.territoire),
   )
@@ -229,7 +202,32 @@ function verifierEpcisConnus(
       throw erreur(fichier, 0, `l'EPCI « ${t.epci} » de la commune « ${t.territoire} » est inconnu de la référence`)
     }
   }
-  return reference
+
+  return territoires
+}
+
+function indexerReference(territoires: Territoire[]): Map<string, TerritoireType> {
+  const index = new Map<string, TerritoireType>()
+  for (const t of territoires) index.set(t.territoire, t.type)
+  return index
+}
+
+function verifierReference(
+  ligne: LigneBrute,
+  reference: Map<string, TerritoireType>,
+  fichier: string,
+  i: number,
+): void {
+  const territoire = ligne['territoire']
+  exiger(estChaine(territoire), fichier, i, '« territoire » doit être une chaîne')
+  exiger(reference.has(territoire), fichier, i, `territoire inconnu « ${territoire} »`)
+  const type = ligne['type'] as unknown
+  exiger(
+    estUneDe(type, TYPES_TERRITOIRE) && reference.get(territoire) === type,
+    fichier,
+    i,
+    `« type » incohérent avec la référence pour « ${territoire} »`,
+  )
 }
 
 /** The indicateurs facts table. */
@@ -240,7 +238,7 @@ export function validerIndicateurs(
 ): Indicateur[] {
   exiger(Array.isArray(brut), fichier, 0, 'la table des indicateurs doit être un tableau')
   const lignes = brut as unknown[]
-  const reference = verifierEpcisConnus(territoires, fichier)
+  const reference = indexerReference(territoires)
   const vus = new Set<string>()
 
   return lignes.map((ligne, i) => {
@@ -312,7 +310,7 @@ export function validerHistoires(
 ): Histoire[] {
   exiger(Array.isArray(brut), fichier, 0, 'la table des histoires doit être un tableau')
   const lignes = brut as unknown[]
-  const reference = verifierEpcisConnus(territoires, fichier)
+  const reference = indexerReference(territoires)
   const vus = new Set<string>()
 
   return lignes.map((ligne, i) => {
@@ -355,7 +353,7 @@ export function validerApercu(
 ): ApercuRow[] {
   exiger(Array.isArray(brut), fichier, 0, 'la table apercu doit être un tableau')
   const lignes = brut as unknown[]
-  const reference = verifierEpcisConnus(territoires, fichier)
+  const reference = indexerReference(territoires)
   const vus = new Set<string>()
 
   return lignes.map((ligne, i) => {

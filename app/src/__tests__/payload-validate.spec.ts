@@ -10,6 +10,8 @@ import {
 import { PayloadError, parsePayload } from '../payload/validate'
 import type { Payload } from '../payload/types'
 
+type DocumentsBruts = Parameters<typeof parsePayload>[0]
+
 /**
  * The app's half of validate_payload() (docs/architecture.md §The fiche
  * payload): drift on the pipeline side must surface here as a loud,
@@ -17,7 +19,7 @@ import type { Payload } from '../payload/types'
  * raw JSON shapes in, typed structures out (or PayloadError).
  */
 
-function documentsBruts(overrides: Record<string, unknown> = {}) {
+function documentsBruts(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts {
   return {
     territoires: territoiresFixture,
     indicateurs: indicateursDemographieFixture,
@@ -28,7 +30,7 @@ function documentsBruts(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function attendErreurValidation(documents: Record<string, unknown>): PayloadError {
+function attendErreurValidation(documents: DocumentsBruts): PayloadError {
   let erreur: unknown
   try {
     parsePayload(documents)
