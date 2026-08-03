@@ -27,7 +27,7 @@ import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { themesPresent, trouverTerritoire } from '@/payload/selectors'
-import type { Theme } from '@/payload/types'
+import type { Payload, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
 const route = useRoute()
@@ -65,6 +65,14 @@ const selection = computed<Theme | null>(() => {
 
 const echelons = computed(() =>
   payload.value ? echelleContexte(payload.value, String(route.params.id)) : [],
+)
+
+/** The active theme's block needs the payload — narrowed together (both are
+ *  non-null exactly when a theme is selected). */
+const ongletTheme = computed<{ theme: Theme; payload: Payload } | null>(() =>
+  selection.value && payload.value
+    ? { theme: selection.value, payload: payload.value }
+    : null,
 )
 
 const classesFond = computed(() =>
@@ -149,7 +157,12 @@ watch(
           :payload="payload"
           :territoire="String(route.params.id)"
         />
-        <OngletTheme v-else-if="selection" :theme="selection" />
+        <OngletTheme
+          v-else-if="ongletTheme"
+          :theme="ongletTheme.theme"
+          :payload="ongletTheme.payload"
+          :territoire="String(route.params.id)"
+        />
       </div>
     </template>
   </section>

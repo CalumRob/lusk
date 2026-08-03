@@ -10,6 +10,8 @@
 import type {
   ApercuRow,
   ColonneRang,
+  Histoire,
+  Indicateur,
   Payload,
   Territoire,
   Theme,
@@ -105,4 +107,148 @@ export function ligneFraicheur(payload: Payload): string {
 /** The reference lookup: id → territoire (the names live here, joined by everything else). */
 export function trouverTerritoire(payload: Payload, id: string): Territoire | null {
   return payload.territoires.find((t) => t.territoire === id) ?? null
+}
+
+/**
+ * The canonical order of the standard indicators per theme — the fiche
+ * contract (docs/themes/<theme>.md). Keys absent from the map keep their
+ * payload order (later themes extend the map when their block lands).
+ */
+const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
+  demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
+}
+
+/** The standard indicator rows for a territoire + theme, in the contract's order. */
+export function indicateursPourTerritoire(
+  payload: Payload,
+  theme: Theme,
+  territoire: string,
+): Indicateur[] {
+  const lignes = payload.indicateurs.filter(
+    (ligne) => ligne.theme === theme && ligne.territoire === territoire,
+  )
+  const ordre = ORDRE_INDICATEURS[theme]
+  if (!ordre) return lignes
+  return [...lignes].sort((a, b) => {
+    const ia = ordre.indexOf(a.key)
+    const ib = ordre.indexOf(b.key)
+    if (ia === -1 && ib === -1) return 0
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
+}
+
+/** One indicator figure of the block: a key and its rows (multi-detail keys group). */
+export interface GroupeIndicateur {
+  key: string
+  lignes: Indicateur[]
+}
+
+/**
+ * The block's figures, grouped by key — the multi-detail indicators
+ * (structure_age = one row per tranche) become ONE figure with a breakdown.
+ * Group order follows the contract's indicator order; detail rows keep their
+ * payload order within the group.
+ */
+export function indicateursGroupeesPourTerritoire(
+  payload: Payload,
+  theme: Theme,
+  territoire: string,
+): GroupeIndicateur[] {
+  const groupes = new Map<string, Indicateur[]>()
+  for (const ligne of indicateursPourTerritoire(payload, theme, territoire)) {
+    const groupe = groupes.get(ligne.key)
+    if (groupe) groupe.push(ligne)
+    else groupes.set(ligne.key, [ligne])
+  }
+  return [...groupes.entries()].map(([key, lignes]) => ({ key, lignes }))
+}
+
+/** The Story row for a territoire + theme, or null (no story — handled honestly). */
+export function histoirePourTerritoire(
+  payload: Payload,
+  theme: Theme,
+  territoire: string,
+): Histoire | null {
+  return payload.histoires.find(
+    (histoire) => histoire.theme === theme && histoire.territoire === territoire,
+  ) ?? null
+}
+
+/** The rank columns, nearest comparison group first (EPCI → département → région). */
+const COLONNES_RANG: readonly ColonneRang[] = ['rang_epci', 'rang_dep', 'rang_reg']
+
+/**
+ * The rank-in-context chip of the nearest available comparison group: a
+ * commune shows its EPCI rank, an EPCI its département rank, the région none.
+ * A null rank at every level → null (no chip).
+ */
+export function rangEnContexte(indicateur: Indicateur): string | null {
+  for (const colonne of COLONNES_RANG) {
+    const libelle = formaterRang(indicateur[colonne], colonne)
+    if (libelle !== null) return libelle
+  }
+  return null
+}
+
+/** French number: comma decimal separator, thin-space thousands, zeros trimmed. */
+function formaterNombreFR(x: number, decimalesMax: number): string {
+  const fixe = x.toFixed(decimalesMax)
+  const [entiers, decPart = ''] = fixe.split('.')
+  const decs = decPart.replace(/0+$/, '')
+  const groupes = entiers.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+  return decs ? `${groupes},${decs}` : groupes
+}
+
+/**
+ * The indicator's display value, French. A "%" unit means the payload value
+ * is a fraction in [0,1] (0.3 → "30"). Null → null (non calculable pour ce
+ * territoire — the figure shows an honest "—", never a made-up number).
+ */
+export function formaterValeur(indicateur: Indicateur): string | null {
+  if (indicateur.value === null) return null
+  const estPourcent = indicateur.unit === '%'
+  const brut = estPourcent ? indicateur.value * 100 : indicateur.value
+  return formaterNombreFR(brut, estPourcent ? 0 : 2)
+}
+
+/** A signed integer — the Démographie story's soldes ("+70", "-380", "0"). */
+export function formaterSolde(x: number): string {
+  const signe = x > 0 ? '+' : ''
+  return `${signe}${formaterNombreFR(x, 0)}`
+}
+
+const MOIS_COURTS = [
+  'janv.',
+  'févr.',
+  'mars',
+  'avr.',
+  'mai',
+  'juin',
+  'juil.',
+  'août',
+  'sept.',
+  'oct.',
+  'nov.',
+  'déc.',
+]
+
+function formaterDateCourt(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) return iso
+  return `${date.getUTCDate()} ${MOIS_COURTS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+}
+
+/**
+ * The vintage stamp — source · version · the two dates (reference AND
+ * publication). The "alive" promise: always present, never optional
+ * (ui-elements.md §Indicator/KPI figure).
+ */
+export function formaterVintage(indicateur: Indicateur): string {
+  return (
+    `${indicateur.vintage_source} · ${indicateur.vintage_version} · ` +
+    `réf. ${formaterDateCourt(indicateur.vintage_date_reference)} · ` +
+    `publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`
+  )
 }
