@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Build output — committed to the repo on tag by the deploy path
+# (docs/self-hosting.md), so dist/ stays out of the source tree
+dist/
+dist-ssr/
+
+# Local tooling
+*.local
+.vite/
+
+# Logs
+logs/
+*.log
+npm-debug.log*

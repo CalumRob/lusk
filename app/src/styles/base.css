@@ -1,0 +1,94 @@
+/* ============================================================================
+   Lusk — base styles
+   ============================================================================
+   Element-level defaults only. Everything visual comes from the tokens
+   (src/styles/tokens.css); components bring their own scoped styles on top.
+   See DESIGN.md §6 (motion) and §8 (accessibility) for the rules enforced
+   here.
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* overflow-x: clip (not hidden) — hidden turns <body> into a scroll
+   container and breaks position: sticky against the viewport; clip clips
+   identically without creating one. */
+html,
+body {
+  overflow-x: clip;
+  width: 100%;
+  position: relative;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  background-color: var(--surface-secondary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin-top: 0;
+  color: var(--text-primary);
+}
+
+a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* Visible focus everywhere (WCAG 2.2 AA — DESIGN.md §8) */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Respect prefers-reduced-motion — disable non-essential animation */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Page scaffolding — used by placeholder views now, real views later.
+   Content column: 1200px max (DESIGN.md §4), 16px mobile margin.
+   -------------------------------------------------------------------------- */
+
+.page {
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding: var(--space-8) var(--grid-margin-mobile);
+  width: 100%;
+}
+
+.page__empty {
+  color: var(--text-secondary);
+}
+
