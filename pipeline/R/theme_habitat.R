@@ -592,6 +592,23 @@ vintages_habitat <- function(cache = "data/raw") {
   v
 }
 
+# APERCU_HABITAT ---------------------------------------------------------------
+# La table déclarative des clés de l'Aperçu du thème Habitat (issue #32,
+# ADR-0007) : VIDE — le gating par thème. Habitat ne déclare aucune clé
+# aujourd'hui : ses stats de base de l'Aperçu n'existent pas encore, la table
+# `apercu` du payload d'un run Habitat est présente mais vide (jamais un
+# « under construction »). Les clés Habitat s'ajouteront ici quand le thème
+# les définira.
+APERCU_HABITAT <- tibble::tibble(
+  key = character(),
+  libelle = character(),
+  multiplicite = integer()
+)
+
+construire_apercu_habitat <- function(territoires) {
+  list()
+}
+
 # theme_habitat ---------------------------------------------------------------
 # Le descripteur du thème Habitat : la même forme de contrat que
 # theme_demographie(), avec les pièces du thème.
@@ -600,10 +617,12 @@ theme_habitat <- function() {
     theme = "habitat",
     manifest = MANIFEST_HABITAT,
     indicateurs = INDICATEURS_HABITAT,
+    apercu = APERCU_HABITAT,
     vintages = vintages_habitat,
     construire_donnees = construire_donnees_habitat,
     construire_territoires = construire_territoires_habitat,
     construire_indicateurs = construire_indicateurs_habitat,
+    construire_apercu = construire_apercu_habitat,
     scalaires = scalaires_habitat,
     compute_histoires = compute_histoires_habitat,
     validations = validations_habitat

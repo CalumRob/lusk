@@ -30,9 +30,9 @@ test_that("chaque territoire porte les 5 clés avec leur multiplicité", {
   }
 })
 
-test_that("la forme des trois tables est le contrat (avec la colonne n)", {
+test_that("la forme des quatre tables est le contrat (avec la colonne n)", {
   p <- payload_habitat()
-  expect_named(p, c("indicateurs", "histoires", "territoires"))
+  expect_named(p, c("indicateurs", "histoires", "territoires", "apercu"))
   # Démographie n'a pas de n ; Habitat le publie — la colonne est là
   expect_named(p$indicateurs, c(
     "territoire", "type", "theme", "key", "detail", "value", "unit",
@@ -45,7 +45,11 @@ test_that("la forme des trois tables est le contrat (avec la colonne n)", {
     "territoire", "type", "theme", "story_key",
     "classification", "part_passoires", "part_abc", "n_dpe"
   ))
-  expect_named(p$territoires, c("territoire", "type", "nom", "departement"))
+  expect_named(p$territoires, c("territoire", "type", "nom", "departement", "epci"))
+  # l'Aperçu : la forme du contrat est là, vide — Habitat ne déclare pas de
+  # clés (gating par thème, issue #32) : la table est présente mais 0 ligne
+  expect_named(p$apercu, c("territoire", "type", "key", "value", "unit"))
+  expect_equal(nrow(p$apercu), 0)
   expect_true(all(p$indicateurs$theme == "habitat"))
   expect_true(all(p$histoires$theme == "habitat"))
 })
@@ -127,6 +131,6 @@ test_that("le payload du fixture est valide (validation générique + thème)", 
   p <- payload_habitat()
   expect_no_error(validate_payload(
     p, indicateurs = INDICATEURS_HABITAT, vintages = vintages_habitat(),
-    validations = validations_habitat
+    validations = validations_habitat, apercu = APERCU_HABITAT
   ))
 })

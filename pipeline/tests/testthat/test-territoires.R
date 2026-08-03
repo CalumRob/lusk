@@ -27,6 +27,17 @@ test_that("les départements et la région portent leurs étiquettes", {
   expect_equal(bt$nom[bt$type == "region"], "Bretagne")
 })
 
+test_that("les EPCIs n'appartiennent à aucun EPCI — la colonne epci ne concerne que les communes", {
+  # issue #32 : la colonne epci de la table des territoires porte l'EPCI
+  # (SIREN) de chaque commune ; les lignes EPCI / département / région portent
+  # NA (miroir de `departement`). Sans l'écrasement explicite, le
+  # group_by(epci) ferait « s'appartenir » chaque EPCI à lui-même.
+  bt <- build_territoires(load_fixture())
+  expect_equal(bt$epci[bt$type == "commune"],
+               c("200000001", "200000001", "200000002", "200000002"))
+  expect_true(all(is.na(bt$epci[bt$type != "commune"])))
+})
+
 test_that("un EPCI à cheval sur deux départements prend la pluralité de population (point 6)", {
   # mini-table : l'EPCI Z réunit une commune du 22 (1000 hab.) et une du 29
   # (2000 hab.) — la pluralité de population est le 29.

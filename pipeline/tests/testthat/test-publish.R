@@ -29,7 +29,7 @@ test_that("le backend par défaut est 'static' vers le home public du payload", 
   expect_equal(formals(publish)$backend, "static")
 })
 
-test_that("publish(backend = 'static') écrit parquet + JSON des trois tables", {
+test_that("publish(backend = 'static') écrit parquet + JSON des quatre tables", {
   payload <- compute_payload(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
@@ -37,7 +37,7 @@ test_that("publish(backend = 'static') écrit parquet + JSON des trois tables", 
   publish(payload, cible)
 
   for (nom in c("indicateurs_demographie", "histoires_demographie",
-                "territoires")) {
+                "territoires", "apercu")) {
     expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
     expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
   }
@@ -56,7 +56,7 @@ test_that("le JSON se relit exactement comme les tables parquet — dérive impo
   publish(payload, cible)
 
   for (nom in c("indicateurs_demographie", "histoires_demographie",
-                "territoires")) {
+                "territoires", "apercu")) {
     parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
     json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
     # colonne pour colonne : le même ordre, les mêmes noms
@@ -91,8 +91,11 @@ test_that("la publication est par thème : le thème du payload nomme les fichie
   expect_true(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
   expect_true(file.exists(file.path(cible, "histoires_demographie.parquet")))
   expect_true(file.exists(file.path(cible, "territoires.parquet")))
+  expect_true(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "indicateurs.parquet")))
   expect_false(file.exists(file.path(cible, "histoires.parquet")))
+  # l'Aperçu est partagé entre les thèmes, comme la référence — pas par thème
+  expect_false(file.exists(file.path(cible, "apercu_demographie.parquet")))
 })
 
 test_that("un payload d'un autre thème écrit les fichiers de CE thème", {
@@ -136,7 +139,8 @@ test_that("le payload Habitat publie les fichiers par thème + la référence pa
 
   publish(payload, cible)
 
-  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
+  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires",
+                "apercu")) {
     expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
     expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
   }
@@ -155,9 +159,17 @@ test_that("le JSON Habitat se relit exactement comme les tables parquet — dér
 
   publish(payload, cible)
 
-  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
+  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires",
+                "apercu")) {
     parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
     json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
+    # une table vide (l'Aperçu d'un thème sans clés déclarées, issue #32) se
+    # sérialise en `[]` — les deux côtés sont « vide », la comparaison
+    # colonne pour colonne n'a pas de sens (jsonlite relit `[]` en liste).
+    if (nrow(parquet) == 0) {
+      expect_equal(length(json), 0, info = nom)
+      next
+    }
     expect_identical(names(json), names(parquet), info = nom)
     expect_equal(nrow(json), nrow(parquet), info = nom)
     for (col in names(parquet)) {

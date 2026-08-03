@@ -1,0 +1,83 @@
+[
+  {
+    "territoire": "22001",
+    "type": "commune",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 70,
+    "solde_migratoire": 30,
+    "classification": "fertile"
+  },
+  {
+    "territoire": "22002",
+    "type": "commune",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": -20,
+    "solde_migratoire": -5,
+    "classification": "vieillissante"
+  },
+  {
+    "territoire": "29001",
+    "type": "commune",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 20,
+    "solde_migratoire": 380,
+    "classification": "attractive"
+  },
+  {
+    "territoire": "29002",
+    "type": "commune",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": -20,
+    "solde_migratoire": -380,
+    "classification": "exode"
+  },
+  {
+    "territoire": "200000001",
+    "type": "epci",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 50,
+    "solde_migratoire": 25,
+    "classification": "fertile"
+  },
+  {
+    "territoire": "200000002",
+    "type": "epci",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 0,
+    "solde_migratoire": 0,
+    "classification": "vieillissante"
+  },
+  {
+    "territoire": "22",
+    "type": "departement",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 50,
+    "solde_migratoire": 25,
+    "classification": "fertile"
+  },
+  {
+    "territoire": "29",
+    "type": "departement",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 0,
+    "solde_migratoire": 0,
+    "classification": "vieillissante"
+  },
+  {
+    "territoire": "53",
+    "type": "region",
+    "theme": "demographie",
+    "story_key": "attractive-ou-fertile",
+    "solde_naturel": 50,
+    "solde_migratoire": 25,
+    "classification": "fertile"
+  }
+]

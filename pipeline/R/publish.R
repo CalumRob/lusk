@@ -1,12 +1,12 @@
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
-#   - "static" (défaut, issue #10, ADR-0004) : écrit les trois tables en
-#     parquet (l'artefact canonique téléchargeable) ET leurs projections JSON
-#     (ce que l'app Vue fetch), vers le home public du payload (public/data/
-#     à la racine du dépôt — là où Pages et l'app lisent). Les deux
-#     sérialisations sortent des MÊMES tables en mémoire : un test lit le JSON
-#     en retour et prouve qu'il égale exactement le parquet (dérive
-#     impossible, pas juste improbable — ADR-0004).
+#   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet
+#     (l'artefact canonique téléchargeable) ET leurs projections JSON (ce que
+#     l'app Vue fetch), vers le home public du payload (public/data/ à la
+#     racine du dépôt — là où Pages et l'app lisent). Les deux sérialisations
+#     sortent des MÊMES tables en mémoire : un test lit le JSON en retour et
+#     prouve qu'il égale exactement le parquet (dérive impossible, pas juste
+#     improbable — ADR-0004).
 #   - "parquet" (local, comportement historique inchangé) : parquet seul.
 # Sémantique d'upsert documentée : le payload EST l'état complet des fiches —
 # écrire écrase, donc relancer ne duplique jamais. Le backend Supabase
@@ -15,8 +15,9 @@
 # Issue #13 : les fichiers de FAITS sont par thème — indicateurs_<theme> et
 # histoires_<theme> (parquet + JSON) — pour que les thèmes ne se marchent
 # jamais dessus et que l'app récupère par thème. La référence des territoires
-# (les noms réels — la dimension que l'app joint) et les vintages restent
-# partagés : territoires.parquet/.json, vintages.parquet (écrit par
+# (les noms réels — la dimension que l'app joint), la table apercu (les stats
+# de base de l'onglet Aperçu, issue #32) et les vintages restent partagés :
+# territoires.parquet/.json, apercu.parquet/.json, vintages.parquet (écrit par
 # run_pipeline). Le thème se lit sur le payload lui-même (la colonne `theme`
 # des deux tables de faits) : publish ne peut pas écrire un thème différent de
 # celui des données.
@@ -49,6 +50,8 @@ publish <- function(payload, cible = "public/data", backend = "static") {
                              file.path(cible, paste0("histoires_", theme, ".parquet")))
   nanoparquet::write_parquet(payload$territoires,
                              file.path(cible, "territoires.parquet"))
+  nanoparquet::write_parquet(payload$apercu,
+                             file.path(cible, "apercu.parquet"))
 
   if (backend == "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
@@ -67,6 +70,7 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     ecrire_projection(payload$indicateurs, paste0("indicateurs_", theme, ".json"))
     ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
     ecrire_projection(payload$territoires, "territoires.json")
+    ecrire_projection(payload$apercu, "apercu.json")
   }
 
   invisible(payload)

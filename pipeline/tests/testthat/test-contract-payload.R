@@ -29,10 +29,10 @@ test_that("chaque territoire porte 4 clés d'indicateur (structure = 7 tranches)
   }
 })
 
-test_that("la forme des trois tables est le contrat", {
+test_that("la forme des quatre tables est le contrat", {
   payload <- compute_payload(load_fixture())
 
-  expect_named(payload, c("indicateurs", "histoires", "territoires"))
+  expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_named(payload$indicateurs, c(
     "territoire", "type", "theme", "key", "detail", "value", "unit",
     "rang_epci", "rang_dep", "rang_reg",
@@ -44,8 +44,9 @@ test_that("la forme des trois tables est le contrat", {
     "solde_naturel", "solde_migratoire", "classification"
   ))
   expect_named(payload$territoires, c(
-    "territoire", "type", "nom", "departement"
+    "territoire", "type", "nom", "departement", "epci"
   ))
+  expect_named(payload$apercu, c("territoire", "type", "key", "value", "unit"))
   expect_true(all(payload$indicateurs$theme == "demographie"))
   expect_true(all(payload$histoires$theme == "demographie"))
 })
@@ -92,6 +93,67 @@ test_that("la table de référence porte le département d'appartenance", {
   expect_equal(tr$departement[tr$territoire == "22"], "22")
   # la région n'appartient à aucun département
   expect_true(is.na(tr$departement[tr$territoire == "53"]))
+})
+
+test_that("la table de référence porte l'EPCI (SIREN) des communes, NA pour les agrégats", {
+  # issue #32 : la colonne epci — chaque commune porte l'EPCI dont elle est
+  # membre (le SIREN, jamais le nom — le nom vit dans la colonne nom), les
+  # EPCIs / départements / région portent NA (miroir de `departement`).
+  payload <- compute_payload(load_fixture())
+  tr <- payload$territoires
+
+  # une commune : son EPCI (SIREN)
+  expect_equal(tr$epci[tr$territoire == "22001"], "200000001")
+  expect_equal(tr$epci[tr$territoire == "29002"], "200000002")
+  # l'EPCI lui-même, le département et la région n'appartiennent à aucun EPCI
+  expect_true(all(is.na(tr$epci[tr$type != "commune"])))
+  # chaque EPCI de commune existe comme territoire EPCI de la référence
+  # (l'échelle du contexte switcher : commune -> EPCI -> département -> région)
+  expect_true(all(tr$epci[tr$type == "commune"] %in%
+                    tr$territoire[tr$type == "epci"]))
+})
+
+test_that("la table apercu porte les clés de l'Aperçu pour chaque territoire", {
+  # issue #32, ADR-0007 : la table des stats de base de l'onglet Aperçu —
+  # une ligne par (territoire × clé), l'app la rend, elle ne la dérive pas.
+  payload <- compute_payload(load_fixture())
+  ap <- payload$apercu
+
+  expect_named(ap, c("territoire", "type", "key", "value", "unit"))
+  # 9 territoires × 3 clés (population, densité, part 65+)
+  expect_equal(nrow(ap), 9 * 3)
+  expect_setequal(unique(ap$territoire), payload$territoires$territoire)
+  expect_setequal(unique(ap$key), c("population", "densite", "part_65_plus"))
+  # pas de doublon (territoire × clé)
+  expect_false(any(duplicated(ap[c("territoire", "key")])))
+  # la colonne type est cohérente avec la référence
+  for (code in unique(ap$territoire)) {
+    expect_equal(
+      ap$type[ap$territoire == code][1],
+      payload$territoires$type[payload$territoires$territoire == code],
+      info = code
+    )
+  }
+})
+
+test_that("la table apercu : les valeurs de base (population, densité, part 65+)", {
+  payload <- compute_payload(load_fixture())
+  ap <- payload$apercu
+
+  valeur <- function(code, cle) ap$value[ap$territoire == code & ap$key == cle]
+  # population : la population par territoire (somme par niveau d'agrégat)
+  expect_equal(valeur("22001", "population"), 2000)
+  expect_equal(valeur("200000001", "population"), 2400)
+  expect_equal(valeur("53", "population"), 8400)
+  # densité : population / superficie
+  expect_equal(valeur("22001", "densite"), 200)
+  # part 65+ : (65-79 + 80+) / population — dérivée des tranches de la
+  # structure par âge, jamais une seconde source de chiffres
+  expect_equal(valeur("22001", "part_65_plus"), (200 + 100) / 2000)
+  # les unités du contrat
+  expect_equal(ap$unit[ap$key == "population"], rep("hab.", 9))
+  expect_equal(ap$unit[ap$key == "densite"], rep("hab/km²", 9))
+  expect_equal(ap$unit[ap$key == "part_65_plus"], rep("%", 9))
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence", {
