@@ -119,7 +119,7 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     },
     construire_donnees_brut = function(cache) load_fixture(),
     vintages_demographie = function() faux_vintages,
-    compute_payload = function(data, vintage = VINTAGE_RP) list(),
+    compute_payload = function(data, vintages = NULL) list(),
     publish = function(payload, cible) invisible(payload),
     .package = "lusk"
   )
