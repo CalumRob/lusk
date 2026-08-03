@@ -10,3 +10,9 @@
 !/app/
 !/pipeline/
 !/.github/
+
+# ADRs — the decisions the code cites — are versioned, like their
+# siblings (docs/adr/0001..0003); the rest of docs/ stays local
+!/docs/
+/docs/*
+!/docs/adr/
