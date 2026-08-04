@@ -217,4 +217,10 @@
 
   --surface-chrome: rgba(255,255,255,0.8);
   --blur-chrome: 12px;
+
+  /* §7 — Hero band (landing): the hero's branded ground (mock V8). The mint
+   * washes in from the top-right and fades; the page surface does the rest.
+   * The carousel zone below stays on the plain --surface-secondary page
+   * ground — the band edge is the vertical separation. */
+  --surface-hero: radial-gradient(46rem 32rem at 82% -6%, color-mix(in oklab, var(--brand-100) 55%, transparent), transparent 70%), var(--surface-secondary);
 }

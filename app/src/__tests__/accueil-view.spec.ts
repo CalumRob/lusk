@@ -46,13 +46,64 @@ async function monter(charger: ChargerPayload, options: Record<string, unknown> 
 }
 
 describe('Accueil — le héros', () => {
-  it('porte la revendication en serif — voix produit, jamais la première personne', async () => {
+  it('porte la signature discrète du mock landing sur le héros', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const marque = wrapper.find('.accueil-hero .lusk-marque')
+    expect(marque.exists()).toBe(true)
+    expect(marque.text()).toContain('lusk')
+  })
+
+  it('dispose le lock-up dans la colonne de droite du héros (frère du contenu, jamais au-dessus du titre)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const interieur = wrapper.find('.accueil-hero-interieur')
+    const contenu = wrapper.find('.accueil-hero-contenu')
+    const marque = wrapper.find('.accueil-hero-marque')
+
+    expect(interieur.exists()).toBe(true)
+    expect(contenu.exists()).toBe(true)
+    expect(marque.exists()).toBe(true)
+    expect(contenu.element.parentElement).toBe(interieur.element)
+    expect(marque.element.parentElement).toBe(interieur.element)
+    expect(contenu.element.contains(marque.element)).toBe(false)
+  })
+
+  it('place le mot de la signature au-dessus de sa légende', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const marque = wrapper.find('.accueil-hero-marque')
+    const mot = wrapper.find('.lusk-marque__mot')
+    const ermine = wrapper.find('.lusk-marque__ermine')
+    const legende = wrapper.find('.accueil-marque-caption')
+    expect(marque.element.contains(ermine.element)).toBe(true)
+    expect(marque.element.contains(mot.element)).toBe(true)
+    expect(ermine.element.nextElementSibling).toBe(mot.element)
+    expect(mot.element.parentElement?.nextElementSibling).toBe(legende.element)
+  })
+
+  it('porte la légende du mock landing sous le mot', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    expect(wrapper.find('.accueil-marque-caption').text()).toBe('breton · élan, mouvement')
+  })
+
+  it('porte le titre « lusk · Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
     const { wrapper } = await monter(async () => payload)
 
     const accroche = wrapper.find('.accueil-accroche').text()
-    expect(accroche).toContain('Lusk transforme des données publiques')
+    expect(accroche).toBe('lusk · Intelligence territoriale en Bretagne')
     expect(accroche).not.toMatch(/\bJe\b/)
     expect(wrapper.find('.accueil-sous-titre').exists()).toBe(true)
+  })
+
+  it('le sous-titre énonce la promesse ET le périmètre (Bretagne, données publiques)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const sousTitre = wrapper.find('.accueil-sous-titre').text()
+    expect(sousTitre).toContain('intelligence territoriale')
+    expect(sousTitre).toContain('Bretagne')
+    expect(sousTitre).toContain('données publiques')
   })
 
   it('propose la recherche globale branchée sur les territoires', async () => {
@@ -111,6 +162,27 @@ describe('Accueil — EXEMPLES (Sélection aléatoire)', () => {
 
     const liens = wrapper.findAll('.carrousel-carte')
     expect(liens[0].attributes('href')).toMatch(/^\/territoire\/(commune|epci|departement|region)\//)
+  })
+})
+
+describe('Accueil — héros vs carrousel : fonds et séparation verticale', () => {
+  it('le héros est une bande pleine largeur, distincte de la zone de contenu du carrousel', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const { wrapper } = await monter(async () => payload)
+
+    const hero = wrapper.find('.accueil-hero')
+    const interieur = wrapper.find('.accueil-interieur')
+    const carrousel = wrapper.find('.accueil-exemples')
+
+    expect(hero.exists()).toBe(true)
+    expect(interieur.exists()).toBe(true)
+    expect(carrousel.exists()).toBe(true)
+
+    // Le héros est une bande à part entière (pleine largeur), pas une zone
+    // dans la page : le carrousel vit sur le fond de page, en dessous.
+    expect(hero.element.parentElement?.classList.contains('accueil')).toBe(true)
+    expect(carrousel.element.parentElement?.classList.contains('accueil-interieur')).toBe(true)
+    expect(interieur.element.contains(hero.element)).toBe(false)
   })
 })
 

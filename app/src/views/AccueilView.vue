@@ -1,11 +1,17 @@
 <script setup lang="ts">
 /**
  * L'accueil — the landing (layouts.md §1 + site-map.md). The visitor's
- * decision path: claim → prove → entice → trust. The serif claim is the hero
- * moment (DESIGN.md §1); the GlobalSearchBar is the way into any fiche; the
- * freshness line makes the "alive" promise literal (ligneFraicheur from the
- * run report); EXEMPLES shows a random selection of fiches (EntityCarousel);
- * the outro closes with the thesis-as-evidence teaser and Sources & Méthodes.
+ * decision path: brand → claim → prove → entice → trust. The hero opens with
+ * the LuskBrand lockup and the title « lusk · Intelligence territoriale en
+ * Bretagne » (mock/brand/iterations/v8.html — the brand moment, DESIGN.md §1);
+ * the GlobalSearchBar is the way into any fiche; the freshness line makes the
+ * "alive" promise literal (ligneFraicheur from the run report); EXEMPLES shows
+ * a random selection of fiches (EntityCarousel); the outro closes with the
+ * thesis-as-evidence teaser and Sources & Méthodes.
+ *
+ * The hero is its own full-bleed band on --surface-hero, separated vertically
+ * from the carousel zone (plain page surface) by the band edge + border
+ * (DESIGN.md §7) — the two landing zones never blur together.
  *
  * States (ui-elements.md): skeleton while the payload loads; typed
  * PayloadError with a Retry button; honest static-rhythm freshness fallback.
@@ -18,6 +24,7 @@ import { computed, ref, watchEffect } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import EntityCarousel from '@/components/landing/EntityCarousel.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
+import LuskBrand from '@/components/LuskBrand.vue'
 import { selectionAleatoire } from '@/landing/selection'
 import { ligneFraicheur } from '@/payload/selectors'
 import type { Territoire } from '@/payload/types'
@@ -56,44 +63,54 @@ watchEffect(() => {
 
 <template>
   <section class="accueil" :aria-busy="chargement ? 'true' : 'false'">
-    <div class="accueil-interieur">
-      <header class="accueil-hero">
-        <p class="accueil-accroche">
-          «&nbsp;Lusk transforme des données publiques éparses en intelligence territoriale.&nbsp;»
-        </p>
-        <p class="accueil-sous-titre">
-          Lusk rassemble les chiffres ouverts de la Bretagne — communes, EPCI, départements —
-          en une fiche d’identité lisible pour chaque territoire.
-        </p>
+    <header class="accueil-hero">
+      <div class="accueil-hero-interieur">
+        <div class="accueil-hero-contenu">
+          <p class="accueil-accroche">
+            lusk · Intelligence territoriale en Bretagne
+          </p>
+          <p class="accueil-sous-titre">
+            Lusk transforme les données publiques éparses de la Bretagne en intelligence
+            territoriale — pour chaque commune, EPCI et département, une fiche d'identité
+            lisible, sourcée et datée.
+          </p>
 
-        <GlobalSearchBar
-          class="accueil-recherche"
-          :territoires="territoires"
-          :chargement="chargement"
-          :erreur="messagesErreur"
-        />
-
-        <div class="accueil-produit">
-          <RouterLink to="/carte" class="accueil-carte">
-            <AppIcon :icone="Map" :taille="18" aria-hidden="true" />
-            La carte interactive
-            <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
-          </RouterLink>
-
-          <RouterLink
-            v-if="fraicheur"
-            :to="{ path: '/methodologie' }"
-            class="accueil-fraicheur"
-          >{{ fraicheur }}</RouterLink>
-          <div
-            v-else
-            class="squelette squelette--fraicheur"
-            role="status"
-            aria-label="Chargement des données"
+          <GlobalSearchBar
+            class="accueil-recherche"
+            :territoires="territoires"
+            :chargement="chargement"
+            :erreur="messagesErreur"
           />
-        </div>
-      </header>
 
+          <div class="accueil-produit">
+            <RouterLink to="/carte" class="accueil-carte">
+              <AppIcon :icone="Map" :taille="18" aria-hidden="true" />
+              La carte interactive
+              <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
+            </RouterLink>
+
+            <RouterLink
+              v-if="fraicheur"
+              :to="{ path: '/methodologie' }"
+              class="accueil-fraicheur"
+            >{{ fraicheur }}</RouterLink>
+            <div
+              v-else
+              class="squelette squelette--fraicheur"
+              role="status"
+              aria-label="Chargement des données"
+            />
+          </div>
+        </div>
+
+        <div class="accueil-hero-marque" aria-label="Lusk — breton, élan, mouvement">
+          <LuskBrand verticale class="accueil-marque" />
+          <span class="accueil-marque-caption">breton · élan, mouvement</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="accueil-interieur">
       <EntityCarousel
         v-if="exemples.length > 0"
         class="accueil-exemples"
@@ -125,6 +142,70 @@ watchEffect(() => {
   background: var(--surface-secondary);
 }
 
+/* ---- La bande du héros : son propre fond de marque (--surface-hero, DESIGN.md
+   §7), pleine largeur — la bande se termine par un liseré, puis la zone de
+   contenu reprend le fond de page : les deux zones ne se confondent pas. ---- */
+.accueil-hero {
+  background: var(--surface-hero);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.accueil-hero-interieur {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding: var(--space-16) var(--grid-margin-mobile) var(--space-20);
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: var(--space-12);
+  align-items: center;
+}
+
+.accueil-hero-contenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 760px;
+}
+
+/* La signature du héros (mock/landing.html) reste une atmosphère discrète :
+   grand mot serif pâle, puis sa légende sous-jacente. */
+.accueil-hero-marque {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  user-select: none;
+}
+
+.accueil-hero-marque :deep(.lusk-marque) {
+  font: 600 clamp(4.5rem, 9vw, 7.5rem)/0.9 var(--font-serif);
+  font-style: italic;
+  letter-spacing: -0.02em;
+  color: color-mix(in oklab, var(--brand-200) 55%, var(--surface-secondary));
+}
+
+.accueil-hero-marque :deep(.lusk-marque__ermine) {
+  width: 80px;
+  height: 80px;
+}
+
+.accueil-marque-caption {
+  font: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 767.98px) {
+  .accueil-hero-interieur {
+    grid-template-columns: 1fr;
+    gap: var(--space-10);
+  }
+}
+
 .accueil-interieur {
   width: 100%;
   max-width: var(--content-max-width);
@@ -133,14 +214,6 @@ watchEffect(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-}
-
-/* ---- Le héros : la revendication est le moment serif (DESIGN.md §1) ---- */
-.accueil-hero {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  max-width: 760px;
 }
 
 .accueil-accroche {

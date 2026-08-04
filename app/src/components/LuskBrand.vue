@@ -5,11 +5,21 @@
  * The ermine is a locked brand asset: body ink #1B1B19, tail/eye/ear green
  * #57726F (= --brand-500) — its colors are hardcoded, never tokenized. The
  * wordmark text follows the host link's color (--text-primary).
+ *
+ * `verticale` (mock/brand/iterations/v8.html — the hero lock-up): the ermine
+ * stacks ABOVE the word, the mark reads as a column (hero right column), not
+ * the horizontal header lock-up.
  */
+defineProps<{
+  verticale?: boolean
+}>()
 </script>
 
 <template>
-  <span class="lusk-marque">
+  <span
+    class="lusk-marque"
+    :class="{ 'lusk-marque--verticale': verticale }"
+  >
     <svg class="lusk-marque__ermine" viewBox="15 95.7 86.4 47" aria-hidden="true" focusable="false">
       <!-- queue (derrière le corps) -->
       <path d="m47.3 109.7c-11.5 3.4-21.7 10.8-26.8 20.4-0.7 1.4-1.4 3.1-0.6 5.6 0.6 1.5 1.8 2.7 4.1 2.8 4.6 0.2 8.8-3.9 12.2-10.2l0.3-0.5c2-3.7 4.4-7.7 7.9-9.6l0.4-0.3" fill="#57726F" />
@@ -35,10 +45,20 @@
   color: var(--text-primary);
 }
 
+.lusk-marque--verticale {
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
 
 .lusk-marque__ermine {
   width: 26px;
   height: 26px;
   flex-shrink: 0;
+}
+
+.lusk-marque--verticale .lusk-marque__ermine {
+  width: 34px;
+  height: 34px;
 }
 </style>
