@@ -1,19 +1,22 @@
 <script setup lang="ts">
 /**
  * AppHeader (DESIGN.md §5 + site-map.md §Navigation): sticky 60px chrome,
- * Lusk wordmark (serif → /), centered nav Accueil · Carte · Données ·
- * Méthodes with a 2px underline on the active route, Contact →
- * calumrobertson.fr (external). No locale toggle (French-only v1).
+ * Lusk wordmark (serif → /) — the sole home affordance (#61) — centered nav
+ * Carte · Données · Méthodes with a 2px underline on the active route,
+ * Contact → calumrobertson.fr (external). No locale toggle (French-only v1).
  *
- * F3 (#53): the GlobalSearchBar is embedded on every page — search works
- * everywhere (the landing hero also carries one). Selecting a result closes
- * the mobile drawer. The compact variant drops the tabs row for the 60px bar.
+ * F3 (#53) + #61: search works everywhere, but the header's always-open
+ * compact bar collapses into a « Rechercher » button; clicking it expands
+ * the GlobalSearchBar in an overlay below the 60px header (dismiss on
+ * outside click / Escape, managed focus). The landing hero and the drawer
+ * keep their always-open search. Selecting a result closes the overlay and
+ * the mobile drawer.
  *
  * Mobile (<768px): full-screen drawer — transform-only, scroll-lock, focus
  * trap, Escape closes. Données is a small disclosure dropdown to the three
  * lists (site-map.md: « may be a small dropdown »).
  */
-import { ChevronDown, ExternalLink, Menu, X } from 'lucide-vue-next'
+import { ChevronDown, ExternalLink, Menu, Search, X } from 'lucide-vue-next'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -38,7 +41,6 @@ const SOUS_LIENS_DONNEES = [
 ] as const
 
 const LIENS_TIROIR = [
-  { label: 'Accueil', chemin: '/' },
   { label: 'Carte', chemin: '/carte' },
   { label: 'Données', chemin: '/communes' },
   { label: 'Méthodes', chemin: '/methodologie' },
@@ -50,7 +52,6 @@ function correspond(prefixes: readonly string[], chemin: string): boolean {
   )
 }
 
-const accueilActif = computed(() => route.path === '/')
 const carteActif = computed(() => correspond(['/carte'], route.path))
 const methodesActif = computed(() => correspond(['/methodologie'], route.path))
 const donneesActif = computed(() =>
@@ -58,7 +59,6 @@ const donneesActif = computed(() =>
 )
 
 const liensSimples = computed(() => [
-  { label: 'Accueil', chemin: '/', actif: accueilActif.value },
   { label: 'Carte', chemin: '/carte', actif: carteActif.value },
 ])
 
@@ -75,6 +75,49 @@ function fermerDonneesHors(ev: Event): void {
 watch(donneesOuvert, (ouvert) => {
   if (ouvert) document.addEventListener('pointerdown', fermerDonneesHors, true)
   else document.removeEventListener('pointerdown', fermerDonneesHors, true)
+})
+
+/* ---- Recherche (#61): the « Rechercher » button expands the search in an
+   overlay below the 60px header. Managed focus: into the input on open,
+   back to the button on close. Escape and outside clicks dismiss. */
+const rechercheOuverte = ref(false)
+const boutonRecherche = ref<HTMLButtonElement | null>(null)
+const panneauRecherche = ref<HTMLElement | null>(null)
+const conteneurRecherche = ref<HTMLElement | null>(null)
+
+async function ouvrirRecherche(): Promise<void> {
+  rechercheOuverte.value = true
+  await nextTick()
+  panneauRecherche.value?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus()
+}
+
+function fermerRecherche(rendreFocus = true): void {
+  if (!rechercheOuverte.value) return
+  rechercheOuverte.value = false
+  if (rendreFocus) boutonRecherche.value?.focus()
+}
+
+function fermerRechercheHors(ev: Event): void {
+  if (conteneurRecherche.value && !conteneurRecherche.value.contains(ev.target as Node)) {
+    fermerRecherche()
+  }
+}
+
+function surToucheRecherche(ev: KeyboardEvent): void {
+  if (ev.key === 'Escape') {
+    ev.preventDefault()
+    fermerRecherche()
+  }
+}
+
+watch(rechercheOuverte, (estOuverte) => {
+  if (estOuverte) {
+    document.addEventListener('pointerdown', fermerRechercheHors, true)
+    document.addEventListener('keydown', surToucheRecherche, true)
+  } else {
+    document.removeEventListener('pointerdown', fermerRechercheHors, true)
+    document.removeEventListener('keydown', surToucheRecherche, true)
+  }
 })
 
 /* ---- Tiroir mobile (drawer) ---- */
@@ -132,6 +175,8 @@ watch(ouvert, (estOuvert) => {
 onUnmounted(() => {
   document.removeEventListener('keydown', surToucheTiroir, true)
   document.removeEventListener('pointerdown', fermerDonneesHors, true)
+  document.removeEventListener('pointerdown', fermerRechercheHors, true)
+  document.removeEventListener('keydown', surToucheRecherche, true)
   document.body.classList.remove('tiroir-verrouille')
 })
 </script>
@@ -188,14 +233,36 @@ onUnmounted(() => {
         >Méthodes</RouterLink>
       </nav>
 
-      <GlobalSearchBar
-        class="en-tete-recherche"
-        compacte
-        :territoires="territoires"
-        :chargement="chargement"
-        :erreur="messageErreur"
-        @select="fermer()"
-      />
+      <div ref="conteneurRecherche" class="en-tete-recherche">
+        <button
+          ref="boutonRecherche"
+          type="button"
+          class="bouton-recherche"
+          :aria-expanded="rechercheOuverte ? 'true' : 'false'"
+          aria-controls="recherche-superposee"
+          @click="rechercheOuverte ? fermerRecherche() : ouvrirRecherche()"
+        >
+          <AppIcon :icone="Search" :taille="18" />
+          Rechercher
+        </button>
+
+        <div
+          v-if="rechercheOuverte"
+          id="recherche-superposee"
+          ref="panneauRecherche"
+          class="recherche-superposee"
+        >
+          <div class="recherche-superposee-interieur">
+            <GlobalSearchBar
+              class="recherche-superposee-barre"
+              :territoires="territoires"
+              :chargement="chargement"
+              :erreur="messageErreur"
+              @select="fermerRecherche(); fermer()"
+            />
+          </div>
+        </div>
+      </div>
 
       <a
         class="bouton-contact"
@@ -304,10 +371,66 @@ onUnmounted(() => {
   text-decoration: none;
 }
 
-/* F3 (#53): the compact search sits right-aligned before Contact. */
+/* F3 (#53) + #61: the search collapses into the « Rechercher » button,
+   right-aligned before Contact; the expanded bar overlays below the header. */
 .en-tete-recherche {
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.bouton-recherche {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-primary);
+  color: var(--text-primary);
+  font: var(--text-body-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-subtle);
+  cursor: pointer;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.bouton-recherche:hover,
+.bouton-recherche[aria-expanded='true'] {
+  background: var(--surface-tertiary);
+  border-color: var(--brand-500);
+}
+
+.recherche-superposee {
+  position: fixed;
+  top: var(--header-height);
+  left: 0;
+  right: 0;
+  z-index: var(--z-header);
+  padding: var(--space-4) 0;
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-default);
+  box-shadow: var(--shadow-prominent);
+  animation: recherche-apparition 200ms ease-in-out;
+}
+
+.recherche-superposee-interieur {
+  max-width: var(--header-max-width);
+  margin-inline: auto;
+  padding: 0 var(--space-6);
+  display: flex;
+  justify-content: flex-end;
+}
+
+@keyframes recherche-apparition {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .nav-bureau {
