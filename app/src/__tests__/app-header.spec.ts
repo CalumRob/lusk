@@ -96,6 +96,32 @@ describe('AppHeader — le mot-clé et la navigation', () => {
   })
 })
 
+describe('AppHeader — les cibles de navigation résolvent', () => {
+  it('points Méthodes at the registered /methodologie route', async () => {
+    const { wrapper } = await montage()
+
+    const methodes = wrapper.find('.nav-bureau a[href="/methodologie"]')
+    expect(methodes.exists()).toBe(true)
+    expect(methodes.text()).toBe('Méthodes')
+    expect(routes.some((r) => r.path === '/methodologie')).toBe(true)
+  })
+
+  it('resolves every internal nav target against the route table', async () => {
+    const { wrapper } = await montage()
+
+    const cheminsRoutes = new Set<string>(routes.map((r) => r.path))
+    const cibles = wrapper
+      .findAll('.nav-bureau a, .tiroir a')
+      .map((l) => l.attributes('href'))
+      .filter((href): href is string => !!href && href.startsWith('/'))
+
+    expect(cibles.length).toBeGreaterThan(0)
+    for (const cible of cibles) {
+      expect(cheminsRoutes.has(cible)).toBe(true)
+    }
+  })
+})
+
 describe('AppHeader — le menu Données', () => {
   it('opens the three data-list links on click', async () => {
     const { wrapper } = await montage()

@@ -30,8 +30,8 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 | `/epcis` | `epcis` | Placeholder |
 | `/departements` | `departements` | Placeholder |
 | `/territoire/:type/:id` | `territoire` | **Built** — fiche shell (#35) |
-| `/methodologie` | `methodologie` | Placeholder |
-| `/a-propos` | `a-propos` | Placeholder |
+| `/methodologie` | `methodologie` | **Shell** — Sources & Méthodes (#42) |
+| `/a-propos` | `a-propos` | **Shell** — À propos (#42) |
 
 ## Deploy path
 
