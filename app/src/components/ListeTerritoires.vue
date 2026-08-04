@@ -119,7 +119,7 @@ function basculerTri(cle: CleColonne): void {
 }
 
 /** aria-sort: the ARIA values, not the internal short forms. */
-function ariaSort(cle: CleColonne): string {
+function ariaSort(cle: CleColonne): 'none' | 'ascending' | 'descending' {
   if (tri.value.cle !== cle) return 'none'
   return tri.value.sens === 'asc' ? 'ascending' : 'descending'
 }

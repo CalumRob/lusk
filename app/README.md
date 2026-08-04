@@ -20,15 +20,15 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 
 ## Routes
 
-The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The other routes are placeholders until their tickets land:
+The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The three **data lists** are built — `/communes`, `/epcis`, `/departements` as filterable link directories to the fiches (issue #40), sharing `src/components/ListeTerritoires.vue` over the pure list logic in `src/listes/listes.ts`. The remaining routes are placeholders until their tickets land:
 
 | Route | Name | Status |
 |---|---|---|
 | `/` | `accueil` | Placeholder |
 | `/carte` | `carte` | Placeholder |
-| `/communes` | `communes` | Placeholder |
-| `/epcis` | `epcis` | Placeholder |
-| `/departements` | `departements` | Placeholder |
+| `/communes` | `communes` | **Built** — link directory (#40) |
+| `/epcis` | `epcis` | **Built** — link directory (#40) |
+| `/departements` | `departements` | **Built** — link directory (#40) |
 | `/territoire/:type/:id` | `territoire` | **Built** — fiche shell (#35) |
 | `/methodologie` | `methodologie` | Placeholder |
 | `/a-propos` | `a-propos` | Placeholder |
