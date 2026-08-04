@@ -123,46 +123,6 @@ function lireChaine(ligne: LigneBrute, champ: string, fichier: string, i: number
   return valeur
 }
 
-/** Une date ISO, ou null — la base roulante DPE n'a pas de date de référence (spec #12). */
-function lireDateNullable(
-  ligne: LigneBrute,
-  champ: string,
-  fichier: string,
-  i: number,
-): string | null {
-  const valeur = ligne[champ]
-  if (valeur === null) return null
-  exiger(estDateIso(valeur), fichier, i, `« ${champ} » doit être une date ISO (AAAA-MM-JJ)`)
-  return valeur
-}
-
-/** Un nombre, ou absent — les colonnes par thème de la table histoires. */
-function lireNombreOptional(
-  ligne: LigneBrute,
-  champ: string,
-  fichier: string,
-  i: number,
-): number | null | undefined {
-  const valeur = ligne[champ]
-  if (valeur === undefined) return undefined
-  if (valeur === null) return null
-  exiger(estNombre(valeur), fichier, i, `« ${champ} » doit être un nombre`)
-  return valeur
-}
-
-/** Une chaîne, ou null — la lecture d'une Story supprimée (petit échantillon). */
-function lireChaineNullable(
-  ligne: LigneBrute,
-  champ: string,
-  fichier: string,
-  i: number,
-): string | null {
-  const valeur = ligne[champ]
-  if (valeur === null) return null
-  exiger(estChaine(valeur), fichier, i, `« ${champ} » doit être une chaîne`)
-  return valeur
-}
-
 function lireType(ligne: LigneBrute, fichier: string, i: number): TerritoireType {
   const valeur = ligne['type']
   exiger(
@@ -308,8 +268,22 @@ export function validerIndicateurs(
 
     const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
     const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
-    const vintage_date_reference = lireDateNullable(ligne, 'vintage_date_reference', fichier, ligneIndexee)
-    const vintage_date_publication = lireDateNullable(ligne, 'vintage_date_publication', fichier, ligneIndexee)
+    const vintage_date_reference = ligne['vintage_date_reference']
+    const vintage_date_publication = ligne['vintage_date_publication']
+    // La date de référence est null pour une base roulante (DPE — ADR-0009,
+    // spec #12 : date_reference NA, date_publication = date du pull).
+    exiger(
+      vintage_date_reference === null || estDateIso(vintage_date_reference),
+      fichier,
+      ligneIndexee,
+      '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ) ou null',
+    )
+    exiger(
+      estDateIso(vintage_date_publication),
+      fichier,
+      ligneIndexee,
+      '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
+    )
 
     return {
       territoire,
@@ -330,7 +304,7 @@ export function validerIndicateurs(
   })
 }
 
-/** The histoires (Story) facts table. */
+/** The histoires (Story) facts table — per-theme shape (types.ts). */
 export function validerHistoires(
   brut: unknown,
   fichier: string,
@@ -354,29 +328,56 @@ export function validerHistoires(
     const theme = lireTheme(ligne, fichier, ligneIndexee)
     const story_key = lireChaine(ligne, 'story_key', fichier, ligneIndexee)
 
-    const classification = lireChaineNullable(ligne, 'classification', fichier, ligneIndexee)
-
-    // La table histoires est par thème : Démographie publie les soldes,
-    // Habitat les parts DPE. Les champs de l'autre thème sont absents —
-    // présents, ils doivent être des nombres.
-    const solde_naturel = lireNombreOptional(ligne, 'solde_naturel', fichier, ligneIndexee)
-    const solde_migratoire = lireNombreOptional(ligne, 'solde_migratoire', fichier, ligneIndexee)
-    const part_passoires = lireNombreOptional(ligne, 'part_passoires', fichier, ligneIndexee)
-    const part_abc = lireNombreOptional(ligne, 'part_abc', fichier, ligneIndexee)
-    const n_dpe = lireNombreOptional(ligne, 'n_dpe', fichier, ligneIndexee)
-
-    return {
-      territoire,
-      type,
-      theme,
-      story_key,
-      classification,
-      solde_naturel,
-      solde_migratoire,
-      part_passoires,
-      part_abc,
-      n_dpe,
+    // La forme du Story est spécifique au thème (le contrat R) : Démographie
+    // porte les deux soldes, Habitat les parts de lecture du parc.
+    if (theme === 'demographie') {
+      const solde_naturel = ligne['solde_naturel']
+      const solde_migratoire = ligne['solde_migratoire']
+      exiger(estNombre(solde_naturel), fichier, ligneIndexee, '« solde_naturel » doit être un nombre')
+      exiger(estNombre(solde_migratoire), fichier, ligneIndexee, '« solde_migratoire » doit être un nombre')
+      const classification = lireChaine(ligne, 'classification', fichier, ligneIndexee)
+      return {
+        territoire,
+        type,
+        theme,
+        story_key,
+        solde_naturel,
+        solde_migratoire,
+        classification,
+      }
     }
+
+    if (theme === 'habitat') {
+      // La classification et les parts sont null sous le seuil de suppression
+      // n < 30 (le n, lui, est publié — test-histoires-habitat.R).
+      const classification = ligne['classification']
+      exiger(
+        classification === null || estChaine(classification),
+        fichier,
+        ligneIndexee,
+        '« classification » doit être une chaîne ou null',
+      )
+      const part_passoires = ligne['part_passoires']
+      const part_abc = ligne['part_abc']
+      const n_dpe = ligne['n_dpe']
+      exiger(estValeur(part_passoires), fichier, ligneIndexee, '« part_passoires » doit être un nombre ou null')
+      exiger(estValeur(part_abc), fichier, ligneIndexee, '« part_abc » doit être un nombre ou null')
+      exiger(estNombre(n_dpe), fichier, ligneIndexee, '« n_dpe » doit être un nombre')
+      return {
+        territoire,
+        type,
+        theme,
+        story_key,
+        classification,
+        part_passoires,
+        part_abc,
+        n_dpe,
+      }
+    }
+
+    // Un thème sans Story construite ne publie pas d'histoires (le loader 404
+    // sur histoires_<theme>.json) — une ligne ici est une dérive du contrat.
+    throw erreur(fichier, ligneIndexee, `Story du thème « ${theme} » inconnue de l'app`)
   })
 }
 

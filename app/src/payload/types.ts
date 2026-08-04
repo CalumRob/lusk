@@ -55,33 +55,39 @@ export interface Indicateur {
   rang_reg: number | null
   vintage_source: string
   vintage_version: string
-  /** Null when the source has no reference date (the DPE rolling base — pipeline spec #12). */
+  /** The reference date — null for a rolling base (DPE: ADR-0009, spec #12). */
   vintage_date_reference: string | null
-  vintage_date_publication: string | null
+  vintage_date_publication: string
 }
 
 /**
- * One story row per territoire. The pipeline's single `histoires` table is
- * theme-specific: Démographie (« Attractive ou fertile ? ») publishes the
- * soldes, Habitat (« L'état énergétique du parc ») publishes the DPE parts —
- * the columns of the other theme are absent from the row. The app mirrors
- * that: the common fields are required, the per-theme fields optional.
+ * The Story row per territoire (schema name kept: histoires) — the shape is
+ * theme-specific (the R contract: Démographie carries the two soldes, Habitat
+ * the parc-reading parts). Discriminated by `theme`.
  */
-export interface Histoire {
+export interface HistoireDemographie {
   territoire: string
   type: TerritoireType
-  theme: Theme
+  theme: 'demographie'
   story_key: string
-  /** Null = lecture impossible (échantillon DPE trop petit) — jamais inventée. */
-  classification: string | null
-  /** Démographie — les soldes du « Attractive ou fertile ? ». */
-  solde_naturel?: number | null
-  solde_migratoire?: number | null
-  /** Habitat — les parts du « L'état énergétique du parc ». */
-  part_passoires?: number | null
-  part_abc?: number | null
-  n_dpe?: number | null
+  solde_naturel: number
+  solde_migratoire: number
+  classification: string
 }
+
+export interface HistoireHabitat {
+  territoire: string
+  type: TerritoireType
+  theme: 'habitat'
+  story_key: string
+  /** Classification + parts de justification null sous le seuil n < 30 (suppression, R contract). */
+  classification: string | null
+  part_passoires: number | null
+  part_abc: number | null
+  n_dpe: number
+}
+
+export type Histoire = HistoireDemographie | HistoireHabitat
 
 /** One basic-stat row per (territoire × key) — the Aperçu tab renders it, never derives it. */
 export interface ApercuRow {

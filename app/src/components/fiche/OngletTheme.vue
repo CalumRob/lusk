@@ -42,15 +42,13 @@ const histoire = computed(() =>
   histoirePourTerritoire(props.payload, props.theme, props.territoire),
 )
 
-const story = computed(() => storyDemographie(histoire.value?.classification ?? null))
+// The solde chart is the Démographie story's shape only; the block guards on
+// the theme before touching the theme-specific fields of the Histoire union.
+const histoireDemographie = computed(() =>
+  histoire.value?.theme === 'demographie' ? histoire.value : null,
+)
 
-/** Les soldes du graphique — présents exactement quand la Story Démographie l'est. */
-const soldesStory = computed<{ naturel: number; migratoire: number } | null>(() => {
-  const h = histoire.value
-  if (!story.value || !h) return null
-  if (typeof h.solde_naturel !== 'number' || typeof h.solde_migratoire !== 'number') return null
-  return { naturel: h.solde_naturel, migratoire: h.solde_migratoire }
-})
+const story = computed(() => storyDemographie(histoire.value?.classification ?? null))
 
 const nomTerritoire = computed(
   () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
@@ -90,10 +88,10 @@ function libelleIndicateur(clef: string): string {
       <p class="angle-story-titre">{{ story.titre }}</p>
       <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
       <GraphiqueSoldes
-        v-if="soldesStory"
-        :solde-naturel="soldesStory.naturel"
-        :solde-migratoire="soldesStory.migratoire"
-        :classification="histoire!.classification ?? ''"
+        v-if="histoireDemographie"
+        :solde-naturel="histoireDemographie.solde_naturel"
+        :solde-migratoire="histoireDemographie.solde_migratoire"
+        :classification="histoireDemographie.classification"
         :nom="nomTerritoire"
       />
       <p class="angle-story-comment-lire">

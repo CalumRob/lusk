@@ -20,18 +20,18 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 
 ## Routes
 
-The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The **carte interactive** (`/carte`) is built too (issue #39) — MapExplorer (MapLibre GL, CARTO Voyager basemap, GeoJSON territory masks per ADR-0008, theme-driven indicator layers), MapSidebar (search, mask levels, legend), and the same ThemeTabs subheader. maplibre-gl is lazy-loaded with the route (a ~225 ko gzip chunk on `/carte` only). The remaining routes are placeholders until their tickets land:
+The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The **carte interactive** (`/carte`) is built too (issue #39) — MapExplorer (MapLibre GL, CARTO Voyager basemap, GeoJSON territory masks per ADR-0008, theme-driven indicator layers), MapSidebar (search, mask levels, legend), and the same ThemeTabs subheader. maplibre-gl is lazy-loaded with the route (a ~225 ko gzip chunk on `/carte` only). The three **data lists** are built — `/communes`, `/epcis`, `/departements` as filterable link directories to the fiches (issue #40), sharing `src/components/ListeTerritoires.vue` over the pure list logic in `src/listes/listes.ts`. The remaining routes are placeholders until their tickets land:
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | Placeholder |
+| `/` | `accueil` | **Built** — landing (#41) |
 | `/carte` | `carte` | **Built** — map (#39) |
-| `/communes` | `communes` | Placeholder |
-| `/epcis` | `epcis` | Placeholder |
-| `/departements` | `departements` | Placeholder |
+| `/communes` | `communes` | **Built** — link directory (#40) |
+| `/epcis` | `epcis` | **Built** — link directory (#40) |
+| `/departements` | `departements` | **Built** — link directory (#40) |
 | `/territoire/:type/:id` | `territoire` | **Built** — fiche shell (#35) |
-| `/methodologie` | `methodologie` | Placeholder |
-| `/a-propos` | `a-propos` | Placeholder |
+| `/methodologie` | `methodologie` | **Shell** — Sources & Méthodes (#42) |
+| `/a-propos` | `a-propos` | **Shell** — À propos (#42) |
 
 ## Deploy path
 

@@ -25,9 +25,9 @@ export function normaliserTexte(texte: string): string {
   return texte
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
     .replace(/œ/g, 'oe')
     .replace(/æ/g, 'ae')
-    .toLowerCase()
     .replace(/[\s'’\-]+/g, ' ')
     .trim()
 }

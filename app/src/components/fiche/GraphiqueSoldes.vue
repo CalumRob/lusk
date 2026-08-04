@@ -11,16 +11,14 @@
  * (getComputedStyle), never hardcoded. The data is ALSO rendered as text
  * (role=img aria-label + a legend line) so the figure never depends on
  * canvas alone (WCAG 2.2 AA, color never the sole carrier).
+ *
+ * ECharts is code-split (issue #51): the tree-shaken registration lives in
+ * ./echarts.ts, imported dynamically on mount — the shell never loads it.
  */
-import { ScatterChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import * as echarts from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import type * as echarts from 'echarts/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { formaterSolde } from '@/payload/selectors'
-
-echarts.use([ScatterChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps<{
   soldeNaturel: number
@@ -118,10 +116,12 @@ function redimensionner(): void {
   instance?.resize()
 }
 
-onMounted(() => {
-  if (!conteneur.value) return
+onMounted(async () => {
+  const el = conteneur.value
+  if (!el) return
   try {
-    instance = echarts.init(conteneur.value)
+    const { echarts } = await import('./echarts')
+    instance = echarts.init(el)
     instance.setOption(optionGraphique())
   } catch {
     instance = null
