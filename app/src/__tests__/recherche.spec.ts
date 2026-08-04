@@ -48,6 +48,11 @@ describe('normaliserTexte — accent-insensitive, separator-tolerant normalizati
     expect(normaliserTexte('Rœux')).toBe('roeux')
     expect(normaliserTexte('Cæsar')).toBe('caesar')
   })
+
+  it('expands uppercase ligatures too — lowercased before expansion', () => {
+    expect(normaliserTexte('PLŒUC-SUR-LIÉ')).toBe('ploeuc sur lie')
+    expect(normaliserTexte('ŒUVRES')).toBe('oeuvres')
+  })
 })
 
 describe('rechercherTerritoires — search over the territoires reference table', () => {
