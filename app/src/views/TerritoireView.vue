@@ -135,12 +135,15 @@ watch(
           <span v-else aria-current="page">Région</span>
         </nav>
 
-        <div class="fiche-titre">
-          <h1>{{ nomTerritoire }}</h1>
-          <span class="puce-type">{{ nomType }}</span>
+        <div class="fiche-identite">
+          <div class="fiche-titre">
+            <h1>{{ nomTerritoire }}</h1>
+          </div>
+          <div class="fiche-actions">
+            <span class="puce-type">{{ nomType }}</span>
+            <ContexteSwitcher :echelons="echelons" />
+          </div>
         </div>
-
-        <ContexteSwitcher :echelons="echelons" />
       </template>
     </div>
 
@@ -221,18 +224,34 @@ watch(
   color: var(--text-tertiary);
 }
 
+.fiche-identite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
 .fiche-titre {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
 }
 
 .fiche-titre h1 {
   margin: 0;
   font: var(--text-h1);
   letter-spacing: var(--text-h1-tracking);
+}
+
+.fiche-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3) var(--space-4);
 }
 
 .puce-type {
