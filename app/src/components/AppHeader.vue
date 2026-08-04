@@ -19,6 +19,7 @@ import { useRoute } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
+import LuskBrand from '@/components/LuskBrand.vue'
 import { usePayload } from '@/payload/usePayload'
 import type { Territoire } from '@/payload/types'
 
@@ -138,7 +139,9 @@ onUnmounted(() => {
 <template>
   <header class="en-tete">
     <div class="en-tete-interieur">
-      <RouterLink to="/" class="en-tete-marque">Lusk</RouterLink>
+      <RouterLink to="/" class="en-tete-marque" aria-label="lusk — Accueil">
+        <LuskBrand />
+      </RouterLink>
 
       <nav class="nav-bureau" aria-label="Navigation principale">
         <RouterLink
@@ -225,7 +228,9 @@ onUnmounted(() => {
       :aria-hidden="ouvert ? 'false' : 'true'"
     >
       <div class="tiroir-tete">
-        <RouterLink to="/" class="en-tete-marque" @click="fermer()">Lusk</RouterLink>
+        <RouterLink to="/" class="en-tete-marque" @click="fermer()">
+          <LuskBrand />
+        </RouterLink>
         <button
           type="button"
           class="tiroir-fermer"
@@ -294,9 +299,9 @@ onUnmounted(() => {
 }
 
 .en-tete-marque {
-  font: 600 1.25rem/1 var(--font-serif);
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 /* F3 (#53): the compact search sits right-aligned before Contact. */
@@ -399,7 +404,6 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  margin-left: auto;
   height: 36px;
   padding: 0 var(--space-4);
   border-radius: var(--radius-md);

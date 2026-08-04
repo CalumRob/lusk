@@ -65,11 +65,13 @@ afterEach(() => {
 const LIENS_NAV = ['Accueil', 'Carte', 'Données', 'Méthodes']
 
 describe('AppHeader — le mot-clé et la navigation', () => {
-  it('renders the serif Lusk wordmark linking to /', async () => {
+  it('renders the locked brand lockup — ermine + italic "lusk" — linking to /', async () => {
     const { wrapper } = await montage()
 
     const marque = wrapper.find('.en-tete-marque')
-    expect(marque.text()).toBe('Lusk')
+    expect(marque.text()).toBe('lusk')
+    expect(marque.find('.lusk-marque__ermine').exists()).toBe(true)
+    expect(marque.attributes('aria-label')).toBe('lusk — Accueil')
     expect(marque.attributes('href')).toBe('/')
   })
 
@@ -237,6 +239,18 @@ describe('AppHeader — la recherche globale (F3, #53)', () => {
     const input = wrapper.find('input[role="combobox"]')
     expect(input.exists()).toBe(true)
     expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+  })
+
+  it('sits right-aligned before Contact in the header (F3/#53 layout)', async () => {
+    const { wrapper } = await montage()
+
+    const enfants = wrapper.find('.en-tete-interieur').element.children
+    const ordre = Array.from(enfants).map((el) => el.className)
+    const positionRecherche = ordre.findIndex((c) => c.includes('en-tete-recherche'))
+    const positionContact = ordre.findIndex((c) => c.includes('bouton-contact'))
+
+    expect(positionRecherche).toBeGreaterThan(-1)
+    expect(positionContact).toBeGreaterThan(positionRecherche)
   })
 
   it('searches the payload territoires from the header', async () => {

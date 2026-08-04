@@ -46,10 +46,12 @@ async function monter(charger: ChargerPayload, options: Record<string, unknown> 
 }
 
 describe('Accueil — le héros', () => {
-  it('porte la revendication en serif et le sous-titre', async () => {
+  it('porte la revendication en serif — voix produit, jamais la première personne', async () => {
     const { wrapper } = await monter(async () => payload)
 
-    expect(wrapper.find('.accueil-accroche').text()).toContain('Je transforme des données publiques')
+    const accroche = wrapper.find('.accueil-accroche').text()
+    expect(accroche).toContain('Lusk transforme des données publiques')
+    expect(accroche).not.toMatch(/\bJe\b/)
     expect(wrapper.find('.accueil-sous-titre').exists()).toBe(true)
   })
 

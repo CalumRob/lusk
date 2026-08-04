@@ -59,7 +59,7 @@ watchEffect(() => {
     <div class="accueil-interieur">
       <header class="accueil-hero">
         <p class="accueil-accroche">
-          «&nbsp;Je transforme des données publiques éparses en intelligence territoriale…&nbsp;»
+          «&nbsp;Lusk transforme des données publiques éparses en intelligence territoriale.&nbsp;»
         </p>
         <p class="accueil-sous-titre">
           Lusk rassemble les chiffres ouverts de la Bretagne — communes, EPCI, départements —
