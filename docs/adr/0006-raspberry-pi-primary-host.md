@@ -1,4 +1,4 @@
-# v1 serves from a home Raspberry Pi — primary host, repo as source of truth, pre-warmed Vercel as failover and dev environment
+## The # v1 serves from a home Raspberry Pi — primary host, repo as source of truth, pre-warmed Vercel as failover and dev environment
 
 ADR-0003 settled static-first: the pipeline publishes the payload as static assets on the same host as the app, and ADR-0004 made the GitHub Actions cron the publisher, committing fresh files that "GitHub Pages (or any static host)" serves. What "the host" actually is stayed open — Pages was the default, Vercel was available (the user hosts another dashboard there), and a home Raspberry Pi was described as "a possible future watchdog, never the workhorse". The user's motivation is **sovereignty/control**: the payload is theirs, served from their own box, no third-party free tier — the same reasoning that runs AdGuard locally rather than on a cloud DNS. Their Pi (a 4, on 24/7) already runs AdGuard and cloudflared (a couple of Stremio addons), so the security-critical piece — the tunnel — is already in production on that box.
 
