@@ -4,6 +4,7 @@ import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  indicateursHabitatFixture,
   runReportFraisFixture,
   territoiresFixture,
 } from '../payload/fixtures'
@@ -147,6 +148,15 @@ describe('formaterVintage — the always-present freshness stamp', () => {
 
     expect(formaterVintage(densite22001)).toBe(
       'INSEE — Série historique du recensement · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026',
+    )
+  })
+
+  it('omits a missing reference date (the DPE rolling base) instead of inventing one', () => {
+    const passoires = indicateursHabitatFixture.find((l) => l.key === 'part_residences_secondaires')!
+    const sansReference = { ...passoires, vintage_date_reference: null }
+
+    expect(formaterVintage(sansReference)).toBe(
+      'INSEE — Logements (dossier complet) · 2023 · publ. 30 juin 2026',
     )
   })
 })

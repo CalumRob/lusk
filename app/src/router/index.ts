@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import AccueilView from '../views/AccueilView.vue'
 import AProposView from '../views/AProposView.vue'
-import CarteView from '../views/CarteView.vue'
 import CommunesView from '../views/CommunesView.vue'
 import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
@@ -17,7 +16,11 @@ import TerritoireView from '../views/TerritoireView.vue'
  * dist/ at the site root with `try_files $uri /index.html` (SPA fallback,
  * docs/self-hosting.md). Later tickets replace the placeholder views —
  * names and paths are the contract, do not rename them.
+ *
+ * La carte est chargée paresseusement : maplibre-gl (~230 ko gzip) ne pèse
+ * que sur /carte, jamais dans le bundle initial (issue #39).
  */
+const CarteView = () => import('../views/CarteView.vue')
 export const routes = [
   {
     path: '/',
