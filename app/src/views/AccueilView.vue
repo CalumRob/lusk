@@ -103,10 +103,9 @@ watchEffect(() => {
           </div>
         </div>
 
-        <div class="accueil-hero-marque" aria-label="Lusk — Observatoire des territoires bretons">
+        <div class="accueil-hero-marque" aria-label="Lusk — breton, élan, mouvement">
           <LuskBrand verticale class="accueil-marque" />
-          <span class="accueil-marque-caption">Observatoire des territoires bretons</span>
-          <span class="accueil-marque-etymo">breton → élan, mouvement</span>
+          <span class="accueil-marque-caption">breton · élan, mouvement</span>
         </div>
       </div>
     </header>
@@ -169,8 +168,8 @@ watchEffect(() => {
   max-width: 760px;
 }
 
-/* La marque du héros (mock V8) : le lock-up vertical — l'ermine au-dessus du
-   mot — avec la légende et l'étymologie, dans la colonne de droite. */
+/* La signature du héros (mock/landing.html) reste une atmosphère discrète :
+   grand mot serif pâle, puis sa légende sous-jacente. */
 .accueil-hero-marque {
   display: flex;
   flex-direction: column;
@@ -180,30 +179,24 @@ watchEffect(() => {
   user-select: none;
 }
 
-/* Tailles du lock-up (mock V8) : le mot domine — l'ermine reste
-   proportionnellement plus petite que le mot, la légende et l'étymologie
-   suivent la montée en échelle. */
-.accueil-marque :deep(.lusk-marque) {
-  font-size: 3.75rem;
+.accueil-hero-marque :deep(.lusk-marque) {
+  font: 600 clamp(4.5rem, 9vw, 7.5rem)/0.9 var(--font-serif);
+  font-style: italic;
+  letter-spacing: -0.02em;
+  color: color-mix(in oklab, var(--brand-200) 55%, var(--surface-secondary));
 }
 
-.accueil-marque :deep(.lusk-marque__ermine) {
+.accueil-hero-marque :deep(.lusk-marque__ermine) {
   width: 80px;
   height: 80px;
 }
 
 .accueil-marque-caption {
   font: var(--text-caption);
-  font-size: 0.875rem;
-  letter-spacing: var(--text-caption-tracking);
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-}
-
-.accueil-marque-etymo {
-  font: 400 1.0625rem/1.5 var(--font-serif);
-  font-style: italic;
-  color: var(--text-secondary);
 }
 
 @media (max-width: 767.98px) {

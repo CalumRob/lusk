@@ -46,7 +46,7 @@ async function monter(charger: ChargerPayload, options: Record<string, unknown> 
 }
 
 describe('Accueil — le héros', () => {
-  it('porte la marque sur le héros — le lock-up LuskBrand (mock V8)', async () => {
+  it('porte la signature discrète du mock landing sur le héros', async () => {
     const { wrapper } = await monter(async () => payload)
 
     const marque = wrapper.find('.accueil-hero .lusk-marque')
@@ -69,23 +69,23 @@ describe('Accueil — le héros', () => {
     expect(contenu.element.contains(marque.element)).toBe(false)
   })
 
-  it('présente le lock-up en vertical — l’ermine au-dessus du mot (mock V8, pas le logo V4)', async () => {
+  it('place le mot de la signature au-dessus de sa légende', async () => {
     const { wrapper } = await monter(async () => payload)
 
-    const marque = wrapper.find('.accueil-hero-marque .lusk-marque--verticale')
-    expect(marque.exists()).toBe(true)
-
-    const ermine = wrapper.find('.accueil-hero-marque .lusk-marque__ermine')
-    const mot = wrapper.find('.accueil-hero-marque .lusk-marque__mot')
-    expect(ermine.exists()).toBe(true)
-    expect(mot.exists()).toBe(true)
+    const marque = wrapper.find('.accueil-hero-marque')
+    const mot = wrapper.find('.lusk-marque__mot')
+    const ermine = wrapper.find('.lusk-marque__ermine')
+    const legende = wrapper.find('.accueil-marque-caption')
+    expect(marque.element.contains(ermine.element)).toBe(true)
+    expect(marque.element.contains(mot.element)).toBe(true)
+    expect(ermine.element.nextElementSibling).toBe(mot.element)
+    expect(mot.element.parentElement?.nextElementSibling).toBe(legende.element)
   })
 
-  it('la marque porte la légende et l’étymologie du lock-up (v8 : « Observatoire des territoires bretons », « breton → élan, mouvement »)', async () => {
+  it('porte la légende du mock landing sous le mot', async () => {
     const { wrapper } = await monter(async () => payload)
 
-    expect(wrapper.find('.accueil-marque-caption').text()).toBe('Observatoire des territoires bretons')
-    expect(wrapper.find('.accueil-marque-etymo').text()).toBe('breton → élan, mouvement')
+    expect(wrapper.find('.accueil-marque-caption').text()).toBe('breton · élan, mouvement')
   })
 
   it('porte le titre « lusk · Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
