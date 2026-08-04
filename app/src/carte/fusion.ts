@@ -6,13 +6,28 @@
  * value (rendered in the neutral no-data color, never invented).
  */
 
-import type { CollectionMasque } from '../geo/types'
+import type { ExpressionSpecification } from 'maplibre-gl'
+
+import type { CollectionMasque, FeatureTerritoire } from '../geo/types'
 import type { Indicateur, Theme } from '../payload/types'
 import { formaterValeur } from '../payload/selectors'
 import { COULEUR_NEUTRE } from './couleurs'
 
 /** The MapLibre paint expression for a choropleth fill (step + null guard). */
-export type ExpressionCouleurs = unknown[]
+export type ExpressionCouleurs = ExpressionSpecification
+
+/** A feature enriched with the joined indicator (the fill + the popup read it). */
+export interface FeatureAvecValeur extends FeatureTerritoire {
+  properties: FeatureTerritoire['properties'] & {
+    valeur: number | null
+    valeur_formatee: string | null
+  }
+}
+
+export interface CollectionAvecValeurs {
+  type: 'FeatureCollection'
+  features: FeatureAvecValeur[]
+}
 
 /**
  * The rows that feed one choropleth: the theme's indicator with `detail ===
@@ -41,7 +56,7 @@ export function indicateurParTerritoire(
 export function collectionAvecValeurs(
   collection: CollectionMasque,
   parTerritoire: ReadonlyMap<string, Indicateur>,
-): CollectionMasque {
+): CollectionAvecValeurs {
   return {
     type: 'FeatureCollection',
     features: collection.features.map((feature) => {
@@ -75,5 +90,5 @@ export function expressionCouleurs(seuils: readonly number[], couleurs: readonly
     ['all', ['has', 'valeur'], ['!=', ['get', 'valeur'], null]],
     step,
     COULEUR_NEUTRE,
-  ]
+  ] as unknown as ExpressionCouleurs
 }

@@ -29,3 +29,133 @@ vi.mock('echarts/core', () => ({
 vi.mock('echarts/charts', () => ({ ScatterChart: {} }))
 vi.mock('echarts/components', () => ({ GridComponent: {}, TooltipComponent: {} }))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
+/**
+ * MapLibre — happy-dom has no WebGL. A structural fake records the map's
+ * construction options, sources/layers/paints (the specs assert the map
+ * contract: CARTO Voyager basemap, GeoJSON sources, theme-driven fills) and
+ * lets specs fire 'load' to walk the init path. MapExplorer tests reach the
+ * fake through `instancesCarteMaple`.
+ */
+const maplibreMock = vi.hoisted(() => {
+  type Ecouteur = (...args: unknown[]) => void
+
+  class PopupFake {
+    contenu = ''
+    position: unknown = null
+    enlevee = false
+    options: Record<string, unknown>
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = options
+    }
+    setLngLat(lngLat: unknown) {
+      this.position = lngLat
+      return this
+    }
+    setHTML(html: string) {
+      this.contenu = html
+      return this
+    }
+    addTo(_carte: unknown) {
+      return this
+    }
+    remove() {
+      this.enlevee = true
+    }
+  }
+
+  class CarteFake {
+    options: Record<string, unknown>
+    ecouteurs: Record<string, Ecouteur[]> = {}
+    sources: Record<string, unknown> = {}
+    sourcesSetData: Record<string, ReturnType<typeof vi.fn>> = {}
+    couches: Record<string, unknown> = {}
+    peintures: Record<string, Record<string, unknown>> = {}
+    misesEnPage: Record<string, Record<string, unknown>> = {}
+    controlesAjoutes: unknown[] = []
+    enlevee = false
+    constructor(options: Record<string, unknown>) {
+      this.options = options
+    }
+    addControl(controle: unknown) {
+      this.controlesAjoutes.push(controle)
+    }
+    on(evenement: string, ecouteur: Ecouteur) {
+      ;(this.ecouteurs[evenement] ??= []).push(ecouteur)
+    }
+    fire(evenement: string, ...args: unknown[]) {
+      for (const ecouteur of this.ecouteurs[evenement] ?? []) ecouteur(...args)
+    }
+    addSource(id: string, source: unknown) {
+      this.sources[id] = source
+    }
+    getSource(id: string) {
+      if (!(id in this.sources)) return null
+      this.sourcesSetData[id] ??= vi.fn()
+      return { setData: this.sourcesSetData[id] }
+    }
+    addLayer(couche: Record<string, unknown>) {
+      this.couches[String(couche.id)] = couche
+    }
+    getLayer(id: string) {
+      return this.couches[id] ?? null
+    }
+    setPaintProperty(couche: string, propriete: string, valeur: unknown) {
+      ;(this.peintures[couche] ??= {})[propriete] = valeur
+    }
+    setLayoutProperty(couche: string, propriete: string, valeur: unknown) {
+      ;(this.misesEnPage[couche] ??= {})[propriete] = valeur
+    }
+    getCanvas() {
+      return { style: {} }
+    }
+    queryRenderedFeatures(_point: unknown, _options: unknown) {
+      return []
+    }
+    resize() {
+      /* no-op */
+    }
+    isStyleLoaded() {
+      return true
+    }
+    getZoom() {
+      return 8
+    }
+    remove() {
+      this.enlevee = true
+    }
+  }
+
+  return {
+    instancesCarteMaple: [] as CarteFake[],
+    instancesPopups: [] as PopupFake[],
+    CarteFake,
+    PopupFake,
+  }
+})
+
+vi.mock('maplibre-gl', () => ({
+  default: {
+    Map: class extends maplibreMock.CarteFake {
+      constructor(options: Record<string, unknown>) {
+        super(options)
+        maplibreMock.instancesCarteMaple.push(this)
+      }
+    },
+    Popup: class extends maplibreMock.PopupFake {
+      constructor(options: Record<string, unknown>) {
+        super(options)
+        maplibreMock.instancesPopups.push(this)
+      }
+    },
+    NavigationControl: class {},
+    LngLat: class {
+      constructor(
+        public lng: number,
+        public lat: number,
+      ) {}
+    },
+  },
+}))
+
+export { maplibreMock }

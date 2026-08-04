@@ -7,11 +7,11 @@ import { seuilsQuantiles } from '../carte/seuils'
 describe('seuilsQuantiles — the class breaks', () => {
   it('returns empty breaks for no finite values', () => {
     expect(seuilsQuantiles([], 5)).toEqual([])
-    expect(seuilsQuantiles([null, undefined, NaN], 5)).toEqual([])
+    expect(seuilsQuantiles([Number.NaN, Number.POSITIVE_INFINITY], 5)).toEqual([])
   })
 
   it('excludes NA values (they never take a bucket)', () => {
-    const seuils = seuilsQuantiles([1, 2, 3, 4, 5, 6, null, 7, 8, 9, 10], 5)
+    const seuils = seuilsQuantiles([1, 2, 3, 4, 5, 6, Number.NaN, 7, 8, 9, 10], 5)
     expect(seuils).toHaveLength(4)
   })
 
@@ -41,7 +41,7 @@ describe('seuilsQuantiles — the class breaks', () => {
   })
 
   it('returns sorted, strictly increasing breaks', () => {
-    const valeurs = Array.from({ length: 50 }, (_, i) => Math.random() * 100)
+    const valeurs = Array.from({ length: 50 }, () => Math.random() * 100)
     const seuils = seuilsQuantiles(valeurs, 6)
     for (let i = 1; i < seuils.length; i++) {
       expect(seuils[i]).toBeGreaterThan(seuils[i - 1])

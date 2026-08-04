@@ -84,7 +84,10 @@ export function validerCollectionMasque(brut: unknown, fichier: string): Collect
         nom: typeof nom === 'string' ? nom : territoire,
         type: typeof type === 'string' ? type : '',
       },
-      geometry: { type: geom.type, coordinates: geom.coordinates },
+      geometry:
+        geom.type === 'Polygon'
+          ? { type: 'Polygon' as const, coordinates: geom.coordinates }
+          : { type: 'MultiPolygon' as const, coordinates: geom.coordinates },
     }
   })
   return { type: 'FeatureCollection', features }

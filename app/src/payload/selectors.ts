@@ -241,14 +241,18 @@ function formaterDateCourt(iso: string): string {
 }
 
 /**
- * The vintage stamp — source · version · the two dates (reference AND
- * publication). The "alive" promise: always present, never optional
- * (ui-elements.md §Indicator/KPI figure).
+ * The vintage stamp — source · version · the dates. The « alive » promise:
+ * always present, never optional (ui-elements.md §Indicator/KPI figure). A
+ * source without a reference date (the DPE rolling base, spec #12) shows
+ * only its publication date — the missing half is omitted, never invented.
  */
 export function formaterVintage(indicateur: Indicateur): string {
-  return (
-    `${indicateur.vintage_source} · ${indicateur.vintage_version} · ` +
-    `réf. ${formaterDateCourt(indicateur.vintage_date_reference)} · ` +
-    `publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`
-  )
+  const parties = [`${indicateur.vintage_source} · ${indicateur.vintage_version}`]
+  if (indicateur.vintage_date_reference) {
+    parties.push(`réf. ${formaterDateCourt(indicateur.vintage_date_reference)}`)
+  }
+  if (indicateur.vintage_date_publication) {
+    parties.push(`publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`)
+  }
+  return parties.join(' · ')
 }

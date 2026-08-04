@@ -10,7 +10,7 @@ import {
   indicateursDemographieFixture,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { Indicateur, Payload } from '../payload/types'
+import type { Payload } from '../payload/types'
 
 /**
  * The indicator-join onto the masks (ADR-0008): the map reads the territoire
@@ -99,7 +99,7 @@ describe('expressionCouleurs — the MapLibre fill expression', () => {
     const expr = expressionCouleurs([20, 40, 60], ['#c1c1e9', '#a3a3df', '#8e85c4', '#6f67a8'])
 
     expect(expr[0]).toBe('case')
-    const step = expr[2]
+    const step = expr[2] as unknown[]
     expect(step[0]).toBe('step')
     expect(step[2]).toBe('#c1c1e9')
     // seuils puis couleurs, en alternance
@@ -113,7 +113,7 @@ describe('expressionCouleurs — the MapLibre fill expression', () => {
 
   it('collapses to the neutral fill when there are no breaks (no data at all)', () => {
     const expr = expressionCouleurs([], ['#e8e8f5', '#8e85c4'])
-    const step = expr[2]
+    const step = expr[2] as unknown[]
     expect(step[0]).toBe('step')
     expect(step[2]).toBe('#e8e8f5')
     expect(step.length).toBe(3)

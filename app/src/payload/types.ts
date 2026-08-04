@@ -55,19 +55,32 @@ export interface Indicateur {
   rang_reg: number | null
   vintage_source: string
   vintage_version: string
-  vintage_date_reference: string
-  vintage_date_publication: string
+  /** Null when the source has no reference date (the DPE rolling base — pipeline spec #12). */
+  vintage_date_reference: string | null
+  vintage_date_publication: string | null
 }
 
-/** One story row per territoire (schema name kept: histoires). */
+/**
+ * One story row per territoire. The pipeline's single `histoires` table is
+ * theme-specific: Démographie (« Attractive ou fertile ? ») publishes the
+ * soldes, Habitat (« L'état énergétique du parc ») publishes the DPE parts —
+ * the columns of the other theme are absent from the row. The app mirrors
+ * that: the common fields are required, the per-theme fields optional.
+ */
 export interface Histoire {
   territoire: string
   type: TerritoireType
   theme: Theme
   story_key: string
-  solde_naturel: number
-  solde_migratoire: number
-  classification: string
+  /** Null = lecture impossible (échantillon DPE trop petit) — jamais inventée. */
+  classification: string | null
+  /** Démographie — les soldes du « Attractive ou fertile ? ». */
+  solde_naturel?: number | null
+  solde_migratoire?: number | null
+  /** Habitat — les parts du « L'état énergétique du parc ». */
+  part_passoires?: number | null
+  part_abc?: number | null
+  n_dpe?: number | null
 }
 
 /** One basic-stat row per (territoire × key) — the Aperçu tab renders it, never derives it. */

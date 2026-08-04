@@ -18,6 +18,11 @@ import {
  * nginx /data/ alias, app/README.md); this test reads those committed files
  * and proves the seam accepts them, field for field. If the pipeline drifts
  * from the contract, this test goes red — loud, like its R mirror.
+ *
+ * State on 2026-08-04: the committed payload is the REAL run (1 269
+ * territoires — 1 202 communes, 62 EPCIs, 4 départements, la région).
+ * Démographie is partial (its files still carry the R fixture's commune/dep
+ * rows — a full run is a pipeline ticket); Habitat covers all territoires.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -34,6 +39,8 @@ async function chargerPayloadCommite() {
     'apercu.json',
     'indicateurs_demographie.json',
     'histoires_demographie.json',
+    'indicateurs_habitat.json',
+    'histoires_habitat.json',
     'run-report.json',
   ]) {
     fichiers[nom] = lireJson(nom)
@@ -52,13 +59,13 @@ async function chargerPayloadCommite() {
 }
 
 describe('payload contract — the committed payload parses and renders', () => {
-  it('covers the 9 fixture territories (4 communes, 2 EPCIs, 2 départements, région)', async () => {
+  it('covers the 1 269 committed territoires (communes, EPCIs, départements, région)', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(payload.territoires).toHaveLength(9)
-    expect(payload.territoires.filter((t) => t.type === 'commune')).toHaveLength(4)
-    expect(payload.territoires.filter((t) => t.type === 'epci')).toHaveLength(2)
-    expect(payload.territoires.filter((t) => t.type === 'departement')).toHaveLength(2)
+    expect(payload.territoires).toHaveLength(1269)
+    expect(payload.territoires.filter((t) => t.type === 'commune')).toHaveLength(1202)
+    expect(payload.territoires.filter((t) => t.type === 'epci')).toHaveLength(62)
+    expect(payload.territoires.filter((t) => t.type === 'departement')).toHaveLength(4)
     expect(payload.territoires.filter((t) => t.type === 'region')).toHaveLength(1)
   })
 
@@ -66,17 +73,18 @@ describe('payload contract — the committed payload parses and renders', () => 
     const payload = await chargerPayloadCommite()
     const nom = (id: string) => payload.territoires.find((t) => t.territoire === id)?.nom
 
-    expect(nom('22001')).toBe('Commune A1')
-    expect(nom('200000001')).toBe('EPCI X')
+    expect(nom('22001')).toBe('Allineuc')
+    expect(nom('200027027')).toBe('Communauté de communes Arc Sud Bretagne')
     expect(nom('53')).toBe('Bretagne')
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })
 
-  it('publishes one indicateur row per (territoire × key × detail), all demographie', async () => {
+  it('publishes unique indicateur rows (territoire × key × detail) across the built themes', async () => {
     const payload = await chargerPayloadCommite()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
-    expect(payload.indicateurs.every((i) => i.theme === 'demographie')).toBe(true)
+    const themes = new Set(payload.indicateurs.map((i) => i.theme))
+    expect([...themes].sort()).toEqual(['demographie', 'habitat'])
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
   })
@@ -92,30 +100,36 @@ describe('payload contract — the committed payload parses and renders', () => 
     }
   })
 
-  it('stamps each indicator with its two vintage dates (reference + publication)', async () => {
+  it('stamps each indicator with its vintage dates (ISO, or null for a rolling base)', async () => {
     const payload = await chargerPayloadCommite()
 
     for (const i of payload.indicateurs) {
-      expect(i.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-      expect(i.vintage_date_publication).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      if (i.vintage_date_reference !== null) {
+        expect(i.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      }
+      if (i.vintage_date_publication !== null) {
+        expect(i.vintage_date_publication).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      }
     }
+    // la base roulante DPE n'a pas de date de référence (spec #12) — un null
+    // est légitime, jamais un faux millésime.
+    const passoires = payload.indicateurs.find((i) => i.key === 'part_passoires')
+    expect(passoires?.vintage_date_reference).toBeNull()
   })
 
-  it('renders the Aperçu from the apercu table (never derives it)', async () => {
+  it('accepts the committed apercu table as-is (data-gated — empty rows are never invented)', async () => {
     const payload = await chargerPayloadCommite()
 
-    const lignes = apercuPourTerritoire(payload, '22001')
-    expect(lignes.map((l) => l.key)).toContain('population')
-    expect(lignes.find((l) => l.key === 'population')).toMatchObject({
-      value: 2000,
-      unit: 'hab.',
-    })
+    // The real run has not published apercu rows yet: the Aperçu block is
+    // data-gated (the seam accepts an empty table, the UI renders nothing).
+    expect(Array.isArray(payload.apercu)).toBe(true)
+    expect(apercuPourTerritoire(payload, '22001')).toEqual([])
   })
 
-  it('drives the theme tab bar from the payload (only demographie is built)', async () => {
+  it('drives the theme tab bar from the payload (the two built themes)', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(themesPresent(payload)).toEqual(['demographie'])
+    expect(themesPresent(payload)).toEqual(['demographie', 'habitat'])
   })
 
   it('formats the committed ranks as French chips', async () => {

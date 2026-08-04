@@ -4,7 +4,7 @@ import {
   chargerMasques,
   validerCollectionMasque,
 } from '../geo/chargerMasques'
-import type { CollectionMasque } from '../geo/types'
+import type { CollectionMasque, FeatureTerritoire } from '../geo/types'
 import { PayloadError } from '../payload/validate'
 
 /**
@@ -14,7 +14,7 @@ import { PayloadError } from '../payload/validate'
  * never a crash.
  */
 
-const commune = {
+const commune: FeatureTerritoire = {
   type: 'Feature',
   properties: { territoire: '22001', nom: 'Allineuc', type: 'commune' },
   geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] },

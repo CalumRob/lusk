@@ -1,0 +1,395 @@
+<script setup lang="ts">
+/**
+ * MapExplorer — the full-bleed map shell (layouts.md §3 + ui-elements.md
+ * §Map shell, ported per ADR-0008: PMTiles → GeoJSON). CARTO Voyager raster
+ * basemap, territory masks (communes / EPCIs / départements) as plain GeoJSON
+ * sources — no PMTiles protocol — and the selected theme's indicator layer
+ * joined from the fiche payload.
+ *
+ * The view owns the theme + level state; this component renders the map and
+ * reacts to them. Aperçu (theme null) = territory masks only. A theme with a
+ * choropleth contract (configCoucheTheme) paints the active level's fill; a
+ * theme without one (Mobilité/Économie) keeps neutral masks.
+ *
+ * Popups: name + 2–3 KPI figures (kpisPourPopup) + « Voir la fiche » → the
+ * territory's fiche. A11y: the popup's link is focusable (focusAfterOpen),
+ * the map region is labelled, the NavigationControl stays keyboard-reachable.
+ */
+import maplibregl from 'maplibre-gl'
+import type {
+  FillLayerSpecification,
+  GeoJSONSource,
+  Map as CarteMaple,
+  MapGeoJSONFeature,
+  Popup,
+} from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+
+import {
+  ANCRAGES_THEMES,
+  COULEUR_CONTOUR,
+  COULEUR_NEUTRE,
+  echelleChoroplethe,
+} from '@/carte/couleurs'
+import { configCoucheTheme } from '@/carte/configCouche'
+import {
+  collectionAvecValeurs,
+  expressionCouleurs,
+  indicateurParTerritoire,
+} from '@/carte/fusion'
+import type { CollectionAvecValeurs } from '@/carte/fusion'
+import { kpisPourPopup } from '@/carte/popup'
+import { seuilsQuantiles } from '@/carte/seuils'
+import type { CollectionMasque, Masques, NiveauMasque } from '@/geo/types'
+import { trouverTerritoire } from '@/payload/selectors'
+import type { Payload, Theme } from '@/payload/types'
+
+const props = defineProps<{
+  masques: Masques
+  payload: Payload
+  theme: Theme | null
+  niveau: NiveauMasque
+}>()
+
+const router = useRouter()
+
+const mapContainer = ref<HTMLElement | null>(null)
+let carte: CarteMaple | null = null
+let popup: Popup | null = null
+let observeurTaille: ResizeObserver | null = null
+let derive: ReturnType<typeof setTimeout> | null = null
+
+const NOMBRE_CLASSES = 5
+
+const ID_SOURCE = (niveau: NiveauMasque) => `masques-${niveau}`
+const ID_REMPLISSAGE = (niveau: NiveauMasque) => `masques-${niveau}-remplissage`
+const ID_CONTOUR = (niveau: NiveauMasque) => `masques-${niveau}-contour`
+
+const NIVEAUX_PRESENTS = (masques: Masques): NiveauMasque[] =>
+  (['communes', 'epcis', 'departements'] as const).filter((n) => masques[n] !== null)
+
+function masqueDe(niveau: NiveauMasque): CollectionMasque | null {
+  return props.masques[niveau] ?? null
+}
+
+/** The active level's fill — joined to the theme's indicator rows. */
+function collectionActive(niveau: NiveauMasque): CollectionAvecValeurs | CollectionMasque | null {
+  const collection = masqueDe(niveau)
+  if (!collection) return null
+  const config = props.theme ? configCoucheTheme(props.theme) : null
+  if (!config) return collection
+  const parTerritoire = indicateurParTerritoire(
+    props.payload.indicateurs,
+    props.theme as Theme,
+    config.indicateur,
+  )
+  return collectionAvecValeurs(collection, parTerritoire)
+}
+
+type PaintRemplissage = FillLayerSpecification['paint']
+
+function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
+  const config = props.theme ? configCoucheTheme(props.theme) : null
+  if (!config) return null
+  const collection = collectionActive(niveau)
+  if (!collection) return null
+  const valeurs: number[] = []
+  for (const feature of collection.features) {
+    const v = (feature.properties as { valeur?: number | null }).valeur
+    if (typeof v === 'number') valeurs.push(v)
+  }
+  const seuils = seuilsQuantiles(valeurs, NOMBRE_CLASSES)
+  const couleurs = echelleChoroplethe(
+    ANCRAGES_THEMES[config.theme],
+    Math.max(2, seuils.length + 1),
+  )
+  return { 'fill-color': expressionCouleurs(seuils, couleurs) }
+}
+
+function ajouterCouches(): void {
+  if (!carte) return
+  for (const niveau of NIVEAUX_PRESENTS(props.masques)) {
+    const collection = masqueDe(niveau)
+    if (!collection || carte.getSource(ID_SOURCE(niveau))) continue
+    carte.addSource(ID_SOURCE(niveau), {
+      type: 'geojson',
+      data: collection as unknown as GeoJSON.FeatureCollection,
+    })
+    carte.addLayer({
+      id: ID_REMPLISSAGE(niveau),
+      type: 'fill',
+      source: ID_SOURCE(niveau),
+      layout: { visibility: 'none' },
+      paint: {
+        'fill-color': COULEUR_NEUTRE,
+        'fill-opacity': 0.9,
+        'fill-outline-color': COULEUR_CONTOUR,
+      },
+    })
+    carte.addLayer({
+      id: ID_CONTOUR(niveau),
+      type: 'line',
+      source: ID_SOURCE(niveau),
+      layout: { visibility: 'none' },
+      paint: { 'line-color': COULEUR_CONTOUR, 'line-width': 1 },
+    })
+  }
+}
+
+/** Applies the active level's visibility + the theme's fill paint. */
+function appliquerNiveau(): void {
+  if (!carte) return
+  for (const niveau of NIVEAUX_PRESENTS(props.masques)) {
+    const actif = niveau === props.niveau
+    for (const id of [ID_REMPLISSAGE(niveau), ID_CONTOUR(niveau)]) {
+      if (carte.getLayer(id)) {
+        carte.setLayoutProperty(id, 'visibility', actif ? 'visible' : 'none')
+      }
+    }
+  }
+  const remplissage = ID_REMPLISSAGE(props.niveau)
+  if (!carte.getLayer(remplissage)) return
+  const peinture = peintureRemplissage(props.niveau)
+  if (peinture) {
+    carte.setPaintProperty(remplissage, 'fill-color', peinture['fill-color'])
+  } else {
+    carte.setPaintProperty(remplissage, 'fill-color', COULEUR_NEUTRE)
+  }
+  // les données jointes ont pu changer (thème) — recharge la source active.
+  const collection = collectionActive(props.niveau)
+  if (collection) {
+    ;(carte.getSource(ID_SOURCE(props.niveau)) as GeoJSONSource)?.setData(
+      collection as unknown as GeoJSON.FeatureCollection,
+    )
+  }
+}
+
+function nomTerritoire(territoire: string): string {
+  return trouverTerritoire(props.payload, territoire)?.nom ?? territoire
+}
+
+function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
+  const territoire = String(feature.properties.territoire)
+  const nom = nomTerritoire(territoire)
+  const fiche = trouverTerritoire(props.payload, territoire)
+
+  const kpis = kpisPourPopup(props.payload, territoire, props.theme)
+  const lignesKpis = kpis
+    .map(
+      (k) =>
+        `<div class="popup-carte-kpi"><span class="popup-carte-libelle">${k.libelle}</span>` +
+        `<span class="popup-carte-valeur">${k.valeur} <span class="popup-carte-unite">${k.unite}</span></span></div>`,
+    )
+    .join('')
+
+  const lienFiche = fiche
+    ? `<a class="popup-carte-lien" href="${router.resolve({
+        name: 'territoire',
+        params: { type: fiche.type, id: fiche.territoire },
+      }).href}">Voir la fiche</a>`
+    : ''
+
+  const contenu = `<div class="popup-carte">
+    <h3 class="popup-carte-titre">${nom}</h3>
+    <div class="popup-carte-kpis">${lignesKpis}</div>
+    ${lienFiche}
+  </div>`
+
+  popup?.remove()
+  popup = new maplibregl.Popup({
+    closeButton: true,
+    closeOnClick: true,
+    focusAfterOpen: true,
+    className: 'popup-carte-fenetre',
+    maxWidth: '320px',
+  })
+    .setLngLat(lngLat)
+    .setHTML(contenu)
+    .addTo(carte as CarteMaple)
+}
+
+function surClic(e: maplibregl.MapLayerMouseEvent): void {
+  if (!carte) return
+  const remplissage = ID_REMPLISSAGE(props.niveau)
+  const features = carte.queryRenderedFeatures(e.point, { layers: [remplissage] })
+  if (features.length === 0) {
+    popup?.remove()
+    return
+  }
+  ouvrirPopup(features[0] as MapGeoJSONFeature, e.lngLat)
+}
+
+function surSurvol(e: maplibregl.MapLayerMouseEvent): void {
+  if (!carte) return
+  const remplissage = ID_REMPLISSAGE(props.niveau)
+  const features = carte.queryRenderedFeatures(e.point, { layers: [remplissage] })
+  carte.getCanvas().style.cursor = features.length > 0 ? 'pointer' : ''
+}
+
+function initialiserCarte(): void {
+  if (!mapContainer.value || carte) return
+  carte = new maplibregl.Map({
+    container: mapContainer.value,
+    style: {
+      version: 8,
+      sources: {
+        'fond-cartographique': {
+          type: 'raster',
+          tiles: [
+            'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+            'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+            'https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+            'https://d.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
+          ],
+          tileSize: 256,
+          attribution:
+            '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> · © <a href="https://carto.com/attributions">CARTO</a>',
+        },
+      },
+      layers: [
+        {
+          id: 'fond-carte',
+          type: 'raster',
+          source: 'fond-cartographique',
+        },
+      ],
+    },
+    transformRequest: (url) => ({ url }),
+    center: [-2.8, 48.2],
+    zoom: 8,
+    minZoom: 7,
+    maxZoom: 16,
+  })
+
+  carte.addControl(new maplibregl.NavigationControl(), 'top-right')
+
+  carte.on('load', () => {
+    ajouterCouches()
+    appliquerNiveau()
+    if (carte) carte.on('click', surClic)
+    if (carte) carte.on('mousemove', surSurvol)
+  })
+
+  carte.on('error', (e) => {
+    console.error('MapLibre — erreur carte :', e.error?.message ?? e.message)
+  })
+}
+
+watch(
+  () => [props.niveau, props.theme, props.masques, props.payload] as const,
+  () => {
+    if (!carte || !carte.isStyleLoaded()) return
+    ajouterCouches()
+    appliquerNiveau()
+  },
+  { deep: true },
+)
+
+onMounted(() => {
+  initialiserCarte()
+  observeurTaille = new ResizeObserver(() => {
+    if (derive) clearTimeout(derive)
+    derive = setTimeout(() => carte?.resize(), 150)
+  })
+  if (mapContainer.value) observeurTaille.observe(mapContainer.value)
+})
+
+onBeforeUnmount(() => {
+  observeurTaille?.disconnect()
+  if (derive) clearTimeout(derive)
+  popup?.remove()
+  carte?.remove()
+  carte = null
+})
+</script>
+
+<template>
+  <div class="map-explorer">
+    <div ref="mapContainer" class="map-explorer-canevas" role="region" aria-label="Carte interactive" />
+  </div>
+</template>
+
+<style scoped>
+.map-explorer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  background: var(--surface-tertiary);
+}
+
+.map-explorer-canevas {
+  position: absolute;
+  inset: 0;
+}
+</style>
+
+<style>
+/* The MapLibre popup content — global because MapLibre renders it outside the
+   component's subtree (its own container in the map's DOM). Styled with the
+   tokens (ui-elements.md §Map shell: name + KPIs + link). */
+.popup-carte-fenetre .maplibregl-popup-content {
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-prominent);
+  font-family: var(--font-sans);
+}
+
+.popup-carte {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 220px;
+}
+
+.popup-carte-titre {
+  margin: 0;
+  font: var(--text-h3);
+  color: var(--text-primary);
+}
+
+.popup-carte-kpis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.popup-carte-kpi {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  font: var(--text-body-sm);
+}
+
+.popup-carte-libelle {
+  color: var(--text-secondary);
+}
+
+.popup-carte-valeur {
+  font-weight: 600;
+  font-variant-numeric: var(--text-numeric-variant);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.popup-carte-unite {
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.popup-carte-lien {
+  align-self: flex-start;
+  font: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.popup-carte-lien:hover {
+  color: var(--accent-hover);
+}
+</style>
