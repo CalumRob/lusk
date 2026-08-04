@@ -5,6 +5,10 @@
  * Méthodes with a 2px underline on the active route, Contact →
  * calumrobertson.fr (external). No locale toggle (French-only v1).
  *
+ * F3 (#53): the GlobalSearchBar is embedded on every page — search works
+ * everywhere (the landing hero also carries one). Selecting a result closes
+ * the mobile drawer. The compact variant drops the tabs row for the 60px bar.
+ *
  * Mobile (<768px): full-screen drawer — transform-only, scroll-lock, focus
  * trap, Escape closes. Données is a small disclosure dropdown to the three
  * lists (site-map.md: « may be a small dropdown »).
@@ -14,8 +18,17 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
+import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
+import { usePayload } from '@/payload/usePayload'
+import type { Territoire } from '@/payload/types'
 
 const route = useRoute()
+
+const { payload, erreur, chargement } = usePayload()
+
+const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
+
+const messageErreur = computed(() => (erreur.value ? 'Impossible de charger les territoires.' : null))
 
 const SOUS_LIENS_DONNEES = [
   { label: 'Les communes', chemin: '/communes' },
@@ -172,6 +185,15 @@ onUnmounted(() => {
         >Méthodes</RouterLink>
       </nav>
 
+      <GlobalSearchBar
+        class="en-tete-recherche"
+        compacte
+        :territoires="territoires"
+        :chargement="chargement"
+        :erreur="messageErreur"
+        @select="fermer()"
+      />
+
       <a
         class="bouton-contact"
         href="https://calumrobertson.fr"
@@ -212,6 +234,14 @@ onUnmounted(() => {
         >
           <AppIcon :icone="X" :taille="24" />
         </button>
+      </div>
+      <div class="tiroir-recherche">
+        <GlobalSearchBar
+          :territoires="territoires"
+          :chargement="chargement"
+          :erreur="messageErreur"
+          @select="fermer()"
+        />
       </div>
       <nav class="nav-tiroir" aria-label="Navigation principale">
         <RouterLink
@@ -267,6 +297,12 @@ onUnmounted(() => {
   font: 600 1.25rem/1 var(--font-serif);
   color: var(--text-primary);
   letter-spacing: -0.01em;
+}
+
+/* F3 (#53): the compact search sits right-aligned before Contact. */
+.en-tete-recherche {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .nav-bureau {
@@ -399,6 +435,10 @@ onUnmounted(() => {
     display: none;
   }
 
+  .en-tete-recherche {
+    display: none;
+  }
+
   .bouton-contact {
     display: none;
   }
@@ -454,6 +494,10 @@ onUnmounted(() => {
   background: none;
   color: var(--text-primary);
   cursor: pointer;
+}
+
+.tiroir-recherche {
+  padding: var(--space-4) var(--space-6) var(--space-2);
 }
 
 .nav-tiroir {

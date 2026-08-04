@@ -28,8 +28,10 @@ const props = withDefaults(
     territoires: Territoire[]
     chargement?: boolean
     erreur?: string | null
+    /** Compact (header host, F3/#53): no tabs row, reduced input height. */
+    compacte?: boolean
   }>(),
-  { chargement: false, erreur: null },
+  { chargement: false, erreur: null, compacte: false },
 )
 
 const emit = defineEmits<{
@@ -164,8 +166,8 @@ function surFocusout(e: FocusEvent) {
 </script>
 
 <template>
-  <div class="global-search" @focusout="surFocusout">
-    <div class="global-search__tabs" role="tablist" aria-label="Type de recherche">
+  <div class="global-search" :class="{ 'global-search--compacte': compacte }" @focusout="surFocusout">
+    <div v-if="!compacte" class="global-search__tabs" role="tablist" aria-label="Type de recherche">
       <button
         type="button"
         id="gsb-tab-entites"
@@ -274,6 +276,15 @@ function surFocusout(e: FocusEvent) {
   position: relative;
   width: 100%;
   max-width: 560px;
+}
+
+/* Compact host (header — F3/#53): no tabs, a tighter input bar. */
+.global-search--compacte {
+  max-width: 320px;
+}
+
+.global-search--compacte .global-search__bar {
+  min-height: 40px;
 }
 
 /* ---- Tabs (Entités actif — Données / Aléatoire en attente) ---- */
