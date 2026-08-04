@@ -374,7 +374,6 @@ onUnmounted(() => {
 /* F3 (#53) + #61: the search collapses into the « Rechercher » button,
    right-aligned before Contact; the expanded bar overlays below the header. */
 .en-tete-recherche {
-  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -434,14 +433,12 @@ onUnmounted(() => {
 }
 
 .nav-bureau {
-  position: absolute;
-  left: 50%;
-  top: 0;
+  flex: 1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-6);
   height: 100%;
-  transform: translateX(-50%);
 }
 
 .nav-lien {
