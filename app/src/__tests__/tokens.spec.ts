@@ -250,4 +250,11 @@ describe('DESIGN.md §7 — Depth & surface', () => {
     expectToken('--surface-chrome', 'rgba(255,255,255,0.8)')
     expectToken('--blur-chrome', '12px')
   })
+
+  it('declares the hero band surface — the landing hero’s branded ground (V8 mock)', () => {
+    expectToken(
+      '--surface-hero',
+      'radial-gradient(46rem 32rem at 82% -6%, color-mix(in oklab, var(--brand-100) 55%, transparent), transparent 70%), var(--surface-secondary)',
+    )
+  })
 })

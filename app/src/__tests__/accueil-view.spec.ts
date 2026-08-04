@@ -131,6 +131,27 @@ describe('Accueil — EXEMPLES (Sélection aléatoire)', () => {
   })
 })
 
+describe('Accueil — héros vs carrousel : fonds et séparation verticale', () => {
+  it('le héros est une bande pleine largeur, distincte de la zone de contenu du carrousel', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const { wrapper } = await monter(async () => payload)
+
+    const hero = wrapper.find('.accueil-hero')
+    const interieur = wrapper.find('.accueil-interieur')
+    const carrousel = wrapper.find('.accueil-exemples')
+
+    expect(hero.exists()).toBe(true)
+    expect(interieur.exists()).toBe(true)
+    expect(carrousel.exists()).toBe(true)
+
+    // Le héros est une bande à part entière (pleine largeur), pas une zone
+    // dans la page : le carrousel vit sur le fond de page, en dessous.
+    expect(hero.element.parentElement?.classList.contains('accueil')).toBe(true)
+    expect(carrousel.element.parentElement?.classList.contains('accueil-interieur')).toBe(true)
+    expect(interieur.element.contains(hero.element)).toBe(false)
+  })
+})
+
 describe('Accueil — l’outro', () => {
   it('propose le lien Sources & Méthodes', async () => {
     const { wrapper } = await monter(async () => payload)

@@ -9,6 +9,10 @@
  * a random selection of fiches (EntityCarousel); the outro closes with the
  * thesis-as-evidence teaser and Sources & Méthodes.
  *
+ * The hero is its own full-bleed band on --surface-hero, separated vertically
+ * from the carousel zone (plain page surface) by the band edge + border
+ * (DESIGN.md §7) — the two landing zones never blur together.
+ *
  * States (ui-elements.md): skeleton while the payload loads; typed
  * PayloadError with a Retry button; honest static-rhythm freshness fallback.
  * The search bar and the carousel need the reference table — the carousel's
@@ -59,47 +63,51 @@ watchEffect(() => {
 
 <template>
   <section class="accueil" :aria-busy="chargement ? 'true' : 'false'">
-    <div class="accueil-interieur">
-      <header class="accueil-hero">
-        <LuskBrand class="accueil-marque" />
+    <header class="accueil-hero">
+      <div class="accueil-hero-interieur">
+        <div class="accueil-hero-contenu">
+          <LuskBrand class="accueil-marque" />
 
-        <p class="accueil-accroche">
-          lusk · Intelligence territoriale en Bretagne
-        </p>
-        <p class="accueil-sous-titre">
-          Lusk transforme les données publiques éparses de la Bretagne en intelligence
-          territoriale — pour chaque commune, EPCI et département, une fiche d'identité
-          lisible, sourcée et datée.
-        </p>
+          <p class="accueil-accroche">
+            lusk · Intelligence territoriale en Bretagne
+          </p>
+          <p class="accueil-sous-titre">
+            Lusk transforme les données publiques éparses de la Bretagne en intelligence
+            territoriale — pour chaque commune, EPCI et département, une fiche d'identité
+            lisible, sourcée et datée.
+          </p>
 
-        <GlobalSearchBar
-          class="accueil-recherche"
-          :territoires="territoires"
-          :chargement="chargement"
-          :erreur="messagesErreur"
-        />
-
-        <div class="accueil-produit">
-          <RouterLink to="/carte" class="accueil-carte">
-            <AppIcon :icone="Map" :taille="18" aria-hidden="true" />
-            La carte interactive
-            <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
-          </RouterLink>
-
-          <RouterLink
-            v-if="fraicheur"
-            :to="{ path: '/methodologie' }"
-            class="accueil-fraicheur"
-          >{{ fraicheur }}</RouterLink>
-          <div
-            v-else
-            class="squelette squelette--fraicheur"
-            role="status"
-            aria-label="Chargement des données"
+          <GlobalSearchBar
+            class="accueil-recherche"
+            :territoires="territoires"
+            :chargement="chargement"
+            :erreur="messagesErreur"
           />
-        </div>
-      </header>
 
+          <div class="accueil-produit">
+            <RouterLink to="/carte" class="accueil-carte">
+              <AppIcon :icone="Map" :taille="18" aria-hidden="true" />
+              La carte interactive
+              <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
+            </RouterLink>
+
+            <RouterLink
+              v-if="fraicheur"
+              :to="{ path: '/methodologie' }"
+              class="accueil-fraicheur"
+            >{{ fraicheur }}</RouterLink>
+            <div
+              v-else
+              class="squelette squelette--fraicheur"
+              role="status"
+              aria-label="Chargement des données"
+            />
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="accueil-interieur">
       <EntityCarousel
         v-if="exemples.length > 0"
         class="accueil-exemples"
@@ -131,18 +139,22 @@ watchEffect(() => {
   background: var(--surface-secondary);
 }
 
-.accueil-interieur {
+/* ---- La bande du héros : son propre fond de marque (--surface-hero, DESIGN.md
+   §7), pleine largeur — la bande se termine par un liseré, puis la zone de
+   contenu reprend le fond de page : les deux zones ne se confondent pas. ---- */
+.accueil-hero {
+  background: var(--surface-hero);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.accueil-hero-interieur {
   width: 100%;
   max-width: var(--content-max-width);
   margin-inline: auto;
-  padding: var(--space-16) var(--grid-margin-mobile) var(--space-12);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
+  padding: var(--space-16) var(--grid-margin-mobile) var(--space-20);
 }
 
-/* ---- Le héros : la marque ouvre, puis la revendication serif (DESIGN.md §1) ---- */
-.accueil-hero {
+.accueil-hero-contenu {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -158,6 +170,16 @@ watchEffect(() => {
 .accueil-marque :deep(.lusk-marque__ermine) {
   width: 34px;
   height: 34px;
+}
+
+.accueil-interieur {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding: var(--space-16) var(--grid-margin-mobile) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
 }
 
 .accueil-accroche {
