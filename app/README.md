@@ -20,12 +20,12 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 
 ## Routes
 
-The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The other routes are placeholders until their tickets land:
+The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The **carte interactive** (`/carte`) is built too (issue #39) — MapExplorer (MapLibre GL, CARTO Voyager basemap, GeoJSON territory masks per ADR-0008, theme-driven indicator layers), MapSidebar (search, mask levels, legend), and the same ThemeTabs subheader. maplibre-gl is lazy-loaded with the route (a ~225 ko gzip chunk on `/carte` only). The remaining routes are placeholders until their tickets land:
 
 | Route | Name | Status |
 |---|---|---|
 | `/` | `accueil` | Placeholder |
-| `/carte` | `carte` | Placeholder |
+| `/carte` | `carte` | **Built** — map (#39) |
 | `/communes` | `communes` | Placeholder |
 | `/epcis` | `epcis` | Placeholder |
 | `/departements` | `departements` | Placeholder |
