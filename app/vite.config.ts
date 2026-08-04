@@ -5,7 +5,8 @@ import path from 'node:path'
 
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
-import type { Plugin } from 'vite'
+import type { Connect, Plugin } from 'vite'
+import type { ServerResponse } from 'node:http'
 
 // Vite 7 + Vitest 4 share this config. The `test` block wires Vitest:
 // happy-dom (no browser), unit specs under src/.
@@ -14,34 +15,44 @@ import type { Plugin } from 'vite'
 // and createWebHistory (client-side history routing, server-side fallback).
 
 // The published payload lives at the repo root (public/data/ — ADR-0004) and
-// nginx aliases /data/ to it in production. In dev there is no nginx, so the
-// /data/ fetch (the loader's default baseUrl) 404s. This dev-only middleware
-// serves the same files from the same path — the app's /data/ fetch stays
-// honest in dev without shipping the payload into dist/.
+// nginx aliases /data/ to it in production. In dev and in `vite preview` there
+// is no nginx, so the /data/ fetch (the loader's default baseUrl) 404s. This
+// middleware serves the same files from the same path — the app's /data/ fetch
+// stays honest locally, and a missing file is a real 404 (the loader's
+// « 404 = theme absent » contract, mirroring the Vercel /data/ passthrough).
 const racinePayload = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../public/data')
+
+async function servirPayloadMiddleware(
+  req: Connect.IncomingMessage,
+  res: ServerResponse,
+  suivant: Connect.NextFunction,
+): Promise<void> {
+  if (!req.url?.startsWith('/data/')) return suivant()
+  const relatif = req.url.slice('/data/'.length)
+  const chemin = path.resolve(racinePayload, relatif)
+  if (!chemin.startsWith(racinePayload + path.sep)) {
+    res.statusCode = 403
+    res.end('Hors du répertoire /data')
+    return
+  }
+  try {
+    const contenu = await readFile(chemin)
+    res.setHeader('Content-Type', 'application/json')
+    res.end(contenu)
+  } catch {
+    res.statusCode = 404
+    res.end('Payload introuvable')
+  }
+}
 
 function servirPayloadEnDev(): Plugin {
   return {
     name: 'servir-payload-dev',
     configureServer(serveur) {
-      serveur.middlewares.use(async (req, res, suivant) => {
-        if (!req.url?.startsWith('/data/')) return suivant()
-        const relatif = req.url.slice('/data/'.length)
-        const chemin = path.resolve(racinePayload, relatif)
-        if (!chemin.startsWith(racinePayload + path.sep)) {
-          res.statusCode = 403
-          res.end('Hors du répertoire /data')
-          return
-        }
-        try {
-          const contenu = await readFile(chemin)
-          res.setHeader('Content-Type', 'application/json')
-          res.end(contenu)
-        } catch {
-          res.statusCode = 404
-          res.end('Payload introuvable')
-        }
-      })
+      serveur.middlewares.use(servirPayloadMiddleware)
+    },
+    configurePreviewServer(serveur) {
+      serveur.middlewares.use(servirPayloadMiddleware)
     },
   }
 }
