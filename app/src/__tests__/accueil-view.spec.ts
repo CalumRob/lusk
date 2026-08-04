@@ -46,13 +46,30 @@ async function monter(charger: ChargerPayload, options: Record<string, unknown> 
 }
 
 describe('Accueil — le héros', () => {
-  it('porte la revendication en serif — voix produit, jamais la première personne', async () => {
+  it('porte la marque sur le héros — le lock-up LuskBrand (mock V8)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const marque = wrapper.find('.accueil-hero .lusk-marque')
+    expect(marque.exists()).toBe(true)
+    expect(marque.text()).toContain('lusk')
+  })
+
+  it('porte le titre « lusk · Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
     const { wrapper } = await monter(async () => payload)
 
     const accroche = wrapper.find('.accueil-accroche').text()
-    expect(accroche).toContain('Lusk transforme des données publiques')
+    expect(accroche).toBe('lusk · Intelligence territoriale en Bretagne')
     expect(accroche).not.toMatch(/\bJe\b/)
     expect(wrapper.find('.accueil-sous-titre').exists()).toBe(true)
+  })
+
+  it('le sous-titre énonce la promesse ET le périmètre (Bretagne, données publiques)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const sousTitre = wrapper.find('.accueil-sous-titre').text()
+    expect(sousTitre).toContain('intelligence territoriale')
+    expect(sousTitre).toContain('Bretagne')
+    expect(sousTitre).toContain('données publiques')
   })
 
   it('propose la recherche globale branchée sur les territoires', async () => {

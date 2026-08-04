@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /**
  * L'accueil — the landing (layouts.md §1 + site-map.md). The visitor's
- * decision path: claim → prove → entice → trust. The serif claim is the hero
- * moment (DESIGN.md §1); the GlobalSearchBar is the way into any fiche; the
- * freshness line makes the "alive" promise literal (ligneFraicheur from the
- * run report); EXEMPLES shows a random selection of fiches (EntityCarousel);
- * the outro closes with the thesis-as-evidence teaser and Sources & Méthodes.
+ * decision path: brand → claim → prove → entice → trust. The hero opens with
+ * the LuskBrand lockup and the title « lusk · Intelligence territoriale en
+ * Bretagne » (mock/brand/iterations/v8.html — the brand moment, DESIGN.md §1);
+ * the GlobalSearchBar is the way into any fiche; the freshness line makes the
+ * "alive" promise literal (ligneFraicheur from the run report); EXEMPLES shows
+ * a random selection of fiches (EntityCarousel); the outro closes with the
+ * thesis-as-evidence teaser and Sources & Méthodes.
  *
  * States (ui-elements.md): skeleton while the payload loads; typed
  * PayloadError with a Retry button; honest static-rhythm freshness fallback.
@@ -18,6 +20,7 @@ import { computed, ref, watchEffect } from 'vue'
 import AppIcon from '@/components/AppIcon.vue'
 import EntityCarousel from '@/components/landing/EntityCarousel.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
+import LuskBrand from '@/components/LuskBrand.vue'
 import { selectionAleatoire } from '@/landing/selection'
 import { ligneFraicheur } from '@/payload/selectors'
 import type { Territoire } from '@/payload/types'
@@ -58,12 +61,15 @@ watchEffect(() => {
   <section class="accueil" :aria-busy="chargement ? 'true' : 'false'">
     <div class="accueil-interieur">
       <header class="accueil-hero">
+        <LuskBrand class="accueil-marque" />
+
         <p class="accueil-accroche">
-          «&nbsp;Lusk transforme des données publiques éparses en intelligence territoriale.&nbsp;»
+          lusk · Intelligence territoriale en Bretagne
         </p>
         <p class="accueil-sous-titre">
-          Lusk rassemble les chiffres ouverts de la Bretagne — communes, EPCI, départements —
-          en une fiche d’identité lisible pour chaque territoire.
+          Lusk transforme les données publiques éparses de la Bretagne en intelligence
+          territoriale — pour chaque commune, EPCI et département, une fiche d'identité
+          lisible, sourcée et datée.
         </p>
 
         <GlobalSearchBar
@@ -135,12 +141,23 @@ watchEffect(() => {
   gap: var(--space-16);
 }
 
-/* ---- Le héros : la revendication est le moment serif (DESIGN.md §1) ---- */
+/* ---- Le héros : la marque ouvre, puis la revendication serif (DESIGN.md §1) ---- */
 .accueil-hero {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
   max-width: 760px;
+}
+
+/* La marque sur le héros — le lock-up LuskBrand agrandi (mock V8 : le lock-up
+   est le moment de marque, plus présent que dans le header). */
+.accueil-marque :deep(.lusk-marque) {
+  font-size: 1.75rem;
+}
+
+.accueil-marque :deep(.lusk-marque__ermine) {
+  width: 34px;
+  height: 34px;
 }
 
 .accueil-accroche {
