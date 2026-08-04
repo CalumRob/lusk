@@ -209,10 +209,14 @@ const classesFond = computed(() =>
 
 <style scoped>
 .carte {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* plein écran sous le header — dvh quand dispo, vh en secours ;
+     flex: 0 0 auto pour que la hauteur explicite l'emporte sur le flex. */
+  height: calc(100vh - var(--header-height));
+  height: calc(100dvh - var(--header-height));
   background: var(--surface-secondary);
   transition: background-color 300ms ease-in-out;
 }

@@ -137,7 +137,7 @@ describe('MapExplorer — the theme-driven indicator layer', () => {
   it('paints the neutral mask fill in Aperçu (no theme)', async () => {
     const { carte } = await monter()
 
-    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe('#E4ECEA')
+    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe('#BFD5D0')
   })
 
   it('paints the theme choropleth and joins the indicator onto the source data', async () => {
@@ -164,7 +164,7 @@ describe('MapExplorer — the theme-driven indicator layer', () => {
 
     await wrapper.setProps({ theme: 'mobilite' })
 
-    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe('#E4ECEA')
+    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe('#BFD5D0')
   })
 })
 

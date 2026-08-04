@@ -133,7 +133,7 @@ function ajouterCouches(): void {
       type: 'line',
       source: ID_SOURCE(niveau),
       layout: { visibility: 'none' },
-      paint: { 'line-color': COULEUR_CONTOUR, 'line-width': 1 },
+      paint: { 'line-color': COULEUR_CONTOUR, 'line-width': 1.2 },
     })
   }
 }
@@ -314,8 +314,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .map-explorer {
   position: relative;
-  width: 100%;
-  height: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 480px;
   background: var(--surface-tertiary);
 }

@@ -108,7 +108,7 @@ describe('expressionCouleurs — the MapLibre fill expression', () => {
 
   it('guards null/missing values to the neutral color', () => {
     const expr = expressionCouleurs([10], ['#e8e8f5', '#8e85c4'])
-    expect(expr).toContain('#E4ECEA')
+    expect(expr).toContain('#BFD5D0')
   })
 
   it('collapses to the neutral fill when there are no breaks (no data at all)', () => {
