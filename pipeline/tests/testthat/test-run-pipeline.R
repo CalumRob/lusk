@@ -28,6 +28,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$construire <- 0
   appels$publish <- 0
   appels$parquet <- 0
+  appels$geometrie <- 0
   appels$donnees_vues <- NULL
   appels$vintages_compute_vus <- NULL
   appels$payload_vu <- NULL
@@ -38,6 +39,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$rapport_statuts_vus <- NULL
   appels$rapport_mode_vu <- NULL
   appels$rapport_cible_vue <- NULL
+  appels$geometrie_cible_vue <- NULL
 
   faux_payload <- list(
     indicateurs = data.frame(x = 1),
@@ -81,6 +83,13 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$backend_vu <- backend
       invisible(payload)
     },
+    # issue #60 : la géométrie (ADR-0008) est publiée par le run, vers la même
+    # cible que le payload — un artefact partagé, pas une table du thème.
+    publier_geometrie = function(cible = "public/data", fetch = NULL) {
+      appels$geometrie <- appels$geometrie + 1
+      appels$geometrie_cible_vue <- cible
+      invisible(NULL)
+    },
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL) {
       appels$rapport_statuts_vus <- statuts
       appels$rapport_mode_vu <- mode
@@ -105,6 +114,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_equal(appels$construire, 1)
   expect_equal(appels$publish, 1)
   expect_equal(appels$parquet, 1)
+  expect_equal(appels$geometrie, 1)
 
   # la donnée du compute vient de construire_donnees_brut
   expect_s3_class(appels$donnees_vues, "tbl_df")
@@ -115,10 +125,12 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
 
   # publish reçoit le payload de compute, vers la cible du run, en "static"
   # (issue #10 : le run écrit l'artefact complet — parquet + JSON) ; les
-  # vintages partent en parquet
+  # vintages partent en parquet ; la géométrie (issue #60) part vers la même
+  # cible que le payload
   expect_identical(appels$payload_vu, faux_payload)
   expect_equal(appels$publish_cible_vue, "public/data")
   expect_equal(appels$backend_vu, "static")
+  expect_equal(appels$geometrie_cible_vue, "public/data")
   expect_equal(nrow(appels$vintages_vus), 2)
 
   # le mode par défaut est "full" — le comportement local est inchangé

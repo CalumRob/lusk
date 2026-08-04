@@ -4,6 +4,10 @@
 # Idempotent par construction : les téléchargements sautent ce qui existe (et
 # valide), le rebuild est déterministe, la publication écrase (sémantique
 # d'upsert).
+# Issue #60 : le run publie aussi la géométrie du fond de carte (ADR-0008) —
+# les trois masques CARTO-PE sous public/data/, un artefact partagé qui n'est
+# pas une table du thème (publier_geometrie, appelée après publish vers la
+# même cible).
 # mode (issue #8, ADR-0004) : "full" (défaut, local) télécharge tout ; "cron"
 # (runner GitHub Actions) ne télécharge que les sources « cron » du manifeste,
 # saute les « manuel » (enregistrées « à traiter à la main ») et s'arrête
@@ -61,6 +65,13 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # Le backend par défaut de publish est "static" : le run écrit l'artefact
   # complet du produit (parquet canonique + projections JSON de l'app).
   publish(payload, sortie)
+  # Issue #60 : la géométrie du fond de carte (ADR-0008) est un artefact
+  # partagé, pas une table du thème — le run la publie vers la MÊME cible que
+  # le payload (communes/epcis/departements.geojson sous public/data/), depuis
+  # Admin Express CARTO-PE. Upsert comme le payload : relancer écrase, et un
+  # échec de fetch s'arrête bruyamment (le run ne part jamais avec une carte
+  # cassée).
+  publier_geometrie(sortie)
   nanoparquet::write_parquet(vintages, file.path(sortie, "vintages.parquet"))
 
   # Le rapport du run réussi, écrit après la publication — il décrit un run
