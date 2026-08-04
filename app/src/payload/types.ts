@@ -55,20 +55,39 @@ export interface Indicateur {
   rang_reg: number | null
   vintage_source: string
   vintage_version: string
-  vintage_date_reference: string
+  /** The reference date — null for a rolling base (DPE: ADR-0009, spec #12). */
+  vintage_date_reference: string | null
   vintage_date_publication: string
 }
 
-/** One story row per territoire (schema name kept: histoires). */
-export interface Histoire {
+/**
+ * The Story row per territoire (schema name kept: histoires) — the shape is
+ * theme-specific (the R contract: Démographie carries the two soldes, Habitat
+ * the parc-reading parts). Discriminated by `theme`.
+ */
+export interface HistoireDemographie {
   territoire: string
   type: TerritoireType
-  theme: Theme
+  theme: 'demographie'
   story_key: string
   solde_naturel: number
   solde_migratoire: number
   classification: string
 }
+
+export interface HistoireHabitat {
+  territoire: string
+  type: TerritoireType
+  theme: 'habitat'
+  story_key: string
+  /** Classification + parts de justification null sous le seuil n < 30 (suppression, R contract). */
+  classification: string | null
+  part_passoires: number | null
+  part_abc: number | null
+  n_dpe: number
+}
+
+export type Histoire = HistoireDemographie | HistoireHabitat
 
 /** One basic-stat row per (territoire × key) — the Aperçu tab renders it, never derives it. */
 export interface ApercuRow {

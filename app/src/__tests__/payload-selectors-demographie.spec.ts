@@ -69,8 +69,9 @@ describe('histoirePourTerritoire — the Story row', () => {
     const histoire = histoirePourTerritoire(payloadDemographie, 'demographie', '22001')
 
     expect(histoire).toMatchObject({ story_key: 'attractive-ou-fertile', classification: 'fertile' })
-    expect(histoire?.solde_naturel).toBe(70)
-    expect(histoire?.solde_migratoire).toBe(30)
+    if (histoire?.theme !== 'demographie') throw new Error('attendu : story Démographie')
+    expect(histoire.solde_naturel).toBe(70)
+    expect(histoire.solde_migratoire).toBe(30)
   })
 
   it('returns null for a territory without a story (handled honestly)', () => {
