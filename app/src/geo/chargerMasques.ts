@@ -5,9 +5,10 @@
  * drift is loud, and a 404 on a mask level means the level is absent (honest
  * state — the layer control disables it), never a crash.
  *
- * The real geometry is published by the pipeline (a pipeline ticket); until
- * then the demo files live in public/data/. The app does not care which
- * produced them — the contract is the FeatureCollection shape in geo/types.ts.
+ * The real geometry is published by the pipeline from Admin Express CARTO-PE
+ * (issue #60) — communes/epcis/departements.geojson under /data/. The app does
+ * not care which produced them — the contract is the FeatureCollection shape
+ * in geo/types.ts.
  */
 
 import { PayloadError } from '../payload/validate'
