@@ -1,3 +1,4 @@
+import { cpSync, existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -45,8 +46,25 @@ function servirPayloadEnDev(): Plugin {
   }
 }
 
+// Vercel (ADR-0010): /data/ must live in the build output — a per-deploy
+// snapshot of public/data, the Vercel-side equivalent of the Pi's nginx alias.
+function copierPayloadEnBuild(): Plugin {
+  return {
+    name: 'copier-payload-build',
+    closeBundle() {
+      const cibleData = path.resolve(fileURLToPath(new URL('.', import.meta.url)), 'dist', 'data')
+      if (!existsSync(racinePayload)) {
+        console.warn('[copier-payload-build] payload introuvable — rien à copier dans dist/data')
+        return
+      }
+      cpSync(racinePayload, cibleData, { recursive: true })
+      console.log('[copier-payload-build] payload copié dans dist/data')
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [vue(), servirPayloadEnDev()],
+  plugins: [vue(), servirPayloadEnDev(), copierPayloadEnBuild()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

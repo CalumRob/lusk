@@ -35,7 +35,14 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 ## Deploy path
 
-Per `docs/self-hosting.md`: a tag triggers the dist build, committed to the repo; the Pi's nginx serves `dist/` at the site root with `try_files $uri /index.html` (SPA fallback) and aliases `/data/` to the published payload. The app therefore uses **history-mode routing** (`createWebHistory`, default base `/`) — matching that fallback. `public/data/` at the repo root is the payload the nginx `/data/` alias serves; the app never ships it in its own bundle.
+Two hosts, one URL contract (`/` = app, `/data/` = payload):
+
+- **Pi (primary, `docs/self-hosting.md`)** — a tag triggers the dist build, committed to the repo; nginx serves `dist/` at the site root with `try_files $uri /index.html` (SPA fallback) and aliases `/data/` to repo-root `public/data/` — the payload is served live from the working tree, never baked into the app.
+- **Vercel (failover/dev, ADR-0006)** — project Root Directory = `app`. `vercel.json` supplies the same SPA fallback (rewrites → `/index.html`). Vercel can only serve what the build output contains, so the Vite build copies `public/data/` into `dist/data/` (ADR-0010) — a per-deploy snapshot, exactly the failover role: current as of the last push, no nginx alias needed.
+
+The app therefore uses **history-mode routing** (`createWebHistory`, default base `/`) — matching the fallback on both hosts. The app's own bundle never ships the payload; `public/data/` at the repo root remains the single source, fetched at runtime from `/data/`.
+
+From the repo root, `npm run dev` / `build` / `test` / `preview` forward to the app via the root `package.json` wrapper.
 
 ## Conventions
 

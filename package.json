@@ -1,0 +1,10 @@
+{
+  "name": "lusk",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "test": "npm --prefix app run test",
+    "preview": "npm --prefix app run preview"
+  }
+}

@@ -4,6 +4,7 @@
 # ...except these files
 !/.gitignore
 !/README.md
+!/package.json
 
 # Directories the build will live in — un-ignored up front so
 # future code pushes without editing this file
