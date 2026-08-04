@@ -7,11 +7,7 @@
   "outputDirectory": "app/dist",
   "rewrites": [
     {
-      "source": "/data/(.*)",
-      "destination": "/data/$1"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!data/).*)",
       "destination": "/index.html"
     }
   ]
