@@ -277,8 +277,8 @@ describe('GlobalSearchBar — keyboard navigation and opening', () => {
   })
 })
 
-describe('AccueilView — demo placement (the header host lands with C1)', () => {
-  it('renders the search on the Accueil route while the payload loads', async () => {
+describe('AccueilView — la recherche du héros (D3 landing)', () => {
+  it('renders the search in the landing hero with the full tab set', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/')
     const wrapper = mount(AccueilView, { global: { plugins: [router] } })
@@ -305,6 +305,6 @@ describe('AccueilView — demo placement (the header host lands with C1)', () =>
 
     const etat = wrapper.find('.global-search__etat--erreur')
     expect(etat.exists()).toBe(true)
-    expect(etat.text()).toContain('Impossible de charger les territoires.')
+    expect(etat.text()).toContain('Impossible de charger les données.')
   })
 })

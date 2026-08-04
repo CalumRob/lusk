@@ -34,6 +34,8 @@ async function chargerPayloadCommite() {
     'apercu.json',
     'indicateurs_demographie.json',
     'histoires_demographie.json',
+    'indicateurs_habitat.json',
+    'histoires_habitat.json',
     'run-report.json',
   ]) {
     fichiers[nom] = lireJson(nom)
@@ -52,13 +54,13 @@ async function chargerPayloadCommite() {
 }
 
 describe('payload contract — the committed payload parses and renders', () => {
-  it('covers the 9 fixture territories (4 communes, 2 EPCIs, 2 départements, région)', async () => {
+  it('covers the real 1 269 territoires (1 202 communes, 62 EPCIs, 4 départements, région)', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(payload.territoires).toHaveLength(9)
-    expect(payload.territoires.filter((t) => t.type === 'commune')).toHaveLength(4)
-    expect(payload.territoires.filter((t) => t.type === 'epci')).toHaveLength(2)
-    expect(payload.territoires.filter((t) => t.type === 'departement')).toHaveLength(2)
+    expect(payload.territoires).toHaveLength(1269)
+    expect(payload.territoires.filter((t) => t.type === 'commune')).toHaveLength(1202)
+    expect(payload.territoires.filter((t) => t.type === 'epci')).toHaveLength(62)
+    expect(payload.territoires.filter((t) => t.type === 'departement')).toHaveLength(4)
     expect(payload.territoires.filter((t) => t.type === 'region')).toHaveLength(1)
   })
 
@@ -66,17 +68,19 @@ describe('payload contract — the committed payload parses and renders', () => 
     const payload = await chargerPayloadCommite()
     const nom = (id: string) => payload.territoires.find((t) => t.territoire === id)?.nom
 
-    expect(nom('22001')).toBe('Commune A1')
-    expect(nom('200000001')).toBe('EPCI X')
+    expect(nom('22001')).toBe('Allineuc')
+    expect(nom('200067460')).toBe('Communauté de communes Loudéac Communauté - Bretagne Centre')
     expect(nom('53')).toBe('Bretagne')
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })
 
-  it('publishes one indicateur row per (territoire × key × detail), all demographie', async () => {
+  it('publishes one indicateur row per (territoire × key × detail), across both themes', async () => {
     const payload = await chargerPayloadCommite()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
-    expect(payload.indicateurs.every((i) => i.theme === 'demographie')).toBe(true)
+    const themes = new Set(payload.indicateurs.map((i) => i.theme))
+    expect(themes.has('demographie')).toBe(true)
+    expect(themes.has('habitat')).toBe(true)
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
   })
@@ -96,7 +100,11 @@ describe('payload contract — the committed payload parses and renders', () => 
     const payload = await chargerPayloadCommite()
 
     for (const i of payload.indicateurs) {
-      expect(i.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      // la référence est null pour la base DPE roulante (ADR-0009) — jamais
+      // pour la publication (toujours publiée)
+      if (i.vintage_date_reference !== null) {
+        expect(i.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      }
       expect(i.vintage_date_publication).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
   })
@@ -107,15 +115,15 @@ describe('payload contract — the committed payload parses and renders', () => 
     const lignes = apercuPourTerritoire(payload, '22001')
     expect(lignes.map((l) => l.key)).toContain('population')
     expect(lignes.find((l) => l.key === 'population')).toMatchObject({
-      value: 2000,
+      value: 589,
       unit: 'hab.',
     })
   })
 
-  it('drives the theme tab bar from the payload (only demographie is built)', async () => {
+  it('drives the theme tab bar from the payload (both themes are built)', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(themesPresent(payload)).toEqual(['demographie'])
+    expect(themesPresent(payload)).toEqual(['demographie', 'habitat'])
   })
 
   it('formats the committed ranks as French chips', async () => {
@@ -124,7 +132,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     const densite29001 = payload.indicateurs.find(
       (i) => i.territoire === '29001' && i.key === 'densite',
     )
-    expect(formaterRang(densite29001?.rang_epci ?? null, 'rang_epci')).toBe("P25 de l'EPCI")
+    expect(formaterRang(densite29001?.rang_epci ?? null, 'rang_epci')).toBe("P20 de l'EPCI")
   })
 
   it('renders the freshness line from the committed run-report', async () => {

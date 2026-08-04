@@ -5,26 +5,51 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import AppHeader from '../components/AppHeader.vue'
+import {
+  apercuAvecNAFixture,
+  histoiresDemographieFixture,
+  indicateursDemographieFixture,
+  runReportFraisFixture,
+  territoiresFixture,
+} from '../payload/fixtures'
+import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import type { ChargerPayload } from '../payload/usePayload'
+import type { Payload } from '../payload/types'
 import { routes } from '../router'
 
 /**
  * AppHeader (DESIGN.md §5 + site-map.md §Navigation): sticky 60px chrome,
  * Lusk wordmark (serif → /), centered nav Accueil · Carte · Données ·
  * Méthodes with a 2px underline on the active route, Contact →
- * calumrobertson.fr. Mobile (<768px): full-screen drawer (transform-only,
- * scroll-lock, focus trap, Escape closes). Données is a small disclosure
- * dropdown to the three lists. No locale toggle (French-only v1).
+ * calumrobertson.fr, and (F3, issue #53) the GlobalSearchBar — search works
+ * on every page. Mobile (<768px): full-screen drawer (transform-only,
+ * scroll-lock, focus trap, Escape closes); a select inside the search closes
+ * the drawer. Données is a small disclosure dropdown to the three lists.
  */
+
+const payload: Payload = {
+  territoires: territoiresFixture,
+  indicateurs: indicateursDemographieFixture,
+  histoires: histoiresDemographieFixture,
+  apercu: apercuAvecNAFixture,
+  runReport: runReportFraisFixture,
+}
+
+const charger: ChargerPayload = async () => payload
 
 let montee: ReturnType<typeof mount> | null = null
 
-async function montage(chemin = '/') {
+async function montage(chemin = '/', options: Record<string, unknown> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(chemin)
   await router.isReady()
   const wrapper = mount(AppHeader, {
     attachTo: document.body,
-    global: { plugins: [router] },
+    global: {
+      plugins: [router],
+      provide: { [PAYLOAD_CHARGER_KEY]: charger },
+      ...options,
+    },
   })
   montee = wrapper
   return { router, wrapper }
@@ -201,6 +226,48 @@ describe('AppHeader — le tiroir mobile', () => {
     await wrapper.find('.bouton-menu').trigger('click')
     await wrapper.find('.tiroir a[href="/"]').trigger('click')
 
+    expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
+  })
+})
+
+describe('AppHeader — la recherche globale (F3, #53)', () => {
+  it('embeds the GlobalSearchBar on every page', async () => {
+    const { wrapper } = await montage('/carte')
+
+    const input = wrapper.find('input[role="combobox"]')
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+  })
+
+  it('searches the payload territoires from the header', async () => {
+    const { wrapper } = await montage()
+    const input = wrapper.find('input[role="combobox"]')
+
+    await input.trigger('focus')
+    await input.setValue('epci')
+    await new Promise((r) => setTimeout(r, 300))
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options.length).toBeGreaterThan(0)
+    expect(options[0].text()).toContain('EPCI')
+  })
+
+  it('closes the mobile drawer when a search result is chosen', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-menu').trigger('click')
+    expect(wrapper.find('.tiroir').classes()).toContain('tiroir--ouvert')
+
+    const tiroir = wrapper.find('.tiroir')
+    const input = tiroir.find('input[role="combobox"]')
+    await input.trigger('focus')
+    await input.setValue('epci')
+    await new Promise((r) => setTimeout(r, 300))
+
+    await tiroir.findAll('[role="option"]')[0].trigger('click')
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(wrapper.find('.tiroir').classes()).not.toContain('tiroir--ouvert')
     expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
   })
 })

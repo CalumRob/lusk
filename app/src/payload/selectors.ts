@@ -243,12 +243,16 @@ function formaterDateCourt(iso: string): string {
 /**
  * The vintage stamp — source · version · the two dates (reference AND
  * publication). The "alive" promise: always present, never optional
- * (ui-elements.md §Indicator/KPI figure).
+ * (ui-elements.md §Indicator/KPI figure). A rolling base (DPE — ADR-0009)
+ * has no reference date: the stamp shows the publication date only, honestly
+ * ("publ." alone) — never a fabricated reference.
  */
 export function formaterVintage(indicateur: Indicateur): string {
+  const reference = indicateur.vintage_date_reference
+    ? `réf. ${formaterDateCourt(indicateur.vintage_date_reference)} · `
+    : ''
   return (
     `${indicateur.vintage_source} · ${indicateur.vintage_version} · ` +
-    `réf. ${formaterDateCourt(indicateur.vintage_date_reference)} · ` +
-    `publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`
+    `${reference}publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`
   )
 }
