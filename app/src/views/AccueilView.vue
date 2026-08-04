@@ -66,8 +66,6 @@ watchEffect(() => {
     <header class="accueil-hero">
       <div class="accueil-hero-interieur">
         <div class="accueil-hero-contenu">
-          <LuskBrand class="accueil-marque" />
-
           <p class="accueil-accroche">
             lusk · Intelligence territoriale en Bretagne
           </p>
@@ -103,6 +101,12 @@ watchEffect(() => {
               aria-label="Chargement des données"
             />
           </div>
+        </div>
+
+        <div class="accueil-hero-marque" aria-label="Lusk — Observatoire des territoires bretons">
+          <LuskBrand verticale class="accueil-marque" />
+          <span class="accueil-marque-caption">Observatoire des territoires bretons</span>
+          <span class="accueil-marque-etymo">breton → élan, mouvement</span>
         </div>
       </div>
     </header>
@@ -152,6 +156,10 @@ watchEffect(() => {
   max-width: var(--content-max-width);
   margin-inline: auto;
   padding: var(--space-16) var(--grid-margin-mobile) var(--space-20);
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: var(--space-12);
+  align-items: center;
 }
 
 .accueil-hero-contenu {
@@ -161,15 +169,44 @@ watchEffect(() => {
   max-width: 760px;
 }
 
-/* La marque sur le héros — le lock-up LuskBrand agrandi (mock V8 : le lock-up
-   est le moment de marque, plus présent que dans le header). */
+/* La marque du héros (mock V8) : le lock-up vertical — l'ermine au-dessus du
+   mot — avec la légende et l'étymologie, dans la colonne de droite. */
+.accueil-hero-marque {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+  user-select: none;
+}
+
 .accueil-marque :deep(.lusk-marque) {
-  font-size: 1.75rem;
+  font-size: 2.5rem;
 }
 
 .accueil-marque :deep(.lusk-marque__ermine) {
-  width: 34px;
-  height: 34px;
+  width: 56px;
+  height: 56px;
+}
+
+.accueil-marque-caption {
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.accueil-marque-etymo {
+  font: 400 0.9375rem/1.5 var(--font-serif);
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 767.98px) {
+  .accueil-hero-interieur {
+    grid-template-columns: 1fr;
+    gap: var(--space-10);
+  }
 }
 
 .accueil-interieur {

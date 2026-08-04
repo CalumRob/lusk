@@ -54,6 +54,40 @@ describe('Accueil — le héros', () => {
     expect(marque.text()).toContain('lusk')
   })
 
+  it('dispose le lock-up dans la colonne de droite du héros (frère du contenu, jamais au-dessus du titre)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const interieur = wrapper.find('.accueil-hero-interieur')
+    const contenu = wrapper.find('.accueil-hero-contenu')
+    const marque = wrapper.find('.accueil-hero-marque')
+
+    expect(interieur.exists()).toBe(true)
+    expect(contenu.exists()).toBe(true)
+    expect(marque.exists()).toBe(true)
+    expect(contenu.element.parentElement).toBe(interieur.element)
+    expect(marque.element.parentElement).toBe(interieur.element)
+    expect(contenu.element.contains(marque.element)).toBe(false)
+  })
+
+  it('présente le lock-up en vertical — l’ermine au-dessus du mot (mock V8, pas le logo V4)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    const marque = wrapper.find('.accueil-hero-marque .lusk-marque--verticale')
+    expect(marque.exists()).toBe(true)
+
+    const ermine = wrapper.find('.accueil-hero-marque .lusk-marque__ermine')
+    const mot = wrapper.find('.accueil-hero-marque .lusk-marque__mot')
+    expect(ermine.exists()).toBe(true)
+    expect(mot.exists()).toBe(true)
+  })
+
+  it('la marque porte la légende et l’étymologie du lock-up (v8 : « Observatoire des territoires bretons », « breton → élan, mouvement »)', async () => {
+    const { wrapper } = await monter(async () => payload)
+
+    expect(wrapper.find('.accueil-marque-caption').text()).toBe('Observatoire des territoires bretons')
+    expect(wrapper.find('.accueil-marque-etymo').text()).toBe('breton → élan, mouvement')
+  })
+
   it('porte le titre « lusk · Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
     const { wrapper } = await monter(async () => payload)
 
