@@ -97,7 +97,8 @@ watch(
 
 <template>
   <section class="fiche" :class="classesFond" :aria-busy="chargement ? 'true' : 'false'">
-    <div class="fiche-en-tete">
+    <div class="fiche-en-tete-surface">
+      <div class="fiche-en-tete">
       <div
         v-if="chargement"
         class="fiche-chargement"
@@ -145,10 +146,16 @@ watch(
           </div>
         </div>
       </template>
+      </div>
+      <ThemeTabs
+        v-if="typeValide"
+        :themes="themes"
+        :selected="selection"
+        @select="choisirOnglet"
+      />
     </div>
 
     <template v-if="typeValide">
-      <ThemeTabs :themes="themes" :selected="selection" @select="choisirOnglet" />
       <div
         class="fiche-contenu"
         role="tabpanel"
@@ -199,6 +206,10 @@ watch(
   max-width: var(--content-max-width);
   margin-inline: auto;
   padding: var(--space-8) var(--grid-margin-mobile) var(--space-6);
+}
+
+.fiche-en-tete-surface {
+  background: var(--surface-primary);
 }
 
 .fil-ariane {

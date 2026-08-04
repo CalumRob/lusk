@@ -30,11 +30,17 @@ function regle(css: string, selecteur: string): string {
 }
 
 describe('#70 — le sous-en-tête de la fiche délimite les zones de fond', () => {
+  it('donne au sous-en-tête complet une surface solide', () => {
+    expect(regle(cssTerritoire, '\\.fiche-en-tete-surface')).toContain(
+      'background: var(--surface-primary)',
+    )
+  })
+
   it('donne au bandeau ThemeTabs un fond solide distinct du fond de page (--surface-primary, pas le chrome translucide)', () => {
     expect(regle(cssThemeTabs, '\\.theme-tabs')).toContain('background: var(--surface-primary)')
   })
 
-  it('garde la séparation basse du bandeau (border-bottom)', () => {
+  it('garde la séparation basse du bandeau complet (border-bottom)', () => {
     expect(regle(cssThemeTabs, '\\.theme-tabs')).toContain('border-bottom: 1px solid var(--border-subtle)')
   })
 })
