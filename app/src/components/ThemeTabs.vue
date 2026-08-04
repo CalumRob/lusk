@@ -117,9 +117,7 @@ function surTouche(ev: KeyboardEvent): void {
   align-items: stretch;
   overflow-x: auto;
   padding: 0 var(--grid-margin-mobile);
-  background: var(--surface-chrome);
-  -webkit-backdrop-filter: blur(var(--blur-chrome));
-  backdrop-filter: blur(var(--blur-chrome));
+  background: var(--surface-primary);
   border-bottom: 1px solid var(--border-subtle);
 }
 

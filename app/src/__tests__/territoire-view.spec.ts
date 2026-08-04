@@ -132,6 +132,19 @@ describe('TerritoireView — l’en-tête de la fiche', () => {
     expect(liens).toEqual(['EPCI Y', 'Département 29', 'Bretagne'])
     expect(switcher.find('[aria-current="page"]').text()).toBe('Commune C')
   })
+
+  it('groups the type chip and the context switcher into a centered actions row under the title', async () => {
+    const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
+
+    const identite = wrapper.find('.fiche-identite')
+    expect(identite.exists()).toBe(true)
+    expect(identite.find('.fiche-titre h1').text()).toBe('Commune C')
+
+    const actions = identite.find('.fiche-actions')
+    expect(actions.exists()).toBe(true)
+    expect(actions.find('.puce-type').text()).toBe('Commune')
+    expect(actions.find('.contexte-switcher').exists()).toBe(true)
+  })
 })
 
 describe('TerritoireView — les onglets (ADR-0007)', () => {

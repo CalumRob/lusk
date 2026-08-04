@@ -97,7 +97,8 @@ watch(
 
 <template>
   <section class="fiche" :class="classesFond" :aria-busy="chargement ? 'true' : 'false'">
-    <div class="fiche-en-tete">
+    <div class="fiche-en-tete-surface">
+      <div class="fiche-en-tete">
       <div
         v-if="chargement"
         class="fiche-chargement"
@@ -135,17 +136,26 @@ watch(
           <span v-else aria-current="page">Région</span>
         </nav>
 
-        <div class="fiche-titre">
-          <h1>{{ nomTerritoire }}</h1>
-          <span class="puce-type">{{ nomType }}</span>
+        <div class="fiche-identite">
+          <div class="fiche-titre">
+            <h1>{{ nomTerritoire }}</h1>
+          </div>
+          <div class="fiche-actions">
+            <span class="puce-type">{{ nomType }}</span>
+            <ContexteSwitcher :echelons="echelons" />
+          </div>
         </div>
-
-        <ContexteSwitcher :echelons="echelons" />
       </template>
+      </div>
+      <ThemeTabs
+        v-if="typeValide"
+        :themes="themes"
+        :selected="selection"
+        @select="choisirOnglet"
+      />
     </div>
 
     <template v-if="typeValide">
-      <ThemeTabs :themes="themes" :selected="selection" @select="choisirOnglet" />
       <div
         class="fiche-contenu"
         role="tabpanel"
@@ -198,6 +208,10 @@ watch(
   padding: var(--space-8) var(--grid-margin-mobile) var(--space-6);
 }
 
+.fiche-en-tete-surface {
+  background: var(--surface-primary);
+}
+
 .fil-ariane {
   display: flex;
   flex-wrap: wrap;
@@ -221,18 +235,34 @@ watch(
   color: var(--text-tertiary);
 }
 
+.fiche-identite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
 .fiche-titre {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
 }
 
 .fiche-titre h1 {
   margin: 0;
   font: var(--text-h1);
   letter-spacing: var(--text-h1-tracking);
+}
+
+.fiche-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3) var(--space-4);
 }
 
 .puce-type {
