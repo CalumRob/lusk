@@ -39,6 +39,7 @@ describe("MapSidebar — le panneau d'options de la carte", () => {
 
     expect(wrapper.findComponent({ name: 'GlobalSearchBar' }).exists()).toBe(true)
     expect(wrapper.find('input[role="combobox"]').exists()).toBe(true)
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
   })
 
   it('renders one radio per available mask level, the active one checked', () => {

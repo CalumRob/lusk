@@ -61,10 +61,11 @@ describe('App shell', () => {
     expect(wrapper.find('main').attributes('id')).toBe('contenu-principal')
   })
 
-  it('renders the Accueil placeholder at /', async () => {
+  it('renders the landing page at /', async () => {
     const { wrapper } = await mountApp('/')
 
-    expect(wrapper.text()).toContain('Accueil')
+    expect(wrapper.find('.accueil').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Lusk transforme des données publiques')
   })
 
   it('navigates to the Carte placeholder', async () => {

@@ -19,12 +19,13 @@ import { routes } from '../router'
 
 /**
  * AppHeader (DESIGN.md §5 + site-map.md §Navigation): sticky 60px chrome,
- * Lusk wordmark (serif → /), centered nav Accueil · Carte · Données ·
- * Méthodes with a 2px underline on the active route, Contact →
- * calumrobertson.fr, and (F3, issue #53) the GlobalSearchBar — search works
- * on every page. Mobile (<768px): full-screen drawer (transform-only,
- * scroll-lock, focus trap, Escape closes); a select inside the search closes
- * the drawer. Données is a small disclosure dropdown to the three lists.
+ * Lusk wordmark (serif → /) — the sole home affordance (#61) — centered nav
+ * Carte · Données · Méthodes with a 2px underline on the active route,
+ * Contact → calumrobertson.fr, and (F3, #53 + #61) the search collapsed into
+ * a « Rechercher » button that expands an overlay below the header. Mobile
+ * (<768px): full-screen drawer (transform-only, scroll-lock, focus trap,
+ * Escape closes); a select inside the search closes the drawer. Données is a
+ * small disclosure dropdown to the three lists.
  */
 
 const payload: Payload = {
@@ -62,7 +63,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-const LIENS_NAV = ['Accueil', 'Carte', 'Données', 'Méthodes']
+const LIENS_NAV = ['Carte', 'Données', 'Méthodes']
 
 describe('AppHeader — le mot-clé et la navigation', () => {
   it('renders the locked brand lockup — ermine + italic "lusk" — linking to /', async () => {
@@ -75,7 +76,7 @@ describe('AppHeader — le mot-clé et la navigation', () => {
     expect(marque.attributes('href')).toBe('/')
   })
 
-  it('renders the four centered nav items in order', async () => {
+  it('renders the centered nav items in order — no Accueil, the wordmark is the home affordance', async () => {
     const { wrapper } = await montage()
 
     const libelles = wrapper
@@ -86,25 +87,33 @@ describe('AppHeader — le mot-clé et la navigation', () => {
   })
 
   it('underlines the active nav item for the current route', async () => {
-    const { router, wrapper } = await montage('/')
+    const { router, wrapper } = await montage('/carte')
 
-    const accueil = wrapper.findAll('.nav-lien')[0]
-    expect(accueil.classes()).toContain('nav-lien--actif')
-
-    await router.push('/carte')
-    await wrapper.vm.$nextTick()
-    const carte = wrapper.findAll('.nav-lien')[1]
+    const carte = wrapper.findAll('.nav-lien')[0]
     expect(carte.classes()).toContain('nav-lien--actif')
+
+    await router.push('/communes')
+    await wrapper.vm.$nextTick()
     expect(wrapper.findAll('.nav-lien')[0].classes()).not.toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
   })
 
   it('keeps Données active on the three list routes and the fiche', async () => {
     const { router, wrapper } = await montage('/communes')
-    expect(wrapper.findAll('.nav-lien')[2].classes()).toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
 
     await router.push('/territoire/commune/29002')
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('.nav-lien')[2].classes()).toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
+  })
+
+  it('has no Accueil link in the desktop nav or the mobile drawer', async () => {
+    const { wrapper } = await montage()
+
+    expect(wrapper.find('.nav-bureau').text()).not.toContain('Accueil')
+
+    await wrapper.find('.bouton-menu').trigger('click')
+    expect(wrapper.find('.tiroir').text()).not.toContain('Accueil')
   })
 
   it('renders Contact as the external calumrobertson.fr link', async () => {
@@ -153,7 +162,7 @@ describe('AppHeader — le menu Données', () => {
   it('opens the three data-list links on click', async () => {
     const { wrapper } = await montage()
 
-    const donnees = wrapper.findAll('.nav-lien')[2]
+    const donnees = wrapper.findAll('.nav-lien')[1]
     expect(donnees.attributes('aria-expanded')).toBe('false')
 
     await donnees.trigger('click')
@@ -168,10 +177,10 @@ describe('AppHeader — le menu Données', () => {
   it('closes the menu when a list link is chosen', async () => {
     const { wrapper } = await montage()
 
-    await wrapper.findAll('.nav-lien')[2].trigger('click')
+    await wrapper.findAll('.nav-lien')[1].trigger('click')
     await wrapper.findAll('.sous-nav-lien')[0].trigger('click')
 
-    expect(wrapper.findAll('.nav-lien')[2].attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('.nav-lien')[1].attributes('aria-expanded')).toBe('false')
   })
 })
 
@@ -226,19 +235,22 @@ describe('AppHeader — le tiroir mobile', () => {
     const { wrapper } = await montage()
 
     await wrapper.find('.bouton-menu').trigger('click')
-    await wrapper.find('.tiroir a[href="/"]').trigger('click')
+    await wrapper.find('.tiroir a[href="/carte"]').trigger('click')
 
     expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
   })
 })
 
-describe('AppHeader — la recherche globale (F3, #53)', () => {
-  it('embeds the GlobalSearchBar on every page', async () => {
+describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
+  it('shows a « Rechercher » button instead of an always-open search in the header', async () => {
     const { wrapper } = await montage('/carte')
 
-    const input = wrapper.find('input[role="combobox"]')
-    expect(input.exists()).toBe(true)
-    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    const bouton = wrapper.find('.bouton-recherche')
+    expect(bouton.exists()).toBe(true)
+    expect(bouton.text()).toContain('Rechercher')
+    expect(bouton.attributes('aria-expanded')).toBe('false')
+    expect(bouton.attributes('aria-controls')).toBe('recherche-superposee')
+    expect(wrapper.find('.en-tete-recherche input[role="combobox"]').exists()).toBe(false)
   })
 
   it('sits right-aligned before Contact in the header (F3/#53 layout)', async () => {
@@ -253,10 +265,58 @@ describe('AppHeader — la recherche globale (F3, #53)', () => {
     expect(positionContact).toBeGreaterThan(positionRecherche)
   })
 
-  it('searches the payload territoires from the header', async () => {
+  it('expands the search below the header on click and moves focus into the input', async () => {
     const { wrapper } = await montage()
-    const input = wrapper.find('input[role="combobox"]')
+    const bouton = wrapper.find('.bouton-recherche')
 
+    await bouton.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const panneau = wrapper.find('.recherche-superposee')
+    expect(panneau.exists()).toBe(true)
+    expect(bouton.attributes('aria-expanded')).toBe('true')
+
+    const input = panneau.find('input[role="combobox"]')
+    expect(input.exists()).toBe(true)
+    expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
+    expect(panneau.element.contains(document.activeElement)).toBe(true)
+  })
+
+  it('closes on Escape and returns focus to the button', async () => {
+    const { wrapper } = await montage()
+    const bouton = wrapper.find('.bouton-recherche').element as HTMLButtonElement
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.recherche-superposee').exists()).toBe(true)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.recherche-superposee').exists()).toBe(false)
+    expect(wrapper.find('.bouton-recherche').attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(bouton)
+  })
+
+  it('closes on an outside click', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.recherche-superposee').exists()).toBe(true)
+
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.recherche-superposee').exists()).toBe(false)
+    expect(wrapper.find('.bouton-recherche').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('searches the payload territoires once expanded', async () => {
+    const { wrapper } = await montage()
+    await wrapper.find('.bouton-recherche').trigger('click')
+
+    const input = wrapper.find('.recherche-superposee input[role="combobox"]')
     await input.trigger('focus')
     await input.setValue('epci')
     await new Promise((r) => setTimeout(r, 300))
