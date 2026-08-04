@@ -11,10 +11,11 @@ import AccueilView from '../views/AccueilView.vue'
 
 /**
  * GlobalSearchBar — the search into any fiche (ui-elements.md §Search).
- * These tests pin the keyboard contract (arrows move the active option via
- * aria-activedescendant, Enter opens, Escape closes), the navigation to
- * /territoire/:type/:id, and the state machine (debounced loading spinner,
- * empty state, error state).
+ * A single untitled search box (#64) — the placeholder carries the
+ * affordance, no tabs row. These tests pin the keyboard contract (arrows
+ * move the active option via aria-activedescendant, Enter opens, Escape
+ * closes), the navigation to /territoire/:type/:id, and the state machine
+ * (debounced loading spinner, empty state, error state).
  */
 
 const INPUT = 'input[role="combobox"]'
@@ -49,7 +50,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('GlobalSearchBar — structure and tabs', () => {
+describe('GlobalSearchBar — structure', () => {
   it('renders the combobox with the French placeholder and label', () => {
     const { wrapper } = monterRecherche()
     const input = wrapper.find(INPUT)
@@ -62,15 +63,12 @@ describe('GlobalSearchBar — structure and tabs', () => {
     expect(input.attributes('aria-expanded')).toBe('false')
   })
 
-  it('shows the three tabs — Entités selected, Données and Aléatoire disabled', () => {
+  it('has no tabs row — a single untitled search box', () => {
     const { wrapper } = monterRecherche()
-    const onglets = wrapper.findAll('[role="tab"]')
 
-    expect(onglets.map((o) => o.text())).toEqual(['Entités', 'Données', 'Aléatoire'])
-    expect(onglets[0].attributes('aria-selected')).toBe('true')
-    expect(onglets[1].attributes('aria-disabled')).toBe('true')
-    expect(onglets[2].attributes('aria-disabled')).toBe('true')
-    expect(onglets[1].attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
+    expect(wrapper.find('.global-search__tabs').exists()).toBe(false)
+    expect(wrapper.findAll('input[type="text"]')).toHaveLength(1)
   })
 
   it('closes the dropdown when focus leaves the component', async () => {
@@ -278,7 +276,7 @@ describe('GlobalSearchBar — keyboard navigation and opening', () => {
 })
 
 describe('AccueilView — la recherche du héros (D3 landing)', () => {
-  it('renders the search in the landing hero with the full tab set', async () => {
+  it('renders the single untitled search in the landing hero — no tabs row', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/')
     const wrapper = mount(AccueilView, { global: { plugins: [router] } })
@@ -286,11 +284,8 @@ describe('AccueilView — la recherche du héros (D3 landing)', () => {
     const input = wrapper.find(INPUT)
     expect(input.exists()).toBe(true)
     expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
-    expect(wrapper.findAll('[role="tab"]').map((o) => o.text())).toEqual([
-      'Entités',
-      'Données',
-      'Aléatoire',
-    ])
+    expect(wrapper.findAll('[role="tab"]')).toHaveLength(0)
+    expect(wrapper.findAll('input[type="text"]')).toHaveLength(1)
   })
 
   it('surfaces a payload failure through the search error state', async () => {

@@ -1,11 +1,10 @@
 <script setup lang="ts">
 /**
  * GlobalSearchBar — the way into any fiche (ui-elements.md §Search).
- * Input + tabs (Entités / Données / Aléatoire) + results dropdown.
- * v1 ships the Entités tab only: it searches the territoires reference table
- * (payload.territoires) by name and opens /territoire/:type/:id. The
- * Données and Aléatoire tabs are disabled placeholders so later tickets slot
- * in without touching the shell.
+ * A single, untitled search box (#64): the input + results dropdown, no tabs
+ * row — the placeholder carries the affordance. It searches the territoires
+ * reference table (payload.territoires) by name and opens
+ * /territoire/:type/:id.
  *
  * States (ui-elements.md): rest / focus / typing (debounced) / loading
  * (spinner) / empty ("Aucun résultat trouvé.") / error (muted text + icon).
@@ -28,10 +27,8 @@ const props = withDefaults(
     territoires: Territoire[]
     chargement?: boolean
     erreur?: string | null
-    /** Compact (header host, F3/#53): no tabs row, reduced input height. */
-    compacte?: boolean
   }>(),
-  { chargement: false, erreur: null, compacte: false },
+  { chargement: false, erreur: null },
 )
 
 const emit = defineEmits<{
@@ -166,40 +163,7 @@ function surFocusout(e: FocusEvent) {
 </script>
 
 <template>
-  <div class="global-search" :class="{ 'global-search--compacte': compacte }" @focusout="surFocusout">
-    <div v-if="!compacte" class="global-search__tabs" role="tablist" aria-label="Type de recherche">
-      <button
-        type="button"
-        id="gsb-tab-entites"
-        class="global-search__tab global-search__tab--actif"
-        role="tab"
-        aria-selected="true"
-        aria-controls="gsb-panel"
-      >
-        Entités
-      </button>
-      <button
-        type="button"
-        class="global-search__tab"
-        role="tab"
-        aria-selected="false"
-        aria-disabled="true"
-        disabled
-      >
-        Données
-      </button>
-      <button
-        type="button"
-        class="global-search__tab"
-        role="tab"
-        aria-selected="false"
-        aria-disabled="true"
-        disabled
-      >
-        Aléatoire
-      </button>
-    </div>
-
+  <div class="global-search" @focusout="surFocusout">
     <div class="global-search__bar">
       <Search class="global-search__icone" aria-hidden="true" />
       <input
@@ -232,8 +196,6 @@ function surFocusout(e: FocusEvent) {
       v-if="ouvert"
       id="gsb-panel"
       class="global-search__dropdown"
-      role="tabpanel"
-      aria-labelledby="gsb-tab-entites"
       @mousedown.prevent
     >
       <div
@@ -276,46 +238,6 @@ function surFocusout(e: FocusEvent) {
   position: relative;
   width: 100%;
   max-width: 560px;
-}
-
-/* Compact host (header — F3/#53): no tabs, a tighter input bar. */
-.global-search--compacte {
-  max-width: 320px;
-}
-
-.global-search--compacte .global-search__bar {
-  min-height: 40px;
-}
-
-/* ---- Tabs (Entités actif — Données / Aléatoire en attente) ---- */
-.global-search__tabs {
-  display: flex;
-  gap: var(--space-1);
-  padding: 0 0 var(--space-2);
-}
-
-.global-search__tab {
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  text-transform: uppercase;
-  padding: var(--space-1) var(--space-3);
-  border: none;
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background-color 120ms ease-out, color 120ms ease-out;
-}
-
-.global-search__tab--actif {
-  background: var(--surface-tertiary);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.global-search__tab:disabled {
-  color: var(--text-tertiary);
-  cursor: not-allowed;
 }
 
 /* ---- Input bar ---- */
