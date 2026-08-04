@@ -5,6 +5,7 @@
 !/.gitignore
 !/README.md
 !/package.json
+!/vercel.json
 
 # Directories the build will live in — un-ignored up front so
 # future code pushes without editing this file
