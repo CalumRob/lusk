@@ -180,24 +180,28 @@ watchEffect(() => {
   user-select: none;
 }
 
+/* Tailles du lock-up (mock V8) : le mot domine — l'ermine reste
+   proportionnellement plus petite que le mot, la légende et l'étymologie
+   suivent la montée en échelle. */
 .accueil-marque :deep(.lusk-marque) {
-  font-size: 2.5rem;
+  font-size: 3.75rem;
 }
 
 .accueil-marque :deep(.lusk-marque__ermine) {
-  width: 56px;
-  height: 56px;
+  width: 80px;
+  height: 80px;
 }
 
 .accueil-marque-caption {
   font: var(--text-caption);
+  font-size: 0.875rem;
   letter-spacing: var(--text-caption-tracking);
   text-transform: uppercase;
   color: var(--text-tertiary);
 }
 
 .accueil-marque-etymo {
-  font: 400 0.9375rem/1.5 var(--font-serif);
+  font: 400 1.0625rem/1.5 var(--font-serif);
   font-style: italic;
   color: var(--text-secondary);
 }
