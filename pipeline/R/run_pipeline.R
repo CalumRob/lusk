@@ -73,6 +73,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # cassée).
   publier_geometrie(sortie)
   nanoparquet::write_parquet(vintages, file.path(sortie, "vintages.parquet"))
+  # Issue #73 : la table des vintages est aussi projetée en JSON — la table
+  # partagée que l'app lit pour citer les sources d'un bloc (le Story cite SES
+  # jeux de données, plus jamais un tampon de thème).
+  jsonlite::write_json(vintages, file.path(sortie, "vintages.json"),
+                       dataframe = "rows", na = "null",
+                       digits = 17, pretty = TRUE)
 
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet.
