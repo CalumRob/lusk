@@ -278,7 +278,13 @@ validate_payload <- function(payload,
   }
 
   # 2. la table des indicateurs du thème fait foi : chaque clé du payload y est
-  # déclarée (issue #9), avec la bonne multiplicité par territoire.
+  # déclarée (issue #9), avec la bonne multiplicité par territoire. Issue #97 :
+  # une multiplicité NA (table INDICATEURS_<theme>) déclare une clé à nombre de
+  # lignes VARIABLE par territoire — la LQ commune × activité n'a pas un nombre
+  # fixe de lignes par commune (une ligne par cellule observée). La clé reste
+  # déclarée et présente, seule l'égalité exacte est levée pour elle ; les
+  # autres clés gardent leur multiplicité entière (comportement inchangé pour
+  # Démographie/Habitat, qui ne déclarent jamais NA).
   declares <- stats::setNames(indicateurs$multiplicite, indicateurs$key)
   comptes <- table(ind$territoire, ind$key)
   non_declarees <- setdiff(colnames(comptes), names(declares))
@@ -291,8 +297,11 @@ validate_payload <- function(payload,
     stop("Payload invalide : clés d'indicateur manquantes : ",
          paste(manquantes, collapse = ", "), ".", call. = FALSE)
   }
+  fixes <- !is.na(declares)
   mal <- rownames(comptes)[apply(comptes[, names(declares), drop = FALSE],
-                                 1, function(ligne) any(ligne != declares))]
+                                 1, function(ligne) {
+                                   any(ligne[fixes] != declares[fixes])
+                                 })]
   if (length(mal) > 0) {
     stop("Payload invalide : clés d'indicateur inattendues pour ",
          paste(mal, collapse = ", "), ".", call. = FALSE)

@@ -41,11 +41,27 @@ verifier_fichier <- function(chemin) {
   TRUE
 }
 
+# TELECHARGEMENT_TIMEOUT ------------------------------------------------------
+# Le timeout de téléchargement en secondes (issue #105). Sur R 4.4.1 (version
+# épinglée), utils::download.file n'a PAS d'argument `timeout` — le seul levier
+# est l'option globale options(timeout=), par défaut 60 s. Mesuré en réel :
+# l'export SIRENE prend ~112 s et le zip chômage fait ~121 Mo — un run froid
+# (mode full ou cron) dépassait le plafond de 60 s et échouait avec
+# « Timeout of 60 seconds ». 600 s couvre les deux avec de la marge.
+
+TELECHARGEMENT_TIMEOUT <- 600
+
 # telecharger_fichier ---------------------------------------------------------
 # Télécharge une URL vers le cache. Wrapper séparé pour être mockable dans les
 # tests (le réseau n'entre jamais dans la boucle de test) — le seam de test du
 # téléchargement.
+# Le timeout est relevé ICI, au seam (issue #105) : l'option globale est
+# appliquée autour de l'appel et restaurée avec on.exit() à sa valeur
+# précédente — l'option n'est JAMAIS laissée modifiée après le retour.
 telecharger_fichier <- function(url, cible) {
+  ancien_timeout <- getOption("timeout")
+  on.exit(options(timeout = ancien_timeout), add = TRUE)
+  options(timeout = TELECHARGEMENT_TIMEOUT)
   utils::download.file(url, cible, mode = "wb", quiet = TRUE)
 }
 

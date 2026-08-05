@@ -84,14 +84,18 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
   expect_named(payload$apercu, c("territoire", "type", "key", "value", "unit"))
   expect_equal(nrow(payload$apercu), 0)
 
-  # les fichiers par thème + la référence partagée + vintages + rapport
+  # les fichiers par thème + la référence partagée + vintages + rapport.
+  # Issue #116 : l'Aperçu d'un run Habitat est vide par design — le fichier
+  # partagé apercu n'est NI écrit NI écrasé par un thème sans aperçu (seul
+  # Démographie le peuple).
   for (f in c("indicateurs_habitat.parquet", "indicateurs_habitat.json",
               "histoires_habitat.parquet", "histoires_habitat.json",
               "territoires.parquet", "territoires.json",
-              "apercu.parquet", "apercu.json",
               "vintages.parquet", "run-report.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
+  expect_false(file.exists(file.path(cible, "apercu.parquet")))
+  expect_false(file.exists(file.path(cible, "apercu.json")))
 
   # le parquet relit exactement le payload publié
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_habitat.parquet"))

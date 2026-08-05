@@ -50,8 +50,17 @@ publish <- function(payload, cible = "public/data", backend = "static") {
                              file.path(cible, paste0("histoires_", theme, ".parquet")))
   nanoparquet::write_parquet(payload$territoires,
                              file.path(cible, "territoires.parquet"))
-  nanoparquet::write_parquet(payload$apercu,
-                             file.path(cible, "apercu.parquet"))
+  # Issue #116 : apercu est un fichier PARTAGÉ (pas par-thème) — seule la
+  # table Démographie le peuple (les thèmes sans aperçu ont une table vide par
+  # design). Un thème sans aperçu ne doit NI écrire NI écraser le fichier
+  # partagé : last-writer-wins, un run Habitat/Économie écraserait l'aperçu
+  # Démographie par `[]`. La table du payload reste présente et vide (le
+  # contrat, validate_payload l'exige) ; publish ne la sérialise que lorsqu'elle
+  # porte des lignes.
+  if (nrow(payload$apercu) > 0) {
+    nanoparquet::write_parquet(payload$apercu,
+                               file.path(cible, "apercu.parquet"))
+  }
 
   if (backend == "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
@@ -70,7 +79,9 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     ecrire_projection(payload$indicateurs, paste0("indicateurs_", theme, ".json"))
     ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
     ecrire_projection(payload$territoires, "territoires.json")
-    ecrire_projection(payload$apercu, "apercu.json")
+    if (nrow(payload$apercu) > 0) {
+      ecrire_projection(payload$apercu, "apercu.json")
+    }
   }
 
   invisible(payload)
