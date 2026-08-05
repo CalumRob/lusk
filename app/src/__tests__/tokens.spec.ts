@@ -257,4 +257,10 @@ describe('DESIGN.md §7 — Depth & surface', () => {
       'radial-gradient(46rem 32rem at 82% -6%, color-mix(in oklab, var(--brand-100) 55%, transparent), transparent 70%), var(--surface-secondary)',
     )
   })
+
+  it('declares the filigrane tokens — the fiche watermark (opacity + width range)', () => {
+    expectToken('--filigrane-opacity', '0.08')
+    expectToken('--filigrane-largeur-min', 'min(24vw, 280px)')
+    expectToken('--filigrane-largeur-max', 'min(64vw, 680px)')
+  })
 })

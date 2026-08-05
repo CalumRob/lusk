@@ -21,6 +21,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import ApercuOnglet from '@/components/fiche/ApercuOnglet.vue'
 import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
+import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import { echelleContexte } from '@/fiche/echelleContexte'
@@ -156,23 +157,30 @@ watch(
     </div>
 
     <template v-if="typeValide">
-      <div
-        class="fiche-contenu"
-        role="tabpanel"
-        :id="idPanneau(selection)"
-        :aria-labelledby="idOnglet(selection)"
-      >
-        <ApercuOnglet
-          v-if="payload && selection === null"
-          :payload="payload"
-          :territoire="String(route.params.id)"
-        />
-        <OngletTheme
-          v-else-if="ongletTheme"
-          :theme="ongletTheme.theme"
-          :payload="ongletTheme.payload"
-          :territoire="String(route.params.id)"
-        />
+      <div class="fiche-corps">
+        <!-- Le filigrane (DESIGN.md §7) : dessinable n'importe où dans la zone
+             d'onglet (entre le sous-en-tête et le pied de page), re-tiré à
+             chaque changement d'onglet (remount via :key), figé pour la durée
+             du montage. -->
+        <FiligraneFiche :key="selection ?? 'apercu'" :theme="selection" />
+        <div
+          class="fiche-contenu"
+          role="tabpanel"
+          :id="idPanneau(selection)"
+          :aria-labelledby="idOnglet(selection)"
+        >
+          <ApercuOnglet
+            v-if="payload && selection === null"
+            :payload="payload"
+            :territoire="String(route.params.id)"
+          />
+          <OngletTheme
+            v-else-if="ongletTheme"
+            :theme="ongletTheme.theme"
+            :payload="ongletTheme.payload"
+            :territoire="String(route.params.id)"
+          />
+        </div>
       </div>
     </template>
   </section>
@@ -338,6 +346,12 @@ watch(
 .bouton-reessayer:hover {
   background: var(--surface-tertiary);
   border-color: var(--brand-500);
+}
+
+.fiche-corps {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
 }
 
 .fiche-contenu {
