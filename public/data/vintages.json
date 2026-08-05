@@ -1,0 +1,34 @@
+[
+  {
+    "id": "serie_historique",
+    "source": "INSEE — Série historique du recensement",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "menages",
+    "source": "INSEE — Ménages (dossier complet)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "age_detail",
+    "source": "INSEE — Population par sexe et âge (PRINC)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "epci",
+    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": null
+  }
+]

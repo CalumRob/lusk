@@ -5,7 +5,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import MapExplorer from '../components/carte/MapExplorer.vue'
-import { indicateursDemographieFixture, territoiresFixture } from '../payload/fixtures'
+import {
+  indicateursDemographieFixture,
+  territoiresFixture,
+  vintagesFixture,
+} from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 import { routes } from '../router'
 import { maplibreMock } from './setup'
@@ -48,6 +52,7 @@ const payload: Payload = {
   histoires: [],
   apercu: [],
   runReport: null,
+  vintages: vintagesFixture,
 }
 
 async function monter(overrides: Record<string, unknown> = {}) {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 
 import {
   apercuAvecNAFixture,
@@ -9,6 +9,7 @@ import {
   runReportEchecFixture,
   runReportManuelFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import {
   apercuPourTerritoire,
@@ -32,6 +33,7 @@ const payloadDemographie: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuAvecNAFixture,
   runReport: runReportEchecFixture,
+  vintages: vintagesFixture,
 }
 
 describe('themesPresent — the payload-driven tab bar (ADR-0007)', () => {

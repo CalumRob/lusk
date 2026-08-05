@@ -24,6 +24,7 @@ import {
   validerIndicateurs,
   validerRapportRun,
   validerTerritoires,
+  validerVintages,
 } from './validate'
 
 /** The minimal Response surface the loader needs (fetch() satisfies it). */
@@ -98,6 +99,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
 
   const apercu = validerApercu(await obtenir('apercu.json', false), 'apercu.json', territoires)
   const runReport = validerRapportRun(await obtenir('run-report.json', true), 'run-report.json')
+  const vintages = validerVintages(await obtenir('vintages.json', true), 'vintages.json')
 
-  return { territoires, indicateurs, histoires, apercu, runReport }
+  return { territoires, indicateurs, histoires, apercu, runReport, vintages }
 }

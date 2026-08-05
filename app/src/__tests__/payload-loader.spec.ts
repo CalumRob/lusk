@@ -8,6 +8,7 @@ import {
   indicateursHabitatFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import { chargerPayload, type ChargerOptions, type ReponseFetch } from '../payload/loader'
 import { PayloadError } from '../payload/validate'
@@ -39,6 +40,7 @@ const fichiersDemographie = {
   'histoires_demographie.json': histoiresDemographieFixture,
   'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
+  'vintages.json': vintagesFixture,
 }
 
 describe('chargerPayload — the single seam', () => {
@@ -50,6 +52,19 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.histoires).toHaveLength(9)
     expect(payload.apercu).toHaveLength(apercuAvecNAFixture.length)
     expect(payload.runReport).toEqual(runReportFraisFixture)
+  })
+
+  it('loads the shared vintages table — the story blocks cite their datasets from it', async () => {
+    const payload = await chargerPayload(optionsPour(fichiersDemographie))
+
+    expect(payload.vintages).toEqual(vintagesFixture)
+  })
+
+  it('treats a missing vintages.json (404) as absent — no invented sourcing', async () => {
+    const { 'vintages.json': _vintages, ...sansVintages } = fichiersDemographie
+
+    const payload = await chargerPayload(optionsPour(sansVintages))
+    expect(payload.vintages).toBeNull()
   })
 
   it('fetches every present theme and merges their facts', async () => {

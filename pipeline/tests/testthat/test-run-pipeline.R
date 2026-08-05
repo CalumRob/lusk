@@ -40,6 +40,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$rapport_mode_vu <- NULL
   appels$rapport_cible_vue <- NULL
   appels$geometrie_cible_vue <- NULL
+  appels$vintages_json <- 0
 
   faux_payload <- list(
     indicateurs = data.frame(x = 1),
@@ -106,6 +107,16 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
     },
     .package = "nanoparquet"
   )
+  local_mocked_bindings(
+    # issue #73 : le run projette la table des vintages en JSON — la table que
+    # l'app lit pour citer les sources d'un bloc.
+    write_json = function(x, path, ...) {
+      appels$vintages_json <- appels$vintages_json + 1
+      appels$vintages_json_vus <- x
+      invisible(NULL)
+    },
+    .package = "jsonlite"
+  )
 
   resultat <- run_pipeline()
 
@@ -115,6 +126,8 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_equal(appels$publish, 1)
   expect_equal(appels$parquet, 1)
   expect_equal(appels$geometrie, 1)
+  expect_equal(appels$vintages_json, 1)
+  expect_identical(appels$vintages_json_vus, faux_vintages)
 
   # la donnée du compute vient de construire_donnees_brut
   expect_s3_class(appels$donnees_vues, "tbl_df")

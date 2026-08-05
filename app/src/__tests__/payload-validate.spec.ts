@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 
 import {
   apercuAvecNAFixture,
@@ -6,9 +6,10 @@ import {
   indicateursDemographieFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import { PayloadError, parsePayload } from '../payload/validate'
-import type { Payload } from '../payload/types'
+import type { HistoireDemographie, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
 
@@ -26,6 +27,7 @@ function documentsBruts(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts
     histoires: histoiresDemographieFixture,
     apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
+  vintages: vintagesFixture,
     ...overrides,
   }
 }
@@ -152,6 +154,14 @@ describe('parsePayload — rejects contract drift, loudly', () => {
     indicateurs.push({ ...indicateurs[0] })
 
     attendErreurValidation(documentsBruts({ indicateurs }))
+  })
+
+  it('rejects a Démographie histoire missing the annualized rates (ADR-0011)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresDemographieFixture)) as typeof histoiresDemographieFixture
+    delete (histoires[0] as Partial<HistoireDemographie>).taux_solde_naturel
+    delete (histoires[0] as Partial<HistoireDemographie>).taux_solde_migratoire
+
+    attendErreurValidation(documentsBruts({ histoires }))
   })
 
   it('rejects duplicate apercu rows (territoire × key)', () => {

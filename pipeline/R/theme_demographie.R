@@ -372,59 +372,52 @@ scalaires_demographie <- list(
 )
 
 # compute_histoires_demographie -----------------------------------------------
-# L'Histoire « Attractive ou fertile ? » — une décomposition, une
-# classification 2x2 (ADR-0002, docs/themes/demographie.md).
+# L'Histoire « Trajectoire démographique » — une décomposition, une lecture
+# par quadrant de taux (ADR-0011, docs/themes/demographie.md).
 #
 # Décompose la variation récente de population en deux soldes :
 #   solde naturel    = naissances - décès
 #   solde migratoire = variation totale - solde naturel (le résidu)
-# puis classe chaque territoire dans l'un des quatre quadrants :
-#   - axe de croissance : le taux de variation, relatif à la médiane du groupe
-#     de comparaison (le même que pour les rangs — communes vs EPCIs vs
-#     départements, sur la région). La région, sans groupe, se compare à une
-#     croissance nulle.
-#   - axe de solde : le plus grand des deux |soldes| domine ; ex æquo -> le
-#     solde naturel.
-# Quatre lectures, une par quadrant : fertile (croît × naturel), attractive
-# (croît × migratoire), vieillissante (décroît × naturel), exode (décroît ×
-# migratoire). Règle déterministe documentée (Méthodes).
+# puis exprime chacun en taux annuel pour mille habitants :
+#   taux_solde = solde / 6 ans / population moyenne x 1000
+#   (population moyenne = (POP 2017 + POP 2023) / 2, convention INSEE).
+# La lecture est le signe seul des deux taux — les quatre quadrants du plan
+# (zéro compte négatif), rien de relatif à la région :
+#   attire-renouvelle  (naturel > 0  × migratoire > 0)
+#   attire-meurt       (naturel <= 0 × migratoire > 0)
+#   vide-meurt         (naturel <= 0 × migratoire <= 0)
+#   vide-renouvelle    (naturel > 0  × migratoire <= 0)
+# Les soldes bruts restent publiés à côté des taux. Règle déterministe
+# documentée (Méthodes).
 compute_histoires_demographie <- function(territoires) {
-  groupe_reg <- groupes_comparaison(territoires)$reg
-
   soldes <- territoires %>%
     dplyr::mutate(
-      groupe_reg = groupe_reg,
       solde_naturel = naissances - deces,
       solde_migratoire = (population - population_precedente) - (naissances - deces),
-      taux_croissance = (population - population_precedente) / population_precedente
-    )
-
-  medianes <- soldes %>%
-    dplyr::filter(!is.na(groupe_reg)) %>%
-    dplyr::group_by(groupe_reg) %>%
-    dplyr::summarise(mediane = stats::median(taux_croissance), .groups = "drop")
-
-  soldes %>%
-    dplyr::left_join(medianes, by = "groupe_reg") %>%
-    dplyr::mutate(
-      croit = dplyr::if_else(is.na(mediane),
-                             taux_croissance > 0,
-                             taux_croissance > mediane),
-      migratoire_domine = abs(solde_migratoire) > abs(solde_naturel),
+      population_moyenne = (population_precedente + population) / 2,
+      # Les deux forces lues par l'histoire sont des TAUX annuels pour mille
+      # habitants (INSEE) — solde / 6 ans / population moyenne x 1000 — jamais
+      # les soldes bruts (ADR-0011).
+      taux_solde_naturel = solde_naturel / 6 / population_moyenne * 1000,
+      taux_solde_migratoire = solde_migratoire / 6 / population_moyenne * 1000,
+      # Quatre lectures = les quatre quadrants du plan des deux taux ; signe
+      # seul (zéro compte négatif), rien de relatif à la région (ADR-0011).
       classification = dplyr::case_when(
-        croit & !migratoire_domine ~ "fertile",
-        croit & migratoire_domine ~ "attractive",
-        !croit & !migratoire_domine ~ "vieillissante",
-        !croit & migratoire_domine ~ "exode"
+        taux_solde_naturel > 0 & taux_solde_migratoire > 0 ~ "attire-renouvelle",
+        taux_solde_naturel <= 0 & taux_solde_migratoire > 0 ~ "attire-meurt",
+        taux_solde_naturel <= 0 & taux_solde_migratoire <= 0 ~ "vide-meurt",
+        taux_solde_naturel > 0 & taux_solde_migratoire <= 0 ~ "vide-renouvelle"
       )
     ) %>%
     dplyr::transmute(
       territoire = code,
       type = type,
       theme = "demographie",
-      story_key = "attractive-ou-fertile",
+      story_key = "trajectoire-demographique",
       solde_naturel,
       solde_migratoire,
+      taux_solde_naturel,
+      taux_solde_migratoire,
       classification
     )
 }

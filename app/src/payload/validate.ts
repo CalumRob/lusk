@@ -31,6 +31,7 @@ import type {
   Territoire,
   TerritoireType,
   Theme,
+  Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
 
@@ -329,13 +330,21 @@ export function validerHistoires(
     const story_key = lireChaine(ligne, 'story_key', fichier, ligneIndexee)
 
     // La forme du Story est spécifique au thème (le contrat R) : Démographie
-    // porte les deux soldes, Habitat les parts de lecture du parc.
+    // porte les deux soldes et leurs taux annuels (ADR-0011), Habitat les
+    // parts de lecture du parc.
     if (theme === 'demographie') {
       const solde_naturel = ligne['solde_naturel']
       const solde_migratoire = ligne['solde_migratoire']
+      const taux_solde_naturel = ligne['taux_solde_naturel']
+      const taux_solde_migratoire = ligne['taux_solde_migratoire']
       exiger(estNombre(solde_naturel), fichier, ligneIndexee, '« solde_naturel » doit être un nombre')
       exiger(estNombre(solde_migratoire), fichier, ligneIndexee, '« solde_migratoire » doit être un nombre')
+      exiger(estNombre(taux_solde_naturel), fichier, ligneIndexee, '« taux_solde_naturel » doit être un nombre')
+      exiger(estNombre(taux_solde_migratoire), fichier, ligneIndexee, '« taux_solde_migratoire » doit être un nombre')
       const classification = lireChaine(ligne, 'classification', fichier, ligneIndexee)
+      // La période est OPTIONNELLE : le pipeline ne la publie pas encore
+      // (issue #113) — absente, le titre reste non daté (honnête).
+      const periode = estChaine(ligne['periode']) ? (ligne['periode'] as string) : null
       return {
         territoire,
         type,
@@ -343,7 +352,10 @@ export function validerHistoires(
         story_key,
         solde_naturel,
         solde_migratoire,
+        taux_solde_naturel,
+        taux_solde_migratoire,
         classification,
+        periode,
       }
     }
 
@@ -437,6 +449,30 @@ export function validerRapportRun(brut: unknown, fichier: string): RunReport | n
 }
 
 /**
+ * The shared vintage table (vintages.json) — one row per dataset of the run.
+ * Optional (404 → null), like the run report: the story blocks read it to
+ * cite THEIR datasets, but a payload without it still renders (no invented
+ * sourcing — the source line simply doesn't show).
+ */
+export function validerVintages(brut: unknown, fichier: string): Vintage[] | null {
+  if (brut === null) return null
+  exiger(Array.isArray(brut), fichier, 0, 'la table des vintages doit être un tableau')
+  return (brut as unknown[]).map((ligne, i) => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque vintage doit être un objet')
+    const id = lireChaine(ligne, 'id', fichier, ligneIndexee)
+    const source = lireChaine(ligne, 'source', fichier, ligneIndexee)
+    const version = lireChaine(ligne, 'version', fichier, ligneIndexee)
+    const licence = lireChaine(ligne, 'licence', fichier, ligneIndexee)
+    const dateReference = ligne['date_reference']
+    const datePublication = ligne['date_publication']
+    exiger(dateReference === null || estChaine(dateReference), fichier, ligneIndexee, '« date_reference » doit être une chaîne ou null')
+    exiger(datePublication === null || estChaine(datePublication), fichier, ligneIndexee, '« date_publication » doit être une chaîne ou null')
+    return { id, source, version, licence, date_reference: dateReference, date_publication: datePublication }
+  })
+}
+
+/**
  * Assemble + validate a complete payload from the raw documents (the JSON
  * projections as fetched). The loader merges per-theme facts files before
  * calling this; per-file error attribution lives in the loader.
@@ -447,12 +483,14 @@ export function parsePayload(documents: {
   histoires: unknown
   apercu: unknown
   runReport: unknown
+  vintages?: unknown
 }): Payload {
   const territoires = validerTerritoires(documents.territoires, 'territoires.json')
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
   const histoires = validerHistoires(documents.histoires, 'histoires', territoires)
   const apercu = validerApercu(documents.apercu, 'apercu.json', territoires)
   const runReport = validerRapportRun(documents.runReport, 'run-report.json')
+  const vintages = validerVintages(documents.vintages ?? null, 'vintages.json')
 
-  return { territoires, indicateurs, histoires, apercu, runReport }
+  return { territoires, indicateurs, histoires, apercu, runReport, vintages }
 }

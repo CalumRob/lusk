@@ -104,6 +104,6 @@ test_that("déterminisme : même territoire + mêmes données -> même lecture, 
 
 test_that("l'Histoire Démographie n'est pas touchée", {
   p <- compute_payload(load_fixture())
-  expect_true(all(p$histoires$story_key == "attractive-ou-fertile"))
+  expect_true(all(p$histoires$story_key == "trajectoire-demographique"))
   expect_true(all(!is.na(p$histoires$classification)))
 })

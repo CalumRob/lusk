@@ -9,6 +9,7 @@ import type { CollectionMasque } from '../geo/types'
 import {
   indicateursDemographieFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
@@ -45,6 +46,7 @@ const payload: Payload = {
   histoires: [],
   apercu: [],
   runReport: null,
+  vintages: vintagesFixture,
 }
 
 describe('indicateurParTerritoire — the rows that feed a choropleth', () => {

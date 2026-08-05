@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -13,6 +13,7 @@ import {
   indicateursHabitatFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerPayload } from '../payload/usePayload'
@@ -35,6 +36,7 @@ const payloadDemographie: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
+  vintages: vintagesFixture,
 }
 
 const payloadAvecHabitat: Payload = {
@@ -185,7 +187,7 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     const panneau = wrapper.find('[role="tabpanel"]')
     expect(panneau.text()).toContain('Démographie')
     expect(panneau.text()).toContain('Densité de population')
-    expect(panneau.text()).toContain('Les départs l’emportent sur les arrivées.')
+    expect(panneau.text()).toContain('La population diminue sur ses deux composantes.')
   })
 
   it('writes ?theme= into the URL when a theme tab is chosen', async () => {

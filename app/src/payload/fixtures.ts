@@ -19,6 +19,7 @@ import type {
   Indicateur,
   RunReport,
   Territoire,
+  Vintage,
 } from './types'
 
 /** 9 territoires — codes, noms and EPCI/département ladder from the R fixture. */
@@ -98,20 +99,21 @@ export const indicateursDemographieFixture: Indicateur[] = [
 ]
 
 /**
- * Histoires — the 2x2 story quadrant (solde naturel × solde migratoire):
- * 22001 fertile, 22002 vieillissante, 29001 attractive, 29002 exode.
- * story_key kept from the R schema (CONTEXT.md §Story).
+ * Histoires — the rate-quadrant story (ADR-0011): the two annualized
+ * per-mille rates (taux_solde_*) cross at 0; classification is their signs.
+ * Rates mirror the R fixture output (solde / 6 ans / population moyenne
+ * × 1000, population moyenne = (pop_prec + pop) / 2).
  */
 export const histoiresDemographieFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 70, solde_migratoire: 30, classification: 'fertile' },
-  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: -20, solde_migratoire: -5, classification: 'vieillissante' },
-  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 20, solde_migratoire: 380, classification: 'attractive' },
-  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: -20, solde_migratoire: -380, classification: 'exode' },
-  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 50, solde_migratoire: 25, classification: 'fertile' },
-  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 0, solde_migratoire: 0, classification: 'vieillissante' },
-  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 50, solde_migratoire: 25, classification: 'fertile' },
-  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 0, solde_migratoire: 0, classification: 'vieillissante' },
-  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'attractive-ou-fertile', solde_naturel: 50, solde_migratoire: 25, classification: 'fertile' },
+  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
+  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
+  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
+  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
+  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
 ]
 
 /**
@@ -193,6 +195,46 @@ export const runReportManuelFixture: RunReport = {
     { id: 'menages', mode: 'manuel', status: 'à traiter à la main' },
   ],
 }
+
+/**
+ * The shared vintage table (vintages.json) — one row per dataset of the run.
+ * The Démographie story cites ITS two datasets from here: the série
+ * historique (rates) and the base des EPCI (the nuage's comparison groups).
+ */
+export const vintagesFixture: Vintage[] = [
+  {
+    id: 'serie_historique',
+    source: 'INSEE — Série historique du recensement',
+    version: '2023',
+    licence: 'lov2',
+    date_reference: '2023-01-01',
+    date_publication: '2026-06-30',
+  },
+  {
+    id: 'menages',
+    source: 'INSEE — Ménages (dossier complet)',
+    version: '2023',
+    licence: 'lov2',
+    date_reference: '2023-01-01',
+    date_publication: '2026-06-30',
+  },
+  {
+    id: 'age_detail',
+    source: 'INSEE — Population par sexe et âge (PRINC)',
+    version: '2023',
+    licence: 'lov2',
+    date_reference: '2023-01-01',
+    date_publication: '2026-06-30',
+  },
+  {
+    id: 'epci',
+    source: 'INSEE — Base des EPCI à fiscalité propre au 01/01/2025',
+    version: '2025',
+    licence: 'lov2',
+    date_reference: '2025-01-01',
+    date_publication: null,
+  },
+]
 
 /** A second theme (habitat) — for the payload-driven tab bar (ADR-0007). */
 export const indicateursHabitatFixture: Indicateur[] = [

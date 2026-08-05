@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -12,6 +12,7 @@ import {
   indicateursDemographieFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerPayload } from '../payload/usePayload'
@@ -47,6 +48,7 @@ const payloadDemographie: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
+  vintages: vintagesFixture,
 }
 
 function chargerAvec(payload: Payload): ChargerPayload {
