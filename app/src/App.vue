@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
+import { computed } from 'vue'
 
 import AppFooter from '@/components/AppFooter.vue'
 import AppHeader from '@/components/AppHeader.vue'
+
+const route = useRoute()
+
+/** Full-bleed tool pages (e.g. /carte — issue #67) own the viewport: no
+    footer, so the page never scrolls as a whole. */
+const afficherPied = computed(() => route.meta.sansPied !== true)
 </script>
 
 <template>
@@ -12,7 +19,7 @@ import AppHeader from '@/components/AppHeader.vue'
     <main class="app-main" id="contenu-principal">
       <RouterView />
     </main>
-    <AppFooter />
+    <AppFooter v-if="afficherPied" />
   </div>
 </template>
 

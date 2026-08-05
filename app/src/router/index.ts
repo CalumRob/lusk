@@ -32,7 +32,7 @@ export const routes = [
     path: '/carte',
     name: 'carte',
     component: CarteView,
-    meta: { title: 'Carte' },
+    meta: { title: 'Carte', sansPied: true },
   },
   {
     path: '/communes',

@@ -77,6 +77,12 @@ describe('App shell', () => {
     expect(wrapper.text()).toContain('Carte')
   })
 
+  it('hides the footer on the carte route (full-bleed tool page)', async () => {
+    const { wrapper } = await mountApp('/carte')
+
+    expect(wrapper.find('.pied').exists()).toBe(false)
+  })
+
   it('renders the fiche route inside the shell', async () => {
     const { wrapper } = await mountApp('/territoire/commune/29002')
 
