@@ -223,4 +223,12 @@
    * The carousel zone below stays on the plain --surface-secondary page
    * ground — the band edge is the vertical separation. */
   --surface-hero: radial-gradient(46rem 32rem at 82% -6%, color-mix(in oklab, var(--brand-100) 55%, transparent), transparent 70%), var(--surface-secondary);
+
+  /* §7 — Filigrane (fiche watermark, DESIGN.md §7): the locked ermine drawn
+   * behind the fiche's tab content at low opacity, its accent parts (tail
+   * root, ear, eye) in the active theme's anchor. Size re-draws randomly per
+   * tab switch, within the width thresholds below (aspect preserved). */
+  --filigrane-opacity: 0.08;
+  --filigrane-largeur-min: min(24vw, 280px);
+  --filigrane-largeur-max: min(64vw, 680px);
 }

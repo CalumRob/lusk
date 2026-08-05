@@ -241,3 +241,32 @@ describe('TerritoireView — la coloration de la page (le -wash du thème)', () 
     expect(wrapper.find('.fiche').classes()).toContain('fiche--theme-apercu')
   })
 })
+
+describe('TerritoireView — le filigrane de la fiche', () => {
+  it('renders the watermark behind the Aperçu tab, accents on the brand anchor', async () => {
+    const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
+
+    const filigrane = wrapper.find('.filigrane-fiche')
+    expect(filigrane.exists()).toBe(true)
+    expect(filigrane.attributes('aria-hidden')).toBe('true')
+    expect(filigrane.attributes('style')).toContain('--filigrane-accent: var(--brand-500)')
+  })
+
+  it('wears the theme’s anchor on a theme tab', async () => {
+    const { wrapper } = await monter(
+      '/territoire/commune/29002?theme=demographie',
+      chargerAvec(payloadDemographie),
+    )
+
+    const filigrane = wrapper.find('.filigrane-fiche')
+    expect(filigrane.attributes('style')).toContain(
+      '--filigrane-accent: var(--theme-demographie-line)',
+    )
+  })
+
+  it('is not rendered when the fiche is missing (empty state)', async () => {
+    const { wrapper } = await monter('/territoire/commune/99999', chargerAvec(payloadDemographie))
+
+    expect(wrapper.find('.filigrane-fiche').exists()).toBe(false)
+  })
+})
