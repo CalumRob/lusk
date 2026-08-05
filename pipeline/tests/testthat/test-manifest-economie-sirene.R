@@ -26,7 +26,7 @@ test_that("le manifeste a la forme du contrat : une source, colonnes standard + 
   )
   expect_true(all(c(
     "naf_version", "date_extraction", "champ_commune", "champ_actif",
-    "champ_naf", "champ_libelle", "regle_selection"
+    "champ_naf", "champ_libelle", "champ_traitement", "regle_selection"
   ) %in% names(MANIFEST_ECONOMIE_SIRENE)))
   # le statut de diffusion n'est PAS épinglé (décision todo 9 : on ne retient
   # pas la diffusion O/P tant que la commune est présente)
@@ -46,6 +46,10 @@ test_that("l'URL de l'export régional et le nom de cache sont uniques, HTTPS et
   expect_match(MANIFEST_ECONOMIE_SIRENE$url, "data\\.bretagne\\.bzh")
   expect_match(MANIFEST_ECONOMIE_SIRENE$url, "sirene-v3-consolidee")
   expect_match(MANIFEST_ECONOMIE_SIRENE$url, "etatadministratifetablissement")
+  # le select de l'export porte aussi le champ de fraîcheur : la normalisation
+  # confronte le dernier traitement observé dans le fichier à la référence
+  expect_match(MANIFEST_ECONOMIE_SIRENE$url,
+               "datederniertraitementetablissement")
   # aucune référence au fichier historique (national ou régional)
   expect_false(grepl("historique", MANIFEST_ECONOMIE_SIRENE$url, ignore.case = TRUE))
   expect_false(grepl("historique", MANIFEST_ECONOMIE_SIRENE$fichier, ignore.case = TRUE))
@@ -59,19 +63,18 @@ test_that("l'URL de l'export régional et le nom de cache sont uniques, HTTPS et
                       MANIFEST_ECONOMIE_SIRENE$vintage, ".csv"))
 })
 
-test_that("les dates : référence = dernier jour du mois du millésime, extraction >= référence, publication >= extraction", {
-  # la convention régionale (data.bretagne.bzh) : la référence est l'image du
-  # répertoire SIRENE au DERNIER JOUR du mois du millésime (2026-04-30) ;
+test_that("les dates : référence = dernier jour du mois précédant le millésime, extraction >= référence, publication >= extraction", {
+  # la convention de référence du stock (rétablie) : la référence est l'image
+  # du répertoire SIRENE au DERNIER JOUR du mois PRÉCÉDANT le millésime du
+  # fichier — pour le millésime 2026-04, 2026-03-31 (le maximum de
+  # datederniertraitementetablissement observé dans le fichier régional) ;
   # l'extraction est la date data_processed de la coupe ODS (2026-05-01) ; la
-  # publication est la mise en ligne sur le portail (2026-05-01). Les règles
-  # du stock national (référence = mois précédent, extraction = référence)
-  # ne s'appliquent plus.
+  # publication est la mise en ligne sur le portail (2026-05-01)
   attendue <- as.character(
-    seq(as.Date(paste0(MANIFEST_ECONOMIE_SIRENE$vintage, "-01")),
-        by = "month", length.out = 2)[2] - 1
+    as.Date(paste0(MANIFEST_ECONOMIE_SIRENE$vintage, "-01")) - 1
   )
   expect_equal(MANIFEST_ECONOMIE_SIRENE$date_reference, attendue)
-  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_reference, "2026-04-30")
+  expect_equal(MANIFEST_ECONOMIE_SIRENE$date_reference, "2026-03-31")
   expect_equal(MANIFEST_ECONOMIE_SIRENE$date_extraction, "2026-05-01")
   expect_equal(MANIFEST_ECONOMIE_SIRENE$date_publication, "2026-05-01")
   expect_true(all(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
@@ -101,6 +104,10 @@ test_that("licence, NAF, mode/type et champs de filtrage exacts du vocabulaire O
   expect_equal(MANIFEST_ECONOMIE_SIRENE$champ_actif, "etatadministratifetablissement")
   expect_equal(MANIFEST_ECONOMIE_SIRENE$champ_naf, "activiteprincipaleetablissement")
   expect_equal(MANIFEST_ECONOMIE_SIRENE$champ_libelle, "classeetablissement")
+  # le champ de fraîcheur est épinglé : le fichier porte la date du dernier
+  # traitement INSEE que la normalisation confronte à la référence
+  expect_equal(MANIFEST_ECONOMIE_SIRENE$champ_traitement,
+               "datederniertraitementetablissement")
   expect_false(is.na(MANIFEST_ECONOMIE_SIRENE$note))
   expect_match(MANIFEST_ECONOMIE_SIRENE$source, "SIRENE")
 })
@@ -141,6 +148,21 @@ test_that("le contrat refuse un manifeste sans version NAF", {
   sans_naf <- MANIFEST_ECONOMIE_SIRENE
   sans_naf$naf_version <- NA_character_
   expect_error(verifier_contrat_sirene_snapshot(sans_naf), "naf_version")
+})
+
+test_that("le contrat refuse une date de référence hors de la convention (dernier jour du mois précédant le millésime)", {
+  # la référence doit être l'image du répertoire au dernier jour du mois
+  # précédant le millésime — une date quelconque (comme le dernier jour DU
+  # mois du millésime, l'erreur du premier jet du todo 9) est refusée
+  mauvaise_date <- MANIFEST_ECONOMIE_SIRENE
+  mauvaise_date$date_reference <- "2026-04-30"
+  expect_error(verifier_contrat_sirene_snapshot(mauvaise_date),
+               "date_reference")
+
+  # une date mal formée est aussi refusée (la règle ISO)
+  date_mal_formee <- MANIFEST_ECONOMIE_SIRENE
+  date_mal_formee$date_reference <- "31/03/2026"
+  expect_error(verifier_contrat_sirene_snapshot(date_mal_formee), "dates")
 })
 
 test_that("le contrat refuse un id dupliqué ou une URL absente", {

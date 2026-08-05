@@ -227,13 +227,45 @@ test_that("le contrat du manifeste est vérifié avant la normalisation", {
                "historique")
 
   # et un snapshot sans les champs épinglés par le manifeste est refusé : le
-  # code APE comme le libellé déclaré (classeetablissement) sont obligatoires
+  # code APE comme le libellé déclaré (classeetablissement) et le champ de
+  # fraîcheur (datederniertraitementetablissement) sont obligatoires
   incomplet <- fixture_sirene
   incomplet$activiteprincipaleetablissement <- NULL
   expect_error(normaliser_sirene_snapshot(incomplet), "champs absents")
   sans_libelle <- fixture_sirene
   sans_libelle$classeetablissement <- NULL
   expect_error(normaliser_sirene_snapshot(sans_libelle), "champs absents")
+  sans_traitement <- fixture_sirene
+  sans_traitement$datederniertraitementetablissement <- NULL
+  expect_error(normaliser_sirene_snapshot(sans_traitement), "champs absents")
+})
+
+test_that("la date de référence est auto-vérifiée contre le fichier (le fichier a le dernier mot)", {
+  # le maximum de datederniertraitementetablissement parmi les lignes RETENUES
+  # doit égaler EXACTEMENT la date de référence épinglée par le manifeste — le
+  # fichier a le dernier mot sur sa propre date (la notice du jeu ne fait que
+  # l'annoncer). Tolérance zéro jour : as.Date lit la composante date UTC
+  # telle qu'écrite dans l'ISO — un traitement à 2026-03-31T23:41:59+00:00
+  # reste le 2026-03-31, sans débordement au jour suivant.
+  expect_no_error(normaliser_sirene_snapshot(fixture_sirene))
+
+  # un fichier rafraîchi vers un stock plus récent déplace le maximum : le
+  # contrat échoue bruyamment, en nommant la date du manifeste ET la date
+  # observée — le seam du watchdog qui force la mise à jour consciente du
+  # manifeste
+  plus_recent <- fixture_sirene
+  plus_recent$datederniertraitementetablissement[
+    plus_recent$siret == "00000000300001"
+  ] <- "2026-04-15T10:00:00+00:00"
+  expect_error(normaliser_sirene_snapshot(plus_recent), "2026-03-31")
+  expect_error(normaliser_sirene_snapshot(plus_recent), "2026-04-15")
+  expect_error(normaliser_sirene_snapshot(plus_recent), "date_reference")
+
+  # une colonne de traitement entièrement vide est aussi une violation : on ne
+  # vérifie jamais silencieusement la fraîcheur d'un fichier muet
+  sans_dates <- fixture_sirene
+  sans_dates$datederniertraitementetablissement <- NA_character_
+  expect_error(normaliser_sirene_snapshot(sans_dates), "date_reference")
 })
 
 test_that("construire_sirene_normalise persiste la table et le rapport sous data/processed/economie/", {

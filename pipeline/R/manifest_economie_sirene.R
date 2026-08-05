@@ -38,30 +38,38 @@
 # URL_SIRENE_REGIONAL -----------------------------------------------------------
 # L'URL STABLE de l'export API ODS du jeu régional « sirene-v3-consolidee »
 # (Base SIRENE - Région Bretagne, data.bretagne.bzh) : le select épingle les
-# champs du contrat et le where restreint l'export aux seuls établissements
-# ACTIFS (etatadministratifetablissement = 'Actif' — le libellé ODS enrichi,
-# PAS le code national 'A'). Vérifié en direct le 2026-08-05 : 758 569 lignes
+# champs du contrat — dont datederniertraitementetablissement, le champ de
+# fraîcheur que la normalisation confronte à la date de référence épinglée
+# (l'auto-vérification : le fichier a le dernier mot sur sa propre date) — et
+# le where restreint l'export aux seuls établissements ACTIFS
+# (etatadministratifetablissement = 'Actif' — le libellé ODS enrichi, PAS le
+# code national 'A'). Vérifié en direct le 2026-08-05 : 758 569 lignes
 # actives, CSV ~58,5 Mo, téléchargement ~112 s. Le jeu est déjà pré-coupé à la
 # Bretagne (1 877 987 enregistrements, codeRegionEtablissement = 53) : pas de
 # ZIP national 2,7 Go, pas d'étape de décompression. La ressource HISTORIQUE
 # (stocketablissementhistorique, data.gouv) porte un autre identifiant — le
 # contrat la refuse (la règle : pas d'historique dans cette phase).
 URL_SIRENE_REGIONAL <-
-  "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/sirene-v3-consolidee/exports/csv?select=siret,activiteprincipaleetablissement,codecommuneetablissement,etatadministratifetablissement,trancheeffectifsetablissement,classeetablissement&where=etatadministratifetablissement='Actif'"
+  "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/sirene-v3-consolidee/exports/csv?select=siret,activiteprincipaleetablissement,codecommuneetablissement,etatadministratifetablissement,trancheeffectifsetablissement,classeetablissement,datederniertraitementetablissement&where=etatadministratifetablissement='Actif'"
 
 # Le millésime épinglé --------------------------------------------------------
 # La coupe régionale épinglée : données basées sur le stock SIRENE 2026-04
-# (la description du jeu le dit explicitement), data_processed ODS 2026-05-01
-# (la date de la coupe) et mise en ligne le 2026-05-01. Les rafraîchissements
-# quotidiens ODS sont suspendus depuis fin février 2026 (instabilité de l'API
-# INSEE) : le jeu accuse ~3 mois de retard sur le stock mensuel national —
-# retard ACCEPTÉ pour cette phase et documenté dans la note. La convention
-# RÉGIONALE des dates : référence = dernier jour DU mois du millésime
-# (2026-04-30), extraction = data_processed (2026-05-01), publication = mise
-# en ligne (2026-05-01). Les règles du fichier national (référence = mois
-# précédent, extraction = référence) ne s'appliquent plus.
+# (la description du jeu le dit), data_processed ODS 2026-05-01 (la date de la
+# coupe) et mise en ligne le 2026-05-01. La RÉFÉRENCE est une donnée du
+# FICHIER, pas de la notice : le maximum de datederniertraitementetablissement
+# sur l'export régional est 2026-03-31T23:57:31 (toutes lignes) /
+# 2026-03-31T23:41:59 (actifs seuls) — l'extrait reflète le répertoire SIRENE
+# à FIN MARS 2026. La convention de référence est donc celle du stock national
+# (la règle d'origine du todo 1) : référence = dernier jour du mois PRÉCÉDANT
+# le millésime du fichier — pour le millésime 2026-04, la référence est
+# 2026-03-31. Les rafraîchissements quotidiens ODS sont suspendus depuis fin
+# février 2026 (instabilité de l'API INSEE) : le jeu accuse ~3 mois de retard
+# sur le stock mensuel national — retard ACCEPTÉ pour cette phase et documenté
+# dans la note. La normalisation AUTO-VÉRIFIE la référence contre le fichier :
+# si le dernier traitement observé parmi les lignes retenues diffère de la
+# date épinglée, le contrat échoue bruyamment (le fichier a le dernier mot).
 VINTAGE_SIRENE_SNAPSHOT <- "2026-04"
-DATE_REFERENCE_SIRENE_SNAPSHOT <- "2026-04-30"
+DATE_REFERENCE_SIRENE_SNAPSHOT <- "2026-03-31"
 DATE_PUBLICATION_SIRENE_SNAPSHOT <- "2026-05-01"
 
 # MANIFEST_ECONOMIE_SIRENE ------------------------------------------------------
@@ -77,11 +85,15 @@ DATE_PUBLICATION_SIRENE_SNAPSHOT <- "2026-05-01"
 #     (codecommuneetablissement, 5 chiffres COG), le statut administratif
 #     (etatadministratifetablissement, en LIBELLÉS « Actif »/« Fermé » — l'ODS
 #     enrichit, il ne renvoie pas les codes nationaux A/F), le code APE
-#     (activiteprincipaleetablissement, 5 chiffres) et le libellé du code APE
+#     (activiteprincipaleetablissement, 5 chiffres), le libellé du code APE
 #     (classeetablissement — il n'y a PAS de libelleActivitePrincipaleEtablissement
-#     dans ce jeu). PAS de champ diffusion : le statut de diffusion n'est pas
-#     retenu (décision todo 9 — la diffusion partielle compte comme les
-#     autres tant que commune et code APE restent exploitables) ;
+#     dans ce jeu) et le champ de fraîcheur
+#     (datederniertraitementetablissement, la date/heure ISO du dernier
+#     traitement INSEE de l'établissement — le fichier a le dernier mot sur sa
+#     propre date, la normalisation la confronte à date_reference). PAS de
+#     champ diffusion : le statut de diffusion n'est pas retenu (décision
+#     todo 9 — la diffusion partielle compte comme les autres tant que commune
+#     et code APE restent exploitables) ;
 #   - regle_selection   : la règle de sélection documentée du snapshot.
 # Mode : « manuel » — pas de cron : la fraîcheur du jeu régional dépend des
 # rafraîchissements ODS (suspendus depuis février 2026), le téléchargement se
@@ -107,11 +119,15 @@ MANIFEST_ECONOMIE_SIRENE <- tibble::tribble(
     "(etatadministratifetablissement = 'Actif', le where de l'URL) — 758 569 ",
     "lignes actives, CSV ~58,5 Mo, vérifié le 2026-08-05. Pas de ZIP national ",
     "2,7 Go : le cache est le CSV d'export. La fraîcheur est celle de la coupe ",
-    "ODS : données basées sur le stock INSEE 2026-04 (data_processed du jeu : ",
-    "2026-05-01), les rafraîchissements quotidiens ODS étant suspendus depuis ",
+    "ODS : données basées sur le stock INSEE 2026-04 — le dernier traitement ",
+    "observé dans le fichier (maximum de datederniertraitementetablissement) ",
+    "est 2026-03-31, la date de référence épinglée ; data_processed du jeu : ",
+    "2026-05-01, les rafraîchissements quotidiens ODS étant suspendus depuis ",
     "fin février 2026 (instabilité de l'API INSEE) — le jeu accuse ~3 mois de ",
-    "retard sur le stock mensuel national, retard ACCEPTÉ pour cette phase. ",
-    "Vocabulaire ODS : etatadministratifetablissement en libellés ",
+    "retard sur le stock mensuel national, retard ACCEPTÉ pour cette phase. La ",
+    "normalisation auto-vérifie la référence : si le dernier traitement ",
+    "observé dans le fichier diffère de la date épinglée, le contrat échoue ",
+    "bruyamment. Vocabulaire ODS : etatadministratifetablissement en libellés ",
     "« Actif »/« Fermé », trancheeffectifsetablissement en libellés de ",
     "tranche, libellé APET porté par classeetablissement. Le statut de ",
     "diffusion n'est PAS retenu : les établissements en diffusion partielle ",
@@ -130,6 +146,7 @@ MANIFEST_ECONOMIE_SIRENE <- tibble::tribble(
     champ_actif = "etatadministratifetablissement",
     champ_naf = "activiteprincipaleetablissement",
     champ_libelle = "classeetablissement",
+    champ_traitement = "datederniertraitementetablissement",
     regle_selection = paste0(
       "Seuls les établissements ACTIFS entrent : le where de l'URL de ",
       "l'export filtre etatadministratifetablissement = 'Actif' ET la ",
@@ -232,11 +249,13 @@ verifier_contrat_sirene_snapshot <- function(manifest) {
     manquer("type", "type inconnu (fichier|api)")
   }
 
-  # les dates — ISO ; la convention RÉGIONALE : la référence est l'image du
-  # répertoire au DERNIER JOUR du mois du millésime du fichier ; l'extraction
-  # (data_processed de la coupe ODS) est postérieure ou égale à la référence ;
-  # la publication (mise en ligne réelle) est postérieure ou égale à
-  # l'extraction
+  # les dates — ISO ; la convention de référence du stock (rétablie) : la
+  # référence est l'image du répertoire au dernier jour du mois PRÉCÉDANT le
+  # millésime du fichier (pour le millésime 2026-04 : 2026-03-31 — le dernier
+  # traitement observé dans le fichier régional, voir champ_traitement) ;
+  # l'extraction (data_processed de la coupe ODS) est postérieure ou égale à
+  # la référence ; la publication (mise en ligne réelle) est postérieure ou
+  # égale à l'extraction
   date_ref <- valeur("date_reference")
   date_pub <- valeur("date_publication")
   date_ext <- valeur("date_extraction")
@@ -248,13 +267,12 @@ verifier_contrat_sirene_snapshot <- function(manifest) {
       "manquants ou mal formés"
     ))
   }
-  dernier_du_mois_millesime <- as.character(
-    seq(as.Date(paste0(vintage, "-01")), by = "month", length.out = 2)[2] - 1
-  )
-  if (date_ref != dernier_du_mois_millesime) {
+  dernier_du_mois_precedent <- as.character(as.Date(paste0(vintage, "-01")) - 1)
+  if (date_ref != dernier_du_mois_precedent) {
     manquer("date_reference", paste0(
-      "la référence doit être le dernier jour du mois du millésime du ",
-      "fichier (convention régionale data.bretagne.bzh)"
+      "la référence doit être le dernier jour du mois précédant le millésime ",
+      "du fichier (l'image du répertoire SIRENE — le maximum de ",
+      "datederniertraitementetablissement)"
     ))
   }
   if (as.Date(date_ext) < as.Date(date_ref)) {
@@ -277,13 +295,15 @@ verifier_contrat_sirene_snapshot <- function(manifest) {
   }
 
   # les champs exacts du vocabulaire ODS régional (minuscules) — commune,
-  # statut administratif, code APE et libellé APET (classeetablissement) ;
-  # PAS de champ diffusion : la diffusion n'est pas retenue (todo 9)
+  # statut administratif, code APE, libellé APET (classeetablissement) et le
+  # champ de fraîcheur (datederniertraitementetablissement) ; PAS de champ
+  # diffusion : la diffusion n'est pas retenue (todo 9)
   champs <- c(
     champ_commune = "codecommuneetablissement",
     champ_actif = "etatadministratifetablissement",
     champ_naf = "activiteprincipaleetablissement",
-    champ_libelle = "classeetablissement"
+    champ_libelle = "classeetablissement",
+    champ_traitement = "datederniertraitementetablissement"
   )
   for (nom in names(champs)) {
     if (is.na(valeur(nom)) || valeur(nom) != champs[[nom]]) {

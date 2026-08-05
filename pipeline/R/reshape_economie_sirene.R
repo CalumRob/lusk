@@ -75,15 +75,20 @@ normaliser_sirene_snapshot <- function(snapshot,
   champ_actif <- manifest$champ_actif
   champ_naf <- manifest$champ_naf
   champ_libelle <- manifest$champ_libelle
+  champ_traitement <- manifest$champ_traitement
 
   # les champs épinglés par le contrat doivent exister dans le snapshot :
   # un export qui ne porte pas le vocabulaire ODS est refusé. Le libellé APET
-  # (classeetablissement) est OBLIGATOIRE quand le manifeste le déclare — c'est
-  # le cas de l'export régional
+  # (classeetablissement) et la date de traitement
+  # (datederniertraitementetablissement) sont OBLIGATOIRES quand le manifeste
+  # les déclare — c'est le cas de l'export régional
   manquants <- setdiff(c(champ_commune, champ_actif, champ_naf),
                        names(snapshot))
   if (!is.na(champ_libelle) && nzchar(champ_libelle)) {
     manquants <- union(manquants, setdiff(champ_libelle, names(snapshot)))
+  }
+  if (!is.na(champ_traitement) && nzchar(champ_traitement)) {
+    manquants <- union(manquants, setdiff(champ_traitement, names(snapshot)))
   }
   if (length(manquants)) {
     stop(sprintf(
@@ -118,6 +123,40 @@ normaliser_sirene_snapshot <- function(snapshot,
         grepl("^[0-9]{2}\\.[0-9]{2}[A-Z]$", naf),
       actif = etat %in% "Actif"
     )
+
+  # L'AUTO-VÉRIFICATION de fraîcheur : le FICHIER a le dernier mot sur sa
+  # propre date. Le maximum de datederniertraitementetablissement parmi les
+  # lignes RETENUES (actif × bretonne × naf_ok) doit égaler EXACTEMENT la date
+  # de référence épinglée par le manifeste — aucune tolérance d'un jour :
+  # as.Date lit la composante date UTC telle qu'écrite dans l'ISO (un
+  # traitement à 2026-03-31T23:41:59+00:00 reste le 2026-03-31 — pas de
+  # débordement au jour suivant), et un fichier rafraîchi vers un stock plus
+  # récent déplace le maximum et fait échouer le contrat bruyamment : le seam
+  # du watchdog, qui force la mise à jour CONSCIENTE du manifeste quand l'ODS
+  # repasse à un stock plus frais. Une colonne entièrement vide (fichier non
+  # téléchargé / non conforme) est aussi une violation : on ne vérifie jamais
+  # silencieusement la fraîcheur d'un fichier muet.
+  traites <- as.Date(norm[[champ_traitement]][
+    norm$actif & norm$bretonne & norm$naf_ok
+  ])
+  if (length(traites) == 0 || all(is.na(traites))) {
+    stop(sprintf(
+      paste0(
+        "Contrat SIRENE snapshot violé — date_reference : %s est entièrement ",
+        "vide parmi les lignes retenues — impossible de vérifier la fraîcheur ",
+        "du fichier."
+      ), champ_traitement
+    ), call. = FALSE)
+  }
+  date_observee <- as.character(max(traites, na.rm = TRUE))
+  if (date_observee != manifest$date_reference) {
+    stop(sprintf(
+      paste0(
+        "Contrat SIRENE snapshot violé — date_reference : le manifeste ",
+        "épingle %s mais le dernier traitement observé dans le fichier est %s."
+      ), manifest$date_reference, date_observee
+    ), call. = FALSE)
+  }
 
   # LA table : actifs seuls, communes bretonnes, code APE exploitable — une
   # ligne par cellule observée (commune × code APE × tranche ; la diffusion
