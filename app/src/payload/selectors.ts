@@ -176,6 +176,74 @@ export function histoirePourTerritoire(
   ) ?? null
 }
 
+/** One point of the story chart's context cloud (ADR-0011). */
+export interface PointNuage {
+  territoire: string
+  type: TerritoireType
+  nom: string
+  tauxNaturel: number
+  tauxMigratoire: number
+}
+
+/**
+ * The Démographie story chart's context cloud — the territory's comparison
+ * group at the SAME scale (ADR-0011): a commune sees its EPCI's communes
+ * (or, when it belongs to no EPCI, its département's communes); an EPCI sees
+ * the other EPCIs of the region; a département the other départements; the
+ * région all its communes. Every point is a peer the territory's dot sits
+ * among — and a click navigates to that point's own fiche (territoire/type).
+ */
+export function nuageComparaison(payload: Payload, territoire: string): PointNuage[] | null {
+  const ref = trouverTerritoire(payload, territoire)
+  if (!ref) return null
+
+  const codes = codesComparaison(payload, ref)
+  const nuage: PointNuage[] = []
+  for (const code of codes) {
+    const histoire = payload.histoires.find(
+      (h) => h.theme === 'demographie' && h.territoire === code,
+    )
+    if (histoire?.theme !== 'demographie') continue
+    const t = trouverTerritoire(payload, code)
+    if (!t) continue
+    nuage.push({
+      territoire: code,
+      type: t.type,
+      nom: t.nom,
+      tauxNaturel: histoire.taux_solde_naturel,
+      tauxMigratoire: histoire.taux_solde_migratoire,
+    })
+  }
+  return nuage
+}
+
+function codesComparaison(payload: Payload, ref: Territoire): string[] {
+  const codesDe = (type: TerritoireType) =>
+    payload.territoires.filter((t) => t.type === type).map((t) => t.territoire)
+
+  if (ref.type === 'commune') {
+    // une commune de l'EPCI voit les communes de SON EPCI ; sans EPCI, les
+    // communes de son département (il en existe deux en Bretagne réelle)
+    if (ref.epci) {
+      return payload.territoires
+        .filter((t) => t.type === 'commune' && t.epci === ref.epci)
+        .map((t) => t.territoire)
+    }
+    return payload.territoires
+      .filter((t) => t.type === 'commune' && t.departement === ref.departement)
+      .map((t) => t.territoire)
+  }
+  if (ref.type === 'epci') {
+    // les AUTRES EPCIs de la région — le territoire courant est le point mis
+    // en évidence, pas un membre de son propre nuage
+    return codesDe('epci').filter((code) => code !== ref.territoire)
+  }
+  if (ref.type === 'departement') {
+    return codesDe('departement').filter((code) => code !== ref.territoire)
+  }
+  return codesDe('commune')
+}
+
 /** The rank columns, nearest comparison group first (EPCI → département → région). */
 const COLONNES_RANG: readonly ColonneRang[] = ['rang_epci', 'rang_dep', 'rang_reg']
 

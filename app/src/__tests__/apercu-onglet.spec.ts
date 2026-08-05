@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+﻿import { mount } from '@vue/test-utils'
 
 import { describe, expect, it } from 'vitest'
 
@@ -11,6 +11,7 @@ import {
   indicateursDemographieFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
@@ -30,6 +31,7 @@ const payloadDemographie: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
+  vintages: vintagesFixture,
 }
 
 const programmesFixture: Programme[] = [

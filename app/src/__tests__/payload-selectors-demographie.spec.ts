@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 
 import {
   apercuAvecNAFixture,
@@ -7,6 +7,7 @@ import {
   indicateursHabitatFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import {
   formaterSolde,
@@ -15,6 +16,7 @@ import {
   histoirePourTerritoire,
   indicateursGroupeesPourTerritoire,
   indicateursPourTerritoire,
+  nuageComparaison,
   rangEnContexte,
 } from '../payload/selectors'
 import type { Payload } from '../payload/types'
@@ -30,6 +32,7 @@ const payloadDemographie: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
+  vintages: vintagesFixture,
 }
 
 describe('indicateursPourTerritoire — the standard block in contract order', () => {
@@ -69,10 +72,15 @@ describe('histoirePourTerritoire — the Story row', () => {
   it('finds the story and its classification for the territory', () => {
     const histoire = histoirePourTerritoire(payloadDemographie, 'demographie', '22001')
 
-    expect(histoire).toMatchObject({ story_key: 'attractive-ou-fertile', classification: 'fertile' })
+    expect(histoire).toMatchObject({
+      story_key: 'trajectoire-demographique',
+      classification: 'attire-renouvelle',
+    })
     if (histoire?.theme !== 'demographie') throw new Error('attendu : story Démographie')
     expect(histoire.solde_naturel).toBe(70)
     expect(histoire.solde_migratoire).toBe(30)
+    expect(histoire.taux_solde_naturel).toBeCloseTo(5.982906, 4)
+    expect(histoire.taux_solde_migratoire).toBeCloseTo(2.564103, 4)
   })
 
   it('returns null for a territory without a story (handled honestly)', () => {
@@ -166,5 +174,66 @@ describe('formaterSolde — the signed story numbers', () => {
     expect(formaterSolde(70)).toBe('+70')
     expect(formaterSolde(-380)).toBe('-380')
     expect(formaterSolde(0)).toBe('0')
+  })
+})
+
+describe('nuageComparaison — the story chart’s context cloud (ADR-0011)', () => {
+  it('gives a commune in an EPCI its EPCI’s communes (peers at the same scale)', () => {
+    const nuage = nuageComparaison(payloadDemographie, '22001')
+
+    expect(nuage).not.toBeNull()
+    expect(nuage?.map((p) => p.nom)).toEqual(['Commune A1', 'Commune D'])
+  })
+
+  it('gives a commune without an EPCI its département’s communes', () => {
+    // a commune outside any EPCI has no epci — the cloud falls back to the
+    // département level (there are two such communes in the real payload)
+    const territoiresSansEpci = territoiresFixture.map((t) =>
+      t.territoire === '22001' ? { ...t, epci: null } : t,
+    )
+    const payloadSansEpci: Payload = {
+      ...payloadDemographie,
+      territoires: territoiresSansEpci,
+    }
+
+    const nuage = nuageComparaison(payloadSansEpci, '22001')
+    expect(nuage?.map((p) => p.nom)).toEqual(['Commune A1', 'Commune D'])
+  })
+
+  it('gives an EPCI the OTHER EPCIs of the region', () => {
+    const nuage = nuageComparaison(payloadDemographie, '200000001')
+
+    expect(nuage?.map((p) => p.nom)).toEqual(['EPCI Y'])
+    expect(nuage?.[0]).toMatchObject({ type: 'epci', territoire: '200000002' })
+  })
+
+  it('gives a département the OTHER départements of the region', () => {
+    const nuage = nuageComparaison(payloadDemographie, '22')
+
+    expect(nuage?.map((p) => p.nom)).toEqual(['Département 29'])
+    expect(nuage?.[0]).toMatchObject({ type: 'departement', territoire: '29' })
+  })
+
+  it('gives the région ALL the region’s communes', () => {
+    const nuage = nuageComparaison(payloadDemographie, '53')
+
+    expect(nuage?.map((p) => p.nom)).toEqual([
+      'Commune A1',
+      'Commune D',
+      'Commune B',
+      'Commune C',
+    ])
+  })
+
+  it('carries each cloud point’s rates, type and code — the data the quadrant plots and the click navigates', () => {
+    const nuage = nuageComparaison(payloadDemographie, '200000001')
+
+    expect(nuage?.[0]).toMatchObject({
+      nom: 'EPCI Y',
+      type: 'epci',
+      territoire: '200000002',
+      tauxNaturel: 0,
+      tauxMigratoire: 0,
+    })
   })
 })

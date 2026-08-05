@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 
 import { echelleContexte } from '../fiche/echelleContexte'
 import {
@@ -7,6 +7,7 @@ import {
   indicateursDemographieFixture,
   runReportFraisFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
@@ -23,6 +24,7 @@ const payload: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
+  vintages: vintagesFixture,
 }
 
 describe('echelleContexte — the context-switcher ladder', () => {

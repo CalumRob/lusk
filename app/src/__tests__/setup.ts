@@ -24,7 +24,13 @@ vi.stubGlobal(
  */
 vi.mock('echarts/core', () => ({
   use: vi.fn(),
-  init: vi.fn(() => ({ setOption: vi.fn(), dispose: vi.fn(), resize: vi.fn() })),
+  init: vi.fn(() => ({
+    setOption: vi.fn(),
+    dispose: vi.fn(),
+    resize: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+  })),
 }))
 vi.mock('echarts/charts', () => ({ ScatterChart: {} }))
 vi.mock('echarts/components', () => ({ GridComponent: {}, TooltipComponent: {} }))

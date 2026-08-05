@@ -72,6 +72,9 @@ export interface HistoireDemographie {
   story_key: string
   solde_naturel: number
   solde_migratoire: number
+  /** Annualized per-mille rates (ADR-0011) — the two forces the reading crosses. */
+  taux_solde_naturel: number
+  taux_solde_migratoire: number
   classification: string
 }
 
@@ -115,6 +118,16 @@ export interface RunReport {
   statuts: StatutRun[]
 }
 
+/** One dataset's vintage record (vintages.json — the shared source table). */
+export interface Vintage {
+  id: string
+  source: string
+  version: string
+  licence: string
+  date_reference: string | null
+  date_publication: string | null
+}
+
 /** The assembled payload — everything the app renders, parsed and validated. */
 export interface Payload {
   territoires: Territoire[]
@@ -122,4 +135,6 @@ export interface Payload {
   histoires: Histoire[]
   apercu: ApercuRow[]
   runReport: RunReport | null
+  /** The shared vintage table (vintages.json) — optional, like run-report. */
+  vintages: Vintage[] | null
 }
