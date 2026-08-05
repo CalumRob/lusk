@@ -14,6 +14,7 @@ import type {
   Indicateur,
   Payload,
   Territoire,
+  TerritoireType,
   Theme,
 } from './types'
 import { THEMES_CANONIQUES } from './types'

@@ -14,6 +14,7 @@ import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerPayload } from '../payload/usePayload'
@@ -49,6 +50,7 @@ const payload: Payload = {
   histoires: histoiresDemographieFixture,
   apercu: apercuFixture,
   runReport: null,
+  vintages: vintagesFixture,
 }
 
 function chargerPayloadAvec(p: Payload): ChargerPayload {

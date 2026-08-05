@@ -7,6 +7,7 @@ import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
+  vintagesFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
@@ -23,6 +24,7 @@ function payloadAvecApercu(apercu = apercuFixture): Payload {
     histoires: histoiresDemographieFixture,
     apercu,
     runReport: null,
+    vintages: vintagesFixture,
   }
 }
 

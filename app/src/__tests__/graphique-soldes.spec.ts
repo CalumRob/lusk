@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import * as echarts from 'echarts/core'
 
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
+import type { PointNuage } from '../payload/selectors'
 import { routes } from '../router'
 
 /**
@@ -20,14 +21,14 @@ import { routes } from '../router'
  * WCAG 2.2 AA, the reading never depends on canvas alone.
  */
 
-const pointA1 = {
+const pointA1: PointNuage = {
   territoire: '22001',
   type: 'commune',
   nom: 'Commune A1',
   tauxNaturel: 5.982906,
   tauxMigratoire: 2.564103,
 }
-const pointD = {
+const pointD: PointNuage = {
   territoire: '22002',
   type: 'commune',
   nom: 'Commune D',

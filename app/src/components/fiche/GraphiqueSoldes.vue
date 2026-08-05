@@ -104,7 +104,13 @@ function optionGraphique(): echarts.EChartsCoreOption {
       // Keep the reading visible: the tooltip floats beside the point (never
       // over it). Coordinates are canvas-relative — `point` from the chart,
       // `viewSize` the chart's own size — no page-relative math.
-      position: (point_, _params, _dom, _rect, taille) => {
+      position: (
+        point_: [number, number],
+        _params: unknown,
+        _dom: unknown,
+        _rect: unknown,
+        taille?: { contentSize?: [number, number]; viewSize?: [number, number] },
+      ) => {
         const [cx, cy] = point_
         const [lw, lh] = taille?.contentSize ?? [0, 0]
         const [vw, vh] = taille?.viewSize ?? [0, 0]
