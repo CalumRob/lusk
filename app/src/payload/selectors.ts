@@ -218,6 +218,87 @@ export function nuageComparaison(payload: Payload, territoire: string): PointNua
   return nuage
 }
 
+/** The comparison container the nuage groups come from — the subtitle names it and links to its fiche. */
+export interface ConteneurComparaison {
+  code: string
+  nom: string
+  type: TerritoireType
+}
+
+/** The story card's subtitle descriptor: who is compared against whom, at the same scale. */
+export interface DescriptionNuage {
+  /** The preposition before the current territory: "de" (Rennes) or "de la" (Bretagne). */
+  prepositionCourant: string
+  /** The current territory's display name ("Rennes", "Rennes Métropole", "Bretagne"). */
+  nomCourant: string
+  /**
+   * The comparison phrase: "des communes de", "des autres EPCIs de",
+   * "des autres départements de" — or, for the région, the final
+   * "de ses communes" (no container to append).
+   */
+  groupe: string
+  /** The container the group belongs to (EPCI / département / région), or null for the région. */
+  conteneur: ConteneurComparaison | null
+}
+
+/**
+ * The comparison the chart draws — what the subtitle states: the current
+ * territory vs its comparison group at the same scale (ADR-0011, the SAME
+ * scope nuageComparaison uses): a commune sees its EPCI's communes (or its
+ * département's when it belongs to no EPCI); an EPCI the other EPCIs of the
+ * region; a département the other départements; the région its communes.
+ * Returns null for an unknown territory — never invents a comparison.
+ */
+export function descriptionNuage(payload: Payload, territoire: string): DescriptionNuage | null {
+  const ref = trouverTerritoire(payload, territoire)
+  if (!ref) return null
+  const region = payload.territoires.find((t) => t.type === 'region')
+
+  if (ref.type === 'commune') {
+    if (ref.epci) {
+      const epci = trouverTerritoire(payload, ref.epci)
+      return {
+        prepositionCourant: 'de',
+        nomCourant: ref.nom,
+        groupe: 'des communes de',
+        conteneur: epci ? { code: epci.territoire, nom: epci.nom, type: 'epci' } : null,
+      }
+    }
+    const departement = ref.departement ? trouverTerritoire(payload, ref.departement) : null
+    return {
+      prepositionCourant: 'de',
+      nomCourant: ref.nom,
+      groupe: 'des communes de',
+      conteneur: departement
+        ? { code: departement.territoire, nom: departement.nom, type: 'departement' }
+        : null,
+    }
+  }
+  if (ref.type === 'epci') {
+    return {
+      prepositionCourant: 'de',
+      nomCourant: ref.nom,
+      groupe: 'des autres EPCIs de',
+      conteneur: region ? { code: region.territoire, nom: region.nom, type: 'region' } : null,
+    }
+  }
+  if (ref.type === 'departement') {
+    return {
+      prepositionCourant: 'de',
+      nomCourant: ref.nom,
+      groupe: 'des autres départements de',
+      conteneur: region ? { code: region.territoire, nom: region.nom, type: 'region' } : null,
+    }
+  }
+  // région → all communes, its own scale: "de la Bretagne et de ses communes"
+  return {
+    prepositionCourant: 'de la',
+    nomCourant: ref.nom,
+    groupe: 'de ses communes',
+    conteneur: null,
+  }
+}
+
 function codesComparaison(payload: Payload, ref: Territoire): string[] {
   const codesDe = (type: TerritoireType) =>
     payload.territoires.filter((t) => t.type === type).map((t) => t.territoire)

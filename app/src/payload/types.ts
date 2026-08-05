@@ -76,6 +76,12 @@ export interface HistoireDemographie {
   taux_solde_naturel: number
   taux_solde_migratoire: number
   classification: string
+  /**
+   * The inter-censal window the rates annualize ("2017-2023") — dates the
+   * story title. Null until the pipeline publishes it (issue #113): the
+   * undated title is the honest fallback, never an invented period.
+   */
+  periode: string | null
 }
 
 export interface HistoireHabitat {

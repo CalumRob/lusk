@@ -342,6 +342,9 @@ export function validerHistoires(
       exiger(estNombre(taux_solde_naturel), fichier, ligneIndexee, '« taux_solde_naturel » doit être un nombre')
       exiger(estNombre(taux_solde_migratoire), fichier, ligneIndexee, '« taux_solde_migratoire » doit être un nombre')
       const classification = lireChaine(ligne, 'classification', fichier, ligneIndexee)
+      // La période est OPTIONNELLE : le pipeline ne la publie pas encore
+      // (issue #113) — absente, le titre reste non daté (honnête).
+      const periode = estChaine(ligne['periode']) ? (ligne['periode'] as string) : null
       return {
         territoire,
         type,
@@ -352,6 +355,7 @@ export function validerHistoires(
         taux_solde_naturel,
         taux_solde_migratoire,
         classification,
+        periode,
       }
     }
 

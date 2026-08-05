@@ -13,6 +13,7 @@ import {
   formaterSolde,
   formaterValeur,
   formaterVintage,
+  descriptionNuage,
   histoirePourTerritoire,
   indicateursGroupeesPourTerritoire,
   indicateursPourTerritoire,
@@ -235,5 +236,64 @@ describe('nuageComparaison — the story chart’s context cloud (ADR-0011)', ()
       tauxNaturel: 0,
       tauxMigratoire: 0,
     })
+  })
+})
+
+describe('descriptionNuage — the subtitle’s comparison statement (same scale as the nuage)', () => {
+  it('commune in an EPCI: "de X et des communes de son EPCI", the EPCI linkable', () => {
+    expect(descriptionNuage(payloadDemographie, '22001')).toEqual({
+      prepositionCourant: 'de',
+      nomCourant: 'Commune A1',
+      groupe: 'des communes de',
+      conteneur: { code: '200000001', nom: 'EPCI X', type: 'epci' },
+    })
+  })
+
+  it('commune without an EPCI: falls back to its département’s communes', () => {
+    const territoiresSansEpci = territoiresFixture.map((t) =>
+      t.territoire === '22001' ? { ...t, epci: null } : t,
+    )
+    const payloadSansEpci: Payload = {
+      ...payloadDemographie,
+      territoires: territoiresSansEpci,
+    }
+
+    expect(descriptionNuage(payloadSansEpci, '22001')).toEqual({
+      prepositionCourant: 'de',
+      nomCourant: 'Commune A1',
+      groupe: 'des communes de',
+      conteneur: { code: '22', nom: 'Département 22', type: 'departement' },
+    })
+  })
+
+  it('EPCI: "des autres EPCIs de la région", the région linkable', () => {
+    expect(descriptionNuage(payloadDemographie, '200000001')).toEqual({
+      prepositionCourant: 'de',
+      nomCourant: 'EPCI X',
+      groupe: 'des autres EPCIs de',
+      conteneur: { code: '53', nom: 'Bretagne', type: 'region' },
+    })
+  })
+
+  it('département: "des autres départements de la région"', () => {
+    expect(descriptionNuage(payloadDemographie, '22')).toEqual({
+      prepositionCourant: 'de',
+      nomCourant: 'Département 22',
+      groupe: 'des autres départements de',
+      conteneur: { code: '53', nom: 'Bretagne', type: 'region' },
+    })
+  })
+
+  it('région: "de la Bretagne et de ses communes" — its own scale, no container', () => {
+    expect(descriptionNuage(payloadDemographie, '53')).toEqual({
+      prepositionCourant: 'de la',
+      nomCourant: 'Bretagne',
+      groupe: 'de ses communes',
+      conteneur: null,
+    })
+  })
+
+  it('returns null for an unknown territory — never invents a comparison', () => {
+    expect(descriptionNuage(payloadDemographie, '99999')).toBeNull()
   })
 })

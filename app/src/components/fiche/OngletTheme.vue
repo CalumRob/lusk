@@ -23,6 +23,7 @@ import {
   histoirePourTerritoire,
   indicateursGroupeesPourTerritoire,
   nuageComparaison,
+  descriptionNuage,
   trouverTerritoire,
 } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
@@ -56,10 +57,18 @@ const story = computed(() => {
     histoire.classification,
     histoire.taux_solde_naturel,
     histoire.taux_solde_migratoire,
+    histoire.periode,
   )
 })
 
 const nuage = computed(() => nuageComparaison(props.payload, props.territoire) ?? [])
+
+// What the chart compares: the subtitle names the current territory and its
+// comparison group (same scale as the nuage), with the container (EPCI /
+// département / région) clickable to its own fiche.
+const descriptionNuageComputed = computed(() =>
+  descriptionNuage(props.payload, props.territoire),
+)
 
 // The story's data sources, exhaustive: the série historique (the rates the
 // reading crosses) and the base des EPCI (the nuage's comparison groups).
@@ -91,6 +100,7 @@ function libelleIndicateur(clef: string): string {
       '--couleur-strong': `var(--theme-${theme}-strong)`,
       '--couleur-soft': `var(--theme-${theme}-soft)`,
       '--couleur-line': `var(--theme-${theme}-line)`,
+      '--couleur-nuage': `var(--theme-${theme})`,
     }"
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
@@ -109,8 +119,28 @@ function libelleIndicateur(clef: string): string {
     </div>
 
     <section v-if="story" class="angle-story">
-      <p class="angle-story-titre">{{ story.titre }}</p>
       <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
+      <p class="angle-story-titre">
+        {{ story.titre }}
+        <template v-if="descriptionNuageComputed">
+          {{ descriptionNuageComputed.prepositionCourant }}
+          <span class="angle-story-courant">{{ descriptionNuageComputed.nomCourant }}</span>
+          et {{ descriptionNuageComputed.groupe }}
+          <RouterLink
+            v-if="descriptionNuageComputed.conteneur"
+            class="angle-story-conteneur"
+            :to="{
+              name: 'territoire',
+              params: {
+                type: descriptionNuageComputed.conteneur.type,
+                id: descriptionNuageComputed.conteneur.code,
+              },
+            }"
+          >
+            {{ descriptionNuageComputed.conteneur.nom }}
+          </RouterLink>
+        </template>
+      </p>
       <GraphiqueSoldes
         v-if="histoireDemographie"
         :taux-naturel="histoireDemographie.taux_solde_naturel"
@@ -197,6 +227,23 @@ function libelleIndicateur(clef: string): string {
 .angle-story-titre {
   margin: 0;
   font: 600 1.1875rem/1.4 var(--font-serif);
+  color: var(--couleur-strong);
+}
+
+/* The subtitle names the two colors of the plot: the current territory wears
+   the highlighted dot's color, the comparison container the cloud's. */
+.angle-story-courant {
+  color: var(--couleur-strong);
+}
+
+.angle-story-conteneur {
+  color: var(--couleur-nuage);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.angle-story-conteneur:hover {
   color: var(--couleur-strong);
 }
 

@@ -69,17 +69,41 @@ describe('OngletTheme — the standard block', () => {
 })
 
 describe('OngletTheme — the story angle', () => {
-  it('renders the serif one-liner keyed by the territory’s classification', async () => {
+  it('renders the serif one-liner keyed by the territory’s classification, first in the card', async () => {
     const wrapper = await monter('22001') // attire-renouvelle
 
-    expect(wrapper.find('.angle-story-titre').text()).toBe('Trajectoire démographique')
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe('La population se renouvelle et attire.')
+    const uneLigne = wrapper.find('.angle-story-une-ligne')
+    expect(uneLigne.text()).toBe('Le territoire attire et se renouvelle.')
+    // the reading leads the card; the dated subtitle follows beneath it
+    const titre = wrapper.find('.angle-story-titre')
+    expect(titre.exists()).toBe(true)
+    expect(uneLigne.element.compareDocumentPosition(titre.element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  it('dates the subtitle from the published period and names the comparison (current + container)', async () => {
+    const wrapper = await monter('22001') // commune in EPCI X
+
+    const titre = wrapper.find('.angle-story-titre').text()
+    expect(titre).toContain('Trajectoire démographique (2017-2023)')
+    // the current territory wears the courant color, the container the cloud's
+    expect(wrapper.find('.angle-story-courant').text()).toBe('Commune A1')
+    expect(titre).toContain('des communes de')
+    expect(wrapper.find('.angle-story-conteneur').text()).toBe('EPCI X')
+    const liens = wrapper.findAllComponents(RouterLinkStub)
+    const lien = liens.find(
+      (l) => (l.props('to') as { name?: string } | undefined)?.name === 'territoire',
+    )
+    expect(lien?.props('to')).toEqual({ name: 'territoire', params: { type: 'epci', id: '200000001' } })
   })
 
   it('changes the one-liner with the reading (vide-meurt ≠ attire-renouvelle)', async () => {
     const wrapper = await monter('29002') // vide-meurt
 
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe('La population diminue sur ses deux composantes.')
+    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
+      'La population diminue sur ses deux composantes.',
+    )
   })
 
   it('passes the two rates and the classification to the chart', async () => {
@@ -111,14 +135,17 @@ describe('OngletTheme — the story angle', () => {
 
     expect(wrapper.find('.angle-story-comment-lire').text()).toContain('Comment lire')
     expect(wrapper.find('.angle-story-comment-lire').text()).toContain('solde naturel')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('‰/an')
+    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('/an pour 1 000 hab.')
     // the datasets used are named exhaustively (from the vintages table, never
     // hardcoded): the série historique (rates) AND the base des EPCI (nuage)
     expect(wrapper.find('.angle-story-source').text()).toContain('Source')
     expect(wrapper.find('.angle-story-source').text()).toContain('Série historique')
     expect(wrapper.find('.angle-story-source').text()).toContain('Base des EPCI')
     expect(wrapper.find('.angle-story-methodes').text()).toBe('Méthodes')
-    expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/methodologie')
+    const methodes = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((l) => l.props('to') === '/methodologie')
+    expect(methodes).toBeTruthy()
   })
 })
 
