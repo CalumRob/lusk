@@ -241,8 +241,13 @@ test_that("construire_analytiques_economie : le seam de calcul de T8 enchaîne l
   expect_equal(res$chomage$r, 4)
 })
 
-test_that("publier_economie : le seam de publication de T8 est un stub qui échoue bruyamment", {
-  # T8 câble la publication du payload Économie — tant qu'il n'est pas livré,
-  # un appel au seam échoue FORT (jamais un « under construction » silencieux)
-  expect_error(publier_economie(), "T8")
+test_that("publier_economie : le seam de publication de T8 est câblé (plus un stub)", {
+  # T8 câble la publication du payload Économie — le stub qui échouait avec
+  # « câblé par T8 » est remplacé par la publication réelle : un appel sans
+  # données échoue désormais pour une raison de DONNÉES (cache absent), jamais
+  # sur un message de stub.
+  expect_false(grepl("T8", tryCatch(
+    publier_economie(list()),
+    error = function(e) conditionMessage(e)
+  )))
 })

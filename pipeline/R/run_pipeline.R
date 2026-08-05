@@ -60,11 +60,18 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # indicateur est estampillé depuis le vintage de sa source de référence
   # déclarée (la table INDICATEURS_<theme>), plus de tampon de fraîcheur du
   # thème.
-  payload <- compute_payload(brut, theme = theme, vintages = vintages)
-
-  # Le backend par défaut de publish est "static" : le run écrit l'artefact
-  # complet du produit (parquet canonique + projections JSON de l'app).
-  publish(payload, sortie)
+  # Issue #97 : le thème Économie câble SA publication par le seam `publier`
+  # du descripteur (le chaînon analytique T1-T6 → payload → publish). Les
+  # thèmes classiques (Démographie, Habitat) n'exposent pas ce seam : ils
+  # gardent compute_payload + publish, à l'identique (régression
+  # byte-identical).
+  if (is.function(theme$publier)) {
+    payload <- theme$publier(brut, cache = cache, vintages = vintages,
+                             sortie = sortie)
+  } else {
+    payload <- compute_payload(brut, theme = theme, vintages = vintages)
+    publish(payload, sortie)
+  }
   # Issue #60 : la géométrie du fond de carte (ADR-0008) est un artefact
   # partagé, pas une table du thème — le run la publie vers la MÊME cible que
   # le payload (communes/epcis/departements.geojson sous public/data/), depuis
