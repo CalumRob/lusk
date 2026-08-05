@@ -36,14 +36,6 @@ TABLES_ECONOMIE_PROFIL <- c(
   "sirene_snapshot", "flores_a38", "flores_a88", "rp_emploi"
 )
 
-# STATUTS_DIFFUSION_SIRENE ------------------------------------------------------
-# Le vocabulaire fermé des statuts de diffusion du snapshot (dessin de fichier
-# INSEE 311, docs/themes/economie-emploi.md §SIRENE snapshot rules) : O =
-# diffusible, P = diffusion partielle (adresse/géoloc masquées, commune et
-# code APE restent exploitables — conservée). Tout autre statut est une
-# valeur de suppression non classée : le profilage refuse.
-STATUTS_DIFFUSION_SIRENE <- c("O", "P")
-
 # STATUTS_OBSERVATION_FLORES ----------------------------------------------------
 # Le vocabulaire fermé des statuts d'observation Flores (résolu sur le fichier
 # réel 2024, reshape_economie_flores.R) : A = observation normale, K = valeur
@@ -163,31 +155,32 @@ couverture_communes <- function(communes_table, reference) {
 }
 
 # profil_table_sirene -----------------------------------------------------------
-# Le profil de la table sirene_snapshot (normaliser_sirene_snapshot, todo 4) :
-# une ligne par cellule commune × code APE × diffusion × tranche, la valeur =
-# nombre d'établissements ACTIFS (jamais 0, jamais NA — le snapshot ne garde
-# que des cellules observées, les zéros et les manquants n'existent pas dans
-# la table). Les cellules omises (combinaison commune × activité × statut ×
-# tranche absente) sont donc LE signal de sparsité de la source. La suppression
-# se lit à deux endroits : la diffusion partielle 'P' (statut de diffusion) et
-# le rapport d'exclusions d'éligibilité (fermé, commune/NAF inutilisable...).
+# Le profil de la table sirene_snapshot (normaliser_sirene_snapshot, todo 4 ;
+# bascule régionale todo 9) : une ligne par cellule commune × code APE ×
+# tranche d'effectifs, la valeur = nombre d'établissements ACTIFS (jamais 0,
+# jamais NA — le snapshot ne garde que des cellules observées, les zéros et
+# les manquants n'existent pas dans la table). Les cellules omises
+# (combinaison commune × activité × tranche absente) sont donc LE signal de
+# sparsité de la source. La suppression ne se lit plus dans la table : le
+# statut de diffusion de la source n'est pas retenu (todo 9) — chaque
+# établissement actif avec commune et code APE exploitables compte, quelle que
+# soit sa diffusion — le rapport le dit explicitement par un tibble vide, et la
+# suppression d'éligibilité se lit dans le rapport d'exclusions (fermé,
+# commune/NAF inutilisable...).
 profil_table_sirene <- function(resultat, reference, nom_table = "sirene_snapshot") {
   table <- resultat$table
   exclusions <- resultat$exclusions
 
   valider_communes_table(table, reference, nom_table)
-  valider_vocabulaire(table, "statut_diffusion", STATUTS_DIFFUSION_SIRENE,
-                      nom_table, "statut de diffusion")
-  valider_vocabulaire(table, "etat_administratif", "A",
+  valider_vocabulaire(table, "etat_administratif", "Actif",
                       nom_table, "statut administratif")
   valider_vocabulaire(exclusions, "raison", RAISONS_EXCLUSION_SIRENE,
                       nom_table, "motif d'exclusion")
 
   n_communes <- dplyr::n_distinct(table$commune)
   n_activites <- dplyr::n_distinct(table$activity_code)
-  n_statuts <- dplyr::n_distinct(table$statut_diffusion)
   n_tranches <- dplyr::n_distinct(table$tranche_effectifs)
-  potentielles <- n_communes * n_activites * n_statuts * n_tranches
+  potentielles <- n_communes * n_activites * n_tranches
   observees <- nrow(table)
   zero_observe <- sum(table$value == 0, na.rm = TRUE)
   manquantes <- sum(is.na(table$value))
@@ -211,7 +204,9 @@ profil_table_sirene <- function(resultat, reference, nom_table = "sirene_snapsho
       ),
       lignes = c(potentielles, observees, zero_observe, manquantes, omises)
     ),
-    suppression = compter_par(table, "statut_diffusion"),
+    # le statut de diffusion de la source n'est pas retenu (todo 9) — la table
+    # n'en porte aucune ligne : le tibble vide est la preuve explicite
+    suppression = tibble::tibble(statut = character(), lignes = integer()),
     exclusions = dplyr::bind_rows(
       tibble::tibble(motif = "total", lignes = nrow(exclusions)),
       compter_par(exclusions, "raison") %>%
@@ -240,10 +235,12 @@ profil_table_sirene <- function(resultat, reference, nom_table = "sirene_snapsho
         paste(unique(table$vintage), collapse = ","),
         paste(unique(table$measure), collapse = ","),
         paste(unique(table$naf_version), collapse = ","),
-        "A (actifs seuls — les établissements fermés sont exclus et rapportés)",
+        "Actif (actifs seuls — les établissements fermés sont exclus et rapportés)",
         paste0(
-          "'O' diffusible, 'P' diffusion partielle conservée quand commune et ",
-          "code APE exploitables (adresse et géoloc masquées)"
+          "Le statut de diffusion de la source n'est pas retenu — chaque ",
+          "établissement actif avec commune et code APE exploitables compte, ",
+          "quelle que soit sa diffusion ; aucune dimension de suppression ",
+          "dans la table"
         ),
         paste0(
           "Établissements hors éligibilité (fermés, commune ou code APE ",

@@ -2,16 +2,17 @@
 # Le test de bout en bout de la phase source-table du thème Économie/Emploi
 # (plan economie-pipeline-contracts, todo 8) : le run complet « télécharger →
 # extraire → normaliser → profiler » des TROIS familles de sources — SIRENE
-# (sirene_snapshot), Flores (flores_a38 + flores_a88) et RP Emploi (rp_emploi)
-# — avec la couture de téléchargement MOCKÉE (les fixtures des normalisateurs
-# sont le seam d'entrée, jamais le réseau : ni SIRENE 2,7 Go, ni RP 988 Mo),
+# (sirene_snapshot, extrait régional data.bretagne.bzh depuis le todo 9),
+# Flores (flores_a38 + flores_a88) et RP Emploi (rp_emploi) — avec la couture
+# de téléchargement MOCKÉE (les fixtures des normalisateurs sont le seam
+# d'entrée, jamais le réseau : ni ZIP national SIRENE 2,7 Go, ni RP 988 Mo),
 # la référence EPCI partagée MOCKÉE (lire_epci — la base des EPCI est une
 # ressource transversale des thèmes, pas une source Économie), et les builders
 # + le profilage RÉELS.
 #
 # Ce que le run source-table doit prouver (acceptance du todo 8) :
 #   - les QUATRE tables du contrat sont produites et persistées sous
-#     data/processed/economie/ avec leurs comptes connus (6 lignes SIRENE,
+#     data/processed/economie/ avec leurs comptes connus (5 lignes SIRENE,
 #     37 A38, 22 A88, 12 RP — les comptes verrouillés par le profilage, todo 7) ;
 #   - la preuve profilée sort (un <id>-profil.json par table) ;
 #   - AUCUN artefact de fiche n'est produit : publish() n'est jamais appelé,
@@ -62,11 +63,15 @@ dictionnaire_a88_contrats <- c(
 # fabriquer_telechargement_contrats ---------------------------------------------
 # La couture de téléchargement MOCKÉE (le seam, comme test-run-pipeline-habitat.R
 # mocke download_sources) : au lieu du réseau, elle écrit dans le cache brut les
-# zips construits depuis les fixtures — exactement les noms de cache que les
-# builders attendent de décompresser (les noms des manifestes). Un fragment de
-# manifeste Économie en entrée (la convention des fragments), les zips de SES
-# sources en sortie. `corrompre` : l'id d'une source dont le « téléchargement »
-# est volontairement invalide (fichier non-zip) — le chemin d'échec du run.
+# artefacts construits depuis les fixtures — exactement les noms de cache que
+# les builders attendent de lire (les noms des manifestes). Pour SIRENE (todo 9
+# — bascule régionale), le cache EST le CSV d'export : la fixture est écrite
+# directement sous le nom de cache du manifeste, sans zip ni dossier extrait.
+# Flores et RP gardent le format zip/decompressé qu'ils consomment. Un fragment
+# de manifeste Économie en entrée (la convention des fragments), les artefacts
+# de SES sources en sortie. `corrompre` : l'id d'une source dont le
+# « téléchargement » est volontairement invalide (fichier non-zip / non-CSV) —
+# le chemin d'échec du run.
 fabriquer_telechargement_contrats <- function(corrompre = NULL) {
   function(manifest, cache, mode) {
     if (!dir.exists(cache)) dir.create(cache, recursive = TRUE)
@@ -75,25 +80,29 @@ fabriquer_telechargement_contrats <- function(corrompre = NULL) {
       cible <- file.path(cache, manifest$fichier[i])
 
       if (identical(id, corrompre)) {
-        # un « téléchargement » invalide : un fichier qui n'est pas un zip
+        # un « téléchargement » invalide : un fichier qui n'est ni le CSV
+        # d'export ni un zip
         writeLines("téléchargement invalide (simulé)", cible)
         next
       }
 
-      d <- tempfile("zip-contrats-")
-      dir.create(d)
       if (id == "sirene_snapshot") {
+        # le cache régional EST le CSV d'export (le where de l'URL a déjà
+        # filtré les actifs) : pas de zip à décompresser — la fixture est
+        # écrite en CSV « ; » (le format de l'export ODS) directement sous le
+        # nom de cache du manifeste
         snapshot <- readr::read_csv(
           fixture_contrats("sirene-snapshot-fixture.csv"),
           col_types = readr::cols(.default = readr::col_character()),
           show_col_types = FALSE
         )
-        # le fichier réel est un CSV « ; » (dessin de fichier INSEE v311) — la
-        # fixture est lue en CSV « , » puis réécrite dans le format du réel
-        readr::write_delim(
-          snapshot, file.path(d, "StockEtablissement_utf8.csv"), delim = ";"
-        )
-      } else if (id == "flores_a38") {
+        readr::write_delim(snapshot, cible, delim = ";")
+        next
+      }
+
+      d <- tempfile("zip-contrats-")
+      dir.create(d)
+      if (id == "flores_a38") {
         file.copy(fixture_contrats("flores-a38-fixture.csv"),
                   file.path(d, "DS_FLORES_A38_2024_data.csv"))
         readr::write_delim(
@@ -162,9 +171,10 @@ executer_phase_sources <- function(cache, sortie) {
   list(tables = tables, profil = profil, sortie = sortie)
 }
 
-# Les comptes du contrat (verrouillés par le profilage, todo 7) -----------------
+# Les comptes du contrat (verrouillés par le profilage, todo 7 ; todo 9 :
+# SIRENE régional, diffusion non retenue) --------------------------------------
 lignes_attendu <- c(
-  sirene_snapshot = 6, flores_a38 = 37, flores_a88 = 22, rp_emploi = 12
+  sirene_snapshot = 5, flores_a38 = 37, flores_a88 = 22, rp_emploi = 12
 )
 
 test_that("la phase source-table de bout en bout : quatre tables + preuves profilées, aucun artefact de fiche", {
@@ -273,6 +283,32 @@ test_that("une source invalide arrête le run avant la preuve profilée (pas de 
 
   # ...AVANT la preuve profilée : le profilage n'a jamais tourné, aucun
   # <id>-profil.json n'existe — jamais de succès partiel silencieux
+  expect_false(dir.exists(file.path(sortie, "profil")))
+  expect_false(any(grepl("-profil\\.json", list.files(sortie, recursive = TRUE))))
+})
+
+test_that("un cache SIRENE corrompu arrête le run au moment de la lecture (pas de succès partiel)", {
+  cache <- tempfile("cache-eco-")
+  sortie <- tempfile("processed-eco-")
+  on.exit(unlink(c(cache, sortie), recursive = TRUE), add = TRUE)
+
+  local_mocked_bindings(
+    # le « téléchargement » SIRENE produit un fichier invalide (ni CSV
+    # d'export ni zip) — le nouveau lecteur régional (lire_snapshot_sirene
+    # sur le cache direct) doit s'arrêter bruyamment à la lecture
+    download_sources = fabriquer_telechargement_contrats(corrompre = "sirene_snapshot"),
+    lire_epci = function(chemin) reference_contrats,
+    .package = "lusk"
+  )
+
+  # le run s'arrête sur le snapshot inutilisable — le fichier corrompu ne
+  # porte pas le dessin de fichier épinglé par le manifeste
+  expect_error(
+    executer_phase_sources(cache, sortie),
+    "champs absents"
+  )
+
+  # ...AVANT la preuve profilée : jamais de succès partiel silencieux
   expect_false(dir.exists(file.path(sortie, "profil")))
   expect_false(any(grepl("-profil\\.json", list.files(sortie, recursive = TRUE))))
 })

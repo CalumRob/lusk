@@ -1,15 +1,15 @@
-siren,siret,statutDiffusionEtablissement,trancheEffectifsEtablissement,etatAdministratifEtablissement,codeCommuneEtablissement,codePostalEtablissement,activitePrincipaleEtablissement,nomenclatureActivitePrincipaleEtablissement,libelleActivitePrincipaleEtablissement
-000000001,00000000100001,O,00,A,22001,22000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
-000000001,00000000100002,O,00,A,22001,22000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
-000000002,00000000200001,P,12,A,22001,22000,47.11Z,NAFRev2,Commerce d'alimentation générale
-000000002,00000000200002,O,12,A,22001,22000,47.11Z,NAFRev2,Commerce d'alimentation générale
-000000003,00000000300001,O,11,A,29001,29000,62.01Z,NAFRev2,Programmation informatique
-000000004,00000000400001,O,NN,A,35001,35000,86.10Z,NAFRev2,Activités hospitalières
-000000005,00000000500001,O,03,A,56001,56000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
-000000006,00000000600001,O,00,F,22001,22000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
-000000007,00000000700001,O,11,A,,29000,62.01Z,NAFRev2,Programmation informatique
-000000008,00000000800001,O,00,A,29001,29000,,NAFRev2,
-000000009,00000000900001,O,12,A,44001,44000,47.11Z,NAFRev2,Commerce d'alimentation générale
-000000010,00000001000001,O,00,A,35001,35000,47XXZ,NAFRev2,
-000000011,00000001100001,O,00,A,12345,12300,86.10Z,NAFRev2,Activités hospitalières
-000000012,00000001200001,O,00,A,12A45,12300,86.10Z,NAFRev2,Activités hospitalières
+siret,activiteprincipaleetablissement,codecommuneetablissement,etatadministratifetablissement,trancheeffectifsetablissement,classeetablissement,datederniertraitementetablissement,libellecommuneetablissement
+00000000100001,01.11Z,22001,Actif,0 salarié,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses",2026-03-15T08:12:30+00:00,Plouha
+00000000100002,01.11Z,22001,Actif,0 salarié,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses",2026-03-31T23:41:59+00:00,Plouha
+00000000200001,47.11Z,22001,Actif,20 à 49 salariés,Commerce d'alimentation générale,2026-03-20T10:05:00+00:00,Plouha
+00000000200002,47.11Z,22001,Actif,20 à 49 salariés,Commerce d'alimentation générale,2026-03-22T14:30:00+00:00,Plouha
+00000000300001,62.01Z,29001,Actif,10 à 19 salariés,Programmation informatique,2026-03-28T09:15:00+00:00,Plougastel-Daoulas
+00000000400001,86.10Z,35001,Actif,Etablissement non employeur,Activités hospitalières,2026-03-31T11:00:00+00:00,Bruz
+00000000500001,01.11Z,56001,Actif,6 à 9 salariés,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses",2026-03-05T07:45:00+00:00,Ploemeur
+00000000600001,01.11Z,22001,Fermé,0 salarié,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses",2026-03-10T18:20:00+00:00,Plouha
+00000000700001,62.01Z,,Actif,10 à 19 salariés,Programmation informatique,2026-03-12T12:00:00+00:00,
+00000000800001,,29001,Actif,0 salarié,,2026-03-14T16:40:00+00:00,
+00000000900001,47.11Z,44001,Actif,20 à 49 salariés,Commerce d'alimentation générale,2026-03-31T20:00:00+00:00,Nantes
+00000001000001,47XXZ,35001,Actif,0 salarié,,2026-03-18T08:00:00+00:00,
+00000001100001,86.10Z,12345,Actif,0 salarié,Activités hospitalières,2026-03-25T09:30:00+00:00,Inconnue
+00000001200001,86.10Z,12A45,Actif,0 salarié,Activités hospitalières,2026-03-27T10:10:00+00:00,Invalide
