@@ -65,7 +65,7 @@ describe('App shell', () => {
     const { wrapper } = await mountApp('/')
 
     expect(wrapper.find('.accueil').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Lusk transforme des données publiques')
+    expect(wrapper.text()).toContain('Lusk transforme les données publiques éparses')
   })
 
   it('navigates to the Carte placeholder', async () => {

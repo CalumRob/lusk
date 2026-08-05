@@ -82,10 +82,10 @@ describe('Accueil — le héros', () => {
     expect(mot.element.parentElement?.nextElementSibling).toBe(legende.element)
   })
 
-  it('porte la légende du mock landing sous le mot', async () => {
+  it('porte la légende du mot sous la marque — prononciation puis breton · élan, mouvement', async () => {
     const { wrapper } = await monter(async () => payload)
 
-    expect(wrapper.find('.accueil-marque-caption').text()).toBe('breton · élan, mouvement')
+    expect(wrapper.find('.accueil-marque-caption').text()).toBe("/'lysk/ · breton · élan, mouvement")
   })
 
   it('porte le titre « lusk · Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {

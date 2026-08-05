@@ -105,7 +105,7 @@ watchEffect(() => {
 
         <div class="accueil-hero-marque" aria-label="Lusk — breton, élan, mouvement">
           <LuskBrand verticale class="accueil-marque" />
-          <span class="accueil-marque-caption">breton · élan, mouvement</span>
+          <span class="accueil-marque-caption">/'lysk/ · breton · élan, mouvement</span>
         </div>
       </div>
     </header>
@@ -184,11 +184,15 @@ watchEffect(() => {
   font-style: italic;
   letter-spacing: -0.02em;
   color: color-mix(in oklab, var(--brand-200) 55%, var(--surface-secondary));
+  /* L'ermine vient se poser sur le mot : le gap interne (--space-2) saute,
+     et la marge négative de l'ermine fait remonter le mot sous lui. */
+  gap: 0;
 }
 
 .accueil-hero-marque :deep(.lusk-marque__ermine) {
-  width: 80px;
-  height: 80px;
+  width: 156px;
+  height: 156px;
+  margin-bottom: -56px;
 }
 
 .accueil-marque-caption {
