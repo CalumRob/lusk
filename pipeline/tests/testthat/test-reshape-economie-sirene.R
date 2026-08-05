@@ -1,14 +1,18 @@
-# La normalisation du snapshot SIRENE (todo 4, plan economie-pipeline-contracts)
-# Le snapshot mensuel brut des établissements (une ligne par établissement,
-# dessin de fichier INSEE StockEtablissement v311) vers la table communale
-# longue et creuse du thème Économie/Emploi : une ligne par cellule
-# commune × code APE (NAF rév. 2, 5 chiffres) ventilée par les dimensions
-# sources conservées (statut de diffusion, tranche d'effectifs), le nombre
-# d'établissements ACTIFS comme valeur. Le mini-fixture
-# (fixtures/sirene-snapshot-fixture.csv) reproduit le format RÉEL du stock
-# mensuel ; les champs exacts viennent du CONTRAT (MANIFEST_ECONOMIE_SIRENE,
-# todo 1) — la normalisation consomme le manifeste, elle ne le re-épingle pas.
-# Aucun appel réseau dans la boucle de test (docs/architecture.md §Testing).
+# La normalisation du snapshot SIRENE (todo 9, plan economie-pipeline-contracts
+# — la bascule régionale) -------------------------------------------------------
+# L'export régional data.bretagne.bzh (jeu « sirene-v3-consolidee », vocabulaire
+# ODS minuscules) vers la table communale longue et creuse du thème
+# Économie/Emploi : une ligne par cellule commune × code APE (NAF rév. 2, 5
+# chiffres) × tranche d'effectifs, le nombre d'établissements ACTIFS comme
+# valeur. Le statut de diffusion n'est PAS retenu (décision todo 9 : chaque
+# établissement actif avec commune et code APE exploitables compte) — les
+# jumelles O/P d'une même cellule fusionnent en une ligne. Le mini-fixture
+# (fixtures/sirene-snapshot-fixture.csv) reproduit le vocabulaire ODS RÉEL de
+# l'export (libellés « Actif »/« Fermé », tranches en libellés,
+# classeetablissement = libellé APET) ; les champs exacts viennent du CONTRAT
+# (MANIFEST_ECONOMIE_SIRENE) — la normalisation consomme le manifeste, elle ne
+# le re-épingle pas. Aucun appel réseau dans la boucle de test
+# (docs/architecture.md §Testing).
 
 fixture_sirene <- load_fixture_sirene()
 
@@ -19,14 +23,15 @@ test_that("l'enveloppe commune et les champs SIRENE : la forme du contrat", {
   # activity_code | activity_label | value | measure | source | vintage
   expect_true(all(c("commune", "activity_code", "activity_label", "value",
                     "measure", "source", "vintage") %in% names(res$table)))
-  # plus les champs spécifiques SIRENE : statut actif, diffusion, tranche
-  # d'effectifs, version NAF (le contrat du thème les retient)
+  # plus les champs spécifiques SIRENE régional : statut actif, tranche
+  # d'effectifs, version NAF — PAS de statut de diffusion (non retenu)
   expect_equal(
     names(res$table),
     c("commune", "activity_code", "activity_label", "value", "measure",
-      "source", "vintage", "etat_administratif", "statut_diffusion",
-      "tranche_effectifs", "naf_version")
+      "source", "vintage", "etat_administratif", "tranche_effectifs",
+      "naf_version")
   )
+  expect_false("statut_diffusion" %in% names(res$table))
   # la mesure est le nombre d'établissements ACTIFS ; la source et le millésime
   # viennent du manifeste (jamais recopiés à la main)
   expect_true(all(res$table$measure == "ETABLISSEMENTS_ACTIFS"))
@@ -38,7 +43,8 @@ test_that("l'enveloppe commune et les champs SIRENE : la forme du contrat", {
 test_that("communes bretonnes uniquement : tous les codes sont des codes de référence 22/29/35/56", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  # toutes les communes retenues portent un département breton
+  # toutes les communes retenues portent un département breton (le jeu régional
+  # est pré-découpé ; la garde reste une validation défensive)
   expect_true(all(substr(res$table$commune, 1, 2) %in% DEPT_BRETAGNE))
   # les quatre départements bretons sont représentés, la non-bretonne (44001)
   # et le département inconnu (12345) sont absents
@@ -48,60 +54,55 @@ test_that("communes bretonnes uniquement : tous les codes sont des codes de réf
 test_that("actifs seuls : aucune ligne n'a un statut non actif", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  # le filtre du manifeste (etatAdministratifEtablissement = 'A') est porté
-  # par la colonne SIRENE retenue : elle vaut 'A' partout, sans exception
-  expect_true(all(res$table$etat_administratif == "A"))
-  expect_false(any(res$table$etat_administratif %in% c("F", NA)))
+  # le filtre du manifeste (etatadministratifetablissement = 'Actif' — le
+  # libellé ODS) est porté par la colonne SIRENE retenue : elle vaut 'Actif'
+  # partout, sans exception
+  expect_true(all(res$table$etat_administratif == "Actif"))
+  expect_false(any(res$table$etat_administratif %in% c("Fermé", NA)))
 })
 
-test_that("la diffusion partielle 'P' est conservée quand commune et code APE exploitables", {
+test_that("la diffusion n'est pas retenue : les jumelles O/P fusionnent en une cellule", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  # l'établissement en diffusion partielle (statutDiffusionEtablissement = 'P')
-  # de 22001 × 47.11Z reste : sa commune et son code APE sont exploitables
-  expect_true(any(res$table$statut_diffusion == "P"))
-  p <- res$table[res$table$commune == "22001" &
-                   res$table$activity_code == "47.11Z" &
-                   res$table$statut_diffusion == "P", ]
-  expect_equal(nrow(p), 1)
-  expect_equal(p$value, 1)
-  expect_equal(p$tranche_effectifs, "12")
-  # la jumelle diffusée 'O' de la même cellule commune × code APE vit dans sa
-  # propre ligne : la ventilation par dimensions sources est le grain long
-  o <- res$table[res$table$commune == "22001" &
-                   res$table$activity_code == "47.11Z" &
-                   res$table$statut_diffusion == "O", ]
-  expect_equal(o$value, 1)
+  # l'établissement en diffusion partielle côté INSEE (et sa jumelle O) ne se
+  # distinguent que par un statut NON retenu (todo 9) : une seule cellule
+  # 22001 × 47.11Z × « 20 à 49 salariés », valeur 2 — la diffusion n'existe
+  # plus comme dimension de grain
+  cellule <- res$table[res$table$commune == "22001" &
+                         res$table$activity_code == "47.11Z", ]
+  expect_equal(nrow(cellule), 1)
+  expect_equal(cellule$value, 2)
+  expect_equal(cellule$tranche_effectifs, "20 à 49 salariés")
 })
 
-test_that("le décompte des établissements actifs par cellule commune × code APE", {
+test_that("le décompte des établissements actifs par cellule commune × code APE × tranche", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  valeur <- function(commune, naf, statut, tranche) {
+  valeur <- function(commune, naf, tranche) {
     res$table$value[res$table$commune == commune &
                       res$table$activity_code == naf &
-                      res$table$statut_diffusion == statut &
                       res$table$tranche_effectifs == tranche]
   }
   # deux établissements actifs sur la même cellule → value = 2
-  expect_equal(valeur("22001", "01.11Z", "O", "00"), 2)
+  expect_equal(valeur("22001", "01.11Z", "0 salarié"), 2)
+  expect_equal(valeur("22001", "47.11Z", "20 à 49 salariés"), 2)
   # les cellules simples → value = 1
-  expect_equal(valeur("29001", "62.01Z", "O", "11"), 1)
-  expect_equal(valeur("35001", "86.10Z", "O", "NN"), 1)
-  expect_equal(valeur("56001", "01.11Z", "O", "03"), 1)
+  expect_equal(valeur("29001", "62.01Z", "10 à 19 salariés"), 1)
+  expect_equal(valeur("35001", "86.10Z", "Etablissement non employeur"), 1)
+  expect_equal(valeur("56001", "01.11Z", "6 à 9 salariés"), 1)
 })
 
 test_that("la table est longue et creuse : une ligne par cellule observée, aucune cellule à zéro", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  # 7 établissements actifs répartis sur 6 cellules observées : les cellules
+  # 7 établissements actifs répartis sur 5 cellules observées : les cellules
   # non observées (0 établissement) n'existent tout simplement pas
-  expect_equal(nrow(res$table), 6)
+  expect_equal(nrow(res$table), 5)
   expect_true(nrow(res$table) > length(unique(res$table$commune)))
   # chaque ligne est une cellule observée : value >= 1, pas de doublon de clé
+  # (le grain est commune × code APE × tranche — plus de dimension diffusion)
   expect_true(all(res$table$value >= 1))
   expect_equal(anyDuplicated(res$table[c("commune", "activity_code",
-                                         "statut_diffusion",
                                          "tranche_effectifs")]), 0L)
   # les cellules agrégées du grain fin redonnent bien le total par commune × NAF
   agrege <- res$table %>%
@@ -111,30 +112,34 @@ test_that("la table est longue et creuse : une ligne par cellule observée, aucu
                           agrege$activity_code == "47.11Z"], 2)
 })
 
-test_that("le libellé du code APE est porté quand disponible", {
+test_that("le libellé du code APE vient de classeetablissement (le vocabulaire ODS)", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  c02 <- res$table[res$table$commune == "22001" &
+  # le libellé APET est porté par classeetablissement dans le jeu régional
+  # (il n'existe PAS de libelleActivitePrincipaleEtablissement) — le libellé
+  # retenu est celui du champ épinglé par le manifeste
+  c01 <- res$table[res$table$commune == "22001" &
                      res$table$activity_code == "01.11Z", ]
-  expect_equal(c02$activity_label,
+  expect_equal(c01$activity_label,
                "Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses")
   expect_equal(res$table$activity_label[res$table$activity_code == "62.01Z"],
                "Programmation informatique")
 
-  # quand le snapshot ne porte pas la colonne libellé (fichiers plus anciens),
-  # l'enveloppe commune reste complète : activity_label est NA, sans erreur
+  # quand le snapshot ne porte PAS le libellé épinglé par le manifeste
+  # (classeetablissement), le contrat du manifeste est violé : la normalisation
+  # s'arrête — le libellé déclaré est un champ OBLIGATOIRE de l'export
   sans_libelle <- fixture_sirene
-  sans_libelle$libelleActivitePrincipaleEtablissement <- NULL
-  res2 <- normaliser_sirene_snapshot(sans_libelle)
-  expect_true(all(is.na(res2$table$activity_label)))
-  expect_setequal(names(res2$table), names(res$table))
+  sans_libelle$classeetablissement <- NULL
+  expect_error(normaliser_sirene_snapshot(sans_libelle), "champs absents")
 })
 
 test_that("la tranche d'effectifs reste de la métadonnée, jamais convertie en effectif", {
   res <- normaliser_sirene_snapshot(fixture_sirene)
 
-  # les tranches sources sont conservées telles quelles (00, 12, 11, NN, 03)
-  expect_setequal(res$table$tranche_effectifs, c("00", "03", "11", "12", "NN"))
+  # les tranches sources sont conservées telles quelles (les libellés ODS)
+  expect_setequal(res$table$tranche_effectifs,
+                  c("0 salarié", "6 à 9 salariés", "10 à 19 salariés",
+                    "20 à 49 salariés", "Etablissement non employeur"))
   # et aucune colonne d'effectifs salariés ESTIMÉS n'apparaît (la tranche
   # retenue est la métadonnée ; l'estimation d'emploi est hors contrat)
   expect_false(any(grepl("salari|emploi|estime", names(res$table),
@@ -194,9 +199,10 @@ test_that("le rapport d'exclusions compte les lignes inutilisables avec leur mot
   )
 
   # le rapport porte les valeurs fautives : rien n'est perdu silencieusement
+  # (plus de statut de diffusion — non retenu par le contrat)
   expect_true(all(c("siret", "raison", "commune", "naf",
-                    "etat_administratif", "statut_diffusion") %in%
-                    names(res$exclusions)))
+                    "etat_administratif") %in% names(res$exclusions)))
+  expect_false("statut_diffusion" %in% names(res$exclusions))
   # les 7 établissements retenus du fixture ne figurent pas dans le rapport :
   # l'exclusion et la rétention sont des partitions de l'entrée
   expect_setequal(
@@ -211,7 +217,7 @@ test_that("le rapport d'exclusions compte les lignes inutilisables avec leur mot
 
 test_that("le contrat du manifeste est vérifié avant la normalisation", {
   # la normalisation consomme le CONTRAT : un manifeste qui le viole (URL
-  # historique) arrête la normalisation avant tout filtrage
+  # historique data.gouv) arrête la normalisation avant tout filtrage
   mauvais <- MANIFEST_ECONOMIE_SIRENE
   mauvais$url <- paste0(
     "https://www.data.gouv.fr/api/1/datasets/r/",
@@ -220,11 +226,14 @@ test_that("le contrat du manifeste est vérifié avant la normalisation", {
   expect_error(normaliser_sirene_snapshot(fixture_sirene, mauvais),
                "historique")
 
-  # et un snapshot sans les champs épinglés par le manifeste est refusé
+  # et un snapshot sans les champs épinglés par le manifeste est refusé : le
+  # code APE comme le libellé déclaré (classeetablissement) sont obligatoires
   incomplet <- fixture_sirene
-  incomplet$activitePrincipaleEtablissement <- NULL
-  expect_error(normaliser_sirene_snapshot(incomplet),
-               "champs absents")
+  incomplet$activiteprincipaleetablissement <- NULL
+  expect_error(normaliser_sirene_snapshot(incomplet), "champs absents")
+  sans_libelle <- fixture_sirene
+  sans_libelle$classeetablissement <- NULL
+  expect_error(normaliser_sirene_snapshot(sans_libelle), "champs absents")
 })
 
 test_that("construire_sirene_normalise persiste la table et le rapport sous data/processed/economie/", {
@@ -235,7 +244,7 @@ test_that("construire_sirene_normalise persiste la table et le rapport sous data
   # fixture ; le pipeline réel lit le cache brut — même chemin de code)
   table <- construire_sirene_normalise(snapshot = fixture_sirene, sortie = sortie)
 
-  expect_equal(nrow(table), 6)
+  expect_equal(nrow(table), 5)
   expect_true(file.exists(sortie))
   # le rapport d'exclusions est persisté à côté, dans la même localisation
   sortie_exclusions <- sub("\\.rds$", "_exclusions.rds", sortie)
