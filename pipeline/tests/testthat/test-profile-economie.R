@@ -7,7 +7,8 @@
 # déterministe : couverture communale contre LE référentiel partagé,
 # comptes de lignes, couverture des activités, comportement des cellules
 # (zéro OBSERVÉ / cellule omise / valeur manquante — jamais confondus),
-# suppression (diffusion partielle SIRENE, statuts K/W Flores, exclusions RP),
+# suppression (SIRENE n'en porte aucune — la diffusion n'est pas retenue ;
+# statuts K/W Flores ; exclusions RP),
 # exclusions d'éligibilité SIRENE et résumés de sparsité / fiabilité.
 #
 # Les acceptances du todo 7, verrouillées ici :
@@ -155,9 +156,9 @@ test_that("la couverture communale contre le référentiel partagé (commune-fir
 test_that("comptes déterministes : lignes, communes, activités, mesures, total brut", {
   profil <- profil_economie(construire_tables_profil(), reference_profil)
 
-  # SIRENE : 6 cellules observées (7 établissements actifs), 4 communes,
-  # 4 codes APE, 1 mesure, 7 établissements au total
-  expect_equal(profil$sirene_snapshot$comptes$valeur, c(6, 4, 4, 1, 7))
+  # SIRENE (todo 9, diffusion non retenue) : 5 cellules observées (7
+  # établissements actifs), 4 communes, 4 codes APE, 1 mesure, 7 établissements
+  expect_equal(profil$sirene_snapshot$comptes$valeur, c(5, 4, 4, 1, 7))
 
   # Flores A38 : 37 lignes, 2 communes, 4 postes natifs, 2 mesures
   expect_equal(profil$flores_a38$comptes$valeur, c(37, 2, 4, 2, 317))
@@ -173,10 +174,10 @@ test_that("les cellules distinguent zéro observé, omis, manquant — jamais co
   profil <- profil_economie(construire_tables_profil(), reference_profil)
 
   # SIRENE : table creuse et sans zéro ni manquant — les cellules non
-  # observées n'existent pas (0 établissement), elles sont OMISES :
-  # 160 potentielles (4 communes × 4 APE × 2 statuts × 5 tranches), 6
-  # observées, 154 omises, 0 zéro observé, 0 manquant
-  expect_equal(profil$sirene_snapshot$cellules$lignes, c(160, 6, 0, 0, 154))
+  # observées n'existent pas (0 établissement), elles sont OMISES : 80
+  # potentielles (4 communes × 4 APE × 5 tranches — la diffusion n'est plus
+  # une dimension), 5 observées, 75 omises, 0 zéro observé, 0 manquant
+  expect_equal(profil$sirene_snapshot$cellules$lignes, c(80, 5, 0, 0, 75))
 
   # Flores A38 : le zéro OBSERVÉ (statut A, valeur 0) est compté à part du
   # manquant (statut K, valeur NA) et de l'omission (combinaison absente) :
@@ -196,10 +197,17 @@ test_that("les cellules distinguent zéro observé, omis, manquant — jamais co
 test_that("la suppression est comptée là où la source la porte, et nommée", {
   profil <- profil_economie(construire_tables_profil(), reference_profil)
 
-  # SIRENE : 5 établissements en diffusion 'O', 1 en diffusion partielle 'P'
-  # (conservée — sa commune et son code APE sont exploitables)
-  expect_equal(valeur_suppression(profil, "sirene_snapshot", "O"), 5)
-  expect_equal(valeur_suppression(profil, "sirene_snapshot", "P"), 1)
+  # SIRENE : le statut de diffusion de la source n'est pas retenu (todo 9) —
+  # chaque établissement actif avec commune et code APE exploitables compte,
+  # quelle que soit sa diffusion ; le rapport le dit EXPLICITEMENT par un
+  # tibble vide (la distinction « supprimé » n'existe pas dans la table)
+  expect_equal(nrow(profil$sirene_snapshot$suppression), 0)
+  expect_match(
+    profil$sirene_snapshot$fiabilite$valeur[
+      profil$sirene_snapshot$fiabilite$cle == "note_diffusion"
+    ],
+    "diffusion"
+  )
 
   # Flores A38 : 35 observations normales (A), 1 cellule non diffusée (K —
   # valeur NA, jamais un zéro), 1 observation d'inclusion (W)
@@ -268,10 +276,10 @@ test_that("les exclusions sont agrégées par motif, total en tête", {
 test_that("les résumés de sparsité / fiabilité sont déterministes", {
   profil <- profil_economie(construire_tables_profil(), reference_profil)
 
-  # SIRENE : 6/160 cellules observées, max 2 établissements, moyenne 7/6,
+  # SIRENE : 5/80 cellules observées, max 2 établissements, moyenne 7/5,
   # aucune part de zéro ni de manquant
   expect_equal(profil$sirene_snapshot$sparsite$valeur,
-               c(6 / 160, 2, 7 / 6, 0, 0))
+               c(5 / 80, 2, 7 / 5, 0, 0))
 
   # Flores A38 : 37/112, max 45, moyenne 317/36, 1/37 pour zéro, manquant et
   # non diffusé
@@ -420,16 +428,17 @@ test_that("échec bruyant : un statut de suppression non classé est refusé ave
     "statut d'observation non classé"
   )
 
-  # SIRENE : un statut de diffusion hors vocabulaire (O/P)
+  # SIRENE : un statut administratif hors vocabulaire (le libellé ODS
+  # retenu est 'Actif')
   tables2 <- construire_tables_profil()
-  tables2$sirene_snapshot$table$statut_diffusion[1] <- "Q"
+  tables2$sirene_snapshot$table$etat_administratif[1] <- "A"
   expect_error(
     profil_economie(tables2, reference_profil),
     "sirene_snapshot"
   )
   expect_error(
     profil_economie(tables2, reference_profil),
-    "statut de diffusion non classé"
+    "statut administratif non classé"
   )
 
   # SIRENE : un motif d'exclusion hors vocabulaire (le rapport d'éligibilité
