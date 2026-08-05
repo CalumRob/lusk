@@ -130,16 +130,264 @@ construire_analytiques_economie <- function(donnees, base_epci, artefact,
 }
 
 # publier_economie -------------------------------------------------------------
-# LE seam de publication de T8 : STUB. T8 câble la publication du payload
-# Économie (les artefacts analytiques *_rangs.rds et la fiche) — tant que T8
-# n'est pas livré, un appel échoue FORT plutôt que de publier un état
-# incomplet (jamais un « under construction » silencieux). Le descripteur
-# porte le seam pour que la forme du contrat soit complète.
-publier_economie <- function(...) {
-  stop(
-    "publier_economie : le seam de publication est câblé par T8 — appel hors contrat.",
-    call. = FALSE
+# LE seam de publication de T8 : le chaînon analytique T1-T6 → payload →
+# publish, câblé par T8 (plan economie-analytical-phase, todo 8). Il consomme
+# la MÊME machinerie partagée que theme_demographie/theme_habitat —
+# squelette_territoires (la référence), assembler_indicateurs (la forme du
+# contrat), validate_payload (le garde-fou) et publish (le backend "static"
+# par défaut) — avec les pièces du thème : les artefacts analytiques T6
+# classés (les rangs-en-contexte viennent de T6, jamais recalculés ici) et la
+# table déclarative INDICATEURS_ECONOMIE (les estampilles T7).
+# run_pipeline(theme = theme_economie()) route par ce seam (issue #97) ; les
+# thèmes classiques gardent compute_payload + publish, inchangés.
+
+# INDICATEURS_ECONOMIE ---------------------------------------------------------
+# La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
+# payload y est déclarée avec sa source de référence (l'id du manifeste qui
+# l'estampille — les vintages T7) et sa multiplicité. La multiplicité NA
+# déclare une clé à nombre de lignes VARIABLE par territoire : la LQ
+# commune × activité porte une ligne par cellule observée, jamais un nombre
+# fixe par commune (validate_payload lève l'égalité exacte pour ces clés —
+# issue #97 — et la garde pour les autres).
+INDICATEURS_ECONOMIE <- tibble::tibble(
+  key = c("lq", "lq_emploi", "eco_activites", "chomage"),
+  libelle = c(
+    "Localisation quotient (spécialisation productive)",
+    "Localisation quotient de l'emploi",
+    "Part des éco-activités",
+    "Chômage (population active)"
+  ),
+  sources = list(
+    "sirene_snapshot",
+    "flores_a88",
+    "sirene_snapshot",
+    "rp_chomage"
+  ),
+  source_reference = c("sirene_snapshot", "flores_a88",
+                       "sirene_snapshot", "rp_chomage"),
+  multiplicite = c(NA_integer_, NA_integer_, 1L, 1L)
+)
+
+# APERCU_ECONOMIE ---------------------------------------------------------------
+# La table déclarative des clés de l'Aperçu du thème (issue #32, ADR-0007) :
+# VIDE — le gating par thème. L'Économie ne déclare aucune clé aujourd'hui :
+# ses stats de base de l'Aperçu n'existent pas encore, la table `apercu` du
+# payload d'un run Économie est présente mais vide (jamais un « under
+# construction »).
+APERCU_ECONOMIE <- tibble::tibble(
+  key = character(),
+  libelle = character(),
+  multiplicite = integer()
+)
+
+# construire_territoires_economie ----------------------------------------------
+# La table des territoires du thème : le squelette PARTAGÉ (squelette_territoires,
+# compute.R) — communes/EPCIs/départements/région avec les noms réels de la
+# base des EPCI (lire_epci), la règle de pluralité départementale — avec le
+# POIDS du thème : le nombre total d'établissements actifs par commune (la
+# mesure signature SIRENE, comme Démographie pèse par la population et Habitat
+# par les logements).
+construire_territoires_economie <- function(base_epci, analytiques) {
+  poids <- analytiques$lq %>%
+    dplyr::select(commune, n_c) %>%
+    dplyr::distinct()
+  communes <- base_epci %>%
+    dplyr::transmute(
+      code = CODGEO, nom = LIBGEO, departement = DEP,
+      epci = EPCI, nom_epci = LIBEPCI
+    ) %>%
+    dplyr::left_join(poids, by = c("code" = "commune")) %>%
+    dplyr::mutate(n_c = dplyr::coalesce(n_c, 0))
+  squelette_territoires(communes, poids = "n_c")
+}
+
+# construire_indicateurs_economie ----------------------------------------------
+# Les quatre indicateurs publiés du thème (T1/T2/T3/T5), depuis les artefacts
+# analytiques T6 classés : une table longue par clé (code, key, detail, value,
+# unit) PORTANT SES RANGS — les rangs-en-contexte de T6, jamais recalculés
+# ici (une cellule LQ se classe dans (activité × groupe), ce que la machinerie
+# générique ne refait pas). L'assemblage suit EXACTEMENT la forme du contrat
+# d'assembler_indicateurs (compute.R) : jointure du type de territoire, la
+# colonne theme, et les estampilles T7 depuis INDICATEURS_ECONOMIE + vintages.
+construire_indicateurs_economie <- function(analytiques, territoires, vintages) {
+  tables <- list(
+    lq = dplyr::transmute(
+      analytiques$lq,
+      code = commune, key = "lq", detail = activity_code,
+      value = lq, unit = "", rang_epci, rang_dep, rang_reg
+    ),
+    lq_emploi = dplyr::transmute(
+      analytiques$lq_emploi_a88,
+      code = commune, key = "lq_emploi", detail = activity_code,
+      value = lq, unit = "", rang_epci, rang_dep, rang_reg
+    ),
+    eco_activites = dplyr::transmute(
+      analytiques$eco_activites,
+      code = commune, key = "eco_activites", detail = NA_character_,
+      value = part_economie_verte, unit = "%", rang_epci, rang_dep, rang_reg
+    ),
+    chomage = dplyr::transmute(
+      analytiques$chomage,
+      code = commune, key = "chomage", detail = NA_character_,
+      value = taux_chomage, unit = "%", rang_epci, rang_dep, rang_reg
+    )
   )
+
+  tampons <- INDICATEURS_ECONOMIE %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+    dplyr::select(key,
+                  vintage_source = source,
+                  vintage_version = version,
+                  vintage_date_reference = date_reference,
+                  vintage_date_publication = date_publication)
+
+  dplyr::bind_rows(tables) %>%
+    dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
+    dplyr::rename(territoire = code) %>%
+    dplyr::mutate(theme = "economie") %>%
+    dplyr::left_join(tampons, by = "key") %>%
+    dplyr::select(territoire, type, theme, key, detail, value, unit,
+                  rang_epci, rang_dep, rang_reg,
+                  vintage_source, vintage_version,
+                  vintage_date_reference, vintage_date_publication)
+}
+
+# compute_histoires_economie ---------------------------------------------------
+# L'Histoire du thème — la SÉLECTION par territoire (ADR-0002) : exactement
+# une Histoire par commune, choisie déterministement par la saillance. Le pool
+# (docs/themes/economie-emploi.md) :
+#   - « ce que la commune sait faire » (la LQ top-N, T1) — DÉFAUT, toujours
+#     allumée ; son contenu (les top-N spécialisations) vit dans les lignes
+#     `lq` des indicateurs, jamais recopié ici ;
+#   - « le matin, la commune se vide » (le ratio dortoir, T4) — déclenchée sur
+#     les queues réelles (dortoir-profond / pole-emploi), jamais sur la
+#     majorité.
+# La classification du Story n'est PAS un indicateur (MUST NOT de T8) : elle
+# vit dans la table histoires, avec les justifications du Story dortoir
+# (ratio, workplace, resident — NA quand le Story dortoir ne se déclenche pas).
+compute_histoires_economie <- function(analytiques, territoires) {
+  dort <- analytiques$dortoir %>%
+    dplyr::select(commune, classification, ratio, workplace, resident)
+
+  territoires %>%
+    dplyr::filter(type == "commune") %>%
+    dplyr::select(code, type) %>%
+    dplyr::left_join(dort, by = c("code" = "commune")) %>%
+    dplyr::mutate(
+      story_key = dplyr::if_else(
+        classification %in% c("dortoir-profond", "pole-emploi"),
+        "le-matin-la-commune-se-vide",
+        "ce-que-la-commune-sait-faire"
+      ),
+      # la classification et les justifications ne s'affichent que pour le
+      # Story dortoir (saillance déclenchée) — jamais un bruit pour le défaut
+      classification = dplyr::if_else(
+        story_key == "le-matin-la-commune-se-vide",
+        classification, NA_character_
+      ),
+      ratio = dplyr::if_else(
+        story_key == "le-matin-la-commune-se-vide", ratio, NA_real_
+      ),
+      workplace = dplyr::if_else(
+        story_key == "le-matin-la-commune-se-vide", workplace, NA_real_
+      ),
+      resident = dplyr::if_else(
+        story_key == "le-matin-la-commune-se-vide", resident, NA_real_
+      )
+    ) %>%
+    dplyr::transmute(
+      territoire = code, type = type, theme = "economie",
+      story_key, classification, ratio, workplace, resident
+    )
+}
+
+# construire_apercu_economie ---------------------------------------------------
+# Les stats de base de l'onglet Aperçu (ADR-0007) : AUCUNE aujourd'hui — le
+# gating par thème (APERCU_ECONOMIE vide). Retourne la liste vide ; la table
+# `apercu` du payload reste présente et vide (la forme du contrat).
+construire_apercu_economie <- function(territoires) {
+  list()
+}
+
+# validations_economie ---------------------------------------------------------
+# Les vérifications de valeur propres au thème (point 7) : déclarées ici,
+# exécutées par validate_payload() après ses vérifications génériques.
+validations_economie <- list(
+  # le chômage est une part dans [0, 1] (une valeur NA — commune sans taux
+  # calculable — est un cas légitime, jamais une corruption)
+  function(payload) {
+    tx <- payload$indicateurs$value[payload$indicateurs$key == "chomage"]
+    if (any(!is.na(tx) & (tx < 0 | tx > 1))) {
+      stop("Payload invalide : un taux de chômage hors [0, 1].",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # la part des éco-activités est une part dans [0, 1]
+  function(payload) {
+    pe <- payload$indicateurs$value[payload$indicateurs$key == "eco_activites"]
+    if (any(!is.na(pe) & (pe < 0 | pe > 1))) {
+      stop("Payload invalide : une part d'éco-activités hors [0, 1].",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # la LQ est une valeur strictement positive (une LQ nulle ou négative est
+  # une corruption — la LQ de Balassa est un ratio de parts)
+  function(payload) {
+    lq <- payload$indicateurs$value[payload$indicateurs$key == "lq"]
+    if (any(!is.na(lq) & lq <= 0)) {
+      stop("Payload invalide : une LQ non positive.", call. = FALSE)
+    }
+    invisible(payload)
+  }
+)
+
+# construire_payload_economie --------------------------------------------------
+# L'assembleur du payload du thème : les quatre tables du contrat (la forme
+# d'compute_payload, compute.R) — indicateurs (avec rangs T6 + estampilles T7),
+# histoires (story_key ADR-0002), territoires (référence partagée) et apercu
+# (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
+# déclaratives du thème — un payload invalide s'arrête là.
+construire_payload_economie <- function(analytiques, base_epci, vintages) {
+  territoires <- construire_territoires_economie(base_epci, analytiques)
+
+  payload <- list(
+    indicateurs = construire_indicateurs_economie(analytiques, territoires, vintages),
+    histoires = compute_histoires_economie(analytiques, territoires),
+    territoires = reference_territoires(territoires),
+    apercu = assemble_apercu(territoires, construire_apercu_economie(territoires))
+  )
+
+  validate_payload(payload,
+                   indicateurs = INDICATEURS_ECONOMIE,
+                   vintages = vintages,
+                   validations = validations_economie,
+                   apercu = APERCU_ECONOMIE)
+  payload
+}
+
+# publier_economie ---------------------------------------------------------------
+# Le seam de publication du thème, câblé par T8 : lit le référentiel partagé
+# (base_epci du cache), enchaîne le calcul analytique T1-T6 (construire_analytiques
+# — les artefacts *_rangs.rds sont régénérés sous data/processed/economie/),
+# assemble le payload, le valide et le publie via la machinerie PARTAGÉE
+# publish (backend "static" par défaut — parquet + projections JSON + vintages).
+# Retourne le payload, comme run_pipeline l'attend.
+publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
+                             sortie = "public/data",
+                             sortie_analytiques = file.path(dirname(cache),
+                                                            "processed", "economie")) {
+  if (is.null(vintages)) vintages <- vintages_economie()
+
+  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
+  analytiques <- construire_analytiques_economie(donnees, base_epci,
+                                                 artefact_egss(),
+                                                 sortie = sortie_analytiques)
+  payload <- construire_payload_economie(analytiques, base_epci, vintages)
+  publish(payload, sortie)
+  payload
 }
 
 # MEMBRES_DESCRIPTEUR_ECONOMIE -------------------------------------------------
