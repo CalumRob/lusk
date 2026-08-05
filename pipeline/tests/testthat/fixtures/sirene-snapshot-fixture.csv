@@ -1,0 +1,15 @@
+siren,siret,statutDiffusionEtablissement,trancheEffectifsEtablissement,etatAdministratifEtablissement,codeCommuneEtablissement,codePostalEtablissement,activitePrincipaleEtablissement,nomenclatureActivitePrincipaleEtablissement,libelleActivitePrincipaleEtablissement
+000000001,00000000100001,O,00,A,22001,22000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
+000000001,00000000100002,O,00,A,22001,22000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
+000000002,00000000200001,P,12,A,22001,22000,47.11Z,NAFRev2,Commerce d'alimentation générale
+000000002,00000000200002,O,12,A,22001,22000,47.11Z,NAFRev2,Commerce d'alimentation générale
+000000003,00000000300001,O,11,A,29001,29000,62.01Z,NAFRev2,Programmation informatique
+000000004,00000000400001,O,NN,A,35001,35000,86.10Z,NAFRev2,Activités hospitalières
+000000005,00000000500001,O,03,A,56001,56000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
+000000006,00000000600001,O,00,F,22001,22000,01.11Z,NAFRev2,"Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses"
+000000007,00000000700001,O,11,A,,29000,62.01Z,NAFRev2,Programmation informatique
+000000008,00000000800001,O,00,A,29001,29000,,NAFRev2,
+000000009,00000000900001,O,12,A,44001,44000,47.11Z,NAFRev2,Commerce d'alimentation générale
+000000010,00000001000001,O,00,A,35001,35000,47XXZ,NAFRev2,
+000000011,00000001100001,O,00,A,12345,12300,86.10Z,NAFRev2,Activités hospitalières
+000000012,00000001200001,O,00,A,12A45,12300,86.10Z,NAFRev2,Activités hospitalières
