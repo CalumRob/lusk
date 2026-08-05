@@ -316,7 +316,10 @@ onBeforeUnmount(() => {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 480px;
+  /* The map flexes with the viewport (issue #67 — viewport-height page):
+     a floor here would push the page past 100dvh on short screens. The
+     ResizeObserver keeps MapLibre in sync. */
+  min-height: 0;
   background: var(--surface-tertiary);
 }
 
