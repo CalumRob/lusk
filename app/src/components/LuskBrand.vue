@@ -49,6 +49,7 @@ defineProps<{
   font-style: italic;
   letter-spacing: -0.01em;
   color: var(--text-primary);
+  transition: color 150ms ease-out;
 }
 
 .lusk-marque--verticale {

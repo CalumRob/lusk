@@ -371,6 +371,13 @@ onUnmounted(() => {
   text-decoration: none;
 }
 
+/* Hover: the wordmark text turns the primary accent green (--accent-primary,
+   the same green as the nav underline). The ermine artwork is a locked brand
+   asset (hardcoded fills) — only the text responds. */
+.en-tete-marque:hover :deep(.lusk-marque__mot) {
+  color: var(--accent-primary);
+}
+
 /* F3 (#53) + #61: the search collapses into the « Rechercher » button,
    right-aligned before Contact; the expanded bar overlays below the header. */
 .en-tete-recherche {
@@ -476,6 +483,13 @@ onUnmounted(() => {
 }
 
 .nav-lien--actif::after {
+  transform: scaleX(1);
+}
+
+/* Hover / keyboard focus: the same 2px underline appears as the interactive
+   state cue (transform-only, DESIGN.md §6) — active keeps it persistent. */
+.nav-lien:hover::after,
+.nav-lien:focus-visible::after {
   transform: scaleX(1);
 }
 
