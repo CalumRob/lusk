@@ -22,6 +22,7 @@ import { storyDemographie } from '@/fiche/storyDemographie'
 import {
   histoirePourTerritoire,
   indicateursGroupeesPourTerritoire,
+  nuageComparaison,
   trouverTerritoire,
 } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
@@ -48,7 +49,30 @@ const histoireDemographie = computed(() =>
   histoire.value?.theme === 'demographie' ? histoire.value : null,
 )
 
-const story = computed(() => storyDemographie(histoire.value?.classification ?? null))
+const story = computed(() => {
+  const histoire = histoireDemographie.value
+  if (!histoire) return null
+  return storyDemographie(
+    histoire.classification,
+    histoire.taux_solde_naturel,
+    histoire.taux_solde_migratoire,
+  )
+})
+
+const nuage = computed(() => nuageComparaison(props.payload, props.territoire) ?? [])
+
+// The story's data sources, exhaustive: the série historique (the rates the
+// reading crosses) and the base des EPCI (the nuage's comparison groups).
+// Cited from the payload's vintages table — never invented, never a theme
+// stamp. Absent table → no source line (honest, nothing to cite).
+const sourceHistoire = computed(() => {
+  const vintages = props.payload.vintages
+  if (!vintages) return null
+  const ids = new Set(['serie_historique', 'epci'])
+  const citees = vintages.filter((v) => ids.has(v.id))
+  if (citees.length === 0) return null
+  return citees.map((v) => `${v.source} · ${v.version}`).join(' · ')
+})
 
 const nomTerritoire = computed(
   () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
@@ -89,14 +113,19 @@ function libelleIndicateur(clef: string): string {
       <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
       <GraphiqueSoldes
         v-if="histoireDemographie"
-        :solde-naturel="histoireDemographie.solde_naturel"
-        :solde-migratoire="histoireDemographie.solde_migratoire"
+        :taux-naturel="histoireDemographie.taux_solde_naturel"
+        :taux-migratoire="histoireDemographie.taux_solde_migratoire"
         :classification="histoireDemographie.classification"
         :nom="nomTerritoire"
+        :nuage="nuage"
       />
       <p class="angle-story-comment-lire">
         <span class="angle-story-etiquette">Comment lire</span>
         {{ story.commentLire }}
+      </p>
+      <p v-if="sourceHistoire" class="angle-story-source">
+        <span class="angle-story-etiquette">Source</span>
+        {{ sourceHistoire }}
       </p>
       <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
     </section>
@@ -185,6 +214,16 @@ function libelleIndicateur(clef: string): string {
   margin: 0;
   font: var(--text-body-sm);
   color: var(--text-secondary);
+}
+
+.angle-story-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--text-tertiary);
 }
 
 .angle-story-etiquette {
