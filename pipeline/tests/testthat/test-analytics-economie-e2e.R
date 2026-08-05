@@ -182,14 +182,18 @@ test_that("le run de bout en bout : tables analytiques réelles + payload publi�
   expect_equal(sum(payload$indicateurs$key == "eco_activites"), 1202)
   expect_equal(sum(payload$indicateurs$key == "chomage"), 1202)
 
-  # les fichiers par thème + la référence partagée + vintages + rapport de run
+  # les fichiers par thème + la référence partagée + vintages + rapport de run.
+  # Issue #116 : l'Aperçu d'un run Économie est vide par design (comptes
+  # verrouillés ci-dessus : apercu = 0) — le fichier partagé apercu n'est NI
+  # écrit NI écrasé par un thème sans aperçu (seul Démographie le peuple).
   for (f in c("indicateurs_economie.parquet", "indicateurs_economie.json",
               "histoires_economie.parquet", "histoires_economie.json",
               "territoires.parquet", "territoires.json",
-              "apercu.parquet", "apercu.json",
               "vintages.parquet", "run-report.json")) {
     expect_true(file.exists(file.path(sortie, f)), info = f)
   }
+  expect_false(file.exists(file.path(sortie, "apercu.parquet")))
+  expect_false(file.exists(file.path(sortie, "apercu.json")))
   # le parquet relit exactement le payload publié
   ind <- nanoparquet::read_parquet(file.path(sortie, "indicateurs_economie.parquet"))
   expect_equal(nrow(ind), nrow(payload$indicateurs))
