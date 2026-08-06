@@ -39,22 +39,48 @@ describe('storyEconomie — ce-que-la-commune-abrite (top-5 spécialisations LQ)
     )
   })
 
-  it('drafts a one-liner naming the top-3 specialisations and a comment-lire on the LQ', () => {
+  it('drafts a one-liner naming the specialisation of active establishments — never the three activities — and a comment-lire on the LQ', () => {
     const story = storyEconomie(lignesPour('22001'), 'Commune A1')
 
     expect(story?.uneLigne).toBe(
-      'Commune A1 se distingue par Élevage de volailles, Commerce de gros (commerce interentreprises) ' +
-        "d'animaux vivants et Captage, traitement et distribution d'eau.",
+      'Commune A1 se distingue par la spécialisation de ses établissements actifs.',
     )
+    expect(story?.uneLigne).not.toContain('Élevage de volailles')
     expect(story?.commentLire).toContain('quotient de localisation')
     expect(story?.commentLire).toContain('moyenne bretonne')
   })
 
-  it('adapts the title to the territory type (an EPCI is never « la commune »)', () => {
-    expect(storyEconomie(lignesPour('200000001'), 'EPCI X')?.titre).toBe('Ce que l’EPCI abrite')
-    expect(storyEconomie(lignesPour('22'), 'Département 22')?.titre).toBe(
-      'Ce que le département abrite',
+  it('uses the single fixed title « Ce que la commune abrite » for every territory type (issue #153)', () => {
+    expect(storyEconomie(lignesPour('22001'), 'Commune A1')?.titre).toBe(
+      'Ce que la commune abrite',
     )
+    expect(storyEconomie(lignesPour('200000001'), 'EPCI X')?.titre).toBe(
+      'Ce que la commune abrite',
+    )
+    expect(storyEconomie(lignesPour('22'), 'Département 22')?.titre).toBe(
+      'Ce que la commune abrite',
+    )
+  })
+
+  it('carries a precision naming the matière — « Spécialisation des établissements actifs » (issues #153 + #156)', () => {
+    expect(storyEconomie(lignesPour('22001'), 'Commune A1')?.precision).toBe(
+      'Spécialisation des établissements actifs',
+    )
+    expect(storyEconomie(lignesPour('200000001'), 'EPCI X')?.precision).toBe(
+      'Spécialisation des établissements actifs',
+    )
+    expect(storyEconomie(lignesPour('22'), 'Département 22')?.precision).toBe(
+      'Spécialisation des établissements actifs',
+    )
+  })
+
+  it('states in its own copy that the reading is about establishments, never jobs (issue #156)', () => {
+    const story = storyEconomie(lignesPour('22001'), 'Commune A1')
+
+    expect(story?.uneLigne).toContain('établissements actifs')
+    expect(story?.precision).toContain('établissements')
+    expect(story?.commentLire).toContain('établissements actifs')
+    expect(story?.commentLire).toContain('jamais sur les emplois')
   })
 
   it('stamps the story with its own vintage from the payload rows (issue #74)', () => {
@@ -72,6 +98,9 @@ describe('storyEconomie — ce-que-la-bretagne-abrite (top-5 par présence, rég
     expect(story).not.toBeNull()
     expect(story?.storyKey).toBe('ce-que-la-bretagne-abrite')
     expect(story?.titre).toBe('Ce que la Bretagne abrite')
+    // the présence reading carries no precision — its matière lives in its
+    // own comment-lire (issue #153: the precision is the specialisation's)
+    expect(story?.precision).toBeUndefined()
     expect(story?.lignes.map((l) => l.rang)).toEqual([1, 2, 3, 4, 5])
     expect(story?.lignes[0]).toEqual({
       rang: 1,
@@ -103,5 +132,6 @@ describe('storyEconomie — honest edges', () => {
 
     expect(une?.lignes).toEqual(deux?.lignes)
     expect(une?.uneLigne).toBe(deux?.uneLigne)
+    expect(une?.precision).toBe(deux?.precision)
   })
 })

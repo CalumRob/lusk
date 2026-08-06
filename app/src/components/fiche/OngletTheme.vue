@@ -143,6 +143,9 @@ function libelleIndicateur(clef: string): string {
       <template v-if="storyEconomieAngle">
         <p class="angle-story-une-ligne">{{ storyEconomieAngle.uneLigne }}</p>
         <p class="angle-story-titre">{{ storyEconomieAngle.titre }}</p>
+        <p v-if="storyEconomieAngle.precision" class="angle-story-precision">
+          {{ storyEconomieAngle.precision }}
+        </p>
         <ol class="liste-specialisations">
           <li
             v-for="ligne in storyEconomieAngle.lignes"
@@ -278,6 +281,17 @@ function libelleIndicateur(clef: string): string {
   margin: 0;
   font: 600 1.1875rem/1.4 var(--font-serif);
   color: var(--couleur-strong);
+}
+
+/* The small label naming the matière, next to the Économie Story's title
+   (issues #153 + #156): « Spécialisation des établissements actifs ». The
+   title stays fabric-neutral; the precision carries the establishment
+   reading. The région's presence Story carries none — nothing renders. */
+.angle-story-precision {
+  margin: 0;
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--text-secondary);
 }
 
 /* The subtitle names the two colors of the plot: the current territory wears

@@ -82,16 +82,18 @@ describe('OngletTheme — the Économie block (3 indicateurs)', () => {
 })
 
 describe('OngletTheme — the Économie Story angle (la Story, jamais un indicateur)', () => {
-  it('renders the serif one-liner and the top-5 specialisations list for a commune', async () => {
+  it('renders the serif one-liner, the fixed title with its precision, and the top-5 specialisations list for a commune', async () => {
     const wrapper = await monter('22001')
 
     const uneLigne = wrapper.find('.angle-story-une-ligne')
     expect(uneLigne.exists()).toBe(true)
     expect(uneLigne.text()).toBe(
-      'Commune A1 se distingue par Élevage de volailles, Commerce de gros (commerce interentreprises) ' +
-        "d'animaux vivants et Captage, traitement et distribution d'eau.",
+      'Commune A1 se distingue par la spécialisation de ses établissements actifs.',
     )
     expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que la commune abrite')
+    expect(wrapper.find('.angle-story-precision').text()).toBe(
+      'Spécialisation des établissements actifs',
+    )
 
     const lignes = wrapper.findAll('.specialisation')
     expect(lignes).toHaveLength(5)
@@ -109,20 +111,24 @@ describe('OngletTheme — the Économie Story angle (la Story, jamais un indicat
     expect(source.text()).toContain('réf. 31 mars 2026')
   })
 
-  it('gives an EPCI its top-5 Story with the type-adapted title', async () => {
+  it('gives an EPCI its top-5 Story with the same fixed title and precision (issue #153)', async () => {
     const wrapper = await monter('200000001')
 
-    expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que l’EPCI abrite')
+    expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que la commune abrite')
+    expect(wrapper.find('.angle-story-precision').text()).toBe(
+      'Spécialisation des établissements actifs',
+    )
     const lignes = wrapper.findAll('.specialisation')
     expect(lignes).toHaveLength(5)
     expect(lignes[0].text()).toContain('Production de sel')
     expect(lignes[0].text()).toContain('LQ 35,7')
   })
 
-  it('gives the région (53) its presence Story — n + part du parc, no LQ', async () => {
+  it('gives the région (53) its presence Story — n + part du parc, no LQ, no precision', async () => {
     const wrapper = await monter('53')
 
     expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que la Bretagne abrite')
+    expect(wrapper.find('.angle-story-precision').exists()).toBe(false)
     expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
       'La Bretagne abrite surtout Location de terrains et d\'autres biens immobiliers, ' +
         'Location de logements et Autres organisations fonctionnant par adhésion volontaire.',
@@ -134,11 +140,12 @@ describe('OngletTheme — the Économie Story angle (la Story, jamais un indicat
     expect(lignes[0].text()).not.toContain('LQ')
   })
 
-  it('renders "comment lire", the Méthodes link, and keeps the indicators', async () => {
+  it('renders "comment lire" (explicitly about establishments), the Méthodes link, and keeps the indicators', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.angle-story-comment-lire').text()).toContain('Comment lire')
     expect(wrapper.find('.angle-story-comment-lire').text()).toContain('quotient de localisation')
+    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('jamais sur les emplois')
     expect(wrapper.find('.angle-story-methodes').text()).toBe('Méthodes')
     expect(wrapper.findAll('.figure-indicateur')).toHaveLength(3)
   })
