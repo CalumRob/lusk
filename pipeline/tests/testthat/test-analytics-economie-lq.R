@@ -11,10 +11,13 @@
 #      bretonne (gate E) : LQ_ca = (n_ca / n_c.) / (n_.a / n_..), avec n_c. =
 #      total de la commune, n_.a = total de l'activité sur la Bretagne retenue,
 #      n_.. = total général — PAS de seuillage (gate C) ;
-#   4. l'Histoire « ce que la commune sait faire » : les top-3 spécialisations
-#      par LQ (décision de build : TOP_N = 3, documentée), valeurs CONTINUES
-#      uniquement — une entrée binaire échoue bruyamment (gate C) ; sélection
-#      déterministe (ADR-0002) : même entrée → même Histoire, pour toujours ;
+#   4. l'Histoire « ce que la commune abrite » : les top-5 spécialisations
+#      par LQ (TOP_N_SPECIALISATIONS_LQ = 5, décision 2026-08-06 — la 4e/5e
+#      place est encore une LQ énorme et apporte de la diversité sectorielle),
+#      valeurs CONTINUES uniquement — une entrée binaire échoue bruyamment
+#      (gate C) ; sélection déterministe (ADR-0002) : même entrée → même
+#      Histoire, pour toujours ; `n` (la cellule n_ca, transparence de
+#      calculer_lq_balassa) est CONSERVÉ par l'Histoire (issue #131) ;
 #   5. la matrice M sidecar (LQ ≥ 1 binaire, commune × activité) comme artefact
 #      SÉPARÉ pour la relatedness future (gate F, docs/research/relatedness.md
 #      §5 Layer 1) — l'Histoire ne l'utilise jamais.
@@ -29,69 +32,8 @@
 # connus. Aucun appel réseau dans la boucle de test.
 
 # La fixture analytique --------------------------------------------------------
-# Un mini snapshot normalisé (la forme de normaliser_sirene_snapshot) : 14
-# lignes, commune × code APE × tranche. Après regroupement des tranches :
-#   22001 : 01.11Z = 2 · 47.11Z = 3 · 86.10Z = 5   (total 10)
-#   29001 : 01.11Z = 4 · 47.11Z = 1 · 86.10Z = 5   (total 10)
-#   35001 : 01.11Z = 6 · 47.11Z = 2 · 86.10Z = 2   (total 10)
-#   56001 : 01.11Z = 1 · 47.11Z = 1 · 86.10Z = 1   (total 3 — SOUS LE PLANCHER)
-# Totaux bretons retenus : 01.11Z = 12 · 47.11Z = 6 · 86.10Z = 12 · total = 30
-# → parts bretonnes 0,4 / 0,2 / 0,4.
-#   LQ 22001 : (2/10)/0,4 = 0,5 · (3/10)/0,2 = 1,5 · (5/10)/0,4 = 1,25
-#   LQ 29001 : (4/10)/0,4 = 1,0 · (1/10)/0,2 = 0,5 · (5/10)/0,4 = 1,25
-#   LQ 35001 : (6/10)/0,4 = 1,5 · (2/10)/0,2 = 1,0 · (1/10)/0,4 = 0,5
-fixture_lq_analytique <- function() {
-  tibble::tribble(
-    ~commune, ~activity_code, ~activity_label, ~value, ~measure, ~source,
-    ~vintage, ~etat_administratif, ~tranche_effectifs, ~naf_version,
-    # 22001 — 4 lignes (deux tranches sur 01.11Z : le regroupement est exercé)
-    "22001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "22001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
-    "NAF rév. 2",
-    "22001", "47.11Z", "Commerce de détail non spécialisé", 3L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "22001", "86.10Z", "Activités hospitalières", 5L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
-    "NAF rév. 2",
-    # 29001 — 3 lignes
-    "29001", "01.11Z", "Culture de céréales", 4L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "29001", "47.11Z", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "29001", "86.10Z", "Activités hospitalières", 5L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
-    "NAF rév. 2",
-    # 35001 — 4 lignes (deux tranches sur 01.11Z)
-    "35001", "01.11Z", "Culture de céréales", 3L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "35001", "01.11Z", "Culture de céréales", 3L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
-    "NAF rév. 2",
-    "35001", "47.11Z", "Commerce de détail non spécialisé", 2L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "35001", "86.10Z", "Activités hospitalières", 2L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
-    "NAF rév. 2",
-    # 56001 — sous le plancher (total 3)
-    "56001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "56001", "47.11Z", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
-    "NAF rév. 2",
-    "56001", "86.10Z", "Activités hospitalières", 1L, "ETABLISSEMENTS_ACTIFS",
-    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
-    "NAF rév. 2"
-  )
-}
+# (vivante dans helper-fixture-sirene.R — partagée avec
+# test-analytics-economie-territoires.R)
 
 # Le chemin de la vraie table normalisée (gitignorée ; absente hors worktree —
 # le test saute proprement sur une machine sans la donnée)
@@ -218,14 +160,15 @@ test_that("les totaux bretons se calculent sur la Bretagne RETENUE seulement", {
   expect_equal(n_a_par_activite$n_a, c(12, 6, 12))
 })
 
-# 4. L'Histoire « ce que la commune sait faire » --------------------------------
-test_that("l'Histoire = top-3 spécialisations par LQ, valeurs continues, déterministe", {
+# 4. L'Histoire « ce que la commune abrite » --------------------------------
+test_that("l'Histoire = top-5 spécialisations par LQ, valeurs continues, déterministe", {
   agrege <- agreger_sirene_par_activite(fixture_lq_analytique())
   retenu <- appliquer_plancher_communes(agrege)$retenu
   lq <- calculer_lq_balassa(retenu)
   histoires <- calculer_histoires_lq(lq)
 
-  # une ligne par (commune × rang), rang 1..3 — les top-3 spécialisations
+  # une ligne par (commune × rang), rang 1..min(top_n, activités) — les 3
+  # activités de la fixture (< top_n) donnent 3 lignes, jamais de padding
   expect_equal(nrow(histoires), 9)
   expect_equal(unique(histoires$rang), 1:3)
   # 22001 : 47.11Z (1,5) > 86.10Z (1,25) > 01.11Z (0,5)
@@ -247,6 +190,49 @@ test_that("l'Histoire = top-3 spécialisations par LQ, valeurs continues, déter
   expect_identical(histoires, calculer_histoires_lq(lq))
 })
 
+test_that("l'Histoire conserve `n` — la cellule n_ca, transparence de la LQ (issue #131)", {
+  agrege <- agreger_sirene_par_activite(fixture_lq_analytique())
+  retenu <- appliquer_plancher_communes(agrege)$retenu
+  lq <- calculer_lq_balassa(retenu)
+  histoires <- calculer_histoires_lq(lq)
+
+  # la colonne n (le nombre d'établissements de la cellule commune × activité)
+  # n'est PAS jetée par la sélection — l'Histoire la porte, comme le payload
+  expect_true("n" %in% names(histoires))
+  # 22001 : 47.11Z porte 3 établissements, 86.10Z en porte 5, 01.11Z en porte 2
+  expect_equal(
+    histoires$n[histoires$commune == "22001"],
+    c(3, 5, 2)
+  )
+})
+
+test_that("l'Histoire va jusqu'au top-5 quand une commune a 5 activités ou plus", {
+  # une commune à 6 activités → 5 lignes d'Histoire (la profondeur top-5),
+  # jamais plus — la 6e activité (la plus faible LQ) est écartée
+  lq_profonde <- tibble::tibble(
+    commune = c(rep("22001", 6), rep("29001", 6)),
+    activity_code = c("A", "B", "C", "D", "E", "F",
+                      "A", "B", "C", "D", "E", "F"),
+    activity_label = c(paste0("Activité ", c("A", "B", "C", "D", "E", "F")),
+                       paste0("Activité ", c("A", "B", "C", "D", "E", "F"))),
+    lq = c(2.0, 1.8, 1.6, 1.4, 1.2, 0.5,
+           1.0, 0.8, 0.6, 0.4, 0.2, 0.1),
+    n = c(2, 3, 4, 5, 6, 1,
+          1, 2, 3, 4, 5, 6)
+  )
+  histoires <- calculer_histoires_lq(lq_profonde)
+
+  # 22001 : les 5 meilleures LQ, rang 1..5, F (0,5) écartée
+  h22001 <- histoires[histoires$commune == "22001", ]
+  expect_equal(nrow(h22001), TOP_N_SPECIALISATIONS_LQ)
+  expect_equal(h22001$rang, 1:TOP_N_SPECIALISATIONS_LQ)
+  expect_equal(h22001$activity_code, c("A", "B", "C", "D", "E"))
+  expect_equal(h22001$n, c(2, 3, 4, 5, 6))
+  # 29001 : la même profondeur, dans l'ordre de LQ
+  h29001 <- histoires[histoires$commune == "29001", ]
+  expect_equal(h29001$activity_code, c("A", "B", "C", "D", "E"))
+})
+
 test_that("une Histoire construite depuis une entrée BINAIRE échoue bruyamment", {
   # la matrice M (0/1) ne doit JAMAIS piloter l'Histoire (gate C) — la
   # fonction refuse une colonne lq binaire
@@ -258,19 +244,23 @@ test_that("une Histoire construite depuis une entrée BINAIRE échoue bruyamment
   expect_error(calculer_histoires_lq(binaire), "continu")
 })
 
-test_that("une commune avec moins de 3 activités reçoit toute son Histoire (rang < top_n)", {
+test_that("une commune avec moins de top_n activités reçoit toute son Histoire (rang < top_n)", {
   # une commune à 2 activités → 2 lignes d'Histoire, pas de padding
   lq_mince <- tibble::tibble(
     commune = c("22001", "22001", "29001", "29001", "29001"),
     activity_code = c("01.11Z", "47.11Z", "01.11Z", "47.11Z", "86.10Z"),
     activity_label = c("a", "b", "a", "b", "c"),
-    lq = c(1.5, 0.5, 1.0, 1.2, 0.8)
+    lq = c(1.5, 0.5, 1.0, 1.2, 0.8),
+    n = c(2L, 3L, 4L, 1L, 5L)
   )
   histoires <- calculer_histoires_lq(lq_mince)
   expect_equal(sum(histoires$commune == "22001"), 2)
   expect_equal(histoires$rang[histoires$commune == "22001"], 1:2)
   expect_equal(sum(histoires$commune == "29001"), 3)
   expect_equal(histoires$rang[histoires$commune == "29001"], 1:3)
+  # `n` est conservé jusqu'au bout, même sous top_n — 29001 trié par LQ
+  # décroissante : 47.11Z (1,2 → n=1) · 01.11Z (1,0 → n=4) · 86.10Z (0,8 → n=5)
+  expect_equal(histoires$n[histoires$commune == "29001"], c(1, 4, 5))
 })
 
 test_that("une entrée sans colonne lq échoue en nommant le champ", {
@@ -325,6 +315,8 @@ test_that("construire_analytique_lq_economie persiste les quatre artefacts sous 
   # chaque artefact relit le bon contenu
   expect_equal(nrow(readRDS(file.path(sortie, "lq_economie.rds"))), 9)
   expect_equal(nrow(readRDS(file.path(sortie, "histoires_lq_economie.rds"))), 9)
+  # l'artefact Histoire porte `n` (la transparence de la LQ, issue #131)
+  expect_true("n" %in% names(readRDS(file.path(sortie, "histoires_lq_economie.rds"))))
   expect_equal(nrow(readRDS(file.path(sortie, "m_economie.rds"))), 9)
   suppress <- readRDS(file.path(sortie, "suppression_lq_economie.rds"))
   expect_true("56001" %in% suppress$commune)
@@ -380,10 +372,11 @@ test_that("la vraie table sirene_snapshot : 1202 communes, 0 suppression, compte
   expect_true(all(lq$lq > 0))
   expect_true(any(lq$lq < 1) & any(lq$lq > 1))
 
-  # Histoire : 3 lignes par commune, déterminée
+  # Histoire : 5 lignes par commune (TOP_N_SPECIALISATIONS_LQ), déterminée
   histoires <- calculer_histoires_lq(lq)
   expect_equal(nrow(histoires), 1202 * TOP_N_SPECIALISATIONS_LQ)
   expect_identical(histoires, calculer_histoires_lq(lq))
+  expect_true("n" %in% names(histoires))
 
   # M sidecar : une ligne par cellule croisée commune × activité, binaire
   m <- calculer_matrice_m(lq)
@@ -394,4 +387,133 @@ test_that("la vraie table sirene_snapshot : 1202 communes, 0 suppression, compte
     construire_analytique_lq_economie(snapshot, sortie = tempfile("lq-reel-"))
   )["elapsed"]
   expect_lt(unname(duree), 120)
+})
+
+# 8. La LQ à référence même-échelle (issue #131, décision 2026-08-06) ---------
+# Un agrégat (EPCI, département) recalcule SA LQ contre le total de SON niveau
+# — un EPCI contre les autres EPCIs, jamais contre la moyenne bretonne des
+# communes : la LQ d'un EPCI n'est pas la LQ de ses communes.
+
+test_that("calculer_lq_par_niveau : un EPCI se compare aux autres EPCIs (référence même-échelle)", {
+  # la table agrégée par EPCI des cellules retenues de la fixture (22001 +
+  # 29001 → EPCI X ; 35001 → EPCI Y ; 56001 supprimée au plancher) :
+  #   EPCI X : 01.11Z = 6 · 47.11Z = 4 · 86.10Z = 10  (total 20)
+  #   EPCI Y : 01.11Z = 6 · 47.11Z = 2 · 86.10Z = 2   (total 10)
+  # Totaux du NIVEAU EPCI : 01.11Z = 12 · 47.11Z = 6 · 86.10Z = 12 · total = 30
+  table_epci <- tibble::tribble(
+    ~EPCI, ~activity_code, ~activity_label, ~n,
+    "200000001", "01.11Z", "Culture de céréales", 6L,
+    "200000001", "47.11Z", "Commerce de détail non spécialisé", 4L,
+    "200000001", "86.10Z", "Activités hospitalières", 10L,
+    "200000002", "01.11Z", "Culture de céréales", 6L,
+    "200000002", "47.11Z", "Commerce de détail non spécialisé", 2L,
+    "200000002", "86.10Z", "Activités hospitalières", 2L
+  )
+  lq <- calculer_lq_par_niveau(table_epci, "EPCI")
+
+  expect_equal(nrow(lq), 6)
+  expect_setequal(names(lq), c("EPCI", "activity_code", "activity_label", "lq", "n"))
+  # EPCI X : (6/20)/(12/30) = 0,75 · (4/20)/(6/30) = 1,0 · (10/20)/(12/30) = 1,25
+  lq_x <- lq[lq$EPCI == "200000001", ]
+  expect_equal(lq_x$activity_code, c("01.11Z", "47.11Z", "86.10Z"))
+  expect_equal(lq_x$lq, c(0.75, 1, 1.25))
+  # EPCI Y : (6/10)/(12/30) = 1,5 · (2/10)/(6/30) = 1,0 · (2/10)/(12/30) = 0,5
+  lq_y <- lq[lq$EPCI == "200000002", ]
+  expect_equal(lq_y$lq, c(1.5, 1, 0.5))
+  # `n` est conservé (la cellule agrégée du niveau)
+  expect_equal(lq$n[lq$EPCI == "200000001"], c(6, 4, 10))
+
+  # la référence EST le total du niveau : 22001 (commune seule) avait une LQ
+  # de 0,5 sur 01.11Z vs la Bretagne des communes — son EPCI (X) vaut 0,75 vs
+  # les autres EPCIs. Le même EPCI, autre référence, autre LQ : l'agrégat ne
+  # recopie JAMAIS la LQ de ses communes.
+  expect_false(lq_x$lq[lq_x$activity_code == "01.11Z"] == 0.5)
+})
+
+test_that("calculer_lq_par_niveau : un département se compare aux autres départements", {
+  # chaque département de la fixture ne porte qu'une commune retenue : ses
+  # parts égalent les parts communales, la référence est le total des
+  # DÉPARTEMENTS (identique ici aux totaux communaux — les LQ coïncident)
+  table_dep <- tibble::tribble(
+    ~DEP, ~activity_code, ~activity_label, ~n,
+    "22", "01.11Z", "Culture de céréales", 2L,
+    "22", "47.11Z", "Commerce de détail non spécialisé", 3L,
+    "22", "86.10Z", "Activités hospitalières", 5L,
+    "29", "01.11Z", "Culture de céréales", 4L,
+    "29", "47.11Z", "Commerce de détail non spécialisé", 1L,
+    "29", "86.10Z", "Activités hospitalières", 5L,
+    "35", "01.11Z", "Culture de céréales", 6L,
+    "35", "47.11Z", "Commerce de détail non spécialisé", 2L,
+    "35", "86.10Z", "Activités hospitalières", 2L
+  )
+  lq <- calculer_lq_par_niveau(table_dep, "DEP")
+
+  expect_equal(lq$lq[lq$DEP == "22" & lq$activity_code == "01.11Z"], 0.5)
+  expect_equal(lq$lq[lq$DEP == "35" & lq$activity_code == "86.10Z"], 0.5)
+  # la colonne de niveau est la clé de regroupement
+  expect_setequal(unique(lq$DEP), c("22", "29", "35"))
+})
+
+test_that("calculer_lq_par_niveau : une table vide échoue bruyamment", {
+  expect_error(
+    calculer_lq_par_niveau(
+      tibble::tibble(EPCI = character(), activity_code = character(),
+                     activity_label = character(), n = numeric()),
+      "EPCI"
+    ),
+    "nul"
+  )
+})
+
+# 9. La présence régionale « Ce que la Bretagne abrite » (issue #131) ---------
+# La région (53) n'a pas de Story LQ (sa LQ est dégénérée, toute ≡ 1) : elle
+# reçoit une lecture de STRUCTURE — le top-5 des types d'établissements les
+# plus présents par nombre d'établissements actifs, avec leur part du parc.
+
+test_that("calculer_presence_bretagne : top-5 par présence (n), avec la part du parc", {
+  agrege <- agreger_sirene_par_activite(fixture_lq_analytique())
+  retenu <- appliquer_plancher_communes(agrege)$retenu
+  lq <- calculer_lq_balassa(retenu)
+  # parc retenu : 01.11Z = 12 · 47.11Z = 6 · 86.10Z = 12 · total = 30
+  presence <- calculer_presence_bretagne(lq)
+
+  # la forme du contrat : la ligne région, story_key dédié, la part du parc
+  expect_equal(nrow(presence), 3)  # 3 activités < top_n → toutes, sans padding
+  expect_setequal(names(presence),
+                  c("territoire", "type", "story_key", "rang",
+                    "activity_code", "activity_label", "lq", "n", "part_parc"))
+  expect_true(all(presence$territoire == "53"))
+  expect_true(all(presence$type == "region"))
+  expect_true(all(presence$story_key == "ce-que-la-bretagne-abrite"))
+  expect_true(all(is.na(presence$lq)))  # pas de LQ pour la structure régionale
+
+  # tri déterministe par n décroissant, ex æquo par code APE croissant
+  # (01.11Z et 86.10Z portent tous deux 12 établissements — 01.11Z d'abord)
+  expect_equal(presence$rang, 1:3)
+  expect_equal(presence$activity_code, c("01.11Z", "86.10Z", "47.11Z"))
+  expect_equal(presence$n, c(12, 12, 6))
+  # la part du parc : n / total breton retenu
+  expect_equal(presence$part_parc, c(12 / 30, 12 / 30, 6 / 30))
+  # la somme des parts ne dépasse jamais 1 (la structure, pas un total garanti)
+  expect_lte(sum(presence$part_parc), 1)
+  # déterminisme (ADR-0002)
+  expect_identical(presence, calculer_presence_bretagne(lq))
+})
+
+test_that("calculer_presence_bretagne : la profondeur top-5, jamais plus", {
+  # un parc à 7 activités → 5 lignes (TOP_N_PRESENCE_REGION), les 2 plus
+  # faibles présences écartées
+  lq_riche <- tibble::tibble(
+    commune = rep("22001", 7),
+    activity_code = c("A", "B", "C", "D", "E", "F", "G"),
+    activity_label = paste0("Activité ", c("A", "B", "C", "D", "E", "F", "G")),
+    lq = runif(7, 0.5, 2),
+    n = c(50, 40, 30, 20, 10, 5, 2)
+  )
+  presence <- calculer_presence_bretagne(lq_riche)
+  expect_equal(nrow(presence), TOP_N_PRESENCE_REGION)
+  expect_equal(presence$activity_code, c("A", "B", "C", "D", "E"))
+  expect_equal(presence$n, c(50, 40, 30, 20, 10))
+  # la part se calcule sur le parc total (157)
+  expect_equal(presence$part_parc[1], 50 / 157)
 })

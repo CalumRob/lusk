@@ -112,7 +112,7 @@ comptes_analytiques_reels <- c(
 # les tables *support* du chaînon (T1/T2 — pas des indicateurs publiés)
 comptes_support_reels <- c(
   lq_emploi_a38 = 16019,
-  histoires_lq_economie = 1202 * 3,
+  histoires_lq_economie = 1202 * 5,
   m_economie = 835390
 )
 # les tables normalisées réelles (verrouillées par la phase source-table)
@@ -123,13 +123,17 @@ comptes_normalises_reels <- c(
   rp_emploi = 7212,
   rp_chomage = 1202 * 3
 )
-# le payload publié (T7-T8) — comptes verrouillés sur le run réel
+# le payload publié (T7-T8) — comptes verrouillés sur le run réel 2026-08-06
+# (issue #131 : le bloc passe à 3 clés × 4 types de territoire — lq et
+# lq_emploi quittent le payload, la matrice reste interne ; les histoires
+# deviennent MULTI-LIGNES : top-5 « ce que la commune abrite » pour les 1269
+# territoires porteurs d'une LQ + les 5 lignes de la lecture régionale)
 comptes_payload_reels <- c(
-  indicateurs = 135784 + 22616 + 1202 + 1202,  # lq + lq_emploi + eco + chomage
-  histoires = 1202,
-  territoires = 1269,  # 1202 communes + 62 EPCIs + 4 départements + 1 région
-  apercu = 0,          # le gating du thème : la table est présente mais vide
-  vintages = 5         # une ligne par source du manifeste Économie
+  indicateurs = 1269 * 3,  # effectifs_salaries + chomage + eco_activites
+  histoires = 1269 * 5,    # communes + EPCIs + départements (top-5) + région (5)
+  territoires = 1269,      # 1202 communes + 62 EPCIs + 4 départements + 1 région
+  apercu = 0,              # le gating du thème : la table est présente mais vide
+  vintages = 5             # une ligne par source du manifeste Économie
 )
 
 # empreintes_binaires -------------------------------------------------------------
@@ -172,15 +176,15 @@ test_that("le run de bout en bout : tables analytiques réelles + payload publi�
   expect_equal(nrow(payload$histoires), comptes_payload_reels[["histoires"]])
   expect_equal(nrow(payload$territoires), comptes_payload_reels[["territoires"]])
   expect_equal(nrow(payload$apercu), comptes_payload_reels[["apercu"]])
-  # les quatre indicateurs publiés, avec leurs rangs T6 — les comptes par clé
+  # les trois indicateurs publiés (issue #131), avec leurs rangs — une ligne
+  # par territoire × clé (jamais la matrice LQ : lq/lq_emploi quittent le bloc)
   expect_setequal(unique(payload$indicateurs$key),
-                  c("lq", "lq_emploi", "eco_activites", "chomage"))
+                  c("effectifs_salaries", "chomage", "eco_activites"))
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
-  expect_equal(sum(payload$indicateurs$key == "lq"), 135784)
-  expect_equal(sum(payload$indicateurs$key == "lq_emploi"), 22616)
-  expect_equal(sum(payload$indicateurs$key == "eco_activites"), 1202)
-  expect_equal(sum(payload$indicateurs$key == "chomage"), 1202)
+  expect_equal(sum(payload$indicateurs$key == "effectifs_salaries"), 1269)
+  expect_equal(sum(payload$indicateurs$key == "chomage"), 1269)
+  expect_equal(sum(payload$indicateurs$key == "eco_activites"), 1269)
 
   # les fichiers par thème + la référence partagée + vintages + rapport de run.
   # Issue #116 : l'Aperçu d'un run Économie est vide par design (comptes

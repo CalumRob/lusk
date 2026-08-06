@@ -28,13 +28,21 @@
 #      persistées à côté de la LQ. La LQ reste CONTINUE : aucun seuillage
 #      (gate C — le seuil n'existe pas dans cette phase, la matrice binaire
 #      part dans le sidecar M).
-#   4. `calculer_histoires_lq`        — l'Histoire « ce que la commune sait
-#      faire » : les TOP_N_SPECIALISATIONS_LQ (décision de build : top-3,
-#      documentée) spécialisations par LQ, valeurs CONTINUES uniquement. Une
-#      entrée binaire (une matrice M 0/1 passée par erreur) échoue
-#      bruyamment — l'Histoire ne se seuille jamais (gate C). Sélection
-#      déterministe (ADR-0002) : tri par LQ décroissante puis code APE
-#      croissant — même entrée → même Histoire, pour toujours.
+#   4. `calculer_histoires_lq`        — l'Histoire « ce que la commune abrite » :
+#      les TOP_N_SPECIALISATIONS_LQ (top-5, décision 2026-08-06) par LQ,
+#      valeurs CONTINUES uniquement, `n` conservé (issue #131). Une entrée
+#      binaire (une matrice M 0/1 passée par erreur) échoue bruyamment —
+#      l'Histoire ne se seuille jamais (gate C). Sélection déterministe
+#      (ADR-0002) : tri par LQ décroissante puis code APE croissant — même
+#      entrée → même Histoire, pour toujours.
+#   4bis. `calculer_lq_par_niveau`   — la LQ à RÉFÉRENCE MÊME-ÉCHELLE (issue
+#      #131, décision 2026-08-06) : la même formule de Balassa, paramétrée par
+#      le niveau d'agrégat — un EPCI se compare aux autres EPCIs, un
+#      département aux autres départements (jamais vs la moyenne bretonne des
+#      communes). La matière des lignes d'Histoire des agrégats.
+#   4ter. `calculer_presence_bretagne` — la lecture régionale « Ce que la
+#      Bretagne abrite » (issue #131) : le top-N par PRÉSENCE (n + part du
+#      parc) — la région n'a pas de Story LQ (sa LQ est dégénérée).
 #   5. `calculer_matrice_m`           — le sidecar M : la matrice d'incidence
 #      binaire (LQ ≥ 1, commune × activité) comme artefact SÉPARÉ pour la
 #      relatedness future (gate F — docs/research/relatedness.md §5 Layer 1 :
@@ -59,12 +67,23 @@
 SEUIL_PLANCHER_COMMUNES_LQ <- 5
 
 # TOP_N_SPECIALISATIONS_LQ -----------------------------------------------------
-# La profondeur de l'Histoire « ce que la commune sait faire » (décision de
-# build, documentée) : les top-3 spécialisations par LQ. Le plan
-# (economie-analytical-phase, todo 1) laisse le choix top-3/top-5 au build ;
-# top-3 est retenu — la lecture de fiche la plus lisible, alignée sur le
-# top-3 du §5 Layer 1 de docs/research/relatedness.md (« top-3 sectors »).
-TOP_N_SPECIALISATIONS_LQ <- 3
+# La profondeur de l'Histoire « ce que la commune abrite » (issue #131,
+# décision 2026-08-06 — portée de top-3 à top-5) : les top-5 spécialisations
+# par LQ. La 4e/5e place est encore une LQ énorme (loin au-dessus du p90 de la
+# distribution des cellules) et apporte de la diversité sectorielle à la
+# lecture. Le plan (economie-analytical-phase, todo 1) laissait le choix
+# top-3/top-5 au build ; top-5 est retenu, aligné sur la profondeur de la
+# lecture régionale (TOP_N_PRESENCE_REGION = 5, même constante).
+TOP_N_SPECIALISATIONS_LQ <- 5
+
+# TOP_N_PRESENCE_REGION ---------------------------------------------------------
+# La profondeur de la lecture régionale « Ce que la Bretagne abrite » (issue
+# #131, décision 2026-08-06) : le top-5 des types d'établissements les plus
+# présents dans le parc breton (NAF-5, n + part du parc). La région n'a pas de
+# Story LQ (sa LQ est dégénérée — le territoire EST la référence, toutes les
+# LQ ≡ 1) : la lecture est une lecture de STRUCTURE, miroir de la profondeur
+# top-5 de la Story des autres territoires (même constante = 5).
+TOP_N_PRESENCE_REGION <- 5
 
 # agreger_sirene_par_activite --------------------------------------------------
 # Le regroupement de la dimension tranche (étape 1) : somme de `value` par
@@ -131,48 +150,59 @@ appliquer_plancher_communes <- function(agrege, seuil = SEUIL_PLANCHER_COMMUNES_
   )
 }
 
-# calculer_lq_balassa ----------------------------------------------------------
-# La LQ de Balassa continue (étape 3) : par cellule commune × activité,
-#   LQ_ca = (n_ca / n_c.) / (n_.a / n_..)
-# où les totaux bretons (n_.a par activité, n_.. général) se calculent sur la
-# Bretagne RETENUE seulement — les communes sous le plancher n'entrent ni
-# dans le numérateur ni dans les références bretonnes. La référence est la
-# Bretagne seule (gate E). Les colonnes de transparence du contrat sont
-# persistées : n (la cellule n_ca), n_c (le total de la commune), n_a (le
-# total de l'activité sur la Bretagne retenue). Déterministe : trié par
-# commune puis code APE.
-calculer_lq_balassa <- function(retenu) {
-  totaux_commune <- retenu %>%
-    dplyr::group_by(commune) %>%
-    dplyr::summarise(n_c = sum(n), .groups = "drop")
-  totaux_activite <- retenu %>%
+# calculer_lq_balassa_noyau -----------------------------------------------------
+# Le noyau COMMUN des deux LQ de Balassa du thème (calculer_lq_balassa — la
+# commune vs la moyenne bretonne, gate E ; calculer_lq_par_niveau — un agrégat
+# vs SES pairs, référence même-échelle, issue #131) : les totaux par groupe
+# (n_g), les totaux par activité (n_a), le total général et la formule
+#   LQ = (n / n_g) / (n_a / total)
+# `groupe` nomme la colonne du territoire (commune, EPCI, DEP...). Un total
+# général nul est un calcul sans référence — une erreur bruyante, jamais une
+# LQ inventée. Déterministe : les totaux ne dépendent que de la table.
+calculer_lq_balassa_noyau <- function(table, groupe) {
+  totaux_groupe <- table %>%
+    dplyr::group_by(.data[[groupe]]) %>%
+    dplyr::summarise(n_g = sum(n), .groups = "drop")
+  totaux_activite <- table %>%
     dplyr::group_by(activity_code) %>%
     dplyr::summarise(n_a = sum(n), .groups = "drop")
-  total_general <- sum(retenu$n)
+  total_general <- sum(table$n)
 
   if (total_general <= 0) {
-    stop("Analyse LQ — total général nul : aucune commune retenue.", call. = FALSE)
+    stop("Analyse LQ — total général nul : aucun établissement à la référence.",
+         call. = FALSE)
   }
 
-  retenu %>%
-    dplyr::left_join(totaux_commune, by = "commune") %>%
+  table %>%
+    dplyr::left_join(totaux_groupe, by = groupe) %>%
     dplyr::left_join(totaux_activite, by = "activity_code") %>%
-    dplyr::mutate(
-      lq = (n / n_c) / (n_a / total_general)
-    ) %>%
+    dplyr::mutate(lq = (n / n_g) / (n_a / total_general))
+}
+
+# calculer_lq_balassa ----------------------------------------------------------
+# La LQ de Balassa continue (étape 3) : par cellule commune × activité, le
+# noyau commun paramétré par la commune. Les colonnes de transparence du
+# contrat sont persistées : n (la cellule n_ca), n_c (le total de la commune —
+# renommée depuis n_g), n_a (le total de l'activité sur la Bretagne retenue).
+# Déterministe : trié par commune puis code APE.
+calculer_lq_balassa <- function(retenu) {
+  calculer_lq_balassa_noyau(retenu, "commune") %>%
+    dplyr::rename(n_c = n_g) %>%
     dplyr::select(commune, activity_code, activity_label, lq, n, n_c, n_a) %>%
     dplyr::arrange(commune, activity_code)
 }
 
 # calculer_histoires_lq --------------------------------------------------------
-# L'Histoire « ce que la commune sait faire » (étape 4) : les top-N
+# L'Histoire « ce que la commune abrite » (étape 4) : les top-N
 # spécialisations par LQ, valeurs CONTINUES uniquement. Une colonne lq
 # binaire (toutes valeurs dans {0, 1}) est REFUSÉE — l'Histoire ne se
 # seuille jamais (gate C), la matrice M n'est pas un Story driver. La
 # sélection est déterministe (ADR-0002) : tri par lq décroissante puis code
 # APE croissant (l'ex æquo déterministe — même entrée, même Histoire, pour
 # toujours). Une commune avec moins de top_n activités reçoit toutes ses
-# activités (le rang suit le nombre d'activités, jamais de padding).
+# activités (le rang suit le nombre d'activités, jamais de padding). Issue
+# #131 : `n` (la cellule n_ca, colonne de transparence de calculer_lq_balassa)
+# est CONSERVÉ par l'Histoire — l'app reçoit le nombre derrière la LQ.
 calculer_histoires_lq <- function(lq, top_n = TOP_N_SPECIALISATIONS_LQ) {
   if (!"lq" %in% names(lq)) {
     stop("Analyse LQ — l'Histoire exige une colonne lq.", call. = FALSE)
@@ -192,8 +222,75 @@ calculer_histoires_lq <- function(lq, top_n = TOP_N_SPECIALISATIONS_LQ) {
     dplyr::slice_head(n = top_n) %>%
     dplyr::mutate(rang = dplyr::row_number()) %>%
     dplyr::ungroup() %>%
-    dplyr::select(commune, rang, activity_code, activity_label, lq) %>%
+    dplyr::select(commune, rang, activity_code, activity_label, lq, n) %>%
     dplyr::arrange(commune, rang)
+}
+
+# calculer_lq_par_niveau -------------------------------------------------------
+# La LQ de Balassa à RÉFÉRENCE MÊME-ÉCHELLE (issue #131, décision 2026-08-06) :
+# la même formule que calculer_lq_balassa (le noyau commun), mais paramétrée
+# par le niveau d'agrégat — les totaux de référence (n_.a par activité, n_..
+# général) se calculent sur le TOTAL du niveau, jamais sur les communes. Un
+# EPCI se compare donc aux AUTRES EPCIs, un département aux AUTRES départements
+# (le découpage régional SIRENE interdit une référence France entière — gate
+# E ; la référence même-échelle est la lecture décidée 2026-08-06).
+# `groupe` nomme la colonne du territoire dans la table (ex. « EPCI ») ; la
+# table doit porter les colonnes <groupe>, activity_code, activity_label et n
+# (n = les établissements actifs agrégés au niveau). Déterministe : trié par
+# niveau puis code APE.
+calculer_lq_par_niveau <- function(table, groupe) {
+  manquantes <- setdiff(c(groupe, "activity_code", "n"), names(table))
+  if (length(manquantes) > 0) {
+    stop("LQ par niveau — la table doit porter les colonnes ",
+         paste(c(groupe, "activity_code", "n"), collapse = ", "),
+         " (manquantes : ", paste(manquantes, collapse = ", "), ").",
+         call. = FALSE)
+  }
+
+  calculer_lq_balassa_noyau(table, groupe) %>%
+    dplyr::select(dplyr::all_of(c(groupe, "activity_code", "activity_label",
+                                  "lq", "n"))) %>%
+    dplyr::arrange(.data[[groupe]], activity_code)
+}
+
+# calculer_presence_bretagne ---------------------------------------------------
+# La lecture régionale « Ce que la Bretagne abrite » (issue #131, décision
+# 2026-08-06) : le top-N des types d'établissements les PLUS PRÉSENTS du parc
+# breton retenu (par nombre d'établissements actifs n), avec leur part du
+# parc (n / total). La LQ de la région est dégénérée (le territoire EST la
+# référence : toutes les LQ ≡ 1) — la région n'a donc pas de Story de
+# spécialisation ; elle reçoit une lecture de STRUCTURE, portée par la même
+# machinerie d'Histoire. Sélection déterministe (ADR-0002) : tri par n
+# décroissant puis code APE croissant (l'ex æquo déterministe). Un parc avec
+# moins de top_n activités reçoit toutes ses activités (jamais de padding).
+calculer_presence_bretagne <- function(lq, top_n = TOP_N_PRESENCE_REGION) {
+  if (!"n" %in% names(lq)) {
+    stop("Analyse LQ — la présence régionale exige une colonne n.", call. = FALSE)
+  }
+  total_bretagne <- sum(lq$n)
+  if (total_bretagne <= 0) {
+    stop("Analyse LQ — parc breton nul : aucune présence régionale calculable.",
+         call. = FALSE)
+  }
+
+  lq %>%
+    dplyr::group_by(activity_code) %>%
+    dplyr::summarise(
+      activity_label = premier_libelle(activity_label),
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(part_parc = n / total_bretagne) %>%
+    dplyr::arrange(dplyr::desc(n), activity_code) %>%
+    dplyr::slice_head(n = top_n) %>%
+    dplyr::mutate(rang = dplyr::row_number()) %>%
+    dplyr::transmute(
+      territoire = "53", type = "region",
+      story_key = "ce-que-la-bretagne-abrite",
+      rang, activity_code, activity_label,
+      lq = NA_real_, n, part_parc
+    ) %>%
+    dplyr::arrange(rang)
 }
 
 # calculer_matrice_m -----------------------------------------------------------

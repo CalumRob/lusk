@@ -43,6 +43,10 @@ test_that("publish(backend = 'static') écrit parquet + JSON des quatre tables",
   }
 })
 
+# verifier_non_derivee (vivante dans helper-payload.R — partagée avec
+# test-run-pipeline-economie.R, issue #131) : le contrat de non-dérive
+# (issue #10, ADR-0004).
+
 test_that("le JSON se relit exactement comme les tables parquet — dérive impossible", {
   # issue #10, ADR-0004 : les deux sérialisations sortent des mêmes tables en
   # mémoire ; ce test lit chacune en retour et verrouille l'égalité colonne
@@ -59,22 +63,7 @@ test_that("le JSON se relit exactement comme les tables parquet — dérive impo
                 "territoires", "apercu")) {
     parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
     json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
-    # colonne pour colonne : le même ordre, les mêmes noms
-    expect_identical(names(json), names(parquet), info = nom)
-    expect_equal(nrow(json), nrow(parquet), info = nom)
-    # valeur pour valeur. Les colonnes numériques sont comparées en double
-    # (as.numeric) : le texte JSON d'un entier relu par jsonlite est un
-    # entier (70) quand le parquet le relit en double (70) — une
-    # différence de STOCKAGE, pas de valeur ; en double, l'aller-retour à
-    # digits = 17 est bit à bit identique.
-    for (col in names(parquet)) {
-      if (is.numeric(parquet[[col]])) {
-        expect_identical(as.numeric(json[[col]]), as.numeric(parquet[[col]]),
-                         info = paste(nom, col))
-      } else {
-        expect_identical(json[[col]], parquet[[col]], info = paste(nom, col))
-      }
-    }
+    verifier_non_derivee(parquet, json, nom)
   }
 })
 
@@ -171,16 +160,7 @@ test_that("le JSON Habitat se relit exactement comme les tables parquet — dér
   for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
     parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
     json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
-    expect_identical(names(json), names(parquet), info = nom)
-    expect_equal(nrow(json), nrow(parquet), info = nom)
-    for (col in names(parquet)) {
-      if (is.numeric(parquet[[col]])) {
-        expect_identical(as.numeric(json[[col]]), as.numeric(parquet[[col]]),
-                         info = paste(nom, col))
-      } else {
-        expect_identical(json[[col]], parquet[[col]], info = paste(nom, col))
-      }
-    }
+    verifier_non_derivee(parquet, json, nom)
   }
 })
 

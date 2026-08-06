@@ -315,6 +315,37 @@ test_that("une commune absente de la base des EPCI échoue bruyamment (jamais un
   )
 })
 
+test_that("une commune sans EPCI (île, PRÉSENTE dans la base) n'est pas une erreur : rang_epci NA, dép/région gardés (fix #131)", {
+  # le fix « Sans objet » (issue #131) : la base des EPCI porte les trois îles
+  # avec EPCI = NA (le « ZZZZZZZZZ » normalisé à la lecture) — la commune est
+  # PRÉSENTE dans la base, elle n'appartient simplement à aucun EPCI. Son
+  # rang_epci est NA (pas de groupe à ce niveau), JAMAIS une erreur ; elle
+  # garde ses rangs département (ses communes) et région.
+  base_avec_ile <- dplyr::bind_rows(
+    epci_rangs_mini,
+    tibble::tibble(CODGEO = "22016", LIBGEO = "Île-de-Bréhat",
+                   EPCI = NA_character_, LIBEPCI = NA_character_,
+                   DEP = "22", REG = "53")
+  )
+  lq <- dplyr::bind_rows(
+    fixture_lq_rangs(),
+    tibble::tibble(commune = "22016", activity_code = "A",
+                   activity_label = "Activité A", lq = 3.0)
+  )
+
+  r <- attacher_rangs_lq(lq, base_avec_ile)
+  ile <- r[r$commune == "22016", ]
+  # aucun rang_epci (pas d'EPCI) ; les rangs département et région existent
+  expect_true(is.na(ile$rang_epci))
+  expect_false(is.na(ile$rang_dep))
+  expect_false(is.na(ile$rang_reg))
+  # la cellule de l'île n'empoisonne pas le groupe de ses pairs : 22001×A
+  # garde son rang_reg 0,4 (n = 5 sans l'île... n = 6 avec, les valeurs
+  # changent — mais le rang reste un percentile valide dans [0,1])
+  expect_true(all(r$rang_reg[r$activity_code == "A"] >= 0 &
+                    r$rang_reg[r$activity_code == "A"] <= 1))
+})
+
 test_that("déterminisme (ADR-0002) : même entrée → mêmes rangs, à l'identique", {
   expect_identical(
     attacher_rangs_lq(fixture_lq_rangs(), epci_rangs_mini),

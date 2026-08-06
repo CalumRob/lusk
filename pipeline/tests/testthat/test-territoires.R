@@ -88,3 +88,63 @@ test_that("un EPCI à cheval ex æquo prend le plus petit département (règle v
   epci_w <- bt[bt$type == "epci" & bt$code == "200000004", ]
   expect_equal(epci_w$departement, "22")
 })
+
+# Le fix « Sans objet » (issue #131, décision 2026-08-06) ----------------------
+# La base INSEE code les communes sans EPCI par « ZZZZZZZZZ » (libellé
+# « Sans objet ») : normalisé en NA à la lecture (lire_epci), le squelette
+# partagé doit REFUSER de fabriquer un EPCI fantôme depuis ces communes — les
+# trois îles (22016, 29083, 29155) vivent commune / département / région.
+
+test_that("lire_epci normalise le code « ZZZZZZZZZ » en NA (jamais un EPCI fantôme)", {
+  base <- tibble::tribble(
+    ~CODGEO, ~LIBGEO, ~EPCI, ~LIBEPCI, ~DEP, ~REG,
+    "22001", "Commune A1", "200000001", "EPCI X", "22", "53",
+    "22016", "Île-de-Bréhat", "ZZZZZZZZZ", "Sans objet", "22", "53",
+    "29083", "Île-de-Sein", "ZZZZZZZZZ", "Sans objet", "29", "53"
+  )
+  norm <- normaliser_epci_manquants(base)
+
+  # les deux îles : EPCI → NA ET libellé → NA (la commune n'appartient à
+  # aucun EPCI, son nom d'EPCI n'existe pas)
+  expect_true(all(is.na(norm$EPCI[norm$CODGEO %in% c("22016", "29083")])))
+  expect_true(all(is.na(norm$LIBEPCI[norm$CODGEO %in% c("22016", "29083")])))
+  # la commune à EPCI réel reste intouchée
+  expect_equal(norm$EPCI[norm$CODGEO == "22001"], "200000001")
+  expect_equal(norm$LIBEPCI[norm$CODGEO == "22001"], "EPCI X")
+})
+
+test_that("squelette_territoires ne fabrique AUCUN EPCI depuis des communes sans EPCI", {
+  mini <- tibble::tibble(
+    code = c("22001", "22016", "29001"),
+    nom = c("Commune A1", "Île-de-Bréhat", "Commune B"),
+    departement = c("22", "22", "29"),
+    epci = c("200000001", NA_character_, "200000002"),
+    nom_epci = c("EPCI X", NA_character_, "EPCI Y"),
+    population = c(1000, 200, 3000)
+  )
+  bt <- squelette_territoires(mini)
+
+  # les deux EPCIs réels sont construits — AUCUN EPCI fantôme « Sans objet »
+  expect_setequal(bt$code[bt$type == "epci"], c("200000001", "200000002"))
+  expect_false(any(grepl("ZZZ|Sans objet", bt$nom, ignore.case = TRUE)))
+  # l'île reste une commune sans EPCI, vivante aux niveaux département/région
+  expect_equal(bt$code[bt$type == "commune"], c("22001", "22016", "29001"))
+  expect_true(all(is.na(bt$epci[bt$code == "22016"])))
+  expect_true("22" %in% bt$code[bt$type == "departement"])
+  expect_true("53" %in% bt$code[bt$type == "region"])
+})
+
+test_that("squelette_territoires REFUSE un libellé d'EPCI sans SIREN (garde, pas un skip silencieux)", {
+  # une commune porte un libellé d'EPCI (« Sans objet ») mais pas de SIREN :
+  # c'est la donnée corrompue que lire_epci aurait dû normaliser — le
+  # squelette refuse de fabriquer l'EPCI fantôme, bruyamment
+  mini <- tibble::tibble(
+    code = c("22001", "22016"),
+    nom = c("Commune A1", "Île-de-Bréhat"),
+    departement = c("22", "22"),
+    epci = c("200000001", NA_character_),
+    nom_epci = c("EPCI X", "Sans objet"),
+    population = c(1000, 200)
+  )
+  expect_error(squelette_territoires(mini), "SIREN")
+})

@@ -98,10 +98,29 @@ test_that("validate_payload : une colonne epci manquante -> erreur (issue #32)",
   expect_error(validate_payload(p), "epci")
 })
 
-test_that("validate_payload : une commune sans EPCI -> erreur (issue #32)", {
+test_that("validate_payload : une commune sans EPCI est ACCEPTÉE (fix sans-objet, issue #131)", {
+  # les trois îles bretonnes (22016 Île-de-Bréhat, 29083 Île-de-Sein, 29155
+  # Ouessant) n'ont pas d'EPCI — la base INSEE les code « ZZZZZZZZZ »,
+  # normalisé en NA à la lecture : une commune sans EPCI est légitime, jamais
+  # une faute (l'inversion du §5bis, décidée 2026-08-06)
   p <- compute_payload(load_fixture())
   p$territoires$epci[p$territoires$type == "commune"][1] <- NA_character_
-  expect_error(validate_payload(p), "EPCI")
+  expect_no_error(validate_payload(p))
+})
+
+test_that("validate_payload : une ligne EPCI qui ne porte pas un vrai SIREN -> erreur (fix #131)", {
+  p <- compute_payload(load_fixture())
+  # le code de la première EPCI devient un code fantôme (pas 9 chiffres — le
+  # « ZZZZZZZZZ » de la base INSEE n'est pas un SIREN). La référentielle reste
+  # INTACTE (le territoire renommé, la colonne epci des communes, les faits
+  # qui le citent) : c'est la garde SIREN du §5bis qui doit attraper la dérive.
+  epci_ancien <- "200000001"
+  p$territoires$territoire[p$territoires$territoire == epci_ancien] <- "12345"
+  p$territoires$epci[p$territoires$epci == epci_ancien] <- "12345"
+  p$indicateurs$territoire[p$indicateurs$territoire == epci_ancien] <- "12345"
+  p$histoires$territoire[p$histoires$territoire == epci_ancien] <- "12345"
+  p$apercu$territoire[p$apercu$territoire == epci_ancien] <- "12345"
+  expect_error(validate_payload(p), "SIREN")
 })
 
 test_that("validate_payload : un agrégat portant un EPCI -> erreur (issue #32)", {
