@@ -126,12 +126,17 @@ comptes_normalises_reels <- c(
 # le payload publié (T7-T8) — comptes verrouillés sur le run réel 2026-08-06
 # (issue #131 : le bloc passe à 3 clés × 4 types de territoire — lq et
 # lq_emploi quittent le payload, la matrice reste interne ; les histoires
-# deviennent MULTI-LIGNES : top-5 « ce que la commune abrite » pour les 1269
-# territoires porteurs d'une LQ + les 5 lignes de la lecture régionale)
+# deviennent MULTI-LIGNES : top-5 « ce que la commune abrite » pour les
+# territoires porteurs d'une LQ + les 5 lignes de la lecture régionale).
+# NB : 1268 territoires, pas 1269 — la référence n'a plus l'EPCI fantôme
+# « Sans objet » (fix #131) : 1202 communes + 61 EPCIs réels + 4 départements
+# + 1 région. Les trois îles sans EPCI (22016/29083/29155) n'agrègent à
+# aucun niveau EPCI — leurs cellules LQ portent rang_epci = NA (pas de
+# groupe de comparaison), jamais un rang inventé.
 comptes_payload_reels <- c(
-  indicateurs = 1269 * 3,  # effectifs_salaries + chomage + eco_activites
-  histoires = 1269 * 5,    # communes + EPCIs + départements (top-5) + région (5)
-  territoires = 1269,      # 1202 communes + 62 EPCIs + 4 départements + 1 région
+  indicateurs = 1268 * 3,  # effectifs_salaries + chomage + eco_activites
+  histoires = 1202 * 5 + 61 * 5 + 4 * 5 + 5,  # top-5 (communes+EPCIs+deps) + région (5)
+  territoires = 1268,      # 1202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,              # le gating du thème : la table est présente mais vide
   vintages = 5             # une ligne par source du manifeste Économie
 )
@@ -182,9 +187,9 @@ test_that("le run de bout en bout : tables analytiques réelles + payload publi�
                   c("effectifs_salaries", "chomage", "eco_activites"))
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
-  expect_equal(sum(payload$indicateurs$key == "effectifs_salaries"), 1269)
-  expect_equal(sum(payload$indicateurs$key == "chomage"), 1269)
-  expect_equal(sum(payload$indicateurs$key == "eco_activites"), 1269)
+  expect_equal(sum(payload$indicateurs$key == "effectifs_salaries"), 1268)
+  expect_equal(sum(payload$indicateurs$key == "chomage"), 1268)
+  expect_equal(sum(payload$indicateurs$key == "eco_activites"), 1268)
 
   # les fichiers par thème + la référence partagée + vintages + rapport de run.
   # Issue #116 : l'Aperçu d'un run Économie est vide par design (comptes

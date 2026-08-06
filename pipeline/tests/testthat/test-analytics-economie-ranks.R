@@ -21,6 +21,12 @@
 # l'agriculture, jamais à une LQ du commerce. Les tests vérifient que le rang
 # d'une cellule ignore les autres activités de sa commune.
 
+# Les trois îles bretonnes SANS EPCI (fix #131 : la référence n'a plus l'EPCI
+# fantôme « Sans objet » — la base INSEE les code « ZZZZZZZZZ ») : leurs
+# cellules portent rang_epci = NA (aucun groupe de comparaison à ce niveau),
+# jamais un rang inventé — elles gardent leurs rangs département/région.
+ILES_BRETAGNE <- c("22016", "29083", "29155")
+
 # La base des EPCI du fixture ------------------------------------------------
 # La forme de lire_epci (CODGEO / LIBGEO / EPCI / LIBEPCI / DEP / REG) : les 4
 # communes du fixture Démographie (2 EPCIs, 2 départements) + une EPCI
@@ -423,12 +429,16 @@ test_that("données réelles : les rangs LQ sur les 1202 communes, dans [0, 1]",
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(r)))
   # 1202 communes couvertes (0 suppression au plancher gate D)
   expect_equal(dplyr::n_distinct(r$commune), 1202)
-  # les rangs vivent dans [0, 1] — aucune commune du réel n'a de rang NA (chaque
-  # commune bretonne a son EPCI dans la base partagée)
-  for (col in c("rang_epci", "rang_dep", "rang_reg")) {
+  # les rangs vivent dans [0, 1]. La SEULE exception : les trois îles sans EPCI
+  # (22016/29083/29155 — fix #131 : plus d'EPCI fantôme « Sans objet ») portent
+  # rang_epci = NA (aucun groupe de comparaison à ce niveau), jamais un rang
+  # inventé — elles gardent leurs rangs département/région.
+  for (col in c("rang_dep", "rang_reg")) {
     expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
   }
-  expect_equal(sum(is.na(r$rang_epci)), 0)
+  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
+                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
   # déterministe
   expect_identical(r, attacher_rangs_lq(lq, base_epci))
 })
@@ -444,12 +454,16 @@ test_that("données réelles : les rangs de la LQ d'emploi A88 sur les 1196 comm
 
   r <- attacher_rangs_lq_emploi(lq_emploi, base_epci)
 
-  # 1196 communes (1202 − 6 supprimées au plancher gate D), rangs dans [0, 1]
+  # 1196 communes (1202 − 6 supprimées au plancher gate D), rangs dans [0, 1].
+  # Les îles sans EPCI (fix #131) retenues au plancher portent rang_epci = NA.
   expect_equal(dplyr::n_distinct(r$commune), 1196)
   expect_equal(nrow(r), nrow(lq_emploi))
-  for (col in c("rang_epci", "rang_dep", "rang_reg")) {
+  for (col in c("rang_dep", "rang_reg")) {
     expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
   }
+  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
+                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })
 
 test_that("données réelles : les rangs du score vert sur les 1202 communes", {
@@ -463,13 +477,15 @@ test_that("données réelles : les rangs du score vert sur les 1202 communes", {
 
   r <- attacher_rangs_eco_activites(eco, base_epci)
 
-  # 1202 communes, 0 suppression (min 10 établissements), rangs dans [0, 1]
+  # 1202 communes, 0 suppression (min 10 établissements), rangs dans [0, 1].
+  # Les îles sans EPCI (fix #131) portent rang_epci = NA, jamais inventé.
   expect_equal(nrow(r), 1202)
-  for (col in c("rang_epci", "rang_dep", "rang_reg")) {
+  for (col in c("rang_dep", "rang_reg")) {
     expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
   }
-  # aucune part NA sur le réel → aucun rang NA
-  expect_equal(sum(is.na(r$rang_epci)), 0)
+  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
+                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })
 
 test_that("données réelles : les rangs du chômage sur les 1202 communes", {
@@ -486,12 +502,14 @@ test_that("données réelles : les rangs du chômage sur les 1202 communes", {
 
   r <- attacher_rangs_chomage(chomage, base_epci)
 
-  # 1202 communes, une ligne par commune, rangs dans [0, 1]
+  # 1202 communes, une ligne par commune, rangs dans [0, 1]. Les îles sans
+  # EPCI (fix #131) portent rang_epci = NA, jamais inventé.
   expect_equal(nrow(r), 1202)
   expect_equal(anyDuplicated(r$commune), 0L)
-  for (col in c("rang_epci", "rang_dep", "rang_reg")) {
+  for (col in c("rang_dep", "rang_reg")) {
     expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
   }
-  # aucune suppression sur le réel → aucun rang NA
-  expect_equal(sum(is.na(r$rang_epci)), 0)
+  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
+                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })
