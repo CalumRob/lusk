@@ -112,6 +112,37 @@ agreger_eco_territoires <- function(eco, base_epci) {
     dplyr::arrange(code)
 }
 
+# histoires_lq_niveau ----------------------------------------------------------
+# La mécanique PARTAGÉE des niveaux agrégés de « ce que la commune abrite » :
+# les cellules communales retenues sont agrégées au niveau (`cle` : EPCI ou
+# DEP — les communes sans EPCI, les îles, n'entrent dans AUCUN EPCI), la LQ
+# est recalée à RÉFÉRENCE MÊME-ÉCHELLE (calculer_lq_par_niveau), puis le top-N
+# déterministe (LQ décroissante, code APE croissant — ADR-0002) avec `n`
+# conservé. Retourne les lignes du payload (type porté par l'appelant).
+histoires_lq_niveau <- function(lq, base_epci, cle, type, top_n) {
+  lq %>%
+    dplyr::left_join(base_epci[c("CODGEO", cle)], by = c("commune" = "CODGEO")) %>%
+    dplyr::filter(!is.na(.data[[cle]])) %>%
+    dplyr::group_by(.data[[cle]], activity_code) %>%
+    dplyr::summarise(
+      activity_label = premier_libelle(activity_label),
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    calculer_lq_par_niveau(cle) %>%
+    dplyr::group_by(.data[[cle]]) %>%
+    dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
+    dplyr::slice_head(n = top_n) %>%
+    dplyr::mutate(rang = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::transmute(
+      territoire = .data[[cle]], type = type,
+      story_key = "ce-que-la-commune-abrite",
+      rang, activity_code, activity_label, lq, n,
+      part_parc = NA_real_
+    )
+}
+
 # construire_histoires_economie_payload ----------------------------------------
 # Les lignes d'Histoire du payload Économie (issue #131) — MULTI-LIGNES par
 # territoire :
@@ -138,51 +169,10 @@ construire_histoires_economie_payload <- function(lq, base_epci,
       part_parc = NA_real_
     )
 
-  # niveau EPCI : les cellules agrégées par EPCI, LQ à référence même-échelle
-  # (les communes sans EPCI — les îles — n'entrent dans AUCUN EPCI)
-  epcis <- lq %>%
-    dplyr::left_join(base_epci[c("CODGEO", "EPCI")], by = c("commune" = "CODGEO")) %>%
-    dplyr::filter(!is.na(EPCI)) %>%
-    dplyr::group_by(EPCI, activity_code) %>%
-    dplyr::summarise(
-      activity_label = premier_libelle(activity_label),
-      n = sum(n),
-      .groups = "drop"
-    ) %>%
-    calculer_lq_par_niveau("EPCI") %>%
-    dplyr::group_by(EPCI) %>%
-    dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
-    dplyr::slice_head(n = top_n) %>%
-    dplyr::mutate(rang = dplyr::row_number()) %>%
-    dplyr::ungroup() %>%
-    dplyr::transmute(
-      territoire = EPCI, type = "epci",
-      story_key = "ce-que-la-commune-abrite",
-      rang, activity_code, activity_label, lq, n,
-      part_parc = NA_real_
-    )
-
-  # niveau département : la même mécanique, référence les autres départements
-  deps <- lq %>%
-    dplyr::left_join(base_epci[c("CODGEO", "DEP")], by = c("commune" = "CODGEO")) %>%
-    dplyr::group_by(DEP, activity_code) %>%
-    dplyr::summarise(
-      activity_label = premier_libelle(activity_label),
-      n = sum(n),
-      .groups = "drop"
-    ) %>%
-    calculer_lq_par_niveau("DEP") %>%
-    dplyr::group_by(DEP) %>%
-    dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
-    dplyr::slice_head(n = top_n) %>%
-    dplyr::mutate(rang = dplyr::row_number()) %>%
-    dplyr::ungroup() %>%
-    dplyr::transmute(
-      territoire = DEP, type = "departement",
-      story_key = "ce-que-la-commune-abrite",
-      rang, activity_code, activity_label, lq, n,
-      part_parc = NA_real_
-    )
+  # niveaux EPCI et département : la même mécanique (les îles n'entrent dans
+  # AUCUN EPCI ; la LQ de chaque niveau est à référence même-échelle)
+  epcis <- histoires_lq_niveau(lq, base_epci, "EPCI", "epci", top_n)
+  deps <- histoires_lq_niveau(lq, base_epci, "DEP", "departement", top_n)
 
   # niveau région : la lecture de STRUCTURE (jamais une Story LQ)
   region <- calculer_presence_bretagne(lq, top_n = top_n_region)

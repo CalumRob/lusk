@@ -150,35 +150,44 @@ appliquer_plancher_communes <- function(agrege, seuil = SEUIL_PLANCHER_COMMUNES_
   )
 }
 
-# calculer_lq_balassa ----------------------------------------------------------
-# La LQ de Balassa continue (étape 3) : par cellule commune × activité,
-#   LQ_ca = (n_ca / n_c.) / (n_.a / n_..)
-# où les totaux bretons (n_.a par activité, n_.. général) se calculent sur la
-# Bretagne RETENUE seulement — les communes sous le plancher n'entrent ni
-# dans le numérateur ni dans les références bretonnes. La référence est la
-# Bretagne seule (gate E). Les colonnes de transparence du contrat sont
-# persistées : n (la cellule n_ca), n_c (le total de la commune), n_a (le
-# total de l'activité sur la Bretagne retenue). Déterministe : trié par
-# commune puis code APE.
-calculer_lq_balassa <- function(retenu) {
-  totaux_commune <- retenu %>%
-    dplyr::group_by(commune) %>%
-    dplyr::summarise(n_c = sum(n), .groups = "drop")
-  totaux_activite <- retenu %>%
+# calculer_lq_balassa_noyau -----------------------------------------------------
+# Le noyau COMMUN des deux LQ de Balassa du thème (calculer_lq_balassa — la
+# commune vs la moyenne bretonne, gate E ; calculer_lq_par_niveau — un agrégat
+# vs SES pairs, référence même-échelle, issue #131) : les totaux par groupe
+# (n_g), les totaux par activité (n_a), le total général et la formule
+#   LQ = (n / n_g) / (n_a / total)
+# `groupe` nomme la colonne du territoire (commune, EPCI, DEP...). Un total
+# général nul est un calcul sans référence — une erreur bruyante, jamais une
+# LQ inventée. Déterministe : les totaux ne dépendent que de la table.
+calculer_lq_balassa_noyau <- function(table, groupe) {
+  totaux_groupe <- table %>%
+    dplyr::group_by(.data[[groupe]]) %>%
+    dplyr::summarise(n_g = sum(n), .groups = "drop")
+  totaux_activite <- table %>%
     dplyr::group_by(activity_code) %>%
     dplyr::summarise(n_a = sum(n), .groups = "drop")
-  total_general <- sum(retenu$n)
+  total_general <- sum(table$n)
 
   if (total_general <= 0) {
-    stop("Analyse LQ — total général nul : aucune commune retenue.", call. = FALSE)
+    stop("Analyse LQ — total général nul : aucun établissement à la référence.",
+         call. = FALSE)
   }
 
-  retenu %>%
-    dplyr::left_join(totaux_commune, by = "commune") %>%
+  table %>%
+    dplyr::left_join(totaux_groupe, by = groupe) %>%
     dplyr::left_join(totaux_activite, by = "activity_code") %>%
-    dplyr::mutate(
-      lq = (n / n_c) / (n_a / total_general)
-    ) %>%
+    dplyr::mutate(lq = (n / n_g) / (n_a / total_general))
+}
+
+# calculer_lq_balassa ----------------------------------------------------------
+# La LQ de Balassa continue (étape 3) : par cellule commune × activité, le
+# noyau commun paramétré par la commune. Les colonnes de transparence du
+# contrat sont persistées : n (la cellule n_ca), n_c (le total de la commune —
+# renommée depuis n_g), n_a (le total de l'activité sur la Bretagne retenue).
+# Déterministe : trié par commune puis code APE.
+calculer_lq_balassa <- function(retenu) {
+  calculer_lq_balassa_noyau(retenu, "commune") %>%
+    dplyr::rename(n_c = n_g) %>%
     dplyr::select(commune, activity_code, activity_label, lq, n, n_c, n_a) %>%
     dplyr::arrange(commune, activity_code)
 }
@@ -219,17 +228,16 @@ calculer_histoires_lq <- function(lq, top_n = TOP_N_SPECIALISATIONS_LQ) {
 
 # calculer_lq_par_niveau -------------------------------------------------------
 # La LQ de Balassa à RÉFÉRENCE MÊME-ÉCHELLE (issue #131, décision 2026-08-06) :
-# la même formule que calculer_lq_balassa, mais paramétrée par le niveau
-# d'agrégat — les totaux de référence (n_.a par activité, n_.. général) se
-# calculent sur le TOTAL du niveau, jamais sur les communes. Un EPCI se
-# compare donc aux AUTRES EPCIs, un département aux AUTRES départements (le
-# découpage régional SIRENE interdit une référence France entière — gate E ;
-# la référence même-échelle est la lecture décidée 2026-08-06).
+# la même formule que calculer_lq_balassa (le noyau commun), mais paramétrée
+# par le niveau d'agrégat — les totaux de référence (n_.a par activité, n_..
+# général) se calculent sur le TOTAL du niveau, jamais sur les communes. Un
+# EPCI se compare donc aux AUTRES EPCIs, un département aux AUTRES départements
+# (le découpage régional SIRENE interdit une référence France entière — gate
+# E ; la référence même-échelle est la lecture décidée 2026-08-06).
 # `groupe` nomme la colonne du territoire dans la table (ex. « EPCI ») ; la
 # table doit porter les colonnes <groupe>, activity_code, activity_label et n
-# (n = les établissements actifs agrégés au niveau). La colonne de
-# transparence n_g (le total du niveau) est persistée comme n_c l'est pour la
-# commune. Déterministe : trié par niveau puis code APE.
+# (n = les établissements actifs agrégés au niveau). Déterministe : trié par
+# niveau puis code APE.
 calculer_lq_par_niveau <- function(table, groupe) {
   manquantes <- setdiff(c(groupe, "activity_code", "n"), names(table))
   if (length(manquantes) > 0) {
@@ -239,23 +247,7 @@ calculer_lq_par_niveau <- function(table, groupe) {
          call. = FALSE)
   }
 
-  totaux_niveau <- table %>%
-    dplyr::group_by(.data[[groupe]]) %>%
-    dplyr::summarise(n_g = sum(n), .groups = "drop")
-  totaux_activite <- table %>%
-    dplyr::group_by(activity_code) %>%
-    dplyr::summarise(n_a = sum(n), .groups = "drop")
-  total_general <- sum(table$n)
-
-  if (total_general <= 0) {
-    stop("LQ par niveau — total général nul : aucun établissement à ce niveau.",
-         call. = FALSE)
-  }
-
-  table %>%
-    dplyr::left_join(totaux_niveau, by = groupe) %>%
-    dplyr::left_join(totaux_activite, by = "activity_code") %>%
-    dplyr::mutate(lq = (n / n_g) / (n_a / total_general)) %>%
+  calculer_lq_balassa_noyau(table, groupe) %>%
     dplyr::select(dplyr::all_of(c(groupe, "activity_code", "activity_label",
                                   "lq", "n"))) %>%
     dplyr::arrange(.data[[groupe]], activity_code)
