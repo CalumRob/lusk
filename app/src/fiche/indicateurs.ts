@@ -17,7 +17,14 @@ export const NOMS_INDICATEURS: Record<Theme, Record<string, string>> = {
   },
   mobilite: {},
   habitat: {},
-  economie: {},
+  // Économie (issue #121, forme reshapée) : le bloc est 3 indicateurs — taille
+  // (Flores A88), santé (concept censitaire) et verdure (approximation EGSS).
+  // Jamais de LQ dans le bloc : le LQ est la Story (issue #120).
+  economie: {
+    effectifs_salaries: 'Effectifs salariés (lieu de travail)',
+    chomage: 'Chômage (population active)',
+    eco_activites: 'Part des éco-activités',
+  },
 }
 
 /** The structure_age tranche labels (the pipeline's 7 tranches exhaustives). */
