@@ -62,6 +62,22 @@ describe('sourcesMethodes — la jointure registre × vintages', () => {
       'https://www.data.gouv.fr/datasets/serie-historique-du-recensement-de-la-population',
     )
   })
+
+  it('joint la source mobilite_snapshot avec sa licence ODbL et ses deux dates (issue #151)', () => {
+    const { lignes } = sourcesMethodes(payloadAvec(vintagesFixture))
+
+    const snapshot = lignes.find((l) => l.id === 'mobilite_snapshot')
+    expect(snapshot).toMatchObject({
+      nom: 'Lusk — analyse d\u2019accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+      editeur: 'Lusk',
+      url: null,
+      version: '2026-02',
+      licence: 'Licence ODbL — attribution « © OpenStreetMap contributors »',
+      dateReference: '28 février 2026',
+      datePublication: '6 août 2026',
+    })
+    expect(snapshot?.themes).toEqual(['mobilite'])
+  })
 })
 
 describe('sourcesMethodes — la dégradation gracieuse', () => {

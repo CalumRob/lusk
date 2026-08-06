@@ -107,10 +107,21 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligneSerie.text()).toContain('30 juin 2026')
   })
 
-  it('liste les 34 sources commises (l\u2019union est le contrat)', async () => {
+  it('liste les 35 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
-    expect(wrapper.findAll('tbody tr').length).toBe(34)
+    expect(wrapper.findAll('tbody tr').length).toBe(35)
+  })
+
+  it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
+    const { wrapper } = await monter(async () => payloadAvecVintages)
+
+    const ligne = wrapper.find('tr#source-mobilite-snapshot')
+    expect(ligne.exists()).toBe(true)
+    expect(ligne.text()).toContain('Licence ODbL — attribution « © OpenStreetMap contributors »')
+    expect(ligne.text()).toContain('28 février 2026')
+    expect(ligne.text()).toContain('6 août 2026')
+    expect(ligne.text()).not.toContain('odbl')
   })
 
   it('porte une ancre par source, dérivée de son id', async () => {
@@ -144,8 +155,8 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 34 lignes, fraîcheur en tirets
-    expect(wrapper.findAll('tbody tr').length).toBe(34)
+    // La page ne casse jamais : 35 lignes, fraîcheur en tirets
+    expect(wrapper.findAll('tbody tr').length).toBe(35)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

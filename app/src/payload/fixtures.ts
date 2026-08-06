@@ -234,6 +234,15 @@ export const vintagesFixture: Vintage[] = [
     date_reference: '2025-01-01',
     date_publication: null,
   },
+  {
+    id: 'mobilite_snapshot',
+    source:
+      "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
+    version: '2026-02',
+    licence: 'odbl',
+    date_reference: '2026-02-28',
+    date_publication: '2026-08-06',
+  },
 ]
 
 /** A second theme (habitat) — for the payload-driven tab bar (ADR-0007). */
