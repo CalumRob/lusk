@@ -21,9 +21,10 @@
 #     les rangs-en-contexte (la machinerie partagée) ;
 #   - le payload publié (indicateurs / histoires / territoires / vintages) sort
 #     de run_pipeline(theme = theme_mobilite()) vers une cible TEMPORAIRE (le
-#     public/data du worktree n'est jamais touché) : 1 268 territoires × 1 clé
-#     (nb_buildings — la « Taille » ; les clés de la grille sont assemblées par
-#     le ticket payload #141), histoires aux deux story keys verrouillées
+#     public/data du worktree n'est jamais touché) : 1 268 territoires × 17
+#     clés/détails (la « Taille » + la demande/réseaux + le sous-bloc + les 5
+#     parts d'isolation de la grille, assemblées par le ticket payload #141),
+#     histoires aux deux story keys verrouillées
 #     (« vingt-minutes-sans-voiture » 1 266 + « ce-que-le-velo-preserve » 139) ;
 #   - le run est DÉTERMINISTE : un second run produit des tables et un payload
 #     octet-pour-octet identiques (run-report.json excepté — horodaté par
@@ -152,8 +153,9 @@ executer_run_reel <- function(cache, sortie) {
 #     densités Σ L ÷ Σ surface) ;
 #   - payload : 1 268 territoires (1 202 communes + 61 EPCIs + 4 départements +
 #     la région — le squelette partagé, les 2 communes hors snapshot portent NA
-#     pour l'indicateur, jamais une ligne manquante), × 3 clés (nb_buildings +
-#     voitures_menage × 2 parts + reseaux × 6 mesures = 11 412 lignes) ;
+#     pour l'indicateur, jamais une ligne manquante), × 17 clés/détails
+#     (nb_buildings 1 + voitures_menage 2 + reseaux 6 + le sous-bloc 3 + les 5
+#     parts d'isolation de la grille = 21 556 lignes) ;
 #     histoires : 1 405 lignes — 1 266 « vingt-minutes-sans-voiture » (une
 #     ligne par territoire, la Story par défaut) + 139 « ce-que-le-velo-
 #     preserve » (la saillance : 130 communes + 9 EPCIs au delta ≥ 10) ;
@@ -254,7 +256,7 @@ comptes_offre_par_niveau_reels <- c(
   velo_region = 1
 )
 comptes_payload_reels <- c(
-  indicateurs = 15216,  # 12 clés/détails × 1 268 territoires (nb_buildings 1 + voitures 2 + reseaux 6 + sous-bloc 3)
+  indicateurs = 21556,  # 17 clés/détails × 1 268 territoires (nb_buildings 1 + voitures 2 + reseaux 6 + sous-bloc 3 + isolation 5)
   histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
@@ -314,17 +316,32 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   # les clés publiées : la « Taille » (nb_buildings) + l'étage demande/réseaux
   # (issue #139 : voitures_menage, reseaux) + le sous-bloc « L'offre de
   # mobilité alternative » (issue #140 : offre_tc, bornes_recharge,
-  # places_stationnement_velo_1000) — une ligne par territoire × multiplicité,
-  # avec leurs rangs
+  # places_stationnement_velo_1000) + les 5 parts d'isolation de la GRILLE
+  # (issue #141 : iso_alimentation, iso_sante, iso_administration, iso_ecole,
+  # iso_banque) — une ligne par territoire × multiplicité, avec leurs rangs.
+  # La matrice complète ne part JAMAIS dans le payload : les seules clés du
+  # payload sont les onze déclarées (aucune clé dens_div_t_*, div_loss_t_dec_*,
+  # share_* — la leçon de l'issue #131)
   expect_setequal(unique(payload$indicateurs$key),
                   c("nb_buildings", "voitures_menage", "reseaux",
                     "offre_tc", "bornes_recharge",
-                    "places_stationnement_velo_1000"))
+                    "places_stationnement_velo_1000",
+                    "iso_alimentation", "iso_sante", "iso_administration",
+                    "iso_ecole", "iso_banque"))
+  expect_false(any(grepl("dens_|dec_|share_|norm_score|tot_loss",
+                         payload$indicateurs$key)))
   expect_equal(sum(payload$indicateurs$key == "nb_buildings"), 1268)
   expect_equal(sum(payload$indicateurs$key == "voitures_menage"), 2536)
   expect_equal(sum(payload$indicateurs$key == "reseaux"), 7608)
   for (cle in c("offre_tc", "bornes_recharge",
                 "places_stationnement_velo_1000")) {
+    expect_equal(sum(payload$indicateurs$key == cle), 1268, info = cle)
+  }
+  # les 5 parts d'isolation : une ligne par territoire (les agrégats EPCI /
+  # département / région sont recalculés depuis les parties — la moyenne
+  # pondérée par les bâtiments, jamais une moyenne de parts), chacune avec ses
+  # rangs-en-contexte et l'estampille SNAPSHOT
+  for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(sum(payload$indicateurs$key == cle), 1268, info = cle)
   }
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
@@ -413,11 +430,60 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
                      6), 18.498939)
   expect_equal(round(lire_ind("35238", "places_stationnement_velo_1000", NA)$value,
                      6), 72.804284)
+  # la GRILLE (issue #141) : les 5 parts d'isolation — la part des bâtiments
+  # SANS accès à pied ou en transports en commun à 20 minutes (1 − share_*),
+  # l'agrégat de chaque niveau RECALCULÉ depuis les parties (la moyenne
+  # pondérée par les bâtiments, jamais une moyenne de parts). Les valeurs de
+  # la région et de Rennes sont verrouillées sur le run réel ; une part hors
+  # [0, 1] ferait échouer validations_mobilite.
+  lire_iso <- function(territoire, key) {
+    lire_ind(territoire, key, NA)$value
+  }
+  # la région : la banque isole le plus (50 % des bâtiments — l'accès au
+  # dernier distributeur), l'alimentation le moins (31 %)
+  expect_equal(round(lire_iso("53", "iso_alimentation"), 6), 0.310495)
+  expect_equal(round(lire_iso("53", "iso_sante"), 6), 0.388552)
+  expect_equal(round(lire_iso("53", "iso_administration"), 6), 0.343320)
+  expect_equal(round(lire_iso("53", "iso_ecole"), 6), 0.323002)
+  expect_equal(round(lire_iso("53", "iso_banque"), 6), 0.502248)
+  # Rennes : la métropole — la part des bâtiments isolés est nulle (l'offre
+  # dense), et chaque part porte ses rangs-en-contexte (Rennes se classe très
+  # haut — les bâtiments isolés sont rares)
+  expect_equal(round(lire_iso("35238", "iso_alimentation"), 6), 0)
+  expect_equal(round(lire_iso("35238", "iso_banque"), 6), 0)
+  rennes_iso <- payload$indicateurs[
+    payload$indicateurs$territoire == "35238" &
+      payload$indicateurs$key == "iso_banque", ]
+  expect_true(all(!is.na(c(rennes_iso$rang_epci, rennes_iso$rang_dep,
+                           rennes_iso$rang_reg))))
+  # Brest Métropole (l'EPCI) : la moyenne pondérée par les bâtiments de ses
+  # communes membres
+  expect_equal(round(lire_iso("242900314", "iso_banque"), 6), 0.076433)
+  # les agrégats ne sont JAMAIS la moyenne des parts communales : le contraste
+  # réel (la moyenne des 1 200 parts communales de l'école — 0,449 — vs la
+  # valeur agrégée de la région, pondérée par les bâtiments — 0,323)
+  parts_communales_ecole <- payload$indicateurs$value[
+    payload$indicateurs$key == "iso_ecole" &
+      type_territoire_mobilite(payload$indicateurs$territoire) == "commune"]
+  expect_false(isTRUE(all.equal(lire_iso("53", "iso_ecole"),
+                                mean(parts_communales_ecole, na.rm = TRUE))))
+  # toutes les parts publiées restent des parts dans [0, 1] (une valeur NA —
+  # commune hors snapshot — est un cas légitime, jamais une part hors borne)
+  for (cle in names(CLES_ISOLATION_MOBILITE)) {
+    v <- payload$indicateurs$value[payload$indicateurs$key == cle]
+    expect_true(all(is.na(v) | (v >= 0 & v <= 1)), info = cle)
+  }
+  # les 2 communes hors snapshot portent NA pour les parts d'isolation (jamais
+  # une part fabriquée) — l'alignement sur la référence du squelette
+  expect_true(all(is.na(lire_iso("29083", "iso_alimentation"))))
+  expect_true(all(is.na(lire_iso("29084", "iso_banque"))))
   # les estampilles T7 : CHAQUE indicateur porte le vintage de SA source de
   # référence (la « Taille » → le snapshot ; la demande → le RP exploitation
   # principale ; les réseaux → l'extrait OSM, le timestamp d'extraction ; le
   # sous-bloc → la base GTFS korrigo pour l'offre TC, l'IRVE pour les bornes,
-  # le hub Ecolab pour le stationnement vélo)
+  # le hub Ecolab pour le stationnement vélo ; les parts d'isolation → le
+  # snapshot — l'ESTAMPILLE SNAPSHOT du flagship, la date d'instantané de
+  # l'analyse comme référence, distincte des thèmes légers)
   vintages <- vintages_mobilite()
   pour <- function(cle) {
     payload$indicateurs[payload$indicateurs$key == cle &
@@ -428,6 +494,15 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_true(all(nb$vintage_source == ref_snapshot$source))
   expect_true(all(nb$vintage_date_reference == "2026-02-28"))
   expect_true(all(nb$vintage_date_publication == "2026-08-06"))
+  for (cle in names(CLES_ISOLATION_MOBILITE)) {
+    iso_stamp <- pour(cle)
+    expect_true(all(iso_stamp$vintage_source == ref_snapshot$source), info = cle)
+    expect_true(all(iso_stamp$vintage_version == "2026-02"), info = cle)
+    expect_true(all(iso_stamp$vintage_date_reference == "2026-02-28"),
+                info = cle)
+    expect_true(all(iso_stamp$vintage_date_publication == "2026-08-06"),
+                info = cle)
+  }
   expect_true(all(pour("voitures_menage")$vintage_source ==
                     vintages$source[vintages$id == "rp_logement_princ"]))
   expect_true(all(pour("voitures_menage")$vintage_date_reference == "2023-01-01"))
