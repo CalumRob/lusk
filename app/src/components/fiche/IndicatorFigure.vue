@@ -29,6 +29,18 @@ const premiere = computed(() => props.lignes[0] ?? null)
 
 const multi = computed(() => props.lignes.length > 1)
 
+/**
+ * The segmented bar is only meaningful when the detail rows share one unit —
+ * a multi-measure key (the Mobilité reseaux: km AND km/km²) must not sum
+ * incommensurable values into one bar. The tranche list always renders.
+ */
+const barreUnifiee = computed(() => {
+  const unites = new Set(
+    props.lignes.filter((ligne) => ligne.value !== null).map((ligne) => ligne.unit),
+  )
+  return unites.size <= 1
+})
+
 const valeur = computed(() => {
   if (!premiere.value) return null
   const texte = formaterValeur(premiere.value)
@@ -68,6 +80,7 @@ const segments = computed<Segment[]>(() => {
   >
     <div v-if="multi" class="figure-indicateur-decomposition">
       <div
+        v-if="barreUnifiee"
         class="barre-segmentee"
         role="img"
         :aria-label="`${libelle} : ${segments.map((s) => `${s.libelle} ${s.texte}`).join(' · ')}`"

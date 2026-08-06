@@ -4,14 +4,16 @@ import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
+  histoiresMobiliteFixture,
   indicateursDemographieFixture,
   indicateursEconomieFixture,
+  indicateursMobiliteFixture,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
 import { PayloadError, parsePayload } from '../payload/validate'
-import type { HistoireDemographie, Payload } from '../payload/types'
+import type { HistoireDemographie, HistoireMobilite, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
 
@@ -29,7 +31,7 @@ function documentsBruts(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts
     histoires: histoiresDemographieFixture,
     apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
-  vintages: vintagesFixture,
+    vintages: vintagesFixture,
     ...overrides,
   }
 }
@@ -39,6 +41,15 @@ function documentsEconomie(overrides: Partial<DocumentsBruts> = {}): DocumentsBr
   return documentsBruts({
     indicateurs: indicateursEconomieFixture,
     histoires: histoiresEconomieFixture,
+    ...overrides,
+  })
+}
+
+/** The Mobilité documents (issue #142) — the fixture payload, theme swapped. */
+function documentsMobilite(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts {
+  return documentsBruts({
+    indicateurs: indicateursMobiliteFixture,
+    histoires: histoiresMobiliteFixture,
     ...overrides,
   })
 }
@@ -335,5 +346,80 @@ describe('parsePayload — the Économie contract (issue #120, forme reshapée)'
     histoires.push({ ...histoires[0] })
 
     attendErreurValidation(documentsBruts({ histoires }))
+  })
+})
+
+describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () => {
+  it('accepts the Mobilité documents — le défaut multi-lignes + la saillance vélo', () => {
+    const payload = parsePayload(documentsMobilite())
+
+    expect(payload.indicateurs).toHaveLength(indicateursMobiliteFixture.length)
+    const histoires = payload.histoires.filter((h) => h.theme === 'mobilite')
+    expect(histoires).toHaveLength(histoiresMobiliteFixture.length)
+    // la saillante porte DEUX lignes — le défaut ET le vélo
+    const saillante = histoires.filter((h) => h.territoire === '22002')
+    expect(saillante.map((h) => h.story_key)).toEqual([
+      'vingt-minutes-sans-voiture',
+      'ce-que-le-velo-preserve',
+    ])
+  })
+
+  it('rejects a Mobilité histoire with an unknown story_key (drift must be loud)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    ;(histoires[0] as { story_key: string }).story_key = 'la-voiture-reine'
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/Story Mobilité/)
+  })
+
+  it('rejects a Mobilité histoire missing its required reading (div_loss_t absent — loud)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    delete (histoires[0] as Partial<HistoireMobilite>).div_loss_t
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/div_loss_t/)
+  })
+
+  it('rejects a negative delta — la neutralité modale (vélo ≥ à pied) est le contrat', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    ;(histoires[0] as { delta: number }).delta = -3
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/delta/)
+  })
+
+  it('rejects a vélo Story without the « saillant » classification', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    const velo = histoires.find(
+      (h) => (h as { story_key: string }).story_key === 'ce-que-le-velo-preserve',
+    ) as unknown as { classification_saillance: string }
+    velo.classification_saillance = 'notable'
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/saillant/)
+  })
+
+  it('rejects an unknown saillance classification', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    ;(histoires[0] as { classification_saillance: string }).classification_saillance = 'super'
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/classification_saillance/)
+  })
+
+  it('rejects a duplicate (territoire × story_key) — jamais deux fois la même Story', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    histoires.push({ ...histoires[0] })
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/plusieurs Story/)
+  })
+
+  it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    ;(histoires[0] as { vintage_date_publication: string }).vintage_date_publication = '2026/08/06'
+
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/vintage/)
   })
 })

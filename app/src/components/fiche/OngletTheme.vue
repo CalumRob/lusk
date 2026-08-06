@@ -16,20 +16,31 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
+import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
-import { NOMS_INDICATEURS, NOMS_TRANCHES_AGE } from '@/fiche/indicateurs'
+import {
+  NOMS_DETAILS_RESEAUX,
+  NOMS_DETAILS_VOITURES_MENAGE,
+  NOMS_INDICATEURS,
+  NOMS_TRANCHES_AGE,
+} from '@/fiche/indicateurs'
 import { NOMS_THEMES } from '@/fiche/onglets'
 import { storyDemographie } from '@/fiche/storyDemographie'
 import { storyEconomie } from '@/fiche/storyEconomie'
+import { storyMobilite } from '@/fiche/storyMobilite'
 import {
+  descriptionNuage,
+  estampilleSnapshot,
   histoirePourTerritoire,
   histoiresEconomiePourTerritoire,
+  histoiresMobilitePourTerritoire,
   indicateursGroupeesPourTerritoire,
   nuageComparaison,
-  descriptionNuage,
+  nuageMobilite,
   trouverTerritoire,
 } from '@/payload/selectors'
+import type { GroupeIndicateur } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
 
 const props = defineProps<{
@@ -104,6 +115,72 @@ const nomTerritoire = computed(
   () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
 )
 
+// The Mobilité block (issue #142, ADR-0012) : la « Taille » → la grille
+// d'isolation (les 5 parts) → l'étage demande/réseaux → le sous-bloc
+// « L'offre de mobilité alternative ». Les sections découpent l'ordre du
+// contrat (ORDRE_INDICATEURS.mobilite) — chaque groupe reste dans SA section.
+const CLEFS_SOUS_BLOC_MOBILITE = ['offre_tc', 'bornes_recharge', 'places_stationnement_velo_1000']
+const CLEFS_GRILLE_MOBILITE = [
+  'iso_alimentation',
+  'iso_sante',
+  'iso_administration',
+  'iso_ecole',
+  'iso_banque',
+]
+
+function groupesMobilite(cles: readonly string[]) {
+  return groupes.value.filter((g) => cles.includes(g.key))
+}
+
+const groupesMobiliteTaille = computed(() => groupesMobilite(['nb_buildings']))
+const groupesMobiliteGrille = computed(() => groupesMobilite(CLEFS_GRILLE_MOBILITE))
+const groupesMobiliteDemandeReseaux = computed(() =>
+  groupesMobilite(['voitures_menage', 'reseaux']),
+)
+const groupesMobiliteSousBloc = computed(() => groupesMobilite(CLEFS_SOUS_BLOC_MOBILITE))
+
+/** The snapshot stamp — the flagship's honest freshness claim (ADR-0012). */
+const estampille = computed(() =>
+  props.theme === 'mobilite' ? estampilleSnapshot(props.payload) : null,
+)
+
+// The Mobilité Story (issue #142) : the salience rule of ADR-0002 — the vélo
+// reading replaces the default when the payload carries it (classification
+// « saillant »). A territory carries at most two mobilite rows; the mapper
+// picks the reading.
+const storyMobiliteAngle = computed(() => {
+  if (props.theme !== 'mobilite') return null
+  const lignes = histoiresMobilitePourTerritoire(props.payload, props.territoire)
+  if (!lignes) return null
+  return storyMobilite(lignes)
+})
+
+// The Mobilité story chart's context cloud (ADR-0011) — the peers' div_loss_t
+// at the same scale, clickable like the Démographie nuage.
+const nuageMobiliteComputed = computed(() =>
+  props.theme === 'mobilite' ? nuageMobilite(props.payload, props.territoire) ?? [] : [],
+)
+
+function labelsDetailPour(clef: string): Record<string, string> | undefined {
+  if (clef === 'reseaux') return NOMS_DETAILS_RESEAUX
+  if (clef === 'voitures_menage') return NOMS_DETAILS_VOITURES_MENAGE
+  return undefined
+}
+
+/** The Mobilité block's sections — the Taille, the isolation grid, the demand/network tier and the labelled sub-block. */
+interface SectionMobilite {
+  titre: string | null
+  isolation?: boolean
+  groupes: GroupeIndicateur[]
+}
+
+const sectionsMobilite = computed<SectionMobilite[]>(() => [
+  { titre: null, groupes: groupesMobiliteTaille.value },
+  { titre: null, isolation: true, groupes: groupesMobiliteGrille.value },
+  { titre: null, groupes: groupesMobiliteDemandeReseaux.value },
+  { titre: 'L’offre de mobilité alternative', groupes: groupesMobiliteSousBloc.value },
+])
+
 function libelleIndicateur(clef: string): string {
   return NOMS_INDICATEURS[props.theme]?.[clef] ?? clef
 }
@@ -122,7 +199,32 @@ function libelleIndicateur(clef: string): string {
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
 
-    <div class="grille-indicateurs">
+    <!-- The Mobilité block (issue #142, ADR-0012) : la « Taille » → la grille
+         d'isolation (les 5 parts, cadrage « sans accès ») → l'étage
+         demande/réseaux → le sous-bloc sous son libellé, puis l'estampille
+         snapshot — jamais le langage des chips hebdomadaires. -->
+    <template v-if="theme === 'mobilite'">
+      <template v-for="(section, i) in sectionsMobilite" :key="i">
+        <p v-if="section.titre" class="sous-bloc-mobilite-libelle">{{ section.titre }}</p>
+        <div
+          class="grille-indicateurs"
+          :class="{ 'grille-isolation': section.isolation }"
+        >
+          <IndicatorFigure
+            v-for="groupe in section.groupes"
+            :key="groupe.key"
+            :clef="groupe.key"
+            :lignes="groupe.lignes"
+            :libelle="libelleIndicateur(groupe.key)"
+            :labels-detail="labelsDetailPour(groupe.key)"
+            :large="groupe.key === 'reseaux'"
+          />
+        </div>
+      </template>
+      <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
+    </template>
+
+    <div v-else class="grille-indicateurs">
       <IndicatorFigure
         v-for="groupe in groupes"
         :key="groupe.key"
@@ -135,7 +237,53 @@ function libelleIndicateur(clef: string): string {
       />
     </div>
 
-    <section v-if="story || storyEconomieAngle" class="angle-story">
+    <section v-if="storyMobiliteAngle || story || storyEconomieAngle" class="angle-story">
+      <!-- The Mobilité Story (issue #142, ADR-0012) : the flagship's headline.
+           The default « Vingt minutes sans voiture » renders its distribution
+           chart (density signature, median marked) against the same-scale
+           cloud; the salience « Ce que le vélo préserve » replaces it where the
+           payload carries it (the delta reading, no distribution — honest). -->
+      <template v-if="storyMobiliteAngle">
+        <p class="angle-story-une-ligne">{{ storyMobiliteAngle.uneLigne }}</p>
+        <p class="angle-story-titre">
+          {{ storyMobiliteAngle.titre }}
+          <template v-if="descriptionNuageComputed">
+            {{ descriptionNuageComputed.prepositionCourant }}
+            <span class="angle-story-courant">{{ descriptionNuageComputed.nomCourant }}</span>
+            et {{ descriptionNuageComputed.groupe }}
+            <RouterLink
+              v-if="descriptionNuageComputed.conteneur"
+              class="angle-story-conteneur"
+              :to="{
+                name: 'territoire',
+                params: {
+                  type: descriptionNuageComputed.conteneur.type,
+                  id: descriptionNuageComputed.conteneur.code,
+                },
+              }"
+            >
+              {{ descriptionNuageComputed.conteneur.nom }}
+            </RouterLink>
+          </template>
+        </p>
+        <GraphiqueDistributionMobilite
+          v-if="storyMobiliteAngle.distribution"
+          :distribution="storyMobiliteAngle.distribution"
+          :mediane="storyMobiliteAngle.divLossT"
+          :nom="nomTerritoire"
+          :nuage="nuageMobiliteComputed"
+        />
+        <p class="angle-story-comment-lire">
+          <span class="angle-story-etiquette">Comment lire</span>
+          {{ storyMobiliteAngle.commentLire }}
+        </p>
+        <p class="angle-story-source">
+          <span class="angle-story-etiquette">Source</span>
+          {{ storyMobiliteAngle.vintage }}
+        </p>
+        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+      </template>
+
       <!-- The Économie Story (issue #121) : la LQ EST la Story — la liste des
            top-5 spécialisations (ou, pour la région, la top-5 par présence),
            jamais un indicateur du bloc. La lecture tient dans la liste ; le
@@ -264,6 +412,48 @@ function libelleIndicateur(clef: string): string {
   .grille-indicateurs {
     grid-template-columns: 1fr;
   }
+}
+
+/* The Mobilité isolation grid (issue #142, ADR-0012) — the flagship's 5 parts
+   read as ONE grid: five columns on wide screens, the fiche contract's grid
+   below. The « sans accès » framing lives in the figure labels. */
+.grille-isolation {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+@media (max-width: 1024px) {
+  .grille-isolation {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .grille-isolation {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The sub-block's label (issue #142) — « L'offre de mobilité alternative »,
+   the one labelled tier of the Mobilité block. */
+.sous-bloc-mobilite-libelle {
+  margin: 0;
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
+  text-transform: uppercase;
+  color: var(--couleur-strong);
+}
+
+/* The flagship's snapshot stamp (ADR-0012) — the honest freshness claim,
+   visually distinct from the light themes' weekly vintage chips. */
+.estampille-snapshot {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--couleur-line);
+  border-radius: var(--radius-lg);
+  background: var(--couleur-soft);
+  color: var(--couleur-strong);
+  font: var(--text-body-sm);
+  font-weight: 600;
 }
 
 .angle-story {

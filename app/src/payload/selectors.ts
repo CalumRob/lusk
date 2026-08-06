@@ -12,6 +12,7 @@ import type {
   ColonneRang,
   Histoire,
   HistoireEconomie,
+  HistoireMobilite,
   Indicateur,
   Payload,
   Territoire,
@@ -79,7 +80,7 @@ const MOIS_FRANCAIS = [
 ]
 
 /** ISO timestamp → "3 août 2026" (UTC — the pipeline stamps UTC, CONTEXT.md §Run report). */
-function formaterDateFrancaise(iso: string): string {
+export function formaterDateFrancaise(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
   return `${date.getUTCDate()} ${MOIS_FRANCAIS[date.getUTCMonth()]} ${date.getUTCFullYear()}`
@@ -124,6 +125,22 @@ const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
   // Économie (issue #120) : « Taille » → « santé » → « verdure » — l'ordre du
   // contrat R (INDICATEURS_ECONOMIE), pas celui du JSON.
   economie: ['effectifs_salaries', 'chomage', 'eco_activites'],
+  // Mobilité (issue #142, ADR-0012) : la « Taille » → la grille d'isolation
+  // (les 5 parts) → l'étage demande/réseaux → le sous-bloc — l'ordre du bloc,
+  // pas celui d'INDICATEURS_MOBILITE (nb_buildings → voitures → reseaux → …).
+  mobilite: [
+    'nb_buildings',
+    'iso_alimentation',
+    'iso_sante',
+    'iso_administration',
+    'iso_ecole',
+    'iso_banque',
+    'voitures_menage',
+    'reseaux',
+    'offre_tc',
+    'bornes_recharge',
+    'places_stationnement_velo_1000',
+  ],
 }
 
 /** The standard indicator rows for a territoire + theme, in the contract's order. */
@@ -202,6 +219,81 @@ export function histoiresEconomiePourTerritoire(
     )
     .sort((a, b) => a.rang - b.rang || a.activity_code.localeCompare(b.activity_code))
   return lignes.length > 0 ? lignes : null
+}
+
+/**
+ * The Mobilité Story rows of a territoire (issue #142, ADR-0012) — AT MOST TWO:
+ * the always-on default « vingt-minutes-sans-voiture » and, where the bike
+ * delta is real (classification « saillant »), the salience candidate
+ * « ce-que-le-velo-preserve ». Null for a territory without a Mobilité Story
+ * (handled honestly, no invented reading).
+ */
+export function histoiresMobilitePourTerritoire(
+  payload: Payload,
+  territoire: string,
+): HistoireMobilite[] | null {
+  const lignes = payload.histoires.filter(
+    (h): h is HistoireMobilite => h.theme === 'mobilite' && h.territoire === territoire,
+  )
+  return lignes.length > 0 ? lignes : null
+}
+
+/** One point of the Mobilité story chart's context cloud — a peer's div_loss_t (ADR-0011). */
+export interface PointNuageMobilite {
+  territoire: string
+  type: TerritoireType
+  nom: string
+  /** La lecture du pair — le nombre de types de services qu'il perd à pied ou en transports en commun. */
+  divLoss: number
+}
+
+/**
+ * The Mobilité story chart's context cloud (ADR-0011) — the SAME comparison
+ * scope as the Démographie nuage (codesComparaison) but reading each peer's
+ * default Story row (its div_loss_t — every territory carries its own). The
+ * nuage is derivable app-side from the peers' lines, never a downloaded list
+ * (theme_mobilite.R — le même pattern que la Story Démographie).
+ */
+export function nuageMobilite(payload: Payload, territoire: string): PointNuageMobilite[] | null {
+  const ref = trouverTerritoire(payload, territoire)
+  if (!ref) return null
+
+  const codes = codesComparaison(payload, ref)
+  const nuage: PointNuageMobilite[] = []
+  for (const code of codes) {
+    const histoire = payload.histoires.find(
+      (h) =>
+        h.theme === 'mobilite' &&
+        h.story_key === 'vingt-minutes-sans-voiture' &&
+        h.territoire === code,
+    )
+    if (histoire?.theme !== 'mobilite') continue
+    const t = trouverTerritoire(payload, code)
+    if (!t) continue
+    nuage.push({ territoire: code, type: t.type, nom: t.nom, divLoss: histoire.div_loss_t })
+  }
+  return nuage
+}
+
+/**
+ * The flagship's snapshot stamp (ADR-0012) — the Mobilité block's freshness
+ * promise, distinct from the light themes' weekly vintage chips: "Analyse
+ * calculée le [date] — se rafraîchit sur un rythme lent". The date is the
+ * snapshot's publication date (the run that computed the analysis); it is read
+ * from the shared vintages table (mobilite_snapshot) and, in its absence, from
+ * any Mobilité Story row's own stamp. Null only when the payload carries no
+ * Mobilité at all — the block never invents a stamp.
+ */
+export function estampilleSnapshot(payload: Payload): string | null {
+  const snap = payload.vintages?.find((v) => v.id === 'mobilite_snapshot')
+  if (snap?.date_publication) {
+    return `Analyse calculée le ${formaterDateFrancaise(snap.date_publication)} — se rafraîchit sur un rythme lent`
+  }
+  const histoire = payload.histoires.find((h) => h.theme === 'mobilite')
+  if (histoire?.theme === 'mobilite') {
+    return `Analyse calculée le ${formaterDateFrancaise(histoire.vintage_date_publication)} — se rafraîchit sur un rythme lent`
+  }
+  return null
 }
 
 /** One point of the story chart's context cloud (ADR-0011). */

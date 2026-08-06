@@ -149,7 +149,74 @@ export interface HistoireEconomieBretagneAbrite extends VintageStamp {
 
 export type HistoireEconomie = HistoireEconomieCommuneAbrite | HistoireEconomieBretagneAbrite
 
-export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie
+/**
+ * The Mobilité Story rows (issue #142, ADR-0012) — TWO rows per saillant
+ * territory at most: the always-on default « vingt-minutes-sans-voiture » and,
+ * ONLY where the bike delta is real (classification « saillant »), the salience
+ * candidate « ce-que-le-velo-preserve ». The default row carries the story's
+ * whole matter: the reading (div_loss_t — the number of service types that
+ * leave the territory's reach à pied ou en transports en commun at 20 minutes),
+ * the story depth (pct_iso_full_t — the share of buildings that lose ALL
+ * access), the precomputed distribution signature (dens_1..10 + dec_1..10 +
+ * min/max — the building-level density of div_loss_t, NEVER the matrix,
+ * lesson of issue #131) and the saillance classification. The vélo row carries
+ * only the delta reading — the distribution is hors contrat there (null in the
+ * raw rows, dropped from the type). Each row carries the snapshot's vintage
+ * stamp (issue #74 — the flagship cites its source).
+ */
+export interface HistoireMobiliteVingtMinutes extends VintageStamp {
+  territoire: string
+  type: TerritoireType
+  theme: 'mobilite'
+  story_key: 'vingt-minutes-sans-voiture'
+  /** La lecture — les types de services perdus à pied ou en transports en commun à 20 min. */
+  div_loss_t: number
+  div_loss_b: number
+  /** La matière de la saillance — ce que le vélo préserve déjà (div_loss_t − div_loss_b). */
+  delta: number
+  /** La part des bâtiments qui perdent TOUT accès — la profondeur du Story. */
+  pct_iso_full_t: number | null
+  dens_min: number | null
+  dens_max: number | null
+  dens_1: number | null
+  dens_2: number | null
+  dens_3: number | null
+  dens_4: number | null
+  dens_5: number | null
+  dens_6: number | null
+  dens_7: number | null
+  dens_8: number | null
+  dens_9: number | null
+  dens_10: number | null
+  dec_1: number | null
+  dec_2: number | null
+  dec_3: number | null
+  dec_4: number | null
+  dec_5: number | null
+  dec_6: number | null
+  dec_7: number | null
+  dec_8: number | null
+  dec_9: number | null
+  dec_10: number | null
+  classification_saillance: string
+}
+
+/** La lecture du delta — le vélo préserve déjà ces types de services (réalisé, jamais potentiel). */
+export interface HistoireMobiliteVeloPreserve extends VintageStamp {
+  territoire: string
+  type: TerritoireType
+  theme: 'mobilite'
+  story_key: 'ce-que-le-velo-preserve'
+  div_loss_t: number
+  div_loss_b: number
+  delta: number
+  /** Le vélo ne se déclenche que sur la saillance — « saillant » par contrat. */
+  classification_saillance: 'saillant'
+}
+
+export type HistoireMobilite = HistoireMobiliteVingtMinutes | HistoireMobiliteVeloPreserve
+
+export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite
 
 /** One basic-stat row per (territoire × key) — the Aperçu tab renders it, never derives it. */
 export interface ApercuRow {

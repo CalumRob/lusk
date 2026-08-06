@@ -32,8 +32,12 @@ vi.mock('echarts/core', () => ({
     off: vi.fn(),
   })),
 }))
-vi.mock('echarts/charts', () => ({ ScatterChart: {} }))
-vi.mock('echarts/components', () => ({ GridComponent: {}, TooltipComponent: {} }))
+vi.mock('echarts/charts', () => ({ ScatterChart: {}, LineChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  TooltipComponent: {},
+  MarkLineComponent: {},
+}))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
 /**
