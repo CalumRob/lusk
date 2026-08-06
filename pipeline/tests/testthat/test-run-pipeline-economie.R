@@ -333,3 +333,54 @@ test_that("une dérive de valeur du payload Économie échoue bruyamment", {
     "chômage"
   )
 })
+
+test_that("un payload avec `lq` encore dans les indicateurs échoue la validation (QA issue #131)", {
+  # la matrice LQ ne doit JAMAIS repartir dans le bloc : une clé `lq` n'est
+  # pas déclarée dans INDICATEURS_ECONOMIE — la validation générique la
+  # rejette bruyamment (le reshape interdit la régression du payload 80 Mo)
+  cible <- tempfile("pub-economie-")
+  on.exit(unlink(cible, recursive = TRUE))
+  cache <- tempfile("cache-economie-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) statuts_economie(),
+    construire_donnees_economie = function(cache) list(
+      sirene_snapshot = tibble::tibble(x = 1),
+      flores_a38 = tibble::tibble(x = 2),
+      flores_a88 = tibble::tibble(x = 3),
+      rp_emploi = tibble::tibble(x = 4),
+      rp_chomage = tibble::tibble(x = 5)
+    ),
+    construire_analytiques_economie = function(donnees, base_epci, artefact, sortie) {
+      fixture_analytiques_economie()
+    },
+    lire_epci = function(chemin) base_epci_economie,
+    publier_geometrie = function(cible = "public/data", fetch = NULL) invisible(NULL),
+    .package = "lusk"
+  )
+
+  # un run sain, puis le payload corrompu : une ligne `lq` réintroduite
+  payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  payload$indicateurs <- dplyr::bind_rows(
+    payload$indicateurs,
+    tibble::tibble(
+      territoire = "22001", type = "commune", theme = "economie",
+      key = "lq", detail = "A", value = 1.5, unit = "",
+      rang_epci = 0.5, rang_dep = 0.5, rang_reg = 0.5,
+      vintage_source = "x", vintage_version = "y",
+      vintage_date_reference = "2026-01-01",
+      vintage_date_publication = "2026-01-01"
+    )
+  )
+
+  # la clé fantôme n'est pas déclarée dans INDICATEURS_ECONOMIE → erreur forte
+  expect_error(
+    validate_payload(payload, indicateurs = INDICATEURS_ECONOMIE,
+                     vintages = vintages_economie(),
+                     validations = validations_economie,
+                     apercu = APERCU_ECONOMIE),
+    "non déclarée"
+  )
+})
