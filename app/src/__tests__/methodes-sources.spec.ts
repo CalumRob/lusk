@@ -51,8 +51,8 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     expect(registreSeul).toEqual([])
   })
 
-  it('déclare 35 sources — l\u2019union commise (demographie + habitat + economie + mobilite)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(35)
+  it('déclare 42 sources — l\u2019union commise (demographie + habitat + economie + mobilite)', () => {
+    expect(Object.keys(SOURCES_METHODES).length).toBe(42)
   })
 })
 

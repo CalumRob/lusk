@@ -107,10 +107,10 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligneSerie.text()).toContain('30 juin 2026')
   })
 
-  it('liste les 35 sources commises (l\u2019union est le contrat)', async () => {
+  it('liste les 42 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
-    expect(wrapper.findAll('tbody tr').length).toBe(35)
+    expect(wrapper.findAll('tbody tr').length).toBe(42)
   })
 
   it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
@@ -122,6 +122,17 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligne.text()).toContain('28 février 2026')
     expect(ligne.text()).toContain('6 août 2026')
     expect(ligne.text()).not.toContain('odbl')
+  })
+
+  it('rend l\u2019attribution ODbL pour les trois sources concernées (OSM · Korrigo · stationnement vélo, ADR-0001)', async () => {
+    const { wrapper } = await monter(async () => payloadAvecVintages)
+
+    for (const id of ['osm-reseaux', 'korrigo', 'stationnement-velo']) {
+      const ligne = wrapper.find(`tr#source-${id}`)
+      expect(ligne.exists(), `ligne « ${id} » introuvable`).toBe(true)
+      expect(ligne.text()).toContain('Licence ODbL — attribution « © OpenStreetMap contributors »')
+      expect(ligne.text()).not.toContain('odbl')
+    }
   })
 
   it('porte une ancre par source, dérivée de son id', async () => {
@@ -155,8 +166,8 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 35 lignes, fraîcheur en tirets
-    expect(wrapper.findAll('tbody tr').length).toBe(35)
+    // La page ne casse jamais : 42 lignes, fraîcheur en tirets
+    expect(wrapper.findAll('tbody tr').length).toBe(42)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

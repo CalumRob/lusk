@@ -125,6 +125,22 @@ describe('MethodologieView — la section « les indicateurs »', () => {
     expect(texte).toContain('les cinq types d’établissements les plus présents')
   })
 
+  it('documente l\u2019horloge lente dans le bloc mobilité — fait de première classe (ADR-0012)', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#mobilite')
+    expect(bloc.exists()).toBe(true)
+    const texte = bloc.text()
+    const horloge = THEMES_METHODES.mobilite.horlogeLente
+    expect(horloge).toBeDefined()
+    expect(texte).toContain('L’horloge lente')
+    expect(texte).toContain(horloge!.consommation)
+    expect(texte).toContain(horloge!.declencheur)
+    for (const entree of horloge!.entrees) {
+      expect(texte).toContain(entree.donnee)
+    }
+  })
+
   it('marque la Story en pause comme non publiée, jamais comme une Story active', async () => {
     const wrapper = await monter(async () => payload)
 

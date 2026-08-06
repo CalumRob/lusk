@@ -54,13 +54,14 @@ function themesSansDocumentation(payloadThemes: string[]): string[] {
 
 describe('contrat Méthodes — chaque thème de la payload a sa documentation', () => {
   it('l\u2019enforcement a des dents : un thème de payload sans section Méthodes est nommé', () => {
-    // Quand le payload de la Mobilité part (indicateurs_mobilite.json commis)
-    // sans sa section Méthodes, le contrat doit la nommer — jamais échouer en
-    // silence sur une liste vide. Ce test fixe le comportement de détection :
-    // sans lui, l'assertion de parité pourrait passer par vacuité.
-    expect(themesSansDocumentation(['demographie', 'habitat', 'economie', 'mobilite'])).toEqual([
-      'mobilite',
-    ])
+    // La Mobilité est désormais documentée (issue #143) — le test doit garder
+    // sa dent sur un thème SYNTHÉTIQUE de payload sans section Méthodes : ici
+    // « milieux », le cinquième thème du plan (CONTEXT.md), pas encore construit.
+    // Le fixe le comportement de détection : sans lui, l'assertion de parité
+    // pourrait passer par vacuité.
+    expect(
+      themesSansDocumentation(['demographie', 'habitat', 'economie', 'mobilite', 'milieux']),
+    ).toEqual(['milieux'])
   })
 
   it('découvre les payloads commis — les thèmes construits du registre, ni plus ni moins', () => {
