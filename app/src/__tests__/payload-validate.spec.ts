@@ -3,7 +3,9 @@
 import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
+  histoiresEconomieFixture,
   indicateursDemographieFixture,
+  indicateursEconomieFixture,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -30,6 +32,15 @@ function documentsBruts(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts
   vintages: vintagesFixture,
     ...overrides,
   }
+}
+
+/** The Économie documents — the same fixture payload, theme swapped. */
+function documentsEconomie(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts {
+  return documentsBruts({
+    indicateurs: indicateursEconomieFixture,
+    histoires: histoiresEconomieFixture,
+    ...overrides,
+  })
 }
 
 function attendErreurValidation(documents: DocumentsBruts): PayloadError {
@@ -128,11 +139,24 @@ describe('parsePayload — rejects contract drift, loudly', () => {
     expect(erreur.message).toMatch(/territoire/i)
   })
 
-  it('rejects a commune without an EPCI in the reference table', () => {
+  it('accepts a commune without an EPCI in the reference table (the three islands, fix #131)', () => {
+    // Les trois îles (22016, 29083, 29155) n'ont pas d'EPCI — « Sans objet » —
+    // la commune sans EPCI est désormais légitime dans la référence (issue #120).
     const territoires = JSON.parse(JSON.stringify(territoiresFixture)) as typeof territoiresFixture
     territoires[0].epci = null
 
-    attendErreurValidation(documentsBruts({ territoires }))
+    const payload = parsePayload(documentsBruts({ territoires }))
+    expect(payload.territoires.find((t) => t.territoire === '22001')?.epci).toBeNull()
+  })
+
+  it('rejects a commune whose EPCI is unknown to the reference (ladder integrity kept)', () => {
+    // L'intégrité référentielle de l'échelle reste verrouillée : un SIREN
+    // inconnu casse le contexte switcher (commune → EPCI → département → région).
+    const territoires = JSON.parse(JSON.stringify(territoiresFixture)) as typeof territoiresFixture
+    territoires[0].epci = '999999999'
+
+    const erreur = attendErreurValidation(documentsBruts({ territoires }))
+    expect(erreur.message).toMatch(/EPCI/i)
   })
 
   it('rejects a non-commune carrying an EPCI', () => {
@@ -221,5 +245,95 @@ describe('parsePayload — the shared vintages table', () => {
     const payload = parsePayload(documentsBruts({ vintages: null }))
 
     expect(payload.vintages).toBeNull()
+  })
+})
+
+describe('parsePayload — the Économie contract (issue #120, forme reshapée)', () => {
+  it('accepts the reshaped Économie documents — 3 indicators + the multi-line Stories', () => {
+    const payload = parsePayload(documentsEconomie())
+
+    expect(payload.indicateurs).toHaveLength(indicateursEconomieFixture.length)
+    expect(payload.histoires).toHaveLength(histoiresEconomieFixture.length)
+    // la forme multi-lignes : 5 lignes par (territoire × story_key), pas une
+    expect(payload.histoires.filter((h) => h.theme === 'economie' && h.territoire === '22001')).toHaveLength(5)
+    // la région porte la lecture de structure dédiée
+    const region = payload.histoires.filter((h) => h.territoire === '53')
+    expect(region).toHaveLength(5)
+    expect(region.every((h) => h.theme === 'economie' && h.story_key === 'ce-que-la-bretagne-abrite')).toBe(true)
+  })
+
+  it('rejects an Économie histoire with an unknown story_key (drift must be loud)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    ;(histoires[0] as { story_key: string }).story_key = 'le-matin-la-commune-se-vide'
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/Story Économie/)
+  })
+
+  it('rejects an Économie histoire missing the multi-line story columns (the one-line-per-territoire revert)', () => {
+    // La forme d'avant la reshape : une ligne par territoire, sans les colonnes
+    // du top-5 (activity_code / rang / lq) — une dérive du contrat, jamais
+    // silencieuse.
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    const ligneAncienne = histoires[0] as unknown as Record<string, unknown>
+    delete ligneAncienne.activity_code
+    delete ligneAncienne.activity_label
+    delete ligneAncienne.rang
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/activity_code|activity_label|rang/)
+  })
+
+  it('rejects a duplicate rang within a (territoire × story_key) group', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    ;(histoires[1] as { rang: number }).rang = 1
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/rang/)
+  })
+
+  it('rejects a 6th line for a group — the top-5 is the contract (rang 6 = drift)', () => {
+    // Le plafond de 5 lignes est porté par la contrainte rang ∈ 1..5 : une
+    // sixième ligne ne peut pas être un rang valide du top-5 — c'est une
+    // dérive du contrat (le pipeline aurait publié un top-6).
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    const ligne = { ...(histoires[0] as unknown as Record<string, unknown>), rang: 6 } as typeof histoires[0]
+    histoires.push(ligne)
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/rang/)
+  })
+
+  it('rejects a ce-que-la-commune-abrite row without its LQ (the reading IS the specialisation)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    ;(histoires[0] as { lq: number | null }).lq = null
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/lq/)
+  })
+
+  it('rejects a ce-que-la-bretagne-abrite row without its part du parc (the reading IS the structure)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    ;(histoires[15] as { part_parc: number | null }).part_parc = null
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/part_parc/)
+  })
+
+  it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
+    ;(histoires[0] as { vintage_date_publication: string }).vintage_date_publication = '2026/05/01'
+
+    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
+    expect(erreur.message).toMatch(/vintage/)
+  })
+
+  it('does NOT relax the one-line-per-territory invariant for the other themes', () => {
+    // Démographie / Habitat inchangés : deux histoires pour le même territoire
+    // restent une dérive du contrat (seul le thème Économie est multi-lignes).
+    const histoires = JSON.parse(JSON.stringify(histoiresDemographieFixture)) as typeof histoiresDemographieFixture
+    histoires.push({ ...histoires[0] })
+
+    attendErreurValidation(documentsBruts({ histoires }))
   })
 })

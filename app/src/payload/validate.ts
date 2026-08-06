@@ -69,6 +69,12 @@ const STATUTS_SOURCE: readonly StatutRun['status'][] = [
 
 const MODES_SOURCE: readonly StatutRun['mode'][] = ['cron', 'manuel']
 
+/** Les story_keys du thème Économie (issue #120) — la spécialisation top-5 et la lecture de structure régionale. */
+const CLES_HISTOIRES_ECONOMIE = [
+  'ce-que-la-commune-abrite',
+  'ce-que-la-bretagne-abrite',
+] as const
+
 const DATE_ISO = /^\d{4}-\d{2}-\d{2}$/
 
 function estObjet(x: unknown): x is LigneBrute {
@@ -184,10 +190,11 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
     exiger(epci === null || estChaine(epci), fichier, ligneIndexee, '« epci » doit être une chaîne ou null')
 
     // La colonne epci est le miroir de departement : une commune porte son
-    // EPCI (SIREN), les EPCIs / départements / région portent null.
-    if (type === 'commune') {
-      exiger(estChaine(epci), fichier, ligneIndexee, `la commune « ${territoire} » n'a pas d'EPCI`)
-    } else {
+    // EPCI (SIREN) — sauf les trois îles sans EPCI (22016, 29083, 29155, fix
+    // « Sans objet », issue #131) — et les EPCIs / départements / région
+    // portent null. L'intégrité référentielle de l'échelle reste verrouillée
+    // plus bas : un SIREN porté doit être un territoire EPCI de la référence.
+    if (type !== 'commune') {
       exiger(epci === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un EPCI`)
     }
 
@@ -317,6 +324,8 @@ export function validerHistoires(
   const lignes = brut as unknown[]
   const reference = indexerReference(territoires)
   const vus = new Set<string>()
+  // Les groupes (territoire × story_key) de l'Économie — le top-5 multi-lignes.
+  const groupes = new Map<string, Set<number>>()
 
   return lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
@@ -324,12 +333,19 @@ export function validerHistoires(
     verifierReference(ligne, reference, fichier, ligneIndexee)
 
     const territoire = ligne['territoire'] as string
-    exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
-    vus.add(territoire)
-
     const type = lireType(ligne, fichier, ligneIndexee)
     const theme = lireTheme(ligne, fichier, ligneIndexee)
     const story_key = lireChaine(ligne, 'story_key', fichier, ligneIndexee)
+
+    // L'Économie est MULTI-LIGNES (issue #120) : le top-5 par (territoire ×
+    // story_key) — l'invariant « une ligne par territoire » meurt pour ce
+    // thème (le même relâchement que la LQ côté R), il reste en vigueur pour
+    // Démographie / Habitat (plus bas).
+    if (theme === 'economie') return lireHistoireEconomie(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, groupes)
+
+    // Démographie / Habitat : une ligne par territoire, jamais deux.
+    exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
+    vus.add(territoire)
 
     // La forme du Story est spécifique au thème (le contrat R) : Démographie
     // porte les deux soldes et leurs taux annuels (ADR-0011), Habitat les
@@ -393,6 +409,126 @@ export function validerHistoires(
     // sur histoires_<theme>.json) — une ligne ici est une dérive du contrat.
     throw erreur(fichier, ligneIndexee, `Story du thème « ${theme} » inconnue de l'app`)
   })
+}
+
+/** Une ligne d'Histoire Économie (issue #120) — le top-5 par (territoire × story_key). */
+function lireHistoireEconomie(
+  ligne: LigneBrute,
+  entete: { territoire: string; type: TerritoireType; theme: 'economie'; story_key: string },
+  ligneIndexee: number,
+  fichier: string,
+  groupes: Map<string, Set<number>>,
+): Histoire {
+  const { territoire, type, theme, story_key } = entete
+
+  // Une story_key inconnue du thème est une dérive — la lecture n'existe pas.
+  exiger(
+    estUneDe(story_key, CLES_HISTOIRES_ECONOMIE),
+    fichier,
+    ligneIndexee,
+    `Story Économie « ${story_key} » inconnue du contrat`,
+  )
+
+  const rang = ligne['rang']
+  exiger(
+    estNombre(rang) && Number.isInteger(rang) && rang >= 1 && rang <= 5,
+    fichier,
+    ligneIndexee,
+    '« rang » d\u2019une Story Économie doit être un entier de 1 à 5',
+  )
+
+  // Le groupe (territoire × story_key) : rangs uniques — le top-5 ne publie
+  // jamais deux fois le même rang. Le plafond de 5 lignes est porté par la
+  // contrainte rang ∈ 1..5 (une sixième ligne serait un rang hors contrat).
+  const cleGroupe = `${territoire}\u0000${story_key}`
+  const groupe = groupes.get(cleGroupe)
+  if (groupe) {
+    exiger(!groupe.has(rang), fichier, ligneIndexee, `rang « ${rang} » en double pour « ${territoire} » (${story_key})`)
+    groupe.add(rang)
+  } else {
+    groupes.set(cleGroupe, new Set([rang]))
+  }
+
+  const activity_code = lireChaine(ligne, 'activity_code', fichier, ligneIndexee)
+  // Le label d'activité vient TOUJOURS du payload (activity_label) — jamais
+  // codé en dur dans l'app (CONTEXT.md « Ce que la commune abrite »).
+  const activity_label = lireChaine(ligne, 'activity_label', fichier, ligneIndexee)
+  exiger(activity_label.length > 0, fichier, ligneIndexee, '« activity_label » vide')
+
+  const n = ligne['n']
+  exiger(estNombre(n), fichier, ligneIndexee, '« n » doit être un nombre')
+
+  const lq = ligne['lq']
+  const part_parc = ligne['part_parc']
+  exiger(estValeur(lq), fichier, ligneIndexee, '« lq » doit être un nombre ou null')
+  exiger(estValeur(part_parc), fichier, ligneIndexee, '« part_parc » doit être un nombre ou null')
+  if (story_key === 'ce-que-la-commune-abrite') {
+    // La lecture de spécialisation EST le LQ — une ligne sans quotient est
+    // une dérive du contrat (jamais de Story spécialisation sans sa matière).
+    exiger(estNombre(lq), fichier, ligneIndexee, '« lq » doit être un nombre pour ce-que-la-commune-abrite')
+  } else {
+    // La lecture de structure EST la part du parc — idem pour la région.
+    exiger(estNombre(part_parc), fichier, ligneIndexee, '« part_parc » doit être un nombre pour ce-que-la-bretagne-abrite')
+  }
+
+  // Les estampilles vintage des Stories : deux dates ISO + source/version,
+  // comme les indicateurs (issue #74 — la Story cite SA source, jamais
+  // inventée). La référence est null pour une base roulante (ADR-0009).
+  const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
+  const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
+  const vintage_date_reference = ligne['vintage_date_reference']
+  const vintage_date_publication = ligne['vintage_date_publication']
+  exiger(
+    vintage_date_reference === null || estDateIso(vintage_date_reference),
+    fichier,
+    ligneIndexee,
+    '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ) ou null',
+  )
+  exiger(
+    estDateIso(vintage_date_publication),
+    fichier,
+    ligneIndexee,
+    '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
+  )
+
+  // La forme discriminée : chaque story_key retourne SA ligne de contrat. Les
+  // exiger ci-dessus valident la matière (lq nombre pour la spécialisation,
+  // part_parc nombre pour la structure) — une garde assert ne narrowing pas le
+  // type, les champs sont resserrés ici.
+  if (story_key === 'ce-que-la-commune-abrite') {
+    return {
+      territoire,
+      type,
+      theme,
+      story_key,
+      rang,
+      activity_code,
+      activity_label,
+      lq: lq as number,
+      n,
+      part_parc,
+      vintage_source,
+      vintage_version,
+      vintage_date_reference,
+      vintage_date_publication,
+    }
+  }
+  return {
+    territoire,
+    type,
+    theme,
+    story_key,
+    rang,
+    activity_code,
+    activity_label,
+    lq,
+    n,
+    part_parc: part_parc as number,
+    vintage_source,
+    vintage_version,
+    vintage_date_reference,
+    vintage_date_publication,
+  }
 }
 
 /** The apercu basic-stats table (ADR-0007). */

@@ -7,6 +7,7 @@ import { chargerPayload } from '../payload/loader'
 import {
   apercuPourTerritoire,
   formaterRang,
+  histoiresEconomiePourTerritoire,
   ligneFraicheur,
   themesPresent,
 } from '../payload/selectors'
@@ -36,6 +37,8 @@ async function chargerPayloadCommite() {
     'histoires_demographie.json',
     'indicateurs_habitat.json',
     'histoires_habitat.json',
+    'indicateurs_economie.json',
+    'histoires_economie.json',
     'run-report.json',
     'vintages.json',
   ]) {
@@ -55,14 +58,25 @@ async function chargerPayloadCommite() {
 }
 
 describe('payload contract — the committed payload parses and renders', () => {
-  it('covers the real 1 269 territoires (1 202 communes, 62 EPCIs, 4 départements, région)', async () => {
+  it('covers the real 1 268 territoires (1 202 communes, 61 EPCIs, 4 départements, région)', async () => {
+    // 1268, pas 1269 : la référence n'a plus l'EPCI fantôme « Sans objet »
+    // (fix #131) — 1202 communes + 61 EPCIs réels + 4 départements + 1 région
     const payload = await chargerPayloadCommite()
 
-    expect(payload.territoires).toHaveLength(1269)
+    expect(payload.territoires).toHaveLength(1268)
     expect(payload.territoires.filter((t) => t.type === 'commune')).toHaveLength(1202)
-    expect(payload.territoires.filter((t) => t.type === 'epci')).toHaveLength(62)
+    expect(payload.territoires.filter((t) => t.type === 'epci')).toHaveLength(61)
     expect(payload.territoires.filter((t) => t.type === 'departement')).toHaveLength(4)
     expect(payload.territoires.filter((t) => t.type === 'region')).toHaveLength(1)
+  })
+
+  it('accepts the three islands without an EPCI (22016, 29083, 29155 — « Sans objet », issue #131)', async () => {
+    const payload = await chargerPayloadCommite()
+
+    for (const ile of ['22016', '29083', '29155']) {
+      const commune = payload.territoires.find((t) => t.territoire === ile)
+      expect(commune).toMatchObject({ type: 'commune', epci: null })
+    }
   })
 
   it('carries the real names (LIBGEO/LIBEPCI — never the SIREN)', async () => {
@@ -75,13 +89,14 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })
 
-  it('publishes one indicateur row per (territoire × key × detail), across both themes', async () => {
+  it('publishes one indicateur row per (territoire × key × detail), across all three themes', async () => {
     const payload = await chargerPayloadCommite()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
     const themes = new Set(payload.indicateurs.map((i) => i.theme))
     expect(themes.has('demographie')).toBe(true)
     expect(themes.has('habitat')).toBe(true)
+    expect(themes.has('economie')).toBe(true)
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
   })
@@ -121,10 +136,10 @@ describe('payload contract — the committed payload parses and renders', () => 
     })
   })
 
-  it('drives the theme tab bar from the payload (both themes are built)', async () => {
+  it('drives the theme tab bar from the payload (all three themes are built)', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(themesPresent(payload)).toEqual(['demographie', 'habitat'])
+    expect(themesPresent(payload)).toEqual(['demographie', 'habitat', 'economie'])
   })
 
   it('formats the committed ranks as French chips', async () => {
@@ -145,9 +160,10 @@ describe('payload contract — the committed payload parses and renders', () => 
   it('loads the committed vintages table — the freshness facts of the Méthodes sources', async () => {
     const payload = await chargerPayloadCommite()
 
-    // L'union commise (issue #124/#133) : une ligne par source des trois
-    // thèmes construits — démographie + habitat + economie
-    expect(payload.vintages).toHaveLength(30)
+    // L'union commise (issues #124/#133) : une ligne par source des trois
+    // thèmes construits — démographie + habitat + economie (les 5 du manifeste
+    // Économie : sirene_snapshot, flores_a38, flores_a88, rp_emploi, rp_chomage)
+    expect(payload.vintages).toHaveLength(34)
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
       source: 'INSEE — Série historique du recensement',
@@ -157,5 +173,42 @@ describe('payload contract — the committed payload parses and renders', () => 
     })
     // La base des EPCI est un millésime fixe — publiée mais sans base roulante
     expect(payload.vintages?.find((v) => v.id === 'epci')?.date_publication).toBeNull()
+  })
+
+  it('publishes the Économie Stories multi-lignes — top-5 per (territoire × story_key), les deux story_keys', async () => {
+    const payload = await chargerPayloadCommite()
+
+    const histoiresEconomie = payload.histoires.filter((h) => h.theme === 'economie')
+    // 1202 communes + 61 EPCIs + 4 départements = 1267 × 5 + les 5 de la région
+    expect(histoiresEconomie).toHaveLength(6340)
+    const storyKeys = new Set(histoiresEconomie.map((h) => h.story_key))
+    expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite']))
+
+    // la région porte la lecture de structure, le reste la spécialisation
+    expect(
+      histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite'),
+    ).toHaveLength(5)
+    expect(histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite').every(
+      (h) => h.territoire === '53',
+    )).toBe(true)
+
+    // le sélecteur Story lit le top-5 réel d'une commune, trié par rang
+    const allineuc = histoiresEconomiePourTerritoire(payload, '22001')
+    expect(allineuc?.map((l) => l.rang)).toEqual([1, 2, 3, 4, 5])
+    expect(allineuc?.[0]?.activity_label).toBe('Élevage de volailles')
+  })
+
+  it('exposes the Économie Story vintage on every line (issue #74 — the story cites its source)', async () => {
+    const payload = await chargerPayloadCommite()
+
+    const histoire = payload.histoires.find(
+      (h) => h.theme === 'economie' && h.territoire === '22001',
+    )
+    expect(histoire).toMatchObject({
+      vintage_source: 'data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)',
+      vintage_version: '2026-04',
+      vintage_date_reference: '2026-03-31',
+      vintage_date_publication: '2026-05-01',
+    })
   })
 })

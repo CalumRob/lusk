@@ -294,3 +294,97 @@ export const histoiresHabitatFixture: Histoire[] = [
     n_dpe: 737082,
   },
 ]
+
+/**
+ * Économie fixture — the three indicator keys and the two Story keys, VALUES
+ * extracted from the REAL reshaped payload (public/data/indicateurs_economie.json,
+ * histoires_economie.json, run 2026-08-06, issue #131): one commune (22001), one
+ * EPCI (the real 200027027 rows, remapped to the fixture's 200000001), the
+ * département 22 and the région 53. Nothing invented — every label, value and
+ * vintage is copied from the committed payload.
+ */
+
+/** Flores A88 — the reference source of effectifs_salaires. */
+const vintageFlores = {
+  vintage_source:
+    "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
+  vintage_version: '2024',
+  vintage_date_reference: '2024-12-31',
+  vintage_date_publication: '2026-03-31',
+}
+
+/** RP emploi — the reference source of chomage. */
+const vintageRpChomage = {
+  vintage_source:
+    'INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)',
+  vintage_version: '2023',
+  vintage_date_reference: '2023-01-01',
+  vintage_date_publication: '2026-07-15',
+}
+
+/** SIRENE régional — the reference source of eco_activites AND the two Stories. */
+const vintageSirene = {
+  vintage_source: 'data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)',
+  vintage_version: '2026-04',
+  vintage_date_reference: '2026-03-31',
+  vintage_date_publication: '2026-05-01',
+}
+
+/**
+ * The three Économie indicators (issue #131): « Taille » (effectifs_salaries,
+ * Flores A88), « santé » (chomage, RP) and « verdure » (eco_activites, SIRENE ×
+ * EGSS) — FIXED multiplicity: one line per territory, the contract order
+ * effectifs_salaries → chomage → eco_activites (INDICATEURS_ECONOMIE, theme_economie.R).
+ */
+export const indicateursEconomieFixture: Indicateur[] = [
+  // la commune 22001 — les valeurs réelles du payload reshapé
+  { territoire: '22001', type: 'commune', theme: 'economie', key: 'effectifs_salaries', detail: null, value: 31, unit: 'salariés', rang_epci: 0.23684210526315788, rang_dep: 0.26308139534883723, rang_reg: 0.16181364392678868, ...vintageFlores },
+  { territoire: '22001', type: 'commune', theme: 'economie', key: 'chomage', detail: null, value: 0.07117029606927434, unit: '%', rang_epci: 0.2631578947368421, rang_dep: 0.26744186046511625, rang_reg: 0.3752079866888519, ...vintageRpChomage },
+  { territoire: '22001', type: 'commune', theme: 'economie', key: 'eco_activites', detail: null, value: 0.541095890410959, unit: '%', rang_epci: 0.9473684210526315, rang_dep: 0.9447674418604651, rang_reg: 0.9816971713810316, ...vintageSirene },
+  // l'EPCI (les lignes réelles de 200027027, remappées sur le 200000001 du fixture)
+  { territoire: '200000001', type: 'epci', theme: 'economie', key: 'effectifs_salaries', detail: null, value: 6967, unit: 'salariés', rang_epci: null, rang_dep: 0.42857142857142855, rang_reg: 0.3442622950819672, ...vintageFlores },
+  { territoire: '200000001', type: 'epci', theme: 'economie', key: 'chomage', detail: null, value: 0.08533735474411866, unit: '%', rang_epci: null, rang_dep: 0.2857142857142857, rang_reg: 0.4098360655737705, ...vintageRpChomage },
+  { territoire: '200000001', type: 'epci', theme: 'economie', key: 'eco_activites', detail: null, value: 0.26564928642079977, unit: '%', rang_epci: null, rang_dep: 0.42857142857142855, rang_reg: 0.5409836065573771, ...vintageSirene },
+  // le département 22
+  { territoire: '22', type: 'departement', theme: 'economie', key: 'effectifs_salaries', detail: null, value: 199446, unit: 'salariés', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageFlores },
+  { territoire: '22', type: 'departement', theme: 'economie', key: 'chomage', detail: null, value: 0.09569409103288876, unit: '%', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageRpChomage },
+  { territoire: '22', type: 'departement', theme: 'economie', key: 'eco_activites', detail: null, value: 0.24933991838991001, unit: '%', rang_epci: null, rang_dep: null, rang_reg: 0.75, ...vintageSirene },
+  // la région 53
+  { territoire: '53', type: 'region', theme: 'economie', key: 'effectifs_salaries', detail: null, value: 1261149, unit: 'salariés', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageFlores },
+  { territoire: '53', type: 'region', theme: 'economie', key: 'chomage', detail: null, value: 0.09329395376073676, unit: '%', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageRpChomage },
+  { territoire: '53', type: 'region', theme: 'economie', key: 'eco_activites', detail: null, value: 0.22450225227303586, unit: '%', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageSirene },
+]
+
+/**
+ * The two Économie Stories (issue #120) — MULTI-LIGNES, top-5 par
+ * (territoire × story_key), triées par rang : « ce que la commune abrite » (la
+ * spécialisation LQ, communes/EPCIs/départements) et « ce que la Bretagne
+ * abrite » (la lecture de structure de la région, story_key dédié sur 53).
+ * Labels et nombres réels du payload reshapé — jamais codés en dur.
+ */
+export const histoiresEconomieFixture: Histoire[] = [
+  // 22001 — top-5 de spécialisation (LQ)
+  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 1, activity_code: '01.47Z', activity_label: 'Élevage de volailles', lq: 23.6794426899885, n: 12, part_parc: null, ...vintageSirene },
+  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 2, activity_code: '46.23Z', activity_label: "Commerce de gros (commerce interentreprises) d'animaux vivants", lq: 22.98966541398957, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 3, activity_code: '36.00Z', activity_label: "Captage, traitement et distribution d'eau", lq: 19.31473748535927, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 4, activity_code: '77.29Z', activity_label: "Location et location-bail d'autres biens personnels et domestiques", lq: 11.125619665014225, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 5, activity_code: '78.30Z', activity_label: 'Autre mise à disposition de ressources humaines', lq: 10.999995166326697, n: 3, part_parc: null, ...vintageSirene },
+  // l'EPCI (les lignes réelles de 200027027, remappées)
+  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 1, activity_code: '08.93Z', activity_label: 'Production de sel', lq: 35.69822429466346, n: 2, part_parc: null, ...vintageSirene },
+  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 2, activity_code: '15.11Z', activity_label: 'Apprêt et tannage des cuirs ; préparation et teinture des fourrures', lq: 21.418934576798076, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 3, activity_code: '11.02B', activity_label: 'Vinification', lq: 17.84911214733173, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 4, activity_code: '50.30Z', activity_label: 'Transports fluviaux de passagers', lq: 17.84911214733173, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 5, activity_code: '25.92Z', activity_label: "Fabrication d'emballages métalliques légers", lq: 15.299238983427198, n: 1, part_parc: null, ...vintageSirene },
+  // le département 22
+  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 1, activity_code: '01.22Z', activity_label: 'Culture de fruits tropicaux et subtropicaux', lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 2, activity_code: '07.10Z', activity_label: 'Extraction de minerais de fer', lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 3, activity_code: '08.91Z', activity_label: "Extraction des minéraux chimiques et d'engrais minéraux", lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 4, activity_code: '14.20Z', activity_label: "Fabrication d'articles en fourrure", lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
+  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 5, activity_code: '25.94Z', activity_label: 'Fabrication de vis et de boulons', lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
+  // la région 53 — la lecture de structure (story_key dédié, lq dégénérée)
+  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 1, activity_code: '68.20B', activity_label: "Location de terrains et d'autres biens immobiliers", lq: null, n: 124881, part_parc: 0.16462751477456836, ...vintageSirene },
+  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 2, activity_code: '68.20A', activity_label: 'Location de logements', lq: null, n: 71660, part_parc: 0.09446759482023341, ...vintageSirene },
+  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 3, activity_code: '94.99Z', activity_label: 'Autres organisations fonctionnant par adhésion volontaire', lq: null, n: 30531, part_parc: 0.04024825756986528, ...vintageSirene },
+  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 4, activity_code: '70.10Z', activity_label: 'Activités des sièges sociaux', lq: null, n: 16207, part_parc: 0.02136528480674746, ...vintageSirene },
+  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 5, activity_code: '47.99A', activity_label: 'Vente à domicile', lq: null, n: 13826, part_parc: 0.0182264717552965, ...vintageSirene },
+]
