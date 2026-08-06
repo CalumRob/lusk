@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { THEMES_CONSTRUITS } from '../methodes/indicateurs'
+import type { ThemeConstruit } from '../methodes/indicateurs'
 
 /**
  * Le contrat Méthodes de parité (issue #130, CONTEXT.md → Méthodes : « a
@@ -45,11 +46,10 @@ function themesDeLaPayload(): string[] {
 
 /**
  * Le cœur de l'enforcement : les thèmes de payload sans documentation
- * Méthodes. Stub dans la phase rouge du TDD — le test « a des dents »
- * ci-dessous exige qu'un thème non construit soit nommé.
+ * Méthodes — tout ce qui n'est pas dans le registre des thèmes construits.
  */
-function themesSansDocumentation(_payloadThemes: string[]): string[] {
-  return []
+function themesSansDocumentation(payloadThemes: string[]): string[] {
+  return payloadThemes.filter((theme) => !THEMES_CONSTRUITS.includes(theme as ThemeConstruit))
 }
 
 describe('contrat Méthodes — chaque thème de la payload a sa documentation', () => {
