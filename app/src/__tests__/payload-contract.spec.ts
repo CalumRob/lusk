@@ -33,6 +33,8 @@ async function chargerPayloadCommite() {
   for (const nom of [
     'territoires.json',
     'apercu.json',
+    'indicateurs_mobilite.json',
+    'histoires_mobilite.json',
     'indicateurs_demographie.json',
     'histoires_demographie.json',
     'indicateurs_habitat.json',
@@ -89,11 +91,12 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })
 
-  it('publishes one indicateur row per (territoire × key × detail), across all three themes', async () => {
+  it('publishes one indicateur row per (territoire × key × detail), across all four themes', async () => {
     const payload = await chargerPayloadCommite()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
     const themes = new Set(payload.indicateurs.map((i) => i.theme))
+    expect(themes.has('mobilite')).toBe(true)
     expect(themes.has('demographie')).toBe(true)
     expect(themes.has('habitat')).toBe(true)
     expect(themes.has('economie')).toBe(true)
@@ -136,10 +139,10 @@ describe('payload contract — the committed payload parses and renders', () => 
     })
   })
 
-  it('drives the theme tab bar from the payload (all three themes are built)', async () => {
+  it('drives the theme tab bar from the payload (all four themes are built)', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(themesPresent(payload)).toEqual(['demographie', 'habitat', 'economie'])
+    expect(themesPresent(payload)).toEqual(['mobilite', 'demographie', 'habitat', 'economie'])
   })
 
   it('formats the committed ranks as French chips', async () => {
@@ -160,10 +163,11 @@ describe('payload contract — the committed payload parses and renders', () => 
   it('loads the committed vintages table — the freshness facts of the Méthodes sources', async () => {
     const payload = await chargerPayloadCommite()
 
-    // L'union commise (issues #124/#133) : une ligne par source des trois
+    // L'union commise (issues #124/#133) : une ligne par source des QUATRE
     // thèmes construits — démographie + habitat + economie (les 5 du manifeste
     // Économie : sirene_snapshot, flores_a38, flores_a88, rp_emploi, rp_chomage)
-    expect(payload.vintages).toHaveLength(34)
+    // + les 8 sources mobilité de la course 2026-08-06 (#139/#140/#141)
+    expect(payload.vintages).toHaveLength(42)
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
       source: 'INSEE — Série historique du recensement',
@@ -209,6 +213,56 @@ describe('payload contract — the committed payload parses and renders', () => 
       vintage_version: '2026-04',
       vintage_date_reference: '2026-03-31',
       vintage_date_publication: '2026-05-01',
+    })
+  })
+
+  it('parses the committed Mobilité Stories — 1 405 rows, les deux story_keys (issue #142)', async () => {
+    const payload = await chargerPayloadCommite()
+
+    const histoiresMobilite = payload.histoires.filter((h) => h.theme === 'mobilite')
+    // 1 266 territoires portent le défaut + les 139 saillants portent aussi le vélo
+    expect(histoiresMobilite).toHaveLength(1405)
+    const storyKeys = new Set(histoiresMobilite.map((h) => h.story_key))
+    expect(storyKeys).toEqual(
+      new Set(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']),
+    )
+    // chaque territoire porte le défaut, une ligne ; les saillants en portent deux
+    const defauts = histoiresMobilite.filter((h) => h.story_key === 'vingt-minutes-sans-voiture')
+    expect(defauts).toHaveLength(1266)
+    expect(new Set(defauts.map((h) => h.territoire)).size).toBe(1266)
+    const velo = histoiresMobilite.filter((h) => h.story_key === 'ce-que-le-velo-preserve')
+    expect(velo).toHaveLength(139)
+    expect(velo.every((h) => h.classification_saillance === 'saillant')).toBe(true)
+  })
+
+  it('carries the real Mobilité Story matter — div_loss_t, la signature et l’estampille snapshot', async () => {
+    const payload = await chargerPayloadCommite()
+
+    // 22001 (Allineuc) : le défaut non-saillant, sa distribution réelle
+    const allineuc = payload.histoires.find(
+      (h) => h.theme === 'mobilite' && h.territoire === '22001',
+    )
+    expect(allineuc).toMatchObject({
+      theme: 'mobilite',
+      story_key: 'vingt-minutes-sans-voiture',
+      div_loss_t: 38,
+      div_loss_b: 38,
+      delta: 0,
+      pct_iso_full_t: 0.48,
+      classification_saillance: 'non-saillant',
+      dens_min: 28,
+      dens_max: 47,
+    })
+    if (allineuc?.theme === 'mobilite' && allineuc.story_key === 'vingt-minutes-sans-voiture') {
+      expect(allineuc.dens_1).toBeCloseTo(0.005915, 6)
+      expect(allineuc.dec_1).toBeCloseTo(33.7, 6)
+    }
+    // l'estampille SNAPSHOT — la Story cite SA source (issue #74, ADR-0012)
+    expect(allineuc).toMatchObject({
+      vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
+      vintage_version: '2026-02',
+      vintage_date_reference: '2026-02-28',
+      vintage_date_publication: '2026-08-06',
     })
   })
 })

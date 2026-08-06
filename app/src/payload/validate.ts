@@ -26,6 +26,7 @@
 import type {
   ApercuRow,
   Histoire,
+  HistoireMobiliteVingtMinutes,
   Indicateur,
   Payload,
   RunReport,
@@ -74,6 +75,24 @@ const CLES_HISTOIRES_ECONOMIE = [
   'ce-que-la-commune-abrite',
   'ce-que-la-bretagne-abrite',
 ] as const
+
+/** Les story_keys du thème Mobilité (issue #142, ADR-0012) — le défaut toujours allumé et la saillance vélo. */
+const CLES_HISTOIRES_MOBILITE = [
+  'vingt-minutes-sans-voiture',
+  'ce-que-le-velo-preserve',
+] as const
+
+/** Les classifications de saillance du flagship (theme_mobilite.R — la règle du delta réel). */
+const CLASSIFICATIONS_SAILLANCE = ['saillant', 'notable', 'non-saillant'] as const
+
+/** Les 20 champs précalculés de la signature de distribution (dens_1..10 + dec_1..10). */
+type SignatureDistribution = Pick<
+  HistoireMobiliteVingtMinutes,
+  | 'dens_1' | 'dens_2' | 'dens_3' | 'dens_4' | 'dens_5'
+  | 'dens_6' | 'dens_7' | 'dens_8' | 'dens_9' | 'dens_10'
+  | 'dec_1' | 'dec_2' | 'dec_3' | 'dec_4' | 'dec_5'
+  | 'dec_6' | 'dec_7' | 'dec_8' | 'dec_9' | 'dec_10'
+>
 
 const DATE_ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -326,6 +345,9 @@ export function validerHistoires(
   const vus = new Set<string>()
   // Les groupes (territoire × story_key) de l'Économie — le top-5 multi-lignes.
   const groupes = new Map<string, Set<number>>()
+  // La Mobilité est multi-lignes par territoire (défaut + saillance vélo) —
+  // une ligne par (territoire × story_key), jamais deux.
+  const groupesMobilite = new Set<string>()
 
   return lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
@@ -342,6 +364,11 @@ export function validerHistoires(
     // thème (le même relâchement que la LQ côté R), il reste en vigueur pour
     // Démographie / Habitat (plus bas).
     if (theme === 'economie') return lireHistoireEconomie(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, groupes)
+
+    // La Mobilité est multi-lignes AUSSI (issue #142) : le défaut toujours
+    // allumé + la saillance vélo quand le delta est réel — l'invariant devient
+    // « une ligne par (territoire × story_key) », jamais deux.
+    if (theme === 'mobilite') return lireHistoireMobilite(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, groupesMobilite)
 
     // Démographie / Habitat : une ligne par territoire, jamais deux.
     exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
@@ -528,6 +555,161 @@ function lireHistoireEconomie(
     vintage_version,
     vintage_date_reference,
     vintage_date_publication,
+  }
+}
+
+/**
+ * Une ligne d'Histoire Mobilité (issue #142, ADR-0012) — le défaut
+ * « vingt-minutes-sans-voiture » (div_loss_t + la signature de distribution)
+ * et la saillance « ce-que-le-velo-preserve » (le delta seul). L'estampille
+ * snapshot est portée par chaque ligne comme l'Économie (issue #74) — la Story
+ * cite SA source, la date d'instantané comme référence.
+ */
+function lireHistoireMobilite(
+  ligne: LigneBrute,
+  entete: { territoire: string; type: TerritoireType; theme: 'mobilite'; story_key: string },
+  ligneIndexee: number,
+  fichier: string,
+  groupes: Set<string>,
+): Histoire {
+  const { territoire, type, theme, story_key } = entete
+
+  exiger(
+    estUneDe(story_key, CLES_HISTOIRES_MOBILITE),
+    fichier,
+    ligneIndexee,
+    `Story Mobilité « ${story_key} » inconnue du contrat`,
+  )
+
+  const cleGroupe = `${territoire}\u0000${story_key}`
+  exiger(
+    !groupes.has(cleGroupe),
+    fichier,
+    ligneIndexee,
+    `plusieurs Story « ${story_key} » pour « ${territoire} »`,
+  )
+  groupes.add(cleGroupe)
+
+  const div_loss_t = ligne['div_loss_t']
+  const div_loss_b = ligne['div_loss_b']
+  const delta = ligne['delta']
+  exiger(
+    estNombre(div_loss_t) && div_loss_t >= 0,
+    fichier,
+    ligneIndexee,
+    '« div_loss_t » doit être un nombre non négatif',
+  )
+  exiger(
+    estNombre(div_loss_b) && div_loss_b >= 0,
+    fichier,
+    ligneIndexee,
+    '« div_loss_b » doit être un nombre non négatif',
+  )
+  exiger(
+    estNombre(delta) && delta >= 0,
+    fichier,
+    ligneIndexee,
+    '« delta » doit être un nombre non négatif',
+  )
+
+  const classification_saillance = lireChaine(
+    ligne,
+    'classification_saillance',
+    fichier,
+    ligneIndexee,
+  )
+  exiger(
+    estUneDe(classification_saillance, CLASSIFICATIONS_SAILLANCE),
+    fichier,
+    ligneIndexee,
+    `« classification_saillance » doit être l'un de ${CLASSIFICATIONS_SAILLANCE.join(' | ')}, reçu « ${String(classification_saillance)} »`,
+  )
+
+  const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
+  const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
+  const vintage_date_reference = ligne['vintage_date_reference']
+  const vintage_date_publication = ligne['vintage_date_publication']
+  exiger(
+    vintage_date_reference === null || estDateIso(vintage_date_reference),
+    fichier,
+    ligneIndexee,
+    '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ) ou null',
+  )
+  exiger(
+    estDateIso(vintage_date_publication),
+    fichier,
+    ligneIndexee,
+    '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
+  )
+
+  const estampille = { vintage_source, vintage_version, vintage_date_reference, vintage_date_publication }
+
+  // La saillance ne se déclenche que sur le delta réel — une Story vélo sans
+  // classification « saillant » est une dérive du contrat (theme_mobilite.R).
+  if (story_key === 'ce-que-le-velo-preserve') {
+    exiger(
+      classification_saillance === 'saillant',
+      fichier,
+      ligneIndexee,
+      'une Story « ce-que-le-velo-preserve » sans saillance « saillant »',
+    )
+    return {
+      territoire,
+      type,
+      theme,
+      story_key,
+      div_loss_t: div_loss_t as number,
+      div_loss_b: div_loss_b as number,
+      delta: delta as number,
+      classification_saillance: classification_saillance as 'saillant',
+      ...estampille,
+    }
+  }
+
+  const pct_iso_full_t = ligne['pct_iso_full_t']
+  exiger(
+    estValeur(pct_iso_full_t),
+    fichier,
+    ligneIndexee,
+    '« pct_iso_full_t » doit être un nombre ou null',
+  )
+  const dens_min = ligne['dens_min']
+  const dens_max = ligne['dens_max']
+  exiger(estValeur(dens_min), fichier, ligneIndexee, '« dens_min » doit être un nombre ou null')
+  exiger(estValeur(dens_max), fichier, ligneIndexee, '« dens_max » doit être un nombre ou null')
+
+  // La signature de distribution — les 10 densités et les 10 bornes de déciles
+  // (la leçon de l'issue #131 : JAMAIS la matrice, seulement les précalculés).
+  // Le trou du portage (Brest Métropole) porte NA — jamais une valeur inventée.
+  const signature = {} as SignatureDistribution
+  for (const famille of ['dens', 'dec'] as const) {
+    for (let k = 1; k <= 10; k++) {
+      const champ = `${famille}_${k}` as keyof SignatureDistribution
+      const valeur = ligne[champ]
+      exiger(
+        estValeur(valeur),
+        fichier,
+        ligneIndexee,
+        `« ${champ} » doit être un nombre ou null`,
+      )
+      signature[champ] = valeur as number | null
+    }
+  }
+
+  return {
+    territoire,
+    type,
+    theme,
+    story_key,
+    div_loss_t: div_loss_t as number,
+    div_loss_b: div_loss_b as number,
+    delta: delta as number,
+    pct_iso_full_t,
+    dens_min,
+    dens_max,
+    ...signature,
+    classification_saillance,
+    ...estampille,
   }
 }
 

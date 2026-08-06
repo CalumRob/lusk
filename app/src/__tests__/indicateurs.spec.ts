@@ -21,7 +21,18 @@ describe('NOMS_INDICATEURS — the Économie block vocabulary', () => {
 
   it('keeps the other themes untouched', () => {
     expect(NOMS_INDICATEURS.demographie.densite).toBe('Densité de population')
-    expect(NOMS_INDICATEURS.mobilite).toEqual({})
+    expect(NOMS_INDICATEURS.habitat).toEqual({})
+  })
+
+  it('labels the Mobilité indicators — « à pied ou en transports en commun », jamais « sans voiture » (issue #142)', () => {
+    const mobilite = NOMS_INDICATEURS.mobilite
+
+    expect(mobilite.iso_alimentation).toContain('à pied ou en transports en commun')
+    expect(mobilite.iso_banque).toContain('à pied ou en transports en commun')
+    expect(mobilite.nb_buildings).toBe('Bâtiments résidentiels analysés')
+    for (const libelle of Object.values(mobilite)) {
+      expect(libelle).not.toContain('sans voiture')
+    }
   })
 
   it('keeps the structure_age tranche labels exhaustive', () => {
