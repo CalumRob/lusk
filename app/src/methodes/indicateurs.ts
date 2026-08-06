@@ -9,6 +9,13 @@
  * payload ; le sourceId, quand il existe, pointe vers l'entrée du registre des
  * sources (sources.ts) — l'ancre de la table. La langue est publique : jamais
  * de gates, de noms de code, de noms d'artefacts.
+ *
+ * Les Stories suivent le modèle du jour (CONTEXT.md, 2026-08-06) : l'Économie
+ * est un thème à Story unique — « Ce que la commune abrite » (top-5 du LQ),
+ * plus la Story de structure de la région « Ce que la Bretagne abrite » ; la
+ * lecture « Le matin, la commune se vide » est en pause (statut 'en-pause'),
+ * documentée comme note Méthodes mais non publiée. La payload commise est en
+ * cours de migration : le registre porte les clés du modèle cible.
  */
 
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
@@ -40,14 +47,19 @@ export interface LectureStory {
   lecture: string
 }
 
+/** L'état de publication d'une Story — publiée, ou en pause (note Méthodes, non publiée). */
+export type StatutStory = 'publiee' | 'en-pause'
+
 /** La documentation éditoriale d'une Story — un indicateur approfondi. */
 export interface StoryMethodes {
-  /** Le story_key de la payload (ground truth). */
+  /** La clé de la Story (le story_key cible du modèle — payload en migration). */
   clef: string
   /** Le titre d'affichage (les termes de CONTEXT.md). */
   titre: string
   /** Ce que la Story lit — en français public. */
   definition: string
+  /** L'état de publication : une Story en pause est documentée, jamais publiée. */
+  statut: StatutStory
   /** Les lectures — la Story par défaut (top-N) n'en porte pas. */
   lectures: LectureStory[]
 }
@@ -105,6 +117,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       {
         clef: 'trajectoire-demographique',
         titre: 'Trajectoire démographique',
+        statut: 'publiee',
         definition:
           'La Story de la Démographie lit la trajectoire de population du territoire à travers ses deux forces : le solde naturel (naissances moins décès) et le solde migratoire (l’évolution totale moins le solde naturel). Chaque force est exprimée en taux annuel moyen pour 1 000 habitants sur la période intercensitaire ; le signe de chacun des deux taux désigne l’une des quatre lectures. Rien n’est rapporté à une référence extérieure : la lecture ne parle que des deux forces propres au territoire.',
         lectures: [
@@ -185,6 +198,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       {
         clef: 'etat-energetique-du-parc',
         titre: 'L’état énergétique du parc',
+        statut: 'publiee',
         definition:
           'La Story de l’Habitat lit la distribution des étiquettes DPE (A à G) du parc et la classe en quatre lectures par une règle de concentration déterministe, qui ne dépend que des parts d’étiquettes. La lecture n’est pas calculée quand la base DPE compte moins de 30 logements : le classement ne serait pas fiable.',
         lectures: [
@@ -255,17 +269,27 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
     },
     stories: [
       {
-        clef: 'ce-que-la-commune-sait-faire',
+        clef: 'ce-que-la-commune-abrite',
         titre: 'Ce que la commune abrite',
+        statut: 'publiee',
         definition:
-          'La Story par défaut de l’Économie : elle lit les trois activités où le territoire est le plus spécialisé — les trois premiers rangs du location quotient, calculé sur les établissements actifs et comparé à la moyenne bretonne. Un quotient supérieur à 1 signale une activité surreprésentée dans le tissu productif local. Elle s’affiche pour chaque commune, sauf quand la Story de saillance « Le matin, la commune se vide » se déclenche.',
+          'La Story de l’Économie, la seule du thème (le thème est à Story unique) : elle lit les cinq activités où le territoire est le plus spécialisé — les cinq premiers rangs du location quotient, calculé sur les établissements actifs et comparé à la moyenne bretonne. Un quotient supérieur à 1 signale une activité surreprésentée dans le tissu productif local. Le titre est volontairement neutre sur la matière — « abrite », héberge : la mesure porte sur les établissements, jamais sur les emplois ni sur les personnes ; c’est le label « Spécialisation des établissements » qui porte cette précision. Publiée pour les communes, les EPCI et les départements ; la région, dont le quotient est dégénéré, a sa propre Story de structure (« Ce que la Bretagne abrite »).',
+        lectures: [],
+      },
+      {
+        clef: 'ce-que-la-bretagne-abrite',
+        titre: 'Ce que la Bretagne abrite',
+        statut: 'publiee',
+        definition:
+          'La Story de la région : comme la région est sa propre référence, son location quotient vaut 1 pour toutes les activités — la lecture de spécialisation n’a pas de sens. Elle lit à la place la structure du tissu productif breton : les cinq types d’établissements les plus présents, par nombre d’établissements actifs, avec leur part du parc breton. Elle se lit comme une liste de structure, pas comme un classement de spécialisation.',
         lectures: [],
       },
       {
         clef: 'le-matin-la-commune-se-vide',
         titre: 'Le matin, la commune se vide',
+        statut: 'en-pause',
         definition:
-          'La Story de saillance de l’Économie, qui remplace la Story par défaut quand elle se déclenche : elle compare l’emploi salarié présent dans la commune (au lieu de travail) aux actifs occupés qui y résident (au lieu de résidence). Le ratio dortoir — emplois sur place divisés par actifs occupés résidents — mesure si la commune se remplit ou se vide le matin. Entre les deux seuils, l’équilibre prévaut et la Story par défaut s’affiche.',
+          'Une note Méthodes — une lecture analytique en pause, non publiée : elle compare l’emploi salarié présent dans la commune (au lieu de travail) aux actifs occupés qui y résident (au lieu de résidence). Le ratio dortoir — emplois sur place divisés par actifs occupés résidents — mesure si la commune se remplit ou se vide le matin. Elle n’est pas publiée aujourd’hui : le thème porte une Story unique (« Ce que la commune abrite »), et cette lecture reste un outil d’analyse en réserve, prête pour le futur modèle multi-Stories.',
         lectures: [
           {
             clef: 'dortoir-profond',
@@ -278,6 +302,12 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
             nom: 'Pôle d’emploi',
             lecture:
               'Le ratio est supérieur à 1,5 : la commune compte bien plus d’emplois que d’actifs occupés résidents — elle se remplit le matin.',
+          },
+          {
+            clef: 'equilibre',
+            nom: 'Équilibre',
+            lecture:
+              'Le ratio se situe entre 0,15 et 1,5 : la commune n’est ni dortoir ni pôle d’emploi, et c’est la Story par défaut qui s’affiche.',
           },
         ],
       },

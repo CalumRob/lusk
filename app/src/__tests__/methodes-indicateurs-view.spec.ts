@@ -116,6 +116,28 @@ describe('MethodologieView — la section « les indicateurs »', () => {
     }
   })
 
+  it('documente la Story de la région « Ce que la Bretagne abrite » dans le bloc économie', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#economie')
+    const texte = bloc.text()
+    expect(texte).toContain('Ce que la Bretagne abrite')
+    expect(texte).toContain('les cinq types d’établissements les plus présents')
+  })
+
+  it('marque la Story en pause comme non publiée, jamais comme une Story active', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#economie')
+    const marqueur = bloc.find('.bloc-story--en-pause .bloc-story-pause')
+    expect(marqueur.exists()).toBe(true)
+    expect(marqueur.text()).toMatch(/en pause/i)
+    expect(marqueur.text()).toMatch(/non publiée/i)
+    // les lectures du dortoir restent documentées, mais dans la note en pause
+    expect(bloc.find('.bloc-story--en-pause').text()).toContain('Dortoir profond')
+    expect(bloc.find('.bloc-story--en-pause').text()).toContain('Équilibre')
+  })
+
   it('ne rend aucune bannière de construction', async () => {
     const wrapper = await monter(async () => payload)
 

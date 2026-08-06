@@ -79,7 +79,15 @@ function uniteAffichage(unite: string): string {
 
       <div class="groupe-stories">
         <h3 class="groupe-titre">Les Stories</h3>
-        <article v-for="story in THEMES_METHODES[theme].stories" :key="story.clef" class="bloc-story">
+        <article
+          v-for="story in THEMES_METHODES[theme].stories"
+          :key="story.clef"
+          class="bloc-story"
+          :class="{ 'bloc-story--en-pause': story.statut === 'en-pause' }"
+        >
+          <p v-if="story.statut === 'en-pause'" class="bloc-story-pause">
+            En pause — lecture analytique non publiée
+          </p>
           <h4 class="bloc-story-titre">{{ story.titre }}</h4>
           <p class="bloc-story-definition">{{ story.definition }}</p>
           <ul v-if="story.lectures.length" class="liste-lectures">
@@ -214,6 +222,23 @@ function uniteAffichage(unite: string): string {
   border: 1px solid var(--bloc-line);
   border-radius: var(--radius-lg);
   background: var(--surface-primary);
+}
+
+.bloc-story--en-pause {
+  border-style: dashed;
+}
+
+.bloc-story-pause {
+  align-self: flex-start;
+  margin: 0;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-tertiary);
+  color: var(--text-tertiary);
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .bloc-story-titre {
