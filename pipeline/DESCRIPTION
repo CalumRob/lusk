@@ -16,8 +16,10 @@ Imports:
     jsonlite,
     magrittr,
     nanoparquet,
+    osmextract,
     readr,
     readxl,
+    sf,
     tibble,
     tidyr
 Suggests:

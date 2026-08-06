@@ -40,24 +40,49 @@
 # (le CSV du cache, une ligne par commune), le normaliseur le valide et le
 # nettoie (identité vérifiée, métriques numérisées), et la table complète est
 # persistée sous data/processed/mobilite/ (idempotent, comme les builders des
-# sources). Le paramètre `snapshot` permet aux tests de passer la fixture
-# directement : le chemin de code de normalisation et de persistance est le
-# même que pour le fichier réel.
+# sources). Depuis l'issue #139, l'étage demande/réseaux a SES sources :
+#   - les voitures/ménage (le cube RP exploitation principale DS_RP_LOGEMENT_
+#     PRINC — le code de table épinglé LOG T12, voir manifest_mobilite.R) ;
+#   - les limites communales Admin Express (le référentiel géométrique des
+#     réseaux — attribution + surface) ;
+#   - les lignes OSM de l'extrait Geofabrik Bretagne (la couche `lines`).
+# Chaque source est lue par SON lecteur (normaliser_mobilite.R) — le seam
+# d'entrée du run. Le paramètre `snapshot` permet aux tests de passer la
+# fixture directement : le chemin de code de normalisation et de persistance
+# est le même que pour le fichier réel.
 construire_donnees_mobilite <- function(cache = "data/raw",
                                         sortie = "data/processed/mobilite/mobilite_snapshot.rds",
                                         snapshot = NULL) {
+  fichier_source <- function(id) {
+    MANIFEST_MOBILITE$fichier[MANIFEST_MOBILITE$id == id]
+  }
+
   if (is.null(snapshot)) {
     snapshot <- lire_snapshot_mobilite(
-      file.path(cache, MANIFEST_MOBILITE$fichier)
+      file.path(cache, fichier_source("mobilite_snapshot"))
     )
   }
 
   table <- normaliser_snapshot_mobilite(snapshot)
+  voitures <- lire_voitures_communes(
+    file.path(cache, fichier_source("rp_logement_princ"))
+  )
+  limites <- lire_communes_limites(
+    file.path(cache, fichier_source("communes_limites"))
+  )
+  lignes <- lire_lignes_osm(
+    file.path(cache, fichier_source("osm_reseaux"))
+  )
 
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(table, sortie)
 
-  list(mobilite_snapshot = table)
+  list(
+    mobilite_snapshot = table,
+    voitures_communes = voitures,
+    communes_limites = limites,
+    lignes_osm = lignes
+  )
 }
 
 # vintages_mobilite ------------------------------------------------------------
@@ -184,6 +209,18 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
 
+  # l'étage demande/réseaux (issue #139) : la demande (voitures/ménage — la
+  # moyenne pondérée par les ménages, jamais une moyenne de parts) et les
+  # réseaux t/b/c (longueurs sommées, densités Σ L ÷ Σ surface — la règle
+  # d'agrégation partagée, les builders dans demande_reseaux_mobilite.R)
+  voitures_communes <- calculer_voitures_communes(donnees$voitures_communes)
+  voitures_territoires <- agreger_voitures_territoires(voitures_communes,
+                                                       base_epci)
+  reseaux_communes <- calculer_reseaux_communes(donnees$lignes_osm,
+                                                donnees$communes_limites)
+  reseaux_territoires <- agreger_reseaux_territoires(reseaux_communes,
+                                                     base_epci)
+
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
   readr::write_rds(mobilite_communes, file.path(sortie, "mobilite_communes.rds"))
   readr::write_rds(nb_buildings_territoires,
@@ -200,6 +237,14 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "nuage_territoires.rds"))
   readr::write_rds(isolation_rangs,
                    file.path(sortie, "isolation_rangs.rds"))
+  readr::write_rds(voitures_communes,
+                   file.path(sortie, "voitures_communes.rds"))
+  readr::write_rds(voitures_territoires,
+                   file.path(sortie, "voitures_territoires.rds"))
+  readr::write_rds(reseaux_communes,
+                   file.path(sortie, "reseaux_communes.rds"))
+  readr::write_rds(reseaux_territoires,
+                   file.path(sortie, "reseaux_territoires.rds"))
 
   list(
     mobilite_communes = mobilite_communes,
@@ -209,28 +254,54 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     saillance_territoires = saillance_territoires,
     densite_territoires = densite_territoires,
     nuage_territoires = nuage_territoires,
-    isolation_rangs = isolation_rangs
+    isolation_rangs = isolation_rangs,
+    voitures_communes = voitures_communes,
+    voitures_territoires = voitures_territoires,
+    reseaux_communes = reseaux_communes,
+    reseaux_territoires = reseaux_territoires
   )
 }
 
 # INDICATEURS_MOBILITE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. Le chaînon flagship
-# (issue #138) ne publie qu'UNE clé : « nb_buildings » (la « Taille » du thème
-# — le nombre de bâtiments résidentiels analysés par commune, le poids du
-# thème dans le squelette), une ligne PAR TERRITOIRE (commune / EPCI /
-# département / région : les agrégats sont recalculés depuis les parties,
-# jamais une moyenne de parts). Les 5 parts d'isolation sont CALCULÉES et
-# PERSISTÉES par le chaînon (isolation_territoires.rds — la matière des clés
-# de la grille) ; leur assemblage dans le payload est le contrat du ticket
-# #141.
+# l'estampille — les vintages T7) et sa multiplicité. Trois clés depuis
+# l'issue #139 :
+#   - « nb_buildings » (la « Taille » du thème — le nombre de bâtiments
+#     résidentiels analysés par commune, le poids du thème dans le squelette),
+#     une ligne PAR TERRITOIRE (commune / EPCI / département / région : les
+#     agrégats sont recalculés depuis les parties, jamais une moyenne de
+#     parts) — la clé du tracer bullet (#137), toujours publiée ;
+#   - « voitures_menage » (l'étage demande) : les parts des ménages SANS
+#     voiture / avec 2+ voitures, une ligne par (territoire × part) — la
+#     multiplicité 2, agrégée depuis les parties par la moyenne pondérée par
+#     les ménages, JAMAIS une moyenne de parts. Source de référence : le cube
+#     RP exploitation principale (rp_logement_princ — le code de table épinglé
+#     LOG T12) ;
+#   - « reseaux » (l'étage réseaux) : les longueurs et densités des réseaux
+#     t/b/c (à pied / vélo / voiture), une ligne par (territoire × mesure) —
+#     la multiplicité 6 (longueur + densité × trois modes), les longueurs
+#     SOMMÉES et les densités Σ L ÷ Σ surface depuis les parties communales.
+#     Source de référence : l'extrait OSM Geofabrik (osm_reseaux — le
+#     timestamp d'extraction comme vintage, ODbL) ; les limites communales
+#     (communes_limites) fournissent la surface du dénominateur.
+# Les 5 parts d'isolation restent CALCULÉES et PERSISTÉES par le chaînon
+# (isolation_territoires.rds — la matière des clés de la grille) ; leur
+# assemblage dans le payload est le contrat du ticket #141.
 INDICATEURS_MOBILITE <- tibble::tibble(
-  key = "nb_buildings",
-  libelle = "Bâtiments résidentiels analysés",
-  sources = list("mobilite_snapshot"),
-  source_reference = "mobilite_snapshot",
-  multiplicite = 1L
+  key = c("nb_buildings", "voitures_menage", "reseaux"),
+  libelle = c(
+    "Bâtiments résidentiels analysés",
+    "Voitures par ménage",
+    "Réseaux à pied / vélo / voiture"
+  ),
+  sources = list(
+    "mobilite_snapshot",
+    "rp_logement_princ",
+    c("osm_reseaux", "communes_limites")
+  ),
+  source_reference = c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux"),
+  multiplicite = c(1L, 2L, 6L)
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -264,15 +335,20 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
-# L'indicateur publié du tracer bullet : UNE ligne par territoire (commune /
-# EPCI / département / région), la valeur d'un agrégat RECALCULÉE depuis les
-# parties communales (jamais une moyenne de parts — la table agrégée de
-# agreger_nb_buildings_territoires). L'assemblage réutilise la MACHINERIE
-# PARTAGÉE telle quelle : compute_ranks (les rangs-en-contexte par niveau
-# entre pairs) et assembler_indicateurs (la forme du contrat — rangs +
-# estampilles T7 depuis INDICATEURS_MOBILITE + vintages). La table est ALIGNÉE
-# sur la référence : un territoire sans donnée porte NA — jamais une ligne
-# manquante (la multiplicité 1 de la table déclarative l'exige).
+# Les indicateurs publiés du thème : les trois clés déclarées, alignées sur la
+# référence (un territoire sans donnée porte NA — jamais une ligne manquante,
+# la multiplicité de la table déclarative l'exige), avec leurs rangs et leurs
+# estampilles T7 (la machinerie partagée compute_ranks + assembler_indicateurs
+# pour la « Taille », un rang PAR DÉTAIL pour les clés multi-mesures).
+#   - nb_buildings : une ligne par territoire, le rang de compute_ranks (la
+#     machinerie partagée) ;
+#   - voitures_menage / reseaux : une ligne par (territoire × détail) — chaque
+#     MESURE porte le rang-en-contexte de SA valeur (la part sans voiture
+#     classée contre les parts sans voiture des pairs, la longueur cyclable
+#     contre les longueurs cyclables… — jamais un rang unique qui mélangerait
+#     des unités).
+# Les estampilles viennent des vintages de SA source de référence (les tampons
+# de la table déclarative) — la même règle que la machinerie partagée.
 construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) {
   aligner <- function(table_agregee, key, unit) {
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
@@ -282,16 +358,112 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
       )
   }
 
+  # la « Taille » : le rang via la machinerie partagée (compute_ranks)
   tables <- list(
     nb_buildings = aligner(analytiques$nb_buildings_territoires,
                            "nb_buildings", "bâtiments")
   )
-
   rangs <- compute_ranks(territoires, tables, scalaires = list())
 
-  assembler_indicateurs(territoires, tables, rangs, theme = "mobilite",
-                        indicateurs_table = INDICATEURS_MOBILITE,
-                        vintages = vintages)
+  # les clés multi-mesures (issue #139) : le squelette (territoire × détail)
+  # étend la table agrégée — chaque territoire porte TOUTES les mesures, NA si
+  # la donnée manque (la multiplicité de la table déclarative)
+  aligner_detail <- function(table_long, key, unites) {
+    details <- names(unites)
+    squelette_detail <- tidyr::crossing(code = territoires$code, detail = details)
+    dplyr::left_join(squelette_detail, table_long, by = c("code", "detail")) %>%
+      dplyr::mutate(key = key, unit = unites[detail]) %>%
+      dplyr::select(code, key, detail, value, unit)
+  }
+
+  voitures <- aligner_detail(
+    analytiques$voitures_territoires, "voitures_menage",
+    c(sans_voiture = "%", deux_plus = "%")
+  )
+  reseaux <- aligner_detail(
+    analytiques$reseaux_territoires, "reseaux",
+    c(t_longueur = "km", b_longueur = "km", c_longueur = "km",
+      t_densite = "km/km²", b_densite = "km/km²", c_densite = "km/km²")
+  )
+
+  # le rang PAR DÉTAIL : chaque mesure est classée dans SON groupe de
+  # comparaison (le percentile partagé de compute.R, jamais re-forké)
+  rangs_voitures <- construire_rangs_detail(
+    analytiques$voitures_territoires, territoires
+  )
+  rangs_reseaux <- construire_rangs_detail(
+    analytiques$reseaux_territoires, territoires
+  )
+
+  # l'assemblage : les trois clés + leurs rangs (le détail NA de la « Taille »
+  # joint sur le détail NA des rangs partagés) + les tampons de la table
+  # déclarative — la même forme que la machinerie partagée assembler_indicateurs
+  tampons <- INDICATEURS_MOBILITE %>%
+    dplyr::select(key, source_reference) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+    dplyr::select(key,
+                  vintage_source = source,
+                  vintage_version = version,
+                  vintage_date_reference = date_reference,
+                  vintage_date_publication = date_publication)
+
+  rangs_combines <- dplyr::bind_rows(
+    dplyr::bind_rows(lapply(rangs, function(rang) {
+      rang %>% dplyr::mutate(detail = NA_character_)
+    })),
+    rangs_voitures,
+    rangs_reseaux
+  )
+
+  dplyr::bind_rows(
+    tables$nb_buildings,
+    voitures,
+    reseaux
+  ) %>%
+    dplyr::left_join(rangs_combines, by = c("code", "key", "detail")) %>%
+    dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
+    dplyr::rename(territoire = code) %>%
+    dplyr::mutate(theme = "mobilite") %>%
+    dplyr::left_join(tampons, by = "key") %>%
+    dplyr::select(dplyr::any_of(c(
+      "territoire", "type", "theme", "key", "detail", "value", "unit",
+      "rang_epci", "rang_dep", "rang_reg",
+      "vintage_source", "vintage_version",
+      "vintage_date_reference", "vintage_date_publication"
+    )))
+}
+
+# construire_rangs_detail --------------------------------------------------------
+# Les rangs-en-contexte PAR DÉTAIL d'une table longue multi-mesures (les clés
+# voitures_menage / reseaux de l'étage demande/réseaux, issue #139) : chaque
+# mesure est classée dans SON groupe de comparaison (commune → EPCI /
+# département / région, EPCI → département / région, département → région, la
+# région nulle part) avec la MACHINERIE PARTAGÉE percentile_par_groupe
+# (compute.R) — la règle du percentile partagé (part strictement inférieure +
+# moitié des ex æquo, les NA exclus du dénominateur). `territoires` est le
+# squelette partagé du thème (la forme de construire_territoires_mobilite).
+# Sortie longue (code × key × detail × les trois rangs), triée par code puis
+# détail — déterministe.
+construire_rangs_detail <- function(table_long, territoires) {
+  groupes <- groupes_comparaison(territoires)
+  tab <- dplyr::left_join(
+    territoires[c("code", "type", "epci", "departement")],
+    table_long,
+    by = "code"
+  )
+
+  dplyr::bind_rows(lapply(sort(unique(tab$detail)), function(detail) {
+    lignes <- tab[tab$detail == detail, ]
+    tibble::tibble(
+      code = lignes$code,
+      key = unique(lignes$key),
+      detail = detail,
+      rang_epci = percentile_par_groupe(lignes$value, groupes$epci),
+      rang_dep = percentile_par_groupe(lignes$value, groupes$dep),
+      rang_reg = percentile_par_groupe(lignes$value, groupes$reg)
+    )
+  })) %>%
+    dplyr::arrange(code, detail)
 }
 
 # compute_histoires_mobilite ---------------------------------------------------
@@ -392,6 +564,27 @@ validations_mobilite <- list(
     nb <- payload$indicateurs$value[payload$indicateurs$key == "nb_buildings"]
     if (any(!is.na(nb) & nb < 0)) {
       stop("Payload invalide : des bâtiments analysés négatifs.",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # les parts voitures/ménage sont des parts dans [0, 1] (une part hors de la
+  # borne est une corruption — un ratio RP qui déraille, jamais un NA)
+  function(payload) {
+    voitures <- payload$indicateurs$value[
+      payload$indicateurs$key == "voitures_menage"]
+    if (any(!is.na(voitures) & (voitures < 0 | voitures > 1))) {
+      stop("Payload invalide : une part voitures/ménage sort de [0, 1].",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # les réseaux sont des longueurs et densités non négatives (une mesure
+  # négative est une corruption — jamais une longueur publiée négative)
+  function(payload) {
+    reseaux <- payload$indicateurs$value[payload$indicateurs$key == "reseaux"]
+    if (any(!is.na(reseaux) & reseaux < 0)) {
+      stop("Payload invalide : une longueur ou densité de réseau négative.",
            call. = FALSE)
     }
     invisible(payload)

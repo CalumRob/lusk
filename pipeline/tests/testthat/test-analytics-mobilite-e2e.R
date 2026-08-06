@@ -36,9 +36,11 @@
 # par les builders réels.
 
 # Les fixtures réelles — le seam d'entrée du run mocké --------------------------
-# Le vrai snapshot porté et le référentiel EPCI partagé vivent sous
-# pipeline/data/ (gitignoré). Absents hors worktree, le test saute proprement
-# (comme les autres tests « données réelles »).
+# Le vrai snapshot porté, le référentiel EPCI partagé et les sources de
+# l'étage demande/réseaux (issue #139 : le cube RP voitures, l'extrait OSM
+# Geofabrik, les limites communales) vivent sous pipeline/data/ (gitignoré).
+# Absents hors worktree, le test saute proprement (comme les autres tests
+# « données réelles »).
 fixture_e2e_raw <- function(...) {
   testthat::test_path("..", "..", "data", "raw", ...)
 }
@@ -46,21 +48,32 @@ fixture_e2e_raw <- function(...) {
 fixtures_reelles_presentes <- function() {
   all(file.exists(
     fixture_e2e_raw("bretagne_mobility_super_dashboard_gravity.csv"),
-    fixture_e2e_raw("extracted", "EPCI_au_01-01-2025.xlsx")
+    fixture_e2e_raw("extracted", "EPCI_au_01-01-2025.xlsx"),
+    fixture_e2e_raw("DS_RP_LOGEMENT_PRINC_2023_CSV_FR.zip"),
+    fixture_e2e_raw("bretagne-latest.osm.pbf"),
+    fixture_e2e_raw("communes_limites.geojson")
   ))
 }
 
 # fabriquer_cache_e2e -----------------------------------------------------------
 # La couture de téléchargement MOCKÉE écrit dans le cache les artefacts réels du
 # worktree (le réseau n'entre jamais dans la boucle) : le snapshot porté (le
-# cache EST le CSV) et le référentiel partagé EPCI (déjà extrait, la base que
-# lire_epci consomme — jamais re-téléchargée).
+# cache EST le CSV), le référentiel partagé EPCI (déjà extrait, la base que
+# lire_epci consomme — jamais re-téléchargée) et, depuis l'issue #139, les
+# trois sources de l'étage demande/réseaux (le cube RP voitures, l'extrait OSM,
+# les limites communales).
 fabriquer_cache_e2e <- function(cache) {
   dir.create(file.path(cache, "extracted"), recursive = TRUE, showWarnings = FALSE)
   file.copy(fixture_e2e_raw("bretagne_mobility_super_dashboard_gravity.csv"),
             cache, overwrite = TRUE)
   file.copy(fixture_e2e_raw("extracted", "EPCI_au_01-01-2025.xlsx"),
             file.path(cache, "extracted"), overwrite = TRUE)
+  file.copy(fixture_e2e_raw("DS_RP_LOGEMENT_PRINC_2023_CSV_FR.zip"),
+            cache, overwrite = TRUE)
+  file.copy(fixture_e2e_raw("bretagne-latest.osm.pbf"),
+            cache, overwrite = TRUE)
+  file.copy(fixture_e2e_raw("communes_limites.geojson"),
+            cache, overwrite = TRUE)
   invisible(cache)
 }
 
@@ -117,13 +130,21 @@ executer_run_reel <- function(cache, sortie) {
 #   - isolation_rangs               : 6 340 lignes (1 268 territoires du
 #     squelette × 5 clés — ALIGNÉS sur la référence, les 2 communes hors
 #     snapshot portent NA, jamais une ligne manquante) ;
+#   - L'étage demande/réseaux (issue #139) : voitures_communes (1 202 communes
+#     du cube RP exploitation principale — TOUTES les communes bretonnes, le RP
+#     couvre ce que l'analyse d'accessibilité ne couvre pas), voitures_
+#     territoires (1 268 territoires × 2 parts = 2 536 lignes — la moyenne
+#     pondérée par les ménages), reseaux_communes (1 202 communes × 6 mesures)
+#     et reseaux_territoires (1 268 × 6 = 7 608 lignes — longueurs sommées,
+#     densités Σ L ÷ Σ surface) ;
 #   - payload : 1 268 territoires (1 202 communes + 61 EPCIs + 4 départements +
 #     la région — le squelette partagé, les 2 communes hors snapshot portent NA
-#     pour l'indicateur, jamais une ligne manquante), × 1 clé (nb_buildings) ;
+#     pour l'indicateur, jamais une ligne manquante), × 3 clés (nb_buildings +
+#     voitures_menage × 2 parts + reseaux × 6 mesures = 11 412 lignes) ;
 #     histoires : 1 405 lignes — 1 266 « vingt-minutes-sans-voiture » (une
 #     ligne par territoire, la Story par défaut) + 139 « ce-que-le-velo-
 #     preserve » (la saillance : 130 communes + 9 EPCIs au delta ≥ 10) ;
-#     apercu vide (gating).
+#     apercu vide (gating) ; vintages : 4 lignes (une par source du manifeste).
 comptes_normalises_reels <- c(
   mobilite_snapshot = 1200
 )
@@ -135,7 +156,11 @@ comptes_analytiques_reels <- c(
   saillance_territoires = 1266,
   densite_territoires = 1266,
   nuage_territoires = 1266,
-  isolation_rangs = 6340
+  isolation_rangs = 6340,
+  voitures_communes = 1202,
+  voitures_territoires = 2536,
+  reseaux_communes = 1202,
+  reseaux_territoires = 7608
 )
 # les comptes par niveau des parts d'isolation (la forme « comptes par niveau
 # commune/EPCI/département/région » de l'acceptance de l'issue #138) : 5 clés ×
@@ -163,11 +188,11 @@ comptes_saillance_reels <- c(
   region_notable = 1
 )
 comptes_payload_reels <- c(
-  indicateurs = 1268,  # nb_buildings × 1 268 territoires
+  indicateurs = 11412,  # 1 268 territoires × (nb_buildings 1 + voitures 2 + reseaux 6)
   histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
-  vintages = 1         # une ligne par source du manifeste Mobilité
+  vintages = 4         # une ligne par source du manifeste (snapshot + demande + reseaux + limites)
 )
 # les comptes des Story keys (la forme multi-lignes du contrat histoires)
 comptes_histoires_reels <- c(
@@ -220,32 +245,102 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(nrow(payload$histoires), comptes_payload_reels[["histoires"]])
   expect_equal(nrow(payload$territoires), comptes_payload_reels[["territoires"]])
   expect_equal(nrow(payload$apercu), comptes_payload_reels[["apercu"]])
-  # l'unique indicateur publié du tracer bullet : la « Taille » du thème (le
-  # nombre de bâtiments analysés par commune — la grille d'isolation et la
-  # Story arrivent au ticket #138), une ligne par territoire, avec ses rangs
-  expect_setequal(unique(payload$indicateurs$key), "nb_buildings")
+  # les clés publiées (issue #139 : la « Taille » + l'étage demande/réseaux) :
+  # une ligne par territoire × multiplicité, avec leurs rangs — la grille
+  # d'isolation et le Story complet arrivent aux tickets #138/#141
+  expect_setequal(unique(payload$indicateurs$key),
+                  c("nb_buildings", "voitures_menage", "reseaux"))
   expect_equal(sum(payload$indicateurs$key == "nb_buildings"), 1268)
+  expect_equal(sum(payload$indicateurs$key == "voitures_menage"), 2536)
+  expect_equal(sum(payload$indicateurs$key == "reseaux"), 7608)
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
-  # les deux communes hors snapshot (Île-de-Sein, Île-Molène) portent NA —
-  # jamais une ligne manquante (l'alignement sur la référence du squelette)
+  # les deux communes hors snapshot (Île-de-Sein, Île-Molène) portent NA pour
+  # la « Taille » — jamais une ligne manquante (l'alignement sur la référence
+  # du squelette). Le RP, lui, couvre Île-de-Sein (voitures 0.603 sans voiture)
   expect_true(all(is.na(payload$indicateurs$value[
-    payload$indicateurs$territoire %in% c("29083", "29084")])))
+    payload$indicateurs$territoire %in% c("29083", "29084") &
+      payload$indicateurs$key == "nb_buildings"])))
   # la valeur de la région : la SOMME des 1 200 communes (recalculée depuis les
   # parties, jamais une moyenne) — le total verrouillé du fichier de production
   expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "53"],
+    payload$indicateurs$value[payload$indicateurs$territoire == "53" &
+                                payload$indicateurs$key == "nb_buildings"],
     1223578
   )
   expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "22"],
+    payload$indicateurs$value[payload$indicateurs$territoire == "22" &
+                                payload$indicateurs$key == "nb_buildings"],
     260617
   )
-  # les estampilles T7 : l'indicateur porte le vintage de SA source de référence
+  # l'étage demande (issue #139) : les parts voitures/ménage de la région
+  # (recalculées depuis les parties — la moyenne pondérée par les ménages,
+  # jamais une moyenne de parts) et de Rennes, avec leurs rangs-en-contexte
+  lire_ind <- function(territoire, key, detail) {
+    payload$indicateurs[
+      payload$indicateurs$territoire == territoire &
+        payload$indicateurs$key == key &
+        ifelse(is.na(payload$indicateurs$detail), is.na(detail),
+               payload$indicateurs$detail == detail), ]
+  }
+  expect_equal(round(lire_ind("53", "voitures_menage", "sans_voiture")$value, 6),
+               0.118268)
+  expect_equal(round(lire_ind("53", "voitures_menage", "deux_plus")$value, 6),
+               0.402230)
+  expect_equal(round(lire_ind("22", "voitures_menage", "sans_voiture")$value, 6),
+               0.094700)
+  rennes_sans <- lire_ind("35238", "voitures_menage", "sans_voiture")
+  expect_equal(round(rennes_sans$value, 6), 0.319333)
+  expect_equal(round(rennes_sans$rang_epci, 4), 0.9767)
+  expect_equal(round(rennes_sans$rang_reg, 4), 0.9933)
+  expect_equal(round(lire_ind("35238", "voitures_menage", "deux_plus")$value, 6),
+               0.150348)
+  # l'île de Sein : sans EPCI → pas de rang EPCI (jamais un rang fantôme), et
+  # la part sans voiture la plus forte de Bretagne (60 % — une île)
+  sein_sans <- lire_ind("29083", "voitures_menage", "sans_voiture")
+  expect_equal(round(sein_sans$value, 6), 0.603082)
+  expect_true(is.na(sein_sans$rang_epci))
+  expect_equal(round(sein_sans$rang_dep, 4), 0.9892)
+  # l'étage réseaux (issue #139) : les longueurs/densités de la région
+  # (longueurs SOMMÉES, densités Σ L ÷ Σ surface) et de Rennes
+  expect_equal(round(lire_ind("53", "reseaux", "c_longueur")$value, 3),
+               101353.736)
+  expect_equal(round(lire_ind("53", "reseaux", "c_densite")$value, 6),
+               3.692786)
+  expect_equal(round(lire_ind("53", "reseaux", "b_longueur")$value, 3),
+               950.721)
+  expect_equal(round(lire_ind("53", "reseaux", "b_densite")$value, 6),
+               0.034639)
+  expect_equal(round(lire_ind("53", "reseaux", "t_longueur")$value, 3),
+               6732.870)
+  expect_equal(round(lire_ind("53", "reseaux", "t_densite")$value, 6),
+               0.245310)
+  rennes_c <- lire_ind("35238", "reseaux", "c_densite")
+  expect_equal(round(rennes_c$value, 6), 18.162491)
+  expect_equal(round(rennes_c$rang_reg, 4), 0.9967)
+  expect_equal(round(lire_ind("242900314", "reseaux", "c_densite")$value, 6),
+               8.946547)
+  # les estampilles T7 : chaque indicateur porte le vintage de SA source de
+  # référence (la « Taille » → le snapshot ; la demande → le RP exploitation
+  # principale ; les réseaux → l'extrait OSM, le timestamp d'extraction)
   vintages <- vintages_mobilite()
-  expect_true(all(payload$indicateurs$vintage_source == vintages$source))
-  expect_true(all(payload$indicateurs$vintage_date_reference == "2026-02-28"))
-  expect_true(all(payload$indicateurs$vintage_date_publication == "2026-08-06"))
+  ind_mob <- payload$indicateurs
+  expect_true(all(ind_mob$vintage_source[ind_mob$key == "nb_buildings"] ==
+                    vintages$source[vintages$id == "mobilite_snapshot"]))
+  expect_true(all(ind_mob$vintage_date_reference[ind_mob$key == "nb_buildings"] ==
+                    "2026-02-28"))
+  expect_true(all(ind_mob$vintage_source[ind_mob$key == "voitures_menage"] ==
+                    vintages$source[vintages$id == "rp_logement_princ"]))
+  expect_true(all(ind_mob$vintage_date_reference[
+    ind_mob$key == "voitures_menage"] == "2023-01-01"))
+  expect_true(all(ind_mob$vintage_date_publication[
+    ind_mob$key == "voitures_menage"] == "2026-07-29"))
+  expect_true(all(ind_mob$vintage_source[ind_mob$key == "reseaux"] ==
+                    vintages$source[vintages$id == "osm_reseaux"]))
+  expect_true(all(ind_mob$vintage_date_reference[ind_mob$key == "reseaux"] ==
+                    "2026-08-05"))
+  expect_true(all(ind_mob$vintage_date_publication[ind_mob$key == "reseaux"] ==
+                    "2026-08-06"))
 
   # la référence des territoires : le squelette partagé (communes + EPCIs +
   # départements + région), les noms réels, l'EPCI de chaque commune
@@ -294,6 +389,63 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
     expect_equal(nrow(readRDS(file.path(sortie_analytiques, paste0(nom, ".rds")))),
                  unname(comptes_analytiques_reels[[nom]]), info = nom)
   }
+
+  # l'étage demande/réseaux (issue #139) --------------------------------------
+  # La demande : les parts voitures/ménage aux quatre niveaux, RECALCULÉES
+  # depuis les parties (la moyenne pondérée par les ménages — jamais une
+  # moyenne de parts), la région à 0.1183 sans voiture / 0.4022 avec 2+ (la
+  # Bretagne rurale possède la voiture), Rennes à 0.319 (la métropole), l'île
+  # de Sein à 0.603 (sans voiture — une île).
+  vt <- readRDS(file.path(sortie_analytiques, "voitures_territoires.rds"))
+  expect_named(vt, c("code", "key", "detail", "value"))
+  expect_true(all(vt$key == "voitures_menage"))
+  expect_setequal(unique(vt$detail), c("sans_voiture", "deux_plus"))
+  lire_vt <- function(code, detail) vt$value[vt$code == code & vt$detail == detail]
+  expect_equal(round(lire_vt("53", "sans_voiture"), 6), 0.118268)
+  expect_equal(round(lire_vt("53", "deux_plus"), 6), 0.402230)
+  expect_equal(round(lire_vt("22", "sans_voiture"), 6), 0.094700)
+  expect_equal(round(lire_vt("35238", "sans_voiture"), 6), 0.319333)
+  expect_equal(round(lire_vt("242900314", "sans_voiture"), 6), 0.208605)
+  expect_equal(round(lire_vt("29083", "sans_voiture"), 6), 0.603082)
+  # la règle d'agrégation : un agrégat n'est JAMAIS la moyenne des parts
+  # communales — le contraste réel (la moyenne des 1 202 parts communales vs
+  # la valeur agrégée de la région, pondérée par les ménages)
+  parts_communales_v <- vt$value[vt$detail == "sans_voiture" &
+                                   type_territoire_mobilite(vt$code) == "commune"]
+  expect_false(isTRUE(all.equal(lire_vt("53", "sans_voiture"),
+                                mean(parts_communales_v))))
+  expect_true(all(!is.na(vt$value) & vt$value >= 0 & vt$value <= 1))
+
+  # Les réseaux : les longueurs/densités aux quatre niveaux, RECALCULÉES
+  # depuis les parties (les longueurs SOMMÉES, les densités Σ L ÷ Σ surface —
+  # jamais la moyenne des densités communales). La région : 101 354 km de
+  # routes (3.69 km/km²), 951 km de pistes cyclables, 6 733 km de trottoirs.
+  rt <- readRDS(file.path(sortie_analytiques, "reseaux_territoires.rds"))
+  expect_named(rt, c("code", "key", "detail", "value"))
+  expect_true(all(rt$key == "reseaux"))
+  expect_setequal(unique(rt$detail),
+                  c("t_longueur", "t_densite", "b_longueur", "b_densite",
+                    "c_longueur", "c_densite"))
+  lire_rt <- function(code, detail) rt$value[rt$code == code & rt$detail == detail]
+  expect_equal(round(lire_rt("53", "c_longueur"), 3), 101353.736)
+  expect_equal(round(lire_rt("53", "c_densite"), 6), 3.692786)
+  expect_equal(round(lire_rt("53", "b_longueur"), 3), 950.721)
+  expect_equal(round(lire_rt("53", "b_densite"), 6), 0.034639)
+  expect_equal(round(lire_rt("53", "t_longueur"), 3), 6732.870)
+  expect_equal(round(lire_rt("53", "t_densite"), 6), 0.245310)
+  # le contraste urbain : Rennes à 18.16 km/km² de routes (la densité la plus
+  # forte de Bretagne), Brest Métropole à 8.95, l'île de Sein sans réseau
+  # cyclable (0 km — un fait, jamais une ligne manquante)
+  expect_equal(round(lire_rt("35238", "c_densite"), 6), 18.162491)
+  expect_equal(round(lire_rt("242900314", "c_densite"), 6), 8.946547)
+  expect_equal(lire_rt("29083", "b_longueur"), 0)
+  # la règle d'agrégation : une densité de niveau = Σ L ÷ Σ surface (la
+  # moyenne pondérée par la surface), jamais la moyenne des densités
+  densites_communales_c <- rt$value[rt$detail == "c_densite" &
+                                      type_territoire_mobilite(rt$code) == "commune"]
+  expect_false(isTRUE(all.equal(lire_rt("53", "c_densite"),
+                                mean(densites_communales_c))))
+  expect_true(all(!is.na(rt$value) & rt$value >= 0))
 
   # la chaîne analytique FLAGSHIP (issue #138) ---------------------------------
   # Les 5 parts d'isolation aux comptes par niveau (l'acceptance : comptes
@@ -404,8 +556,10 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_true(all(velo$delta >= SEUIL_SAILLANCE_VELO))
   expect_equal(sum(velo$type == "commune"), 130)
   expect_equal(sum(velo$type == "epci"), 9)
-  # les estampilles du Story : le vintage de SA source (l'instantané du snapshot)
-  expect_true(all(h$vintage_source == vintages$source))
+  # les estampilles du Story : le vintage de SA source (l'instantané du
+  # snapshot — jamais les autres sources du thème)
+  expect_true(all(h$vintage_source ==
+                    vintages$source[vintages$id == "mobilite_snapshot"]))
   expect_true(all(h$vintage_date_reference == "2026-02-28"))
 
   # AUCUN artefact de fiche hors de la cible de publication : ni indicateurs, ni
