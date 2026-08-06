@@ -1755,24 +1755,30 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
 })
 
 # INDICATEURS_MOBILITE -----------------------------------------------------------
-test_that("INDICATEURS_MOBILITE : les six clés du payload, chacune estampillée de SA source de référence", {
+test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
 
   # la « Taille » (le tracer bullet #137/#138) + les deux clés multi-mesures
   # de l'étage demande/réseaux (issue #139 : voitures_menage × 2, reseaux × 6)
   # + les trois clés du sous-bloc « L'offre de mobilité alternative »
-  # (issue #140) — une ligne par clé, la multiplicité de chacune (1 / 2 / 6 /
-  # 1 / 1 / 1)
-  expect_equal(nrow(ind), 6L)
+  # (issue #140) + les CINQ parts d'isolation de la grille (issue #141) — une
+  # ligne par clé, la multiplicité de chacune (1 / 2 / 6 / 1 / 1 / 1 et les
+  # cinq 1 des parts d'isolation)
+  expect_equal(nrow(ind), 11L)
   expect_setequal(ind$key, c("nb_buildings", "voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
-                             "places_stationnement_velo_1000"))
+                             "places_stationnement_velo_1000",
+                             "iso_alimentation", "iso_sante",
+                             "iso_administration", "iso_ecole", "iso_banque"))
   expect_equal(ind$multiplicite[ind$key == "nb_buildings"], 1L)
   expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 2L)
   expect_equal(ind$multiplicite[ind$key == "reseaux"], 6L)
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
   expect_equal(ind$multiplicite[ind$key == "places_stationnement_velo_1000"], 1L)
+  for (cle in names(CLES_ISOLATION_MOBILITE)) {
+    expect_equal(ind$multiplicite[ind$key == cle], 1L, info = cle)
+  }
 
   # chaque clé est estampillée du vintage de SA source de référence :
   #   - nb_buildings              -> le snapshot porté (l'horloge lente) ;
@@ -1784,7 +1790,10 @@ test_that("INDICATEURS_MOBILITE : les six clés du payload, chacune estampillée
   #     SIGNATURE de la part des bâtiments près d'un arrêt, ODbL) ;
   #   - bornes_recharge           -> bornes-recharges (IRVE, Licence Ouverte) ;
   #   - places_stationnement_velo_1000 -> stationnement-velo (le hub Ecolab,
-  #     ODbL — producteur OSM).
+  #     ODbL — producteur OSM) ;
+  #   - les 5 parts d'isolation (issue #141) -> le snapshot porté, comme la
+  #     « Taille » : l'estampille SNAPSHOT du flagship (la date d'instantané
+  #     de l'analyse comme référence — la grille est la matière du snapshot).
   expect_equal(ind$source_reference[ind$key == "nb_buildings"],
                "mobilite_snapshot")
   expect_equal(ind$source_reference[ind$key == "voitures_menage"],
@@ -1795,4 +1804,170 @@ test_that("INDICATEURS_MOBILITE : les six clés du payload, chacune estampillée
                "bornes-recharges")
   expect_equal(ind$source_reference[ind$key == "places_stationnement_velo_1000"],
                "stationnement-velo")
+  for (cle in names(CLES_ISOLATION_MOBILITE)) {
+    expect_equal(ind$source_reference[ind$key == cle], "mobilite_snapshot",
+                 info = cle)
+  }
+})
+
+# fixture_indicateurs_mobilite ---------------------------------------------------
+# La liste des artefacts analytiques pour l'assemblage des indicateurs (le seam
+# construire_indicateurs_mobilite, issue #141) : la « Taille », les 5 parts
+# d'isolation et LEURS RANGS (mocked — la forme exacte des artefacts que le
+# chaînon persiste : isolation_territoires.rds et isolation_rangs.rds), l'étage
+# demande/réseaux et le sous-bloc. La forme de chaque table est celle des
+# builders réels — le seam ne calcule RIEN, il assemble.
+fixture_indicateurs_mobilite <- function() {
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+  codes <- territoires$code  # 9 territoires (4 communes + 2 EPCIs + 2 déps + région)
+
+  # les parts d'isolation MOCKÉES : une valeur synthétique en [0, 1] par
+  # (territoire × clé) — la forme longue (code, key, value) de
+  # isolation_territoires.rds
+  isolation_territoires <- tidyr::crossing(
+    code = codes, key = names(CLES_ISOLATION_MOBILITE)
+  ) %>%
+    dplyr::mutate(value = 0.1 + 0.05 * match(code, codes))
+
+  # les rangs MOCKÉS : la forme longue (code, key, rang_epci/dep/reg) de
+  # isolation_rangs.rds — des fractions dans [0, 1]
+  isolation_rangs <- isolation_territoires %>%
+    dplyr::transmute(
+      code = code, key = key,
+      rang_epci = 0.25, rang_dep = 0.5, rang_reg = 0.75
+    )
+
+  # l'étage demande/réseaux (issue #139) et le sous-bloc (issue #140) : les
+  # formes longues (code, key[, detail], value) des artefacts du chaînon
+  voitures_territoires <- tidyr::crossing(
+    code = codes, detail = c("sans_voiture", "deux_plus")
+  ) %>%
+    dplyr::mutate(key = "voitures_menage", value = 0.3)
+  reseaux_territoires <- tidyr::crossing(
+    code = codes,
+    detail = c("t_longueur", "t_densite", "b_longueur", "b_densite",
+               "c_longueur", "c_densite")
+  ) %>%
+    dplyr::mutate(key = "reseaux", value = 1)
+  offre_territoires <- tidyr::crossing(
+    code = codes, key = c("offre_tc", "bornes_recharge",
+                          "places_stationnement_velo_1000")
+  ) %>%
+    dplyr::mutate(value = dplyr::if_else(key == "offre_tc", 0.5, 10))
+
+  list(
+    nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
+    isolation_territoires = isolation_territoires,
+    isolation_rangs = isolation_rangs,
+    voitures_territoires = voitures_territoires,
+    reseaux_territoires = reseaux_territoires,
+    offre_territoires = offre_territoires
+  )
+}
+
+test_that("construire_indicateurs_mobilite : les onze clés, avec les 5 parts d'isolation, leurs rangs et l'estampille snapshot", {
+  fx <- fixture_indicateurs_mobilite()
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+
+  ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
+
+  # les onze clés : la « Taille » + la demande/réseaux + le sous-bloc + les 5
+  # parts d'isolation (issue #141) — une ligne par (territoire × détail)
+  # (9 territoires × 17 détails)
+  expect_setequal(unique(ind$key), c(
+    "nb_buildings", "voitures_menage", "reseaux",
+    "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+    "iso_alimentation", "iso_sante", "iso_administration",
+    "iso_ecole", "iso_banque"
+  ))
+  expect_equal(nrow(ind), 9 * 17)
+  expect_equal(sum(ind$key == "nb_buildings"), 9)
+  expect_equal(sum(ind$key == "voitures_menage"), 9 * 2)
+  expect_equal(sum(ind$key == "reseaux"), 9 * 6)
+  for (cle in c("offre_tc", "bornes_recharge",
+                "places_stationnement_velo_1000")) {
+    expect_equal(sum(ind$key == cle), 9, info = cle)
+  }
+  for (cle in names(CLES_ISOLATION_MOBILITE)) {
+    expect_equal(sum(ind$key == cle), 9, info = cle)
+  }
+
+  # chaque part d'isolation porte la valeur MOCKÉE de son artefact (la forme
+  # longue de isolation_territoires.rds) avec le détail NA des clés scalaires
+  lire <- function(code, key) ind$value[ind$territoire == code & ind$key == key]
+  expect_equal(lire("22001", "iso_alimentation"),
+               0.1 + 0.05 * match("22001", territoires$code))
+  expect_equal(lire("53", "iso_banque"),
+               0.1 + 0.05 * match("53", territoires$code))
+
+  # chaque part d'isolation porte SES rangs-en-contexte (l'artefact
+  # isolation_rangs.rds — la machinerie partagée, jamais re-forkée)
+  rang <- function(code, key, col) {
+    ind[[col]][ind$territoire == code & ind$key == key]
+  }
+  expect_equal(rang("22001", "iso_alimentation", "rang_epci"), 0.25)
+  expect_equal(rang("22001", "iso_alimentation", "rang_dep"), 0.5)
+  expect_equal(rang("22001", "iso_alimentation", "rang_reg"), 0.75)
+  expect_equal(rang("53", "iso_banque", "rang_reg"), 0.75)
+
+  # l'estampille SNAPSHOT : chaque part d'isolation est estampillée du vintage
+  # de SA source de référence (le snapshot porté — la date d'instantané de
+  # l'analyse, comme la « Taille »)
+  ref_snapshot <- vintages_mobilite()$source[
+    vintages_mobilite()$id == "mobilite_snapshot"]
+  iso_ind <- ind[ind$key %in% names(CLES_ISOLATION_MOBILITE), ]
+  expect_true(all(iso_ind$vintage_source == ref_snapshot))
+  expect_true(all(iso_ind$vintage_date_reference == "2026-02-28"))
+  expect_true(all(iso_ind$vintage_date_publication == "2026-08-06"))
+  # le détail des clés d'isolation est NA (les clés scalaires de la grille)
+  expect_true(all(is.na(iso_ind$detail)))
+})
+
+test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer la validation bruyamment", {
+  fx <- fixture_indicateurs_mobilite()
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+
+  # un payload sain passe la validation générique + les validations du thème
+  payload <- list(
+    indicateurs = construire_indicateurs_mobilite(fx, territoires,
+                                                  vintages_mobilite()),
+    histoires = tibble::tibble(),
+    territoires = reference_territoires(territoires),
+    apercu = assemble_apercu(territoires, list())
+  )
+  expect_no_error(validate_payload(
+    payload,
+    indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(),
+    validations = validations_mobilite,
+    apercu = APERCU_MOBILITE
+  ))
+
+  # une part d'isolation hors [0, 1] (une corruption — jamais une part de
+  # bâtiments > 100 %) fait échouer la validation bruyamment
+  payload$indicateurs$value[
+    payload$indicateurs$key == "iso_alimentation" &
+      payload$indicateurs$territoire == "22001"] <- 1.5
+  expect_error(validate_payload(
+    payload,
+    indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(),
+    validations = validations_mobilite,
+    apercu = APERCU_MOBILITE
+  ), "[0, 1]")
 })
