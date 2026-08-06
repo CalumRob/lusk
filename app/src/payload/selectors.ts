@@ -18,6 +18,7 @@ import type {
   Theme,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
+import { SOURCES_METHODES } from '@/methodes/sources'
 
 /**
  * Which themes exist in the payload, in canonical order (ADR-0007: Aperçu
@@ -405,4 +406,70 @@ export function formaterVintage(indicateur: Indicateur): string {
     `${indicateur.vintage_source} · ${indicateur.vintage_version} · ` +
     `${reference}publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`
   )
+}
+
+/** The known licence codes → their French names (the vintages table's `licence` column). */
+const LICENCES: Record<string, string> = {
+  lov2: 'Licence Ouverte 2.0',
+}
+
+/** The licence's display name — the raw code when the map doesn't know it (never invented). */
+export function formaterLicence(code: string): string {
+  return LICENCES[code] ?? code
+}
+
+/** One Méthodes source row — the registry's editorial facts joined to the live freshness facts. */
+export interface LigneSourceMethodes {
+  /** The source id — the registry × vintages join key (ancreSource derives the anchor). */
+  id: string
+  /** The source name (the registry's editorial fact — the degraded fallback). */
+  nom: string
+  editeur: string
+  url: string | null
+  themes: Theme[]
+  /** Live freshness — null when the source has no vintage row in the payload (never invented). */
+  version: string | null
+  licence: string | null
+  dateReference: string | null
+  datePublication: string | null
+}
+
+/** The Méthodes sources table — every registered source, one row, freshness joined live. */
+export interface MethodesSources {
+  /** true when vintages.json was absent (404) — the freshness columns show the honest empty state. */
+  vintagesAbsents: boolean
+  lignes: LigneSourceMethodes[]
+}
+
+/**
+ * The Méthodes sources table (docs/themes/README.md §The Méthodes contract):
+ * the registry's editorial facts (nom, éditeur, URL, thèmes) joined by id to
+ * the vintages table's freshness facts (version, licence, dates). Registry
+ * order is the table order; a registered source with no live vintage row
+ * degrades gracefully — its editorial facts render, its freshness stays null
+ * (no invented dates). Absent vintages (404 → null) render every registered
+ * source with null freshness — the page never breaks.
+ */
+export function sourcesMethodes(payload: Payload): MethodesSources {
+  const vintagesAbsents = payload.vintages === null
+  const parId = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
+
+  const lignes: LigneSourceMethodes[] = []
+  for (const [id, source] of Object.entries(SOURCES_METHODES)) {
+    const vintage = parId.get(id) ?? null
+    lignes.push({
+      id,
+      nom: source.nom,
+      editeur: source.editeur,
+      url: source.url,
+      themes: source.themes,
+      version: vintage?.version ?? null,
+      licence: vintage ? formaterLicence(vintage.licence) : null,
+      dateReference: vintage?.date_reference ? formaterDateFrancaise(vintage.date_reference) : null,
+      datePublication: vintage?.date_publication
+        ? formaterDateFrancaise(vintage.date_publication)
+        : null,
+    })
+  }
+  return { vintagesAbsents, lignes }
 }
