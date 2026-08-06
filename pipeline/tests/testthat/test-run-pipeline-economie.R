@@ -238,6 +238,16 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   hist <- nanoparquet::read_parquet(file.path(cible, "histoires_economie.parquet"))
   expect_equal(hist$story_key, payload$histoires$story_key)
 
+  # le contrat de non-dérive (ADR-0004, issue #131) : le JSON du payload
+  # Économie se relit colonne pour colonne comme le parquet — les colonnes
+  # entièrement NA (le `detail` d'un bloc de clés scalaires) et les colonnes
+  # multi-lignes des histoires incluses
+  for (nom in c("indicateurs_economie", "histoires_economie", "territoires")) {
+    pq <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
+    js <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
+    verifier_non_derivee(pq, js, nom)
+  }
+
   # vintages.parquet : une ligne par source du manifeste Économie (les 5)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_ECONOMIE))
