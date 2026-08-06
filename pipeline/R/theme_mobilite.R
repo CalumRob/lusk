@@ -1,8 +1,9 @@
 # theme_mobilite ---------------------------------------------------------------
-# Le module du thème Mobilité (issue #137, tracer bullet) : le descripteur
-# theme_mobilite() que la machinerie partagée (download/compute/publish)
-# consomme sans jamais nommer le thème — la même forme de contrat que
-# theme_economie() (issue #96) et theme_demographie()/theme_habitat().
+# Le module du thème Mobilité (issues #137 tracer bullet + #138 la chaîne
+# analytique flagship) : le descripteur theme_mobilite() que la machinerie
+# partagée (download/compute/publish) consomme sans jamais nommer le thème —
+# la même forme de contrat que theme_economie() (issue #96) et
+# theme_demographie()/theme_habitat().
 #
 # Ce qui vit ici, ce qui ne vit pas ici :
 #   - le manifeste de la source : le snapshot PORTÉ de l'analyse
@@ -14,18 +15,25 @@
 #     numérisées, la table complète des 2 061 colonnes conservée) ;
 #   - le builder de vintages (la projection générique depuis le manifeste,
 #     vintages_depuis_manifest, vintage.R) ;
-#   - le SEAM de calcul : construire_analytiques_mobilite enchaîne la
-#     table communale (la « Taille » du thème : nb_buildings) et l'agrégation
-#     aux quatre niveaux (recalculée depuis les parties — jamais une moyenne).
-#     C'est le TRACER BULLET : les 5 parts d'isolation, div_loss, la signature
-#     de densité, la saillance et les rangs complets arrivent au ticket #138 ;
+#   - le SEAM de calcul : construire_analytiques_mobilite enchaîne la table
+#     communale (la « Taille » du thème : nb_buildings), l'agrégation aux
+#     quatre niveaux (recalculée depuis les parties — jamais une moyenne) et
+#     le chaînon analytique FLAGSHIP (issue #138) — les 5 parts d'isolation,
+#     div_loss_t/b (la neutralité modale sur la base d'abord), la signature de
+#     densité + le nuage même-échelle, la saillance et les rangs-en-contexte
+#     (les builders vivent dans analytics_mobilite.R, persistés sous
+#     data/processed/mobilite/ — la matière que le ticket payload #141
+#     assemble) ;
 #   - le SEAM de publication : publier_mobilite — le payload contractuel
 #     (territoires / indicateurs / histoires / apercu) publié par la
-#     machinerie partagée publish.
-# Ce qui N'y vit PAS : aucun calcul d'indicateur de la grille (ticket #138),
-# aucune Story (ticket #138), aucun étage demande/réseaux (ticket #139), aucun
-# sous-bloc (ticket #140), aucune modification de theme_demographie / theme_
-# economie / theme_habitat ni du cœur partagé (compute.R, publish.R).
+#     machinerie partagée publish. L'indicateur publié reste la « Taille »
+#     (nb_buildings) — les clés de la grille et le Story complet sont assemblés
+#     par le ticket payload #141.
+# Ce qui N'y vit PAS : aucun calcul d'indicateur de la grille (la matière
+# analytique est au ticket #138, l'assemblage des clés au #141), aucun étage
+# demande/réseaux (ticket #139), aucun sous-bloc (ticket #140), aucune
+# modification de theme_demographie / theme_economie / theme_habitat ni du
+# cœur partagé (compute.R, publish.R).
 
 # construire_donnees_mobilite --------------------------------------------------
 # L'acte « trouver la donnée » du thème : le lecteur lit le snapshot porté
@@ -98,21 +106,52 @@ agreger_nb_buildings_territoires <- function(communes, base_epci) {
     dplyr::arrange(code)
 }
 
+# COLONNES_ANALYTIQUES_MOBILITE ------------------------------------------------
+# Les colonnes REQUISES du chaînon analytique flagship (issue #138) : l'identité
+# + les familles que les builders consomment (les parts d'accès share_*_t, les
+# médianes div_loss, pct_iso_full_t, les signatures de densité dens_div_t_* /
+# div_loss_t_dec_* — et leurs niveaux _epci/_dep/_reg). Toute colonne requise
+# manquante (une vague qui change de structure) arrête le run ICI, avant la
+# moindre écriture — jamais un succès partiel silencieux.
+COLONNES_ANALYTIQUES_MOBILITE <- c(
+  "commune", "nb_buildings",
+  unname(CLES_ISOLATION_MOBILITE),
+  "med_div_loss_t", "med_div_loss_b", "pct_iso_full_t",
+  "med_div_loss_t_epci", "med_div_loss_b_epci", "pct_iso_full_t_epci",
+  "med_div_loss_t_dep", "med_div_loss_b_dep", "pct_iso_full_t_dep",
+  "med_div_loss_t_reg", "med_div_loss_b_reg", "pct_iso_full_t_reg",
+  "dens_div_t_min", "dens_div_t_max",
+  paste0("dens_div_t_", 1:10), paste0("div_loss_t_dec_", 1:10),
+  paste0("dens_div_t_min_", c("epci", "dep", "reg")),
+  paste0("dens_div_t_max_", c("epci", "dep", "reg")),
+  paste0("dens_div_t_", 1:10, "_epci"), paste0("div_loss_t_dec_", 1:10, "_epci"),
+  paste0("dens_div_t_", 1:10, "_dep"), paste0("div_loss_t_dec_", 1:10, "_dep"),
+  paste0("dens_div_t_", 1:10, "_reg"), paste0("div_loss_t_dec_", 1:10, "_reg")
+)
+
 # construire_analytiques_mobilite ----------------------------------------------
 # LE seam de calcul : la table communale (la matière du poids du thème — le
-# nombre de bâtiments analysés, comme Démographie pèse par la population et
-# Économie par les établissements) et l'agrégation par niveau (la matière de
-# l'indicateur du payload). Les artefacts sont persistés sous data/processed/
-# mobilite/ (le dossier analytique du run). Le seam ne CALCULE RIEN lui-même
-# (l'agrégation vit dans agreger_nb_buildings_territoires) — la grille
-# d'isolation et la Story arrivent au ticket #138 dans ce même seam.
+# nombre de bâtiments analysés) et le chaînon analytique FLAGSHIP (issue #138).
+# Le seam enchaîne les builders de analytics_mobilite.R — il ne calcule RIEN
+# lui-même :
+#   - la « Taille » : nb_buildings par niveau (agreger_nb_buildings_territoires) ;
+#   - les 5 parts d'isolation (1 − share_*, calculer_parts_isolation_communes)
+#     agrégées aux quatre niveaux (agreger_parts_isolation_territoires — la
+#     moyenne pondérée par les bâtiments, jamais une moyenne de parts) ;
+#   - div_loss_t/b (calculer_div_loss_communes — la neutralité modale sur la
+#     base d'abord) aux quatre niveaux (agreger_div_loss_territoires — les
+#     valeurs du fichier, recalcul depuis les parties quand le fichier est muet) ;
+#   - la classification de saillance (construire_saillance_territoires), la
+#     signature de densité (construire_signature_densite), le nuage même-échelle
+#     (construire_nuage_territoires) et les rangs-en-contexte des parts
+#     d'isolation via la machinerie partagée (construire_rangs_isolation).
+# Tous les artefacts sont persistés sous data/processed/mobilite/ — la matière
+# que le ticket payload (#141) assemble. La garde de forme s'étend aux familles
+# analytiques : un input corrompu s'arrête ICI, avant la moindre écriture.
 construire_analytiques_mobilite <- function(donnees, base_epci,
                                             sortie = "data/processed/mobilite") {
-  # la garde de forme : le chaînon consomme la table normalisée du snapshot —
-  # un input corrompu (une colonne requise manquante) s'arrête ICI, avant la
-  # moindre écriture (jamais un succès partiel silencieux)
   snapshot <- donnees$mobilite_snapshot
-  manquantes <- setdiff(c("commune", "nb_buildings"), names(snapshot))
+  manquantes <- setdiff(COLONNES_ANALYTIQUES_MOBILITE, names(snapshot))
   if (length(manquantes) > 0) {
     stop("construire_analytiques_mobilite : colonne(s) requise(s) manquante(s) ",
          "du snapshot porté : ", paste(manquantes, collapse = ", "),
@@ -126,26 +165,66 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     mobilite_communes, base_epci
   )
 
+  # le chaînon analytique flagship (issue #138)
+  isolation_communes <- calculer_parts_isolation_communes(snapshot)
+  isolation_territoires <- agreger_parts_isolation_territoires(
+    isolation_communes, mobilite_communes, base_epci
+  )
+  div_communes <- calculer_div_loss_communes(snapshot)
+  div_loss_territoires <- agreger_div_loss_territoires(
+    div_communes, snapshot, base_epci
+  )
+  saillance_territoires <- construire_saillance_territoires(div_loss_territoires)
+  densite_territoires <- construire_signature_densite(snapshot, base_epci)
+  nuage_territoires <- construire_nuage_territoires(div_loss_territoires,
+                                                    base_epci)
+  territoires <- construire_territoires_mobilite(
+    base_epci, list(mobilite_communes = mobilite_communes)
+  )
+  isolation_rangs <- construire_rangs_isolation(isolation_territoires,
+                                                territoires)
+
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
   readr::write_rds(mobilite_communes, file.path(sortie, "mobilite_communes.rds"))
   readr::write_rds(nb_buildings_territoires,
                    file.path(sortie, "nb_buildings_territoires.rds"))
+  readr::write_rds(isolation_territoires,
+                   file.path(sortie, "isolation_territoires.rds"))
+  readr::write_rds(div_loss_territoires,
+                   file.path(sortie, "div_loss_territoires.rds"))
+  readr::write_rds(saillance_territoires,
+                   file.path(sortie, "saillance_territoires.rds"))
+  readr::write_rds(densite_territoires,
+                   file.path(sortie, "densite_territoires.rds"))
+  readr::write_rds(nuage_territoires,
+                   file.path(sortie, "nuage_territoires.rds"))
+  readr::write_rds(isolation_rangs,
+                   file.path(sortie, "isolation_rangs.rds"))
 
   list(
     mobilite_communes = mobilite_communes,
-    nb_buildings_territoires = nb_buildings_territoires
+    nb_buildings_territoires = nb_buildings_territoires,
+    isolation_territoires = isolation_territoires,
+    div_loss_territoires = div_loss_territoires,
+    saillance_territoires = saillance_territoires,
+    densite_territoires = densite_territoires,
+    nuage_territoires = nuage_territoires,
+    isolation_rangs = isolation_rangs
   )
 }
 
 # INDICATEURS_MOBILITE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. Le TRACER BULLET ne
-# publie qu'UNE clé : « nb_buildings » (la « Taille » du thème — le nombre de
-# bâtiments résidentiels analysés par commune, le poids du thème dans le
-# squelette), une ligne PAR TERRITOIRE (commune / EPCI / département / région :
-# les agrégats sont recalculés depuis les parties, jamais une moyenne de
-# parts). La grille des 5 parts d'isolation arrive au ticket #138.
+# l'estampille — les vintages T7) et sa multiplicité. Le chaînon flagship
+# (issue #138) ne publie qu'UNE clé : « nb_buildings » (la « Taille » du thème
+# — le nombre de bâtiments résidentiels analysés par commune, le poids du
+# thème dans le squelette), une ligne PAR TERRITOIRE (commune / EPCI /
+# département / région : les agrégats sont recalculés depuis les parties,
+# jamais une moyenne de parts). Les 5 parts d'isolation sont CALCULÉES et
+# PERSISTÉES par le chaînon (isolation_territoires.rds — la matière des clés
+# de la grille) ; leur assemblage dans le payload est le contrat du ticket
+# #141.
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = "nb_buildings",
   libelle = "Bâtiments résidentiels analysés",
@@ -216,20 +295,83 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
 }
 
 # compute_histoires_mobilite ---------------------------------------------------
-# L'Histoire du thème (issue #137) : VIDE par design — le tracer bullet ne
-# porte pas encore de Story. La table existe avec la forme de base du contrat
-# (territoire | type | theme | story_key), prête pour le ticket #138 qui
-# assemble « Vingt minutes sans voiture » (div_loss_t) et « Ce que le vélo
-# préserve » (saillance) avec leurs lignes multi-niveaux et leurs estampilles.
-# Jamais un « under construction » : la table est présente et vide, comme
-# l'apercu du gating.
+# Les Stories du thème (issue #138, ADR-0012) : la table MULTI-ROW par
+# territoire, une ligne par story_key, avec la matière du Story et les
+# estampilles vintage (issue #74 — chaque ligne est estampillée du vintage de
+# SA source de référence : le snapshot porté, la date d'instantané comme
+# référence).
+#
+#   - « vingt-minutes-sans-voiture » (le DÉFAUT, toujours allumé — une ligne
+#     par territoire, communes + EPCIs + départements + région) : div_loss_t
+#     (la lecture — le nombre de types de services qui disparaissent à pied ou
+#     en transports en commun à 20 minutes, la médiane de la distribution
+#     bâtiment par bâtiment), div_loss_b et le delta (la matière de la
+#     saillance), le story depth pct_iso_full_t (la part des bâtiments qui
+#     perdent TOUT accès), la SIGNATURE DE DENSITÉ (les quelques nombres
+#     précalculés de la distribution — dens_1..10, dec_1..10, min/max, jamais
+#     la matrice, leçon de l'issue #131) et la classification de saillance ;
+#   - « ce-que-le-velo-preserve » (la saillance — se déclenche SEULEMENT où le
+#     delta est réel, le top décile : delta ≥ SEUIL_SAILLANCE_VELO) : le delta
+#     + les deux lectures (div_loss_t/b) + la classification. Ailleurs, le
+#     défaut reste la seule Story (ADR-0002).
+# Le nuage même-échelle (ADR-0011) est dérivable côté app depuis les lignes de
+# défaut des pairs (chaque territoire porte SA div_loss_t) — le pattern de la
+# Story Démographie ; le résumé du nuage (médiane/min/max/n des pairs) est
+# l'artefact analytique `nuage_territoires.rds`.
 compute_histoires_mobilite <- function(analytiques, vintages) {
-  tibble::tibble(
-    territoire = character(),
-    type = character(),
-    theme = character(),
-    story_key = character()
-  )
+  tampon <- vintages %>%
+    dplyr::filter(id == "mobilite_snapshot")
+  if (nrow(tampon) != 1) {
+    stop("compute_histoires_mobilite : la source de référence « mobilite_",
+         "snapshot » est absente des vintages — les Stories ne peuvent pas ",
+         "être estampillées.", call. = FALSE)
+  }
+  tampon <- tampon %>%
+    dplyr::transmute(
+      vintage_source = source,
+      vintage_version = version,
+      vintage_date_reference = date_reference,
+      vintage_date_publication = date_publication
+    )
+
+  div <- analytiques$div_loss_territoires
+  saillance <- analytiques$saillance_territoires[c("code", "classification")]
+  signature <- analytiques$densite_territoires
+
+  vingt <- div %>%
+    dplyr::left_join(signature, by = "code") %>%
+    dplyr::left_join(saillance, by = "code") %>%
+    dplyr::mutate(
+      type = type_territoire_mobilite(code),
+      theme = "mobilite",
+      story_key = "vingt-minutes-sans-voiture"
+    ) %>%
+    dplyr::rename(territoire = code,
+                  classification_saillance = classification) %>%
+    dplyr::select(territoire, type, theme, story_key,
+                  div_loss_t, div_loss_b, delta, pct_iso_full_t,
+                  dens_min, dens_max,
+                  dplyr::all_of(paste0("dens_", 1:10)),
+                  dplyr::all_of(paste0("dec_", 1:10)),
+                  classification_saillance) %>%
+    dplyr::arrange(territoire)
+
+  velo <- div %>%
+    dplyr::left_join(saillance, by = "code") %>%
+    dplyr::filter(classification == "saillant") %>%
+    dplyr::mutate(
+      type = type_territoire_mobilite(code),
+      theme = "mobilite",
+      story_key = "ce-que-le-velo-preserve"
+    ) %>%
+    dplyr::rename(territoire = code,
+                  classification_saillance = classification) %>%
+    dplyr::select(territoire, type, theme, story_key,
+                  div_loss_t, div_loss_b, delta, classification_saillance) %>%
+    dplyr::arrange(territoire)
+
+  dplyr::bind_rows(vingt, velo) %>%
+    dplyr::bind_cols(tampon)
 }
 
 # construire_apercu_mobilite ---------------------------------------------------
