@@ -19,55 +19,68 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
 
-interface LigneIndicateur {
-  theme: string
-  key: string
-  unit: string
-  vintage_source: string
+/**
+ * Les payloads commis sont lus en balayage de lignes, jamais JSON.parse :
+ * l'économie pèse 82 Mo (160 k lignes) — matérialiser les tableaux entiers
+ * alourdirait la suite partagée. Un balayage par expression régulière ne
+ * retient que les faits de parité (thème, clé, unité ; story_key,
+ * classification), rien d'autre. L'ordre des champs est le schéma commis
+ * (docs/architecture.md §The fiche payload) — un champ est toujours suivi de
+ * son unité dans le même objet.
+ */
+const BALAYAGE_INDICATEURS =
+  /"theme": "([a-z]+)",\s*"key": "([^"]+)",[\s\S]*?"unit": "([^"]*)"/g
+
+const BALAYAGE_HISTOIRES =
+  /"theme": "([a-z]+)",\s*"story_key": "([^"]+)",[\s\S]*?"classification": ([^,\s]+)/g
+
+interface FaitsIndicateurs {
+  parTheme: Record<ThemeConstruit, Record<string, string>>
+  parStory: Record<ThemeConstruit, Record<string, string[]>>
+  storyKeys: Record<ThemeConstruit, Set<string>>
 }
 
-function indicateursCommites(theme: ThemeConstruit): LigneIndicateur[] {
-  return JSON.parse(
-    readFileSync(join(dataDir, `indicateurs_${theme}.json`), 'utf-8'),
-  ) as LigneIndicateur[]
+/** Balaye un payload commis et n'en extrait que les faits de parité. */
+function lireFaits(nomFichier: string, balayage: RegExp): { theme: string; clef: string; valeur: string | null }[] {
+  const brut = readFileSync(join(dataDir, nomFichier), 'utf-8')
+  const faits: { theme: string; clef: string; valeur: string | null }[] = []
+  for (const correspondance of brut.matchAll(balayage)) {
+    const valeur = correspondance[3] === 'null' ? null : correspondance[3].replace(/"/g, '')
+    faits.push({ theme: correspondance[1], clef: correspondance[2], valeur })
+  }
+  return faits
+}
+
+/** Les faits de parité des six fichiers commis, extraits une seule fois à l'échelle du module. */
+const FAITS: FaitsIndicateurs = { parTheme: { demographie: {}, habitat: {}, economie: {} }, parStory: { demographie: {}, habitat: {}, economie: {} }, storyKeys: { demographie: new Set(), habitat: new Set(), economie: new Set() } }
+
+for (const theme of THEMES_CONSTRUITS) {
+  for (const fait of lireFaits(`indicateurs_${theme}.json`, BALAYAGE_INDICATEURS)) {
+    FAITS.parTheme[theme as ThemeConstruit][fait.clef] = fait.valeur ?? ''
+  }
+  for (const fait of lireFaits(`histoires_${theme}.json`, BALAYAGE_HISTOIRES)) {
+    const construit = theme as ThemeConstruit
+    FAITS.storyKeys[construit].add(fait.clef)
+    if (fait.valeur === null) continue
+    if (!FAITS.parStory[construit][fait.clef]) FAITS.parStory[construit][fait.clef] = []
+    if (!FAITS.parStory[construit][fait.clef].includes(fait.valeur)) {
+      FAITS.parStory[construit][fait.clef].push(fait.valeur)
+    }
+  }
 }
 
 /** Les clés distinctes d'indicateurs de la payload, avec leur unité (ground truth). */
 function clefsEtUnitesCommites(theme: ThemeConstruit): Record<string, string> {
-  const parClef: Record<string, string> = {}
-  for (const ligne of indicateursCommites(theme)) {
-    if (ligne.theme === theme) parClef[ligne.key] = ligne.unit
-  }
-  return parClef
-}
-
-interface LigneHistoire {
-  theme: string
-  story_key: string
-  classification: string | null
-}
-
-function histoiresCommites(theme: ThemeConstruit): LigneHistoire[] {
-  return JSON.parse(
-    readFileSync(join(dataDir, `histoires_${theme}.json`), 'utf-8'),
-  ) as LigneHistoire[]
+  return FAITS.parTheme[theme]
 }
 
 function clefsHistoiresCommites(theme: ThemeConstruit): Set<string> {
-  return new Set(histoiresCommites(theme).map((h) => h.story_key))
+  return FAITS.storyKeys[theme]
 }
 
 /** Les classifications publiées (non nulles) de chaque Story — les lectures à documenter. */
 function classificationsParStory(theme: ThemeConstruit): Record<string, string[]> {
-  const parStory: Record<string, string[]> = {}
-  for (const histoire of histoiresCommites(theme)) {
-    if (histoire.classification === null) continue
-    if (!parStory[histoire.story_key]) parStory[histoire.story_key] = []
-    if (!parStory[histoire.story_key].includes(histoire.classification)) {
-      parStory[histoire.story_key].push(histoire.classification)
-    }
-  }
-  return parStory
+  return FAITS.parStory[theme]
 }
 
 describe('registre Méthodes — la forme exposée au contrat de parité', () => {
