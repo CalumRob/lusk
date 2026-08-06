@@ -1,0 +1,159 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
+
+import { THEMES_CONSTRUITS, THEMES_METHODES } from '../methodes/indicateurs'
+import {
+  apercuAvecNAFixture,
+  histoiresDemographieFixture,
+  indicateursDemographieFixture,
+  territoiresFixture,
+} from '../payload/fixtures'
+import type { ChargerPayload } from '../payload/usePayload'
+import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import type { Payload, Vintage } from '../payload/types'
+import { routes } from '../router'
+import MethodologieView from '../views/MethodologieView.vue'
+
+/**
+ * /methodologie — la section « les indicateurs » (issue #129, layouts.md §5) :
+ * pour chaque thème construit, un bloc d'ancre (#demographie, #habitat,
+ * #economie) qui porte la rampe du thème, les définitions des indicateurs
+ * (label, définition, unité, source) puis les Stories. Jamais de bannière de
+ * construction (principles.md §1).
+ */
+
+const dataDir = join(process.cwd(), '..', 'public', 'data')
+
+function vintagesCommites(): Vintage[] {
+  return JSON.parse(readFileSync(join(dataDir, 'vintages.json'), 'utf-8')) as Vintage[]
+}
+
+const payload: Payload = {
+  territoires: territoiresFixture,
+  indicateurs: indicateursDemographieFixture,
+  histoires: histoiresDemographieFixture,
+  apercu: apercuAvecNAFixture,
+  runReport: null,
+  vintages: vintagesCommites(),
+}
+
+async function monter(charger: ChargerPayload) {
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push('/methodologie')
+  await router.isReady()
+  const wrapper = mount(MethodologieView, {
+    global: {
+      plugins: [router],
+      provide: { [PAYLOAD_CHARGER_KEY]: charger },
+    },
+  })
+  await flushPromises()
+  return wrapper
+}
+
+describe('MethodologieView — la section « les indicateurs »', () => {
+  it('rend une section par thème construit, chacune à son ancre', async () => {
+    const wrapper = await monter(async () => payload)
+
+    for (const theme of THEMES_CONSTRUITS) {
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      expect(bloc.exists(), `bloc « ${theme} » introuvable`).toBe(true)
+    }
+  })
+
+  it('chaque bloc de thème porte la rampe du thème (strong/wash/line)', async () => {
+    const wrapper = await monter(async () => payload)
+
+    for (const theme of THEMES_CONSTRUITS) {
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      expect(bloc.classes()).toContain(`bloc-theme--${theme}`)
+      const style = bloc.attributes('style') ?? ''
+      expect(style, `« ${theme} » sans rampe strong`).toContain(
+        `var(--theme-${theme}-strong)`,
+      )
+      expect(style).toContain(`var(--theme-${theme}-wash)`)
+      expect(style).toContain(`var(--theme-${theme}-line)`)
+    }
+  })
+
+  it('liste chaque indicateur du registre avec sa définition, son unité et sa source', async () => {
+    const wrapper = await monter(async () => payload)
+
+    for (const theme of THEMES_CONSTRUITS) {
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        const blocIndicateur = bloc.find(`.bloc-indicateur[data-clef="${clef}"]`)
+        expect(blocIndicateur.exists(), `bloc « ${theme}.${clef} » introuvable`).toBe(true)
+        const texte = blocIndicateur.text()
+        expect(texte, `« ${theme}.${clef} » sans label`).toContain(indicateur.label)
+        expect(texte, `« ${theme}.${clef} » sans définition`).toContain(indicateur.definition)
+        expect(texte, `« ${theme}.${clef} » sans source`).toContain(indicateur.source)
+        // une unité vide (rapport sans unité) rend « sans unité », jamais une case vide
+        expect(texte).toContain(indicateur.unite || 'sans unité')
+      }
+    }
+  })
+
+  it('documente chaque Story du registre avec son titre, sa définition et ses lectures', async () => {
+    const wrapper = await monter(async () => payload)
+
+    for (const theme of THEMES_CONSTRUITS) {
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      const texte = bloc.text()
+      for (const story of THEMES_METHODES[theme].stories) {
+        expect(texte, `« ${theme}.${story.clef} » sans titre`).toContain(story.titre)
+        expect(texte, `« ${theme}.${story.clef} » sans définition`).toContain(story.definition)
+        for (const lecture of story.lectures) {
+          expect(texte, `« ${theme}.${story.clef} » sans lecture « ${lecture.nom} »`).toContain(
+            lecture.nom,
+          )
+        }
+      }
+    }
+  })
+
+  it('documente la Story de la région « Ce que la Bretagne abrite » dans le bloc économie', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#economie')
+    const texte = bloc.text()
+    expect(texte).toContain('Ce que la Bretagne abrite')
+    expect(texte).toContain('les cinq types d’établissements les plus présents')
+  })
+
+  it('marque la Story en pause comme non publiée, jamais comme une Story active', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#economie')
+    const marqueur = bloc.find('.bloc-story--en-pause .bloc-story-pause')
+    expect(marqueur.exists()).toBe(true)
+    expect(marqueur.text()).toMatch(/en pause/i)
+    expect(marqueur.text()).toMatch(/non publiée/i)
+    // les lectures du dortoir restent documentées, mais dans la note en pause
+    expect(bloc.find('.bloc-story--en-pause').text()).toContain('Dortoir profond')
+    expect(bloc.find('.bloc-story--en-pause').text()).toContain('Équilibre')
+  })
+
+  it('ne rend aucune bannière de construction', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const texte = wrapper.text()
+    expect(texte).not.toMatch(/à venir|en construction|bientôt|under construction/i)
+  })
+
+  it('la section des indicateurs vient après celle des sources', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const sources = wrapper.find('section#sources')
+    const indicateurs = wrapper.find('section#indicateurs')
+    expect(sources.exists()).toBe(true)
+    expect(indicateurs.exists()).toBe(true)
+    expect(sources.element.compareDocumentPosition(indicateurs.element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+})
