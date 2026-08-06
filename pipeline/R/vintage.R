@@ -20,3 +20,22 @@ vintages_depuis_manifest <- function(manifest) {
       date_publication = date_publication
     )
 }
+
+# fusionner_vintages -----------------------------------------------------------
+# Issue #124 : la table des vintages est PARTAGÉE (pas par-thème) — un run doit
+# FUSIONNER ses sources dans la table déjà sur disque au lieu d'écraser le
+# fichier commun avec les seules sources de son thème (last-writer-wins par
+# thème, le même bug que #116 a corrigé pour apercu). Sémantique d'upsert par
+# source : lire l'existante (le parquet canonique, ADR-0004) si présente,
+# bind_rows avec les vintages du thème — les sources du run sont les plus
+# fraîches et gagnent sur leur id — puis dédupliquer par `id`. Une source ne
+# disparaît jamais de la table partagée parce qu'un autre thème a tourné.
+fusionner_vintages <- function(vintages, sortie = "public/data") {
+  chemin <- file.path(sortie, "vintages.parquet")
+  if (!file.exists(chemin)) {
+    return(vintages)
+  }
+  existantes <- nanoparquet::read_parquet(chemin)
+  dplyr::bind_rows(vintages, existantes) %>%
+    dplyr::distinct(id, .keep_all = TRUE)
+}
