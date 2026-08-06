@@ -145,7 +145,9 @@ describe('payload contract — the committed payload parses and renders', () => 
   it('loads the committed vintages table — the freshness facts of the Méthodes sources', async () => {
     const payload = await chargerPayloadCommite()
 
-    expect(payload.vintages).toHaveLength(4)
+    // L'union commise (issue #124/#133) : une ligne par source des trois
+    // thèmes construits — démographie + habitat + economie
+    expect(payload.vintages).toHaveLength(30)
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
       source: 'INSEE — Série historique du recensement',
