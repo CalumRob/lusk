@@ -11,11 +11,13 @@ import type {
   ApercuRow,
   ColonneRang,
   Histoire,
+  HistoireEconomie,
   Indicateur,
   Payload,
   Territoire,
   TerritoireType,
   Theme,
+  VintageStamp,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
 import { SOURCES_METHODES } from '@/methodes/sources'
@@ -113,11 +115,15 @@ export function trouverTerritoire(payload: Payload, id: string): Territoire | nu
 
 /**
  * The canonical order of the standard indicators per theme — the fiche
- * contract (docs/themes/<theme>.md). Keys absent from the map keep their
- * payload order (later themes extend the map when their block lands).
+ * contract (docs/themes/<theme>.md, INDICATEURS_<theme> côté R). Keys absent
+ * from the map keep their payload order (later themes extend the map when
+ * their block lands).
  */
 const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
   demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
+  // Économie (issue #120) : « Taille » → « santé » → « verdure » — l'ordre du
+  // contrat R (INDICATEURS_ECONOMIE), pas celui du JSON.
+  economie: ['effectifs_salaries', 'chomage', 'eco_activites'],
 }
 
 /** The standard indicator rows for a territoire + theme, in the contract's order. */
@@ -176,6 +182,26 @@ export function histoirePourTerritoire(
   return payload.histoires.find(
     (histoire) => histoire.theme === theme && histoire.territoire === territoire,
   ) ?? null
+}
+
+/**
+ * The Économie Story rows of a territoire (issue #120) — the top-5 grouped by
+ * (territoire × story_key), sorted by rang (ascending): the specialisation
+ * reading for communes/EPCIs/départements, the presence reading for the région
+ * (53, story_key ce-que-la-bretagne-abrite). A territoire has exactly one Story
+ * — the five lines are the reading, never a sample. Null for a territory
+ * without an Économie Story (handled honestly, no invented reading).
+ */
+export function histoiresEconomiePourTerritoire(
+  payload: Payload,
+  territoire: string,
+): HistoireEconomie[] | null {
+  const lignes = payload.histoires
+    .filter(
+      (h): h is HistoireEconomie => h.theme === 'economie' && h.territoire === territoire,
+    )
+    .sort((a, b) => a.rang - b.rang || a.activity_code.localeCompare(b.activity_code))
+  return lignes.length > 0 ? lignes : null
 }
 
 /** One point of the story chart's context cloud (ADR-0011). */
@@ -306,7 +332,8 @@ function codesComparaison(payload: Payload, ref: Territoire): string[] {
 
   if (ref.type === 'commune') {
     // une commune de l'EPCI voit les communes de SON EPCI ; sans EPCI, les
-    // communes de son département (il en existe deux en Bretagne réelle)
+    // communes de son département (il en existe trois en Bretagne réelle —
+    // les îles 22016/29083/29155, fix « Sans objet », issue #131)
     if (ref.epci) {
       return payload.territoires
         .filter((t) => t.type === 'commune' && t.epci === ref.epci)
@@ -394,17 +421,20 @@ function formaterDateCourt(iso: string): string {
 /**
  * The vintage stamp — source · version · the two dates (reference AND
  * publication). The "alive" promise: always present, never optional
- * (ui-elements.md §Indicator/KPI figure). A rolling base (DPE — ADR-0009)
- * has no reference date: the stamp shows the publication date only, honestly
- * ("publ." alone) — never a fabricated reference.
+ * (ui-elements.md §Indicator/KPI figure). Works on any vintage-stamped row of
+ * the payload — the indicateurs AND the Économie Stories, which carry their
+ * own stamp (issue #74: the Story cites its source, never an invented one). A
+ * rolling base (DPE — ADR-0009) has no reference date: the stamp shows the
+ * publication date only, honestly ("publ." alone) — never a fabricated
+ * reference.
  */
-export function formaterVintage(indicateur: Indicateur): string {
-  const reference = indicateur.vintage_date_reference
-    ? `réf. ${formaterDateCourt(indicateur.vintage_date_reference)} · `
+export function formaterVintage(vintage: VintageStamp): string {
+  const reference = vintage.vintage_date_reference
+    ? `réf. ${formaterDateCourt(vintage.vintage_date_reference)} · `
     : ''
   return (
-    `${indicateur.vintage_source} · ${indicateur.vintage_version} · ` +
-    `${reference}publ. ${formaterDateCourt(indicateur.vintage_date_publication)}`
+    `${vintage.vintage_source} · ${vintage.vintage_version} · ` +
+    `${reference}publ. ${formaterDateCourt(vintage.vintage_date_publication)}`
   )
 }
 
