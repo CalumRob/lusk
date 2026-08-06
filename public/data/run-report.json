@@ -1,29 +1,44 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-06T02:43:57Z",
+  "timestamp": "2026-08-06T20:24:35Z",
   "statuts": [
     {
-      "id": "sirene_snapshot",
+      "id": "mobilite_snapshot",
       "mode": "manuel",
       "status": "frais"
     },
     {
-      "id": "flores_a38",
+      "id": "rp_logement_princ",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "flores_a88",
+      "id": "osm_reseaux",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "communes_limites",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "rp_emploi",
+      "id": "korrigo",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "rp_chomage",
+      "id": "batiments_residentiels",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "bornes-recharges",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "stationnement-velo",
       "mode": "cron",
       "status": "frais"
     }
