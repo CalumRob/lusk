@@ -19,7 +19,7 @@
  */
 
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
-export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie'] as const
+export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite'] as const
 
 export type ThemeConstruit = (typeof THEMES_CONSTRUITS)[number]
 
@@ -68,6 +68,33 @@ export interface StoryMethodes {
 export interface ThemeMethodes {
   indicateurs: Record<string, IndicateurMethodes>
   stories: StoryMethodes[]
+  /**
+   * L'horloge lente du thème (ADR-0012, CONTEXT.md → Alive) — documentée comme
+   * fait de première classe quand le thème est un instantané sur rythme lent :
+   * ce que le flagship consomme, à quelle fréquence chaque entrée bouge, le
+   * déclencheur de rebuild. Absente pour les thèmes légers (rythme hebdomadaire).
+   */
+  horlogeLente?: HorlogeLenteMethodes
+}
+
+/** Une entrée de l'horloge lente — une donnée que l'instantané consomme. */
+export interface EntreeHorlogeLente {
+  /** La donnée consommée, en français public (jamais un nom d'artefact). */
+  donnee: string
+  /** À quelle fréquence la donnée bouge chez son producteur. */
+  frequence: string
+  /** Le millésime consommé par l'instantané (la référence publiée). */
+  reference: string
+}
+
+/** L'horloge lente d'un thème — le fait de première classe de l'instantané. */
+export interface HorlogeLenteMethodes {
+  /** Ce que le flagship consomme, en une phrase. */
+  consommation: string
+  /** Les entrées de l'instantané — à quelle fréquence chacune bouge. */
+  entrees: EntreeHorlogeLente[]
+  /** Le déclencheur de rebuild — quand le thème se recalcule. */
+  declencheur: string
 }
 
 /**
@@ -304,5 +331,154 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         ],
       },
     ],
+  },
+
+  // ---- Mobilité (docs/themes/mobilite.md, ADR-0012) ----
+  mobilite: {
+    indicateurs: {
+      nb_buildings: {
+        label: 'Bâtiments résidentiels',
+        definition:
+          'Le nombre de bâtiments résidentiels du territoire, comptés un à un par l’analyse d’accessibilité. Chaque bâtiment est le point de départ d’un trajet à pied ou en transports en commun : c’est sur cet ensemble que se calculent la part des bâtiments isolés et la perte de diversité.',
+        unite: 'bâtiments',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+      },
+      voitures_menage: {
+        label: 'Voitures par ménage',
+        definition:
+          'La motorisation des ménages du territoire : la part des ménages sans voiture et la part des ménages équipés de deux voitures ou plus, issues du recensement. C’est le pendant de la demande — ce qu’on peut atteindre à pied ou en transports en commun d’un côté, combien de voitures on possède de l’autre.',
+        unite: '%',
+        source:
+          'INSEE \u2014 Recensement de la population, exploitations principales (Logements) \u2014 tableau LOG T12 \u00ab \u00c9quipement automobile des m\u00e9nages \u00bb (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)',
+        sourceId: 'rp_logement_princ',
+      },
+      reseaux: {
+        label: 'Réseaux à pied, à vélo et en voiture',
+        definition:
+          'La longueur (en kilomètres) et la densité (en kilomètres par kilomètre carré) des réseaux routier, cyclable et piéton du territoire, relevés dans la cartographie participative OpenStreetMap. Trois modes sont distingués — à pied, à vélo, en voiture — chacun avec sa longueur et sa densité.',
+        unite: 'km',
+        source:
+          'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+        sourceId: 'osm_reseaux',
+      },
+      offre_tc: {
+        label: 'Offre de transports en commun',
+        definition:
+          'La part des bâtiments résidentiels du territoire situés à moins de 500 mètres à vol d’oiseau d’un arrêt de transports en commun — le rayon de « 10 minutes à pied » autour d’un arrêt. Les arrêts sont ceux de la base multimodale Korrigo, la fédération des réseaux de transport public bretons.',
+        unite: '%',
+        source:
+          'Bretagne Mobilit\u00e9 \u2014 Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ r\u00e9seaux : BreizhGo TER/car/maritime + les r\u00e9seaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kic\u00e9o\u2026)',
+        sourceId: 'korrigo',
+      },
+      bornes_recharge: {
+        label: 'Bornes de recharge pour véhicules électriques',
+        definition:
+          'Le nombre de stations de recharge pour véhicules électriques (IRVE) présentes sur le territoire. Le compte porte les stations, jamais les prises : une station peut offrir plusieurs points de charge, et c’est l’offre de recharge qui compte. Les stations sans commune identifiable restent hors comptage — une limite signalée par le fichier lui-même.',
+        unite: 'bornes',
+        source:
+          'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
+        sourceId: 'bornes-recharges',
+      },
+      places_stationnement_velo_1000: {
+        label: 'Places de stationnement vélo pour 1 000 habitants',
+        definition:
+          'Le nombre de places de stationnement vélo rapporté à 1 000 habitants, précalculé par le hub d’indicateurs territoriaux de transition écologique depuis la base nationale du stationnement cyclable — elle-même issue de la cartographie participative OpenStreetMap.',
+        unite: 'places / 1 000 hab',
+        source:
+          'Ecolab \u2014 Nombre de places de stationnement v\u00e9lo pour 1 000 hab. (hub d\u2019indicateurs territoriaux de transition \u00e9cologique ; source OSM : Base Nationale du Stationnement Cyclable)',
+        sourceId: 'stationnement-velo',
+      },
+      iso_alimentation: {
+        label: 'Part des bâtiments sans accès à l’alimentation',
+        definition:
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun commerce alimentaire à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+        unite: '%',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+      },
+      iso_sante: {
+        label: 'Part des bâtiments sans accès à la santé',
+        definition:
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun service de santé à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+        unite: '%',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+      },
+      iso_administration: {
+        label: 'Part des bâtiments sans accès aux services administratifs',
+        definition:
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun service administratif à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+        unite: '%',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+      },
+      iso_ecole: {
+        label: 'Part des bâtiments sans accès à l’école',
+        definition:
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucune école à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+        unite: '%',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+      },
+      iso_banque: {
+        label: 'Part des bâtiments sans accès à la banque',
+        definition:
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucune banque à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+        unite: '%',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+      },
+    },
+    stories: [
+      {
+        clef: 'vingt-minutes-sans-voiture',
+        titre: 'Vingt minutes sans voiture',
+        statut: 'publiee',
+        definition:
+          'La Story par défaut du thème Mobilité — le titre du flagship, la seule exception au vocabulaire « à pied ou en transports en commun ». Elle lit la perte de diversité : le nombre de types de services qui sortent de la portée quotidienne du territoire quand la voiture est retirée — ce qu’on atteint en voiture en 20 minutes, moins ce qu’on atteint encore à pied ou en transports en commun. Chaque bâtiment du territoire est le point de départ d’un trajet ; la Story rassemble la distribution bâtiment par bâtiment, en marque la médiane et la compare aux territoires de même échelle. C’est un compte, jamais un indice : le nombre se lit tel quel, il ne cache pas son calcul. La Story s’affiche pour tous les territoires — tout territoire a une perte.',
+        lectures: [],
+      },
+      {
+        clef: 'ce-que-le-velo-preserve',
+        titre: 'Ce que le vélo préserve',
+        statut: 'publiee',
+        definition:
+          'La Story candidate du thème Mobilité, déclenchée par la saillance : elle lit le delta vélo — les types de services que la bicyclette préserve déjà au-delà de la marche et des transports en commun. « Déjà » est le mot exact : la Story lit le réseau actuel, jamais un réseau rêvé — ce que le vélo permet, pas ce que de meilleures infrastructures apporteraient. Elle ne remplace la Story par défaut que là où le delta est réel : la plupart des communes ne préservent qu’un type de service environ — rien à raconter — et ce n’est que dans les territoires les mieux dotés que la bicyclette préserve vraiment la diversité (de l’ordre de quatre à dix types de services).',
+        lectures: [],
+      },
+    ],
+    horlogeLente: {
+      consommation:
+        'Le thème Mobilité est construit autour d’une analyse d’accessibilité figée : un instantané calculé le 28 février 2026 et porté dans le pipeline le 6 août 2026. Ses trois données de référence — les équipements de proximité, les réseaux et les bâtiments — ne bougent pas chaque semaine : le thème se rafraîchit sur un rythme lent, et il le dit. Les autres sources du thème (recensement, transports, bornes, stationnement vélo) suivent le rythme hebdomadaire des autres thèmes.',
+      entrees: [
+        {
+          donnee:
+            'Les équipements de proximité (alimentation, santé, services administratifs, écoles, banques)',
+          frequence: 'annuelle — un nouveau millésime publié chaque année',
+          reference: 'BPE 2024',
+        },
+        {
+          donnee: 'Les réseaux à pied, à vélo et en voiture',
+          frequence:
+            'l’extrait cartographique est reconstruit chaque jour, mais l’instantané fige celui du 5 août 2026',
+          reference: 'extrait du 5 août 2026',
+        },
+        {
+          donnee: 'Les bâtiments résidentiels',
+          frequence:
+            'par campagnes espacées — la base nationale des bâtiments évolue rarement',
+          reference: 'BDNB juillet 2025',
+        },
+      ],
+      declencheur:
+        'Le thème se recalcule à la main, sur décision — jamais automatiquement : quand l’une de ses données de référence bouge de façon significative (un nouveau millésime d’équipements, une actualisation majeure des réseaux ou des bâtiments), l’analyse est re-générée, figée à sa nouvelle date d’instantané, puis re-portée dans le pipeline. La date publiée est celle de l’instantané : le thème ne prétend jamais être plus frais que son calcul.',
+    },
   },
 }

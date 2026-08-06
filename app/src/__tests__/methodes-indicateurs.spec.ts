@@ -10,7 +10,7 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
 /**
  * Le registre Méthodes des indicateurs & Stories (issue #129, docs/themes/
  * README.md §The Méthodes contract). La parité avec la payload : chaque clé
- * d'indicateur des trois thèmes construits (public/data/indicateurs_<theme>.json)
+ * d'indicateur des thèmes construits (public/data/indicateurs_<theme>.json)
  * doit avoir une définition de registre, avec son unité et sa source en
  * ground truth ; chaque Story construite (public/data/histoires_<theme>.json)
  * doit être documentée. Le registre expose le mapping thème → documentation
@@ -51,8 +51,17 @@ function lireFaits(nomFichier: string, balayage: RegExp): { theme: string; clef:
   return faits
 }
 
-/** Les faits de parité des six fichiers commis, extraits une seule fois à l'échelle du module. */
-const FAITS: FaitsIndicateurs = { parTheme: { demographie: {}, habitat: {}, economie: {} }, parStory: { demographie: {}, habitat: {}, economie: {} }, storyKeys: { demographie: new Set(), habitat: new Set(), economie: new Set() } }
+/** Les faits de parité des huit fichiers commis, extraits une seule fois à l'échelle du module. */
+const FAITS: FaitsIndicateurs = {
+  parTheme: { demographie: {}, habitat: {}, economie: {}, mobilite: {} },
+  parStory: { demographie: {}, habitat: {}, economie: {}, mobilite: {} },
+  storyKeys: {
+    demographie: new Set(),
+    habitat: new Set(),
+    economie: new Set(),
+    mobilite: new Set(),
+  },
+}
 
 for (const theme of THEMES_CONSTRUITS) {
   for (const fait of lireFaits(`indicateurs_${theme}.json`, BALAYAGE_INDICATEURS)) {
@@ -84,8 +93,8 @@ function classificationsParStory(theme: ThemeConstruit): Record<string, string[]
 }
 
 describe('registre Méthodes — la forme exposée au contrat de parité', () => {
-  it('couvre les trois thèmes construits, dans l\u2019ordre canonique', () => {
-    expect(THEMES_CONSTRUITS).toEqual(['demographie', 'habitat', 'economie'])
+  it('couvre les thèmes construits, dans l\u2019ordre canonique', () => {
+    expect(THEMES_CONSTRUITS).toEqual(['demographie', 'habitat', 'economie', 'mobilite'])
     expect(Object.keys(THEMES_METHODES)).toEqual(THEMES_CONSTRUITS)
   })
 
@@ -106,7 +115,7 @@ describe('registre Méthodes — la forme exposée au contrat de parité', () =>
 })
 
 describe('registre Méthodes — la parité avec les indicateurs de la payload', () => {
-  it('couvre chaque clé d\u2019indicateur des trois thèmes construits', () => {
+  it('couvre chaque clé d\u2019indicateur des thèmes construits', () => {
     for (const theme of THEMES_CONSTRUITS) {
       const clefs = clefsEtUnitesCommites(theme)
       expect(Object.keys(clefs).length, `« ${theme} » sans indicateurs commis`).toBeGreaterThan(0)
@@ -186,6 +195,38 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     expect(commune?.statut).toBe('publiee')
     expect(region?.statut).toBe('publiee')
     expect(dortoir?.statut).toBe('en-pause')
+  })
+
+  it('la mobilité documente le modèle CONTEXT.md — la Story par défaut et sa candidate saillante', () => {
+    const clefs = new Set(THEMES_METHODES.mobilite.stories.map((s) => s.clef))
+    expect(clefs).toEqual(
+      new Set(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']),
+    )
+
+    // les deux Stories sont publiées — le flagship est la Story par défaut,
+    // la candidate « Ce que le vélo préserve » se déclenche par la saillance
+    for (const story of THEMES_METHODES.mobilite.stories) {
+      expect(story.statut, `« mobilite.${story.clef} » non publiée`).toBe('publiee')
+    }
+  })
+
+  it('documente l\u2019horloge lente comme fait de première classe (ADR-0012)', () => {
+    const horloge = THEMES_METHODES.mobilite.horlogeLente
+    expect(horloge, '« mobilite » sans horloge lente documentée').toBeDefined()
+
+    // ce que le flagship consomme, en une phrase — jamais vide
+    expect(horloge!.consommation.length).toBeGreaterThan(20)
+
+    // chaque entrée : ce qui bouge, à quelle fréquence, la référence figée
+    expect(horloge!.entrees.length).toBeGreaterThan(0)
+    for (const entree of horloge!.entrees) {
+      expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
+      expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
+      expect(entree.reference.length, 'entrée sans référence').toBeGreaterThan(0)
+    }
+
+    // le déclencheur de rebuild — quand le thème se recalcule
+    expect(horloge!.declencheur.length).toBeGreaterThan(20)
   })
 
   it('documente chaque lecture publiée (classification non nulle) des thèmes stables', () => {

@@ -98,6 +98,26 @@ function uniteAffichage(unite: string): string {
           </ul>
         </article>
       </div>
+
+      <div v-if="THEMES_METHODES[theme].horlogeLente" class="groupe-horloge">
+        <h3 class="groupe-titre">L’horloge lente</h3>
+        <p class="horloge-consommation">{{ THEMES_METHODES[theme].horlogeLente.consommation }}</p>
+        <dl class="horloge-entrees">
+          <div
+            v-for="(entree, index) in THEMES_METHODES[theme].horlogeLente.entrees"
+            :key="index"
+            class="horloge-entree"
+          >
+            <dt class="horloge-donnee">{{ entree.donnee }}</dt>
+            <dd class="horloge-frequence">{{ entree.frequence }}</dd>
+            <dd class="horloge-reference">Référence : {{ entree.reference }}</dd>
+          </div>
+        </dl>
+        <p class="horloge-declencheur">
+          <span class="horloge-etiquette">Déclencheur de recalcul</span>
+          {{ THEMES_METHODES[theme].horlogeLente.declencheur }}
+        </p>
+      </div>
     </article>
   </section>
 </template>
@@ -279,5 +299,64 @@ function uniteAffichage(unite: string): string {
 .lecture-texte {
   color: var(--text-secondary);
   font: var(--text-body-sm);
+}
+
+/* ---- L'horloge lente (ADR-0012 — le fait de première classe de l'instantané) ---- */
+.groupe-horloge {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.horloge-consommation,
+.horloge-declencheur {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+}
+
+.horloge-entrees {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.horloge-entree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--bloc-line);
+  background: var(--surface-primary);
+}
+
+.horloge-donnee {
+  margin: 0;
+  font-weight: 600;
+  color: var(--bloc-strong);
+}
+
+.horloge-frequence,
+.horloge-reference {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+}
+
+.horloge-reference {
+  color: var(--text-tertiary);
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+}
+
+.horloge-etiquette {
+  display: inline-block;
+  margin-right: var(--space-2);
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--bloc-strong);
 }
 </style>

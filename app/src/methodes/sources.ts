@@ -155,10 +155,56 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   },
 
   // ---- Mobilité (docs/themes/mobilite.md) ----
+  // L'ordre du manifeste (manifest_mobilite.R) : le snapshot porté (l'horloge
+  // lente du flagship, issue #137), les trois sources de l'étage
+  // demande/réseaux (issue #139), puis les quatre sources du sous-bloc
+  // « L'offre de mobilité alternative » (issue #140).
   mobilite_snapshot: {
-    nom: 'Lusk — analyse d\u2019accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+    nom: 'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
     editeur: 'Lusk',
     url: null,
+    themes: ['mobilite'],
+  },
+  rp_logement_princ: {
+    nom: 'INSEE \u2014 Recensement de la population, exploitations principales (Logements) \u2014 tableau LOG T12 \u00ab \u00c9quipement automobile des m\u00e9nages \u00bb (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)',
+    editeur: 'INSEE',
+    url: 'https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR',
+    themes: ['mobilite'],
+  },
+  osm_reseaux: {
+    nom: 'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+    editeur: 'OpenStreetMap',
+    url: 'https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf',
+    themes: ['mobilite'],
+  },
+  communes_limites: {
+    nom: 'IGN \u2014 Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)',
+    editeur: 'IGN',
+    url: 'https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,urn:ogc:def:crs:EPSG::4326',
+    themes: ['mobilite'],
+  },
+  korrigo: {
+    nom: 'Bretagne Mobilit\u00e9 \u2014 Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ r\u00e9seaux : BreizhGo TER/car/maritime + les r\u00e9seaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kic\u00e9o\u2026)',
+    editeur: 'Bretagne Mobilit\u00e9',
+    url: 'https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo',
+    themes: ['mobilite'],
+  },
+  batiments_residentiels: {
+    nom: 'BDNB (Base Nationale des B\u00e2timents) \u2014 couche des b\u00e2timents r\u00e9sidentiels de Bretagne, port\u00e9e pour l\u2019offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)',
+    editeur: 'CSTB (BDNB)',
+    url: null,
+    themes: ['mobilite'],
+  },
+  'bornes-recharges': {
+    nom: 'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
+    editeur: 'Etalab',
+    url: 'https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B',
+    themes: ['mobilite'],
+  },
+  'stationnement-velo': {
+    nom: 'Ecolab \u2014 Nombre de places de stationnement v\u00e9lo pour 1 000 hab. (hub d\u2019indicateurs territoriaux de transition \u00e9cologique ; source OSM : Base Nationale du Stationnement Cyclable)',
+    editeur: 'Ecolab',
+    url: 'https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv',
     themes: ['mobilite'],
   },
 }
