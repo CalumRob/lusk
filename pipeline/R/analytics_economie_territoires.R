@@ -1,0 +1,209 @@
+# analytics_economie_territoires ------------------------------------------------
+# L'agrégation du payload Économie aux niveaux EPCI / département / région
+# (issue #131, décisions verrouillées 2026-08-06 — CONTEXT.md « Taille » et
+# « Rang »). Les tables analytiques T1-T5 sont COMMUNALES : ce module les
+# propage aux quatre niveaux de territoire (commune / EPCI / département /
+# région) en appliquant LES RÈGLES D'AGRÉGATION décidées — jamais une moyenne
+# de parts communales :
+#
+#   - `effectifs_salaries` (la « Taille ») : le total effectifs salariés au
+#     lieu de travail (Flores A88 — l'agrégation du dortoir) SOMMÉ par niveau ;
+#   - `chomage` (santé) : le taux d'un agrégat est RECALCULÉ depuis les parties
+#     — Σ chômeurs ÷ Σ population active, jamais la moyenne des taux ;
+#   - `eco_activites` (verdure) : Σ établissements verts ÷ Σ établissements,
+#     jamais la moyenne des parts ;
+#   - la LQ des agrégats est recalée à RÉFÉRENCE MÊME-ÉCHELLE (un EPCI vs les
+#     autres EPCIs, un département vs les autres départements — jamais vs la
+#     moyenne bretonne des communes) : la matière des histoires.
+# Les communes SANS EPCI (les trois îles bretonnes — fix « Sans objet »,
+# issue #131) n'agrègent à AUCUN niveau EPCI : elles vivent commune /
+# département / région. Aucun artefact de fiche ici : ce module nourrit
+# l'assemblage du payload (theme_economie.R), la publication reste celle de
+# T8. Les tests (test-analytics-economie-territoires.R) sont le seam.
+
+# decliner_aux_niveaux ---------------------------------------------------------
+# La mécanique partagée des trois indicateurs : la table communale (avec une
+# colonne `commune`) est jointe à son EPCI / département (la base partagée
+# lire_epci), puis déclinée aux QUATRE niveaux — la commune telle quelle, son
+# EPCI (les communes membres, JAMAIS les sans-EPCI), son département, la
+# région. `mesures` nomme les colonnes SOMMÉES par niveau d'agrégat (les
+# numérateurs des taux : effectifs, chômeurs + actifs, verts + établissements
+# — les agrégats RECALCULENT, ils ne moyennent jamais une part). Une cellule
+# NA reste NA dans la somme (un niveau dont une partie est inconnue est
+# inconnu — jamais un total partiel inventé).
+decliner_aux_niveaux <- function(table, base_epci, mesures) {
+  ctx <- table %>%
+    dplyr::left_join(base_epci[c("CODGEO", "EPCI", "DEP")],
+                     by = c("commune" = "CODGEO"))
+
+  dplyr::bind_rows(
+    # commune : la valeur communale telle quelle
+    ctx %>%
+      dplyr::select(dplyr::all_of(c("commune", mesures))) %>%
+      dplyr::rename(code = commune),
+    # EPCI : la somme des communes membres — les sans-EPCI (les îles) n'y
+    # entrent jamais (fix « Sans objet »)
+    ctx %>%
+      dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(dplyr::across(dplyr::all_of(mesures), sum),
+                       .groups = "drop"),
+    # département : la somme des communes du département
+    ctx %>%
+      dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(dplyr::across(dplyr::all_of(mesures), sum),
+                       .groups = "drop"),
+    # région : la somme de toutes les communes
+    ctx %>%
+      dplyr::summarise(code = "53",
+                       dplyr::across(dplyr::all_of(mesures), sum),
+                       .groups = "drop")
+  )
+}
+
+# agreger_effectifs_territoires -------------------------------------------------
+# La « Taille » (issue #131) : le total effectifs salariés au lieu de travail
+# par niveau — les communes portent leur propre effectif, les agrégats la
+# SOMME (jamais une moyenne). L'entrée est la table (commune,
+# effectifs_salaries) de l'agrégation du dortoir (agreger_effectifs_travail,
+# ressuscitée) : une commune avec une cellule non diffusée (statut K) porte
+# une somme NA — un niveau qui la contient est NA, jamais un total partiel.
+# Déterministe : trié par code.
+agreger_effectifs_territoires <- function(effectifs, base_epci) {
+  decliner_aux_niveaux(effectifs, base_epci, "effectifs_salaries") %>%
+    dplyr::rename(value = effectifs_salaries) %>%
+    dplyr::arrange(code)
+}
+
+# agreger_chomage_territoires ---------------------------------------------------
+# Le chômage par niveau : les numérateurs (chômeurs, population active) sont
+# SOMMÉS par niveau, le taux est RECALCULÉ (Σ chômeurs ÷ Σ actifs) — jamais la
+# moyenne des taux communaux. Un niveau dont une commune manque un numérateur
+# (NA) est NA : la règle du « jamais un zéro inventé » du taux communal, au
+# niveau agrégé. Déterministe : trié par code.
+agreger_chomage_territoires <- function(chomage, base_epci) {
+  decliner_aux_niveaux(chomage, base_epci, c("chomeurs", "population_active")) %>%
+    dplyr::mutate(
+      value = dplyr::if_else(
+        !is.na(.data$chomeurs) &
+          !is.na(.data$population_active) & .data$population_active > 0,
+        .data$chomeurs / .data$population_active,
+        NA_real_
+      )
+    ) %>%
+    dplyr::select(code, value) %>%
+    dplyr::arrange(code)
+}
+
+# agreger_eco_territoires -------------------------------------------------------
+# La part des éco-activités par niveau : Σ établissements verts ÷ Σ
+# établissements (les numérateurs de la table green, T3) — jamais la moyenne
+# des parts communales. Déterministe : trié par code.
+agreger_eco_territoires <- function(eco, base_epci) {
+  decliner_aux_niveaux(eco, base_epci, c("n_eco", "n_etablissements")) %>%
+    dplyr::mutate(
+      value = dplyr::if_else(
+        !is.na(.data$n_etablissements) & .data$n_etablissements > 0,
+        .data$n_eco / .data$n_etablissements,
+        NA_real_
+      )
+    ) %>%
+    dplyr::select(code, value) %>%
+    dplyr::arrange(code)
+}
+
+# construire_histoires_economie_payload ----------------------------------------
+# Les lignes d'Histoire du payload Économie (issue #131) — MULTI-LIGNES par
+# territoire :
+#   - « ce que la commune abrite » : le top-N des spécialisations par LQ
+#     (rang / activity_code / activity_label / lq / n — `n` conservé), pour
+#     les COMMUNES (vs la moyenne bretonne, gate E), les EPCIs et les
+#     DÉPARTEMENTS (LQ recalée à référence MÊME-ÉCHELLE — un EPCI vs les
+#     autres EPCIs, jamais vs la moyenne bretonne des communes) ;
+#   - « ce que la Bretagne abrite » : le top-N par PRÉSENCE de la région (n +
+#     part du parc) — la région n'a pas de Story LQ (sa LQ est dégénérée).
+# Sélection déterministe (ADR-0002) partout : LQ (ou n) décroissante, puis
+# code APE croissant. Une commune / EPCI / département avec moins de top_n
+# activités reçoit toutes ses activités (jamais de padding). Le type de
+# territoire est porté par les lignes (la forme du contrat histoires).
+construire_histoires_economie_payload <- function(lq, base_epci,
+                                                  top_n = TOP_N_SPECIALISATIONS_LQ,
+                                                  top_n_region = TOP_N_PRESENCE_REGION) {
+  # niveau commune : l'Histoire existante (la LQ vs la Bretagne, gate E)
+  communes <- calculer_histoires_lq(lq, top_n = top_n) %>%
+    dplyr::transmute(
+      territoire = commune, type = "commune",
+      story_key = "ce-que-la-commune-abrite",
+      rang, activity_code, activity_label, lq, n,
+      part_parc = NA_real_
+    )
+
+  # niveau EPCI : les cellules agrégées par EPCI, LQ à référence même-échelle
+  # (les communes sans EPCI — les îles — n'entrent dans AUCUN EPCI)
+  epcis <- lq %>%
+    dplyr::left_join(base_epci[c("CODGEO", "EPCI")], by = c("commune" = "CODGEO")) %>%
+    dplyr::filter(!is.na(EPCI)) %>%
+    dplyr::group_by(EPCI, activity_code) %>%
+    dplyr::summarise(
+      activity_label = premier_libelle(activity_label),
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    calculer_lq_par_niveau("EPCI") %>%
+    dplyr::group_by(EPCI) %>%
+    dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
+    dplyr::slice_head(n = top_n) %>%
+    dplyr::mutate(rang = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::transmute(
+      territoire = EPCI, type = "epci",
+      story_key = "ce-que-la-commune-abrite",
+      rang, activity_code, activity_label, lq, n,
+      part_parc = NA_real_
+    )
+
+  # niveau département : la même mécanique, référence les autres départements
+  deps <- lq %>%
+    dplyr::left_join(base_epci[c("CODGEO", "DEP")], by = c("commune" = "CODGEO")) %>%
+    dplyr::group_by(DEP, activity_code) %>%
+    dplyr::summarise(
+      activity_label = premier_libelle(activity_label),
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    calculer_lq_par_niveau("DEP") %>%
+    dplyr::group_by(DEP) %>%
+    dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
+    dplyr::slice_head(n = top_n) %>%
+    dplyr::mutate(rang = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::transmute(
+      territoire = DEP, type = "departement",
+      story_key = "ce-que-la-commune-abrite",
+      rang, activity_code, activity_label, lq, n,
+      part_parc = NA_real_
+    )
+
+  # niveau région : la lecture de STRUCTURE (jamais une Story LQ)
+  region <- calculer_presence_bretagne(lq, top_n = top_n_region)
+
+  dplyr::bind_rows(communes, epcis, deps, region) %>%
+    dplyr::arrange(territoire, story_key, rang)
+}
+
+# construire_territoires_agregats_economie --------------------------------------
+# L'acte « calculer » du module : les tables communales des T1-T5 (effectifs,
+# éco, chômage, LQ) + la base des EPCI → les tables agrégées du payload (les
+# trois indicateurs aux quatre niveaux + les lignes d'Histoire). C'est LE seam
+# que le chaînon analytique (construire_analytiques_economie, T8) appelle —
+# les tests de publication le mockent comme les builders T1-T5. Retourne la
+# liste {effectifs, chomage, eco, histoires} — la forme de test.
+construire_territoires_agregats_economie <- function(effectifs, eco, chomage, lq,
+                                                     base_epci) {
+  list(
+    effectifs = agreger_effectifs_territoires(effectifs, base_epci),
+    chomage = agreger_chomage_territoires(chomage, base_epci),
+    eco = agreger_eco_territoires(eco, base_epci),
+    histoires = construire_histoires_economie_payload(lq, base_epci)
+  )
+}
