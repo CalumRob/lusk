@@ -108,3 +108,120 @@ normaliser_snapshot_mobilite <- function(snapshot) {
     ) %>%
     dplyr::arrange(commune)
 }
+
+# L'étage demande/réseaux : les lecteurs des sources (issue #139) -------------
+# Le snapshot porté (ci-dessus) reste la source du flagship ; les trois sources
+# de l'étage demande/réseaux ont leurs propres lecteurs, dans la même
+# discipline : les gardes de forme s'ARRÊTENT bruyamment (une vague qui change
+# de structure est une corruption, jamais une ligne silencieusement perdue) et
+# les lecteurs ne sont pas testés dans la boucle (ils lisent les vrais
+# fichiers) — les PIVOTS purs, eux, sont testés sur la forme réelle.
+
+# extraire_voitures -------------------------------------------------------------
+# Le pivot PUR de la demande : depuis la table longue du cube
+# DS_RP_LOGEMENT_PRINC (lire_csv_long), les comptes voitures/ménage par
+# commune — le code de table épinglé LOG T12 (manifest_mobilite.R). Le filtre
+# sélectionne les lignes « nombre de ménages » (RP_MEASURE = DWELLINGS) des
+# résidences principales (OCS = DW_MAIN) au recensement 2023, avec les
+# dimensions résiduelles au total (_T), croisées par la dimension CARS :
+#   _T    -> menages_total (le nombre de ménages) ;
+#   C0    -> menages_sans_voiture ;
+#   C_GE2 -> menages_deux_plus.
+# Une colonne requise manquante (une vague qui change de structure) s'arrête
+# ici, en nommant le champ fautif. Déterministe : trié par commune.
+extraire_voitures <- function(long) {
+  requises <- c("GEO", "GEO_OBJECT", "OCS", "L_STAY", "TDW", "CARS",
+                "RP_MEASURE", "CARPARK", "NOR", "TSH", "BUILD_END",
+                "NRG_SRC", "OBS_STATUS", "TIME_PERIOD", "OBS_VALUE")
+  manquantes <- setdiff(requises, names(long))
+  if (length(manquantes) > 0) {
+    stop("Voitures/ménage corrompu — colonne(s) requise(s) du cube RP ",
+         "manquante(s) : ", paste(manquantes, collapse = ", "), ".",
+         call. = FALSE)
+  }
+
+  voitures <- long %>%
+    dplyr::filter(
+      GEO_OBJECT == "COM",
+      TIME_PERIOD == 2023,
+      OBS_STATUS == "A",
+      RP_MEASURE == "DWELLINGS",
+      OCS == "DW_MAIN",
+      L_STAY == "_T", TDW == "_T", CARPARK == "_T", NOR == "_T",
+      TSH == "_T", BUILD_END == "_T", NRG_SRC == "_T",
+      CARS %in% c("_T", "C0", "C_GE2"),
+      # la Bretagne : le préfixe départemental du code commune (le même filtre
+      # que le snapshot porté — jamais une commune hors 22/29/35/56)
+      substr(GEO, 1, 2) %in% DEPT_BRETAGNE
+    ) %>%
+    dplyr::select(GEO, CARS, OBS_VALUE) %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = CARS,
+                       values_from = OBS_VALUE) %>%
+    dplyr::rename(commune = GEO, menages_total = `_T`,
+                  menages_sans_voiture = C0, menages_deux_plus = C_GE2)
+
+  absentes <- setdiff(c("commune", "menages_total", "menages_sans_voiture",
+                        "menages_deux_plus"), names(voitures))
+  if (length(absentes) > 0) {
+    stop("Voitures/ménage corrompu — la dimension CARS du cube ne porte pas ",
+         "les comptes attendus (C0 / C_GE2 / _T) : ", paste(absentes, collapse = ", "),
+         ".", call. = FALSE)
+  }
+  voitures %>%
+    dplyr::arrange(commune)
+}
+
+# lire_voitures_communes --------------------------------------------------------
+# Le lecteur de la demande : décompresse le zip du cache (idempotent — les
+# fichiers déjà extraits sont laissés intacts) et pivote la table longue du
+# cube DS_RP_LOGEMENT_PRINC. Non testé dans la boucle (il lit le vrai fichier) ;
+# le pivot (extraire_voitures) est testé sur la forme réelle.
+lire_voitures_communes <- function(chemin_zip) {
+  extrait <- file.path(dirname(chemin_zip), "extracted")
+  if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+  suppressWarnings(
+    utils::unzip(chemin_zip, exdir = extrait, overwrite = FALSE)
+  )
+  long <- lire_csv_long(
+    file.path(extrait, "DS_RP_LOGEMENT_PRINC_2023_data.csv")
+  )
+  extraire_voitures(long)
+}
+
+# lire_communes_limites ----------------------------------------------------------
+# Le lecteur du référentiel géométrique : les limites communales Admin Express
+# COG (WFS data.geopf.fr, le GeoJSON du cache) filtrées à la Bretagne — les
+# communes voisines qui débordent de la bbox tombent. La géométrie est
+# réparée (st_make_valid) pour l'intersection. Retourne les polygones en
+# WGS84 (le crs du GeoJSON) — la projection EPSG:2154 est l'affaire du
+# builder de réseaux (la consigne : projeter AVANT toute mesure).
+lire_communes_limites <- function(chemin) {
+  limites <- sf::st_read(chemin, quiet = TRUE)
+  requises <- c("code_insee", "code_insee_du_departement")
+  manquantes <- setdiff(requises, names(limites))
+  if (length(manquantes) > 0) {
+    stop("Limites communales corrompues — colonne(s) requise(s) manquante(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  limites %>%
+    dplyr::filter(as.character(code_insee_du_departement) %in% DEPT_BRETAGNE) %>%
+    dplyr::select(code_insee) %>%
+    sf::st_make_valid()
+}
+
+# lire_lignes_osm ----------------------------------------------------------------
+# Le lecteur des réseaux : la couche `lines` de l'extrait Geofabrik Bretagne
+# (le pbf du cache) via osmextract — le driver OSM de GDAL, qui expose les
+# colonnes fixes (osm_id, name, highway, ...). Les modes t/b/c se lisent sur
+# highway (MODES_RESEAUX_MOBILITE, demande_reseaux_mobilite.R). La garde de
+# forme s'arrête si la couche ne porte pas highway (une vague qui change de
+# structure). Retourne les lignes en WGS84 — la projection est l'affaire du
+# builder.
+lire_lignes_osm <- function(chemin_pbf) {
+  lignes <- osmextract::oe_read(chemin_pbf, layer = "lines", quiet = TRUE)
+  if (!"highway" %in% names(lignes)) {
+    stop("Extrait OSM corrompu — la couche des lignes ne porte pas highway.",
+         call. = FALSE)
+  }
+  lignes
+}
