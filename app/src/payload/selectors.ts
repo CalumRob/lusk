@@ -371,7 +371,7 @@ export function rangEnContexte(indicateur: Indicateur): string | null {
 }
 
 /** French number: comma decimal separator, thin-space thousands, zeros trimmed. */
-function formaterNombreFR(x: number, decimalesMax: number): string {
+export function formaterNombreFR(x: number, decimalesMax: number): string {
   const fixe = x.toFixed(decimalesMax)
   const [entiers, decPart = ''] = fixe.split('.')
   const decs = decPart.replace(/0+$/, '')

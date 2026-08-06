@@ -1,15 +1,17 @@
 <script setup lang="ts">
 /**
  * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock): the
- * theme overline (-strong) → the standard indicator figures (4, contract
- * order) → one story angle (serif one-liner + one chart) → "comment lire" +
- * Méthodes link. The block wears the theme's ramp — Démographie wears indigo;
- * the page background -wash is the shell's (TerritoireView).
+ * theme overline (-strong) → the standard indicator figures (contract order)
+ * → one story angle (serif one-liner + one shape) → "comment lire" + Méthodes
+ * link. The block wears the theme's ramp — Démographie wears indigo; the page
+ * background -wash is the shell's (TerritoireView).
  *
  * The block consumes the payload selectors only — never raw JSON. The Story
- * copy is keyed by the pipeline's classification (storyDemographie); a
- * territory without a story renders the standard block and no invented
- * one-liner.
+ * copy is keyed per theme by the pipeline's readings: storyDemographie (the
+ * rate-quadrant) and storyEconomie (issue #121 — the top-5 specialisations,
+ * or the région's top-5 by presence). A territory without a story renders the
+ * standard block and no invented one-liner. The Démographie story renders its
+ * solde chart; the Économie story renders its specialisation list.
  */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -19,8 +21,10 @@ import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import { NOMS_INDICATEURS, NOMS_TRANCHES_AGE } from '@/fiche/indicateurs'
 import { NOMS_THEMES } from '@/fiche/onglets'
 import { storyDemographie } from '@/fiche/storyDemographie'
+import { storyEconomie } from '@/fiche/storyEconomie'
 import {
   histoirePourTerritoire,
+  histoiresEconomiePourTerritoire,
   indicateursGroupeesPourTerritoire,
   nuageComparaison,
   descriptionNuage,
@@ -59,6 +63,19 @@ const story = computed(() => {
     histoire.taux_solde_migratoire,
     histoire.periode,
   )
+})
+
+// The Économie Story (issue #121): the LQ is the Story — the block's top-5
+// specialisations (or the région's top-5 by presence), precomputed by the
+// pipeline. Multi-line: one Histoire row per rang; the mapper builds the copy.
+// Gated on the theme like the Démographie story — a territory carries BOTH
+// stories in the payload (Rennes has its trajectoire AND its top-5), and each
+// block must read its own.
+const storyEconomieAngle = computed(() => {
+  if (props.theme !== 'economie') return null
+  const lignes = histoiresEconomiePourTerritoire(props.payload, props.territoire)
+  if (!lignes) return null
+  return storyEconomie(lignes, nomTerritoire.value)
 })
 
 const nuage = computed(() => nuageComparaison(props.payload, props.territoire) ?? [])
@@ -118,46 +135,79 @@ function libelleIndicateur(clef: string): string {
       />
     </div>
 
-    <section v-if="story" class="angle-story">
-      <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
-      <p class="angle-story-titre">
-        {{ story.titre }}
-        <template v-if="descriptionNuageComputed">
-          {{ descriptionNuageComputed.prepositionCourant }}
-          <span class="angle-story-courant">{{ descriptionNuageComputed.nomCourant }}</span>
-          et {{ descriptionNuageComputed.groupe }}
-          <RouterLink
-            v-if="descriptionNuageComputed.conteneur"
-            class="angle-story-conteneur"
-            :to="{
-              name: 'territoire',
-              params: {
-                type: descriptionNuageComputed.conteneur.type,
-                id: descriptionNuageComputed.conteneur.code,
-              },
-            }"
+    <section v-if="story || storyEconomieAngle" class="angle-story">
+      <!-- The Économie Story (issue #121) : la LQ EST la Story — la liste des
+           top-5 spécialisations (ou, pour la région, la top-5 par présence),
+           jamais un indicateur du bloc. La lecture tient dans la liste ; le
+           vintage est celui des lignes elles-mêmes (issue #74). -->
+      <template v-if="storyEconomieAngle">
+        <p class="angle-story-une-ligne">{{ storyEconomieAngle.uneLigne }}</p>
+        <p class="angle-story-titre">{{ storyEconomieAngle.titre }}</p>
+        <ol class="liste-specialisations">
+          <li
+            v-for="ligne in storyEconomieAngle.lignes"
+            :key="ligne.rang"
+            class="specialisation"
+            :data-rang="ligne.rang"
           >
-            {{ descriptionNuageComputed.conteneur.nom }}
-          </RouterLink>
-        </template>
-      </p>
-      <GraphiqueSoldes
-        v-if="histoireDemographie"
-        :taux-naturel="histoireDemographie.taux_solde_naturel"
-        :taux-migratoire="histoireDemographie.taux_solde_migratoire"
-        :classification="histoireDemographie.classification"
-        :nom="nomTerritoire"
-        :nuage="nuage"
-      />
-      <p class="angle-story-comment-lire">
-        <span class="angle-story-etiquette">Comment lire</span>
-        {{ story.commentLire }}
-      </p>
-      <p v-if="sourceHistoire" class="angle-story-source">
-        <span class="angle-story-etiquette">Source</span>
-        {{ sourceHistoire }}
-      </p>
-      <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+            <span class="specialisation-rang">{{ ligne.rang }}</span>
+            <span class="specialisation-label">{{ ligne.label }}</span>
+            <span class="specialisation-mesure">{{ ligne.mesure }}</span>
+          </li>
+        </ol>
+        <p class="angle-story-comment-lire">
+          <span class="angle-story-etiquette">Comment lire</span>
+          {{ storyEconomieAngle.commentLire }}
+        </p>
+        <p class="angle-story-source">
+          <span class="angle-story-etiquette">Source</span>
+          {{ storyEconomieAngle.vintage }}
+        </p>
+        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+      </template>
+
+      <!-- The Démographie story (ADR-0011) : the quadrant reading + its chart. -->
+      <template v-else-if="story">
+        <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
+        <p class="angle-story-titre">
+          {{ story.titre }}
+          <template v-if="descriptionNuageComputed">
+            {{ descriptionNuageComputed.prepositionCourant }}
+            <span class="angle-story-courant">{{ descriptionNuageComputed.nomCourant }}</span>
+            et {{ descriptionNuageComputed.groupe }}
+            <RouterLink
+              v-if="descriptionNuageComputed.conteneur"
+              class="angle-story-conteneur"
+              :to="{
+                name: 'territoire',
+                params: {
+                  type: descriptionNuageComputed.conteneur.type,
+                  id: descriptionNuageComputed.conteneur.code,
+                },
+              }"
+            >
+              {{ descriptionNuageComputed.conteneur.nom }}
+            </RouterLink>
+          </template>
+        </p>
+        <GraphiqueSoldes
+          v-if="histoireDemographie"
+          :taux-naturel="histoireDemographie.taux_solde_naturel"
+          :taux-migratoire="histoireDemographie.taux_solde_migratoire"
+          :classification="histoireDemographie.classification"
+          :nom="nomTerritoire"
+          :nuage="nuage"
+        />
+        <p class="angle-story-comment-lire">
+          <span class="angle-story-etiquette">Comment lire</span>
+          {{ story.commentLire }}
+        </p>
+        <p v-if="sourceHistoire" class="angle-story-source">
+          <span class="angle-story-etiquette">Source</span>
+          {{ sourceHistoire }}
+        </p>
+        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+      </template>
     </section>
   </article>
 </template>
@@ -252,6 +302,62 @@ function libelleIndicateur(clef: string): string {
   font: var(--text-display);
   letter-spacing: var(--text-display-tracking);
   color: var(--text-primary);
+}
+
+/* The Économie Story's shape (issue #121) — the top-5 specialisations as a
+   list: rank, activity label, and the measure (LQ + n, or n + part du parc
+   for the région). The reading lives in the list, not in a chart. */
+.liste-specialisations {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.specialisation {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--space-4);
+  align-items: baseline;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.specialisation:last-child {
+  border-bottom: none;
+}
+
+.specialisation-rang {
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--couleur-strong);
+  font-weight: 600;
+}
+
+.specialisation-label {
+  font: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.specialisation-mesure {
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .specialisation {
+    grid-template-columns: auto 1fr;
+  }
+
+  .specialisation-mesure {
+    grid-column: 2;
+    white-space: normal;
+  }
 }
 
 .angle-story-comment-lire {
