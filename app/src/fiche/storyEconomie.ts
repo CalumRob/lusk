@@ -5,8 +5,9 @@
  * - « ce que la commune abrite » — the top-5 specialisations by LQ, precomputed
  *   by the pipeline (never recomputed here). Communes, EPCIs, départements.
  *   Each ligne: the activity label (always from the payload, never hard-coded),
- *   its LQ and its establishment count. The title adapts to the territory type
- *   (an EPCI is never « la commune »).
+ *   its LQ and its establishment count. One fixed title for every territory
+ *   type (issue #153) — the matière rides in the precision label, rendered
+ *   with the title.
  * - « ce que la Bretagne abrite » — the région's top-5 by PRESENCE (its LQ is
  *   degenerate, all ≡ 1): n + part of the Breton parc. A structure list, not
  *   an LQ reading.
@@ -17,7 +18,7 @@
  * Story — the block never invents a reading.
  */
 
-import type { HistoireEconomie, TerritoireType } from '@/payload/types'
+import type { HistoireEconomie } from '@/payload/types'
 import { formaterNombreFR, formaterVintage } from '@/payload/selectors'
 
 export interface LigneSpecialisation {
@@ -30,6 +31,14 @@ export interface LigneSpecialisation {
 export interface StoryEconomie {
   storyKey: HistoireEconomie['story_key']
   titre: string
+  /**
+   * The small label naming the matière, rendered with the title (issues #153 +
+   * #156): « Spécialisation des établissements actifs ». The title stays
+   * fabric-neutral ("abrite"); the precision carries the establishment
+   * reading. Only the specialisation story carries one — the région's presence
+   * reading stays untouched.
+   */
+  precision?: string
   uneLigne: string
   commentLire: string
   lignes: LigneSpecialisation[]
@@ -37,20 +46,23 @@ export interface StoryEconomie {
   vintage: string
 }
 
-/** The « ce que la commune abrite » title, adapted to the territory type. */
-const TITRES_SPECIALISATION: Record<TerritoireType, string> = {
-  commune: 'Ce que la commune abrite',
-  epci: 'Ce que l’EPCI abrite',
-  departement: 'Ce que le département abrite',
-  region: 'Ce que la région abrite',
-}
+/**
+ * The « ce que la commune abrite » title — deliberately single and fixed for
+ * every territory type (issue #153: an EPCI or département fiche shows the
+ * same title, no per-type adaptation).
+ */
+const TITRE_SPECIALISATION = 'Ce que la commune abrite'
+
+/** The matière, named with the title (issues #153 + #156). */
+const PRECISION_SPECIALISATION = 'Spécialisation des établissements actifs'
 
 const TITRE_PRESENCE = 'Ce que la Bretagne abrite'
 
 const COMMENT_LIRE_SPECIALISATION =
-  'Le quotient de localisation (LQ) compare la part de l’activité dans les établissements du ' +
+  'Le quotient de localisation (LQ) compare la part de l’activité dans les établissements actifs du ' +
   'territoire à la moyenne bretonne : au-dessus de 1, l’activité est surreprésentée dans le ' +
-  'tissu productif local.'
+  'tissu productif local. La mesure porte sur les établissements, jamais sur les emplois ni sur ' +
+  'les personnes.'
 
 const COMMENT_LIRE_PRESENCE =
   'La région est sa propre référence : son quotient de localisation vaut 1 pour toutes les ' +
@@ -93,11 +105,14 @@ export function storyEconomie(
     titre:
       premier.story_key === 'ce-que-la-bretagne-abrite'
         ? TITRE_PRESENCE
-        : TITRES_SPECIALISATION[premier.type],
+        : TITRE_SPECIALISATION,
+    ...(premier.story_key === 'ce-que-la-bretagne-abrite'
+      ? {}
+      : { precision: PRECISION_SPECIALISATION }),
     uneLigne:
       premier.story_key === 'ce-que-la-bretagne-abrite'
         ? `${nomPresence} abrite surtout ${joindreTrois(labels)}.`
-        : `${nom} se distingue par ${joindreTrois(labels)}.`,
+        : `${nom} se distingue par la spécialisation de ses établissements actifs.`,
     commentLire:
       premier.story_key === 'ce-que-la-bretagne-abrite'
         ? COMMENT_LIRE_PRESENCE
