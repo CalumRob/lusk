@@ -34,11 +34,13 @@
 #     sources_offre_mobilite.R), tous persistés sous data/processed/mobilite/ ;
 #   - le SEAM de publication : publier_mobilite — le payload contractuel
 #     (territoires / indicateurs / histoires / apercu) publié par la
-#     machinerie partagée publish. Le chaînon publie les SIX clés du thème
+#     machinerie partagée publish. Le chaînon publie les ONZE clés du thème
 #     (nb_buildings + voitures_menage + reseaux + offre_tc + bornes_recharge +
-#     places_stationnement_velo_1000).
+#     places_stationnement_velo_1000 + les 5 parts d'isolation de la grille,
+#     assemblées au ticket #141 avec leurs rangs et l'estampille snapshot).
 # Ce qui N'y vit PAS : aucun calcul d'indicateur de la grille (la matière
-# analytique est au ticket #138, l'assemblage des clés au #141), aucune
+# analytique est au ticket #138, l'assemblage des clés au #141 — les parts
+# d'isolation sont CALCULÉES par le chaînon et ASSEMBLÉES ici), aucune
 # modification de theme_demographie / theme_economie / theme_habitat ni du
 # cœur partagé (compute.R, publish.R).
 
@@ -320,8 +322,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 # INDICATEURS_MOBILITE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. SIX clés depuis les
-# issues #139 + #140 :
+# l'estampille — les vintages T7) et sa multiplicité. ONZE clés depuis les
+# issues #139 + #140 + #141 :
 #   - « nb_buildings » (la « Taille » du thème — le nombre de bâtiments
 #     résidentiels analysés par commune, le poids du thème dans le squelette),
 #     une ligne PAR TERRITOIRE (commune / EPCI / département / région : les
@@ -352,19 +354,30 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #   - « places_stationnement_velo_1000 » (le sous-bloc, #140) : le hub Ecolab
 #     pris tel quel — les places / 1 000 hab, la multiplicité 1. Source de
 #     référence : stationnement-velo (ODbL, producteur OSM).
-# Les 5 parts d'isolation restent CALCULÉES et PERSISTÉES par le chaînon
-# (isolation_territoires.rds — la matière des clés de la grille) ; leur
-# assemblage dans le payload est le contrat du ticket #141.
+#   - les CINQ parts d'isolation (issue #141) : iso_alimentation, iso_sante,
+#     iso_administration, iso_ecole, iso_banque — la GRILLE du flagship, les
+#     parts des bâtiments SANS accès à pied ou en transports en commun à 20
+#     minutes (1 − share_*), une ligne par territoire, la multiplicité 1.
+#     Chaque part porte SON rang-en-contexte (l'artefact isolation_rangs.rds)
+#     et l'estampille SNAPSHOT (la source de référence « mobilite_snapshot » —
+#     la date d'instantané de l'analyse, le fait de vintage de première classe
+#     du flagship, ADR-0012).
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("nb_buildings", "voitures_menage", "reseaux",
-          "offre_tc", "bornes_recharge", "places_stationnement_velo_1000"),
+          "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+          names(CLES_ISOLATION_MOBILITE)),
   libelle = c(
     "Bâtiments résidentiels analysés",
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
     "Part des bâtiments près d'un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
-    "Places de stationnement vélo pour 1 000 hab."
+    "Places de stationnement vélo pour 1 000 hab.",
+    "Part des bâtiments sans accès à l'alimentation",
+    "Part des bâtiments sans accès à la santé",
+    "Part des bâtiments sans accès aux services administratifs",
+    "Part des bâtiments sans accès à l'école",
+    "Part des bâtiments sans accès à la banque"
   ),
   sources = list(
     "mobilite_snapshot",
@@ -372,11 +385,14 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     c("osm_reseaux", "communes_limites"),
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
-    "stationnement-velo"
+    "stationnement-velo",
+    "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+    "mobilite_snapshot", "mobilite_snapshot"
   ),
   source_reference = c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
-                       "korrigo", "bornes-recharges", "stationnement-velo"),
-  multiplicite = c(1L, 2L, 6L, 1L, 1L, 1L)
+                       "korrigo", "bornes-recharges", "stationnement-velo",
+                       rep("mobilite_snapshot", 5)),
+  multiplicite = c(1L, 2L, 6L, 1L, 1L, 1L, rep(1L, 5))
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -410,7 +426,7 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
-# Les indicateurs publiés du thème : les SIX clés déclarées, alignées sur la
+# Les indicateurs publiés du thème : les ONZE clés déclarées, alignées sur la
 # référence (un territoire sans donnée porte NA — jamais une ligne manquante,
 # la multiplicité de la table déclarative l'exige), avec leurs rangs et leurs
 # estampilles T7 (la machinerie partagée compute_ranks + assembler_indicateurs
@@ -426,7 +442,13 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 #     sous-bloc, issue #140) : une ligne par territoire, la valeur de
 #     l'agrégat agreger_offre_territoires (la moyenne pondérée par les
 #     bâtiments pour la part, la somme pour le compte, Σ places ÷ Σ population
-#     pour le taux), le rang de compute_ranks.
+#     pour le taux), le rang de compute_ranks ;
+#   - les 5 parts d'isolation (issue #141, la GRILLE du flagship) : une ligne
+#     par territoire, la valeur de l'artefact analytique isolation_territoires
+#     (la moyenne pondérée par les bâtiments des parts communales — jamais une
+#     moyenne de parts), avec le rang-en-contexte de l'artefact
+#     isolation_rangs (calculé par construire_rangs_isolation via la
+#     machinerie partagée — jamais re-forké ici).
 # Les estampilles viennent des vintages de SA source de référence (les tampons
 # de la table déclarative) — la même règle que la machinerie partagée.
 construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) {
@@ -461,6 +483,23 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
   )
   rangs <- compute_ranks(territoires, tables, scalaires = list())
 
+  # les 5 parts d'isolation (issue #141, la grille du flagship) : les valeurs
+  # de l'artefact analytique isolation_territoires (longue code × key × value),
+  # alignées sur la référence — leurs rangs-en-contexte viennent de l'artefact
+  # isolation_rangs (construire_rangs_isolation, la machinerie partagée — les
+  # parts sont déjà classées par le chaînon, jamais re-forkées à l'assemblage)
+  isolation <- lapply(names(CLES_ISOLATION_MOBILITE), function(key) {
+    aligner(
+      analytiques$isolation_territoires %>%
+        dplyr::filter(key == !!key) %>%
+        dplyr::select(code, value),
+      key, "%"
+    )
+  })
+  names(isolation) <- names(CLES_ISOLATION_MOBILITE)
+  rangs_isolation <- analytiques$isolation_rangs %>%
+    dplyr::mutate(detail = NA_character_)
+
   # les clés multi-mesures (issue #139) : le squelette (territoire × détail)
   # étend la table agrégée — chaque territoire porte TOUTES les mesures, NA si
   # la donnée manque (la multiplicité de la table déclarative)
@@ -491,7 +530,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     analytiques$reseaux_territoires, territoires
   )
 
-  # l'assemblage : les six clés + leurs rangs (le détail NA des clés scalaires
+  # l'assemblage : les onze clés + leurs rangs (le détail NA des clés scalaires
   # joint sur le détail NA des rangs partagés) + les tampons de la table
   # déclarative — la même forme que la machinerie partagée assembler_indicateurs
   tampons <- INDICATEURS_MOBILITE %>%
@@ -507,6 +546,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     dplyr::bind_rows(lapply(rangs, function(rang) {
       rang %>% dplyr::mutate(detail = NA_character_)
     })),
+    rangs_isolation,
     rangs_voitures,
     rangs_reseaux
   )
@@ -516,6 +556,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     tables$offre_tc,
     tables$bornes_recharge,
     tables$places_stationnement_velo_1000,
+    dplyr::bind_rows(isolation),
     voitures,
     reseaux
   ) %>%
@@ -716,15 +757,28 @@ validations_mobilite <- list(
            call. = FALSE)
     }
     invisible(payload)
+  },
+  # les 5 parts d'isolation (issue #141, la grille) sont des parts dans [0, 1]
+  # (1 − share_*, le miroir des parts d'accès — une part hors de la borne est
+  # une corruption, jamais une part de bâtiments > 100 %)
+  function(payload) {
+    iso <- payload$indicateurs$value[
+      payload$indicateurs$key %in% names(CLES_ISOLATION_MOBILITE)]
+    if (any(!is.na(iso) & (iso < 0 | iso > 1))) {
+      stop("Payload invalide : une part d'isolation sort de [0, 1].",
+           call. = FALSE)
+    }
+    invisible(payload)
   }
 )
 
 # construire_payload_mobilite --------------------------------------------------
 # L'assembleur du payload du thème : les quatre tables du contrat (la forme
-# d'compute_payload, compute.R) — indicateurs (avec rangs + estampilles T7),
-# histoires (vide — le Story arrive au ticket #138), territoires (référence
-# partagée) et apercu (vide — gating). Validé par la validation GÉNÉRIQUE
-# avec les tables déclaratives du thème — un payload invalide s'arrête là.
+# d'compute_payload, compute.R) — indicateurs (les onze clés, avec rangs +
+# estampilles T7, les 5 parts d'isolation portant l'estampille snapshot),
+# histoires (les deux story keys), territoires (référence partagée) et apercu
+# (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
+# déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
   territoires <- construire_territoires_mobilite(base_epci, analytiques)
 
