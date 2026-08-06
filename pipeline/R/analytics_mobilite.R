@@ -426,3 +426,216 @@ construire_rangs_isolation <- function(isolation_territoires, territoires) {
   dplyr::bind_rows(compute_ranks(territoires, tables, scalaires = list())) %>%
     dplyr::arrange(code, key)
 }
+
+# =============================================================================
+# Le sous-bloc « L'offre de mobilité alternative » (issue #140)
+# =============================================================================
+# Les builders du sous-bloc : l'offre TC (la part des bâtiments près d'un
+# arrêt — la jointure SPATIALE arrêts Korrigo × communes, le proxy documenté),
+# les bornes de recharge (les stations IRVE par commune) et le stationnement
+# vélo (les places / 1 000 hab du hub Ecolab, pris tel quel). Les tables
+# communales sont ensuite agrégées aux QUATRE niveaux (agreger_offre_
+# territoires) par la règle du thème (CONTEXT.md « Taille ») : un agrégat est
+# RECALCULÉ depuis les parties — la moyenne pondérée par les bâtiments pour
+# une part, la SOMME pour un compte, Σ places ÷ Σ population pour un taux —
+# jamais la moyenne des valeurs communales.
+
+# calculer_part_proches_arret_communes -----------------------------------------
+# L'offre TC COMMUNALE : la part de la superficie communale à moins de
+# `distance` mètres à vol d'oiseau d'un arrêt Korrigo (mobibreizh-stops) — le
+# proxy DOCUMENTÉ de la part des bâtiments près d'un arrêt (la couche bâtiment
+# par bâtiment vit dans l'analyse portée, pas dans le pipeline ; la décision
+# est verrouillée : DISTANCE_ARRET_M = 500 m, le rayon « 10 minutes à pied »).
+# La mécanique spatiale (sf) : les arrêts (points WGS84) et les communes
+# (polygones WGS84) sont reprojetés en Lambert-93 (CRS_OFFRE_MOBILITE, les
+# distances en mètres), les arrêts sont tamponnés à `distance`, l'union des
+# tampons est intersectée avec les communes, et le ratio aire couverte ÷ aire
+# communale EST la part. La géométrie sphérique (s2) est désactivée pour le
+# calcul planaire et restaurée après (on.exit) — le calcul ne laisse aucune
+# trace d'état global. Déterministe (GEOS, même entrée → même sortie) ; trié
+# par commune. Couvre les 1 202 communes du référentiel (les deux îles hors
+# snapshot de l'analyse ont leur part — c'est la couverture des sources du
+# sous-bloc, pas celle de l'analyse).
+calculer_part_proches_arret_communes <- function(stops, communes,
+                                                 distance = DISTANCE_ARRET_M) {
+  if (!all(c("stop_lat", "stop_lon") %in% names(stops))) {
+    stop("calculer_part_proches_arret_communes : le tableau des arrêts doit ",
+         "porter stop_lat et stop_lon.", call. = FALSE)
+  }
+  if (!inherits(communes, "sf") || !"com_code" %in% names(communes)) {
+    stop("calculer_part_proches_arret_communes : le référentiel communal doit ",
+         "être un sf portant com_code.", call. = FALSE)
+  }
+
+  ancien_s2 <- sf::sf_use_s2(FALSE)
+  on.exit(sf::sf_use_s2(ancien_s2), add = TRUE)
+
+  points_arrets <- sf::st_sfc(
+    lapply(seq_len(nrow(stops)), function(i) {
+      sf::st_point(c(stops$stop_lon[i], stops$stop_lat[i]))
+    }),
+    crs = 4326
+  )
+  communes_proj <- sf::st_transform(communes, CRS_OFFRE_MOBILITE)
+  arrets_proj <- sf::st_transform(points_arrets, CRS_OFFRE_MOBILITE)
+
+  couverture <- sf::st_intersection(
+    communes_proj,
+    sf::st_union(sf::st_buffer(arrets_proj, distance))
+  )
+  couverture <- couverture %>%
+    dplyr::mutate(couverte = as.numeric(sf::st_area(geometry))) %>%
+    sf::st_drop_geometry() %>%
+    dplyr::group_by(com_code) %>%
+    dplyr::summarise(couverte = sum(couverte), .groups = "drop")
+
+  sf::st_drop_geometry(communes_proj) %>%
+    dplyr::transmute(
+      commune = as.character(com_code),
+      aire = as.numeric(sf::st_area(communes_proj))
+    ) %>%
+    dplyr::left_join(couverture, by = c("commune" = "com_code")) %>%
+    dplyr::mutate(part_proche = dplyr::coalesce(couverte, 0) / aire) %>%
+    dplyr::select(commune, part_proche) %>%
+    dplyr::arrange(commune)
+}
+
+# calculer_bornes_communes ------------------------------------------------------
+# Les bornes de recharge COMMUNALES : le nombre de STATIONS IRVE distinctes
+# (id_station_itinerance) par commune — « bornes » = stations, jamais les
+# points de charge (une station porte plusieurs prises). Deux caveats SOURCE
+# (documentés dans le manifeste et la Méthodes) appliqués ici : les stations
+# sans code commune (les lignes mal géolocalisées du fichier) n'entrent dans
+# aucun comptage, et le champ code_insee_commune du fichier consolidé porte
+# des valeurs HORS référentiel (des codes postaux comme 22100, des codes
+# départementaux comme 22000, « 99999 », des communes hors Bretagne) — seules
+# les communes du RÉFÉRENTIEL breton (communes_referentiel) sont comptées, le
+# reste tombe. Une commune sans station n'a pas de ligne ici (le zéro est
+# porté par l'alignement au payload). Trié par commune — déterministe.
+calculer_bornes_communes <- function(bornes, communes_referentiel) {
+  communes_valides <- sort(unique(as.character(
+    sf::st_drop_geometry(communes_referentiel)$com_code
+  )))
+  bornes %>%
+    dplyr::filter(!is.na(code_insee_commune),
+                  code_insee_commune %in% communes_valides) %>%
+    dplyr::distinct(code_insee_commune, id_station_itinerance) %>%
+    dplyr::count(code_insee_commune, name = "nb_bornes") %>%
+    dplyr::rename(commune = code_insee_commune) %>%
+    dplyr::arrange(commune)
+}
+
+# calculer_stationnement_velo_communes ------------------------------------------
+# Le stationnement vélo COMMUNAL : les places / 1 000 hab du hub Ecolab, PRIS
+# TEL QUEL (décision 2026-08-04) — la valeur du millésime le PLUS RÉCENT par
+# commune (le hub est annuel, 2022-2025 ; la table normalisée porte une ligne
+# par commune × millésime avec les places, la population et le taux). La
+# table porte places + population en plus du taux : l'agrégation des niveaux
+# recompose Σ places ÷ Σ population × 1 000 (jamais la moyenne des taux).
+# Trié par commune — déterministe.
+calculer_stationnement_velo_communes <- function(velo) {
+  velo %>%
+    dplyr::group_by(geocode_commune) %>%
+    dplyr::slice_max(annee, with_ties = FALSE) %>%
+    dplyr::ungroup() %>%
+    dplyr::rename(commune = geocode_commune) %>%
+    dplyr::select(commune, annee, places, population, places_1000) %>%
+    dplyr::arrange(commune)
+}
+
+# agreger_offre_territoires -----------------------------------------------------
+# Le sous-bloc aux QUATRE niveaux de territoire (commune / EPCI / département /
+# région), chaque indicateur agrégé par SA règle (CONTEXT.md « Taille » — un
+# agrégat est RECALCULÉ depuis les parties, jamais une moyenne de valeurs) :
+#   - offre_tc (une part) : la moyenne pondérée par les bâtiments analysés —
+#     Σ (part × nb_buildings) ÷ Σ nb_buildings, la même règle que la grille
+#     d'isolation ; les communes hors snapshot (les îles, poids inconnu) ont
+#     un poids nul — jamais un NA qui ferait tomber l'agrégat ;
+#   - bornes_recharge (un compte) : la SOMME des stations communales, avec le
+#     ZÉRO porté par toute commune du référentiel sans station (une commune
+#     sans borne a 0 borne — un fait, jamais un NA) ;
+#   - places_stationnement_velo_1000 (un taux) : Σ places ÷ Σ population
+#     × 1 000 — recomposé depuis les parties, jamais la moyenne des taux.
+# Sortie longue (code × key × value), une ligne par (territoire × clé), triée
+# par code puis clé — déterministe. Les communes sans EPCI (les îles) n'agrègent
+# à AUCUN niveau EPCI (la règle du fix « Sans objet » #131).
+agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
+                                      velo_communes, poids, base_epci) {
+  ref <- base_epci[c("CODGEO", "EPCI", "DEP")]
+
+  # l'univers communal du sous-bloc : les communes du RÉFÉRENTIEL (la table
+  # d'ancrage offre_tc couvre le référentiel complet, 1 202 communes) — le
+  # zéro des bornes et les poids manquants s'alignent dessus. L'univers n'est
+  # JAMAIS l'union des trois tables : le fichier IRVE consolidé porte des codes
+  # hors référentiel (postaux, départementaux, « 99999 ») qui n'ont rien à
+  # faire dans le payload.
+  communes_univers <- sort(unique(offre_tc_communes$commune))
+
+  ctx_tc <- offre_tc_communes %>%
+    dplyr::rename(valeur = part_proche) %>%
+    dplyr::left_join(poids, by = "commune") %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO")) %>%
+    dplyr::mutate(nb_buildings = dplyr::coalesce(nb_buildings, 0))
+  ctx_b <- tibble::tibble(
+    commune = communes_univers,
+    nb_bornes = 0L
+  ) %>%
+    dplyr::rows_update(
+      bornes_communes %>% dplyr::mutate(nb_bornes = as.integer(nb_bornes)),
+      by = "commune"
+    ) %>%
+    dplyr::rename(valeur = nb_bornes) %>%
+    dplyr::left_join(poids, by = "commune") %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+  ctx_v <- velo_communes %>%
+    dplyr::left_join(poids, by = "commune") %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+
+  offre_tc <- dplyr::bind_rows(
+    ctx_tc %>% dplyr::transmute(code = commune, valeur),
+    ctx_tc %>% dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(valeur = sum(valeur * nb_buildings) / sum(nb_buildings),
+                       .groups = "drop"),
+    ctx_tc %>% dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(valeur = sum(valeur * nb_buildings) / sum(nb_buildings),
+                       .groups = "drop"),
+    ctx_tc %>% dplyr::summarise(
+      code = "53",
+      valeur = sum(valeur * nb_buildings) / sum(nb_buildings),
+      .groups = "drop")
+  ) %>%
+    dplyr::mutate(key = "offre_tc")
+
+  bornes <- dplyr::bind_rows(
+    ctx_b %>% dplyr::transmute(code = commune, valeur),
+    ctx_b %>% dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(valeur = sum(valeur), .groups = "drop"),
+    ctx_b %>% dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(valeur = sum(valeur), .groups = "drop"),
+    ctx_b %>% dplyr::summarise(code = "53", valeur = sum(valeur),
+                               .groups = "drop")
+  ) %>%
+    dplyr::mutate(key = "bornes_recharge")
+
+  velo <- dplyr::bind_rows(
+    ctx_v %>% dplyr::transmute(code = commune, valeur = places_1000),
+    ctx_v %>% dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI) %>%
+      dplyr::summarise(valeur = sum(places) / sum(population) * 1000,
+                       .groups = "drop"),
+    ctx_v %>% dplyr::group_by(code = DEP) %>%
+      dplyr::summarise(valeur = sum(places) / sum(population) * 1000,
+                       .groups = "drop"),
+    ctx_v %>% dplyr::summarise(
+      code = "53",
+      valeur = sum(places) / sum(population) * 1000,
+      .groups = "drop")
+  ) %>%
+    dplyr::mutate(key = "places_stationnement_velo_1000")
+
+  dplyr::bind_rows(offre_tc, bornes, velo) %>%
+    dplyr::select(code, key, value = valeur) %>%
+    dplyr::arrange(code, key)
+}

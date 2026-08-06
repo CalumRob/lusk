@@ -1,18 +1,21 @@
 # theme_mobilite ---------------------------------------------------------------
 # Le module du thème Mobilité (issues #137 tracer bullet + #138 la chaîne
-# analytique flagship) : le descripteur theme_mobilite() que la machinerie
-# partagée (download/compute/publish) consomme sans jamais nommer le thème —
-# la même forme de contrat que theme_economie() (issue #96) et
+# analytique flagship + #140 le sous-bloc « L'offre de mobilité alternative ») :
+# le descripteur theme_mobilite() que la machinerie partagée
+# (download/compute/publish) consomme sans jamais nommer le thème — la même
+# forme de contrat que theme_economie() (issue #96) et
 # theme_demographie()/theme_habitat().
 #
 # Ce qui vit ici, ce qui ne vit pas ici :
-#   - le manifeste de la source : le snapshot PORTÉ de l'analyse
-#     d'accessibilité « Vingt minutes sans voiture » (manifest_mobilite.R) —
-#     UNE source, UNE ligne, la date d'instantané comme référence et la date
-#     de portage comme publication ;
+#   - le manifeste des sources : le snapshot PORTÉ de l'analyse
+#     d'accessibilité « Vingt minutes sans voiture » + les cinq sources du
+#     sous-bloc (korrigo GTFS, mobibreizh-stops, communes-france,
+#     bornes-recharges, stationnement-velo) — manifest_mobilite.R, SIX lignes
+#     concaténées, chaque source garde SA référence et SA publication ;
 #   - la construction des données : la normalisation du snapshot porté (le
 #     lecteur du CSV + le normaliseur : identité vérifiée, métriques
-#     numérisées, la table complète des 2 061 colonnes conservée) ;
+#     numérisées, la table complète des 2 061 colonnes conservée) + les
+#     lecteurs/normaliseurs des sources du sous-bloc (sources_offre_mobilite.R) ;
 #   - le builder de vintages (la projection générique depuis le manifeste,
 #     vintages_depuis_manifest, vintage.R) ;
 #   - le SEAM de calcul : construire_analytiques_mobilite enchaîne la table
@@ -20,36 +23,46 @@
 #     quatre niveaux (recalculée depuis les parties — jamais une moyenne) et
 #     le chaînon analytique FLAGSHIP (issue #138) — les 5 parts d'isolation,
 #     div_loss_t/b (la neutralité modale sur la base d'abord), la signature de
-#     densité + le nuage même-échelle, la saillance et les rangs-en-contexte
-#     (les builders vivent dans analytics_mobilite.R, persistés sous
-#     data/processed/mobilite/ — la matière que le ticket payload #141
-#     assemble) ;
+#     densité + le nuage même-échelle, la saillance et les rangs-en-contexte —
+#     puis le sous-bloc (issue #140) : l'offre TC (la jointure SPATIALE arrêts
+#     Korrigo × communes à 500 m, le proxy documenté), les bornes IRVE et le
+#     stationnement vélo du hub Ecolab (les builders vivent dans
+#     analytics_mobilite.R, persistés sous data/processed/mobilite/ — la
+#     matière que le ticket payload #141 assemble) ;
 #   - le SEAM de publication : publier_mobilite — le payload contractuel
 #     (territoires / indicateurs / histoires / apercu) publié par la
-#     machinerie partagée publish. L'indicateur publié reste la « Taille »
-#     (nb_buildings) — les clés de la grille et le Story complet sont assemblés
-#     par le ticket payload #141.
+#     machinerie partagée publish. Les quatre indicateurs publiés : la
+#     « Taille » (nb_buildings) et les trois clés du sous-bloc.
 # Ce qui N'y vit PAS : aucun calcul d'indicateur de la grille (la matière
 # analytique est au ticket #138, l'assemblage des clés au #141), aucun étage
-# demande/réseaux (ticket #139), aucun sous-bloc (ticket #140), aucune
-# modification de theme_demographie / theme_economie / theme_habitat ni du
-# cœur partagé (compute.R, publish.R).
+# demande/réseaux (ticket #139), aucune modification de theme_demographie /
+# theme_economie / theme_habitat ni du cœur partagé (compute.R, publish.R).
 
 # construire_donnees_mobilite --------------------------------------------------
 # L'acte « trouver la donnée » du thème : le lecteur lit le snapshot porté
 # (le CSV du cache, une ligne par commune), le normaliseur le valide et le
 # nettoie (identité vérifiée, métriques numérisées), et la table complète est
 # persistée sous data/processed/mobilite/ (idempotent, comme les builders des
-# sources). Le paramètre `snapshot` permet aux tests de passer la fixture
-# directement : le chemin de code de normalisation et de persistance est le
-# même que pour le fichier réel.
+# sources). Issue #140 : le seam assemble aussi les CINQ sources du sous-bloc
+# « L'offre de mobilité alternative » (construire_sources_offre_mobilite —
+# korrigo GTFS, mobibreizh-stops, communes-france, bornes-recharges,
+# stationnement-velo), chacune lue dans le cache et normalisée par SON
+# normaliseur (sources_offre_mobilite.R), jamais re-persistée ici (la matière
+# des indicateurs est l'affaire du chaînon analytique). Les paramètres
+# `snapshot` et `sources` permettent aux tests de passer les fixtures
+# directement : le chemin de code de normalisation est le même que pour les
+# fichiers réels.
 construire_donnees_mobilite <- function(cache = "data/raw",
                                         sortie = "data/processed/mobilite/mobilite_snapshot.rds",
-                                        snapshot = NULL) {
+                                        snapshot = NULL,
+                                        sources = NULL) {
   if (is.null(snapshot)) {
     snapshot <- lire_snapshot_mobilite(
-      file.path(cache, MANIFEST_MOBILITE$fichier)
+      file.path(cache, MANIFEST_MOBILITE_SNAPSHOT$fichier)
     )
+  }
+  if (is.null(sources)) {
+    sources <- construire_sources_offre_mobilite(cache)
   }
 
   table <- normaliser_snapshot_mobilite(snapshot)
@@ -57,7 +70,7 @@ construire_donnees_mobilite <- function(cache = "data/raw",
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(table, sortie)
 
-  list(mobilite_snapshot = table)
+  c(list(mobilite_snapshot = table), sources)
 }
 
 # vintages_mobilite ------------------------------------------------------------
@@ -144,7 +157,14 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
 #   - la classification de saillance (construire_saillance_territoires), la
 #     signature de densité (construire_signature_densite), le nuage même-échelle
 #     (construire_nuage_territoires) et les rangs-en-contexte des parts
-#     d'isolation via la machinerie partagée (construire_rangs_isolation).
+#     d'isolation via la machinerie partagée (construire_rangs_isolation) ;
+#   - le sous-bloc « L'offre de mobilité alternative » (issue #140) : l'offre
+#     TC (calculer_part_proches_arret_communes — la jointure SPATIALE arrêts
+#     Korrigo × communes, le proxy documenté à 500 m), les bornes de recharge
+#     (calculer_bornes_communes — les stations IRVE par commune) et le
+#     stationnement vélo (calculer_stationnement_velo_communes — les places /
+#     1 000 hab du hub Ecolab, millésime le plus récent), agrégés aux quatre
+#     niveaux par SA règle (agreger_offre_territoires).
 # Tous les artefacts sont persistés sous data/processed/mobilite/ — la matière
 # que le ticket payload (#141) assemble. La garde de forme s'étend aux familles
 # analytiques : un input corrompu s'arrête ICI, avant la moindre écriture.
@@ -184,6 +204,21 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
 
+  # le sous-bloc « L'offre de mobilité alternative » (issue #140)
+  offre_tc_communes <- calculer_part_proches_arret_communes(
+    donnees$mobibreizh_stops, donnees$communes_referentiel
+  )
+  bornes_communes <- calculer_bornes_communes(
+    donnees$bornes_recharges, donnees$communes_referentiel
+  )
+  stationnement_velo_communes <- calculer_stationnement_velo_communes(
+    donnees$stationnement_velo
+  )
+  offre_territoires <- agreger_offre_territoires(
+    offre_tc_communes, bornes_communes, stationnement_velo_communes,
+    mobilite_communes, base_epci
+  )
+
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
   readr::write_rds(mobilite_communes, file.path(sortie, "mobilite_communes.rds"))
   readr::write_rds(nb_buildings_territoires,
@@ -200,6 +235,14 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "nuage_territoires.rds"))
   readr::write_rds(isolation_rangs,
                    file.path(sortie, "isolation_rangs.rds"))
+  readr::write_rds(offre_tc_communes,
+                   file.path(sortie, "offre_tc_communes.rds"))
+  readr::write_rds(bornes_communes,
+                   file.path(sortie, "bornes_communes.rds"))
+  readr::write_rds(stationnement_velo_communes,
+                   file.path(sortie, "stationnement_velo_communes.rds"))
+  readr::write_rds(offre_territoires,
+                   file.path(sortie, "offre_territoires.rds"))
 
   list(
     mobilite_communes = mobilite_communes,
@@ -209,7 +252,11 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     saillance_territoires = saillance_territoires,
     densite_territoires = densite_territoires,
     nuage_territoires = nuage_territoires,
-    isolation_rangs = isolation_rangs
+    isolation_rangs = isolation_rangs,
+    offre_tc_communes = offre_tc_communes,
+    bornes_communes = bornes_communes,
+    stationnement_velo_communes = stationnement_velo_communes,
+    offre_territoires = offre_territoires
   )
 }
 
@@ -217,20 +264,39 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
 # l'estampille — les vintages T7) et sa multiplicité. Le chaînon flagship
-# (issue #138) ne publie qu'UNE clé : « nb_buildings » (la « Taille » du thème
-# — le nombre de bâtiments résidentiels analysés par commune, le poids du
-# thème dans le squelette), une ligne PAR TERRITOIRE (commune / EPCI /
-# département / région : les agrégats sont recalculés depuis les parties,
-# jamais une moyenne de parts). Les 5 parts d'isolation sont CALCULÉES et
-# PERSISTÉES par le chaînon (isolation_territoires.rds — la matière des clés
-# de la grille) ; leur assemblage dans le payload est le contrat du ticket
-# #141.
+# (issue #138) publie « nb_buildings » (la « Taille » du thème — le nombre de
+# bâtiments résidentiels analysés par commune, le poids du thème dans le
+# squelette). Issue #140 : le sous-bloc « L'offre de mobilité alternative »
+# ajoute les TROIS clés d'infrastructure — « offre_tc » (la part des bâtiments
+# près d'un arrêt, estampillée du vintage des arrêts Korrigo), « bornes_
+# recharge » (les stations IRVE / commune, Licence Ouverte) et « places_
+# stationnement_velo_1000 » (le hub Ecolab pris tel quel, ODbL). Chaque clé
+# est à UNE ligne PAR TERRITOIRE (commune / EPCI / département / région : les
+# agrégats sont recalculés depuis les parties — la moyenne pondérée pour la
+# part, la somme pour le compte, Σ places ÷ Σ population pour le taux, jamais
+# une moyenne de valeurs communales).
 INDICATEURS_MOBILITE <- tibble::tibble(
-  key = "nb_buildings",
-  libelle = "Bâtiments résidentiels analysés",
-  sources = list("mobilite_snapshot"),
-  source_reference = "mobilite_snapshot",
-  multiplicite = 1L
+  key = c("nb_buildings", "offre_tc", "bornes_recharge",
+          "places_stationnement_velo_1000"),
+  libelle = c(
+    "Bâtiments résidentiels analysés",
+    "Part des bâtiments près d'un arrêt (à 500 m)",
+    "Bornes de recharge pour véhicules électriques",
+    "Places de stationnement vélo pour 1 000 hab."
+  ),
+  sources = list(
+    "mobilite_snapshot",
+    c("korrigo", "mobibreizh-stops", "communes-france"),
+    "bornes-recharges",
+    "stationnement-velo"
+  ),
+  source_reference = c(
+    "mobilite_snapshot",
+    "mobibreizh-stops",
+    "bornes-recharges",
+    "stationnement-velo"
+  ),
+  multiplicite = c(1L, 1L, 1L, 1L)
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -264,15 +330,18 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
-# L'indicateur publié du tracer bullet : UNE ligne par territoire (commune /
-# EPCI / département / région), la valeur d'un agrégat RECALCULÉE depuis les
-# parties communales (jamais une moyenne de parts — la table agrégée de
-# agreger_nb_buildings_territoires). L'assemblage réutilise la MACHINERIE
-# PARTAGÉE telle quelle : compute_ranks (les rangs-en-contexte par niveau
-# entre pairs) et assembler_indicateurs (la forme du contrat — rangs +
-# estampilles T7 depuis INDICATEURS_MOBILITE + vintages). La table est ALIGNÉE
-# sur la référence : un territoire sans donnée porte NA — jamais une ligne
-# manquante (la multiplicité 1 de la table déclarative l'exige).
+# Les indicateurs publiés du thème : UNE ligne par territoire (commune / EPCI /
+# département / région), la valeur d'un agrégat RECALCULÉE depuis les parties
+# communales (jamais une moyenne de valeurs — les tables agrégées de
+# agreger_nb_buildings_territoires / agreger_offre_territoires). Quatre clés :
+# la « Taille » (nb_buildings — le tracer bullet #137/#138) et les trois clés
+# du sous-bloc « L'offre de mobilité alternative » (#140) — offre_tc, bornes_
+# recharge, places_stationnement_velo_1000. L'assemblage réutilise la
+# MACHINERIE PARTAGÉE telle quelle : compute_ranks (les rangs-en-contexte par
+# niveau entre pairs) et assembler_indicateurs (la forme du contrat — rangs +
+# estampilles T7 depuis INDICATEURS_MOBILITE + vintages). Les tables sont
+# ALIGNÉES sur la référence : un territoire sans donnée porte NA — jamais une
+# ligne manquante (la multiplicité 1 de la table déclarative l'exige).
 construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) {
   aligner <- function(table_agregee, key, unit) {
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
@@ -281,10 +350,26 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
         value = value, unit = unit
       )
   }
+  sous_bloc <- function(key) {
+    dplyr::left_join(
+      territoires["code"],
+      analytiques$offre_territoires %>%
+        dplyr::filter(key == !!key) %>%
+        dplyr::select(code, value),
+      by = "code"
+    )
+  }
 
   tables <- list(
     nb_buildings = aligner(analytiques$nb_buildings_territoires,
-                           "nb_buildings", "bâtiments")
+                           "nb_buildings", "bâtiments"),
+    offre_tc = aligner(sous_bloc("offre_tc"), "offre_tc", "%"),
+    bornes_recharge = aligner(sous_bloc("bornes_recharge"),
+                              "bornes_recharge", "bornes"),
+    places_stationnement_velo_1000 = aligner(
+      sous_bloc("places_stationnement_velo_1000"),
+      "places_stationnement_velo_1000", "places / 1 000 hab"
+    )
   )
 
   rangs <- compute_ranks(territoires, tables, scalaires = list())
@@ -392,6 +477,35 @@ validations_mobilite <- list(
     nb <- payload$indicateurs$value[payload$indicateurs$key == "nb_buildings"]
     if (any(!is.na(nb) & nb < 0)) {
       stop("Payload invalide : des bâtiments analysés négatifs.",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # l'offre TC est une part dans [0, 1] (une valeur NA — territoire sans
+  # calcul — est un cas légitime, jamais une corruption)
+  function(payload) {
+    tc <- payload$indicateurs$value[payload$indicateurs$key == "offre_tc"]
+    if (any(!is.na(tc) & (tc < 0 | tc > 1))) {
+      stop("Payload invalide : une part de bâtiments près d'un arrêt hors [0, 1].",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # les bornes de recharge sont un compte entier non négatif
+  function(payload) {
+    b <- payload$indicateurs$value[payload$indicateurs$key == "bornes_recharge"]
+    if (any(!is.na(b) & (b < 0 | b != floor(b)))) {
+      stop("Payload invalide : un compte de bornes de recharge négatif ou non entier.",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # le stationnement vélo est un taux non négatif (les places / 1 000 hab)
+  function(payload) {
+    v <- payload$indicateurs$value[
+      payload$indicateurs$key == "places_stationnement_velo_1000"]
+    if (any(!is.na(v) & v < 0)) {
+      stop("Payload invalide : un taux de stationnement vélo négatif.",
            call. = FALSE)
     }
     invisible(payload)

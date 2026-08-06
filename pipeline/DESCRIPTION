@@ -18,6 +18,7 @@ Imports:
     nanoparquet,
     readr,
     readxl,
+    sf,
     tibble,
     tidyr
 Suggests:
