@@ -1,5 +1,221 @@
 [
   {
+    "id": "epci",
+    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": null
+  },
+  {
+    "id": "logements",
+    "source": "INSEE — Logements (dossier complet)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "dvf_2021_dep22",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2021_dep29",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2021_dep35",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2021_dep56",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2022_dep22",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2022_dep29",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2022_dep35",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2022_dep56",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2023_dep22",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2023_dep29",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2023_dep35",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2023_dep56",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2024_dep22",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2024_dep29",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2024_dep35",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2024_dep56",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2025_dep22",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2025_dep29",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2025_dep35",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "dvf_2025_dep56",
+    "source": "Etalab — DVF géolocalisées",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-12-31",
+    "date_publication": "2026-05-18"
+  },
+  {
+    "id": "sirene_snapshot",
+    "source": "data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)",
+    "version": "2026-04",
+    "licence": "lov2",
+    "date_reference": "2026-03-31",
+    "date_publication": "2026-05-01"
+  },
+  {
+    "id": "flores_a38",
+    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A38)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-03-31"
+  },
+  {
+    "id": "flores_a88",
+    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-03-31"
+  },
+  {
+    "id": "rp_emploi",
+    "source": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "rp_chomage",
+    "source": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-07-15"
+  },
+  {
     "id": "serie_historique",
     "source": "INSEE — Série historique du recensement",
     "version": "2023",
@@ -22,13 +238,5 @@
     "licence": "lov2",
     "date_reference": "2023-01-01",
     "date_publication": "2026-06-30"
-  },
-  {
-    "id": "epci",
-    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": null
   }
 ]
