@@ -381,7 +381,7 @@ test_that("une valeur effectifs manquante (non diffusée) échoue — jamais sil
 
 # 7. Le chemin de joie RÉEL ------------------------------------------------------
 test_that("la vraie table flores_a88 : 1202 communes, 6 supprimées (min = 2), LQ continues", {
-  skip_if_not(file.exists(chemin_flores_reel("A88")),
+  skip_sans_donnees_reelles(file.exists(chemin_flores_reel("A88")),
               "flores_a88.rds n'est pas présente (worktree sans donnée).")
   flores <- readRDS(chemin_flores_reel("A88"))
 
@@ -411,7 +411,7 @@ test_that("la vraie table flores_a88 : 1202 communes, 6 supprimées (min = 2), L
 })
 
 test_that("la vraie table flores_a38 tourne via la MÊME fonction (mêmes 6 communes)", {
-  skip_if_not(file.exists(chemin_flores_reel("A38")),
+  skip_sans_donnees_reelles(file.exists(chemin_flores_reel("A38")),
               "flores_a38.rds n'est pas présente (worktree sans donnée).")
   flores <- readRDS(chemin_flores_reel("A38"))
 

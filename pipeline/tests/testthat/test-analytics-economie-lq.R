@@ -347,7 +347,7 @@ test_that("relancer l'analyse est déterministe (octet-pour-octet)", {
 
 # 7. Le chemin de joie RÉEL ------------------------------------------------------
 test_that("la vraie table sirene_snapshot : 1202 communes, 0 suppression, comptes connus", {
-  skip_if_not(file.exists(chemin_sirene_reel()),
+  skip_sans_donnees_reelles(file.exists(chemin_sirene_reel()),
               "La vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
   snapshot <- readRDS(chemin_sirene_reel())
 

@@ -283,7 +283,7 @@ test_that("persister_eco_activites_economie : table + rapport de suppression sou
 
 test_that("données réelles : part calculable pour 1202 communes, 0 supprimée, distribution verrouillée", {
   chemin <- chemin_reel_economie("sirene_snapshot.rds")
-  skip_if_not(file.exists(chemin),
+  skip_sans_donnees_reelles(file.exists(chemin),
               "les tables réelles ne sont pas présentes (data/ est gitignoré)")
 
   res <- construire_eco_activites_economie(readr::read_rds(chemin), artefact_egss())

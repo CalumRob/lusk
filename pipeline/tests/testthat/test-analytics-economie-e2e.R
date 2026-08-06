@@ -141,6 +141,11 @@ comptes_payload_reels <- c(
   vintages = 5             # une ligne par source du manifeste Économie
 )
 
+# La référence du déterminisme, capturée par le premier test (le run de bout
+# en bout) et comparée par le second (un run supplémentaire unique) : prouver
+# la stabilité octet-pour-octet avec DEUX runs au total, jamais trois.
+reference_determinisme <- NULL
+
 # empreintes_binaires -------------------------------------------------------------
 # Les empreintes octet-pour-octet des fichiers d'un dossier (le déterminisme du
 # run : relancer produit des fichiers identiques). `exclure` nomme les fichiers
@@ -155,7 +160,7 @@ empreintes_binaires <- function(dossier, exclure = character()) {
 # 1. Le chemin de joie RÉEL ------------------------------------------------------
 
 test_that("le run de bout en bout : tables analytiques réelles + payload publié, aux comptes verrouillés", {
-  skip_if_not(fixtures_reelles_presentes(),
+  skip_sans_donnees_reelles(fixtures_reelles_presentes(),
               "les fixtures réelles ne sont pas présentes (data/ est gitignoré).")
 
   # tout vit dans des dossiers temporaires : le cache (les fixtures copiées), la
@@ -258,10 +263,19 @@ test_that("le run de bout en bout : tables analytiques réelles + payload publi�
                            list.files(dossier, recursive = TRUE))),
                  info = dossier)
   }
+
+  # la référence du déterminisme : les empreintes de CE run — le second test
+  # relance une seule fois et compare contre elles (deux runs au total, pas
+  # trois : la stabilité est prouvée par la comparaison, pas par un second
+  # aller-retour complet dans le test de déterminisme lui-même)
+  reference_determinisme <<- list(
+    analytiques = empreintes_binaires(sortie_analytiques),
+    payload = empreintes_binaires(sortie, exclure = "run-report.json")
+  )
 })
 
 test_that("un second run produit des tables analytiques et un payload octet-pour-octet identiques (déterminisme)", {
-  skip_if_not(fixtures_reelles_presentes(),
+  skip_sans_donnees_reelles(fixtures_reelles_presentes(),
               "les fixtures réelles ne sont pas présentes (data/ est gitignoré).")
 
   racine <- tempfile("e2e-det-")
@@ -269,7 +283,6 @@ test_that("un second run produit des tables analytiques et un payload octet-pour
   cache <- file.path(racine, "cache")
   cwd_run <- file.path(racine, "cwd")
   dir.create(cwd_run)
-  sortie1 <- file.path(racine, "pub1")
   sortie2 <- file.path(racine, "pub2")
   on.exit(unlink(racine, recursive = TRUE), add = TRUE)
 
@@ -277,12 +290,8 @@ test_that("un second run produit des tables analytiques et un payload octet-pour
   withr::local_dir(cwd_run)
   sortie_analytiques <- file.path(dirname(cache), "processed", "economie")
 
-  # premier run : les empreintes des tables analytiques + du payload
-  executer_run_reel(cache, sortie1)
-  analytiques1 <- empreintes_binaires(sortie_analytiques)
-  payload1 <- empreintes_binaires(sortie1, exclure = "run-report.json")
-
-  # second run : relancer produit LES MÊMES fichiers — octet-pour-octet
+  # le second run : relancer produit LES MÊMES fichiers que la référence du
+  # premier test — octet-pour-octet
   executer_run_reel(cache, sortie2)
   analytiques2 <- empreintes_binaires(sortie_analytiques)
   payload2 <- empreintes_binaires(sortie2, exclure = "run-report.json")
@@ -290,10 +299,10 @@ test_that("un second run produit des tables analytiques et un payload octet-pour
   # le déterminisme du chaînon analytique : les artefacts réels identiques
   # (mêmes noms de fichiers, mêmes octets — le run est un état complet, jamais
   # un append : relancer écrase, ne duplique pas)
-  expect_identical(analytiques1, analytiques2)
+  expect_identical(analytiques2, reference_determinisme$analytiques)
   # le déterminisme du payload : tous les fichiers publiés identiques (le
   # run-report.json est exclu — il porte un horodatage par conception)
-  expect_identical(payload1, payload2)
+  expect_identical(payload2, reference_determinisme$payload)
   # et les comptes restent ceux du run verrouillé (jamais de doublon : le payload
   # EST l'état complet, la relance écrase)
   expect_equal(
@@ -307,7 +316,7 @@ test_that("un second run produit des tables analytiques et un payload octet-pour
 })
 
 test_that("un input analytique corrompu arrête le run avant un payload partiel (jamais de succès partiel silencieux)", {
-  skip_if_not(fixtures_reelles_presentes(),
+  skip_sans_donnees_reelles(fixtures_reelles_presentes(),
               "les fixtures réelles ne sont pas présentes (data/ est gitignoré).")
 
   racine <- tempfile("e2e-fail-")

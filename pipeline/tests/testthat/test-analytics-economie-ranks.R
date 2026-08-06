@@ -415,7 +415,7 @@ test_that("construire_rangs_analytiques_economie attache et persiste les quatre 
 
 test_that("données réelles : les rangs LQ sur les 1202 communes, dans [0, 1]", {
   chemin <- chemin_reel_rangs("sirene_snapshot.rds")
-  skip_if_not(file.exists(chemin),
+  skip_sans_donnees_reelles(file.exists(chemin),
               "la vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
 
   snapshot <- readRDS(chemin)
@@ -445,7 +445,7 @@ test_that("données réelles : les rangs LQ sur les 1202 communes, dans [0, 1]",
 
 test_that("données réelles : les rangs de la LQ d'emploi A88 sur les 1196 communes retenues", {
   chemin <- chemin_reel_rangs("flores_a88.rds")
-  skip_if_not(file.exists(chemin),
+  skip_sans_donnees_reelles(file.exists(chemin),
               "la vraie table flores_a88 n'est pas présente (worktree sans donnée).")
 
   flores <- readRDS(chemin)
@@ -468,7 +468,7 @@ test_that("données réelles : les rangs de la LQ d'emploi A88 sur les 1196 comm
 
 test_that("données réelles : les rangs du score vert sur les 1202 communes", {
   chemin <- chemin_reel_rangs("sirene_snapshot.rds")
-  skip_if_not(file.exists(chemin),
+  skip_sans_donnees_reelles(file.exists(chemin),
               "la vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
 
   snapshot <- readRDS(chemin)
@@ -493,7 +493,7 @@ test_that("données réelles : les rangs du chômage sur les 1202 communes", {
   # DS_RP_EMPLOI_LR_PRINC, téléchargée à part) — absente d'un worktree sans la
   # donnée, le test saute proprement (comme les autres tests réels du chômage)
   chemin_rp <- chemin_reel_rangs("rp_chomage.rds")
-  skip_if_not(file.exists(chemin_rp),
+  skip_sans_donnees_reelles(file.exists(chemin_rp),
               "la vraie table rp_chomage n'est pas présente (worktree sans donnée).")
 
   rp <- readRDS(chemin_rp)

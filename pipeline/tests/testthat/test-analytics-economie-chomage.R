@@ -420,7 +420,7 @@ chemin_reel_chomage <- function(fichier) {
 
 test_that("données réelles : rp_chomage.rds couvre 1202 communes × 3 mesures, aucun doublon", {
   chemin <- chemin_reel_chomage("rp_chomage.rds")
-  skip_if_not(file.exists(chemin),
+  skip_sans_donnees_reelles(file.exists(chemin),
               "la table réelle n'est pas présente (data/ est gitignoré)")
 
   rp <- readr::read_rds(chemin)
@@ -440,7 +440,7 @@ test_that("données réelles : rp_chomage.rds couvre 1202 communes × 3 mesures,
 
 test_that("données réelles : chomage_economie.rds = commune × 1 taux dans [0,1], aucune suppression", {
   chemin_rp <- chemin_reel_chomage("rp_chomage.rds")
-  skip_if_not(file.exists(chemin_rp),
+  skip_sans_donnees_reelles(file.exists(chemin_rp),
               "la table réelle n'est pas présente (data/ est gitignoré)")
 
   res <- construire_chomage_economie(readr::read_rds(chemin_rp))
@@ -463,7 +463,7 @@ test_that("données réelles : chomage_economie.rds = commune × 1 taux dans [0,
 
   # l'indicateur persisté existe et est exactement la table calculée
   chemin_ind <- chemin_reel_chomage("chomage_economie.rds")
-  skip_if_not(file.exists(chemin_ind),
+  skip_sans_donnees_reelles(file.exists(chemin_ind),
               "l'indicateur persisté n'est pas présent (data/ est gitignoré)")
   expect_identical(readr::read_rds(chemin_ind), d)
 })

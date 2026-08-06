@@ -237,7 +237,7 @@ test_that("persister_dortoir_economie : table + rapport de suppression sous data
 
 test_that("données réelles : ratio calculable pour 100 % des communes, distribution verrouillée", {
   chemin_a88 <- chemin_reel_economie("flores_a88.rds")
-  skip_if_not(file.exists(chemin_a88),
+  skip_sans_donnees_reelles(file.exists(chemin_a88),
               "les tables réelles ne sont pas présentes (data/ est gitignoré)")
 
   res <- construire_dortoir_economie(
