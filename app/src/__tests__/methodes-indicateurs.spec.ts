@@ -156,10 +156,10 @@ describe('registre Méthodes — la parité avec les indicateurs de la payload',
 })
 
 describe('registre Méthodes — la parité avec les Stories de la payload', () => {
-  // La payload de l'économie est en cours de migration (issue #129, 2026-08-06) :
-  // histoires_economie.json commis porte encore les ANCIENNES clés. La parité
-  // story_key ne vaut donc que pour les thèmes à payload stable (démographie,
-  // habitat) ; le registre de l'économie est asserté contre le modèle CONTEXT.md.
+  // Le balayage lit les lectures par la colonne « classification », que seule
+  // la payload de la démographie et de l'habitat porte. La payload de
+  // l'économie (forme reshapée, issue #131) n'a pas de classification : ses
+  // story_keys sont assertés contre le modèle CONTEXT.md (test ci-dessous).
   const THEMES_STABLES: ThemeConstruit[] = ['demographie', 'habitat']
 
   it('couvre chaque story_key des thèmes à payload stable (démographie, habitat)', () => {

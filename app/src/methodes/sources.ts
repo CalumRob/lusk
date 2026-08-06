@@ -61,6 +61,25 @@ function sourcesDvf(): Record<string, SourceEditoriale> {
   return sources
 }
 
+/** La source DPE est UNE donnée (data.ademe.fr, dpe03existant) déclinée en 4 lignes vintages (une par département breton). */
+const SOURCE_DPE: Omit<SourceEditoriale, 'nom'> = {
+  editeur: 'ADEME',
+  url: 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant',
+  themes: ['habitat'],
+}
+
+/** Les 4 lignes vintages DPE partagent les mêmes faits éditoriaux — générées comme les DVF. */
+function sourcesDpe(): Record<string, SourceEditoriale> {
+  const sources: Record<string, SourceEditoriale> = {}
+  for (const dep of DEPARTEMENTS_BRETAGNE) {
+    sources[`dpe_${dep}`] = {
+      ...SOURCE_DPE,
+      nom: 'ADEME — Observatoire DPE, logements existants (dpe03existant)',
+    }
+  }
+  return sources
+}
+
 /**
  * Le registre complet — une entrée par source, indexée par l'id exact de la
  * table vintages. Ordre du registre = ordre d'affichage de la table (les
@@ -101,6 +120,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     themes: ['habitat'],
   },
   ...sourcesDvf(),
+  ...sourcesDpe(),
 
   // ---- Économie/Emploi (docs/themes/economie-emploi.md) ----
   sirene_snapshot: {

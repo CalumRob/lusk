@@ -14,8 +14,8 @@
  * est un thème à Story unique — « Ce que la commune abrite » (top-5 du LQ),
  * plus la Story de structure de la région « Ce que la Bretagne abrite » ; la
  * lecture « Le matin, la commune se vide » est en pause (statut 'en-pause'),
- * documentée comme note Méthodes mais non publiée. La payload commise est en
- * cours de migration : le registre porte les clés du modèle cible.
+ * documentée comme note Méthodes mais non publiée. La payload commise porte la
+ * forme reshapée (issue #131, 2026-08-06) : le registre suit les clés publiées.
  */
 
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
@@ -234,19 +234,11 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
   // ---- Économie/Emploi (docs/themes/economie-emploi.md, docs/design/methodes.md) ----
   economie: {
     indicateurs: {
-      lq: {
-        label: 'Spécialisation des établissements',
+      effectifs_salaries: {
+        label: 'Effectifs salariés (lieu de travail)',
         definition:
-          'Le location quotient (LQ) mesure la spécialisation d’un territoire dans une activité : la part des établissements actifs du territoire relevant de cette activité, rapportée à la part de la même activité dans l’ensemble de la Bretagne. Un quotient supérieur à 1 signale une surreprésentation, inférieur à 1 une sous-représentation. Le LQ compte les établissements, jamais les emplois ni les personnes. La référence est la moyenne bretonne.',
-        unite: '',
-        source: 'data.bretagne.bzh — Base SIRENE — Région Bretagne (sirene-v3-consolidee)',
-        sourceId: 'sirene_snapshot',
-      },
-      lq_emploi: {
-        label: 'Spécialisation de l’emploi salarié',
-        definition:
-          'Le location quotient appliqué à l’emploi salarié : la part des effectifs salariés du territoire dans une activité, rapportée à la part bretonne. Là où le LQ des établissements lit le tissu productif — ce que la commune abrite —, le LQ de l’emploi lit l’emploi offert sur place.',
-        unite: '',
+          'Le nombre total d’emplois salariés présents dans la commune, comptés au lieu de travail — les salariés des établissements implantés sur le territoire, qu’ils y résident ou non. C’est la taille du tissu économique local, en valeur absolue, comme la population l’est pour la démographie ; la lecture relative de l’emploi est l’affaire de la Story, pas de cet indicateur.',
+        unite: 'salariés',
         source: 'INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)',
         sourceId: 'flores_a88',
       },
