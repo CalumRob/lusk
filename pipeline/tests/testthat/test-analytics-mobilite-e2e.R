@@ -36,9 +36,11 @@
 # par les builders réels.
 
 # Les fixtures réelles — le seam d'entrée du run mocké --------------------------
-# Le vrai snapshot porté et le référentiel EPCI partagé vivent sous
-# pipeline/data/ (gitignoré). Absents hors worktree, le test saute proprement
-# (comme les autres tests « données réelles »).
+# Les vraies sources (le snapshot porté, le référentiel EPCI partagé et les
+# cinq sources du sous-bloc « L'offre de mobilité alternative » — korrigo GTFS,
+# mobibreizh-stops, communes-france, bornes-recharges, stationnement-velo)
+# vivent sous pipeline/data/ (gitignoré). Absents hors worktree, le test saute
+# proprement (comme les autres tests « données réelles »).
 fixture_e2e_raw <- function(...) {
   testthat::test_path("..", "..", "data", "raw", ...)
 }
@@ -46,21 +48,33 @@ fixture_e2e_raw <- function(...) {
 fixtures_reelles_presentes <- function() {
   all(file.exists(
     fixture_e2e_raw("bretagne_mobility_super_dashboard_gravity.csv"),
-    fixture_e2e_raw("extracted", "EPCI_au_01-01-2025.xlsx")
+    fixture_e2e_raw("extracted", "EPCI_au_01-01-2025.xlsx"),
+    fixture_e2e_raw("korrigo-gtfs.zip"),
+    fixture_e2e_raw("mobibreizh-stops.csv"),
+    fixture_e2e_raw("communes-france.geojson"),
+    fixture_e2e_raw("bornes-recharges.csv"),
+    fixture_e2e_raw("stationnement-velo-commune.csv")
   ))
 }
 
 # fabriquer_cache_e2e -----------------------------------------------------------
 # La couture de téléchargement MOCKÉE écrit dans le cache les artefacts réels du
 # worktree (le réseau n'entre jamais dans la boucle) : le snapshot porté (le
-# cache EST le CSV) et le référentiel partagé EPCI (déjà extrait, la base que
-# lire_epci consomme — jamais re-téléchargée).
+# cache EST le CSV), le référentiel partagé EPCI (déjà extrait, la base que
+# lire_epci consomme — jamais re-téléchargée) et les cinq sources du sous-bloc
+# (issue #140 — le calcul de l'offre TC et des bornes/stationnement vélo
+# consomme les fichiers réels).
 fabriquer_cache_e2e <- function(cache) {
   dir.create(file.path(cache, "extracted"), recursive = TRUE, showWarnings = FALSE)
   file.copy(fixture_e2e_raw("bretagne_mobility_super_dashboard_gravity.csv"),
             cache, overwrite = TRUE)
   file.copy(fixture_e2e_raw("extracted", "EPCI_au_01-01-2025.xlsx"),
             file.path(cache, "extracted"), overwrite = TRUE)
+  for (f in c("korrigo-gtfs.zip", "mobibreizh-stops.csv",
+              "communes-france.geojson", "bornes-recharges.csv",
+              "stationnement-velo-commune.csv")) {
+    file.copy(fixture_e2e_raw(f), cache, overwrite = TRUE)
+  }
   invisible(cache)
 }
 
@@ -117,13 +131,22 @@ executer_run_reel <- function(cache, sortie) {
 #   - isolation_rangs               : 6 340 lignes (1 268 territoires du
 #     squelette × 5 clés — ALIGNÉS sur la référence, les 2 communes hors
 #     snapshot portent NA, jamais une ligne manquante) ;
+#   - le sous-bloc (issue #140) : offre_tc_communes (1 202 communes × la part
+#     à 500 m d'un arrêt — le référentiel complet, pas l'analyse), bornes_
+#     communes (709 communes × le compte de stations IRVE — les codes hors
+#     référentiel du fichier consolidé tombent), stationnement_velo_communes
+#     (1 202 communes × places/1 000 hab, millésime 2025), offre_territoires
+#     (3 804 lignes — 3 clés × 1 268 territoires : 1 202 communes + 61 EPCIs +
+#     4 départements + la région, chaque indicateur agrégé par SA règle) ;
 #   - payload : 1 268 territoires (1 202 communes + 61 EPCIs + 4 départements +
 #     la région — le squelette partagé, les 2 communes hors snapshot portent NA
-#     pour l'indicateur, jamais une ligne manquante), × 1 clé (nb_buildings) ;
-#     histoires : 1 405 lignes — 1 266 « vingt-minutes-sans-voiture » (une
-#     ligne par territoire, la Story par défaut) + 139 « ce-que-le-velo-
-#     preserve » (la saillance : 130 communes + 9 EPCIs au delta ≥ 10) ;
-#     apercu vide (gating).
+#     pour l'indicateur, jamais une ligne manquante), × 4 clés (nb_buildings —
+#     la « Taille » — + offre_tc + bornes_recharge + places_stationnement_
+#     velo_1000, le sous-bloc) ; histoires : 1 405 lignes — 1 266 « vingt-
+#     minutes-sans-voiture » (une ligne par territoire, la Story par défaut) +
+#     139 « ce-que-le-velo-preserve » (la saillance : 130 communes + 9 EPCIs au
+#     delta ≥ 10) ; apercu vide (gating) ; vintages : 6 lignes (le snapshot +
+#     les cinq sources du sous-bloc).
 comptes_normalises_reels <- c(
   mobilite_snapshot = 1200
 )
@@ -137,6 +160,45 @@ comptes_analytiques_reels <- c(
   nuage_territoires = 1266,
   isolation_rangs = 6340
 )
+# les comptes verrouillés du sous-bloc (issue #140) — verrouillés sur le run
+# réel 2026-08-06 (les sources téléchargées : korrigo GTFS 2026-02, arrêts
+# 2026-08-02, référentiel 2020-09, bornes 2026-07/08, hub vélo 2022-2025) :
+#   - korrigo                     : 32 réseaux (agency.txt de l'export GTFS) ;
+#   - mobibreizh_stops            : 24 380 arrêts ;
+#   - communes_referentiel        : 1 202 communes (le référentiel breton) ;
+#   - bornes_recharges            : 9 898 lignes de points de charge, 2 018
+#     stations distinctes avec un code du référentiel (les codes postaux /
+#     départementaux du fichier consolidé tombent) ;
+#   - stationnement_velo          : 1 202 communes × 4 millésimes × 4 types —
+#     la couverture bretonne VÉRIFIÉE à la lecture (l'acceptance) ;
+#   - offre_tc_communes           : 1 202 lignes (la part à 500 m, la décision
+#     de build : le proxy superficie communale couverte) — médiane 0,0417 ;
+#   - bornes_communes             : 709 lignes (les communes du référentiel
+#     avec ≥ 1 station), 1 918 stations au total ;
+#   - stationnement_velo_communes : 1 202 lignes (le millésime 2025 — la
+#     valeur du hub telle quelle) ;
+#   - offre_territoires           : 3 804 lignes (3 clés × 1 268 territoires).
+comptes_sources_offre_reels <- c(
+  korrigo = 32,
+  mobibreizh_stops = 24380,
+  communes_referentiel = 1202,
+  bornes_recharges = 9898,
+  stationnement_velo = 4808
+)
+comptes_sous_bloc_analytiques_reels <- c(
+  offre_tc_communes = 1202,
+  bornes_communes = 709,
+  stationnement_velo_communes = 1202,
+  offre_territoires = 3804
+)
+# les comptes par niveau du sous-bloc (la forme « comptes par niveau » de
+# l'acceptance) : 3 clés × le nombre de territoires du niveau.
+comptes_offre_par_niveau_reels <- c(
+  commune = 1202 * 3,
+  epci = 61 * 3,
+  departement = 4 * 3,
+  region = 1 * 3
+)
 # les comptes par niveau des parts d'isolation (la forme « comptes par niveau
 # commune/EPCI/département/région » de l'acceptance de l'issue #138) : 5 clés ×
 # le nombre de territoires du niveau — jamais une moyenne de parts.
@@ -145,6 +207,28 @@ comptes_isolation_par_niveau_reels <- c(
   epci = 61 * 5,
   departement = 4 * 5,
   region = 1 * 5
+)
+# les valeurs VERROUILLÉES du sous-bloc sur les sources réelles (run 2026-08-06)
+#   - offre_tc (la part à 500 m, agrégat pondéré par les bâtiments) : région
+#     0,26972 ; département 29 = 0,32446 ; Bohars (29011) = 0,44619 ;
+#   - bornes_recharge (les stations) : région 1 918 ; Ille-et-Vilaine = 634 ;
+#     Rennes (35238) = 49 ;
+#   - places_stationnement_velo_1000 (le hub, millésime 2025) : région
+#     18,49894 (la même valeur que le fichier région du hub — la recomposition
+#     communale est exactement le calcul du hub) ; Ille-et-Vilaine = 27,56502 ;
+#     Rennes (35238) = 72,80428.
+valeurs_sous_bloc_reels <- list(
+  offre_tc = c(
+    "53" = 0.269720258054, "29" = 0.324457128656,
+    "29011" = 0.446189545101, "35238" = 0.401909679433
+  ),
+  bornes_recharge = c(
+    "53" = 1918, "35" = 634, "29011" = 1, "35238" = 49
+  ),
+  places_stationnement_velo_1000 = c(
+    "53" = 18.4989387483, "35" = 27.5650179584,
+    "29011" = 13.3478616181, "35238" = 72.8042838959
+  )
 )
 # la distribution réelle de la saillance (verrouillée sur le snapshot porté) :
 #   - commune : 130 saillantes (delta ≥ 10 — le top décile), 213 notables
@@ -163,11 +247,11 @@ comptes_saillance_reels <- c(
   region_notable = 1
 )
 comptes_payload_reels <- c(
-  indicateurs = 1268,  # nb_buildings × 1 268 territoires
+  indicateurs = 5072,  # 4 clés × 1 268 territoires (nb_buildings + le sous-bloc)
   histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
-  vintages = 1         # une ligne par source du manifeste Mobilité
+  vintages = 6         # le snapshot + les cinq sources du sous-bloc
 )
 # les comptes des Story keys (la forme multi-lignes du contrat histoires)
 comptes_histoires_reels <- c(
@@ -220,32 +304,70 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(nrow(payload$histoires), comptes_payload_reels[["histoires"]])
   expect_equal(nrow(payload$territoires), comptes_payload_reels[["territoires"]])
   expect_equal(nrow(payload$apercu), comptes_payload_reels[["apercu"]])
-  # l'unique indicateur publié du tracer bullet : la « Taille » du thème (le
-  # nombre de bâtiments analysés par commune — la grille d'isolation et la
-  # Story arrivent au ticket #138), une ligne par territoire, avec ses rangs
-  expect_setequal(unique(payload$indicateurs$key), "nb_buildings")
-  expect_equal(sum(payload$indicateurs$key == "nb_buildings"), 1268)
+  # les QUATRE indicateurs publiés : la « Taille » du thème (le nombre de
+  # bâtiments analysés par commune) + les trois clés du sous-bloc « L'offre de
+  # mobilité alternative » (issue #140) — une ligne par territoire, avec leurs
+  # rangs
+  expect_setequal(unique(payload$indicateurs$key),
+                  c("nb_buildings", "offre_tc", "bornes_recharge",
+                    "places_stationnement_velo_1000"))
+  for (cle in c("nb_buildings", "offre_tc", "bornes_recharge",
+                "places_stationnement_velo_1000")) {
+    expect_equal(sum(payload$indicateurs$key == cle), 1268, info = cle)
+  }
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
-  # les deux communes hors snapshot (Île-de-Sein, Île-Molène) portent NA —
-  # jamais une ligne manquante (l'alignement sur la référence du squelette)
+  # les deux communes hors snapshot (Île-de-Sein, Île-Molène) portent NA pour
+  # la Taille (l'analyse ne les couvre pas) — jamais une ligne manquante ;
+  # le sous-bloc, lui, les COUVRE (les sources couvrent tout le référentiel) :
+  # l'offre TC et le stationnement vélo ont des valeurs réelles pour 29083
   expect_true(all(is.na(payload$indicateurs$value[
-    payload$indicateurs$territoire %in% c("29083", "29084")])))
+    payload$indicateurs$territoire %in% c("29083", "29084") &
+      payload$indicateurs$key == "nb_buildings"])))
+  expect_true(all(!is.na(payload$indicateurs$value[
+    payload$indicateurs$territoire == "29083" &
+      payload$indicateurs$key %in% c("offre_tc",
+                                     "places_stationnement_velo_1000")])))
   # la valeur de la région : la SOMME des 1 200 communes (recalculée depuis les
   # parties, jamais une moyenne) — le total verrouillé du fichier de production
   expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "53"],
+    payload$indicateurs$value[payload$indicateurs$territoire == "53" &
+                                payload$indicateurs$key == "nb_buildings"],
     1223578
   )
   expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "22"],
+    payload$indicateurs$value[payload$indicateurs$territoire == "22" &
+                                payload$indicateurs$key == "nb_buildings"],
     260617
   )
-  # les estampilles T7 : l'indicateur porte le vintage de SA source de référence
+  # les estampilles T7 : CHAQUE indicateur porte le vintage de SA source de
+  # référence (la « Taille » le snapshot porté ; le sous-bloc ses sources)
   vintages <- vintages_mobilite()
-  expect_true(all(payload$indicateurs$vintage_source == vintages$source))
-  expect_true(all(payload$indicateurs$vintage_date_reference == "2026-02-28"))
-  expect_true(all(payload$indicateurs$vintage_date_publication == "2026-08-06"))
+  pour <- function(cle) {
+    payload$indicateurs[payload$indicateurs$key == cle &
+                          !is.na(payload$indicateurs$value), ]
+  }
+  ref_snapshot <- vintages[vintages$id == "mobilite_snapshot", ]
+  nb <- pour("nb_buildings")
+  expect_true(all(nb$vintage_source == ref_snapshot$source))
+  expect_true(all(nb$vintage_date_reference == "2026-02-28"))
+  expect_true(all(nb$vintage_date_publication == "2026-08-06"))
+  # l'offre TC est estampillée des ARRÊTS (le vintage de la couche signature) ;
+  # les bornes du fichier IRVE (référence 2026-07-28) ; le stationnement vélo
+  # du hub (référence 2025-01-01, l'annuel 2022-2025)
+  ref_arrets <- vintages[vintages$id == "mobibreizh-stops", ]
+  expect_true(all(pour("offre_tc")$vintage_source == ref_arrets$source))
+  expect_true(all(pour("offre_tc")$vintage_date_reference == "2026-08-02"))
+  ref_bornes <- vintages[vintages$id == "bornes-recharges", ]
+  expect_true(all(pour("bornes_recharge")$vintage_source == ref_bornes$source))
+  expect_true(all(pour("bornes_recharge")$vintage_date_reference == "2026-07-28"))
+  ref_velo <- vintages[vintages$id == "stationnement-velo", ]
+  expect_true(all(pour("places_stationnement_velo_1000")$vintage_source ==
+                    ref_velo$source))
+  expect_true(all(pour("places_stationnement_velo_1000")$vintage_version ==
+                    "2022-2025"))
+  expect_true(all(pour("places_stationnement_velo_1000")$vintage_date_reference ==
+                    "2025-01-01"))
 
   # la référence des territoires : le squelette partagé (communes + EPCIs +
   # départements + région), les noms réels, l'EPCI de chaque commune
@@ -379,6 +501,100 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(length(unique(rangs$code)), 1268)
   expect_true(all(is.na(rangs$rang_epci[rangs$code %in% c("29083", "29084")])))
 
+  # le sous-bloc « L'offre de mobilité alternative » (issue #140) -----------
+  # Les sources normalisées, aux comptes réels verrouillés : les 32 réseaux
+  # Korrigo, les 24 380 arrêts, le référentiel des 1 202 communes, les 9 898
+  # lignes IRVE, et la couverture bretonne VÉRIFIÉE du hub stationnement vélo
+  # (1 202 communes × 4 millésimes × 4 types = 4 808 lignes — l'acceptance).
+  sources <- construire_sources_offre_mobilite(cache)
+  for (nom in names(comptes_sources_offre_reels)) {
+    expect_equal(nrow(sources[[nom]]), unname(comptes_sources_offre_reels[[nom]]),
+                 info = nom)
+  }
+  # la couverture bretonne du hub est la VÉRIFICATION demandée par le contrat :
+  # les 1 202 communes bretonnes, tous millésimes (2022-2025) et types présents
+  expect_setequal(unique(sources$stationnement_velo$geocode_commune),
+                  unique(as.character(sf::st_drop_geometry(
+                    sources$communes_referentiel)$com_code)))
+  expect_setequal(unique(sources$stationnement_velo$annee),
+                  c("2022", "2023", "2024", "2025"))
+
+  # les tables COMMUNALES persistées, aux comptes réels verrouillés
+  for (nom in names(comptes_sous_bloc_analytiques_reels)) {
+    expect_equal(nrow(readRDS(file.path(sortie_analytiques, paste0(nom, ".rds")))),
+                 unname(comptes_sous_bloc_analytiques_reels[[nom]]), info = nom)
+  }
+  # l'offre TC : la part à 500 m dans [0, 1], le proxy superficie communale —
+  # 357 communes sans aucun arrêt à 500 m, la médiane réelle ~0,04, la valeur
+  # de Bohars verrouillée
+  tc <- readRDS(file.path(sortie_analytiques, "offre_tc_communes.rds"))
+  expect_named(tc, c("commune", "part_proche"))
+  expect_true(all(tc$part_proche >= 0 & tc$part_proche <= 1))
+  expect_equal(sum(tc$part_proche == 0), 357)
+  expect_equal(round(median(tc$part_proche), 4), 0.0417)
+  # les bornes : un compte entier non négatif, le total réel 1 918 stations
+  # (les codes hors référentiel du fichier consolidé tombent — le caveat
+  # source), Rennes 49 stations
+  born <- readRDS(file.path(sortie_analytiques, "bornes_communes.rds"))
+  expect_named(born, c("commune", "nb_bornes"))
+  expect_true(all(born$nb_bornes == floor(born$nb_bornes) & born$nb_bornes >= 0))
+  expect_equal(sum(born$nb_bornes), 1918)
+  expect_equal(born$nb_bornes[born$commune == "35238"], 49)
+  # le stationnement vélo : pris TEL QUEL du hub, millésime 2025 partout, la
+  # valeur de la région = la recomposition communale (le calcul du hub, vérifié
+  # contre son fichier région : 18,49894 places/1 000 hab)
+  vel <- readRDS(file.path(sortie_analytiques,
+                           "stationnement_velo_communes.rds"))
+  expect_named(vel, c("commune", "annee", "places", "population",
+                      "places_1000"))
+  expect_true(all(vel$annee == "2025"))
+  expect_equal(round(sum(vel$places) / sum(vel$population) * 1000, 5),
+               18.49894)
+
+  # l'agrégation aux QUATRE niveaux : 3 clés × 1 268 territoires, les comptes
+  # par niveau verrouillés (jamais une moyenne de valeurs)
+  offre <- readRDS(file.path(sortie_analytiques, "offre_territoires.rds"))
+  expect_named(offre, c("code", "key", "value"))
+  expect_setequal(unique(offre$key), c("offre_tc", "bornes_recharge",
+                                       "places_stationnement_velo_1000"))
+  comptes_offre <- table(type_territoire_mobilite(offre$code), offre$key)
+  for (niveau in names(comptes_offre_par_niveau_reels)) {
+    expect_equal(sum(comptes_offre[niveau, ]),
+                 unname(comptes_offre_par_niveau_reels[[niveau]]),
+                 info = niveau)
+  }
+  # les valeurs VERROUILLÉES : la région (l'agrégat pondéré par les bâtiments
+  # pour la part, la somme pour les bornes, Σ places ÷ Σ population pour le
+  # taux), un département et deux communes
+  for (cle in names(valeurs_sous_bloc_reels)) {
+    for (code in names(valeurs_sous_bloc_reels[[cle]])) {
+      attendue <- valeurs_sous_bloc_reels[[cle]][[code]]
+      reelle <- offre$value[offre$key == cle & offre$code == code]
+      if (cle == "bornes_recharge") {
+        expect_equal(reelle, attendue, info = paste(cle, code))
+      } else {
+        expect_equal(round(reelle, 6), round(attendue, 6),
+                     info = paste(cle, code))
+      }
+    }
+  }
+  # la règle d'agrégation : l'offre TC de la région n'est JAMAIS la moyenne
+  # des parts communales (le contraste réel, comme la grille d'isolation)
+  parts_communales <- offre$value[offre$key == "offre_tc" &
+                                    type_territoire_mobilite(offre$code) == "commune"]
+  region_tc <- offre$value[offre$key == "offre_tc" & offre$code == "53"]
+  expect_false(isTRUE(all.equal(region_tc, mean(parts_communales))))
+
+  # le payload : les trois clés du sous-bloc portent leurs valeurs et rangs,
+  # alignées sur la référence (1 268 lignes par clé, les îles incluses pour
+  # les clés qui les couvrent)
+  for (cle in c("offre_tc", "bornes_recharge", "places_stationnement_velo_1000")) {
+    lignes <- payload$indicateurs[payload$indicateurs$key == cle, ]
+    expect_equal(nrow(lignes), 1268, info = cle)
+    expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(lignes)))
+    expect_false(any(is.na(lignes$vintage_source)), info = cle)
+  }
+
   # les Stories : les deux story keys aux comptes verrouillés — le défaut
   # « vingt-minutes-sans-voiture » une ligne par territoire, la saillance
   # « ce-que-le-velo-preserve » seulement où le delta est réel (≥ 10)
@@ -404,8 +620,11 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_true(all(velo$delta >= SEUIL_SAILLANCE_VELO))
   expect_equal(sum(velo$type == "commune"), 130)
   expect_equal(sum(velo$type == "epci"), 9)
-  # les estampilles du Story : le vintage de SA source (l'instantané du snapshot)
-  expect_true(all(h$vintage_source == vintages$source))
+  # les estampilles du Story : le vintage de SA source (l'instantané du
+  # snapshot — les Stories sourcent l'analyse portée, jamais un tampon du
+  # sous-bloc)
+  tampon_histoires <- vintages[vintages$id == "mobilite_snapshot", ]
+  expect_true(all(h$vintage_source == tampon_histoires$source))
   expect_true(all(h$vintage_date_reference == "2026-02-28"))
 
   # AUCUN artefact de fiche hors de la cible de publication : ni indicateurs, ni

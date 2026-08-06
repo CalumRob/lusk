@@ -10,13 +10,14 @@
 # (les 5 parts d'isolation, div_loss et la Story arrivent au ticket #138) et ne
 # PUBLIE rien par lui-même : il lie les pièces existantes.
 
-test_that("MANIFEST_MOBILITE : la source portée, une ligne, les 11 colonnes standard", {
+test_that("MANIFEST_MOBILITE : les fragments concaténés, six sources, les 11 colonnes standard", {
   m <- MANIFEST_MOBILITE
 
-  # le manifeste est un tibble d'UNE ligne — le snapshot porté est l'unique
-  # source du thème (jamais un doublon de cache)
+  # le manifeste est un tibble de SIX lignes — le snapshot porté + les cinq
+  # sources du sous-bloc « L'offre de mobilité alternative » (issue #140),
+  # jamais un doublon de cache
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 1L)
+  expect_equal(nrow(m), 6L)
   expect_equal(nrow(m), length(unique(m$id)))
 
   # les 11 colonnes standard du manifeste (SIRENE / Flores / RP / Habitat)
@@ -27,14 +28,97 @@ test_that("MANIFEST_MOBILITE : la source portée, une ligne, les 11 colonnes sta
   # chaque source garde SON vintage : aucune colonne d'alignement de date
   expect_false(any(grepl("align", tolower(names(m)))))
 
-  # l'identité de la source : LE fichier de production porté, jamais l'artefact
-  # non-production (qui montrait des deltas vélo négatifs)
-  expect_equal(m$id, "mobilite_snapshot")
-  expect_equal(m$fichier, "bretagne_mobility_super_dashboard_gravity.csv")
-  expect_false(grepl("indicateurs_summarized_communes", m$fichier))
-  expect_equal(m$mode, "manuel")
-  expect_equal(m$type, "fichier")
-  expect_equal(m$licence, "odbl")
+  # le fragment SNAPSHOT est intact : LE fichier de production porté, jamais
+  # l'artefact non-production (qui montrait des deltas vélo négatifs)
+  snap <- m[m$id == "mobilite_snapshot", ]
+  expect_equal(snap$fichier, "bretagne_mobility_super_dashboard_gravity.csv")
+  expect_false(grepl("indicateurs_summarized_communes", snap$fichier))
+  expect_equal(snap$mode, "manuel")
+  expect_equal(snap$type, "fichier")
+  expect_equal(snap$licence, "odbl")
+
+  # les cinq sources du sous-bloc, chacune avec SA licence (ODbL pour
+  # Korrigo/arrêts/stationnement vélo — ADR-0001, lov2 pour le référentiel et
+  # les bornes) et SON mode cron
+  expect_setequal(m$id, c("mobilite_snapshot", "korrigo", "mobibreizh-stops",
+                          "communes-france", "bornes-recharges",
+                          "stationnement-velo"))
+  expect_equal(m$licence[m$id == "korrigo"], "odbl")
+  expect_equal(m$licence[m$id == "mobibreizh-stops"], "odbl")
+  expect_equal(m$licence[m$id == "communes-france"], "lov2")
+  expect_equal(m$licence[m$id == "bornes-recharges"], "lov2")
+  expect_equal(m$licence[m$id == "stationnement-velo"], "odbl")
+  expect_true(all(m$mode[m$id != "mobilite_snapshot"] == "cron"))
+})
+
+test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe son contrat", {
+  # le manifeste réel passe sa propre validation de contrat
+  expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
+
+  # un manifeste amputé d'une source du sous-bloc échoue bruyamment
+  defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "stationnement-velo", ]
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "SIX")
+
+  # un id dupliqué échoue
+  defectueux <- MANIFEST_MOBILITE
+  defectueux$id[defectueux$id == "bornes-recharges"] <- "korrigo"
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "dupliqu")
+})
+
+test_that("MANIFEST_MOBILITE_KORRIGO : GTFS + arrêts + référentiel, leurs licences", {
+  frag <- MANIFEST_MOBILITE_KORRIGO
+
+  # le fragment porte TROIS sources — la base GTFS (le réseau), les arrêts (la
+  # couche du calcul) et le référentiel géographique (la jointure spatiale)
+  expect_equal(nrow(frag), 3L)
+  expect_setequal(frag$id, c("korrigo", "mobibreizh-stops", "communes-france"))
+  expect_true(verifier_contrat_mobilite_korrigo(frag))
+
+  # ODbL pour Korrigo et les arrêts (ADR-0001), Licence Ouverte pour le
+  # référentiel ODS ; les fichiers de cache distincts
+  expect_equal(frag$licence[frag$id == "korrigo"], "odbl")
+  expect_equal(frag$licence[frag$id == "mobibreizh-stops"], "odbl")
+  expect_equal(frag$licence[frag$id == "communes-france"], "lov2")
+  expect_equal(length(unique(frag$fichier)), 3L)
+
+  # les dates : les arrêts portent le rafraîchissement verrouillé du contrat
+  # (stops 2026-08-02), le référentiel sa date (2020-09-03, stale assumé)
+  expect_equal(frag$date_reference[frag$id == "mobibreizh-stops"], "2026-08-02")
+  expect_equal(frag$date_reference[frag$id == "communes-france"], "2020-09-03")
+
+  # un fragment amputé du référentiel échoue (la jointure spatiale exige les
+  # géométries communales — les arrêts ne portent aucun code INSEE)
+  sans_ref <- frag[frag$id != "communes-france", ]
+  expect_error(verifier_contrat_mobilite_korrigo(sans_ref), "TROIS")
+})
+
+test_that("MANIFEST_MOBILITE_BORNES : le fichier consolidé IRVE, Licence Ouverte, vintage verrouillé", {
+  frag <- MANIFEST_MOBILITE_BORNES
+
+  expect_equal(nrow(frag), 1L)
+  expect_equal(frag$id, "bornes-recharges")
+  expect_equal(frag$fichier, "bornes-recharges.csv")
+  expect_equal(frag$licence, "lov2")
+  # la référence est le rafraîchissement verrouillé du contrat thème (2026-07-28),
+  # la publication le traitement ODS de l'export (2026-08-04)
+  expect_equal(frag$date_reference, "2026-07-28")
+  expect_equal(frag$date_publication, "2026-08-04")
+  expect_true(verifier_contrat_mobilite_bornes(frag))
+})
+
+test_that("MANIFEST_MOBILITE_STATIONNEMENT_VELO : le hub Ecolab pris tel quel, ODbL", {
+  frag <- MANIFEST_MOBILITE_STATIONNEMENT_VELO
+
+  expect_equal(nrow(frag), 1L)
+  expect_equal(frag$id, "stationnement-velo")
+  expect_equal(frag$fichier, "stationnement-velo-commune.csv")
+  expect_equal(frag$licence, "odbl")  # producteur OSM (ADR-0001)
+  # l'annuel du hub (2022-2025) ; la référence est la mesure la plus récente
+  # (2025-01-01), la publication la mise en ligne du fichier (2026-02-03)
+  expect_equal(frag$vintage, "2022-2025")
+  expect_equal(frag$date_reference, "2025-01-01")
+  expect_equal(frag$date_publication, "2026-02-03")
+  expect_true(verifier_contrat_mobilite_stationnement_velo(frag))
 })
 
 test_that("theme_mobilite : le descripteur porte les membres requis du contrat", {
@@ -68,43 +152,61 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   expect_error(verifier_descripteur_mobilite(list()), "manquant")
 })
 
-test_that("vintages_mobilite : la source porte SA référence (l'instantané) et SA publication (le portage)", {
+test_that("vintages_mobilite : chaque source porte SA référence et SA publication", {
   v <- vintages_mobilite()
 
-  expect_equal(nrow(v), 1L)
+  expect_equal(nrow(v), 6L)  # le snapshot + les cinq sources du sous-bloc
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
-  expect_equal(v$id, "mobilite_snapshot")
-  expect_equal(v$licence, "odbl")
+  expect_setequal(v$id, c("mobilite_snapshot", "korrigo", "mobibreizh-stops",
+                          "communes-france", "bornes-recharges",
+                          "stationnement-velo"))
 
-  # la date de RÉFÉRENCE est la date d'instantané de l'analyse (le fichier de
-  # production a été figé le 2026-02-28 — les données de référence BPE 2024 ·
-  # OSM 02-2026 · BDNB 2025-07) ; la date de PUBLICATION est la date du portage
-  # dans le pipeline (2026-08-06) — jamais alignées, chacune sa vérité
-  expect_equal(v$version, "2026-02")
-  expect_equal(v$date_reference, "2026-02-28")
-  expect_equal(v$date_publication, "2026-08-06")
-  expect_true(as.Date(v$date_reference) <= as.Date(v$date_publication))
+  # le snapshot : la date de RÉFÉRENCE est la date d'instantané de l'analyse
+  # (le fichier de production a été figé le 2026-02-28 — les données de
+  # référence BPE 2024 · OSM 02-2026 · BDNB 2025-07) ; la date de PUBLICATION
+  # est la date du portage dans le pipeline (2026-08-06) — jamais alignées,
+  # chacune sa vérité
+  snap <- v[v$id == "mobilite_snapshot", ]
+  expect_equal(snap$version, "2026-02")
+  expect_equal(snap$date_reference, "2026-02-28")
+  expect_equal(snap$date_publication, "2026-08-06")
+  expect_equal(snap$licence, "odbl")
+
+  # les sources du sous-bloc gardent leurs dates (les extraits, jamais
+  # « aujourd'hui ») : arrêts 2026-08-02, référentiel 2020-09-03, bornes
+  # 2026-07-28 (référence) / 2026-08-04 (publication), hub vélo 2025-01-01
+  # (référence) / 2026-02-03 (publication)
+  expect_equal(v$date_reference[v$id == "mobibreizh-stops"], "2026-08-02")
+  expect_equal(v$date_reference[v$id == "communes-france"], "2020-09-03")
+  expect_equal(v$date_reference[v$id == "bornes-recharges"], "2026-07-28")
+  expect_equal(v$date_publication[v$id == "bornes-recharges"], "2026-08-04")
+  expect_equal(v$date_reference[v$id == "stationnement-velo"], "2025-01-01")
+  expect_equal(v$date_publication[v$id == "stationnement-velo"], "2026-02-03")
+
+  # la discipline : la publication d'une source n'est jamais antérieure à sa
+  # référence
+  expect_true(all(as.Date(v$date_reference) <= as.Date(v$date_publication)))
 })
 
 test_that("verifier_contrat_mobilite_snapshot : le manifeste épingle le fichier de production", {
-  # le manifeste réel passe sa propre validation de contrat
-  expect_true(verifier_contrat_mobilite_snapshot(MANIFEST_MOBILITE))
+  # le fragment snapshot réel passe sa propre validation de contrat
+  expect_true(verifier_contrat_mobilite_snapshot(MANIFEST_MOBILITE_SNAPSHOT))
 
   # l'artefact NON-production (les deltas vélo négatifs) est refusé bruyamment
   # par le contrat — la garde du « jamais cette base » du PRD #136
-  defectueux <- MANIFEST_MOBILITE
+  defectueux <- MANIFEST_MOBILITE_SNAPSHOT
   defectueux$fichier <- "indicateurs_summarized_communes.csv"
   expect_error(verifier_contrat_mobilite_snapshot(defectueux),
                "bretagne_mobility_super_dashboard_gravity")
 
   # un id hors contrat est refusé
-  defectueux <- MANIFEST_MOBILITE
+  defectueux <- MANIFEST_MOBILITE_SNAPSHOT
   defectueux$id <- "autre_source"
   expect_error(verifier_contrat_mobilite_snapshot(defectueux), "mobilite_snapshot")
 
   # une date de publication antérieure à la référence est refusée
-  defectueux <- MANIFEST_MOBILITE
+  defectueux <- MANIFEST_MOBILITE_SNAPSHOT
   defectueux$date_reference <- "2026-09-01"
   expect_error(verifier_contrat_mobilite_snapshot(defectueux), "référence")
 })
@@ -166,10 +268,18 @@ test_that("normaliser_snapshot_mobilite : un input corrompu s'arrête bruyamment
   )), "aucune ligne")
 })
 
-test_that("construire_donnees_mobilite : assemble la table normalisée du snapshot porté", {
-  # la couture : le lecteur et le normaliseur MOCKÉS — le seam d'entrée du run
-  # (jamais de fichier réel dans la boucle de test unitaire)
+test_that("construire_donnees_mobilite : assemble le snapshot porté et les sources du sous-bloc", {
+  # la couture : le lecteur, le normaliseur et le builder des sources du
+  # sous-bloc MOCKÉS — le seam d'entrée du run (jamais de fichier réel dans la
+  # boucle de test unitaire)
   table_snapshot <- tibble::tibble(commune = "29011", nb_buildings = 1113)
+  sources_fixture <- list(
+    korrigo = tibble::tibble(agency_id = "STAR"),
+    mobibreizh_stops = tibble::tibble(stop_id = "STAR:1"),
+    communes_referentiel = tibble::tibble(com_code = "29011"),
+    bornes_recharges = tibble::tibble(code_insee_commune = "29011"),
+    stationnement_velo = tibble::tibble(geocode_commune = "29011")
+  )
   appels <- new.env()
 
   local_mocked_bindings(
@@ -181,17 +291,32 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
       appels$normalise <- TRUE
       table_snapshot
     },
+    construire_sources_offre_mobilite = function(cache) {
+      appels$sources_cache <- cache
+      sources_fixture
+    },
     .package = "lusk"
   )
 
   donnees <- construire_donnees_mobilite(cache = "cache-test")
 
-  # la liste nommée des tables normalisées, dans l'ordre du contrat
-  expect_named(donnees, "mobilite_snapshot")
+  # la liste nommée des tables, dans l'ordre du contrat : le snapshot + les
+  # cinq sources du sous-bloc (issue #140)
+  expect_named(donnees, c("mobilite_snapshot", "korrigo", "mobibreizh_stops",
+                          "communes_referentiel", "bornes_recharges",
+                          "stationnement_velo"))
   expect_identical(donnees$mobilite_snapshot, table_snapshot)
-  # le lecteur reçoit le chemin du fichier porté dans le cache
+  expect_identical(donnees$korrigo, sources_fixture$korrigo)
+  expect_identical(donnees$mobibreizh_stops, sources_fixture$mobibreizh_stops)
+  expect_identical(donnees$communes_referentiel, sources_fixture$communes_referentiel)
+  expect_identical(donnees$bornes_recharges, sources_fixture$bornes_recharges)
+  expect_identical(donnees$stationnement_velo, sources_fixture$stationnement_velo)
+  # le lecteur reçoit le chemin du fichier porté dans le cache (le fragment
+  # SNAPSHOT — jamais le manifeste entier) et le builder des sources reçoit le
+  # cache
   expect_equal(appels$chemin,
                file.path("cache-test", "bretagne_mobility_super_dashboard_gravity.csv"))
+  expect_equal(appels$sources_cache, "cache-test")
   expect_true(appels$normalise)
 })
 
@@ -298,7 +423,7 @@ base_epci_mini_analytique <- function() {
   )
 }
 
-test_that("construire_analytiques_mobilite : le chaînon flagship enchaîne les builders et persiste les artefacts", {
+test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc enchaînent les builders et persistent les artefacts", {
   # la garde de forme du chaînon consomme le snapshot normalisé : le fixture
   # analytique porte toutes les colonnes requises (identité + familles)
   donnees <- list(mobilite_snapshot = fixture_snapshot_analytique_mobilite())
@@ -352,25 +477,53 @@ test_that("construire_analytiques_mobilite : le chaînon flagship enchaîne les 
       tibble::tibble(code = "22001", key = "iso_alimentation",
                      rang_epci = 0, rang_dep = 0, rang_reg = 0)
     },
+    calculer_part_proches_arret_communes = function(stops, communes) {
+      pousser("offre_tc_communes")
+      tibble::tibble(commune = "22001", part_proche = 0.4)
+    },
+    calculer_bornes_communes = function(bornes, communes_referentiel) {
+      pousser("bornes_communes")
+      tibble::tibble(commune = "22001", nb_bornes = 3)
+    },
+    calculer_stationnement_velo_communes = function(velo) {
+      pousser("velo_communes")
+      tibble::tibble(commune = "22001", annee = "2025", places = 30,
+                     population = 1000, places_1000 = 30)
+    },
+    agreger_offre_territoires = function(offre_tc, bornes, velo, poids, base_epci) {
+      pousser("offre_territoires")
+      tibble::tibble(code = "22001", key = "offre_tc", value = 0.4)
+    },
     .package = "lusk"
   )
+
+  # les sources du sous-bloc font partie des données du seam
+  donnees$mobibreizh_stops <- tibble::tibble(stop_id = "x")
+  donnees$communes_referentiel <- tibble::tibble(com_code = "22001")
+  donnees$bornes_recharges <- tibble::tibble(code_insee_commune = "22001")
+  donnees$stationnement_velo <- tibble::tibble(geocode_commune = "22001")
 
   sortie <- tempfile("mob-analytiques-")
   on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
   res <- construire_analytiques_mobilite(donnees, base_epci, sortie = sortie)
 
   # le chaînon enchaîne les builders dans l'ordre — le seam ne calcule RIEN
-  # lui-même, il orchestre
+  # lui-même, il orchestre (le flagship #138 puis le sous-bloc #140)
   expect_equal(suivi$ordre,
                c("nb_buildings", "isolation_communes", "isolation_territoires",
                  "div_loss_communes", "div_loss_territoires", "saillance",
-                 "densite", "nuage", "territoires", "rangs"))
+                 "densite", "nuage", "territoires", "rangs",
+                 "offre_tc_communes", "bornes_communes", "velo_communes",
+                 "offre_territoires"))
 
-  # les tables analytiques exposées : le poids + les artefacts flagship
+  # les tables analytiques exposées : le poids + les artefacts flagship + le
+  # sous-bloc
   expect_named(res, c("mobilite_communes", "nb_buildings_territoires",
                       "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
-                      "nuage_territoires", "isolation_rangs"))
+                      "nuage_territoires", "isolation_rangs",
+                      "offre_tc_communes", "bornes_communes",
+                      "stationnement_velo_communes", "offre_territoires"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -378,6 +531,10 @@ test_that("construire_analytiques_mobilite : le chaînon flagship enchaîne les 
   expect_equal(res$densite_territoires$dens_1, 0.01)
   expect_equal(res$nuage_territoires$nuage_median, 12)
   expect_equal(res$isolation_rangs$rang_epci, 0)
+  expect_equal(res$offre_tc_communes$part_proche, 0.4)
+  expect_equal(res$bornes_communes$nb_bornes, 3)
+  expect_equal(res$stationnement_velo_communes$places_1000, 30)
+  expect_equal(res$offre_territoires$value, 0.4)
 
   # les artefacts sont PERSISTÉS sous le dossier analytique du run
   expect_true(file.exists(file.path(sortie, "nb_buildings_territoires.rds")))
@@ -387,6 +544,10 @@ test_that("construire_analytiques_mobilite : le chaînon flagship enchaîne les 
   expect_true(file.exists(file.path(sortie, "densite_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "nuage_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "isolation_rangs.rds")))
+  expect_true(file.exists(file.path(sortie, "offre_tc_communes.rds")))
+  expect_true(file.exists(file.path(sortie, "bornes_communes.rds")))
+  expect_true(file.exists(file.path(sortie, "stationnement_velo_communes.rds")))
+  expect_true(file.exists(file.path(sortie, "offre_territoires.rds")))
 })
 
 test_that("construire_analytiques_mobilite : un input corrompu (famille analytique manquante) s'arrête bruyamment", {
@@ -764,7 +925,9 @@ test_that("compute_histoires_mobilite : « Vingt minutes sans voiture », une li
 
   # les estampilles vintage : le Story porte le vintage de SA source de
   # référence (le snapshot porté — la date d'instantané de l'analyse)
-  expect_true(all(vingt$vintage_source == vintages_mobilite()$source))
+  tampon_snapshot <- vintages_mobilite() %>%
+    dplyr::filter(id == "mobilite_snapshot")
+  expect_true(all(vingt$vintage_source == tampon_snapshot$source))
   expect_true(all(vingt$vintage_date_reference == "2026-02-28"))
   expect_true(all(vingt$vintage_date_publication == "2026-08-06"))
 })
@@ -791,4 +954,525 @@ test_that("compute_histoires_mobilite : « Ce que le vélo préserve » ne se d�
   expect_true(all(velo$theme == "mobilite"))
   # les estampilles vintage portées comme le défaut
   expect_true(all(velo$vintage_date_reference == "2026-02-28"))
+})
+
+# =============================================================================
+# Le sous-bloc « L'offre de mobilité alternative » (issue #140)
+# =============================================================================
+# Les tests unitaires des sources (les normaliseurs) et des builders du
+# sous-bloc : la normalisation des arrêts / bornes / stationnement vélo /
+# référentiel / GTFS, le calcul spatial de la part des bâtiments près d'un
+# arrêt (sur un FIXTURE SPATIAL SYNTHÉTIQUE — la décision de distance à 500 m),
+# le compte des bornes par commune, le stationnement vélo pris tel quel, et
+# l'agrégation aux quatre niveaux par la règle du thème.
+
+# normaliser_stops_mobilite -----------------------------------------------------
+# La forme RÉELLE du fichier ODS (une ligne par arrêt, tout en caractères,
+# stop_coordinates « lat, lon ») — le normaliseur découpe et numérise.
+test_that("normaliser_stops_mobilite : découpe « lat, lon » et numérise", {
+  brut <- tibble::tibble(
+    stop_id = c("ARBUS:1", "STAR:2"),
+    stop_code = c("A1", "S2"),
+    stop_coordinates = c("48.465791, -4.242627", "48.10, -1.67"),
+    filename = c("KORRIGOBRET.gtfs", "KORRIGOBRET.gtfs")
+  )
+
+  table <- normaliser_stops_mobilite(brut)
+
+  # la table du calcul : stop_id + les deux coordonnées numériques
+  expect_named(table, c("stop_id", "stop_lat", "stop_lon"))
+  expect_equal(table$stop_lat, c(48.465791, 48.10))
+  expect_equal(table$stop_lon, c(-4.242627, -1.67))
+})
+
+test_that("normaliser_stops_mobilite : un input corrompu s'arrête bruyamment", {
+  # une colonne requise manquante nomme la colonne fautive
+  expect_error(normaliser_stops_mobilite(tibble::tibble(stop_id = "x")),
+               "stop_coordinates")
+  # une coordonnée hors format « lat, lon » est une corruption
+  expect_error(
+    normaliser_stops_mobilite(tibble::tibble(
+      stop_id = "x", stop_coordinates = "48.1 ; -4.2")),
+    "lat, lon"
+  )
+  # un doublon de stop_id est une corruption
+  expect_error(
+    normaliser_stops_mobilite(tibble::tibble(
+      stop_id = c("x", "x"),
+      stop_coordinates = c("48.1, -4.2", "48.1, -4.2"))),
+    "dupliqu"
+  )
+})
+
+# normaliser_bornes_recharges ---------------------------------------------------
+test_that("normaliser_bornes_recharges : garde les codes commune, NA pour les vides", {
+  brut <- tibble::tibble(
+    code_insee_commune = c("35238", NA, "22000", "22100"),
+    id_station_itinerance = c("FR1", "FR2", "FR3", "FR4"),
+    id_pdc_itinerance = c("PDC1", "PDC2", "PDC3", "PDC4")
+  )
+
+  table <- normaliser_bornes_recharges(brut)
+
+  # la table du calcul : les codes (NA pour les lignes sans code — le caveat
+  # source des stations mal géolocalisées, jamais une erreur) + l'id station
+  expect_named(table, c("code_insee_commune", "id_station_itinerance"))
+  expect_equal(table$code_insee_commune, c("35238", NA, "22000", "22100"))
+  # les codes non vides restent au format COG (même « 22000 »/« 22100 » — les
+  # valeurs hors référentiel sont écartées au BUILD, pas ici)
+  expect_equal(table$id_station_itinerance[1], "FR1")
+})
+
+test_that("normaliser_bornes_recharges : un code hors format COG s'arrête bruyamment", {
+  expect_error(
+    normaliser_bornes_recharges(tibble::tibble(
+      code_insee_commune = "ABC", id_station_itinerance = "FR1")),
+    "COG"
+  )
+})
+
+# normaliser_stationnement_velo --------------------------------------------------
+# La forme RÉELLE du hub Ecolab : une ligne par (commune × millésime × type
+# d'accroche), numerateur/denominateur numériques. Le normaliseur somme les
+# places sur les quatre types et garde le dénominateur (le calcul du hub).
+test_that("normaliser_stationnement_velo : somme les quatre types d'accroche, filtre la Bretagne", {
+  brut <- tibble::tibble(
+    date_mesure = c("2025-01-01T00:00:00.000", "2025-01-01T00:00:00.000",
+                    "2025-01-01T00:00:00.000", "2025-01-01T00:00:00.000",
+                    "2024-01-01T00:00:00.000", "2024-01-01T00:00:00.000",
+                    "2024-01-01T00:00:00.000", "2024-01-01T00:00:00.000",
+                    "2025-01-01T00:00:00.000"),
+    geocode_commune = c("29011", "29011", "29011", "29011",
+                        "29011", "29011", "29011", "29011",
+                        "75101"),  # Paris : hors Bretagne, tombe
+    libelle_commune = c(rep("Bohars", 8), "Paris"),
+    type_accroche = c("roue", "cadre", "cadre et roue", "sans accroche",
+                      "roue", "cadre", "cadre et roue", "sans accroche",
+                      "roue"),
+    numerateur = c(15, 0, 34, 0, 10, 5, 20, 0, 999),
+    denominateur = c(3671, 3671, 3671, 3671, 3660, 3660, 3660, 3660, 2100000),
+    valeur = c(1, 2, 3, 4, 5, 6, 7, 8, 9)
+  )
+
+  table <- normaliser_stationnement_velo(brut)
+
+  # une ligne par (commune × millésime) — les quatre types sommés (2025 :
+  # 15+0+34+0 = 49 places), le dénominateur gardé, le taux recomposé ; la
+  # ligne parisienne tombe (la garde Bretagne)
+  expect_equal(nrow(table), 2)
+  expect_named(table, c("geocode_commune", "annee", "places", "population",
+                        "places_1000"))
+  v25 <- table[table$annee == "2025", ]
+  expect_equal(v25$places, 49)
+  expect_equal(v25$population, 3671)
+  expect_equal(round(v25$places_1000, 4), round(49 / 3671 * 1000, 4))
+  v24 <- table[table$annee == "2024", ]
+  expect_equal(v24$places, 35)
+  expect_setequal(table$geocode_commune, "29011")
+})
+
+test_that("normaliser_stationnement_velo : un input corrompu s'arrête bruyamment", {
+  # un type d'accroche inconnu est une évolution du contrat du hub
+  expect_error(
+    normaliser_stationnement_velo(tibble::tibble(
+      geocode_commune = "29011", date_mesure = "2025-01-01T00:00:00.000",
+      type_accroche = "parapente", numerateur = 1, denominateur = 100)),
+    "accroche"
+  )
+  # un dénominateur divergent par commune × millésime est une corruption
+  # (les QUATRE types présents — la garde du nombre de types passée, la garde
+  # du dénominateur déclenche)
+  expect_error(
+    normaliser_stationnement_velo(tibble::tibble(
+      geocode_commune = c("29011", "29011", "29011", "29011"),
+      date_mesure = c("2025-01-01T00:00:00.000", "2025-01-01T00:00:00.000",
+                      "2025-01-01T00:00:00.000", "2025-01-01T00:00:00.000"),
+      type_accroche = c("roue", "cadre", "cadre et roue", "sans accroche"),
+      numerateur = c(1, 2, 3, 4), denominateur = c(100, 200, 100, 100))),
+    "dénominateur"
+  )
+  # aucune ligne bretonne est une corruption
+  expect_error(
+    normaliser_stationnement_velo(tibble::tibble(
+      geocode_commune = "75101", date_mesure = "2025-01-01T00:00:00.000",
+      type_accroche = "roue", numerateur = 1, denominateur = 100)),
+    "bretonne"
+  )
+})
+
+# normaliser_communes_referentiel ------------------------------------------------
+test_that("normaliser_communes_referentiel : garde les communes bretonnes et la géométrie", {
+  # le référentiel du calcul : le compte verrouillé de 1 202 communes
+  # bretonnes généré programmatiquement (les codes COG des quatre
+  # départements), dont UNE commune hors Bretagne qui doit tomber
+  codes_breton <- c(sprintf("22%03d", 1:344), sprintf("29%03d", 1:277),
+                    sprintf("35%03d", 1:332), sprintf("56%03d", 1:249))
+  carre <- function(lon, lat) {
+    sf::st_sfc(sf::st_polygon(list(rbind(
+      c(lon, lat), c(lon + 0.001, lat), c(lon + 0.001, lat + 0.001),
+      c(lon, lat + 0.001), c(lon, lat)))), crs = 4326)
+  }
+  brut <- sf::st_sf(
+    com_code = c(codes_breton, "75101"),  # 1 203 : Paris hors Bretagne
+    geometry = do.call(c, c(
+      lapply(seq_along(codes_breton), function(i) {
+        carre(-4 + (i %% 40) * 0.05, 47.5 + (i %% 30) * 0.05)
+      }),
+      list(carre(2.3, 48.8))
+    ))
+  )
+
+  table <- normaliser_communes_referentiel(brut)
+
+  # la table du calcul : com_code + la géométrie, les colonnes annexes
+  # tombent, la commune parisienne tombe (la garde Bretagne)
+  expect_s3_class(table, "sf")
+  expect_named(table, c("com_code", "geometry"))
+  expect_equal(nrow(table), 1202)
+  expect_false("75101" %in% table$com_code)
+  expect_true(all(sf::st_is_valid(table)))
+})
+
+test_that("normaliser_communes_referentiel : un référentiel corrompu s'arrête bruyamment", {
+  # le compte verrouillé des communes bretonnes (1 202) est une garde
+  carre <- sf::st_sfc(sf::st_polygon(list(rbind(
+    c(-4.5, 48.4), c(-4.49, 48.4), c(-4.49, 48.41), c(-4.5, 48.41),
+    c(-4.5, 48.4)))), crs = 4326)
+  petit <- sf::st_sf(com_code = "29011", geometry = carre)
+  expect_error(normaliser_communes_referentiel(petit), "1 202")
+  # un objet non sf est une corruption
+  expect_error(normaliser_communes_referentiel(tibble::tibble(com_code = "1")),
+               "sf")
+})
+
+# normaliser_korrigo_gtfs --------------------------------------------------------
+test_that("normaliser_korrigo_gtfs : le registre des réseaux (agency.txt)", {
+  brut <- tibble::tibble(
+    agency_id = c("STAR", "QUB", "BIBUS"),
+    agency_name = c("STAR (Rennes Métropole)", "QUB (Quimper urbain)",
+                    "Bibus (Brest Métropole)"),
+    agency_url = c("a", "b", "c")
+  )
+
+  table <- normaliser_korrigo_gtfs(brut)
+
+  expect_named(table, c("agency_id", "agency_name"))
+  expect_equal(nrow(table), 3)
+  expect_true(!is.unsorted(table$agency_id))
+})
+
+# fixture_communes_spatiale -----------------------------------------------------
+# Le FIXTURE SPATIAL SYNTHÉTIQUE du calcul d'offre TC (la décision de distance
+# testée à l'unité, sans les 24 380 arrêts réels) : trois communes carrées en
+# WGS84 autour de (lon -1, lat 48) — une grande commune (22001, ~0.02° de
+# côté ≈ 1,5 km × 2,2 km), une commune minuscule (22002, ~75 m × 110 m), une
+# commune lointaine (22003, ~90 km à l'ouest) — et les arrêts qui les
+# servent. Les valeurs attendues sont des rapports d'aire calculés à la main
+# (une tolérance absorbe la distorsion de la reprojection 4326 → Lambert-93).
+fixture_communes_spatiale <- function() {
+  carre <- function(lon0, lat0, dlon, dlat) {
+    sf::st_sfc(sf::st_polygon(list(rbind(
+      c(lon0, lat0), c(lon0 + dlon, lat0), c(lon0 + dlon, lat0 + dlat),
+      c(lon0, lat0 + dlat), c(lon0, lat0)))), crs = 4326)
+  }
+  sf::st_sf(
+    com_code = c("22001", "22002", "22003"),
+    geometry = c(
+      carre(-1.02, 47.99, 0.02, 0.02),     # ~1 490 m × 2 226 m
+      carre(-1.0105, 47.9995, 0.001, 0.001),  # ~74 m × 111 m
+      carre(-2.00, 48.00, 0.01, 0.01)      # loin, aucun arrêt
+    )
+  )
+}
+
+fixture_arrets_spatiale <- function() {
+  tibble::tibble(
+    stop_id = c("AR1", "AR2", "AR3"),
+    stop_lat = c(48.00, 48.00, 47.99),
+    stop_lon = c(-1.01, -1.01, -1.02)
+  )
+}
+
+test_that("calculer_part_proches_arret_communes : la part à 500 m d'un arrêt (la décision de build)", {
+  skip_if_not(requireNamespace("sf", quietly = TRUE),
+              "sf est requis pour le calcul spatial de l'offre TC.")
+
+  tc <- calculer_part_proches_arret_communes(fixture_arrets_spatiale(),
+                                             fixture_communes_spatiale())
+
+  # la forme : une ligne par commune du référentiel, la part dans [0, 1]
+  expect_named(tc, c("commune", "part_proche"))
+  expect_setequal(tc$commune, c("22001", "22002", "22003"))
+
+  # 22002 (la commune minuscule, ~74 m × 111 m, entièrement dans le tampon de
+  # 500 m de l'arrêt central) : couverte à 100 % — exactement 1, la commune
+  # est toute petite devant le disque de 500 m
+  expect_equal(tc$part_proche[tc$commune == "22002"], 1)
+  # 22003 (aucun arrêt à moins de 500 m) : 0 — exactement
+  expect_equal(tc$part_proche[tc$commune == "22003"], 0)
+  # 22001 (la grande commune) : l'arrêt central couvre π×500² ≈ 785 400 m²
+  # sur ~3,3 km² (~0,237) et l'arrêt du coin ajoute son quart de disque
+  # (~0,059) — la part réelle ~0,296, jamais un doublon (les deux arrêts
+  # superposés du centre ne comptent qu'une fois)
+  v <- tc$part_proche[tc$commune == "22001"]
+  expect_true(v > 0.25 && v < 0.35)
+  # la somme des parts ne dépasse jamais la commune (l'union des tampons,
+  # jamais l'addition)
+  expect_true(all(tc$part_proche <= 1))
+
+  # déterministe : deux appels produisent la même table (et s2 est restauré)
+  avant <- sf::sf_use_s2()
+  tc2 <- calculer_part_proches_arret_communes(fixture_arrets_spatiale(),
+                                              fixture_communes_spatiale())
+  expect_identical(tc, tc2)
+  expect_identical(sf::sf_use_s2(), avant)
+})
+
+test_that("calculer_part_proches_arret_communes : un input corrompu s'arrête bruyamment", {
+  skip_if_not(requireNamespace("sf", quietly = TRUE),
+              "sf est requis pour le calcul spatial de l'offre TC.")
+
+  # un tableau d'arrêts sans coordonnées est refusé
+  expect_error(
+    calculer_part_proches_arret_communes(
+      tibble::tibble(stop_id = "x"), fixture_communes_spatiale()),
+    "stop_lat"
+  )
+})
+
+# calculer_bornes_communes -------------------------------------------------------
+test_that("calculer_bornes_communes : les stations distinctes par commune du référentiel", {
+  referentiel <- sf::st_sf(com_code = c("29011", "22001", "35238"),
+                           geometry = sf::st_sfc(
+                             sf::st_point(c(-4.5, 48.4)),
+                             sf::st_point(c(-2.7, 48.4)),
+                             sf::st_point(c(-1.7, 48.1)), crs = 4326))
+  bornes <- tibble::tibble(
+    code_insee_commune = c("29011", "29011", "29011", "22001", "35238",
+                           NA, "22100", "99999"),
+    id_station_itinerance = c("FR1", "FR1", "FR2", "FR3", "FR4", "FR5",
+                              "FR6", "FR7")
+  )
+
+  b <- calculer_bornes_communes(bornes, referentiel)
+
+  # « bornes » = stations distinctes (FR1 portée par DEUX points de charge ne
+  # compte qu'une fois) ; les lignes sans code commune (NA) et les codes hors
+  # référentiel (22100 — un code postal, 99999) tombent
+  expect_named(b, c("commune", "nb_bornes"))
+  expect_setequal(b$commune, c("29011", "22001", "35238"))
+  expect_equal(b$nb_bornes[b$commune == "29011"], 2)
+  expect_equal(b$nb_bornes[b$commune == "22001"], 1)
+  expect_equal(b$nb_bornes[b$commune == "35238"], 1)
+  expect_true(!is.unsorted(b$commune))
+})
+
+# calculer_stationnement_velo_communes -------------------------------------------
+test_that("calculer_stationnement_velo_communes : le millésime le plus récent par commune", {
+  velo <- tibble::tibble(
+    geocode_commune = c("29011", "29011", "22001"),
+    annee = c("2024", "2025", "2025"),
+    places = c(35, 49, 12),
+    population = c(3660, 3671, 599),
+    places_1000 = c(35 / 3660 * 1000, 49 / 3671 * 1000, 12 / 599 * 1000)
+  )
+
+  v <- calculer_stationnement_velo_communes(velo)
+
+  # une ligne par commune, le millésime le plus récent (2025 pour 29011), trié
+  expect_named(v, c("commune", "annee", "places", "population", "places_1000"))
+  expect_equal(nrow(v), 2)
+  expect_equal(v$places[v$commune == "29011"], 49)
+  expect_equal(v$annee[v$commune == "29011"], "2025")
+  expect_equal(v$commune[1], "22001")   # trié par code
+  expect_equal(v$places_1000[v$commune == "22001"], 12 / 599 * 1000)
+})
+
+# agreger_offre_territoires ------------------------------------------------------
+# Le fixture d'agrégation : 4 communes sur 2 EPCIs / 2 départements, les poids
+# (nb_buildings), et les trois tables communales du sous-bloc. Les valeurs
+# attendues sont calculées à la main — jamais une moyenne de valeurs.
+test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle", {
+  base <- tibble::tribble(
+    ~CODGEO, ~EPCI, ~DEP,
+    "22001", "200000001", "22",
+    "22002", "200000001", "22",
+    "29001", "200000002", "29",
+    "29002", NA, "29"   # la commune sans EPCI (le fix « Sans objet » #131)
+  )
+  poids <- tibble::tribble(
+    ~commune, ~nb_buildings,
+    "22001", 100, "22002", 300, "29001", 200, "29002", 400
+  )
+  offre_tc <- tibble::tribble(
+    ~commune, ~part_proche,
+    "22001", 0.5, "22002", 0.8, "29001", 0.2, "29002", 0.6
+  )
+  bornes <- tibble::tribble(
+    ~commune, ~nb_bornes,
+    "22001", 3, "29002", 2
+  )
+  velo <- tibble::tribble(
+    ~commune, ~annee, ~places, ~population, ~places_1000,
+    "22001", "2025", 30, 1000, 30,
+    "22002", "2025", 90, 3000, 30,
+    "29001", "2025", 40, 2000, 20,
+    "29002", "2025", 120, 4000, 30
+  )
+
+  agg <- agreger_offre_territoires(offre_tc, bornes, velo, poids, base)
+
+  # la forme : une ligne par (territoire × clé) — 4 communes + 2 EPCIs +
+  # 2 départements + la région, les trois clés
+  expect_named(agg, c("code", "key", "value"))
+  expect_equal(nrow(agg), (4 + 2 + 2 + 1) * 3)
+  expect_setequal(unique(agg$key), c("offre_tc", "bornes_recharge",
+                                     "places_stationnement_velo_1000"))
+  lire <- function(code, key) agg$value[agg$code == code & agg$key == key]
+
+  # offre_tc : la moyenne PONDÉRÉE par les bâtiments (jamais la moyenne des
+  # parts) — EPCI 200000001 : (0.5×100 + 0.8×300) ÷ 400 = 0.725
+  expect_equal(lire("200000001", "offre_tc"), 0.725)
+  # département 22 : (0.5×100 + 0.8×300) ÷ 400 ; région : le même calcul sur
+  # les quatre communes (les îles sans poids comptent pour zéro)
+  expect_equal(lire("22", "offre_tc"), 0.725)
+  expect_equal(lire("53", "offre_tc"),
+               (0.5 * 100 + 0.8 * 300 + 0.2 * 200 + 0.6 * 400) / 1000)
+  # bornes : la SOMME, avec le ZÉRO porté par les communes sans station
+  # (22002, 29001 ont 0 borne — jamais un NA) ; l'EPCI 200000002 n'agrège que
+  # 29001 (29002 est la commune sans EPCI) : 0
+  expect_equal(lire("200000001", "bornes_recharge"), 3)
+  expect_equal(lire("200000002", "bornes_recharge"), 0)
+  expect_equal(lire("29001", "bornes_recharge"), 0)
+  expect_equal(lire("29002", "bornes_recharge"), 2)
+  expect_equal(lire("53", "bornes_recharge"), 5)
+  # velo : Σ places ÷ Σ population × 1 000 (jamais la moyenne des taux)
+  # EPCI 200000001 : (30 + 90) ÷ (1 000 + 3 000) × 1 000 = 30
+  expect_equal(lire("200000001", "places_stationnement_velo_1000"), 30)
+  # région : (30+90+40+120) ÷ (1 000+3 000+2 000+4 000) × 1 000 = 28
+  expect_equal(lire("53", "places_stationnement_velo_1000"), 28)
+  # la commune sans EPCI (29002) n'agrège à AUCUN niveau EPCI — l'EPCI
+  # 200000002 n'agrège que 29001 : offre_tc = 0.2 (29002 exclue), velo =
+  # 40 ÷ 2 000 × 1 000 = 20, bornes = 0 (les 2 stations de 29002 ne montent
+  # qu'au département 29 : 0 + 2 = 2)
+  expect_equal(lire("200000002", "offre_tc"), 0.2)
+  expect_equal(lire("200000002", "places_stationnement_velo_1000"), 20)
+  expect_equal(lire("200000002", "bornes_recharge"), 0)
+  expect_equal(lire("29", "bornes_recharge"), 2)
+  # déterministe : trié par code puis clé
+  expect_true(!is.unsorted(paste(agg$code, agg$key)))
+})
+
+# INDICATEURS_MOBILITE -----------------------------------------------------------
+test_that("INDICATEURS_MOBILITE : les quatre clés du payload, chacune estampillée de SA source de référence", {
+  ind <- INDICATEURS_MOBILITE
+
+  # la « Taille » (le tracer bullet) + les trois clés du sous-bloc « L'offre
+  # de mobilité alternative » (issue #140), chacune à une ligne par territoire
+  expect_equal(nrow(ind), 4L)
+  expect_setequal(ind$key, c("nb_buildings", "offre_tc", "bornes_recharge",
+                             "places_stationnement_velo_1000"))
+  expect_true(all(ind$multiplicite == 1L))
+
+  # chaque clé porte SA source de référence (la règle du CONTEXT « Reference
+  # source » — la source qui contribue le composant signature, jamais un
+  # tampon de thème) : le snapshot pour la Taille, les ARRÊTS pour l'offre TC
+  # (le vintage affiché est celui de la couche d'arrêts), le fichier IRVE
+  # pour les bornes, le hub pour le stationnement vélo
+  expect_equal(ind$source_reference[ind$key == "nb_buildings"], "mobilite_snapshot")
+  expect_equal(ind$source_reference[ind$key == "offre_tc"], "mobibreizh-stops")
+  expect_equal(ind$source_reference[ind$key == "bornes_recharge"], "bornes-recharges")
+  expect_equal(ind$source_reference[ind$key == "places_stationnement_velo_1000"],
+               "stationnement-velo")
+  # la table déclarative liste les sources qui nourrissent chaque clé (la
+  # matière de la Méthodes) : l'offre TC est portée par les trois sources du
+  # fragment Korrigo
+  expect_equal(ind$sources[ind$key == "offre_tc"][[1]],
+               c("korrigo", "mobibreizh-stops", "communes-france"))
+})
+
+# construire_indicateurs_mobilite -------------------------------------------------
+test_that("construire_indicateurs_mobilite : les quatre clés alignées sur la référence, estampillées", {
+  # la forme des artefacts (la table agrégée + les communes) — le fixture mini
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tribble(
+    ~commune, ~nb_buildings,
+    "22001", 100, "22002", 300, "29001", 200, "29002", 400
+  )
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+  offre <- tibble::tribble(
+    ~code, ~key, ~value,
+    "22001", "offre_tc", 0.5,
+    "200000001", "offre_tc", 0.725,
+    "53", "offre_tc", 0.6,
+    "22001", "bornes_recharge", 3,
+    "200000001", "bornes_recharge", 3,
+    "53", "bornes_recharge", 5,
+    "22001", "places_stationnement_velo_1000", 30,
+    "200000001", "places_stationnement_velo_1000", 30,
+    "53", "places_stationnement_velo_1000", 28
+  )
+  analytiques <- list(
+    nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
+    offre_territoires = offre
+  )
+
+  ind <- construire_indicateurs_mobilite(analytiques, territoires,
+                                         vintages_mobilite())
+
+  # une ligne par (territoire × clé) — 1 268 territoires × 4 clés, ALIGNÉS
+  # sur la référence (un territoire sans donnée porte NA, jamais une ligne
+  # manquante)
+  expect_equal(nrow(ind), nrow(territoires) * 4)
+  expect_setequal(unique(ind$key), c("nb_buildings", "offre_tc",
+                                     "bornes_recharge",
+                                     "places_stationnement_velo_1000"))
+  expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(ind)))
+  # la valeur communale telle quelle, les rangs calculés par la machinerie
+  # partagée, et l'ESTAMPILLE de chaque clé = le vintage de SA source
+  v <- function(code, key) ind$value[ind$territoire == code & ind$key == key]
+  expect_equal(v("22001", "offre_tc"), 0.5)
+  expect_equal(v("22001", "bornes_recharge"), 3)
+  vintages <- vintages_mobilite()
+  for (i in seq_len(nrow(INDICATEURS_MOBILITE))) {
+    cle <- INDICATEURS_MOBILITE$key[i]
+    ref <- INDICATEURS_MOBILITE$source_reference[i]
+    tampon <- vintages[vintages$id == ref, ]
+    lignes <- ind[ind$key == cle & !is.na(ind$value), ]
+    expect_true(all(lignes$vintage_source == tampon$source), info = cle)
+    expect_true(all(lignes$vintage_version == tampon$version), info = cle)
+  }
+  # un territoire sans donnée analytique porte NA — jamais une ligne manquante
+  # (l'EPCI 200000002 n'a aucune ligne dans le fixture d'offre)
+  expect_true(all(is.na(ind$value[ind$territoire == "200000002" &
+                                    ind$key == "offre_tc"])))
+  expect_equal(nrow(ind[ind$territoire == "200000002", ]), 4)
+})
+
+# validations_mobilite -------------------------------------------------------------
+test_that("validations_mobilite : les valeurs du sous-bloc sont gardées", {
+  payload_ok <- list(indicateurs = tibble::tibble(
+    key = c("nb_buildings", "offre_tc", "bornes_recharge",
+            "places_stationnement_velo_1000"),
+    value = c(100, 0.5, 3, 30)
+  ))
+  for (val in validations_mobilite) expect_silent(val(payload_ok))
+
+  # une part d'offre TC hors [0, 1] est un payload invalide
+  mauvais <- payload_ok
+  mauvais$indicateurs$value[mauvais$indicateurs$key == "offre_tc"] <- 1.5
+  expect_error(validations_mobilite[[2]](mauvais), "hors \\[0, 1\\]")
+
+  # un compte de bornes non entier est un payload invalide
+  mauvais <- payload_ok
+  mauvais$indicateurs$value[mauvais$indicateurs$key == "bornes_recharge"] <- 2.5
+  expect_error(validations_mobilite[[3]](mauvais), "entier")
+
+  # un taux de stationnement vélo négatif est un payload invalide
+  mauvais <- payload_ok
+  mauvais$indicateurs$value[
+    mauvais$indicateurs$key == "places_stationnement_velo_1000"] <- -1
+  expect_error(validations_mobilite[[4]](mauvais), "négatif")
 })
