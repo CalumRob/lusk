@@ -134,10 +134,10 @@
     "type": "commune",
     "theme": "habitat",
     "story_key": "etat-energetique-du-parc",
-    "classification": "passoire-energetique",
-    "part_passoires": 0.34736842105263155,
-    "part_abc": 0.16842105263157894,
-    "n_dpe": 95
+    "classification": null,
+    "part_passoires": null,
+    "part_abc": null,
+    "n_dpe": 0
   },
   {
     "territoire": "22018",
@@ -4234,10 +4234,10 @@
     "type": "commune",
     "theme": "habitat",
     "story_key": "etat-energetique-du-parc",
-    "classification": "passoire-energetique",
-    "part_passoires": 0.45714285714285713,
-    "part_abc": 0.057142857142857141,
-    "n_dpe": 35
+    "classification": null,
+    "part_passoires": null,
+    "part_abc": null,
+    "n_dpe": 0
   },
   {
     "territoire": "29084",
@@ -4854,10 +4854,10 @@
     "type": "commune",
     "theme": "habitat",
     "story_key": "etat-energetique-du-parc",
-    "classification": "passoire-energetique",
-    "part_passoires": 0.45454545454545459,
-    "part_abc": 0.15909090909090909,
-    "n_dpe": 88
+    "classification": null,
+    "part_passoires": null,
+    "part_abc": null,
+    "n_dpe": 0
   },
   {
     "territoire": "29156",
@@ -12630,24 +12630,14 @@
     "n_dpe": 8286
   },
   {
-    "territoire": "ZZZZZZZZZ",
-    "type": "epci",
-    "theme": "habitat",
-    "story_key": "etat-energetique-du-parc",
-    "classification": "passoire-energetique",
-    "part_passoires": 0.40825688073394495,
-    "part_abc": 0.14678899082568808,
-    "n_dpe": 218
-  },
-  {
     "territoire": "22",
     "type": "departement",
     "theme": "habitat",
     "story_key": "etat-energetique-du-parc",
     "classification": "parc-intermediaire",
-    "part_passoires": 0.13406742272381944,
-    "part_abc": 0.35619811260308826,
-    "n_dpe": 109251
+    "part_passoires": 0.13388178386895819,
+    "part_abc": 0.35636153761588918,
+    "n_dpe": 109156
   },
   {
     "territoire": "29",
@@ -12655,9 +12645,9 @@
     "theme": "habitat",
     "story_key": "etat-energetique-du-parc",
     "classification": "parc-intermediaire",
-    "part_passoires": 0.10093302108723243,
-    "part_abc": 0.39028107459389422,
-    "n_dpe": 188313
+    "part_passoires": 0.10070141877889367,
+    "part_abc": 0.39045113980551571,
+    "n_dpe": 188190
   },
   {
     "territoire": "35",
@@ -12685,8 +12675,8 @@
     "theme": "habitat",
     "story_key": "etat-energetique-du-parc",
     "classification": "parc-intermediaire",
-    "part_passoires": 0.087047302742435717,
-    "part_abc": 0.4590208416431279,
-    "n_dpe": 737082
+    "part_passoires": 0.08695227341816128,
+    "part_abc": 0.45911321492161378,
+    "n_dpe": 736864
   }
 ]

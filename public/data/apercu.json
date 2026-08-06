@@ -8841,13 +8841,6 @@
     "unit": "hab."
   },
   {
-    "territoire": "ZZZZZZZZZ",
-    "type": "epci",
-    "key": "population",
-    "value": 1552,
-    "unit": "hab."
-  },
-  {
     "territoire": "22",
     "type": "departement",
     "key": "population",
@@ -17724,13 +17717,6 @@
     "unit": "hab/km²"
   },
   {
-    "territoire": "ZZZZZZZZZ",
-    "type": "epci",
-    "key": "densite",
-    "value": 80.539699014011418,
-    "unit": "hab/km²"
-  },
-  {
     "territoire": "22",
     "type": "departement",
     "key": "densite",
@@ -26604,13 +26590,6 @@
     "type": "epci",
     "key": "part_65_plus",
     "value": 0.24361522645221265,
-    "unit": "%"
-  },
-  {
-    "territoire": "ZZZZZZZZZ",
-    "type": "epci",
-    "key": "part_65_plus",
-    "value": 0.39292938788659793,
     "unit": "%"
   },
   {

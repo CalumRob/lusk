@@ -95,7 +95,7 @@
     "type": "commune",
     "nom": "Île-de-Bréhat",
     "departement": "22",
-    "epci": "ZZZZZZZZZ"
+    "epci": null
   },
   {
     "territoire": "22018",
@@ -2965,7 +2965,7 @@
     "type": "commune",
     "nom": "Île-de-Sein",
     "departement": "29",
-    "epci": "ZZZZZZZZZ"
+    "epci": null
   },
   {
     "territoire": "29084",
@@ -3399,7 +3399,7 @@
     "type": "commune",
     "nom": "Ouessant",
     "departement": "29",
-    "epci": "ZZZZZZZZZ"
+    "epci": null
   },
   {
     "territoire": "29156",
@@ -8838,13 +8838,6 @@
     "type": "epci",
     "nom": "Communauté de communes Pontivy Communauté",
     "departement": "56",
-    "epci": null
-  },
-  {
-    "territoire": "ZZZZZZZZZ",
-    "type": "epci",
-    "nom": "Sans objet",
-    "departement": "29",
     "epci": null
   },
   {

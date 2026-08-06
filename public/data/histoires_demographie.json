@@ -13893,17 +13893,6 @@
     "classification": "attire-meurt"
   },
   {
-    "territoire": "ZZZZZZZZZ",
-    "type": "epci",
-    "theme": "demographie",
-    "story_key": "trajectoire-demographique",
-    "solde_naturel": -167,
-    "solde_migratoire": 274,
-    "taux_solde_naturel": -18.574129685240795,
-    "taux_solde_migratoire": 30.474919363808251,
-    "classification": "attire-meurt"
-  },
-  {
     "territoire": "22",
     "type": "departement",
     "theme": "demographie",
