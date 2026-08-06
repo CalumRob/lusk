@@ -1385,9 +1385,11 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # le manifeste réel passe sa propre validation de contrat
   expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
 
-  # un manifeste amputé d'une source du sous-bloc échoue bruyamment
+  # un manifeste amputé d'une source échoue bruyamment (les HUIT sources du
+  # thème — le snapshot + les trois de l'étage demande/réseaux (#139) + les
+  # quatre du sous-bloc (#140))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "CINQ")
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "HUIT")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE
@@ -1753,19 +1755,31 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
 })
 
 # INDICATEURS_MOBILITE -----------------------------------------------------------
-test_that("INDICATEURS_MOBILITE : les quatre clés du payload, chacune estampillée de SA source de référence", {
+test_that("INDICATEURS_MOBILITE : les six clés du payload, chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
 
-  # la « Taille » (le tracer bullet #137/#138) + les trois clés du sous-bloc
-  # « L'offre de mobilité alternative » (issue #140) — une ligne par clé, la
-  # multiplicité 1 (une valeur par territoire, jamais un multi-valué)
-  expect_equal(nrow(ind), 4L)
-  expect_setequal(ind$key, c("nb_buildings", "offre_tc", "bornes_recharge",
+  # la « Taille » (le tracer bullet #137/#138) + les deux clés multi-mesures
+  # de l'étage demande/réseaux (issue #139 : voitures_menage × 2, reseaux × 6)
+  # + les trois clés du sous-bloc « L'offre de mobilité alternative »
+  # (issue #140) — une ligne par clé, la multiplicité de chacune (1 / 2 / 6 /
+  # 1 / 1 / 1)
+  expect_equal(nrow(ind), 6L)
+  expect_setequal(ind$key, c("nb_buildings", "voitures_menage", "reseaux",
+                             "offre_tc", "bornes_recharge",
                              "places_stationnement_velo_1000"))
-  expect_true(all(ind$multiplicite == 1L))
+  expect_equal(ind$multiplicite[ind$key == "nb_buildings"], 1L)
+  expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 2L)
+  expect_equal(ind$multiplicite[ind$key == "reseaux"], 6L)
+  expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
+  expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
+  expect_equal(ind$multiplicite[ind$key == "places_stationnement_velo_1000"], 1L)
 
   # chaque clé est estampillée du vintage de SA source de référence :
   #   - nb_buildings              -> le snapshot porté (l'horloge lente) ;
+  #   - voitures_menage           -> le cube RP exploitation principale (le
+  #     code de table LOG T12) ;
+  #   - reseaux                   -> l'extrait OSM Geofabrik (le timestamp
+  #     d'extraction comme vintage, ODbL) ;
   #   - offre_tc                  -> korrigo (les arrêts GTFS — la couche
   #     SIGNATURE de la part des bâtiments près d'un arrêt, ODbL) ;
   #   - bornes_recharge           -> bornes-recharges (IRVE, Licence Ouverte) ;
@@ -1773,6 +1787,9 @@ test_that("INDICATEURS_MOBILITE : les quatre clés du payload, chacune estampill
   #     ODbL — producteur OSM).
   expect_equal(ind$source_reference[ind$key == "nb_buildings"],
                "mobilite_snapshot")
+  expect_equal(ind$source_reference[ind$key == "voitures_menage"],
+               "rp_logement_princ")
+  expect_equal(ind$source_reference[ind$key == "reseaux"], "osm_reseaux")
   expect_equal(ind$source_reference[ind$key == "offre_tc"], "korrigo")
   expect_equal(ind$source_reference[ind$key == "bornes_recharge"],
                "bornes-recharges")

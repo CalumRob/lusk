@@ -410,9 +410,9 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(round(lire_ind("53", "bornes_recharge", NA)$value, 6), 1918)
   expect_equal(round(lire_ind("35238", "bornes_recharge", NA)$value, 6), 49)
   expect_equal(round(lire_ind("53", "places_stationnement_velo_1000", NA)$value,
-                     6), 18.4989)
+                     6), 18.498939)
   expect_equal(round(lire_ind("35238", "places_stationnement_velo_1000", NA)$value,
-                     6), 72.8043)
+                     6), 72.804284)
   # les estampilles T7 : CHAQUE indicateur porte le vintage de SA source de
   # référence (la « Taille » → le snapshot ; la demande → le RP exploitation
   # principale ; les réseaux → l'extrait OSM, le timestamp d'extraction ; le
