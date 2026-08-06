@@ -40,14 +40,32 @@ squelette_territoires <- function(communes, poids = "population") {
       dplyr::across(c(departement, epci), as.character)
     )
 
+  # Fix « Sans objet » (issue #131, décision 2026-08-06) : une commune sans
+  # EPCI (les trois îles bretonnes — la base INSEE les code « ZZZZZZZZZ »,
+  # normalisé en NA à la lecture par lire_epci) n'agrège à AUCUN niveau EPCI.
+  # GARDE, pas un skip silencieux : une commune qui porte un libellé d'EPCI
+  # sans SIREN est une donnée corrompue — le squelette refuse de fabriquer un
+  # EPCI fantôme (« Sans objet ») dont tous les membres seraient sans EPCI.
+  sans_siren <- base[is.na(base$epci) & !is.na(base$nom_epci), ]
+  if (nrow(sans_siren) > 0) {
+    stop("squelette_territoires : communes avec un libellé d'EPCI mais sans ",
+         "SIREN (une commune sans EPCI doit porter epci = NA ET nom_epci = NA — ",
+         "le code « ZZZZZZZZZ » de la base INSEE n'est pas un EPCI) : ",
+         paste(unique(sans_siren$code), collapse = ", "), ".", call. = FALSE)
+  }
+
   # Chaque niveau d'agrégat = un group_by des identifiants. Le nom d'un EPCI
   # est son LIBEPCI (porté par ses communes, point 1) ; son département est
   # celui de la pluralité de sa population (point 6). Issue #32 : les lignes
   # EPCI portent epci = NA (la colonne epci ne concerne que les communes —
   # miroir de `departement`, qui ne concerne que communes + EPCIs). Le
   # group_by(epci) garderait la clé comme colonne : on l'écrase en NA
-  # explicitement, sinon l'EPCI « s'appartiendrait ».
+  # explicitement, sinon l'EPCI « s'appartiendrait ». Issue #131 : les
+  # communes SANS EPCI sont filtrées EXPLICITEMENT avant le group_by — jamais
+  # un EPCI fantôme construit depuis un group NA (la garde ci-dessus rend la
+  # donnée corrompue bruyante, le filtre rend le cas légitime déterministe).
   epcis <- base %>%
+    dplyr::filter(!is.na(epci)) %>%
     dplyr::group_by(epci) %>%
     dplyr::summarise(
       code = dplyr::first(epci),
@@ -371,20 +389,18 @@ validate_payload <- function(payload,
          paste(inconnus, collapse = ", "), ".", call. = FALSE)
   }
 
-  # 5bis. la colonne epci de la table de référence (issue #32) : chaque commune
-  # porte l'EPCI dont elle est membre (le SIREN — le nom vit dans la colonne
-  # nom), les EPCIs / départements / région portent NA — miroir de `departement`.
-  # L'intégrité référentielle de l'échelle (commune -> EPCI -> département ->
-  # région) est verrouillée : un EPCI de commune inconnu de la référence casse
-  # le contexte switcher — le payload est invalide.
+  # 5bis. la colonne epci de la table de référence (issue #32, INVERSEE par le
+  # fix « Sans objet » #131 — décision 2026-08-06) : une commune PEUT être
+  # sans EPCI (légitime — les trois îles bretonnes 22016 Île-de-Bréhat, 29083
+  # Île-de-Sein, 29155 Ouessant, que la base INSEE code « ZZZZZZZZZ »,
+  # normalisé en NA à la lecture). L'échelle reste verrouillée : les EPCIs /
+  # départements / région portent NA (miroir de `departement`), chaque EPCI
+  # porté par une commune est un territoire EPCI de la référence — et une
+  # ligne EPCI doit porter un VRAI SIREN (9 chiffres), jamais un code fantôme
+  # fabriqué depuis des communes sans EPCI.
   if (!"epci" %in% names(ref)) {
     stop("Payload invalide : la colonne epci manque à la table de référence.",
          call. = FALSE)
-  }
-  communes_sans_epci <- ref$territoire[ref$type == "commune" & is.na(ref$epci)]
-  if (length(communes_sans_epci) > 0) {
-    stop("Payload invalide : une commune sans EPCI dans la table de référence : ",
-         paste(communes_sans_epci, collapse = ", "), ".", call. = FALSE)
   }
   agrega_avec_epci <- ref$territoire[ref$type != "commune" & !is.na(ref$epci)]
   if (length(agrega_avec_epci) > 0) {
@@ -392,10 +408,19 @@ validate_payload <- function(payload,
          paste(agrega_avec_epci, collapse = ", "), ".", call. = FALSE)
   }
   epcis_connus <- ref$territoire[ref$type == "epci"]
-  epci_inconnus <- setdiff(ref$epci[ref$type == "commune"], epcis_connus)
+  portes <- ref$epci[ref$type == "commune"]
+  # les communes sans EPCI (NA) ne portent rien à vérifier — seules les
+  # valeurs réelles doivent être des EPCIs connus de la référence
+  epci_inconnus <- setdiff(portes[!is.na(portes)], epcis_connus)
   if (length(epci_inconnus) > 0) {
     stop("Payload invalide : un EPCI de commune inconnu de la référence : ",
          paste(epci_inconnus, collapse = ", "), ".", call. = FALSE)
+  }
+  sirens <- ref$territoire[ref$type == "epci"]
+  non_siren <- sirens[!grepl("^[0-9]{9}$", sirens)]
+  if (length(non_siren) > 0) {
+    stop("Payload invalide : une ligne EPCI ne porte pas un vrai SIREN : ",
+         paste(non_siren, collapse = ", "), ".", call. = FALSE)
   }
 
   # 5ter. la table apercu (issue #32, ADR-0007) : présente, la forme du

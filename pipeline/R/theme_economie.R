@@ -15,9 +15,10 @@
 #     vintages_depuis_manifest, vintage.R) ;
 #   - le SEAM de calcul de T8 : construire_analytiques_economie enchaîne les
 #     builders analytiques des T1-T5 (analytics_economie_{lq,lq_flores,green,
-#     dormitory,chomage}) puis les rangs-en-contexte de T6 (analytics_economie_
-#     ranks) — le seam ne CALCULE RIEN lui-même, les indicateurs vivent dans
-#     les T1-T5 (MUST NOT du plan) ;
+#     dormitory,chomage}), les rangs-en-contexte de T6 (analytics_economie_
+#     ranks) et l'agrégation au niveau des territoires (issue #131 —
+#     analytics_economie_territoires.R) — le seam ne CALCULE RIEN lui-même,
+#     les indicateurs vivent dans les T1-T5 (MUST NOT du plan) ;
 #   - le SEAM de publication de T8 : publier_economie, STUB — T8 câble la
 #     publication du payload Économie ; tant qu'il n'est pas livré, un appel
 #     échoue fort (jamais un « under construction » silencieux).
@@ -75,24 +76,29 @@ vintages_economie <- function() {
 }
 
 # construire_analytiques_economie ----------------------------------------------
-# LE seam de calcul de T8 : le chaînon analytique complet T1→T6. Il enchaîne
-# les builders EXISTANTS — jamais un calcul dans l'assembleur (les indicateurs
-# vivent dans les T1-T5, MUST NOT du plan) :
+# LE seam de calcul de T8 : le chaînon analytique complet T1→T6 + l'agrégation
+# au niveau des territoires (issue #131). Il enchaîne les builders EXISTANTS —
+# jamais un calcul dans l'assembleur (les indicateurs vivent dans les T1-T5,
+# MUST NOT du plan) :
 #   - T1 la LQ continue (SIRENE, analytics_economie_lq.R) ;
 #   - T2 la LQ d'emploi (Flores, les DEUX grains natifs A88 et A38, jamais
 #     fusionnés — analytics_economie_lq_flores.R ; A88 est le grain livré) ;
 #   - T3 le score vert (SIRENE × EGSS, analytics_economie_green.R) ;
 #   - T4 le ratio dortoir (Flores A88 × RP Emploi, analytics_economie_
-#     dormitory.R) ;
+#     dormitory.R) — PARKED (2026-08-06) : aucun artefact de payload, sa
+#     perspective lieu de travail ressuscite l'indicateur « Taille » ;
 #   - T5 le chômage (RP Chômage, analytics_economie_chomage.R) ;
-#   - T6 les rangs-en-contexte des quatre indicateurs publiés — les artefacts
-#     *_rangs.rds (analytics_economie_ranks.R).
+#   - T6 les rangs-en-contexte des tables analytiques — les artefacts
+#     *_rangs.rds (analytics_economie_ranks.R) ;
+#   - l'AGRÉGATION (analytics_economie_territoires.R) : les tables communales
+#     → les tables du payload aux quatre niveaux (effectifs/chomage/eco
+#     RECALCULÉS depuis les parties, jamais une moyenne de parts) + les lignes
+#     d'Histoire multi-niveaux (top-5, LQ même-échelle, présence régionale).
 # `donnees` est la liste nommée de construire_donnees_economie ; `base_epci`
-# la base des EPCI (la forme de lire_epci : CODGEO/EPCI/DEP) que T6 consomme ;
-# `artefact` la liste EGSS épinglée (artefact_egss) que T3 consomme. Retourne
-# la liste des tables analytiques (les artefacts T6 classés pour les quatre
-# indicateurs publiés + les tables de support T1/T2) — la forme de test et
-# l'entrée du seam de publication de T8.
+# la base des EPCI (la forme de lire_epci : CODGEO/EPCI/DEP) ; `artefact` la
+# liste EGSS épinglée (artefact_egss) que T3 consomme. Retourne la liste des
+# tables analytiques — la forme de test et l'entrée du seam de publication de
+# T8.
 construire_analytiques_economie <- function(donnees, base_epci, artefact,
                                             sortie = "data/processed/economie") {
   # T1 — la LQ continue (SIRENE) : lq + histoires + matrice M + suppression
@@ -111,10 +117,20 @@ construire_analytiques_economie <- function(donnees, base_epci, artefact,
   # T5 — le chômage (RP Chômage) + son rapport de suppression
   chomage <- construire_chomage_economie(donnees$rp_chomage)
   persister_chomage_economie(chomage, sortie = sortie)
-  # T6 — les rangs-en-contexte (les artefacts *_rangs.rds ; A88 livré d'abord)
+  # T6 — les rangs-en-contexte (les artefacts *_rangs.rds)
   rangs <- construire_rangs_analytiques_economie(
     lq$lq, lq_emploi_a88$lq, eco$table, chomage$table,
     base_epci, sortie = sortie
+  )
+  # Issue #131 — la « Taille » : le total effectifs salariés au lieu de travail
+  # (Flores A88), l'agrégation du dortoir ressuscitée (workplace), commune par
+  # commune — la matière de l'indicateur et de son agrégation par niveau.
+  effectifs <- dplyr::transmute(dortoir$table, commune,
+                                effectifs_salaries = workplace)
+  # L'agrégation au niveau des territoires : les trois indicateurs aux quatre
+  # niveaux (recalculés depuis les parties) + les lignes d'Histoire.
+  agregats <- construire_territoires_agregats_economie(
+    effectifs, eco$table, chomage$table, rangs$lq, base_epci
   )
 
   list(
@@ -125,7 +141,12 @@ construire_analytiques_economie <- function(donnees, base_epci, artefact,
     lq_emploi_a38 = lq_emploi_a38$lq,
     eco_activites = rangs$eco,
     dortoir = dortoir$table,
-    chomage = rangs$chomage
+    chomage = rangs$chomage,
+    effectifs = effectifs,
+    effectifs_territoires = agregats$effectifs,
+    chomage_territoires = agregats$chomage,
+    eco_territoires = agregats$eco,
+    histoires = agregats$histoires
   )
 }
 
@@ -144,28 +165,28 @@ construire_analytiques_economie <- function(donnees, base_epci, artefact,
 # INDICATEURS_ECONOMIE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. La multiplicité NA
-# déclare une clé à nombre de lignes VARIABLE par territoire : la LQ
-# commune × activité porte une ligne par cellule observée, jamais un nombre
-# fixe par commune (validate_payload lève l'égalité exacte pour ces clés —
-# issue #97 — et la garde pour les autres).
+# l'estampille — les vintages T7) et sa multiplicité. Issue #131 (reshape du
+# payload, décisions 2026-08-06) : le bloc est REDUIT à trois clés — « Taille »
+# (effectifs_salaries, Flores A88), « santé » (chomage, RP Chômage), « verdure »
+# (eco_activites, SIRENE × EGSS) — toutes à une ligne PAR TERRITOIRE
+# (commune / EPCI / département / région : les agrégats sont recalculés depuis
+# les parties, jamais une moyenne de parts). `lq` et `lq_emploi` QUITTENT le
+# bloc : la matrice reste un artefact interne (data/processed/economie/),
+# jamais publiée ; le Story top-5 porte les quelques nombres par territoire.
 INDICATEURS_ECONOMIE <- tibble::tibble(
-  key = c("lq", "lq_emploi", "eco_activites", "chomage"),
+  key = c("effectifs_salaries", "chomage", "eco_activites"),
   libelle = c(
-    "Localisation quotient (spécialisation productive)",
-    "Localisation quotient de l'emploi",
-    "Part des éco-activités",
-    "Chômage (population active)"
+    "Effectifs salariés au lieu de travail",
+    "Chômage (population active)",
+    "Part des éco-activités"
   ),
   sources = list(
-    "sirene_snapshot",
     "flores_a88",
-    "sirene_snapshot",
-    "rp_chomage"
+    "rp_chomage",
+    "sirene_snapshot"
   ),
-  source_reference = c("sirene_snapshot", "flores_a88",
-                       "sirene_snapshot", "rp_chomage"),
-  multiplicite = c(NA_integer_, NA_integer_, 1L, 1L)
+  source_reference = c("flores_a88", "rp_chomage", "sirene_snapshot"),
+  multiplicite = c(1L, 1L, 1L)
 )
 
 # APERCU_ECONOMIE ---------------------------------------------------------------
@@ -202,104 +223,78 @@ construire_territoires_economie <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_economie ----------------------------------------------
-# Les quatre indicateurs publiés du thème (T1/T2/T3/T5), depuis les artefacts
-# analytiques T6 classés : une table longue par clé (code, key, detail, value,
-# unit) PORTANT SES RANGS — les rangs-en-contexte de T6, jamais recalculés
-# ici (une cellule LQ se classe dans (activité × groupe), ce que la machinerie
-# générique ne refait pas). L'assemblage suit EXACTEMENT la forme du contrat
-# d'assembler_indicateurs (compute.R) : jointure du type de territoire, la
-# colonne theme, et les estampilles T7 depuis INDICATEURS_ECONOMIE + vintages.
+# Les trois indicateurs publiés du thème (issue #131) : UNE ligne par
+# territoire (commune / EPCI / département / région), la valeur d'un agrégat
+# RECALCULÉE depuis les parties communales (jamais une moyenne de parts — les
+# tables agrégées de construire_territoires_agregats_economie). L'assemblage
+# réutilise la MACHINERIE PARTAGÉE telle quelle :
+#   - compute_ranks(territoires, tables) : les rangs-en-contexte par niveau
+#     entre pairs (commune dans son EPCI, EPCI dans son département, département
+#     dans la région — groupes_comparaison, compute.R) ;
+#   - assembler_indicateurs : la forme du contrat (rangs + estampilles T7
+#     depuis INDICATEURS_ECONOMIE + vintages).
+# Les tables sont ALIGNÉES sur la référence (left_join sur les codes de
+# territoires) : un territoire sans donnée porte NA — jamais une ligne
+# manquante (la multiplicité 1 de la table déclarative l'exige).
 construire_indicateurs_economie <- function(analytiques, territoires, vintages) {
+  aligner <- function(table_agregee, key, unit) {
+    dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
+      dplyr::transmute(
+        code = code, key = key, detail = NA_character_,
+        value = value, unit = unit
+      )
+  }
+
   tables <- list(
-    lq = dplyr::transmute(
-      analytiques$lq,
-      code = commune, key = "lq", detail = activity_code,
-      value = lq, unit = "", rang_epci, rang_dep, rang_reg
-    ),
-    lq_emploi = dplyr::transmute(
-      analytiques$lq_emploi_a88,
-      code = commune, key = "lq_emploi", detail = activity_code,
-      value = lq, unit = "", rang_epci, rang_dep, rang_reg
-    ),
-    eco_activites = dplyr::transmute(
-      analytiques$eco_activites,
-      code = commune, key = "eco_activites", detail = NA_character_,
-      value = part_economie_verte, unit = "%", rang_epci, rang_dep, rang_reg
-    ),
-    chomage = dplyr::transmute(
-      analytiques$chomage,
-      code = commune, key = "chomage", detail = NA_character_,
-      value = taux_chomage, unit = "%", rang_epci, rang_dep, rang_reg
-    )
+    effectifs_salaries = aligner(analytiques$effectifs_territoires,
+                                 "effectifs_salaries", "salariés"),
+    chomage = aligner(analytiques$chomage_territoires, "chomage", "%"),
+    eco_activites = aligner(analytiques$eco_territoires, "eco_activites", "%")
   )
 
-  tampons <- INDICATEURS_ECONOMIE %>%
-    dplyr::select(key, source_reference) %>%
-    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
-    dplyr::select(key,
-                  vintage_source = source,
-                  vintage_version = version,
-                  vintage_date_reference = date_reference,
-                  vintage_date_publication = date_publication)
+  rangs <- compute_ranks(territoires, tables, scalaires = list())
 
-  dplyr::bind_rows(tables) %>%
-    dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
-    dplyr::rename(territoire = code) %>%
-    dplyr::mutate(theme = "economie") %>%
-    dplyr::left_join(tampons, by = "key") %>%
-    dplyr::select(territoire, type, theme, key, detail, value, unit,
-                  rang_epci, rang_dep, rang_reg,
-                  vintage_source, vintage_version,
-                  vintage_date_reference, vintage_date_publication)
+  assembler_indicateurs(territoires, tables, rangs, theme = "economie",
+                        indicateurs_table = INDICATEURS_ECONOMIE,
+                        vintages = vintages)
 }
 
 # compute_histoires_economie ---------------------------------------------------
-# L'Histoire du thème — la SÉLECTION par territoire (ADR-0002) : exactement
-# une Histoire par commune, choisie déterministement par la saillance. Le pool
-# (docs/themes/economie-emploi.md) :
-#   - « ce que la commune sait faire » (la LQ top-N, T1) — DÉFAUT, toujours
-#     allumée ; son contenu (les top-N spécialisations) vit dans les lignes
-#     `lq` des indicateurs, jamais recopié ici ;
-#   - « le matin, la commune se vide » (le ratio dortoir, T4) — déclenchée sur
-#     les queues réelles (dortoir-profond / pole-emploi), jamais sur la
-#     majorité.
-# La classification du Story n'est PAS un indicateur (MUST NOT de T8) : elle
-# vit dans la table histoires, avec les justifications du Story dortoir
-# (ratio, workplace, resident — NA quand le Story dortoir ne se déclenche pas).
-compute_histoires_economie <- function(analytiques, territoires) {
-  dort <- analytiques$dortoir %>%
-    dplyr::select(commune, classification, ratio, workplace, resident)
+# L'Histoire du thème (issue #131, décision 2026-08-06 — thème à Story UNIQUE,
+# ADR-0002 : le pool de saillance se réduit à un défaut toujours allumé).
+# La table est MULTI-LIGNES par territoire : chaque ligne est une des top-5
+# spécialisations de la lecture « ce que la commune abrite » (rang /
+# activity_code / activity_label / lq / n — calculée par
+# construire_histoires_economie_payload, LQ à référence même-échelle pour les
+# agrégats), plus les 5 lignes de la lecture régionale « ce que la Bretagne
+# abrite » (présence, n + part du parc). Le Story dortoir est PARKED : aucune
+# colonne classification/ratio/workplace/resident ne part dans le payload.
+# Issue #74 : les Stories portent leurs estampilles vintage — les DEUX
+# lectures sourcent le snapshot SIRENE (la LQ et la structure régionale sont
+# toutes deux la matière du parc des établissements) : chaque ligne est
+# estampillée du vintage de SA source de référence, comme les indicateurs.
+compute_histoires_economie <- function(analytiques, vintages) {
+  sirene <- vintages %>%
+    dplyr::filter(id == "sirene_snapshot")
+  if (nrow(sirene) != 1) {
+    stop("compute_histoires_economie : la source de référence « sirene_snapshot » ",
+         "est absente des vintages — les Stories ne peuvent pas être estampillées.",
+         call. = FALSE)
+  }
 
-  territoires %>%
-    dplyr::filter(type == "commune") %>%
-    dplyr::select(code, type) %>%
-    dplyr::left_join(dort, by = c("code" = "commune")) %>%
-    dplyr::mutate(
-      story_key = dplyr::if_else(
-        classification %in% c("dortoir-profond", "pole-emploi"),
-        "le-matin-la-commune-se-vide",
-        "ce-que-la-commune-sait-faire"
-      ),
-      # la classification et les justifications ne s'affichent que pour le
-      # Story dortoir (saillance déclenchée) — jamais un bruit pour le défaut
-      classification = dplyr::if_else(
-        story_key == "le-matin-la-commune-se-vide",
-        classification, NA_character_
-      ),
-      ratio = dplyr::if_else(
-        story_key == "le-matin-la-commune-se-vide", ratio, NA_real_
-      ),
-      workplace = dplyr::if_else(
-        story_key == "le-matin-la-commune-se-vide", workplace, NA_real_
-      ),
-      resident = dplyr::if_else(
-        story_key == "le-matin-la-commune-se-vide", resident, NA_real_
-      )
-    ) %>%
+  tampon <- sirene %>%
     dplyr::transmute(
-      territoire = code, type = type, theme = "economie",
-      story_key, classification, ratio, workplace, resident
+      vintage_source = source,
+      vintage_version = version,
+      vintage_date_reference = date_reference,
+      vintage_date_publication = date_publication
     )
+
+  dplyr::bind_cols(
+    analytiques$histoires %>%
+      dplyr::mutate(theme = "economie"),
+    tampon
+  )
 }
 
 # construire_apercu_economie ---------------------------------------------------
@@ -314,7 +309,7 @@ construire_apercu_economie <- function(territoires) {
 # Les vérifications de valeur propres au thème (point 7) : déclarées ici,
 # exécutées par validate_payload() après ses vérifications génériques.
 validations_economie <- list(
-  # le chômage est une part dans [0, 1] (une valeur NA — commune sans taux
+  # le chômage est une part dans [0, 1] (une valeur NA — territoire sans taux
   # calculable — est un cas légitime, jamais une corruption)
   function(payload) {
     tx <- payload$indicateurs$value[payload$indicateurs$key == "chomage"]
@@ -333,12 +328,14 @@ validations_economie <- list(
     }
     invisible(payload)
   },
-  # la LQ est une valeur strictement positive (une LQ nulle ou négative est
-  # une corruption — la LQ de Balassa est un ratio de parts)
+  # les effectifs salariés sont un total non négatif (une valeur NA — cellule
+  # non diffusée d'une commune, somme d'un niveau incomplète — est légitime)
   function(payload) {
-    lq <- payload$indicateurs$value[payload$indicateurs$key == "lq"]
-    if (any(!is.na(lq) & lq <= 0)) {
-      stop("Payload invalide : une LQ non positive.", call. = FALSE)
+    ef <- payload$indicateurs$value[
+      payload$indicateurs$key == "effectifs_salaries"]
+    if (any(!is.na(ef) & ef < 0)) {
+      stop("Payload invalide : des effectifs salariés négatifs.",
+           call. = FALSE)
     }
     invisible(payload)
   }
@@ -355,7 +352,7 @@ construire_payload_economie <- function(analytiques, base_epci, vintages) {
 
   payload <- list(
     indicateurs = construire_indicateurs_economie(analytiques, territoires, vintages),
-    histoires = compute_histoires_economie(analytiques, territoires),
+    histoires = compute_histoires_economie(analytiques, vintages),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, construire_apercu_economie(territoires))
   )

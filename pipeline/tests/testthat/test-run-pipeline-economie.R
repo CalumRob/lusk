@@ -37,10 +37,13 @@ base_epci_economie <- tibble::tribble(
 )
 
 # La couture analytique mockée : la forme exacte de la liste retournée par
-# construire_analytiques_economie (les artefacts T6 classés) — 4 communes ×
-# 3 activités pour LQ/LQ emploi (une commune dortoir-profond, les autres
-# équilibre), le score vert et le chômage en une ligne par commune. Les rangs
-# sont des fractions dans [0,1] (la forme de la machinerie partagée).
+# construire_analytiques_economie — les tables communales (lq, eco, dortoir,
+# chomage), l'effectif communal et les tables AGRÉGÉES du payload (issue #131)
+# — les agrégats et les histoires sont calculés par les VRAIES fonctions
+# d'agrégation sur la base des EPCI du fixture (le seam est le chaînon, pas le
+# calcul). 4 communes × 3 activités pour LQ, une ligne par commune pour les
+# autres. Les rangs sont des fractions dans [0,1] (la forme de la machinerie
+# partagée).
 fixture_analytiques_economie <- function() {
   lq <- tibble::tribble(
     ~commune, ~activity_code, ~activity_label, ~lq, ~n, ~n_c, ~n_a,
@@ -82,12 +85,15 @@ fixture_analytiques_economie <- function() {
     "29002", "29", 4, 6, 10, 0.4, 0.5, 0.5, 0.4
   )
   histoires_lq <- lq %>%
-    dplyr::select(commune, activity_code, activity_label, lq) %>%
+    dplyr::select(commune, activity_code, activity_label, lq, n) %>%
     dplyr::group_by(commune) %>%
     dplyr::arrange(dplyr::desc(lq), activity_code, .by_group = TRUE) %>%
     dplyr::mutate(rang = dplyr::row_number()) %>%
     dplyr::ungroup() %>%
-    dplyr::select(commune, rang, activity_code, activity_label, lq)
+    dplyr::select(commune, rang, activity_code, activity_label, lq, n)
+
+  effectifs <- dortoir %>%
+    dplyr::transmute(commune, effectifs_salaries = workplace)
 
   list(
     lq = lq,
@@ -97,7 +103,15 @@ fixture_analytiques_economie <- function() {
     lq_emploi_a38 = lq,
     eco_activites = eco,
     dortoir = dortoir,
-    chomage = chomage
+    chomage = chomage,
+    effectifs = effectifs,
+    # les agrégats du payload : les VRAIES fonctions, sur la base du fixture
+    # (EPCI X = 22001 + 22002 · EPCI Y = 29001 + 29002)
+    effectifs_territoires = agreger_effectifs_territoires(effectifs,
+                                                          base_epci_economie),
+    chomage_territoires = agreger_chomage_territoires(chomage, base_epci_economie),
+    eco_territoires = agreger_eco_territoires(eco, base_epci_economie),
+    histoires = construire_histoires_economie_payload(lq, base_epci_economie)
   )
 }
 
@@ -132,22 +146,34 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   # le payload complet du thème : les quatre tables du contrat
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "economie"))
-  # les quatre indicateurs publiés (T1/T2/T3/T5) — les Stories ne sont pas
-  # des indicateurs (jamais de clé dortoir, jamais de classification)
+  # les trois indicateurs publiés (issue #131) — `lq` et `lq_emploi` QUITTENT
+  # le bloc (la matrice reste interne, jamais publiée) ; le dortoir est parked
   expect_setequal(unique(payload$indicateurs$key),
-                  c("lq", "lq_emploi", "eco_activites", "chomage"))
-  # les rangs-en-contexte de T6 sont portés par les lignes (fractions [0,1])
+                  c("effectifs_salaries", "chomage", "eco_activites"))
+  # une ligne par territoire (commune / EPCI / département / région) — les
+  # agrégats sont RECALCULÉS depuis les parties (jamais une moyenne de parts)
+  expect_equal(nrow(payload$indicateurs),
+               nrow(payload$territoires) * 3)
+  # le chômage d'un EPCI à deux communes est le recalcul pondéré : EPCI X =
+  # (2 + 1) / (10 + 10) = 0,15 — jamais la moyenne des taux (0,15 ici aussi
+  # par hasard de la fixture : la valeur agrégée est celle des numérateurs)
+  expect_equal(
+    payload$indicateurs$value[payload$indicateurs$territoire == "200000001" &
+                                payload$indicateurs$key == "chomage"],
+    3 / 20
+  )
+  # les rangs-en-contexte sont portés par les lignes (fractions [0,1])
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
   expect_true(all(is.na(payload$indicateurs$rang_epci) |
                     (payload$indicateurs$rang_epci >= 0 &
                        payload$indicateurs$rang_epci <= 1)))
   # les estampilles T7 : chaque indicateur porte le vintage de SA source de
-  # référence — LQ et score vert sur SIRENE, LQ emploi sur Flores A88, chômage
-  # sur RP chômage (aucun alignement de dates)
+  # référence — effectifs sur Flores A88, chômage sur RP chômage, éco-activités
+  # sur SIRENE (aucun alignement de dates)
   src_par_cle <- stats::setNames(
-    c("sirene_snapshot", "flores_a88", "sirene_snapshot", "rp_chomage"),
-    c("lq", "lq_emploi", "eco_activites", "chomage")
+    c("flores_a88", "rp_chomage", "sirene_snapshot"),
+    c("effectifs_salaries", "chomage", "eco_activites")
   )
   vintages <- vintages_economie()
   for (cle in names(src_par_cle)) {
@@ -157,20 +183,27 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
       info = cle)
   }
 
-  # les histoires : une ligne par commune, story_key par ADR-0002 — la
-  # commune dortoir-profond porte l'Histoire dortoir (saillance), les autres
-  # l'Histoire LQ par défaut ; la classification du Story n'est JAMAIS un
-  # indicateur (elle vit dans histoires)
+  # les histoires : MULTI-LIGNES par territoire (issue #131) — le top-5
+  # « ce que la commune abrite » (avec les nombres : lq + n) pour les
+  # communes / EPCIs / départements, la lecture régionale « ce que la
+  # Bretagne abrite » pour la région ; plus JAMAIS de Story dortoir (parked)
   expect_true(all(payload$histoires$theme == "economie"))
-  expect_true(all(c("story_key") %in% names(payload$histoires)))
-  expect_equal(
-    payload$histoires$story_key[payload$histoires$territoire == "22001"],
-    "le-matin-la-commune-se-vide"
-  )
+  expect_true(all(c("story_key", "rang", "activity_code", "activity_label",
+                    "lq", "n") %in% names(payload$histoires)))
   expect_true(all(payload$histoires$story_key[
-    payload$histoires$territoire != "22001"] ==
-    "ce-que-la-commune-sait-faire"))
-  expect_false("classification" %in% unique(payload$indicateurs$key))
+    payload$histoires$territoire == "22001"] ==
+    "ce-que-la-commune-abrite"))
+  expect_true(any(payload$histoires$story_key == "ce-que-la-bretagne-abrite"))
+  expect_true(all(payload$histoires$story_key[
+    payload$histoires$territoire == "53"] ==
+    "ce-que-la-bretagne-abrite"))
+  # la commune dortoir-profond ne porte plus AUCUNE colonne dortoir
+  expect_false(any(c("classification", "ratio", "workplace", "resident") %in%
+                     names(payload$histoires)))
+  # les Stories portent le vintage de leur source de référence (SIRENE pour
+  # les deux lectures — issue #74)
+  expect_true(all(payload$histoires$vintage_source ==
+                    vintages$source[vintages$id == "sirene_snapshot"]))
 
   # la référence des territoires : le squelette partagé (communes + EPCIs +
   # départements + région), les noms réels, l'EPCI de chaque commune
@@ -247,24 +280,24 @@ test_that("un re-run Économie écrase sans dupliquer (upsert, idempotence)", {
   # aucune ligne en double, les comptes du premier run sont conservés
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_economie.parquet"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
-  expect_equal(nrow(ind), nrow(fixture_analytiques_economie()$lq) * 2 +
-                 nrow(fixture_analytiques_economie()$eco_activites) +
-                 nrow(fixture_analytiques_economie()$chomage))
+  # 9 territoires (4 communes + 2 EPCIs + 2 départements + la région) ×
+  # 3 clés (effectifs_salaries · chomage · eco_activites) — une ligne chacun
+  expect_equal(nrow(ind), 9 * 3)
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)
   expect_equal(nrow(ref), 4 + 2 + 2 + 1) # communes + EPCIs + départements + région
 })
 
-test_that("une dérive du schéma du payload Économie échoue bruyamment", {
+test_that("une dérive de valeur du payload Économie échoue bruyamment", {
   cible <- tempfile("pub-economie-")
   on.exit(unlink(cible, recursive = TRUE))
   cache <- tempfile("cache-economie-")
   dir.create(cache)
   on.exit(unlink(cache, recursive = TRUE))
 
-  # la couture analytique renvoie une table corrompue : une ligne en double
-  # dans le chômage (le MÊME territoire deux fois pour la clé multiplicité 1)
-  # — la validation générique du payload détecte la dérive de schéma et le
-  # run s'arrête FORT, jamais un chiffre faux publié silencieusement
+  # la couture analytique renvoie une table corrompue : un taux de chômage
+  # hors de [0, 1] pour un territoire — la validation de VALEUR du thème
+  # détecte la dérive et le run s'arrête FORT, jamais un chiffre faux publié
+  # silencieusement
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_economie(),
     construire_donnees_economie = function(cache) list(
@@ -276,7 +309,7 @@ test_that("une dérive du schéma du payload Économie échoue bruyamment", {
     ),
     construire_analytiques_economie = function(donnees, base_epci, artefact, sortie) {
       fx <- fixture_analytiques_economie()
-      fx$chomage <- rbind(fx$chomage, fx$chomage[1, ])
+      fx$chomage_territoires$value[1] <- 1.5  # hors [0, 1] : une dérive de schéma
       fx
     },
     lire_epci = function(chemin) base_epci_economie,
@@ -284,10 +317,9 @@ test_that("une dérive du schéma du payload Économie échoue bruyamment", {
     .package = "lusk"
   )
 
-  # le doublon casse la multiplicité déclarée (chômage : une ligne par
-  # territoire) — validate_payload l'attrape bruyamment
+  # la validation de valeur (validations_economie) l'attrape bruyamment
   expect_error(
     run_pipeline(theme = theme_economie(), cache = cache, sortie = cible),
-    "double"
+    "chômage"
   )
 })

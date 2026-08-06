@@ -206,7 +206,10 @@ test_that("construire_analytiques_economie : le seam de calcul de T8 enchaîne l
     persister_eco_activites_economie = function(resultat, sortie) invisible(resultat),
     construire_dortoir_economie = function(flores_a88, rp_emploi) {
       pousser("dortoir")
-      list(table = tibble::tibble(w = 4), suppression = tibble::tibble())
+      # la table porte la perspective lieu de travail (commune, workplace) —
+      # la matière de l'indicateur « Taille » (issue #131)
+      list(table = tibble::tibble(commune = "22001", workplace = 3, w = 4),
+           suppression = tibble::tibble())
     },
     persister_dortoir_economie = function(resultat, sortie) invisible(resultat),
     construire_chomage_economie = function(rp_chomage) {
@@ -220,25 +223,41 @@ test_that("construire_analytiques_economie : le seam de calcul de T8 enchaîne l
       list(lq = tibble::tibble(r = 1), lq_emploi = tibble::tibble(r = 2),
            eco = tibble::tibble(r = 3), chomage = tibble::tibble(r = 4))
     },
+    # l'agrégation au niveau des territoires (issue #131) — le seam que le
+    # chaînon appelle après T6 pour bâtir le payload agrégé
+    construire_territoires_agregats_economie = function(effectifs, eco, chomage,
+                                                        lq, base_epci) {
+      pousser("agregats")
+      list(effectifs = tibble::tibble(e = 1), chomage = tibble::tibble(c = 2),
+           eco = tibble::tibble(g = 3), histoires = tibble::tibble(h = 4))
+    },
     .package = "lusk"
   )
 
   res <- construire_analytiques_economie(donnees, base_epci, artefact,
                                          sortie = "sortie-test")
 
-  # le chaînon T1 → T6, dans l'ordre (les rangs en dernier — le seam ne
-  # calcule RIEN lui-même, il enchaîne les builders des T1-T5)
+  # le chaînon T1 → T6, dans l'ordre (les rangs puis l'agrégation territoire
+  # en dernier — le seam ne calcule RIEN lui-même, il enchaîne les builders)
   expect_equal(suivi$ordre, c("lq", "lq_flores_A88", "lq_flores_A38", "eco",
-                              "dortoir", "chomage", "rangs"))
+                              "dortoir", "chomage", "rangs", "agregats"))
 
-  # les tables analytiques exposées : les artefacts T6 classés (*_rangs.rds)
-  # pour les quatre indicateurs publiés, plus les tables de support
+  # les tables analytiques exposées : les artefacts T6 classés, les tables de
+  # support, l'effectif communal et les tables agrégées du payload
   expect_named(res, c("lq", "histoires_lq", "m", "lq_emploi_a88",
-                      "lq_emploi_a38", "eco_activites", "dortoir", "chomage"))
+                      "lq_emploi_a38", "eco_activites", "dortoir", "chomage",
+                      "effectifs", "effectifs_territoires", "chomage_territoires",
+                      "eco_territoires", "histoires"))
   expect_equal(res$lq$r, 1)
   expect_equal(res$lq_emploi_a88$r, 2)
   expect_equal(res$eco_activites$r, 3)
   expect_equal(res$chomage$r, 4)
+  # l'effectif communal est dérivé de la perspective lieu de travail du dortoir
+  expect_equal(res$effectifs$effectifs_salaries, 3)
+  expect_equal(res$effectifs_territoires$e, 1)
+  expect_equal(res$chomage_territoires$c, 2)
+  expect_equal(res$eco_territoires$g, 3)
+  expect_equal(res$histoires$h, 4)
 })
 
 test_that("publier_economie : le seam de publication de T8 est câblé (plus un stub)", {

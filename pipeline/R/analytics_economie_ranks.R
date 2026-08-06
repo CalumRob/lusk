@@ -62,10 +62,15 @@ attacher_rangs_analytiques <- function(table, base_epci, valeur,
       base_epci[c("CODGEO", "EPCI", "DEP")],
       by = c("commune" = "CODGEO")
     )
-  sans_epci <- unique(contexte$commune[is.na(contexte$EPCI)])
-  if (length(sans_epci) > 0) {
+  # une commune ABSENTE de la base (aucune ligne → DEP NA après la jointure)
+  # est une ERREUR (jamais un rang NA silencieux). Une commune PRÉSENTE mais
+  # sans EPCI (les îles — fix « Sans objet », issue #131 : EPCI = NA dans la
+  # base) est LÉGITIME : son rang_epci est NA, elle garde ses rangs de
+  # département et de région.
+  absentes <- unique(contexte$commune[is.na(contexte$DEP)])
+  if (length(absentes) > 0) {
     stop("Rangs économie — commune absente de la base des EPCI (jamais un rang ",
-         "NA silencieux) : ", paste(sans_epci, collapse = ", "), ".",
+         "NA silencieux) : ", paste(absentes, collapse = ", "), ".",
          call. = FALSE)
   }
 

@@ -180,12 +180,30 @@ assembler_communes <- function(serie, menages, age, epci) {
                   population_menages, menages)
 }
 
+# normaliser_epci_manquants ----------------------------------------------------
+# Le fix « Sans objet » (issue #131, décision 2026-08-06) : la base INSEE code
+# les communes sans EPCI par le code « ZZZZZZZZZ » (libellé « Sans objet »).
+# À la lecture, ce code est normalisé en NA — une commune sans EPCI (les trois
+# îles bretonnes : 22016 Île-de-Bréhat, 29083 Île-de-Sein, 29155 Ouessant)
+# n'appartient à AUCUN EPCI, jamais à un EPCI fantôme. Le libellé tombe avec
+# le code : une commune sans EPCI n'a pas de nom d'EPCI (la garde de
+# squelette_territoires l'exige — un libellé sans SIREN est une donnée
+# corrompue). Les communes à EPCI réel restent intouchées.
+normaliser_epci_manquants <- function(base) {
+  base %>%
+    dplyr::mutate(
+      EPCI = dplyr::if_else(EPCI == "ZZZZZZZZZ", NA_character_, EPCI),
+      LIBEPCI = dplyr::if_else(is.na(EPCI), NA_character_, LIBEPCI)
+    )
+}
+
 lire_epci <- function(chemin) {
   # skip = 5 : les 4 premières lignes de la feuille sont titre + métadonnées,
   # la 5e est l'en-tête réel (CODGEO;LIBGEO;EPCI;LIBEPCI;DEP;REG).
   readxl::read_excel(chemin, sheet = "Composition_communale",
                      col_types = "text", skip = 5) %>%
-    dplyr::filter(DEP %in% DEPT_BRETAGNE)
+    dplyr::filter(DEP %in% DEPT_BRETAGNE) %>%
+    normaliser_epci_manquants()
 }
 
 construire_donnees_brut <- function(cache = "data/raw",
