@@ -74,7 +74,7 @@ describe('contrat Méthodes — chaque thème de la payload a sa documentation',
     const manquants = themesSansDocumentation(themesDeLaPayload())
     for (const theme of manquants) {
       expect(
-        THEMES_CONSTRUITS.includes(theme as (typeof THEMES_CONSTRUITS)[number]),
+        THEMES_CONSTRUITS.includes(theme as ThemeConstruit),
         `« ${theme} » est dans la payload (indicateurs_${theme}.json) mais n'a pas de section Méthodes — un thème n'est « construit » qu'avec sa documentation (CONTEXT.md → Méthodes).`,
       ).toBe(true)
     }
