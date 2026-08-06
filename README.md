@@ -6,7 +6,7 @@ Lusk is an **open territorial observatory for Brittany** — départements 22 ·
 
 ## What the app will do
 
-For each territory, the app assembles a fiche with 4 indicators per theme — the standard figures everyone recognises (densité, structure par âge, part de résidences secondaires, établissements par activité…). Every indicator carries its **rank-in-context** — its percentile within the EPCI, the département, or the région — and each theme ends with one signature story that goes deeper than the standard block.
+For each territory, the app assembles a fiche with a variable set of indicators per theme — the standard figures everyone recognises (densité, structure par âge, part de résidences secondaires, établissements par activité…), decided per theme by what's analytically interesting. Every indicator carries its **rank-in-context** — its percentile within the EPCI, the département, or the région — and each theme ends with one signature story that goes deeper than the standard block.
 
 On top of the fiches:
 
