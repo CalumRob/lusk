@@ -153,4 +153,12 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     url: 'https://www.insee.fr/fr/statistiques/9002680',
     themes: ['economie'],
   },
+
+  // ---- Mobilité (docs/themes/mobilite.md) ----
+  mobilite_snapshot: {
+    nom: 'Lusk — analyse d\u2019accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+    editeur: 'Lusk',
+    url: null,
+    themes: ['mobilite'],
+  },
 }
