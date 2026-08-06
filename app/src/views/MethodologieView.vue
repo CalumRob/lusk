@@ -1,30 +1,47 @@
 <template>
   <section class="page methodologie">
     <h1 class="methodologie__titre">Sources &amp; Méthodes</h1>
-    <p class="methodologie__intro">
-      Les sources, définitions et la fraîcheur des données seront documentées ici.
-    </p>
 
-    <div class="etat-vide">
-      <AppIcon :icone="BookOpen" :taille="28" class="etat-icone" />
-      <p class="etat-texte">La table des vintages et les notes de reproductibilité prendront place ici.</p>
-      <RouterLink class="etat-action" to="/">Retour à l'accueil</RouterLink>
+    <div class="methodologie__intro">
+      <p>
+        Lusk est un observatoire ouvert des territoires bretons : pour chaque commune, EPCI,
+        département et pour la région, une fiche d'identité rassemble les chiffres qui décrivent
+        le territoire — population, logement, emploi — chacun sourcé, daté et rapporté à son
+        contexte.
+      </p>
+      <p>
+        Les fiches ne sont pas recopiées : elles sont calculées. Un pipeline télécharge les
+        données publiques des producteurs (INSEE, data.gouv.fr, data.bretagne.bzh…), les filtre
+        à la Bretagne, calcule chaque indicateur et ses rangs, puis publie le résultat.
+      </p>
+      <p>
+        Tout est reproductible : le code du pipeline comme celui de l'application est public sur
+        <a
+          href="https://github.com/CalumRob/lusk"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="lien-depot"
+        >github.com/CalumRob/lusk</a>.
+      </p>
     </div>
+
+    <MethodesSources />
+
+    <!-- La section indicateurs prendra place ici, après les sources. -->
   </section>
 </template>
 
 <script setup lang="ts">
 /**
- * Sources & Méthodes (/methodologie — site-map.md). Shell only (D4): the
- * route must exist and render a minimal, honest shell — content is deferred
- * (decided 2026-08-03). The empty state is the ui-elements pattern (icon +
- * one line + action); no construction banner (principles.md §1). The
- * editorial layout (layouts.md §5) is tightened to 900px for the report
- * voice.
+ * /methodologie — Sources & Méthodes (site-map.md, layouts.md §5, CONTEXT.md →
+ * Méthodes, issue #128). L'intro factuelle (ce qu'est Lusk, le pipeline,
+ * la reproductibilité) puis la section « les sources » (MethodesSources).
+ * Layout éditorial resserré à 900px (layouts.md §5) — voix de rapport
+ * (Newsreader) pour le titre de section, Manrope pour le corps. Pas de
+ * bannière de construction (principles.md §1) : la page énonce ce qui est,
+ * jamais ce qui viendra.
  */
-import { BookOpen } from 'lucide-vue-next'
-
-import AppIcon from '@/components/AppIcon.vue'
+import MethodesSources from '@/methodes/MethodesSources.vue'
 </script>
 
 <style scoped>
@@ -39,32 +56,24 @@ import AppIcon from '@/components/AppIcon.vue'
 }
 
 .methodologie__intro {
-  margin: 0 0 var(--space-8);
-  color: var(--text-secondary);
-  font: var(--text-body-lg);
-}
-
-.etat-vide {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-16) var(--space-6);
-  text-align: center;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-12);
 }
 
-.etat-icone {
-  color: var(--text-tertiary);
-}
-
-.etat-texte {
+.methodologie__intro p {
   margin: 0;
   color: var(--text-secondary);
   font: var(--text-body-lg);
 }
 
-.etat-action {
-  font: var(--text-body-sm);
+.lien-depot {
+  color: var(--accent-primary);
   font-weight: 600;
+}
+
+.lien-depot:hover {
+  color: var(--accent-hover);
 }
 </style>
