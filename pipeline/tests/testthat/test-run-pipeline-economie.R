@@ -254,6 +254,76 @@ test_that("un re-run Économie écrase sans dupliquer (upsert, idempotence)", {
   expect_equal(nrow(ref), 4 + 2 + 2 + 1) # communes + EPCIs + départements + région
 })
 
+test_that("vintages : un run Démographie puis un run Économie laissent l'union (issue #124)", {
+  # La table des vintages est PARTAGÉE (pas par-thème) : un run Économie doit
+  # FUSIONNER ses sources dans la table déjà sur disque — jamais l'écraser avec
+  # ses seules sources (last-writer-wins par thème, le bug que #116 a corrigé
+  # pour apercu). Sinon le Story Démographie (serie_historique + epci cités
+  # depuis la table partagée) perd sa ligne de source après un run Économie.
+  cible <- tempfile("pub-vintages-")
+  dir.create(cible, recursive = TRUE)
+  on.exit(unlink(cible, recursive = TRUE))
+  cache <- tempfile("cache-vintages-")
+  on.exit(unlink(cache, recursive = TRUE))
+
+  # les étapes réseau / couture analytique sont mockées ; les builders de
+  # vintages des thèmes (des projections pures du manifeste) et l'écriture des
+  # fichiers parquet + JSON sont RÉELS : ce qui est testé est ce qui part.
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) tibble::tibble(
+      id = manifest$id, mode = manifest$mode, status = "frais"
+    ),
+    construire_donnees_brut = function(cache) load_fixture(),
+    construire_donnees_economie = function(cache) list(
+      sirene_snapshot = tibble::tibble(x = 1),
+      flores_a38 = tibble::tibble(x = 2),
+      flores_a88 = tibble::tibble(x = 3),
+      rp_emploi = tibble::tibble(x = 4),
+      rp_chomage = tibble::tibble(x = 5)
+    ),
+    construire_analytiques_economie = function(donnees, base_epci, artefact, sortie) {
+      fixture_analytiques_economie()
+    },
+    lire_epci = function(chemin) base_epci_economie,
+    compute_payload = function(data, theme = NULL, vintages = NULL) {
+      list(indicateurs = data.frame(x = 1),
+           histoires = data.frame(y = 2),
+           territoires = data.frame(territoire = "53", nom = "Bretagne"))
+    },
+    publish = function(payload, cible, backend = "static") invisible(payload),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) invisible(NULL),
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL)
+      invisible(NULL),
+    .package = "lusk"
+  )
+
+  # 1) un run Démographie écrit SA table (les 4 sources)
+  run_pipeline(cache = cache, sortie = cible)
+  vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
+  expect_equal(nrow(vint), nrow(MANIFEST_DEMOGRAPHIE))
+  expect_setequal(vint$id, MANIFEST_DEMOGRAPHIE$id)
+
+  # 2) un run Économie ensuite FUSIONNE ses 5 sources dans la table partagée —
+  # l'union des deux thèmes, serie_historique et epci TOUJOURS présents
+  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+
+  vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
+  expect_equal(nrow(vint), nrow(MANIFEST_DEMOGRAPHIE) + nrow(MANIFEST_ECONOMIE))
+  expect_true(all(c("serie_historique", "epci") %in% vint$id))
+  expect_setequal(vint$id, c(MANIFEST_DEMOGRAPHIE$id, MANIFEST_ECONOMIE$id))
+
+  # le JSON projeté porte la MÊME union — ce que l'app lit pour la ligne de
+  # source du Story (jamais un fichier écrasé par le dernier thème)
+  vj <- jsonlite::fromJSON(file.path(cible, "vintages.json"))
+  expect_equal(nrow(vj), nrow(vint))
+  expect_true(all(c("serie_historique", "epci") %in% vj$id))
+
+  # 3) relancer Économie ne duplique pas : la dédupe par id est un upsert
+  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
+  expect_equal(nrow(vint), nrow(MANIFEST_DEMOGRAPHIE) + nrow(MANIFEST_ECONOMIE))
+})
+
 test_that("une dérive du schéma du payload Économie échoue bruyamment", {
   cible <- tempfile("pub-economie-")
   on.exit(unlink(cible, recursive = TRUE))

@@ -34,6 +34,45 @@ test_that("la table des vintages est le seam du watchdog (ADR-0001)", {
   expect_equal(nrow(v), length(unique(v$id)))
 })
 
+test_that("fusionner_vintages : sans table sur disque, les vintages du thème passent tels quels", {
+  cible <- tempfile("vintages-vides-")
+  dir.create(cible, recursive = TRUE)
+  on.exit(unlink(cible, recursive = TRUE))
+
+  v <- vintages_economie()
+  fusionnees <- fusionner_vintages(v, sortie = cible)
+  expect_identical(fusionnees, v)
+  expect_false(file.exists(file.path(cible, "vintages.parquet")))
+})
+
+test_that("fusionner_vintages : l'union des tables — la dédupe par id est un upsert", {
+  cible <- tempfile("vintages-union-")
+  dir.create(cible, recursive = TRUE)
+  on.exit(unlink(cible, recursive = TRUE))
+
+  # un run Démographie a écrit sa table partagée (les 4 sources)
+  nanoparquet::write_parquet(vintages_demographie(),
+                             file.path(cible, "vintages.parquet"))
+
+  # un run Économie fusionne SES sources dedans — l'union des deux thèmes
+  fusionnees <- fusionner_vintages(vintages_economie(), sortie = cible)
+  expect_equal(nrow(fusionnees), nrow(MANIFEST_DEMOGRAPHIE) + nrow(MANIFEST_ECONOMIE))
+  expect_setequal(fusionnees$id, c(MANIFEST_DEMOGRAPHIE$id, MANIFEST_ECONOMIE$id))
+  # serie_historique et epci (les sources citées par le Story Démographie) sont
+  # TOUJOURS présentes après un run d'un autre thème
+  expect_true(all(c("serie_historique", "epci") %in% fusionnees$id))
+
+  # une source en commun (la base EPCI, partagée entre Démographie et Habitat)
+  # : la ligne du run le plus frais gagne, jamais de doublon
+  nanoparquet::write_parquet(fusionnees, file.path(cible, "vintages.parquet"))
+  fusionnees2 <- fusionner_vintages(vintages_habitat(), sortie = cible)
+  expect_equal(nrow(fusionnees2),
+               nrow(MANIFEST_DEMOGRAPHIE) + nrow(MANIFEST_ECONOMIE) +
+                 nrow(MANIFEST_HABITAT) - 1L)
+  expect_equal(anyDuplicated(fusionnees2$id), 0L)
+  expect_equal(nrow(dplyr::filter(fusionnees2, id == "epci")), 1L)
+})
+
 test_that("l'estampille vient de la source de référence, pas du dénominateur", {
   # des vintages différenciés par source : si l'estampille suivait un tampon de
   # thème (ou le dénominateur partagé), elle serait uniforme — ici chaque

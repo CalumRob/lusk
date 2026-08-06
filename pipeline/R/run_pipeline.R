@@ -79,6 +79,13 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # échec de fetch s'arrête bruyamment (le run ne part jamais avec une carte
   # cassée).
   publier_geometrie(sortie)
+  # Issue #124 : la table des vintages est PARTAGÉE (pas par-thème) — le run
+  # FUSIONNE ses sources dans la table déjà sur disque (upsert par id, jamais
+  # un écrasement last-writer-wins qui cacherait les sources des autres thèmes
+  # au Story qui les cite). La table du compute reste celle du thème
+  # (l'estampillage par source de référence) ; le merge n'intervient qu'à la
+  # sérialisation.
+  vintages <- fusionner_vintages(vintages, sortie)
   nanoparquet::write_parquet(vintages, file.path(sortie, "vintages.parquet"))
   # Issue #73 : la table des vintages est aussi projetée en JSON — la table
   # partagée que l'app lit pour citer les sources d'un bloc (le Story cite SES
