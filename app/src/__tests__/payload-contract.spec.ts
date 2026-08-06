@@ -37,6 +37,7 @@ async function chargerPayloadCommite() {
     'indicateurs_habitat.json',
     'histoires_habitat.json',
     'run-report.json',
+    'vintages.json',
   ]) {
     fichiers[nom] = lireJson(nom)
   }
@@ -139,5 +140,20 @@ describe('payload contract — the committed payload parses and renders', () => 
     const payload = await chargerPayloadCommite()
 
     expect(ligneFraicheur(payload)).toContain('2026')
+  })
+
+  it('loads the committed vintages table — the freshness facts of the Méthodes sources', async () => {
+    const payload = await chargerPayloadCommite()
+
+    expect(payload.vintages).toHaveLength(4)
+    const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
+    expect(serieHistorique).toMatchObject({
+      source: 'INSEE — Série historique du recensement',
+      version: '2023',
+      licence: 'lov2',
+      date_reference: '2023-01-01',
+    })
+    // La base des EPCI est un millésime fixe — publiée mais sans base roulante
+    expect(payload.vintages?.find((v) => v.id === 'epci')?.date_publication).toBeNull()
   })
 })

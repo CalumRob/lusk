@@ -13,6 +13,8 @@
  * - histoires: the story row per territoire, soldes numbers
  * - apercu: one row per (territoire × key), value number|null
  * - run-report: mode + ISO timestamp + per-source statuts
+ * - vintages: the shared source table, one row per dataset — two ISO dates or
+ *   null (base roulante / pas encore mise en ligne), like vintage_date_*
  * - referential integrity: facts only cite known territoires, and their
  *   `type` matches the reference
  *
@@ -466,8 +468,21 @@ export function validerVintages(brut: unknown, fichier: string): Vintage[] | nul
     const licence = lireChaine(ligne, 'licence', fichier, ligneIndexee)
     const dateReference = ligne['date_reference']
     const datePublication = ligne['date_publication']
-    exiger(dateReference === null || estChaine(dateReference), fichier, ligneIndexee, '« date_reference » doit être une chaîne ou null')
-    exiger(datePublication === null || estChaine(datePublication), fichier, ligneIndexee, '« date_publication » doit être une chaîne ou null')
+    // Les deux dates sont ISO ou null (date_publication null = pas encore
+    // mise en ligne, date_reference null = base roulante) — le même traitement
+    // que vintage_date_* des indicateurs (ADR-0009).
+    exiger(
+      dateReference === null || estDateIso(dateReference),
+      fichier,
+      ligneIndexee,
+      '« date_reference » doit être une date ISO (AAAA-MM-JJ) ou null',
+    )
+    exiger(
+      datePublication === null || estDateIso(datePublication),
+      fichier,
+      ligneIndexee,
+      '« date_publication » doit être une date ISO (AAAA-MM-JJ) ou null',
+    )
     return { id, source, version, licence, date_reference: dateReference, date_publication: datePublication }
   })
 }

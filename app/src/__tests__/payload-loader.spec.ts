@@ -67,6 +67,15 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.vintages).toBeNull()
   })
 
+  it('raises a typed validation error when vintages.json drifts from the contract', async () => {
+    const vintages = JSON.parse(JSON.stringify(vintagesFixture)) as typeof vintagesFixture
+    vintages[0].date_reference = '2023/01/01'
+
+    await expect(
+      chargerPayload(optionsPour({ ...fichiersDemographie, 'vintages.json': vintages })),
+    ).rejects.toMatchObject({ kind: 'validation', file: 'vintages.json' })
+  })
+
   it('fetches every present theme and merges their facts', async () => {
     const payload = await chargerPayload(
       optionsPour({

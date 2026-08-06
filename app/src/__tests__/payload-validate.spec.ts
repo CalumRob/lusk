@@ -188,4 +188,38 @@ describe('parsePayload — rejects contract drift, loudly', () => {
   it('rejects a non-array facts document (shape drift, not a content drift)', () => {
     attendErreurValidation(documentsBruts({ indicateurs: { not: 'an array' } }))
   })
+
+  it('rejects a non-array vintages document (shape drift)', () => {
+    attendErreurValidation(documentsBruts({ vintages: { id: 'serie_historique' } }))
+  })
+
+  it('rejects a vintage row missing its source', () => {
+    const vintages = JSON.parse(JSON.stringify(vintagesFixture)) as typeof vintagesFixture
+    delete (vintages[0] as Partial<(typeof vintagesFixture)[number]>).source
+
+    const erreur = attendErreurValidation(documentsBruts({ vintages }))
+    expect(erreur.message).toMatch(/source/i)
+  })
+
+  it('rejects a malformed vintage date — drift must be loud, never silent', () => {
+    const vintages = JSON.parse(JSON.stringify(vintagesFixture)) as typeof vintagesFixture
+    vintages[0].date_reference = '2023/01/01'
+
+    const erreur = attendErreurValidation(documentsBruts({ vintages }))
+    expect(erreur.message).toMatch(/date_reference/i)
+  })
+})
+
+describe('parsePayload — the shared vintages table', () => {
+  it('carries the validated vintages on the payload', () => {
+    const payload = parsePayload(documentsBruts())
+
+    expect(payload.vintages).toEqual(vintagesFixture)
+  })
+
+  it('accepts an absent vintages table (null — no invented sourcing)', () => {
+    const payload = parsePayload(documentsBruts({ vintages: null }))
+
+    expect(payload.vintages).toBeNull()
+  })
 })
