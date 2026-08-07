@@ -5,9 +5,14 @@
 # mises à jour annuelles, COG 2025) — plus la base des EPCI partagée (le
 # référentiel commune -> EPCI -> département -> région que la table des
 # territoires consomme ; le même id/URL que Démographie/Habitat — le cache
-# idempotent évite le re-téléchargement). La discipline des fragments (issue
-# #13) : une ligne par source, chaque source garde SON vintage, SA référence et
-# SA publication — aucun alignement de date.
+# idempotent évite le re-téléchargement). Depuis l'Histoire (issue #174), le
+# manifeste porte AUSSI la série historique du recensement — la source partagée
+# de la population (la règle de source d'ADR-0014 : la population de l'Histoire
+# vient TOUJOURS de la série historique, jamais des champs embarqués de
+# CONSOENAF ; le même id/URL que Démographie — le cache idempotent évite le
+# re-téléchargement). La discipline des fragments (issue #13) : une ligne par
+# source, chaque source garde SON vintage, SA référence et SA publication —
+# aucun alignement de date.
 
 # MANIFEST_MILIEUX_CONSOENAF ----------------------------------------------------
 # Le fragment CONSOENAF : la ressource CSV « conso_com.csv » du jeu data.gouv
@@ -57,11 +62,45 @@ MANIFEST_MILIEUX_CONSOENAF <- tibble::tribble(
   "cron", "fichier"
 )
 
+# MANIFEST_MILIEUX_SERIE_HISTORIQUE --------------------------------------------
+# Le fragment série historique du recensement : le MÊME id/URL/fichier que la
+# source partagée de Démographie (theme_demographie.R) — le cache idempotent
+# évite le re-téléchargement. Milieux la consomme pour l'Histoire « Se
+# densifier, s'étaler, ou s'en aller » (#174) : la règle de source d'ADR-0014
+# (la population vient TOUJOURS de la série historique, jamais des champs
+# embarqués de CONSOENAF — une seule population vraie par fiche) et la règle
+# des DEUX HORLOGES (la fenêtre de l'Histoire dérive des deux millésimes RP les
+# plus récents de la série — aujourd'hui 2017 et 2023 — jamais codée en dur ;
+# elle glisse quand l'INSEE publie un nouveau recensement).
+MANIFEST_MILIEUX_SERIE_HISTORIQUE <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "serie_historique",
+  "INSEE — Série historique du recensement",
+  "https://api.insee.fr/melodi/file/DS_RP_SERIE_HISTORIQUE/DS_RP_SERIE_HISTORIQUE_2023_CSV_FR",
+  "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip", "2023", "2023-01-01", "2026-06-30", "lov2",
+  paste0(
+    "La population du recensement 1968-2023 (POP), mesurée par l'INSEE — la ",
+    "source partagée de la population (le même id/URL que Démographie, le ",
+    "cache idempotent évite le re-téléchargement). L'Histoire du thème (#174) ",
+    "la consomme pour la règle de source d'ADR-0014 : la population vient ",
+    "TOUJOURS de la série historique, jamais des champs embarqués de ",
+    "CONSOENAF (une seule population vraie par fiche) — et pour la règle des ",
+    "deux horloges : la fenêtre de l'Histoire dérive des deux millésimes RP ",
+    "les plus récents de la série (aujourd'hui 2017 et 2023), jamais codée en ",
+    "dur — elle glisse quand l'INSEE publie un nouveau recensement, les ",
+    "annuels CONSOENAF se re-somment sur la fenêtre dérivée."
+  ),
+  "cron", "fichier"
+)
+
 # MANIFEST_MILIEUX --------------------------------------------------------------
 # Le manifeste CONCATÉNÉ du thème : la source CONSOENAF + la base des EPCI
 # partagée (la même ligne que Démographie/Habitat — jamais re-déclarée avec un
-# autre id, le cache idempotent évite le re-téléchargement). DEUX lignes, deux
-# ids uniques. Validé par verifier_contrat_milieux.
+# autre id, le cache idempotent évite le re-téléchargement) + la série
+# historique du recensement (la même ligne que Démographie — la source
+# partagée de la population de l'Histoire, #174). TROIS lignes, trois ids
+# uniques. Validé par verifier_contrat_milieux.
 MANIFEST_MILIEUX <- dplyr::bind_rows(
   tibble::tribble(
     ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
@@ -73,12 +112,13 @@ MANIFEST_MILIEUX <- dplyr::bind_rows(
     "Feuille Composition_communale : CODGEO -> EPCI (SIREN), LIBEPCI, DEP, REG",
     "cron", "fichier"
   ),
-  MANIFEST_MILIEUX_CONSOENAF
+  MANIFEST_MILIEUX_CONSOENAF,
+  MANIFEST_MILIEUX_SERIE_HISTORIQUE
 )
 
 # verifier_contrat_milieux ------------------------------------------------------
 # La validation du contrat du manifeste Milieux (la discipline des fragments,
-# comme verifier_contrat_programmes) : DEUX sources, deux ids uniques et
+# comme verifier_contrat_programmes) : TROIS sources, trois ids uniques et
 # exacts, chaque source sur SON contrat — le fichier épinglé, la licence
 # Ouverte, le mode cron, le type fichier, les dates bien formées (la
 # publication jamais antérieure à la référence ; la publication de la base EPCI
@@ -93,11 +133,12 @@ verifier_contrat_milieux <- function(manifest) {
     manquer("forme", "le manifeste doit être un tibble")
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
-  if (nrow(manifest) != 2L) {
-    manquer("forme", paste0("le manifeste porte DEUX sources (la base EPCI ",
-                            "partagée + CONSOENAF), pas ", nrow(manifest)))
+  if (nrow(manifest) != 3L) {
+    manquer("forme", paste0("le manifeste porte TROIS sources (la base EPCI ",
+                            "partagée + CONSOENAF + la série historique du ",
+                            "recensement), pas ", nrow(manifest)))
   }
-  attendus <- c("epci", "consoenaf")
+  attendus <- c("epci", "consoenaf", "serie_historique")
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -123,6 +164,11 @@ verifier_contrat_milieux <- function(manifest) {
     manquer("fichier", paste0(
       "le contrat épingle la ressource CSV conso-com.csv du jeu CONSOENAF — ",
       "le CSV est LA base, jamais le classeur ni les gpkg géométriques"))
+  }
+  if (fichiers[["serie_historique"]] != "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip") {
+    manquer("fichier", paste0(
+      "le contrat épingle le zip DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip de la ",
+      "série historique du recensement (le même fichier que Démographie)"))
   }
 
   # les dates : ISO et bien formées pour CONSOENAF (la publication jamais
