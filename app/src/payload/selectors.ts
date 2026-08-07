@@ -14,11 +14,12 @@ import type {
   HistoireEconomie,
   HistoireMobilite,
   Indicateur,
+  MembreProgramme,
   Payload,
+  SigleProgramme,
   Territoire,
   TerritoireType,
   Theme,
-  VintageStamp,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
 import { SOURCES_METHODES } from '@/methodes/sources'
@@ -518,15 +519,25 @@ function formaterDateCourt(iso: string): string {
  * own stamp (issue #74: the Story cites its source, never an invented one). A
  * rolling base (DPE — ADR-0009) has no reference date: the stamp shows the
  * publication date only, honestly ("publ." alone) — never a fabricated
- * reference.
+ * reference. The ORT membership rows (ADR-0013) carry NO publication by
+ * contract (the stale page metadata is never cited): the stamp shows the
+ * per-row reference only — never a phantom "publ.".
  */
-export function formaterVintage(vintage: VintageStamp): string {
+export function formaterVintage(vintage: {
+  vintage_source: string
+  vintage_version: string
+  vintage_date_reference: string | null
+  vintage_date_publication: string | null
+}): string {
   const reference = vintage.vintage_date_reference
     ? `réf. ${formaterDateCourt(vintage.vintage_date_reference)} · `
     : ''
+  const publication = vintage.vintage_date_publication
+    ? `publ. ${formaterDateCourt(vintage.vintage_date_publication)}`
+    : ''
   return (
     `${vintage.vintage_source} · ${vintage.vintage_version} · ` +
-    `${reference}publ. ${formaterDateCourt(vintage.vintage_date_publication)}`
+    `${reference}${publication}`
   )
 }
 
@@ -595,4 +606,281 @@ export function sourcesMethodes(payload: Payload): MethodesSources {
     })
   }
   return { vintagesAbsents, lignes }
+}
+
+/** Les deux labels communaux (ancrés à la commune, listes lauréates ANCT). */
+const SIGLES_LABELS: readonly SigleProgramme[] = ['ACV', 'PVD']
+
+/** Les deux contrats EPCI-anchored (l'intercommunalité signataire). */
+const SIGLES_CONTRATS: readonly SigleProgramme[] = ['CRTE', "Territoires d'industrie"]
+
+/**
+ * La voix d'un badge — le verbe honnête de l'ancrage (PRD #162-13, les verbes
+ * ne sur-réclament jamais) : « lauréate » (la commune, ses propres labels),
+ * « couverte » (les contrats couvrent le territoire — commune par son EPCI,
+ * EPCI par son propre contrat), « porte » (l'EPCI porte les labels de ses
+ * communes membres, portage nommé), « compte » (l'agrégat au département /
+ * région), « ort » (le badge-outil dans un périmètre de convention signée).
+ */
+export type VoixProgramme = 'laureate' | 'couverte' | 'porte' | 'compte' | 'ort'
+
+/** Un badge dérivé de l'élément — une ligne d'adhésion rendue à SON échelle. */
+export interface BadgeProgramme {
+  sigle: SigleProgramme
+  voix: VoixProgramme
+  /**
+   * Les territoires nommés du badge — le portage (les communes labellisées),
+   * l'agrégat (les EPCIs/communes comptés), la couverture (l'EPCI signataire),
+   * l'ORT d'un EPCI (ses communes en périmètre). Liste COMPLÈTE, jamais
+   * tronquée (rendue scrollable par l'onglet).
+   */
+  noms: string[]
+  /** Le rider « convention valant ORT » sur une ligne de label — le fait accessible. */
+  conventionValantOrt: boolean
+  /** L'estampille vintage formatée de la source du badge (formaterVintage). */
+  vintage: string
+}
+
+/** Un domaine de la ventilation communale des subventions. */
+export interface AxeSubvention {
+  libelle: string
+  montant: number
+}
+
+/**
+ * Les faits de subventions d'une fiche — le total annuel de l'année de
+ * référence, ventilé par domaine sur les fiches communales (le top-N +
+ * « autres » PRÉCALCULÉ par le pipeline, jamais re-dérivé ici — ADR-0013), le
+ * total unique ailleurs. Null quand le payload ne porte aucune ligne pour le
+ * territoire (l'état vide honnête, jamais un zéro inventé).
+ */
+export interface SubventionsFiche {
+  annee: number
+  /** La ventilation par domaine — non-null sur les fiches communales seulement. */
+  axes: AxeSubvention[] | null
+  total: number
+  vintage: string
+}
+
+/** Le rendu de l'élément Programmes & financements pour une fiche. */
+export interface RenderingProgrammes {
+  badges: BadgeProgramme[]
+  subventions: SubventionsFiche | null
+}
+
+/** Le nom réel d'un territoire de la référence — l'id brut en dernier recours. */
+function nomDe(payload: Payload, id: string): string {
+  return trouverTerritoire(payload, id)?.nom ?? id
+}
+
+/**
+ * L'échelle d'un niveau agrégé (département / région) : les EPCIs du niveau =
+ * les `epci` DISTINCTS des communes du niveau (PRD #162 — jamais le champ
+ * `departement` de la ligne EPCI, qui ne porte que le département « maison »).
+ * C'est CETTE dérivation qui fait compter un EPCI transversal (Redon
+ * Agglomération, 35+56) dans les DEUX départements de ses communes.
+ */
+function epcisDuNiveau(payload: Payload, ref: Territoire): Set<string> {
+  const communes = payload.territoires.filter(
+    (t) => t.type === 'commune' && (ref.type === 'region' || t.departement === ref.territoire),
+  )
+  const epcis = new Set<string>()
+  for (const commune of communes) {
+    if (commune.epci !== null) epcis.add(commune.epci)
+  }
+  return epcis
+}
+
+/** Les lignes d'adhésion d'un sigle — au niveau donné (commune ou EPCI). */
+function membresSigle(
+  membres: MembreProgramme[],
+  sigle: SigleProgramme,
+  type: 'commune' | 'epci',
+  territoire: string,
+): MembreProgramme[] {
+  return membres.filter((m) => m.sigle === sigle && m.type === type && m.territoire === territoire)
+}
+
+/** Les communes d'un EPCI — l'appartenance du référentiel (jamais la ligne EPCI). */
+function communesDe(payload: Payload, epci: string): Territoire[] {
+  return payload.territoires.filter((t) => t.type === 'commune' && t.epci === epci)
+}
+
+/**
+ * LA DÉRIVATION EN ÉCHELLE (issue #181, ADR-0013) — le rendu de l'élément
+ * Programmes & financements d'une fiche, depuis les lignes d'adhésion du
+ * payload + le référentiel `territoires` (la jointure relationnelle que le
+ * contexte switcher fait déjà — les jointures sont l'affaire de l'app). Les
+ * trois voix :
+ *   - COMMUNE : ses labels (lauréate, le rider « convention valant ORT » comme
+ *     fait accessible — jamais un badge ORT en plus), la couverture descendante
+ *     des contrats de SON EPCI (l'EPCI nommé), et l'ORT d'une commune NON
+ *     labellisée dans un périmètre signé (sa propre ligne ORT) ;
+ *   - EPCI : ses contrats, le PORTAGE NOMÉ de chaque commune labellisée membre
+ *     (liste complète, jamais tronquée), et l'ORT autonome quand il n'est pas
+ *     porté par un label (ses communes en périmètre nommées) ;
+ *   - DÉPARTEMENT / RÉGION : l'agrégat — des comptes de contrats avec les EPCIs
+ *     nommés, des labels et de l'ORT avec les communes nommées, jamais un badge
+ *     plat que le niveau n'a pas signé ; un EPCI transversal compte dans les
+ *     deux départements.
+ * Les subventions : la ventilation par domaine sur les fiches communales (telle
+ * quelle — le top-N + « autres » est précalculé), le total annuel unique
+ * ailleurs. Chaque badge et chaque figure portent leur estampille vintage. Un
+ * payload absent (404 → null) ou un territoire inconnu rendent l'état vide.
+ */
+export function programmesPourTerritoire(payload: Payload, territoire: string): RenderingProgrammes {
+  const programmes = payload.programmes
+  if (!programmes) return { badges: [], subventions: null }
+
+  const ref = trouverTerritoire(payload, territoire)
+  if (!ref) return { badges: [], subventions: null }
+
+  const membres = programmes.membres
+  const badges: BadgeProgramme[] = []
+  const subventions = programmes.subventions.filter((s) => s.territoire === territoire)
+
+  let subventionsFiche: SubventionsFiche | null = null
+  if (subventions.length > 0) {
+    const axes = ref.type === 'commune'
+      ? subventions.map((s) => ({ libelle: s.programme_libl ?? '', montant: s.montant }))
+      : null
+    subventionsFiche = {
+      annee: subventions[0].annee,
+      axes,
+      total: subventions.reduce((somme, s) => somme + s.montant, 0),
+      vintage: formaterVintage(subventions[0]),
+    }
+  }
+
+  if (ref.type === 'commune') {
+    // les labels de la commune elle-même — le rider comme fait accessible
+    for (const sigle of SIGLES_LABELS) {
+      const ligne = membresSigle(membres, sigle, 'commune', territoire)[0]
+      if (!ligne) continue
+      badges.push({
+        sigle,
+        voix: 'laureate',
+        noms: [],
+        conventionValantOrt: ligne.convention_valant_ort,
+        vintage: formaterVintage(ligne),
+      })
+    }
+    // la couverture descendante : les contrats signés par SON EPCI, l'EPCI nommé
+    if (ref.epci) {
+      const epci = nomDe(payload, ref.epci)
+      for (const sigle of SIGLES_CONTRATS) {
+        const ligne = membresSigle(membres, sigle, 'epci', ref.epci)[0]
+        if (!ligne) continue
+        badges.push({
+          sigle,
+          voix: 'couverte',
+          noms: [epci],
+          conventionValantOrt: false,
+          vintage: formaterVintage(ligne),
+        })
+      }
+    }
+    // l'ORT d'une commune NON labellisée dans un périmètre signé (sa propre
+    // ligne — le double badge est interdit par le contrat, le rider fait foi)
+    const ort = membresSigle(membres, 'ORT', 'commune', territoire)[0]
+    if (ort) {
+      badges.push({
+        sigle: 'ORT',
+        voix: 'ort',
+        noms: [],
+        conventionValantOrt: false,
+        vintage: formaterVintage(ort),
+      })
+    }
+  } else if (ref.type === 'epci') {
+    // les contrats signés par l'EPCI — son territoire est couvert
+    for (const sigle of SIGLES_CONTRATS) {
+      const ligne = membresSigle(membres, sigle, 'epci', territoire)[0]
+      if (!ligne) continue
+      badges.push({
+        sigle,
+        voix: 'couverte',
+        noms: [],
+        conventionValantOrt: false,
+        vintage: formaterVintage(ligne),
+      })
+    }
+    // le portage nomé : chaque commune labellisée membre, liste complète
+    const communes = communesDe(payload, territoire)
+    for (const sigle of SIGLES_LABELS) {
+      const lignes = membres.filter(
+        (m) => m.sigle === sigle && m.type === 'commune' && communes.some((c) => c.territoire === m.territoire),
+      )
+      if (lignes.length === 0) continue
+      badges.push({
+        sigle,
+        voix: 'porte',
+        noms: communes.filter((c) => lignes.some((l) => l.territoire === c.territoire)).map((c) => c.nom),
+        conventionValantOrt: false,
+        vintage: formaterVintage(lignes[0]),
+      })
+    }
+    // l'ORT autonome : l'EPCI dont l'ORT n'est pas porté par un label — ses
+    // communes en périmètre nommées (dérivées des lignes ORT communales)
+    const ort = membresSigle(membres, 'ORT', 'epci', territoire)[0]
+    if (ort) {
+      const communesOrt = communes.filter((c) =>
+        membresSigle(membres, 'ORT', 'commune', c.territoire).length > 0,
+      )
+      badges.push({
+        sigle: 'ORT',
+        voix: 'ort',
+        noms: communesOrt.map((c) => c.nom),
+        conventionValantOrt: false,
+        vintage: formaterVintage(ort),
+      })
+    }
+  } else {
+    // l'agrégat (département / région) : des comptes, jamais un badge plat —
+    // les EPCIs du niveau par l'appartenance de SES communes (transversal inclus)
+    const epcis = epcisDuNiveau(payload, ref)
+    for (const sigle of SIGLES_CONTRATS) {
+      const lignes = membres.filter(
+        (m) => m.sigle === sigle && m.type === 'epci' && epcis.has(m.territoire),
+      )
+      if (lignes.length === 0) continue
+      badges.push({
+        sigle,
+        voix: 'compte',
+        noms: [...epcis].filter((id) => lignes.some((l) => l.territoire === id)).map((id) => nomDe(payload, id)),
+        conventionValantOrt: false,
+        vintage: formaterVintage(lignes[0]),
+      })
+    }
+    const communes = payload.territoires.filter(
+      (t) => t.type === 'commune' && (ref.type === 'region' || t.departement === ref.territoire),
+    )
+    for (const sigle of SIGLES_LABELS) {
+      const lignes = membres.filter(
+        (m) => m.sigle === sigle && m.type === 'commune' && communes.some((c) => c.territoire === m.territoire),
+      )
+      if (lignes.length === 0) continue
+      badges.push({
+        sigle,
+        voix: 'compte',
+        noms: communes.filter((c) => lignes.some((l) => l.territoire === c.territoire)).map((c) => c.nom),
+        conventionValantOrt: false,
+        vintage: formaterVintage(lignes[0]),
+      })
+    }
+    const ortLignes = membres.filter(
+      (m) => m.sigle === 'ORT' && m.type === 'commune' && communes.some((c) => c.territoire === m.territoire),
+    )
+    if (ortLignes.length > 0) {
+      badges.push({
+        sigle: 'ORT',
+        voix: 'compte',
+        noms: communes.filter((c) => ortLignes.some((l) => l.territoire === c.territoire)).map((c) => c.nom),
+        conventionValantOrt: false,
+        vintage: formaterVintage(ortLignes[0]),
+      })
+    }
+  }
+
+  return { badges, subventions: subventionsFiche }
 }

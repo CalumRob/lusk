@@ -659,3 +659,71 @@ export const programmesVideFixture: ProgrammesPayload = {
   subventions: [],
 }
 
+/**
+ * La DÉRIVATION EN ÉCHELLE (issue #181) — le fixture de l'échelle qui étend le
+ * fixture partagé avec le cas transversal verrouillé par le PRD #162 : un EPCI
+ * CROSS-DÉPARTEMENT (modèle du réel — Redon Agglomération, 35+56 : ses communes
+ * s'étendent sur deux départements, sa ligne de référence ne porte QUE son
+ * département « maison »). L'EPCI Z (200000003) porte la commune 22003
+ * (département 22 — « Commune E », le nom du fixture R) et la commune 29003
+ * (département 29 — « Commune F »). La dérivation compte les EPCIs d'un
+ * département par l'APPARTENANCE de ses communes (les `epci` distincts des
+ * communes du département), jamais par le champ `departement` de la ligne EPCI
+ * — un EPCI transversal compte dans les DEUX départements. Les lignes
+ * d'adhésion étendent le fixture : l'EPCI Z signe un CRTE (le contrat compte
+ * dans 22 ET 29), ses deux communes non labellisées portent une convention ORT
+ * signée (lignes commune + EPCI Z). La ventilation des subventions de la
+ * commune 29003 est LARGE (7 domaines) — la forme que le pipeline publie après
+ * le garde-fou top-6 + « autres » (subventions.R, SEUIL_AXES_SUBVENTIONS_COMMUNE) :
+ * six domaines nommés + la ligne d'effondrement « autres ». Rien d'inventé —
+ * les valeurs suivent les conventions verrouillées côté R (ADR-0013, #176).
+ */
+
+/** Le référentiel de l'échelle : le fixture partagé + l'EPCI Z transversal et ses deux communes. */
+export const territoiresLadderFixture: Territoire[] = [
+  ...territoiresFixture,
+  { territoire: '22003', type: 'commune', nom: 'Commune E', departement: '22', epci: '200000003' },
+  { territoire: '29003', type: 'commune', nom: 'Commune F', departement: '29', epci: '200000003' },
+  // L'EPCI transversal — comme Redon Agglomération : son champ `departement`
+  // est SON département « maison » (le préfixe du SIREN), jamais une
+  // appartenance exclusive — la dérivation ne le lit pas.
+  { territoire: '200000003', type: 'epci', nom: 'EPCI Z', departement: '22', epci: null },
+]
+
+/**
+ * Les lignes d'adhésion de l'échelle : le fixture partagé + le CRTE de l'EPCI Z
+ * (transversal — compte dans les deux départements) + les conventions ORT
+ * signées des communes non labellisées 22003 et 29003, aux deux ancrages
+ * (commune + EPCI Z — le référentiel commune → EPCI du calcul R).
+ */
+export const membresLadderFixture: MembreProgramme[] = [
+  ...membresProgrammesFixture,
+  { territoire: '200000003', type: 'epci', sigle: 'CRTE', convention_valant_ort: false, ...vintageCrte },
+  { territoire: '22003', type: 'commune', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-20' },
+  { territoire: '29003', type: 'commune', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-21' },
+  { territoire: '200000003', type: 'epci', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-21' },
+]
+
+/**
+ * Les agrégats de subventions de l'échelle : le fixture partagé + la ventilation
+ * LARGE de la commune 29003 (7 lignes — la forme publiée après le garde-fou
+ * top-6 + « autres » du pipeline) et le total unique de l'EPCI Z.
+ */
+export const subventionsLadderFixture: SubventionProgramme[] = [
+  ...subventionsProgrammesFixture,
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 50000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Agriculture', montant: 40000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Culture', montant: 30000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Sport', montant: 20000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Environnement', montant: 10000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Tourisme', montant: 5000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: '« autres »', montant: 7000, ...vintageSubventions },
+  { territoire: '200000003', type: 'epci', annee: 2025, programme_libl: null, montant: 162000, ...vintageSubventions },
+]
+
+/** Le payload programmes de l'échelle — l'objet { membres, subventions } complet. */
+export const programmesLadderFixture: ProgrammesPayload = {
+  membres: membresLadderFixture,
+  subventions: subventionsLadderFixture,
+}
+
