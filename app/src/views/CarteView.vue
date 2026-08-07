@@ -18,7 +18,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
 import MapSidebar from '@/components/carte/MapSidebar.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
-import { ANCRAGES_THEMES, echelleChoroplethe } from '@/carte/couleurs'
+import { ANCRAGES_THEMES, COULEUR_CONTOUR, COULEUR_NEUTRE, echelleChoroplethe } from '@/carte/couleurs'
 import { configCoucheTheme } from '@/carte/configCouche'
 import { indicateurParTerritoire } from '@/carte/fusion'
 import { seuilsQuantiles } from '@/carte/seuils'
@@ -188,6 +188,8 @@ const classesFond = computed(() =>
             :seuils="legende?.seuils ?? []"
             :unite="legende?.unite ?? ''"
             :est-pourcentage="legende?.estPourcentage ?? false"
+            :couleur-vide="COULEUR_NEUTRE"
+            :couleur-contour="COULEUR_CONTOUR"
             @niveau-change="(n: NiveauMasque) => (niveauDemande = n)"
           />
         </template>

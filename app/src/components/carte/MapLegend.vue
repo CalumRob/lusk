@@ -20,6 +20,10 @@ const props = defineProps<{
   seuils: number[]
   unite: string
   estPourcentage: boolean
+  /** The map's neutral fill — the no-data swatch renders it verbatim (issue #68). */
+  couleurVide: string
+  /** The map's outline — keeps the lightened swatch legible (issue #68). */
+  couleurContour: string
 }>()
 
 const repliee = ref(false)
@@ -83,7 +87,11 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
           </li>
         </ul>
         <p class="carte-legendes-vide">
-          <span class="carte-legendes-swatch carte-legendes-swatch--vide" aria-hidden="true" />
+          <span
+            class="carte-legendes-swatch carte-legendes-swatch--vide"
+            :style="{ backgroundColor: couleurVide, borderColor: couleurContour }"
+            aria-hidden="true"
+          />
           <span>Non disponible</span>
         </p>
       </template>
@@ -162,8 +170,10 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
   flex-shrink: 0;
 }
 
+/* The NA swatch mirrors the map's rendering: the neutral fill + the contour
+   outline come in as props (couleurs.ts — one shared source, issue #68); the
+   inline style sets the colors, this border keeps the 1px solid hairline. */
 .carte-legendes-swatch--vide {
-  background-color: var(--surface-tertiary);
   border: 1px solid var(--border-subtle);
 }
 

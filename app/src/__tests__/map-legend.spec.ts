@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import MapLegend from '../components/carte/MapLegend.vue'
+import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
 
 /**
  * MapLegend (ui-elements.md §Map shell): the theme's choropleth buckets —
@@ -25,6 +26,9 @@ function montage(overrides: Record<string, unknown> = {}) {
       seuils: [20, 40, 60],
       unite: 'hab/km²',
       estPourcentage: false,
+      // the map's neutral rendering, threaded from couleurs.ts (issue #68)
+      couleurVide: COULEUR_NEUTRE,
+      couleurContour: COULEUR_CONTOUR,
       ...overrides,
     },
   })
@@ -53,6 +57,20 @@ describe('MapLegend — the theme bucket legend', () => {
     const wrapper = montage()
 
     expect(wrapper.find('.carte-legendes-vide').text()).toContain('Non disponible')
+  })
+
+  it('paints the NA swatch with the map neutral fill — same source, no drift (issue #68)', () => {
+    const wrapper = montage()
+
+    const swatch = wrapper.find('.carte-legendes-swatch--vide')
+    expect(swatch.attributes('style')).toContain(COULEUR_NEUTRE)
+  })
+
+  it('outlines the NA swatch with the map contour color — legible once lightened (issue #68)', () => {
+    const wrapper = montage()
+
+    const swatch = wrapper.find('.carte-legendes-swatch--vide')
+    expect(swatch.attributes('style')).toContain(COULEUR_CONTOUR)
   })
 
   it('formats % units as whole numbers (fraction × 100)', () => {

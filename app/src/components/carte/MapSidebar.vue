@@ -28,6 +28,9 @@ const props = defineProps<{
   seuils: number[]
   unite: string
   estPourcentage: boolean
+  /** The map's neutral fill + outline — forwarded to the legend (issue #68). */
+  couleurVide: string
+  couleurContour: string
 }>()
 
 const emit = defineEmits<{
@@ -132,6 +135,8 @@ function choisirNiveau(niveau: NiveauMasque): void {
         :seuils="seuils"
         :unite="unite"
         :est-pourcentage="estPourcentage"
+        :couleur-vide="couleurVide"
+        :couleur-contour="couleurContour"
       />
     </div>
   </aside>
