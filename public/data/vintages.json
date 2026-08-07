@@ -1,5 +1,53 @@
 [
   {
+    "id": "acv",
+    "source": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2025-09-24"
+  },
+  {
+    "id": "pvd",
+    "source": "ANCT — Programme Petites villes de demain : liste des communes sélectionnées (COG 2025)",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-04-27"
+  },
+  {
+    "id": "crte",
+    "source": "ANCT — Contrat de relance et de transition écologique : suivi du périmètre (COG 2025), les groupements couverts par CRTE",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-07-17",
+    "date_publication": "2025-09-24"
+  },
+  {
+    "id": "territoires_industrie",
+    "source": "ANCT/Banque des Territoires — liste des Territoires d'industrie et des communes concernées (les territoires arrêtés fin 2022)",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-12-31",
+    "date_publication": "2025-09-30"
+  },
+  {
+    "id": "ort",
+    "source": "DGALN/ANCT — Liste des communes couvertes par des opérations de revitalisation de territoire (ORT) : conventions signées (classeur XLSX, feuille « Suivi conventions »)",
+    "version": "en continu",
+    "licence": "lov2",
+    "date_reference": null,
+    "date_publication": null
+  },
+  {
+    "id": "subventions_scdl",
+    "source": "Région Bretagne — subventions attribuées (SCDL), subventions_attribuees_scdl0 (data.bretagne.bzh, rafraîchi chaque semaine)",
+    "version": "2026-08-05",
+    "licence": "lov2",
+    "date_reference": "2026-08-05",
+    "date_publication": "2026-08-05"
+  },
+  {
     "id": "mobilite_snapshot",
     "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
     "version": "2026-02",

@@ -1,44 +1,34 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-06T20:24:35Z",
+  "timestamp": "2026-08-07T12:59:20Z",
   "statuts": [
     {
-      "id": "mobilite_snapshot",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "rp_logement_princ",
+      "id": "acv",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "osm_reseaux",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "communes_limites",
+      "id": "pvd",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "korrigo",
+      "id": "crte",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "batiments_residentiels",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "bornes-recharges",
+      "id": "territoires_industrie",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "stationnement-velo",
+      "id": "ort",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "subventions_scdl",
       "mode": "cron",
       "status": "frais"
     }
