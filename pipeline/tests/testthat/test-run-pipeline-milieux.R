@@ -51,7 +51,9 @@ mini_zip_milieux <- function(nom = "a.txt") {
   c(lh, cd, eocd)
 }
 
-# Le cache de test : la fixture CSV (le CONSOENAF), la base des EPCI mockée.
+# Le cache de test : la fixture CSV (le CONSOENAF), la base des EPCI mockée, la
+# série historique du recensement déposée extraite (la source partagée de la
+# population de l'Histoire, #174).
 cache_milieux <- function() {
   cache <- tempfile("cache-milieux-")
   dir.create(cache)
@@ -60,6 +62,7 @@ cache_milieux <- function() {
     file.path(cache, "conso-com.csv"),
     overwrite = TRUE
   )
+  copier_fixture_serie_historique(cache)
   cache
 }
 
@@ -111,14 +114,17 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))
   expect_equal(nrow(ind), nrow(payload$indicateurs))
   expect_equal(ind$value, payload$indicateurs$value)
-  # les histoires vides se relisent (la table est présente, sans ligne)
+  # les histoires se relisent : une ligne par territoire, la lecture et les
+  # forces de l'Histoire (#174)
   hist <- nanoparquet::read_parquet(file.path(cible, "histoires_milieux.parquet"))
-  expect_equal(nrow(hist), 0L)
+  expect_equal(nrow(hist), nrow(payload$histoires))
+  expect_equal(hist$territoire, payload$histoires$territoire)
+  expect_equal(hist$classification, payload$histoires$classification)
 
-  # vintages.parquet : une ligne par source du manifeste Milieux (les deux)
+  # vintages.parquet : une ligne par source du manifeste Milieux (les trois)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_MILIEUX))
-  expect_setequal(vint$id, c("epci", "consoenaf"))
+  expect_setequal(vint$id, c("epci", "consoenaf", "serie_historique"))
 
   # le rapport de run : mode full, une ligne par source
   rapport <- jsonlite::fromJSON(file.path(cible, "run-report.json"))
@@ -166,15 +172,17 @@ test_that("le téléchargement CONSOENAF est idempotent : une seule fois, le cac
     .package = "lusk"
   )
 
-  # premier appel : les DEUX sources du manifeste sont téléchargées
+  # premier appel : les TROIS sources du manifeste sont téléchargées
   premier <- download_sources(MANIFEST_MILIEUX, cache)
-  expect_setequal(telecharge, c("epci_au_01-01-2025.zip", "conso-com.csv"))
-  expect_equal(premier$status, c("frais", "frais"))
+  expect_setequal(telecharge, c("epci_au_01-01-2025.zip", "conso-com.csv",
+                                "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip"))
+  expect_equal(premier$status, c("frais", "frais", "frais"))
 
   # deuxième appel : le cache fait foi, RIEN n'est re-téléchargé
   second <- download_sources(MANIFEST_MILIEUX, cache)
-  expect_equal(telecharge, c("epci_au_01-01-2025.zip", "conso-com.csv"))
-  expect_equal(second$status, c("frais", "frais"))
+  expect_equal(telecharge, c("epci_au_01-01-2025.zip", "conso-com.csv",
+                             "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip"))
+  expect_equal(second$status, c("frais", "frais", "frais"))
   # la source CONSOENAF n'a donc été téléchargée qu'UNE fois
   expect_equal(sum(telecharge == "conso-com.csv"), 1L)
 })

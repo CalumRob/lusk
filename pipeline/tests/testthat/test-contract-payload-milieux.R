@@ -2,11 +2,14 @@
 # Le SEAM de test du payload Milieux (issue #171) : même fixture -> même
 # payload, pour toujours. Le TRACEUR publie un payload squelettique — la clé
 # conso_enaf (la consommation totale d'ENAF 2011-2025, en hectares, une ligne
-# par territoire), les tables histoires et apercu VIDE mais présentes (la
-# forme du contrat) — et CE payload passe la validation GÉNÉRIQUE
-# (validate_payload : forme, couverture des territoires, estampilles vintage).
-# La conversion m² -> ha est prouvée bout en bout : la valeur publiée d'une
-# commune EST sa consommation en hectares.
+# par territoire), la table apercu VIDE mais présente (la forme du contrat) —
+# et CE payload passe la validation GÉNÉRIQUE (validate_payload : forme,
+# couverture des territoires, estampilles vintage). Depuis l'Histoire (#174),
+# la table histoires porte une ligne par territoire : les deux forces de la
+# lecture (Δpopulation de la série historique, consommation de la fenêtre
+# re-sommée), l'intensité et la classification (détaillés dans
+# test-theme-milieux-histoire.R). La conversion m² -> ha est prouvée bout en
+# bout : la valeur publiée d'une commune EST sa consommation en hectares.
 
 test_that("le payload Milieux couvre chaque territoire du fixture", {
   payload <- compute_payload(communes_fixture_milieux(),
@@ -35,10 +38,14 @@ test_that("la forme des quatre tables est le contrat (payload squelettique)", {
     "vintage_source", "vintage_version",
     "vintage_date_reference", "vintage_date_publication"
   ))
-  # histoires et apercu : présents, vides, la forme du contrat
-  expect_named(payload$histoires,
-               c("territoire", "type", "theme", "story_key"))
-  expect_equal(nrow(payload$histoires), 0L)
+  # histoires : la forme du contrat de l'Histoire (#174) — une ligne par
+  # territoire, les forces de la lecture et la classification
+  expect_named(payload$histoires, c(
+    "territoire", "type", "theme", "story_key", "periode",
+    "delta_population", "conso_fenetre", "intensite_m2_par_habitant",
+    "classification"
+  ))
+  expect_equal(nrow(payload$histoires), nrow(payload$territoires))
   expect_named(payload$apercu, c("territoire", "type", "key", "value", "unit"))
   expect_equal(nrow(payload$apercu), 0L)
   expect_true(all(payload$indicateurs$theme == "milieux"))

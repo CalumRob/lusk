@@ -99,7 +99,7 @@ test_that("vintages_milieux : la projection générique depuis le manifeste", {
   v <- vintages_milieux()
 
   expect_equal(nrow(v), nrow(MANIFEST_MILIEUX))
-  expect_setequal(v$id, c("epci", "consoenaf"))
+  expect_setequal(v$id, c("epci", "consoenaf", "serie_historique"))
   conso <- v[v$id == "consoenaf", ]
   expect_equal(conso$version, "2025")
   expect_equal(conso$date_reference, "2025-01-01")

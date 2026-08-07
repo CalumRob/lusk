@@ -1,30 +1,44 @@
 # theme_milieux ---------------------------------------------------------------
 # Le module du thème Milieux (issue #171, ADR-0014) : le cinquième bloc de la
-# fiche, l'axe terre. Ce ticket est le TRACEUR — le plus mince chemin complet
-# qui prouve que la machinerie partagée (download/compute/publish) marche pour
-# Milieux : l'ingestion CONSOENAF (le manifeste, le reshape m² -> ha, le filtre
-# Bretagne), la table des territoires via le squelette partagé, et un payload
-# squelettique (une seule clé d'indicateur — la consommation totale 2011-2025
-# en hectares — qui rend le payload publiable et validable) qui passe les
-# validateurs génériques. Les indicateurs proprement dits (la fenêtre 2021-2025
-# et la série annuelle, #172 ; la trajectoire ZAN, #173) et l'Histoire
-# (#174) arrivent dans les tickets suivants.
+# fiche, l'axe terre. Le TRACEUR (issue #171) a prouvé que la machinerie
+# partagée (download/compute/publish) marche pour Milieux : l'ingestion
+# CONSOENAF (le manifeste, le reshape m² -> ha, le filtre Bretagne), la table
+# des territoires via le squelette partagé, et un payload squelettique qui
+# passe les validateurs génériques. Les indicateurs proprement dits (la
+# fenêtre 2021-2025 et la série annuelle, #172 ; la trajectoire ZAN, #173)
+# vivent dans leurs tickets. L'Histoire « Se densifier, s'étaler, ou s'en
+# aller » (#174) vit ici : la lecture du territoire contre sa terre, sur la
+# règle des DEUX HORLOGES (la fenêtre dérive des millésimes RP de la série
+# historique, la terre se re-somme sur la même fenêtre — jamais codée en dur).
 #
 # Ce qui vit ici, ce qui ne vit pas ici :
 #   - le manifeste CONCATÉNÉ du thème (manifest_milieux.R) : la source
-#     CONSOENAF + la base des EPCI partagée ;
+#     CONSOENAF + la base des EPCI partagée + la série historique du
+#     recensement (la source partagée de la population de l'Histoire, #174) ;
 #   - la construction des données : le lecteur du CSV (lire_consoenaf), le
 #     reshape (normaliser_consoenaf — l'anomalie d'unité m²/ha, le filtre
-#     Bretagne) et l'assembleur (construire_donnees_milieux — la jointure
-#     d'identité sur la base des EPCI partagée) ;
+#     Bretagne), le lecteur de la population (lire_serie_historique_pop — la
+#     fenêtre dérivée des deux millésimes RP les plus récents) et l'assembleur
+#     (construire_donnees_milieux — la jointure d'identité sur la base des
+#     EPCI partagée, la jointure de population sur la série historique, la
+#     consommation de la fenêtre re-sommée sur les annuels) ;
 #   - la table des territoires du thème : le squelette PARTAGÉ (squelette_
 #     territoires, compute.R) avec le poids du thème — la consommation totale
 #     d'ENAF (comme Démographie pèse par la population et Habitat par les
 #     logements, Milieux pèse par les hectares consommés) ;
 #   - la table déclarative INDICATEURS_MILIEUX (la clé squelettique conso_enaf)
-#     et l'APERCU_<theme> vide (le gating par thème, ADR-0007).
+#     et l'APERCU_<theme> vide (le gating par thème, ADR-0007) ;
+#   - l'Histoire du thème : compute_histoires_milieux — les quatre lectures
+#     « Se densifier, s'étaler, ou s'en aller » (issue #174).
 # Ce qui N'y vit PAS : aucun calcul d'indicateur livré (#172/#173), aucune
-# Histoire (#174), aucune modification de la machinerie partagée.
+# modification de la machinerie partagée.
+
+# NOM_FICHIER_SERIE_HISTORIQUE -------------------------------------------------
+# Le nom du CSV long de la série historique du recensement DANS le dossier
+# extrait du cache (le nom que le zip INSEE fixe). Le builder du thème le lit
+# après l'extraction idempotente du zip (la même règle que la base des EPCI) ;
+# les tests déposent leur fixture sous ce nom.
+NOM_FICHIER_SERIE_HISTORIQUE <- "DS_RP_SERIE_HISTORIQUE_2023_data.csv"
 
 # lire_consoenaf ---------------------------------------------------------------
 # Le lecteur du CSV CONSOENAF (conso_com.csv) : tout est lu en chaînes — les
@@ -57,6 +71,74 @@ conso_en_m2 <- function(noms) {
   noms[grepl("^(naf|art)[0-9]{2}(art|hab|act|mix|rou|fer|inc)[0-9]{2}$", noms)]
 }
 
+# lire_serie_historique_pop ----------------------------------------------------
+# Le lecteur de la population de l'Histoire (#174) : lit le CSV long de la
+# SÉRIE HISTORIQUE du recensement (la source partagée — la même que le thème
+# Démographie ; la règle de source d'ADR-0014 : la population vient TOUJOURS
+# de là, jamais des champs embarqués de CONSOENAF), ne garde que les lignes
+# communes (GEO_OBJECT == "COM") de la mesure résidente (RP_MEASURE == "POP")
+# au statut valide (OBS_STATUS == "A" — les doublons K/W tombent), puis
+# dérive la FENÊTRE de l'Histoire : les DEUX millésimes RP les plus récents
+# présents dans la donnée (aujourd'hui 2017 et 2023). La règle des deux
+# horloges (ADR-0014) : la fenêtre n'est JAMAIS codée en dur — elle glisse
+# automatiquement quand l'INSEE publie un nouveau recensement dans la série.
+# Retourne une ligne par commune : code, pop_debut, pop_fin, millesime_debut,
+# millesime_fin (la population de la borne de départ et de la borne de fin).
+lire_serie_historique_pop <- function(chemin) {
+  if (!file.exists(chemin)) {
+    stop("La série historique du recensement est absente du cache extrait (",
+         chemin, ") — la source partagée de la population de l'Histoire ",
+         "Milieux.", call. = FALSE)
+  }
+  pop <- lire_csv_long(chemin) %>%
+    dplyr::filter(GEO_OBJECT == "COM", RP_MEASURE == "POP",
+                  OBS_STATUS == "A") %>%
+    dplyr::select(GEO, TIME_PERIOD, OBS_VALUE)
+
+  millesimes <- sort(unique(pop$TIME_PERIOD))
+  if (length(millesimes) < 2) {
+    stop("La série historique du recensement ne porte pas deux millésimes de ",
+         "population — l'Histoire Milieux ne peut pas dériver sa fenêtre.",
+         call. = FALSE)
+  }
+  fenetre <- tail(millesimes, 2)  # les DEUX plus récents, jamais codés en dur
+
+  pop %>%
+    dplyr::filter(TIME_PERIOD %in% fenetre) %>%
+    dplyr::mutate(
+      borne = dplyr::if_else(TIME_PERIOD == fenetre[2], "fin", "debut")
+    ) %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = borne,
+                       values_from = OBS_VALUE) %>%
+    dplyr::rename(code = GEO, pop_debut = debut, pop_fin = fin) %>%
+    dplyr::mutate(millesime_debut = fenetre[1], millesime_fin = fenetre[2])
+}
+
+# conso_annuelles_fenetre ------------------------------------------------------
+# La part du thème côté terre (la règle des deux horloges, #174) : les
+# colonnes ANNUELES CONSOENAF dont l'année tombe dans la fenêtre
+# [millesime_debut, millesime_fin). Chaque annuel naf{AA}art{AA+1} (ou
+# art{AA}{dest}{AA+1}) couvre l'ANNÉE {AA} — du 1er janvier {AA} au 1er
+# janvier {AA+1} — et les millésimes RP étant des dates au 1er janvier, la
+# fenêtre de terre re-somme la MÊME période que la fenêtre de population. Les
+# TOTAUX de période (naf11art25, naf11art21, naf21art25...) ne sont JAMAIS
+# sommés : seul est annuel un champ dont la deuxième paire d'années suit la
+# première (AA+1 == AA + 1). La fenêtre arrive du lecteur de la série
+# historique — jamais une liste d'années codée en dur.
+conso_annuelles_fenetre <- function(noms, millesime_debut, millesime_fin) {
+  m <- regmatches(noms, regexec(
+    "^(?:naf|art)([0-9]{2})(?:art|hab|act|mix|rou|fer|inc)([0-9]{2})$", noms
+  ))
+  annees <- vapply(m, function(mm) if (length(mm) > 0) mm[[2]] else NA_character_,
+                   character(1))
+  fins <- vapply(m, function(mm) if (length(mm) > 0) mm[[3]] else NA_character_,
+                 character(1))
+  annee <- as.integer(annees) + 2000
+  fin <- as.integer(fins) + 2000
+  noms[!is.na(annee) & fin == annee + 1 &
+         annee >= millesime_debut & annee < millesime_fin]
+}
+
 # normaliser_consoenaf ----------------------------------------------------------
 # LE reshape CONSOENAF : renomme l'identité (idcom -> code, idcomtxt -> nom,
 # iddep -> departement, epci25 -> epci, epci25txt -> nom_epci), convertit les
@@ -78,12 +160,17 @@ normaliser_consoenaf <- function(table_conso) {
 
 # construire_donnees_milieux ---------------------------------------------------
 # L'acte « trouver la donnée » du thème : lit le CSV CONSOENAF dans le cache,
-# le reshape (m² -> ha + Bretagne), puis JOINT l'identité sur la base des EPCI
+# le reshape (m² -> ha + Bretagne), JOINT l'identité sur la base des EPCI
 # partagée (lire_epci — le référentiel commun des noms réels LIBGEO/LIBEPCI et
 # de l'appartenance EPCI/département ; la même règle que Démographie/Habitat :
 # l'identité vient du référentiel partagé, jamais des champs embarqués du
-# fichier). Persiste la table des communes sous data/processed/milieux/
-# (idempotent, comme les builders des sources) et la retourne — la forme que
+# fichier), puis JOINT la population de l'Histoire (#174) sur la SÉRIE
+# HISTORIQUE du recensement (la source partagée — la règle de source
+# d'ADR-0014, jamais les populations embarquées de CONSOENAF) et calcule la
+# consommation de la FENÊTRE (les annuels re-sommés sur les deux millésimes
+# dérivés de la série — la règle des deux horloges, jamais codée en dur).
+# Persiste la table des communes sous data/processed/milieux/ (idempotent,
+# comme les builders des sources) et la retourne — la forme que
 # construire_territoires_milieux consomme.
 construire_donnees_milieux <- function(cache = "data/raw",
                                        sortie = "data/processed/milieux/consoenaf_communes.rds") {
@@ -97,20 +184,52 @@ construire_donnees_milieux <- function(cache = "data/raw",
     utils::unzip(file.path(cache, zip_epci), exdir = extrait, overwrite = FALSE)
   )
 
+  # la série historique du recensement est partagée entre les thèmes (le même
+  # id/URL que Démographie) : le manifeste du thème la télécharge, on l'extrait
+  # ici (idempotent) pour lire la population de l'Histoire — la fenêtre dérive
+  # des deux millésimes RP les plus récents de la donnée (la règle des deux
+  # horloges, ADR-0014)
+  zip_serie <- MANIFEST_MILIEUX$fichier[MANIFEST_MILIEUX$id == "serie_historique"]
+  suppressWarnings(
+    utils::unzip(file.path(cache, zip_serie), exdir = extrait, overwrite = FALSE)
+  )
+  serie <- lire_serie_historique_pop(file.path(extrait, NOM_FICHIER_SERIE_HISTORIQUE))
+
   conso <- normaliser_consoenaf(
     lire_consoenaf(file.path(cache, "conso-com.csv"))
   )
   base_epci <- lire_epci(file.path(extrait, "EPCI_au_01-01-2025.xlsx"))
 
+  # la consommation de la fenêtre : les annuels CONSOENAF dont l'année tombe
+  # dans [millesime_debut, millesime_fin) — sommés par commune (une valeur NA
+  # rend le total NA : un total incomplet n'est jamais publié comme complet ;
+  # une fenêtre sans annuel mesure zéro consommation — jamais un 0 inventé)
+  annuelles <- conso_annuelles_fenetre(
+    conso_en_m2(names(conso)),
+    millesime_debut = serie$millesime_debut[1],
+    millesime_fin = serie$millesime_fin[1]
+  )
+  if (length(annuelles) > 0) {
+    conso$conso_fenetre <- rowSums(conso[annuelles], na.rm = FALSE)
+  } else {
+    conso$conso_fenetre <- 0
+  }
+
   communes <- conso %>%
     dplyr::inner_join(base_epci, by = c("code" = "CODGEO")) %>%
+    dplyr::left_join(serie, by = "code") %>%
     dplyr::transmute(
       code = code,
       nom = LIBGEO,
       departement = DEP,
       epci = EPCI,
       nom_epci = LIBEPCI,
-      dplyr::across(dplyr::all_of(conso_en_m2(names(conso))), ~ .x)
+      dplyr::across(dplyr::all_of(conso_en_m2(names(conso))), ~ .x),
+      conso_fenetre = conso_fenetre,
+      pop_debut = pop_debut,
+      pop_fin = pop_fin,
+      millesime_debut = millesime_debut,
+      millesime_fin = millesime_fin
     )
 
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
@@ -125,43 +244,55 @@ construire_donnees_milieux <- function(cache = "data/raw",
 # colonnes du reshape, déjà en hectares), sommées par niveau de territoire.
 
 # agreger_territoires_milieux : la part du thème — les colonnes de consommation
-# (le motif conso_en_m2 — la même source de vérité que le reshape), agrégées
-# par niveau de territoire (une ligne par commune = ses propres valeurs ; EPCI
-# / département / région = la somme des lignes de leurs communes), rejointes
-# sur le squelette partagé par code. La somme est naïve (comme Démographie/
-# Habitat) : une commune à consommation NA rend le total de son niveau NA — un
-# total incomplet n'est JAMAIS publié comme s'il était complet (le fichier
-# Cerema remplit 0,0 — le NA est l'exception honnête, jamais un 0 inventé).
+# (le motif conso_en_m2 — la même source de vérité que le reshape) PLUS les
+# colonnes de l'Histoire (#174) : la consommation de la fenêtre et les
+# populations aux deux bornes (pop_debut / pop_fin), agrégées par niveau de
+# territoire (une ligne par commune = ses propres valeurs ; EPCI / département
+# / région = la somme des lignes de leurs communes), rejointes sur le squelette
+# partagé par code. La somme est naïve (comme Démographie/Habitat) : une
+# commune à consommation NA rend le total de son niveau NA — un total incomplet
+# n'est JAMAIS publié comme s'il était complet (le fichier Cerema remplit 0,0 —
+# le NA est l'exception honnête, jamais un 0 inventé). Les deux MILLÉSIMES de
+# la fenêtre sont des constantes du run : la table des territoires les porte
+# (pour l'Histoire), sans les sommer.
 agreger_territoires_milieux <- function(communes, squelette) {
   base <- communes %>%
     dplyr::mutate(dplyr::across(c(departement, epci), as.character))
   colonnes_conso <- conso_en_m2(names(base))
+  colonnes_mesure <- c(colonnes_conso, "conso_fenetre", "pop_debut", "pop_fin")
 
   mesures <- dplyr::bind_rows(
-    base[c("code", colonnes_conso)],
+    base[c("code", colonnes_mesure)],
     base %>%
       dplyr::group_by(epci) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_conso), sum),
+        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = epci),
     base %>%
       dplyr::group_by(departement) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_conso), sum),
+        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = departement),
     base %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_conso), sum),
+        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
         .groups = "drop"
       ) %>%
       dplyr::mutate(code = "53")
   )
 
-  dplyr::left_join(squelette, mesures, by = "code")
+  territoires <- dplyr::left_join(squelette, mesures, by = "code")
+  # les millésimes de la fenêtre : des constantes du run — la première valeur
+  # non manquante des communes (la même paire partout), portées pour l'Histoire
+  territoires$millesime_debut <-
+    stats::na.omit(unique(communes$millesime_debut))[1]
+  territoires$millesime_fin <-
+    stats::na.omit(unique(communes$millesime_fin))[1]
+  territoires
 }
 
 # construire_territoires_milieux -----------------------------------------------
@@ -231,19 +362,77 @@ construire_indicateurs_milieux <- function(territoires) {
 # arrive avec l'indicateur #172.
 scalaires_milieux <- list()
 
+# SEUIL_INTENSITE_MILIEUX ------------------------------------------------------
+# Le seuil « près de zéro » de l'intensité (m² d'ENAF par habitant ajouté,
+# #174). Le recensement est un DÉNOMBREMENT exact (un entier), jamais un
+# échantillon : « significativement positif » veut dire au moins UN habitant
+# ajouté sur la fenêtre. L'intensité est publiée seulement quand le
+# Δpopulation ≥ ce seuil (elle n'a pas de sens pour un territoire qui ne gagne
+# pas d'habitants — 0 ou négatif, elle serait infinie ou négative) ; la
+# classification, elle, ne s'appuie que sur les signes (seuil 0 — ZAN est un
+# objectif zéro, un 0 est un vrai 0, jamais du bruit d'échantillon).
+SEUIL_INTENSITE_MILIEUX <- 1
+
 # compute_histoires_milieux -----------------------------------------------------
-# L'Histoire du thème : VIDE pour le traceur — les quatre lectures « Se
-# densifier, s'étaler, ou s'en aller » arrivent avec le ticket #174. La table
-# reste présente avec la forme du contrat (territoire | type | theme |
-# story_key), sans aucune ligne : jamais un « under construction », juste
-# l'absence de Story.
+# L'Histoire « Se densifier, s'étaler, ou s'en aller » (issue #174, ADR-0014) :
+# la lecture du territoire contre sa terre. Deux forces, chacune lue par le
+# SIGNE seul (seuil 0, la règle des quadrants d'ADR-0011) :
+#   - le Δpopulation  = pop_fin - pop_debut — les populations de la SÉRIE
+#     HISTORIQUE du recensement aux DEUX millésimes de la fenêtre (la règle de
+#     source d'ADR-0014 : jamais les populations embarquées de CONSOENAF) ;
+#   - la consommation = conso_fenetre — les ANNUELS CONSOENAF re-sommés sur la
+#     MÊME fenêtre (la règle des DEUX HORLOGES : la fenêtre dérive des
+#     millésimes de la série, jamais codée en dur ; les totaux de période ne
+#     sont jamais sommés).
+# Les quatre lectures, une par territoire, exactement une (déterministe :
+# même territoire + mêmes données -> même lecture, toujours) :
+#   grandir-en-se-densifiant               Δpop > 0, consommation == 0
+#   grandir-en-setalant                    Δpop > 0, consommation > 0
+#   sen-aller-et-consommer-quand-meme      Δpop <= 0, consommation > 0
+#   les-departs-laissent-la-place-a-la-renaturation  Δpop <= 0, consommation == 0
+# (zéro compte négatif, comme Démographie : un Δpopulation nul ou une
+# consommation nulle ne sont jamais du bruit — la donnée est un dénombrement).
+# Une force NA (total de niveau incomplet, population absente de la série)
+# rend la lecture NA — jamais une lecture inventée. L'intensité (m² d'ENAF par
+# habitant ajouté) est publiée seulement quand le Δpopulation est
+# significativement positif (SEUIL_INTENSITE_MILIEUX) ; sous le seuil, NA. La
+# fenêtre dérivée est portée par la colonne `periode` (« 2017-2023 ») — la
+# date du titre du Story, jamais inventée.
 compute_histoires_milieux <- function(territoires) {
-  tibble::tibble(
-    territoire = character(),
-    type = character(),
-    theme = character(),
-    story_key = character()
-  )
+  territoires %>%
+    dplyr::mutate(
+      delta_population = pop_fin - pop_debut,
+      # l'intensité : la consommation de la fenêtre (ha) × 10 000 pour des m²,
+      # divisée par les habitants ajoutés — NA quand le Δpopulation n'est pas
+      # significativement positif (le dénombrement est exact : sous 1 habitant
+      # ajouté, pas d'« habitants ajoutés » à rapporter à la consommation)
+      intensite_m2_par_habitant = dplyr::if_else(
+        delta_population >= SEUIL_INTENSITE_MILIEUX,
+        conso_fenetre * 10000 / delta_population,
+        NA_real_
+      ),
+      classification = dplyr::case_when(
+        delta_population > 0 & conso_fenetre == 0 ~ "grandir-en-se-densifiant",
+        delta_population > 0 & conso_fenetre > 0 ~ "grandir-en-setalant",
+        delta_population <= 0 & conso_fenetre > 0 ~
+          "sen-aller-et-consommer-quand-meme",
+        delta_population <= 0 & conso_fenetre == 0 ~
+          "les-departs-laissent-la-place-a-la-renaturation"
+      )
+    ) %>%
+    dplyr::transmute(
+      territoire = code,
+      type = type,
+      theme = "milieux",
+      story_key = "se-densifier-setaler-ou-sen-aller",
+      # la fenêtre dérivée de la série historique — la date du titre du Story,
+      # jamais codée en dur (les deux horloges, ADR-0014)
+      periode = paste0(millesime_debut, "-", millesime_fin),
+      delta_population,
+      conso_fenetre,
+      intensite_m2_par_habitant,
+      classification
+    )
 }
 
 # construire_apercu_milieux -----------------------------------------------------
