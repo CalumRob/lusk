@@ -4,9 +4,11 @@ import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
   histoiresEconomieFixture,
+  histoiresMilieuxFixture,
   histoiresMobiliteFixture,
   indicateursDemographieFixture,
   indicateursEconomieFixture,
+  indicateursMilieuxFixture,
   indicateursMobiliteFixture,
   membresProgrammesFixture,
   programmesFixture,
@@ -17,7 +19,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PayloadError, parsePayload } from '../payload/validate'
-import type { HistoireDemographie, HistoireMobilite, Payload } from '../payload/types'
+import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
 
@@ -55,6 +57,15 @@ function documentsMobilite(overrides: Partial<DocumentsBruts> = {}): DocumentsBr
   return documentsBruts({
     indicateurs: indicateursMobiliteFixture,
     histoires: histoiresMobiliteFixture,
+    ...overrides,
+  })
+}
+
+/** The Milieux documents (issue #171→#174) — the fixture payload, theme swapped. */
+function documentsMilieux(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts {
+  return documentsBruts({
+    indicateurs: indicateursMilieuxFixture,
+    histoires: histoiresMilieuxFixture,
     ...overrides,
   })
 }
@@ -426,6 +437,71 @@ describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () =>
 
     const erreur = attendErreurValidation(documentsMobilite({ histoires }))
     expect(erreur.message).toMatch(/vintage/)
+  })
+})
+
+describe('parsePayload — the Milieux contract (issue #174, ADR-0014)', () => {
+  it('accepts the Milieux documents — la Story unique « Se densifier, s’étaler, ou s’en aller »', () => {
+    const payload = parsePayload(documentsMilieux())
+
+    expect(payload.indicateurs).toHaveLength(indicateursMilieuxFixture.length)
+    const milieux = payload.histoires.filter((h): h is HistoireMilieux => h.theme === 'milieux')
+    expect(milieux).toHaveLength(histoiresMilieuxFixture.length)
+    for (const histoire of milieux) {
+      expect(histoire.story_key).toBe('se-densifier-setaler-ou-sen-aller')
+      expect(histoire.periode).toBe('2017-2023')
+      expect(typeof histoire.delta_population).toBe('number')
+      expect(typeof histoire.conso_fenetre).toBe('number')
+    }
+  })
+
+  it('rejects a Milieux histoire with an unknown story_key (drift must be loud)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { story_key: string }).story_key = 'la-fuite-vers-la-campagne'
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/Story Milieux/)
+  })
+
+  it('rejects a Milieux histoire with an unknown classification', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { classification: string }).classification = 'super'
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/classification/)
+  })
+
+  it('accepts a null classification — lecture NA (total incomplet), jamais une lecture inventée', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { classification: string | null }).classification = null
+
+    const payload = parsePayload(documentsMilieux({ histoires }))
+    const milieux = payload.histoires.filter((h): h is HistoireMilieux => h.theme === 'milieux')
+    expect(milieux[0].classification).toBeNull()
+  })
+
+  it('rejects a Milieux histoire missing its forces (delta_population / conso_fenetre absents)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    delete (histoires[0] as Partial<typeof histoires[0]>).delta_population
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/delta_population/)
+  })
+
+  it('rejects a negative intensité — l’intensité n’existe qu’avec des habitants ajoutés', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { intensite_m2_par_habitant: number }).intensite_m2_par_habitant = -5
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/intensite/)
+  })
+
+  it('rejects a duplicate Milieux histoire — une ligne par territoire, jamais deux', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    histoires.push({ ...histoires[0] })
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/plusieurs histoires/)
   })
 })
 

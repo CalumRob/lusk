@@ -16,6 +16,7 @@ describe('onglets — the ThemeTabs vocabulary (ADR-0007)', () => {
       demographie: 'Démographie',
       habitat: 'Habitat',
       economie: 'Économie',
+      milieux: 'Milieux',
     })
   })
 
