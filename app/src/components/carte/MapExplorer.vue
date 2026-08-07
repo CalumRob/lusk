@@ -31,6 +31,7 @@ import {
   ANCRAGES_THEMES,
   COULEUR_CONTOUR,
   COULEUR_NEUTRE,
+  LARGEUR_CONTOUR,
   echelleChoroplethe,
 } from '@/carte/couleurs'
 import { configCoucheTheme } from '@/carte/configCouche'
@@ -133,7 +134,7 @@ function ajouterCouches(): void {
       type: 'line',
       source: ID_SOURCE(niveau),
       layout: { visibility: 'none' },
-      paint: { 'line-color': COULEUR_CONTOUR, 'line-width': 1.2 },
+      paint: { 'line-color': COULEUR_CONTOUR, 'line-width': LARGEUR_CONTOUR },
     })
   }
 }
