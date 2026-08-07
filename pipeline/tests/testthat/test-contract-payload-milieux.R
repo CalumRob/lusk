@@ -1,12 +1,14 @@
 # test-contract-payload-milieux -------------------------------------------------
-# Le SEAM de test du payload Milieux (issue #171) : même fixture -> même
-# payload, pour toujours. Le TRACEUR publie un payload squelettique — la clé
-# conso_enaf (la consommation totale d'ENAF 2011-2025, en hectares, une ligne
-# par territoire), les tables histoires et apercu VIDE mais présentes (la
-# forme du contrat) — et CE payload passe la validation GÉNÉRIQUE
-# (validate_payload : forme, couverture des territoires, estampilles vintage).
-# La conversion m² -> ha est prouvée bout en bout : la valeur publiée d'une
-# commune EST sa consommation en hectares.
+# Le SEAM de test du payload Milieux (issue #171, étendu par #172) : même
+# fixture -> même payload, pour toujours. L'INDICATEUR livré publie SES DEUX
+# clés — conso_enaf_fenetre (la fenêtre 2021-2025, en hectares, une ligne par
+# territoire) et conso_enaf_annuel (la série annuelle 2011-2024, 14 lignes par
+# territoire, detail = l'année) — et CE payload passe la validation GÉNÉRIQUE
+# (validate_payload : forme, couverture des territoires, multiplicités,
+# estampilles vintage). La conversion m² -> ha est prouvée bout en bout : la
+# valeur publiée d'une commune EST sa consommation en hectares, et la fenêtre
+# EST la somme des quatre annuels 2021-2024 (vérifiée à la main). Les tables
+# histoires et apercu restent VIDE mais présentes (la forme du contrat).
 
 test_that("le payload Milieux couvre chaque territoire du fixture", {
   payload <- compute_payload(communes_fixture_milieux(),
@@ -24,7 +26,7 @@ test_that("le payload Milieux couvre chaque territoire du fixture", {
   expect_equal(nrow(payload$territoires), length(territoires_attendus))
 })
 
-test_that("la forme des quatre tables est le contrat (payload squelettique)", {
+test_that("la forme des quatre tables est le contrat (payload Milieux)", {
   payload <- compute_payload(communes_fixture_milieux(),
                              theme = theme_milieux())
 
