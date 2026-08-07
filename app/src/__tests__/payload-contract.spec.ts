@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
+import type { Payload } from '../payload/types'
 import {
   apercuPourTerritoire,
   formaterRang,
@@ -19,6 +20,12 @@ import {
  * nginx /data/ alias, app/README.md); this test reads those committed files
  * and proves the seam accepts them, field for field. If the pipeline drifts
  * from the contract, this test goes red — loud, like its R mirror.
+ *
+ * Shared-load (issue #185 smell, le flake 5000ms) : le payload committé fait
+ * ~25 Mo — il est LU, validé et parsé UNE SEULE FOIS par fichier de test
+ * (la promesse mémoïsée de chargerPayloadCommite), jamais une fois par test.
+ * Les 15 tests partagent la même instance : un run parallèle ne re-parse
+ * plus le payload 15 fois.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -28,7 +35,7 @@ function lireJson(nom: string): unknown {
 }
 
 /** Serve the committed payload through the seam, from disk — no network. */
-async function chargerPayloadCommite() {
+function chargerPayloadCommite(): Promise<Payload> {
   const fichiers: Record<string, unknown> = {}
   for (const nom of [
     'territoires.json',
@@ -43,6 +50,7 @@ async function chargerPayloadCommite() {
     'histoires_economie.json',
     'run-report.json',
     'vintages.json',
+    'programmes.json',
   ]) {
     fichiers[nom] = lireJson(nom)
   }
@@ -59,11 +67,25 @@ async function chargerPayloadCommite() {
   })
 }
 
+/** Le payload committé, chargé UNE fois par fichier (partagé entre les tests). */
+let payloadCommite: Payload | null = null
+let promesseCharge: Promise<Payload> | null = null
+
+beforeAll(async () => {
+  promesseCharge ??= chargerPayloadCommite()
+  payloadCommite = await promesseCharge
+})
+
+function obtenirPayload(): Payload {
+  if (payloadCommite === null) throw new Error('payload non chargé (beforeAll)')
+  return payloadCommite
+}
+
 describe('payload contract — the committed payload parses and renders', () => {
   it('covers the real 1 268 territoires (1 202 communes, 61 EPCIs, 4 départements, région)', async () => {
     // 1268, pas 1269 : la référence n'a plus l'EPCI fantôme « Sans objet »
     // (fix #131) — 1202 communes + 61 EPCIs réels + 4 départements + 1 région
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     expect(payload.territoires).toHaveLength(1268)
     expect(payload.territoires.filter((t) => t.type === 'commune')).toHaveLength(1202)
@@ -73,7 +95,7 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('accepts the three islands without an EPCI (22016, 29083, 29155 — « Sans objet », issue #131)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     for (const ile of ['22016', '29083', '29155']) {
       const commune = payload.territoires.find((t) => t.territoire === ile)
@@ -82,7 +104,7 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('carries the real names (LIBGEO/LIBEPCI — never the SIREN)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
     const nom = (id: string) => payload.territoires.find((t) => t.territoire === id)?.nom
 
     expect(nom('22001')).toBe('Allineuc')
@@ -92,7 +114,7 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('publishes one indicateur row per (territoire × key × detail), across all four themes', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
     const themes = new Set(payload.indicateurs.map((i) => i.theme))
@@ -105,31 +127,40 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('keeps every rank in [0,1] or null', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
-    for (const i of payload.indicateurs) {
-      for (const rang of [i.rang_epci, i.rang_dep, i.rang_reg]) {
-        if (rang !== null) expect(rang).toBeGreaterThanOrEqual(0)
-        if (rang !== null) expect(rang).toBeLessThanOrEqual(1)
-      }
-    }
+    // Un seul expect agrégé plutôt que ~100k expects par ligne : le payload
+    // fait ~25 Mo (21k indicateurs × 3 rangs) — une assertion par valeur
+    // dépassait le timeout 5000ms du test sous charge parallèle (le flake
+    // #185), et le message d'échec liste les violations au lieu de s'arrêter
+    // à la première.
+    const horsBornes = payload.indicateurs
+      .flatMap((i) =>
+        [i.rang_epci, i.rang_dep, i.rang_reg].map((rang) => ({ i, rang })),
+      )
+      .filter(({ rang }) => rang !== null && (rang < 0 || rang > 1))
+      .map(({ i, rang }) => `${i.territoire}/${i.key}/${i.detail ?? ''}: ${rang}`)
+    expect(horsBornes).toEqual([])
   })
 
   it('stamps each indicator with its two vintage dates (reference + publication)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
-    for (const i of payload.indicateurs) {
-      // la référence est null pour la base DPE roulante (ADR-0009) — jamais
-      // pour la publication (toujours publiée)
-      if (i.vintage_date_reference !== null) {
-        expect(i.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-      }
-      expect(i.vintage_date_publication).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    }
+    const malEstampilles = payload.indicateurs
+      .filter((i) => {
+        // la référence est null pour la base DPE roulante (ADR-0009) — jamais
+        // pour la publication (toujours publiée)
+        const referenceOk = i.vintage_date_reference === null ||
+          /^\d{4}-\d{2}-\d{2}$/.test(i.vintage_date_reference)
+        const publicationOk = /^\d{4}-\d{2}-\d{2}$/.test(i.vintage_date_publication)
+        return !referenceOk || !publicationOk
+      })
+      .map((i) => `${i.territoire}/${i.key}: réf ${i.vintage_date_reference} · publ ${i.vintage_date_publication}`)
+    expect(malEstampilles).toEqual([])
   })
 
   it('renders the Aperçu from the apercu table (never derives it)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     const lignes = apercuPourTerritoire(payload, '22001')
     expect(lignes.map((l) => l.key)).toContain('population')
@@ -140,13 +171,13 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('drives the theme tab bar from the payload (all four themes are built)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     expect(themesPresent(payload)).toEqual(['mobilite', 'demographie', 'habitat', 'economie'])
   })
 
   it('formats the committed ranks as French chips', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     const densite29001 = payload.indicateurs.find(
       (i) => i.territoire === '29001' && i.key === 'densite',
@@ -155,19 +186,21 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('renders the freshness line from the committed run-report', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     expect(ligneFraicheur(payload)).toContain('2026')
   })
 
   it('loads the committed vintages table — the freshness facts of the Méthodes sources', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     // L'union commise (issues #124/#133) : une ligne par source des QUATRE
     // thèmes construits — démographie + habitat + economie (les 5 du manifeste
     // Économie : sirene_snapshot, flores_a38, flores_a88, rp_emploi, rp_chomage)
-    // + les 8 sources mobilité de la course 2026-08-06 (#139/#140/#141)
-    expect(payload.vintages).toHaveLength(42)
+    // + les 8 sources mobilité de la course 2026-08-06 (#139/#140/#141) + les
+    // 6 sources programmes du run 2026-08-07 (#175/#176/#178 : acv, pvd, crte,
+    // territoires_industrie, ort, subventions_scdl)
+    expect(payload.vintages).toHaveLength(48)
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
       source: 'INSEE — Série historique du recensement',
@@ -179,8 +212,37 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.vintages?.find((v) => v.id === 'epci')?.date_publication).toBeNull()
   })
 
+  it('loads the committed programmes payload — membership + subventions, the shared file (issue #178/#179)', async () => {
+    const payload = obtenirPayload()
+
+    // Le fichier PARTAGÉ est présent (le run programmes 2026-08-07 l'a publié)
+    // — jamais l'état vide du 404 : l'élément Aperçu doit rendre des données
+    expect(payload.programmes).not.toBeNull()
+    const programmes = payload.programmes!
+
+    // les deux tables du contrat : les lignes d'adhésion (253 — les comptes
+    // verrouillés du run réel) et les agrégats de subventions (1 908 lignes,
+    // hors communes hors-Bretagne — la discipline « attribué à un territoire
+    // breton », fix des lignes communales)
+    expect(programmes.membres).toHaveLength(253)
+    expect(programmes.subventions.length).toBeGreaterThan(0)
+
+    // chaque ligne d'adhésion est ancrée commune ou EPCI (jamais département/
+    // région — l'échelle est dérivée dans l'app, ADR-0013)
+    for (const membre of programmes.membres) {
+      expect(['commune', 'epci']).toContain(membre.type)
+      expect(membre.vintage_date_reference).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+
+    // chaque ligne de subvention porte le vintage hebdomadaire SCDL
+    for (const subvention of programmes.subventions) {
+      expect(subvention.vintage_version).toBe('2026-08-05')
+      expect(subvention.montant).toBeGreaterThan(0)
+    }
+  })
+
   it('publishes the Économie Stories multi-lignes — top-5 per (territoire × story_key), les deux story_keys', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     const histoiresEconomie = payload.histoires.filter((h) => h.theme === 'economie')
     // 1202 communes + 61 EPCIs + 4 départements = 1267 × 5 + les 5 de la région
@@ -203,7 +265,7 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('exposes the Économie Story vintage on every line (issue #74 — the story cites its source)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     const histoire = payload.histoires.find(
       (h) => h.theme === 'economie' && h.territoire === '22001',
@@ -217,7 +279,7 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('parses the committed Mobilité Stories — 1 405 rows, les deux story_keys (issue #142)', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     const histoiresMobilite = payload.histoires.filter((h) => h.theme === 'mobilite')
     // 1 266 territoires portent le défaut + les 139 saillants portent aussi le vélo
@@ -236,7 +298,7 @@ describe('payload contract — the committed payload parses and renders', () => 
   })
 
   it('carries the real Mobilité Story matter — div_loss_t, la signature et l’estampille snapshot', async () => {
-    const payload = await chargerPayloadCommite()
+    const payload = obtenirPayload()
 
     // 22001 (Allineuc) : le défaut non-saillant, sa distribution réelle
     const allineuc = payload.histoires.find(
