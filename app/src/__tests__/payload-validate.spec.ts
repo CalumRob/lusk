@@ -482,7 +482,7 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014)', () => {
 
   it('rejects a Milieux histoire missing its forces (delta_population / conso_fenetre absents)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
-    delete (histoires[0] as Partial<typeof histoires[0]>).delta_population
+    delete (histoires[0] as Partial<HistoireMilieux>).delta_population
 
     const erreur = attendErreurValidation(documentsMilieux({ histoires }))
     expect(erreur.message).toMatch(/delta_population/)
