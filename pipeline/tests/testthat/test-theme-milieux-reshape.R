@@ -122,3 +122,38 @@ test_that("conso_en_m2 : le motif isole exactement les champs de consommation (j
   )
   expect_setequal(m2, attendus)
 })
+
+# Données réelles --------------------------------------------------------------
+# Le bloc « données réelles » (hors boucle par défaut — LUSK_RUN_REAL=1, le
+# helper skip_sans_donnees_reelles) : le CSV CONSOENAF réel du cache
+# (pipeline/data/raw/, gitignoré). Il verrouille le CONTRAT RÉEL du fichier —
+# les 172 colonnes du dictionnaire, l'anomalie d'unité m²/ha vérifiée sur
+# Rennes (1 233 202 m² ÷ 50 311 729 m² = 2,45 %, docs/research/zan-rennes.md) —
+# que les fixtures ne peuvent pas voir. Sans fichier réel, le test est sauté.
+
+test_that("données réelles : le CSV CONSOENAF réel — 172 colonnes, l'anomalie m²/ha vérifiée sur Rennes", {
+  fichier <- testthat::test_path("..", "..", "data", "raw", "conso-com.csv")
+  skip_sans_donnees_reelles(file.exists(fichier),
+                            "le CSV CONSOENAF réel est absent du cache")
+
+  brut <- lire_consoenaf(fichier)
+  expect_equal(ncol(brut), 172L)
+
+  # l'anomalie d'unité, vérifiée sur le fichier réel : Rennes porte naf11art25
+  # = 1 233 202 m² (le dictionnaire dit hectares) — la cohérence interne
+  # d'artcom1125 (2,45 %) le prouve : 1 233 202 / 50 311 729 × 100 = 2,45 %
+  # (la formule du dictionnaire suppose le champ en hectares et multiplie par
+  # 10 000 ; le fichier distribuant des m², la part se lit directement en m²)
+  rennes <- brut[brut$idcom == "35238", ]
+  expect_equal(nrow(rennes), 1L)
+  m2 <- as.double(rennes$naf11art25)
+  expect_equal(m2, 1233202)
+  part <- as.double(rennes$artcom1125)
+  expect_equal(part, m2 / as.double(rennes$surfcom2025) * 100,
+               tolerance = 1e-2)
+
+  # le reshape réel : la conversion et le filtre Bretagne tournent sans dérive
+  norm <- normaliser_consoenaf(brut)
+  expect_true(all(norm$departement %in% DEPT_BRETAGNE))
+  expect_equal(norm$naf11art25[norm$code == "35238"], 1233202 / 10000)
+})
