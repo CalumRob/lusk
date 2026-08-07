@@ -112,7 +112,10 @@ describe('MethodologieView — la section « les sources »', () => {
   it('liste les 42 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
-    expect(wrapper.findAll('tbody tr').length).toBe(42)
+    // Le comptage est borné à la table de la section #sources — la page porte
+    // aussi la table des sources de l'élément Programmes & financements (6
+    // lignes, issue #180) : les deux registres sont documentés séparément.
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(42)
   })
 
   it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
@@ -168,8 +171,10 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 42 lignes, fraîcheur en tirets
-    expect(wrapper.findAll('tbody tr').length).toBe(42)
+    // La page ne casse jamais : 42 lignes dans la table des sources, fraîcheur en tirets
+    // (la table des sources de l'élément Programmes & financements, 6 lignes statiques,
+    // reste rendue — elle ne dépend pas des vintages, issue #180).
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(42)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

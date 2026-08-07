@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { SOURCES_METHODES, ancreSource } from '../methodes/sources'
+import { SOURCES_PROGRAMMES } from '../methodes/programmes'
 import type { Vintage } from '../payload/types'
 
 /**
@@ -11,7 +12,10 @@ import type { Vintage } from '../payload/types'
  * Méthodes contract, issue #128). Une thème n'est pas « construit » tant que
  * sa documentation Méthodes ne part pas : POUR CE TICKET, chaque id de la
  * table vintages commise (public/data/vintages.json) doit avoir une entrée de
- * registre — l'union est le contrat. Une entrée de registre sans ligne
+ * registre — l'union est le contrat. Depuis l'issue #180, la documentation
+ * vit dans DEUX registres : les sources des thèmes (SOURCES_METHODES) et les
+ * sources de l'élément Programmes & financements (SOURCES_PROGRAMMES) — la
+ * table vintages partagée porte les deux. Une entrée de registre sans ligne
  * vintages en direct est autorisée (dégradation gracieuse) mais signalée.
  */
 
@@ -25,9 +29,10 @@ function lireVintagesCommites(): Vintage[] {
 describe('registre Méthodes — la parité avec la table vintages commise', () => {
   it('couvre chaque id de la table vintages commise (l\u2019union est le contrat)', () => {
     const vintages = lireVintagesCommites()
+    const registres = { ...SOURCES_METHODES, ...SOURCES_PROGRAMMES }
 
     for (const vintage of vintages) {
-      expect(SOURCES_METHODES[vintage.id], `id vintages « ${vintage.id} » sans entrée de registre`).toBeDefined()
+      expect(registres[vintage.id], `id vintages « ${vintage.id} » sans entrée de registre`).toBeDefined()
     }
   })
 
