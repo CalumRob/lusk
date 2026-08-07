@@ -57,7 +57,12 @@ MANIFEST_MILIEUX_CONSOENAF <- tibble::tribble(
     "prouve) — le reshape du thème convertit m² -> ha (÷ 10 000), la ",
     "conversion est testée, jamais silencieusement trustée. Référence : la fin ",
     "de la fenêtre (2025-01-01) ; publication : la mise en ligne du fichier ",
-    "recalculé (2026-07-24)."
+    "recalculé (2026-07-24). TRAJECTOIRE ZAN (#173) : la formule annualise les ",
+    "fenêtres natives avant le rapport — naf11art21 couvre la décennie de ",
+    "référence 2011-2021 (10 ans) et naf21art25 couvre 2021-2025 (4 ans : ",
+    "naf{AA}art{BB} = BB−AA tranches annuelles, 1er janvier 2021 -> 1er janvier ",
+    "2025) — le rapport des rythmes (÷ 10 contre ÷ 4) est documenté dans ",
+    "theme_milieux.R et vérifié à la main dans le fixture."
   ),
   "cron", "fichier"
 )

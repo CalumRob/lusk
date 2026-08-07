@@ -82,23 +82,22 @@ test_that("les quatre lectures : une ligne par territoire, la classification par
   expect_true(all(p$histoires$theme == "milieux"))
   expect_true(all(p$histoires$periode == "2017-2023"))  # la fenêtre dérivée
 
-  # 22001 : population en hausse (+200), consommation 22,5 ha -> s'étale
+  # 22001 : population en hausse (+200), consommation 51 ha -> s'étale
   expect_equal(h("22001")$delta_population, 200)
-  expect_equal(h("22001")$conso_fenetre, 22.5)
+  expect_equal(h("22001")$conso_fenetre, 51)
   expect_equal(h("22001")$classification, "grandir-en-setalant")
-  # 22002 : population en hausse (+100), consommation EXACTEMENT zéro -> se densifie
+  # 22002 : population en hausse (+100), consommation 9 ha -> s'étale aussi
   expect_equal(h("22002")$delta_population, 100)
-  expect_equal(h("22002")$conso_fenetre, 0)
-  expect_equal(h("22002")$classification, "grandir-en-se-densifiant")
-  # 29001 : population en baisse (-150), consommation 9 ha -> consomme quand même
+  expect_equal(h("22002")$conso_fenetre, 9)
+  expect_equal(h("22002")$classification, "grandir-en-setalant")
+  # 29001 : population en baisse (-150), consommation 15,5 ha -> consomme quand même
   expect_equal(h("29001")$delta_population, -150)
-  expect_equal(h("29001")$conso_fenetre, 9)
+  expect_equal(h("29001")$conso_fenetre, 15.5)
   expect_equal(h("29001")$classification, "sen-aller-et-consommer-quand-meme")
-  # 29002 : population en baisse (-10), consommation zéro -> renaturation
+  # 29002 : population en baisse (-10), consommation 1,75 ha -> consomme quand même
   expect_equal(h("29002")$delta_population, -10)
-  expect_equal(h("29002")$conso_fenetre, 0)
-  expect_equal(h("29002")$classification,
-               "les-departs-laissent-la-place-a-la-renaturation")
+  expect_equal(h("29002")$conso_fenetre, 1.75)
+  expect_equal(h("29002")$classification, "sen-aller-et-consommer-quand-meme")
   # 29003 : consommation NA (jamais un 0 inventé) -> lecture NA
   expect_equal(h("29003")$delta_population, 0)
   expect_true(is.na(h("29003")$conso_fenetre))
@@ -109,9 +108,9 @@ test_that("les agrégats : mêmes signes, même lecture — un total incomplet r
   p <- compute_payload(communes_fixture_milieux(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
-  # EPCI X = A1 + D : Δpop 300, conso 22,5 ha -> s'étale
+  # EPCI X = A1 + D : Δpop 300, conso 60 ha -> s'étale
   expect_equal(h("200000001")$delta_population, 300)
-  expect_equal(h("200000001")$conso_fenetre, 22.5)
+  expect_equal(h("200000001")$conso_fenetre, 60)
   expect_equal(h("200000001")$classification, "grandir-en-setalant")
   # le département 22 suit ses communes
   expect_equal(h("22")$classification, "grandir-en-setalant")
@@ -128,10 +127,10 @@ test_that("l'intensité (m² d'ENAF par habitant ajouté) : publiée quand le Δ
   p <- compute_payload(communes_fixture_milieux(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
-  # 22001 : 22,5 ha pour +200 habitants -> 22,5 × 10 000 / 200 = 1125 m²/hab
-  expect_equal(h("22001")$intensite_m2_par_habitant, 22.5 * 10000 / 200)
-  # 22002 : croissance SANS consommation -> 0 m²/hab (une vraie densification)
-  expect_equal(h("22002")$intensite_m2_par_habitant, 0)
+  # 22001 : 51 ha pour +200 habitants -> 51 × 10 000 / 200 = 2550 m²/hab
+  expect_equal(h("22001")$intensite_m2_par_habitant, 51 * 10000 / 200)
+  # 22002 : 9 ha pour +100 habitants -> 9 × 10 000 / 100 = 900 m²/hab
+  expect_equal(h("22002")$intensite_m2_par_habitant, 9 * 10000 / 100)
   # 29001 : la population DIMINUE -> pas d'habitants ajoutés -> NA (supprimée)
   expect_true(is.na(h("29001")$intensite_m2_par_habitant))
   # 29003 : Δpopulation nul (près de zéro) -> NA
@@ -218,16 +217,16 @@ test_that("les deux horloges : des millésimes différents font glisser la fenê
   expect_equal(communes$pop_debut[communes$code == "22001"], 2300)
 
   # la terre re-sommée sur la fenêtre : 22001 = naf19art20..naf22art23
-  # (40000 + 35000 + 30000 + 25000 m²) = 130 000 m² = 13 ha — le total
+  # (100000 + 100000 + 60000 + 50000 m²) = 310 000 m² = 31 ha — le total
   # 2011-2025 (naf11art25) ne compte JAMAIS
-  expect_equal(communes$conso_fenetre[communes$code == "22001"], 13)
+  expect_equal(communes$conso_fenetre[communes$code == "22001"], 31)
 
   # l'Histoire publiée porte la fenêtre glissée et la lecture actualisée
   territoires <- construire_territoires_milieux(communes)
   hist <- compute_histoires_milieux(territoires)
   expect_true(all(hist$periode == "2019-2023"))
   expect_equal(hist$delta_population[hist$territoire == "22001"], 100)
-  expect_equal(hist$conso_fenetre[hist$territoire == "22001"], 13)
+  expect_equal(hist$conso_fenetre[hist$territoire == "22001"], 31)
 })
 
 # Déterminisme et forme du contrat ---------------------------------------------

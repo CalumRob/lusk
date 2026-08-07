@@ -1,15 +1,19 @@
 # test-contract-payload-milieux -------------------------------------------------
-# Le SEAM de test du payload Milieux (issue #171) : même fixture -> même
-# payload, pour toujours. Le TRACEUR publie un payload squelettique — la clé
-# conso_enaf (la consommation totale d'ENAF 2011-2025, en hectares, une ligne
-# par territoire), la table apercu VIDE mais présente (la forme du contrat) —
-# et CE payload passe la validation GÉNÉRIQUE (validate_payload : forme,
-# couverture des territoires, estampilles vintage). Depuis l'Histoire (#174),
-# la table histoires porte une ligne par territoire : les deux forces de la
-# lecture (Δpopulation de la série historique, consommation de la fenêtre
-# re-sommée), l'intensité et la classification (détaillés dans
+# Le SEAM de test du payload Milieux (issue #171, étendu par #172, #173,
+# #174) : même fixture -> même payload, pour toujours. L'INDICATEUR livré
+# publie SES TROIS clés — conso_enaf_fenetre (la fenêtre 2021-2025, en
+# hectares, une ligne par territoire), conso_enaf_annuel (la série annuelle
+# 2011-2024, 14 lignes par territoire, detail = l'année) et trajectoire_zan
+# (le rapport des rythmes, une ligne par territoire) — et CE payload passe la
+# validation GÉNÉRIQUE (validate_payload : forme, couverture des territoires,
+# multiplicités, estampilles vintage). Depuis l'Histoire (#174), la table
+# histoires porte une ligne par territoire : les deux forces de la lecture
+# (Δpopulation de la série historique, consommation de la fenêtre re-sommée),
+# l'intensité et la classification (détaillés dans
 # test-theme-milieux-histoire.R). La conversion m² -> ha est prouvée bout en
-# bout : la valeur publiée d'une commune EST sa consommation en hectares.
+# bout : la valeur publiée d'une commune EST sa consommation en hectares, et
+# la fenêtre EST la somme des quatre annuels 2021-2024 (vérifiée à la main).
+# L'Aperçu reste VIDE mais présent (la forme du contrat).
 
 test_that("le payload Milieux couvre chaque territoire du fixture", {
   payload <- compute_payload(communes_fixture_milieux(),
@@ -27,7 +31,7 @@ test_that("le payload Milieux couvre chaque territoire du fixture", {
   expect_equal(nrow(payload$territoires), length(territoires_attendus))
 })
 
-test_that("la forme des quatre tables est le contrat (payload squelettique)", {
+test_that("la forme des quatre tables est le contrat (payload Milieux)", {
   payload <- compute_payload(communes_fixture_milieux(),
                              theme = theme_milieux())
 
@@ -51,33 +55,69 @@ test_that("la forme des quatre tables est le contrat (payload squelettique)", {
   expect_true(all(payload$indicateurs$theme == "milieux"))
 })
 
-test_that("chaque territoire porte la clé conso_enaf — la conversion m² -> ha prouvée bout en bout", {
+test_that("chaque territoire publie la fenêtre 2021-2025 (ha), la série annuelle 2011-2024 et la trajectoire ZAN", {
   payload <- compute_payload(communes_fixture_milieux(),
                              theme = theme_milieux())
 
-  expect_setequal(unique(payload$indicateurs$key), "conso_enaf")
-  # une ligne par territoire
-  expect_equal(nrow(payload$indicateurs), nrow(payload$territoires))
+  # les TROIS clés du thème (issue #172 + #173) — la fenêtre, la série et la
+  # trajectoire — chacune avec SA multiplicité
+  expect_setequal(unique(payload$indicateurs$key),
+                  c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"))
+  # 10 territoires x 1 (fenêtre) + 10 x 14 (annuels) + 10 x 1 (trajectoire) = 160 lignes
+  expect_equal(nrow(payload$indicateurs), 10 + 10 * 14 + 10)
 
-  valeur <- function(code) {
-    payload$indicateurs$value[payload$indicateurs$territoire == code]
-  }
-  # communes : les valeurs du reshape (m² -> ha), vérifiées à la main
-  expect_equal(valeur("22001"), 1233202 / 10000)   # 123,3202 ha
-  expect_equal(valeur("22002"), 25)
-  expect_equal(valeur("29001"), 50)
-  expect_equal(valeur("29002"), 7.5)
-  # la commune sans donnée porte NA (un total incomplet, jamais un 0 inventé)
-  expect_true(is.na(valeur("29003")))
+  fenetre <- function(code) valeur_payload(payload, code, "conso_enaf_fenetre")
+  # la fenêtre : le champ natif naf21art25, converti m² -> ha (la conversion
+  # prouvée bout en bout — 233 202 m² -> 23,3202 ha pour la commune A1)
+  expect_equal(fenetre("22001")$value, 233202 / 10000)
+  expect_equal(fenetre("22002")$value, 100000 / 10000)
+  expect_equal(fenetre("29001")$value, 150000 / 10000)
+  expect_equal(fenetre("29002")$value, 25000 / 10000)
+  # la commune sans donnée porte NA (une fenêtre incomplète, jamais un 0 inventé)
+  expect_true(is.na(fenetre("29003")$value))
   # agrégats : les sommes des parties
-  expect_equal(valeur("200000001"), 1233202 / 10000 + 25)  # EPCI X
-  expect_equal(valeur("22"), 1233202 / 10000 + 25)          # département 22
-  # EPCI Y / département 29 / région : incomplets (membre 29003 NA) -> NA
-  expect_true(is.na(valeur("200000002")))
-  expect_true(is.na(valeur("29")))
-  expect_true(is.na(valeur("53")))
-  # l'unité du contrat
-  expect_true(all(payload$indicateurs$unit == "ha"))
+  expect_equal(fenetre("200000001")$value, (233202 + 100000) / 10000)  # EPCI X
+  expect_equal(fenetre("22")$value, (233202 + 100000) / 10000)          # dép. 22
+  # EPCI Y / département 29 / région : membres incomplets (29003 NA) -> NA
+  expect_true(is.na(fenetre("200000002")$value))
+  expect_true(is.na(fenetre("29")$value))
+  expect_true(is.na(fenetre("53")$value))
+  # l'unité du contrat : la fenêtre s'exprime en hectares
+  expect_true(all(fenetre("22001")$unit == "ha"))
+
+  annuel <- function(code) valeur_payload(payload, code, "conso_enaf_annuel")
+  # la série annuelle : 14 lignes par territoire, detail = l'année (2011..2024)
+  expect_equal(nrow(annuel("22001")), 14L)
+  expect_setequal(annuel("22001")$detail, as.character(2011:2024))
+  # les valeurs en hectares, vérifiées à la main (naf{AA}art{AA+1} ÷ 10 000)
+  attendues <- c(
+    "2011" = 120000, "2012" = 80000,
+    "2013" = 100000, "2014" = 100000, "2015" = 100000, "2016" = 100000,
+    "2017" = 100000, "2018" = 100000, "2019" = 100000, "2020" = 100000,
+    "2021" = 60000, "2022" = 50000, "2023" = 80000, "2024" = 43202
+  ) / 10000
+  for (an in names(attendues)) {
+    expect_equal(annuel("22001")$value[annuel("22001")$detail == an],
+                 unname(attendues[[an]]), info = an)
+  }
+  # la fenêtre (la clé tête) EST la somme des quatre annuels 2021-2024 — la
+  # vérification à la main de l'acceptance criteria, côté payload
+  somme_fenetre <- sum(annuel("22001")$value[
+    annuel("22001")$detail %in% c("2021", "2022", "2023", "2024")])
+  expect_equal(somme_fenetre, fenetre("22001")$value)
+  # un agrégat somme les annuels de ses communes (EPCI X, 2021 : 6 + 2 ha)
+  expect_equal(annuel("200000001")$value[
+    annuel("200000001")$detail == "2021"], 8)
+  # la commune sans donnée garde ses 14 annuels NA (jamais des 0 inventés)
+  expect_equal(nrow(annuel("29003")), 14L)
+  expect_true(all(is.na(annuel("29003")$value)))
+  # un niveau incomplet garde ses annuels NA
+  expect_true(all(is.na(annuel("200000002")$value)))
+
+  # la trajectoire ZAN (#173) : une ligne par territoire, unité « × », ses
+  # valeurs et bornes sont testées à la main dans test-theme-milieux-trajectoire-zan.R
+  trajectoire <- function(code) valeur_payload(payload, code, "trajectoire_zan")
+  expect_true(all(trajectoire("22001")$unit == "×"))
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence (CONSOENAF)", {
