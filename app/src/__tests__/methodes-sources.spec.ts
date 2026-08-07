@@ -41,7 +41,7 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
       expect(source.nom.length, `« ${id} » sans nom`).toBeGreaterThan(0)
       expect(source.editeur.length, `« ${id} » sans éditeur`).toBeGreaterThan(0)
       expect(source.themes.length, `« ${id} » sans thème utilisé`).toBeGreaterThan(0)
-      expect(source.themes.every((t) => ['demographie', 'habitat', 'economie', 'mobilite'].includes(t))).toBe(true)
+      expect(source.themes.every((t) => ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'].includes(t))).toBe(true)
     }
   })
 
@@ -56,8 +56,8 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     expect(registreSeul).toEqual([])
   })
 
-  it('déclare 42 sources — l\u2019union commise (demographie + habitat + economie + mobilite)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(42)
+  it('déclare 43 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux)', () => {
+    expect(Object.keys(SOURCES_METHODES).length).toBe(43)
   })
 })
 

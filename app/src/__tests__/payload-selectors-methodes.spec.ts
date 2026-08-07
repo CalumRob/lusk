@@ -52,7 +52,7 @@ describe('sourcesMethodes — la jointure registre × vintages', () => {
       dateReference: '1 janvier 2023',
       datePublication: '30 juin 2026',
     })
-    expect(serie?.themes).toEqual(['demographie'])
+    expect(serie?.themes).toEqual(['demographie', 'milieux'])
   })
 
   it('porte l\u2019URL éditoriale du jeu de données, jamais une date inventée', () => {

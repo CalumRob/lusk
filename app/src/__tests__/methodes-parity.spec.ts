@@ -54,14 +54,15 @@ function themesSansDocumentation(payloadThemes: string[]): string[] {
 
 describe('contrat Méthodes — chaque thème de la payload a sa documentation', () => {
   it('l\u2019enforcement a des dents : un thème de payload sans section Méthodes est nommé', () => {
-    // La Mobilité est désormais documentée (issue #143) — le test doit garder
-    // sa dent sur un thème SYNTHÉTIQUE de payload sans section Méthodes : ici
-    // « milieux », le cinquième thème du plan (CONTEXT.md), pas encore construit.
+    // Milieux est désormais documentée (issue #177) — le test doit garder sa
+    // dent sur un thème SYNTHÉTIQUE de payload sans section Méthodes : ici
+    // « eau », l'axe eau du cinquième thème (ADR-0014), conçu mais dont le
+    // contrat n'est délibérément PAS verrouillé (v2, gated sur sa recherche).
     // Le fixe le comportement de détection : sans lui, l'assertion de parité
     // pourrait passer par vacuité.
     expect(
-      themesSansDocumentation(['demographie', 'habitat', 'economie', 'mobilite', 'milieux']),
-    ).toEqual(['milieux'])
+      themesSansDocumentation(['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'eau']),
+    ).toEqual(['eau'])
   })
 
   it('découvre les payloads commis — les thèmes construits du registre, ni plus ni moins', () => {

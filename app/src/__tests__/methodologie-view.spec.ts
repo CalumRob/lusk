@@ -109,13 +109,13 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligneSerie.text()).toContain('30 juin 2026')
   })
 
-  it('liste les 42 sources commises (l\u2019union est le contrat)', async () => {
+  it('liste les 43 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
     // Le comptage est borné à la table de la section #sources — la page porte
     // aussi la table des sources de l'élément Programmes & financements (6
     // lignes, issue #180) : les deux registres sont documentés séparément.
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(42)
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(43)
   })
 
   it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
@@ -171,10 +171,10 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 42 lignes dans la table des sources, fraîcheur en tirets
+    // La page ne casse jamais : 43 lignes dans la table des sources, fraîcheur en tirets
     // (la table des sources de l'élément Programmes & financements, 6 lignes statiques,
     // reste rendue — elle ne dépend pas des vintages, issue #180).
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(42)
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(43)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

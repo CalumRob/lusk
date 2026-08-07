@@ -19,7 +19,7 @@
  */
 
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
-export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite'] as const
+export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
 
 export type ThemeConstruit = (typeof THEMES_CONSTRUITS)[number]
 
@@ -75,6 +75,13 @@ export interface ThemeMethodes {
    * déclencheur de rebuild. Absente pour les thèmes légers (rythme hebdomadaire).
    */
   horlogeLente?: HorlogeLenteMethodes
+  /**
+   * Les deux horloges du thème (ADR-0014) — le fait de première classe de la
+   * promesse de transparence quand l'indicateur et la Story vivent sur des
+   * horloges différentes : la même forme que l'horloge lente, une entrée par
+   * horloge. Absente pour les thèmes à horloge unique.
+   */
+  deuxHorloges?: DeuxHorlogesMethodes
 }
 
 /** Une entrée de l'horloge lente — une donnée que l'instantané consomme. */
@@ -94,6 +101,21 @@ export interface HorlogeLenteMethodes {
   /** Les entrées de l'instantané — à quelle fréquence chacune bouge. */
   entrees: EntreeHorlogeLente[]
   /** Le déclencheur de rebuild — quand le thème se recalcule. */
+  declencheur: string
+}
+
+/**
+ * Les deux horloges d'un thème (ADR-0014) — le fait de première classe de la
+ * promesse de transparence : quand l'indicateur et la Story vivent sur des
+ * horloges différentes, le thème le dit. La même forme que l'horloge lente
+ * (consommation, entrées, déclencheur) — une entrée par horloge.
+ */
+export interface DeuxHorlogesMethodes {
+  /** Ce que les deux horloges du thème sont, en une phrase. */
+  consommation: string
+  /** Les horloges — ce qui bouge sur chacune, à quelle fréquence, la référence. */
+  entrees: EntreeHorlogeLente[]
+  /** Le déclencheur — quand chaque horloge fait bouger le thème. */
   declencheur: string
 }
 
@@ -479,6 +501,100 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       ],
       declencheur:
         'Le thème se recalcule à la main, sur décision — jamais automatiquement : quand l’une de ses données de référence bouge de façon significative (un nouveau millésime d’équipements, une actualisation majeure des réseaux ou des bâtiments), l’analyse est re-générée, figée à sa nouvelle date d’instantané, puis re-portée dans le pipeline. La date publiée est celle de l’instantané : le thème ne prétend jamais être plus frais que son calcul.',
+    },
+  },
+
+  // ---- Milieux (docs/themes/milieux.md, ADR-0014) ----
+  // L'axe terre du cinquième thème : la consommation d'ENAF (l'indicateur à
+  // deux clés, #172) et la trajectoire ZAN (#173), toutes trois de la source
+  // CONSOENAF — puis l'Histoire unique « Se densifier, s'étaler, ou s'en
+  // aller » (#174) avec ses quatre lectures et le fait de première classe des
+  // DEUX HORLOGES (la promesse de transparence : l'indicateur sur l'horloge
+  // annuelle CONSOENAF, délibérément plus frais que la Story épinglée à
+  // l'horloge de la population).
+  milieux: {
+    indicateurs: {
+      conso_enaf_fenetre: {
+        label: 'Consommation d\u2019ENAF 2021-2025',
+        definition:
+          'La consommation d\u2019espaces naturels, agricoles et forestiers (ENAF) du territoire sur la fenêtre 2021-2025, en hectares — la période qui suit la loi Climat et Résilience, celle où l\u2019objectif de réduction de moitié se joue. Le classement se lit sur la part de la surface du territoire consommée, jamais sur les hectares bruts : une grande commune a plus de terre. Le fichier Cerema distribue ces consommations en mètres carrés alors que son dictionnaire les annonce en hectares : le pipeline convertit explicitement (÷ 10 000) et le teste — la conversion n\u2019est jamais silencieusement trustée (docs/research/zan-rennes.md).',
+        unite: 'ha',
+        source:
+          'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
+        sourceId: 'consoenaf',
+      },
+      conso_enaf_annuel: {
+        label: 'Consommation d\u2019ENAF \u2014 série annuelle',
+        definition:
+          'La même consommation d\u2019espaces naturels, agricoles et forestiers, année par année depuis 2011 — une ligne par année (2011, 2012, \u2026 2024), en hectares, pour suivre l\u2019évolution du rythme de consommation du territoire. La série partage le classement de la fenêtre : chacune de ses lignes porte le rang de la part de surface consommée du territoire.',
+        unite: 'ha',
+        source:
+          'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
+        sourceId: 'consoenaf',
+      },
+      trajectoire_zan: {
+        label: 'Trajectoire ZAN',
+        definition:
+          'Le rapport des rythmes de consommation d\u2019espaces naturels, agricoles et forestiers — la fenêtre 2021-2025 contre la décennie de référence 2011-2021, chacune annualisée avant le rapport : des fenêtres de longueurs différentes ne se comparent pas brutes. Un rapport inférieur à 1 veut dire que le territoire ralentit vers l\u2019objectif ZAN — 0,5 est la réduction de moitié de la loi ; supérieur à 1, il accélère. Le ratio se lit tel quel : il n\u2019a pas d\u2019unité.',
+        unite: '×',
+        source:
+          'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
+        sourceId: 'consoenaf',
+      },
+    },
+    stories: [
+      {
+        clef: 'se-densifier-setaler-ou-sen-aller',
+        titre: 'Se densifier, s\u2019\u00e9taler, ou s\u2019en aller',
+        statut: 'publiee',
+        definition:
+          'La Story du thème Milieux, la seule : elle lit le territoire contre sa terre — la variation de population contre la consommation d\u2019espaces naturels, agricoles et forestiers, sur la même fenêtre. La population vient de la série historique du recensement (la règle de source : jamais les champs embarqués de CONSOENAF) ; la consommation est la somme des annuels CONSOENAF sur la fenêtre dérivée des deux millésimes les plus récents de la série (2017-2023 aujourd\u2019hui — elle glisse quand l\u2019INSEE publie un nouveau recensement). Chaque territoire lit exactement une des quatre lectures, par le signe seul : le seuil est zéro, et un 0 est un vrai 0 — l\u2019objectif ZAN est un objectif zéro et la donnée est un dénombrement complet. Le bloc est fondé sur la note de recherche docs/research/zan-rennes.md, qui documente la thèse du thème : les problèmes environnementaux ne respectent pas les frontières communales.',
+        lectures: [
+          {
+            clef: 'grandir-en-se-densifiant',
+            nom: 'Grandir en se densifiant',
+            lecture:
+              'La population augmente et la consommation est nulle — la croissance est absorbée par le bâti existant, le territoire se densifie. Le zéro est un vrai zéro : l\u2019objectif ZAN est atteint sur la fenêtre.',
+          },
+          {
+            clef: 'grandir-en-setalant',
+            nom: 'Grandir en s\u2019\u00e9talant',
+            lecture:
+              'La population augmente et la consommation suit — la croissance s\u2019\u00e9tale sur de nouveaux espaces naturels, agricoles et forestiers.',
+          },
+          {
+            clef: 'sen-aller-et-consommer-quand-meme',
+            nom: 'S\u2019en aller, et consommer quand m\u00eame',
+            lecture:
+              'La population diminue et la consommation continue — le territoire se vide, et consomme quand même.',
+          },
+          {
+            clef: 'les-departs-laissent-la-place-a-la-renaturation',
+            nom: 'Les d\u00e9parts laissent la place \u00e0 la renaturation',
+            lecture:
+              'La population diminue et la consommation s\u2019arr\u00eate. La renaturation est potentielle, jamais mesurée : la donnée montre l\u2019absence de nouvelle consommation, pas un retour de la nature.',
+          },
+        ],
+      },
+    ],
+    deuxHorloges: {
+      consommation:
+        'Le thème porte deux horloges, et le dit (la promesse de transparence d\u2019ADR-0014) : l\u2019indicateur « Consommation d\u2019ENAF » tourne sur l\u2019horloge annuelle CONSOENAF et est délibérément plus frais que la Story, épinglée à l\u2019horloge de la population.',
+      entrees: [
+        {
+          donnee: 'La consommation d\u2019ENAF — l\u2019indicateur',
+          frequence: 'annuelle — le jeu CONSOENAF est mis à jour chaque année',
+          reference: 'CONSOENAF 2011-2025 (COG 2025)',
+        },
+        {
+          donnee: 'La population — la fenêtre de la Story',
+          frequence:
+            'au rythme des recensements — les millésimes de la série historique',
+          reference: 'RP 2017 et 2023 (la fenêtre 2017-2023, dérivée, jamais codée en dur)',
+        },
+      ],
+      declencheur:
+        'Quand l\u2019INSEE publie un nouveau recensement dans la série historique, la fenêtre de la Story glisse — elle dérive des deux millésimes les plus récents — et la consommation se re-somme sur la fenêtre dérivée. L\u2019indicateur, lui, suit simplement l\u2019horloge annuelle CONSOENAF.',
     },
   },
 }
