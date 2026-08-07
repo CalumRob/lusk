@@ -1,0 +1,7 @@
+insee_reg,lib_reg,dep_chef_file,lib_dep,id_crte,lib_crte,type_grp_crte,siren_groupement,lib_groupement,nature_juridique,siren_epci,date_signature
+53,Bretagne,22,Côtes-d'Armor,crte-53-22-1,CRTE EPCI X,mono,200000001,EPCI X,CC,200000001,01-12-2021
+53,Bretagne,29,Finistère,crte-53-29-1,CRTE EPCI Y,mono,200000002,EPCI Y,CA,200000002,01-12-2021
+53,Bretagne,29,Finistère,crte-53-29-2,CRTE pluri des deux,pluri,200000001,EPCI X,CC,200000001,15-06-2022
+53,Bretagne,29,Finistère,crte-53-29-2,CRTE pluri des deux,pluri,200000002,EPCI Y,CA,200000002,15-06-2022
+53,Bretagne,29,Finistère,crte-53-29-3,CRTE à communes seules,pluri,22001,Commune A1,COM,22001,01-03-2023
+84,Auvergne-Rhône-Alpes,01,Ain,crte-84-01-1,CRTE ailleurs,mono,299999999,EPCI Z,CC,299999999,01-01-2021
