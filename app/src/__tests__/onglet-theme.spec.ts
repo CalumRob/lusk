@@ -16,10 +16,10 @@ import type { Histoire, Payload } from '../payload/types'
 
 /**
  * OngletTheme — the ThemeBlock (ui-elements.md §ThemeBlock): overline (-strong)
- * → 4 indicator figures in contract order → story angle (serif one-liner keyed
- * by the pipeline's rate-quadrant classification + the quadrant chart) →
- * "comment lire" + Méthodes link. Consumes the payload selectors — never raw
- * JSON.
+ * → story angle first (serif one-liner keyed by the pipeline's rate-quadrant
+ * classification + the quadrant chart, above the grid since issue #71) → the
+ * 4 indicator figures in contract order → "comment lire" + Méthodes link.
+ * Consumes the payload selectors — never raw JSON.
  */
 
 const payloadDemographie: Payload = {
@@ -56,6 +56,18 @@ describe('OngletTheme — the standard block', () => {
 
     const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
     expect(figures).toEqual(['densite', 'structure_age', 'evolution_1968', 'taille_menages'])
+  })
+
+  it('renders the story angle ABOVE the indicator grid (issue #71 — the fiche’s signature moment leads)', async () => {
+    const wrapper = await monter('22001')
+
+    const story = wrapper.find('.angle-story')
+    const grille = wrapper.find('.grille-indicateurs')
+    expect(story.exists()).toBe(true)
+    expect(grille.exists()).toBe(true)
+    expect(story.element.compareDocumentPosition(grille.element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
   })
 
   it('renders each figure with its French label and its vintage stamp', async () => {

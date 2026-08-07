@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock): the
- * theme overline (-strong) → the standard indicator figures (contract order)
- * → one story angle (serif one-liner + one shape) → "comment lire" + Méthodes
- * link. The block wears the theme's ramp — Démographie wears indigo; the page
+ * theme overline (-strong) → the one story angle (serif one-liner + one shape,
+ * first in the block since issue #71) → the standard indicator figures
+ * (contract order) → "comment lire" + Méthodes link. The block wears the
+ * theme's ramp — Démographie wears indigo; the page
  * background -wash is the shell's (TerritoireView).
  *
  * The block consumes the payload selectors only — never raw JSON. The Story
@@ -199,44 +200,10 @@ function libelleIndicateur(clef: string): string {
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
 
-    <!-- The Mobilité block (issue #142, ADR-0012) : la « Taille » → la grille
-         d'isolation (les 5 parts, cadrage « sans accès ») → l'étage
-         demande/réseaux → le sous-bloc sous son libellé, puis l'estampille
-         snapshot — jamais le langage des chips hebdomadaires. -->
-    <template v-if="theme === 'mobilite'">
-      <template v-for="(section, i) in sectionsMobilite" :key="i">
-        <p v-if="section.titre" class="sous-bloc-mobilite-libelle">{{ section.titre }}</p>
-        <div
-          class="grille-indicateurs"
-          :class="{ 'grille-isolation': section.isolation }"
-        >
-          <IndicatorFigure
-            v-for="groupe in section.groupes"
-            :key="groupe.key"
-            :clef="groupe.key"
-            :lignes="groupe.lignes"
-            :libelle="libelleIndicateur(groupe.key)"
-            :labels-detail="labelsDetailPour(groupe.key)"
-            :large="groupe.key === 'reseaux'"
-          />
-        </div>
-      </template>
-      <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
-    </template>
-
-    <div v-else class="grille-indicateurs">
-      <IndicatorFigure
-        v-for="groupe in groupes"
-        :key="groupe.key"
-        :clef="groupe.key"
-        :lignes="groupe.lignes"
-        :libelle="libelleIndicateur(groupe.key)"
-        :labels-detail="NOMS_TRANCHES_AGE"
-        :signe="groupe.key === 'evolution_1968'"
-        :large="groupe.key === 'structure_age'"
-      />
-    </div>
-
+    <!-- The story angle leads the theme block (issue #71) — the fiche's
+         signature moment sits ABOVE the standard indicator grid, per the
+         décision of 2026-08-07 (DESIGN.md §5 updated in step). The one-liner
+         still carries its own chart, comment-lire, source and Méthodes link. -->
     <section v-if="storyMobiliteAngle || story || storyEconomieAngle" class="angle-story">
       <!-- The Mobilité Story (issue #142, ADR-0012) : the flagship's headline.
            The default « Vingt minutes sans voiture » renders its distribution
@@ -360,6 +327,41 @@ function libelleIndicateur(clef: string): string {
         <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
       </template>
     </section>
+
+    <!-- The standard indicator grid sits BELOW the story angle (issue #71). -->
+    <template v-if="theme === 'mobilite'">
+      <template v-for="(section, i) in sectionsMobilite" :key="i">
+        <p v-if="section.titre" class="sous-bloc-mobilite-libelle">{{ section.titre }}</p>
+        <div
+          class="grille-indicateurs"
+          :class="{ 'grille-isolation': section.isolation }"
+        >
+          <IndicatorFigure
+            v-for="groupe in section.groupes"
+            :key="groupe.key"
+            :clef="groupe.key"
+            :lignes="groupe.lignes"
+            :libelle="libelleIndicateur(groupe.key)"
+            :labels-detail="labelsDetailPour(groupe.key)"
+            :large="groupe.key === 'reseaux'"
+          />
+        </div>
+      </template>
+      <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
+    </template>
+
+    <div v-else class="grille-indicateurs">
+      <IndicatorFigure
+        v-for="groupe in groupes"
+        :key="groupe.key"
+        :clef="groupe.key"
+        :lignes="groupe.lignes"
+        :libelle="libelleIndicateur(groupe.key)"
+        :labels-detail="NOMS_TRANCHES_AGE"
+        :signe="groupe.key === 'evolution_1968'"
+        :large="groupe.key === 'structure_age'"
+      />
+    </div>
   </article>
 </template>
 
