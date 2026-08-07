@@ -1,14 +1,19 @@
 # test-contract-payload-milieux -------------------------------------------------
-# Le SEAM de test du payload Milieux (issue #171, étendu par #172) : même
-# fixture -> même payload, pour toujours. L'INDICATEUR livré publie SES DEUX
-# clés — conso_enaf_fenetre (la fenêtre 2021-2025, en hectares, une ligne par
-# territoire) et conso_enaf_annuel (la série annuelle 2011-2024, 14 lignes par
-# territoire, detail = l'année) — et CE payload passe la validation GÉNÉRIQUE
-# (validate_payload : forme, couverture des territoires, multiplicités,
-# estampilles vintage). La conversion m² -> ha est prouvée bout en bout : la
-# valeur publiée d'une commune EST sa consommation en hectares, et la fenêtre
-# EST la somme des quatre annuels 2021-2024 (vérifiée à la main). Les tables
-# histoires et apercu restent VIDE mais présentes (la forme du contrat).
+# Le SEAM de test du payload Milieux (issue #171, étendu par #172, #173,
+# #174) : même fixture -> même payload, pour toujours. L'INDICATEUR livré
+# publie SES TROIS clés — conso_enaf_fenetre (la fenêtre 2021-2025, en
+# hectares, une ligne par territoire), conso_enaf_annuel (la série annuelle
+# 2011-2024, 14 lignes par territoire, detail = l'année) et trajectoire_zan
+# (le rapport des rythmes, une ligne par territoire) — et CE payload passe la
+# validation GÉNÉRIQUE (validate_payload : forme, couverture des territoires,
+# multiplicités, estampilles vintage). Depuis l'Histoire (#174), la table
+# histoires porte une ligne par territoire : les deux forces de la lecture
+# (Δpopulation de la série historique, consommation de la fenêtre re-sommée),
+# l'intensité et la classification (détaillés dans
+# test-theme-milieux-histoire.R). La conversion m² -> ha est prouvée bout en
+# bout : la valeur publiée d'une commune EST sa consommation en hectares, et
+# la fenêtre EST la somme des quatre annuels 2021-2024 (vérifiée à la main).
+# L'Aperçu reste VIDE mais présent (la forme du contrat).
 
 test_that("le payload Milieux couvre chaque territoire du fixture", {
   payload <- compute_payload(communes_fixture_milieux(),
@@ -37,10 +42,14 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
     "vintage_source", "vintage_version",
     "vintage_date_reference", "vintage_date_publication"
   ))
-  # histoires et apercu : présents, vides, la forme du contrat
-  expect_named(payload$histoires,
-               c("territoire", "type", "theme", "story_key"))
-  expect_equal(nrow(payload$histoires), 0L)
+  # histoires : la forme du contrat de l'Histoire (#174) — une ligne par
+  # territoire, les forces de la lecture et la classification
+  expect_named(payload$histoires, c(
+    "territoire", "type", "theme", "story_key", "periode",
+    "delta_population", "conso_fenetre", "intensite_m2_par_habitant",
+    "classification"
+  ))
+  expect_equal(nrow(payload$histoires), nrow(payload$territoires))
   expect_named(payload$apercu, c("territoire", "type", "key", "value", "unit"))
   expect_equal(nrow(payload$apercu), 0L)
   expect_true(all(payload$indicateurs$theme == "milieux"))

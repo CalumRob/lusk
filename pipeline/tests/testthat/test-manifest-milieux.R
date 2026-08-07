@@ -5,23 +5,25 @@
 # à jour annuelles, COG 2025) — plus la base des EPCI partagée (le référentiel
 # commune -> EPCI -> département -> région que la table des territoires
 # consomme ; le même id/URL que Démographie/Habitat — le cache idempotent évite
-# le re-téléchargement). La discipline des fragments (issue #13) : une ligne
-# par source, chaque source garde SON vintage, SA référence et SA publication —
-# aucun alignement de date.
+# le re-téléchargement). Depuis l'Histoire (#174), le manifeste porte aussi la
+# série historique du recensement — la source partagée de la population (le
+# même id/URL que Démographie, la règle de source d'ADR-0014). La discipline
+# des fragments (issue #13) : une ligne par source, chaque source garde SON
+# vintage, SA référence et SA publication — aucun alignement de date.
 
-test_that("MANIFEST_MILIEUX : la source CONSOENAF et la base EPCI partagée, les 11 colonnes standard", {
+test_that("MANIFEST_MILIEUX : CONSOENAF, la base EPCI partagée et la série historique, les 11 colonnes standard", {
   m <- MANIFEST_MILIEUX
 
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 2L)
+  expect_equal(nrow(m), 3L)
   expect_equal(nrow(m), length(unique(m$id)))
-  expect_setequal(m$id, c("epci", "consoenaf"))
+  expect_setequal(m$id, c("epci", "consoenaf", "serie_historique"))
 
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
                     "date_reference", "date_publication", "licence",
                     "note", "mode", "type") %in% names(m)))
 
-  # les deux sources sont des fichiers téléchargeables en cron (des jeux
+  # les trois sources sont des fichiers téléchargeables en cron (des jeux
   # officiels ouverts — jamais un portage à la main), Licence Ouverte 2.0
   expect_true(all(m$type == "fichier"))
   expect_true(all(m$mode == "cron"))
@@ -67,6 +69,26 @@ test_that("MANIFEST_MILIEUX : la note CONSOENAF documente licence, vintage annue
   expect_true(grepl("hectare", note))
 })
 
+test_that("MANIFEST_MILIEUX : la série historique du recensement est la source partagée de Démographie", {
+  serie <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == "serie_historique", ]
+
+  # le MÊME id/URL/fichier que Démographie (theme_demographie.R) — le cache
+  # idempotent évite le re-téléchargement ; la règle de source d'ADR-0014
+  dem <- MANIFEST_DEMOGRAPHIE[MANIFEST_DEMOGRAPHIE$id == "serie_historique", ]
+  expect_equal(serie$url, dem$url)
+  expect_equal(serie$fichier, "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip")
+  expect_equal(serie$vintage, "2023")
+  expect_equal(serie$date_reference, "2023-01-01")
+  expect_equal(serie$date_publication, "2026-06-30")
+
+  # la note documente la règle de source (jamais les populations embarquées de
+  # CONSOENAF) et la règle des deux horloges (la fenêtre dérivée, jamais codée
+  # en dur)
+  expect_true(grepl("série historique", serie$note, ignore.case = TRUE))
+  expect_true(grepl("jamais des champs embarqués", serie$note,
+                    ignore.case = TRUE))
+})
+
 test_that("verifier_contrat_milieux : le manifeste réel passe son contrat", {
   expect_true(verifier_contrat_milieux(MANIFEST_MILIEUX))
 })
@@ -76,8 +98,8 @@ test_that("verifier_contrat_milieux : un manifeste corrompu échoue bruyamment",
     expect_error(verifier_contrat_milieux(manif), motif)
   }
 
-  # une source manquante (le contrat exige les DEUX)
-  manquer(MANIFEST_MILIEUX[MANIFEST_MILIEUX$id != "consoenaf", ], "DEUX")
+  # une source manquante (le contrat exige les TROIS)
+  manquer(MANIFEST_MILIEUX[MANIFEST_MILIEUX$id != "consoenaf", ], "TROIS")
 
   # un id dupliqué
   duplique <- dplyr::bind_rows(MANIFEST_MILIEUX, MANIFEST_MILIEUX[1, ])
