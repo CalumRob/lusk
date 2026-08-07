@@ -40,7 +40,7 @@ test_that("trajectoire_zan : le rapport des rythmes annualisés, vérifié à la
                              theme = theme_milieux())
 
   expect_setequal(unique(payload$indicateurs$key),
-                  c("conso_enaf", "trajectoire_zan"))
+                  c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"))
   zan <- payload$indicateurs[payload$indicateurs$key == "trajectoire_zan", ]
   # une ligne par territoire (la multiplicité déclarée) — chaque territoire du
   # fixture publie SON rapport, y compris les agrégats

@@ -1,15 +1,15 @@
 # theme_milieux ---------------------------------------------------------------
 # Le module du thème Milieux (issue #171, ADR-0014) : le cinquième bloc de la
-# fiche, l'axe terre. Ce ticket est le TRACEUR — le plus mince chemin complet
-# qui prouve que la machinerie partagée (download/compute/publish) marche pour
-# Milieux : l'ingestion CONSOENAF (le manifeste, le reshape m² -> ha, le filtre
-# Bretagne), la table des territoires via le squelette partagé, et un payload
-# squelettique (une seule clé d'indicateur — la consommation totale 2011-2025
-# en hectares — qui rend le payload publiable et validable) qui passe les
-# validateurs génériques. La trajectoire ZAN (#173) ajoute sa clé — le rapport
-# des rythmes annualisés 2021-2025 contre 2011-2021 ; la fenêtre 2021-2025 et
-# la série annuelle (#172) et l'Histoire (#174) arrivent dans les tickets
-# suivants.
+# fiche, l'axe terre. Le TRACEUR (#171) a prouvé la machinerie partagée
+# (download/compute/publish) pour Milieux : l'ingestion CONSOENAF (le
+# manifeste, le reshape m² -> ha, le filtre Bretagne), la table des territoires
+# via le squelette partagé, et un payload squelettique publiable. L'indicateur
+# « Consommation d'ENAF » (#172) livre SES DEUX clés — la fenêtre 2021-2025
+# (conso_enaf_fenetre, en hectares) et la série annuelle 2011-2024
+# (conso_enaf_annuel, une ligne par année), classées sur la PART de la surface
+# du territoire consommée (jamais les hectares bruts, ADR-0014). La trajectoire
+# ZAN (#173) ajoute SA clé — le rapport des rythmes annualisés 2021-2025 contre
+# 2011-2021, échelle libre. L'Histoire (#174) arrive dans un ticket suivant.
 #
 # Ce qui vit ici, ce qui ne vit pas ici :
 #   - le manifeste CONCATÉNÉ du thème (manifest_milieux.R) : la source
@@ -17,15 +17,19 @@
 #   - la construction des données : le lecteur du CSV (lire_consoenaf), le
 #     reshape (normaliser_consoenaf — l'anomalie d'unité m²/ha, le filtre
 #     Bretagne) et l'assembleur (construire_donnees_milieux — la jointure
-#     d'identité sur la base des EPCI partagée) ;
+#     d'identité sur la base des EPCI partagée, la surface communale
+#     surfcom2025 portée telle quelle, jamais convertie) ;
 #   - la table des territoires du thème : le squelette PARTAGÉ (squelette_
 #     territoires, compute.R) avec le poids du thème — la consommation totale
 #     d'ENAF (comme Démographie pèse par la population et Habitat par les
-#     logements, Milieux pèse par les hectares consommés) ;
-#   - la table déclarative INDICATEURS_MILIEUX (la clé squelettique conso_enaf)
-#     et l'APERCU_<theme> vide (le gating par thème, ADR-0007).
-# Ce qui N'y vit PAS : aucun calcul d'indicateur livré (#172), aucune
-# Histoire (#174), aucune modification de la machinerie partagée.
+#     logements, Milieux pèse par les hectares consommés) ; la surface
+#     s'agrège avec les consommations (le scalaire classé se lit sur les
+#     totaux du niveau) ;
+#   - la table déclarative INDICATEURS_MILIEUX (les trois clés de l'indicateur :
+#     les deux de la « Consommation d'ENAF » #172 + la trajectoire ZAN #173) et
+#     l'APERCU_<theme> vide (le gating par thème, ADR-0007).
+# Ce qui N'y vit PAS : aucune Histoire (#174), aucune modification de la
+# machinerie partagée.
 
 # lire_consoenaf ---------------------------------------------------------------
 # Le lecteur du CSV CONSOENAF (conso_com.csv) : tout est lu en chaînes — les
@@ -111,6 +115,12 @@ construire_donnees_milieux <- function(cache = "data/raw",
       departement = DEP,
       epci = EPCI,
       nom_epci = LIBEPCI,
+      # la surface communale : le champ surfcom2025 du fichier, une MESURE du
+      # référentiel en m² — portée telle quelle, jamais convertie (le décor,
+      # ADR-0014) ; elle s'agrège avec les consommations pour que le scalaire
+      # classé — la part de surface consommée — se lise sur les totaux du
+      # niveau de territoire (#172).
+      surfcom2025 = as.double(surfcom2025),
       dplyr::across(dplyr::all_of(conso_en_m2(names(conso))), ~ .x)
     )
 
@@ -126,37 +136,41 @@ construire_donnees_milieux <- function(cache = "data/raw",
 # colonnes du reshape, déjà en hectares), sommées par niveau de territoire.
 
 # agreger_territoires_milieux : la part du thème — les colonnes de consommation
-# (le motif conso_en_m2 — la même source de vérité que le reshape), agrégées
-# par niveau de territoire (une ligne par commune = ses propres valeurs ; EPCI
-# / département / région = la somme des lignes de leurs communes), rejointes
-# sur le squelette partagé par code. La somme est naïve (comme Démographie/
-# Habitat) : une commune à consommation NA rend le total de son niveau NA — un
-# total incomplet n'est JAMAIS publié comme s'il était complet (le fichier
-# Cerema remplit 0,0 — le NA est l'exception honnête, jamais un 0 inventé).
+# (le motif conso_en_m2 — la même source de vérité que le reshape) et la
+# surface communale (surfcom2025, en m² — une mesure du référentiel, jamais
+# convertie), agrégées par niveau de territoire (une ligne par commune = ses
+# propres valeurs ; EPCI / département / région = la somme des lignes de leurs
+# communes), rejointes sur le squelette partagé par code. La somme est naïve
+# (comme Démographie/Habitat) : une commune à consommation NA rend le total de
+# son niveau NA — un total incomplet n'est JAMAIS publié comme s'il était
+# complet (le fichier Cerema remplit 0,0 — le NA est l'exception honnête,
+# jamais un 0 inventé). La surface d'un niveau, elle, est la somme des
+# surfaces de ses communes (le dénominateur du scalaire classé, #172).
 agreger_territoires_milieux <- function(communes, squelette) {
   base <- communes %>%
     dplyr::mutate(dplyr::across(c(departement, epci), as.character))
   colonnes_conso <- conso_en_m2(names(base))
+  colonnes_mesure <- c(colonnes_conso, "surfcom2025")
 
   mesures <- dplyr::bind_rows(
-    base[c("code", colonnes_conso)],
+    base[c("code", colonnes_mesure)],
     base %>%
       dplyr::group_by(epci) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_conso), sum),
+        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = epci),
     base %>%
       dplyr::group_by(departement) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_conso), sum),
+        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = departement),
     base %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_conso), sum),
+        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
         .groups = "drop"
       ) %>%
       dplyr::mutate(code = "53")
@@ -183,24 +197,30 @@ construire_territoires_milieux <- function(donnees) {
 # INDICATEURS_MILIEUX -----------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages) et sa multiplicité. Le TRACEUR (issue #171)
-# déclare UNE clé squelettique : conso_enaf — la consommation totale d'ENAF
-# 2011-2025 en hectares (le champ natif naf11art25 du fichier, converti m² ->
-# ha au reshape), une ligne PAR TERRITOIRE. La trajectoire ZAN (issue #173)
-# ajoute SA clé : trajectoire_zan — le rapport des rythmes de consommation
-# d'ENAF (la fenêtre 2021-2025 contre la décennie de référence 2011-2021,
-# annualisés), un ratio sans échelle (unité « × ») publié tel quel, une ligne
-# PAR TERRITOIRE. La fenêtre 2021-2025, la série annuelle et le classement sur
-# la part de surface arrivent avec l'indicateur livré (#172).
+# l'estampille — les vintages) et sa multiplicité. Les TROIS clés du thème,
+# toutes de la source CONSOENAF :
+#   - conso_enaf_fenetre : la fenêtre 2021-2025, en hectares (le champ natif
+#     naf21art25, converti m² -> ha au reshape) — une ligne PAR TERRITOIRE
+#     (#172) ;
+#   - conso_enaf_annuel : la série annuelle 2011-2024, en hectares (les champs
+#     natifs naf{AA}art{AA+1}) — 14 lignes par territoire, detail = l'année
+#     (la multiplicité, comme structure_age pour Démographie) (#172) ;
+#   - trajectoire_zan : le rapport des rythmes de consommation d'ENAF (la
+#     fenêtre 2021-2025 contre la décennie de référence 2011-2021,
+#     annualisés), un ratio sans échelle (unité « × ») publié tel quel, une
+#     ligne PAR TERRITOIRE (#173).
+# La clé squelettique du traceur (conso_enaf, le total 2011-2025) n'est PAS
+# dans la spec v1 de l'indicateur — elle est remplacée par les deux clés #172.
 INDICATEURS_MILIEUX <- tibble::tibble(
-  key = c("conso_enaf", "trajectoire_zan"),
+  key = c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"),
   libelle = c(
-    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) 2011-2025 — total, en hectares",
+    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) 2021-2025 — en hectares",
+    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) — consommation annuelle, en hectares",
     "Trajectoire ZAN — rapport des rythmes de consommation d'ENAF (2021-2025 contre 2011-2021, annualisés), en ×"
   ),
-  sources = list("consoenaf", "consoenaf"),
-  source_reference = c("consoenaf", "consoenaf"),
-  multiplicite = c(1L, 1L)
+  sources = list("consoenaf", "consoenaf", "consoenaf"),
+  source_reference = c("consoenaf", "consoenaf", "consoenaf"),
+  multiplicite = c(1L, 14L, 1L)
 )
 
 # APERCU_MILIEUX ----------------------------------------------------------------
@@ -216,22 +236,47 @@ APERCU_MILIEUX <- tibble::tibble(
 
 # Les constructeurs d'indicateurs ----------------------------------------------
 # Mêmes entrées (la table des territoires), mêmes sorties : une table longue
-# code, key, detail, value, unit. Le TRACEUR publie la clé squelettique
-# conso_enaf — la valeur est la consommation totale 2011-2025 (déjà en
-# hectares), NA pour un territoire au total incomplet. La trajectoire ZAN
-# (#173) publie SA clé — le rapport des rythmes annualisés — chaque clé garde
-# sa propre fonction nommée (l'additif, jamais un méli-mélo dans la liste).
-construire_indicateurs_milieux <- function(territoires) {
-  list(
-    conso_enaf = tibble::tibble(
-      code = territoires$code,
-      key = "conso_enaf",
-      detail = NA_character_,
-      value = territoires$naf11art25,
-      unit = "ha"
-    ),
-    trajectoire_zan = trajectoire_zan_territoires(territoires)
+# code, key, detail, value, unit. Chaque clé de l'indicateur (#172) est un
+# petit module pur — la trajectoire ZAN (#173) a ajouté la sienne par une
+# fonction propre, sans toucher aux autres.
+# Une valeur de consommation vide reste NA — jamais un 0 inventé.
+
+# indicator_conso_enaf_fenetre : la fenêtre 2021-2025, en hectares (le champ
+# natif naf21art25, déjà converti m² -> ha dans la table des territoires), NA
+# pour un territoire au total de fenêtre incomplet.
+indicator_conso_enaf_fenetre <- function(territoires) {
+  tibble::tibble(
+    code = territoires$code,
+    key = "conso_enaf_fenetre",
+    detail = NA_character_,
+    value = territoires$naf21art25,
+    unit = "ha"
   )
+}
+
+# indicator_conso_enaf_annuel : la série annuelle 2011-2024 — les 14 champs
+# natifs naf{AA}art{AA+1} (chaque colonne = UNE année : naf11art12 = 2011, ...
+# naf24art25 = 2024), pivotés en 14 lignes par territoire, detail = l'année
+# (la multiplicité de la clé). La liste des colonnes se construit depuis la
+# plage d'années — jamais un sous-ensemble implicite : une colonne manquante
+# (une dérive de forme du fichier) échoue fort au lieu de publier une série
+# amputée.
+indicator_conso_enaf_annuel <- function(territoires) {
+  annees <- 2011:2024
+  colonnes <- paste0("naf", substr(annees, 3, 4), "art", substr(annees + 1, 3, 4))
+  territoires %>%
+    dplyr::select(code, dplyr::all_of(colonnes)) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(colonnes),
+      names_to = "champ",
+      values_to = "value"
+    ) %>%
+    dplyr::mutate(
+      key = "conso_enaf_annuel",
+      detail = paste0("20", substr(champ, 4, 5)),
+      unit = "ha"
+    ) %>%
+    dplyr::select(code, key, detail, value, unit)
 }
 
 # trajectoire_zan_territoires ---------------------------------------------------
@@ -276,14 +321,45 @@ trajectoire_zan_territoires <- function(territoires) {
   )
 }
 
+# construire_indicateurs_milieux : le thème déclare SES constructeurs — la
+# liste nommée des tables longues que compute_payload() assemble. Les trois
+# clés : les deux de la « Consommation d'ENAF » (#172) + la trajectoire ZAN
+# (#173).
+construire_indicateurs_milieux <- function(territoires) {
+  list(
+    conso_enaf_fenetre = indicator_conso_enaf_fenetre(territoires),
+    conso_enaf_annuel = indicator_conso_enaf_annuel(territoires),
+    trajectoire_zan = trajectoire_zan_territoires(territoires)
+  )
+}
+
 # Les scalaires de classement du thème -----------------------------------------
-# Le scalaire classé par indicateur : la valeur elle-même pour les clés à
-# scalaire unique (l'héritage du compute_ranks) — conso_enaf (le total en
-# hectares) ET trajectoire_zan (#173, le rapport des rythmes — ÉCHELLE LIBRE :
-# le rapport est publié tel quel, aucun scalaire à déclarer pour lui). La règle
-# du classement livré (la part de la surface consommée, jamais les hectares
-# bruts) arrive avec l'indicateur #172.
-scalaires_milieux <- list()
+# Le scalaire classé par indicateur : la valeur elle-même pour les clés
+# scalaires, le scalaire déclaré pour les multi-valeurs (issue #13 — ex.
+# structure_age classée par la part des moins de 20 ans). Pour Milieux
+# (#172), le scalaire des DEUX clés de l'indicateur est la PART de la surface
+# du territoire consommée sur la fenêtre 2021-2025 — jamais les hectares
+# bruts (une grande commune a plus de terre ; ADR-0014). La série annuelle
+# porte le même scalaire que la fenêtre : ses 14 lignes partagent le rang du
+# territoire (le rang de la part, comme structure_age réplique le rang de la
+# part des moins de 20 ans sur ses 7 tranches). La trajectoire ZAN (#173),
+# échelle libre, n'a AUCUN scalaire déclaré : la valeur publiée (le rapport
+# des rythmes) EST le scalaire classé (l'héritage du compute_ranks).
+
+# part_surface_consoenaf : la part de la surface du territoire consommée sur
+# la fenêtre 2021-2025. La consommation publiée est en hectares (naf21art25,
+# convertie au reshape) ; la surface est la mesure du référentiel en m²
+# (surfcom2025, jamais convertie — le décor) : on repasse la consommation en
+# m² (x 10 000) avant de diviser. Un territoire à fenêtre incomplète (NA)
+# porte une part NA — jamais un 0 inventé, jamais un rang fabriqué.
+part_surface_consoenaf <- function(territoires) {
+  territoires$naf21art25 * 10000 / territoires$surfcom2025
+}
+
+scalaires_milieux <- list(
+  conso_enaf_fenetre = part_surface_consoenaf,
+  conso_enaf_annuel = part_surface_consoenaf
+)
 
 # compute_histoires_milieux -----------------------------------------------------
 # L'Histoire du thème : VIDE pour le traceur — les quatre lectures « Se
@@ -310,14 +386,15 @@ construire_apercu_milieux <- function(territoires) {
 
 # validations_milieux -----------------------------------------------------------
 # Les vérifications de valeur propres au thème (point 7) : déclarées ici,
-# exécutées par validate_payload() après ses vérifications génériques.
+# exécutées par validate_payload() après ses vérifications génériques. Les
+# deux clés de l'indicateur (#172) sont vérifiées.
 validations_milieux <- list(
   # la consommation d'ENAF est un total non négatif (une valeur NA — commune
   # sans donnée, total de niveau incomplet — est un cas légitime, jamais une
   # corruption ; une valeur négative est un fichier qui dérive)
   function(payload) {
     conso <- payload$indicateurs$value[
-      payload$indicateurs$key == "conso_enaf"]
+      payload$indicateurs$key %in% c("conso_enaf_fenetre", "conso_enaf_annuel")]
     if (any(!is.na(conso) & conso < 0)) {
       stop("Payload invalide : une consommation d'ENAF négative.",
            call. = FALSE)
