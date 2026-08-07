@@ -405,9 +405,18 @@ estampiller_subventions <- function(table, vintages) {
 # (construire_donnees_subventions), `base_epci` le référentiel partagé (la
 # forme de lire_epci), `vintages` la table des vintages du run. Déterministe :
 # trié par type puis code puis domaine.
+# La discipline de l'honnêteté « attribué à un territoire breton » (le même
+# filtre que les totaux, calculer_subventions_agregats) : une commune absente
+# de la base bretonne des EPCI — hors Bretagne (l'export SCDL porte des
+# bénéficiaires de toute la France), ou écart de COG — ne peut être attribuée
+# à AUCUN territoire breton. La ventilation communale est donc limitée aux
+# communes du référentiel : le payload ne porte JAMAIS une ligne pour un
+# territoire inconnu de l'app (le contrat « chaque ligne = un territoire du
+# référentiel » que valide l'app, issue #179).
 construire_analytiques_subventions <- function(conventions, base_epci,
                                                vintages) {
   communales <- calculer_subventions_communes(conventions) %>%
+    dplyr::semi_join(base_epci, by = c("commune" = "CODGEO")) %>%
     dplyr::mutate(type = "commune", territoire = .data$commune) %>%
     dplyr::select(-"commune")
 

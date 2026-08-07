@@ -385,6 +385,34 @@ test_that("construire_analytiques_subventions : une source de référence absent
   )
 })
 
+test_that("construire_analytiques_subventions : une commune HORS Bretagne n'entre JAMAIS dans les agrégats", {
+  # la discipline de l'honnêteté « attribué à un territoire breton » (le même
+  # filtre que les totaux) : une convention ancrée sur une commune absente de
+  # la base bretonne des EPCI — hors Bretagne (l'export SCDL porte des
+  # bénéficiaires de toute la France, ex. 10081 en Aube) ou écart de COG — ne
+  # peut être attribuée à AUCUN territoire breton. Elle est exclue de la
+  # ventilation communale comme des totaux : le payload ne doit jamais porter
+  # une ligne pour un territoire inconnu du référentiel de l'app.
+  brutes <- tibble::tribble(
+    ~dateconvention, ~montant, ~dossier_commune_insee, ~programme_libl,
+    "2025-03-10", "10000", "22001", "Développement économique",
+    "2025-03-11", "5000", "10081", "Développement économique",
+    "2024-06-20", "8000", "22001", "Emploi",
+    "2026-02-10", "6000", "22001", "Développement économique"
+  )
+  norm <- normaliser_subventions_scdl(brutes)
+  analytiques <- construire_analytiques_subventions(
+    norm, base_epci_subventions(), vintages_subventions_fixture())
+
+  # la commune bretonne a ses lignes communales ; la commune de l'Aube
+  # n'apparaît NULLE PART — ni en ligne communale, ni dans les totaux (le
+  # département 10 et l'EPCI hors Bretagne n'existent pas dans la base)
+  expect_true(any(analytiques$territoire == "22001"))
+  expect_false(any(analytiques$territoire == "10081"))
+  # le total de la région ne porte que les montants des communes bretonnes
+  expect_equal(sum(analytiques$montant[analytiques$type == "region"]), 10000)
+})
+
 test_that("construire_donnees_subventions : une source absente du cache s'arrête bruyamment", {
   # le lecteur lève une erreur de fichier absent — le run s'arrête ICI, avant
   # de construire quoi que ce soit (jamais un succès partiel silencieux)
