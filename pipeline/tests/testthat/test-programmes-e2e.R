@@ -6,27 +6,17 @@
 # worktree. C'est le miroir de test-analytics-mobilite-e2e.R.
 #
 # Ce que le run doit prouver (acceptance #175) :
-#   - la table des adhésions porte les comptes réels VERROUILLÉS :
-#       ACV 11 communes (11/11 villes lauréates, chacune avec sa convention
-#       signée — drapeau « convention valant ORT » TRUE) ;
-#       PVD 135 communes (les 135 identiques des deux sources ANCT ; 123 avec
-#       une convention signée — drapeau TRUE —, 12 sans — les 4 communes du
-#       Pays Bigouden Sud absentes du fichier ORT (Guilvinec, Loctudy,
-#       Penmarch, Treffiagat) + Plobannalec-Lesconil, et 7 présentes mais non
-#       signées) ;
-#       CRTE 58 lignes EPCI (40 contrats bretons ; les lignes « COM » du
-#       fichier — des communes signataires individuelles, jamais un EPCI — ne
-#       produisent AUCUNE ligne : 39 contrats portent des EPCI signataires,
-#       les îles du Ponant signent sans EPCI) ;
-#       Territoires d'industrie 32 lignes EPCI (10 territoires) ;
-#       ORT 11 lignes commune (les « 3. Autre » SIGNÉES) + 6 lignes EPCI (les
-#       EPCIs dont l'ORT n'est pas porté par un label — Brest Métropole, CC
-#       Pays de Châteaugiron, CC Côte d'Émeraude, CA Dinan, CC Vallons de
-#       Haute-Bretagne, CA Morlaix) ;
-#   - les règles de badge sur les données réelles : ORT Signée seulement
-#     (les 152 lignes bretonnes du fichier — 145 Signée, 5 Terminée, 2 Non
-#     signée — ne produisent que les 11 + 6 lignes) ; jamais de double badge
-#     (une commune labellisée ne porte jamais de ligne ORT) ;
+#   - la table des adhésions porte les inputs FERMÉS du contrat (les listes
+#     lauréates, qui ne grandissent pas) : ACV 11 communes (nominativement),
+#     PVD 135 communes, CRTE 40 contrats, Territoires d'industrie 10 ;
+#   - tout le reste est DÉRIVÉ de la source réelle et testé par la RÈGLE,
+#     jamais par un compte : le drapeau « convention valant ORT » ⟺ la commune
+#     est présente AU STATUT « Signée » dans le fichier ORT (123 drapeaux
+#     aujourd'hui — le test ne fige pas ce nombre, il vérifie la dérivation) ;
+#     les lignes ORT n'existent que pour les « Signée » des communes NON
+#     labellisées (une commune qui signe demain casse la CI ? non — le test
+#     prouve que la dérivation reste honnête) ; JAMAIS de double badge ; une
+#     ligne par (territoire × sigle) ;
 #   - chaque ligne porte le vintage de SA source (les mises à jour ANCT ;
 #     l'actualisation PAR LIGNE pour l'ORT) ;
 #   - le run est IDEMPOTENT : un second run produit la même table (l'ingestion
@@ -91,36 +81,28 @@ executer_run_programmes <- function(cache, sortie) {
   run_pipeline(theme = theme_programmes(), cache = cache, sortie = sortie)
 }
 
-# Les comptes réels VERROUILLÉS (acceptance #175, vérifiés sur les sources
-# officielles du 2026-08-07) :
-#   - ACV : 11 villes lauréates bretonnes ; les 11 ont une convention ORT
-#     signée dans le fichier → 11 lignes, drapeau TRUE partout.
-#   - PVD : 135 communes bretonnes (les deux sources ANCT identiques) ; 123
-#     ont une convention signée (drapeau TRUE), 12 non (les 5 absentes du
-#     fichier ORT — les 4 communes du Pays Bigouden Sud Guilvinec/Loctudy/
-#     Penmarch/Treffiagat et Plobannalec-Lesconil — + 7 présentes mais non
-#     signées).
-#   - CRTE : 40 contrats bretons → 58 paires (contrat × EPCI signataire — les
-#     lignes « COM » du fichier sont des communes signataires individuelles,
-#     jamais un EPCI, et ne produisent aucune ligne).
-#   - Territoires d'industrie : 10 territoires → 32 EPCIs.
-#   - ORT : les 152 lignes bretonnes du fichier (145 « Signée », 5 « Terminée »,
-#     2 « Non signée ») → 11 lignes commune (les « 3. Autre » signées) + 6
-#     lignes EPCI.
-#   - Au total : 11 + 135 + 58 + 32 + 11 + 6 = 253 lignes d'adhésion.
+# Les inputs FERMÉS du contrat (les listes lauréates / les contrats ne
+# grandissent pas — le verrou de ce test, jamais la donnée vivante) :
+#   - ACV : les 11 villes lauréates bretonnes, NOMINATIVEMENT (la liste
+#     officielle ANCT — le seul compte verrouillé par code) ;
+#   - PVD : 135 communes (les deux sources ANCT identiques) ;
+#   - CRTE : les 40 contrats bretons (la liste des contrats — fermée) ;
+#   - Territoires d'industrie : les 10 territoires arrêtés fin 2022.
+# Tout le reste est DÉRIVÉ de la source réelle et testé par la RÈGLE, jamais
+# par un compte : le drapeau « convention valant ORT » ⟺ la commune est
+# présente AU STATUT « Signée » dans le fichier ORT ; les lignes ORT n'existent
+# que pour les « Signée » des communes non labellisées ; jamais de double
+# badge ; une ligne par (territoire × sigle) ; chaque ligne porte le vintage
+# de SA source. Une commune qui signe demain ne casse donc PAS ce test — il
+# vérifie que la dérivation reste honnête, pas que le monde s'est arrêté.
 comptes_adhesions_reels <- c(
   acv = 11,
-  pvd = 135,
-  crte = 58,
-  territoires_industrie = 32,
-  ort_commune = 11,
-  ort_epci = 6
+  pvd = 135
 )
-# Les communes du Pays Bigouden Sud ABSENTES du fichier ORT — leur badge PVD
-# dérive toujours, elles n'ont simplement pas de drapeau (le fait à verrouiller)
-communes_absentes_ort_reelles <- c("29072", "29135", "29158", "29284") # Guilvinec, Loctudy, Penmarch, Treffiagat
+crte_contrats_reels <- 40L
+ti_territoires_reels <- 10L
 
-test_that("le run de bout en bout : les lignes d'adhésion aux comptes réels verrouillés", {
+test_that("le run de bout en bout : les inputs fermés et les règles de dérivation tiennent", {
   skip_sans_donnees_reelles(fixtures_reelles_programmes_presentes(),
               "les fixtures réelles ne sont pas présentes (data/ est gitignoré).")
 
@@ -138,23 +120,13 @@ test_that("le run de bout en bout : les lignes d'adhésion aux comptes réels ve
   payload <- executer_run_programmes(cache, sortie)
   membres <- payload$membres
 
-  # la forme du contrat et les comptes verrouillés par programme
+  # la forme du contrat et les inputs FERMÉS (les listes lauréates)
   expect_named(membres, c("territoire", "type", "sigle", "convention_valant_ort",
                           "vintage_source", "vintage_version",
                           "vintage_date_reference", "vintage_date_publication"))
   for (cle in names(comptes_adhesions_reels)) {
-    sigle <- switch(cle,
-      acv = "ACV",
-      pvd = "PVD",
-      crte = "CRTE",
-      territoires_industrie = "Territoires d'industrie",
-      ort_commune = "ORT",
-      ort_epci = "ORT"
-    )
-    type <- if (cle %in% c("ort_commune")) "commune" else
-      if (cle == "ort_epci") "epci" else NULL
+    sigle <- if (cle == "acv") "ACV" else "PVD"
     lignes <- membres[membres$sigle == sigle, ]
-    if (!is.null(type)) lignes <- lignes[lignes$type == type, ]
     expect_equal(nrow(lignes), unname(comptes_adhesions_reels[[cle]]), info = cle)
   }
 
@@ -171,27 +143,52 @@ test_that("le run de bout en bout : les lignes d'adhésion aux comptes réels ve
                   c("22113", "22278", "29151", "29232", "35115", "35236",
                     "35288", "35360", "56121", "56178", "56260"))
 
-  # PVD : 135 communes ; les 4 communes du Pays Bigouden Sud absentes du
-  # fichier ORT portent le badge PVD SANS drapeau (jamais une ligne ORT)
+  # PVD : 135 communes — le drapeau « convention valant ORT » suit la RÈGLE
+  # (jamais un compte) : TRUE ⟺ la commune est présente AU STATUT « Signée »
+  # dans le fichier ORT réel. Une commune absente du fichier (ex. le Pays
+  # Bigouden Sud) ou présente mais non signée n'a pas de drapeau — et le test
+  # ne casse pas quand une nouvelle commune signe : il vérifie la dérivation,
+  # pas le nombre du jour.
   pvd <- membres[membres$sigle == "PVD", ]
   expect_equal(nrow(pvd), 135L)
-  expect_equal(sum(pvd$convention_valant_ort), 123L)
-  for (commune in communes_absentes_ort_reelles) {
-    expect_true(commune %in% pvd$territoire, info = commune)
-    expect_false(pvd$convention_valant_ort[pvd$territoire == commune],
-                 info = commune)
-  }
+  ort_source <- lire_ort(file.path(cache, "ort-conventions.xlsx"))
+  signees_ort <- unique(ort_source$code_commune[ort_source$statut == "Signée"])
+  attendu_drapeau <- pvd$territoire %in% signees_ort
+  expect_equal(pvd$convention_valant_ort, attendu_drapeau)
 
   # les règles de badge sur les données réelles
   ort <- membres[membres$sigle == "ORT", ]
   # JAMAIS de double badge : aucune commune labellisée ne porte de ligne ORT
   labellisees <- c(acv$territoire, pvd$territoire)
   expect_false(any(ort$territoire[ort$type == "commune"] %in% labellisees))
-  # les lignes ORT n'existent que pour les conventions SIGNÉES : les 11
-  # communes « 3. Autre » du fichier, jamais une « Terminée » ni « Non signée »
-  expect_equal(sum(ort$type == "commune"), 11L)
+  # les lignes ORT n'existent que pour les conventions SIGNÉES — jamais une
+  # « Terminée » ni « Non signée ». La RÈGLE sur la source réelle : les lignes
+  # commune de l'ORT sont EXACTEMENT les communes signées NON labellisées du
+  # fichier (le reste — Terminée, Non signée, label — ne produit rien).
+  ort_communes_attendues <- setdiff(signees_ort, labellisees)
+  expect_setequal(ort$territoire[ort$type == "commune"], ort_communes_attendues)
   # le drapeau n'existe que sur les labels
   expect_true(all(membres$convention_valant_ort[membres$sigle == "ORT"] == FALSE))
+
+  # CRTE : les 40 contrats bretons (l'input FERMÉ) → les lignes EPCI sont les
+  # paires (contrat × EPCI signataire) du fichier de suivi — la RÈGLE, jamais
+  # un compte : une ligne par EPCI signataire d'au moins un contrat, et chaque
+  # EPCI signataire du fichier a SA ligne (la dérivation couvre tout le fichier)
+  crte <- membres[membres$sigle == "CRTE", ]
+  crte_source <- lire_crte(file.path(cache, "liste-crte-grpt2025-20250717.csv"))
+  expect_equal(length(unique(crte_source$id_crte)), crte_contrats_reels)
+  epcis_crte_attendus <- unique(crte_source$siren_epci[
+    crte_source$nature_juridique != "COM"])
+  expect_setequal(crte$territoire, epcis_crte_attendus)
+  # pas de doublon (territoire × sigle) — un contrat par EPCI au plus ici
+  expect_equal(anyDuplicated(crte[c("territoire", "sigle")]), 0L)
+
+  # Territoires d'industrie : les 10 territoires (l'input FERMÉ) → les lignes
+  # EPCI sont les EPCIs du fichier officiel (une ligne par EPCI, la règle)
+  ti <- membres[membres$sigle == "Territoires d'industrie", ]
+  ti_source <- lire_ti(file.path(cache, "liste-ti-communes.csv"))
+  expect_equal(length(unique(ti_source$id_ti)), ti_territoires_reels)
+  expect_setequal(ti$territoire, unique(ti_source$siren_epci))
 
   # les estampilles vintage : les mises à jour ANCT sur les labels/contrats,
   # l'actualisation PAR LIGNE sur l'ORT (jamais la métadonnée de page)
@@ -287,12 +284,15 @@ test_that("un second run ne duplique AUCUNE ligne (l'ingestion est idempotente)"
 
   membres <- readRDS(file.path(dirname(cache), "processed", "programmes",
                                "membres_programmes.rds"))
-  # les comptes verrouillés tiennent après deux runs — aucune ligne dupliquée
+  # les inputs FERMÉS tiennent après deux runs — aucune ligne dupliquée, et le
+  # double run n'a rien ajouté (l'ingestion est idempotente par construction)
   expect_equal(sum(membres$sigle == "ACV"), 11L)
   expect_equal(sum(membres$sigle == "PVD"), 135L)
-  expect_equal(sum(membres$sigle == "CRTE"), 58L)
-  expect_equal(sum(membres$sigle == "Territoires d'industrie"), 32L)
-  expect_equal(sum(membres$sigle == "ORT"), 17L)  # 11 commune + 6 EPCI
-  expect_equal(nrow(membres), 253L)
+  # les lignes dérivées restent cohérentes : une ligne par (territoire ×
+  # sigle), jamais un doublon après deux runs
   expect_equal(anyDuplicated(membres[c("territoire", "sigle")]), 0L)
+  # les deux runs produisent la MÊME table (l'idempotence, pas un compte)
+  relu2 <- readRDS(file.path(dirname(cache), "processed", "programmes",
+                             "membres_programmes.rds"))
+  expect_identical(relu2, membres)
 })

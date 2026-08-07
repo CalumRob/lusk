@@ -356,20 +356,32 @@ construire_membres_programmes <- function(donnees, base_epci, vintages) {
          paste(inconnues, collapse = ", "), ".", call. = FALSE)
   }
   avec_epci <- non_labellisees %>%
-    dplyr::left_join(referentiel, by = c("code_commune" = "code"))
+    dplyr::left_join(referentiel, by = c("code_commune" = "code")) %>%
+    # une convention SIGNÉE sans actualisation ne porte pas de fraîcheur par
+    # ligne (le contrat estampille chaque ligne ORT de SA date) — elle n'entre
+    # dans AUCUN agrégat de fraîcheur
+    dplyr::filter(!is.na(.data$actualisation))
 
   # l'actualisation la plus récente de chaque convention (commune) et de
-  # chaque EPCI — la fraîcheur par ligne portée par les lignes ORT
+  # chaque EPCI — la fraîcheur par ligne portée par les lignes ORT. La garde
+  # n() > 0 : sur un input SANS lignes (un run à tables vides, issue #178), un
+  # max() sur le groupe vide déclencherait « no non-missing arguments ».
   ort_communes <- avec_epci %>%
     dplyr::group_by(code_commune) %>%
-    dplyr::summarise(actualisation = max(actualisation), .groups = "drop") %>%
+    dplyr::summarise(
+      actualisation = if (dplyr::n() > 0) max(actualisation) else NA_character_,
+      .groups = "drop"
+    ) %>%
     dplyr::transmute(
       territoire = code_commune, type = "commune", sigle = "ORT",
       convention_valant_ort = FALSE, actualisation = actualisation
     )
   ort_epcis <- avec_epci %>%
     dplyr::group_by(epci) %>%
-    dplyr::summarise(actualisation = max(actualisation), .groups = "drop") %>%
+    dplyr::summarise(
+      actualisation = if (dplyr::n() > 0) max(actualisation) else NA_character_,
+      .groups = "drop"
+    ) %>%
     dplyr::transmute(
       territoire = epci, type = "epci", sigle = "ORT",
       convention_valant_ort = FALSE, actualisation = actualisation

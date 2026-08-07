@@ -263,7 +263,11 @@ construire_donnees_subventions <- function(cache = "data/raw") {
 # l'année complète la plus récente est donc la dernière année de décision
 # MOINS UN (2025). Une seule année dans la donnée = partielle par
 # construction : aucune année de référence (les agrégats sont vides).
+# Sans AUCUNE année (une table de conventions vide, le run à tables vides de
+# l'issue #178), un max() sur le vecteur vide déclencherait « no non-missing
+# arguments » — la garde rend NA, qui produit les mêmes agrégats vides.
 annee_reference_subventions <- function(annees) {
+  if (length(annees) == 0L) return(NA_integer_)
   max(annees) - 1L
 }
 

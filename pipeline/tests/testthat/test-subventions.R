@@ -251,6 +251,10 @@ test_that("annee_reference_subventions : l'année complète la plus récente (20
   expect_equal(annee_reference_subventions(c(2024L, 2025L, 2026L)), 2025L)
   # une seule année = partielle par construction : pas d'année de référence
   expect_equal(annee_reference_subventions(2026L), 2025L)
+  # AUCUNE année (une table de conventions vide — le run à tables vides de
+  # l'issue #178) : pas d'année de référence, et JAMAIS de warning de max()
+  expect_no_warning(annee_reference_subventions(integer(0)))
+  expect_equal(annee_reference_subventions(integer(0)), NA_integer_)
 })
 
 test_that("calculer_subventions_communes : le total annuel par domaine, année de référence seule", {

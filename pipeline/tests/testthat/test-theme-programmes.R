@@ -296,6 +296,31 @@ test_that("construire_membres_programmes : l'ORT ne badge QUE les conventions «
   expect_false("200000002" %in% ort$territoire)
 })
 
+test_that("construire_membres_programmes : une convention signée SANS actualisation n'entre dans AUCUN agrégat de fraîcheur", {
+  # une ligne « Signée » dont la date d'actualisation est absente ne peut pas
+  # porter la fraîcheur PAR LIGNE du contrat — elle est exclue des agrégats
+  # commune et EPCI (jamais une ligne ORT sans estampille, jamais de warning
+  # « no non-missing arguments » de max()). 29003 du fixture est « Terminée » :
+  # on la repasse « Signée » SANS date — elle (et son EPCI Y) doit disparaître.
+  donnees <- donnees_programmes_fixture()
+  donnees$ort <- dplyr::bind_rows(
+    donnees$ort[donnees$ort$code_commune != "29003", ],
+    tibble::tibble(code_commune = "29003", statut = "Signée", actualisation = NA_character_)
+  )
+
+  resultat <- testthat::expect_no_warning(
+    construire_membres_programmes(
+      donnees, base_epci_programmes(), vintages_programmes_fixture()
+    )
+  )
+  ort <- resultat[resultat$sigle == "ORT", ]
+  # 29003 (sans actualisation) ne produit AUCUNE ligne — ni commune, ni son
+  # EPCI Y (200000002) ; les autres lignes ORT du fixture restent
+  expect_false("29003" %in% ort$territoire)
+  expect_false("200000002" %in% ort$territoire)
+  expect_setequal(ort$territoire[ort$type == "commune"], c("22003", "22004"))
+})
+
 test_that("construire_membres_programmes : un statut NA ou « En cours » n'est jamais une convention signée", {
   # le fichier réel porte des lignes sans statut et « En cours » — aucune ne
   # doit produire de ligne ORT ni de drapeau (le badge ne s'allume que sur le
