@@ -28,6 +28,8 @@
     <MethodesSources />
 
     <MethodesIndicateurs />
+
+    <MethodesProgrammes />
   </section>
 </template>
 
@@ -35,14 +37,18 @@
 /**
  * /methodologie — Sources & Méthodes (site-map.md, layouts.md §5, CONTEXT.md →
  * Méthodes, issue #128). L'intro factuelle (ce qu'est Lusk, le pipeline,
- * la reproductibilité) puis la section « les sources » (MethodesSources) et
- * la section « les indicateurs » (MethodesIndicateurs, issue #129) : les
- * indicateurs et les Stories de chaque thème construit. Layout éditorial
- * resserré à 900px (layouts.md §5) — voix de rapport (Newsreader) pour les
- * titres de section, Manrope pour le corps. Pas de bannière de construction
- * (principles.md §1) : la page énonce ce qui est, jamais ce qui viendra.
+ * la reproductibilité) puis la section « les sources » (MethodesSources), la
+ * section « les indicateurs » (MethodesIndicateurs, issue #129) et la section
+ * « Programmes & financements » (MethodesProgrammes, issue #180) : les
+ * indicateurs et les Stories de chaque thème construit, puis l'élément
+ * Programmes & financements de la fiche — badges, couvertures, sources.
+ * Layout éditorial resserré à 900px (layouts.md §5) — voix de rapport
+ * (Newsreader) pour les titres de section, Manrope pour le corps. Pas de
+ * bannière de construction (principles.md §1) : la page énonce ce qui est,
+ * jamais ce qui viendra.
  */
 import MethodesIndicateurs from '@/methodes/MethodesIndicateurs.vue'
+import MethodesProgrammes from '@/methodes/MethodesProgrammes.vue'
 import MethodesSources from '@/methodes/MethodesSources.vue'
 </script>
 
