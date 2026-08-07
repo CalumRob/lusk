@@ -1,34 +1,19 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-07T13:08:41Z",
+  "timestamp": "2026-08-07T15:52:58Z",
   "statuts": [
     {
-      "id": "acv",
+      "id": "epci",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "pvd",
+      "id": "consoenaf",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "crte",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "territoires_industrie",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ort",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "subventions_scdl",
+      "id": "serie_historique",
       "mode": "cron",
       "status": "frais"
     }
