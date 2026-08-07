@@ -67,7 +67,7 @@ watchEffect(() => {
       <div class="accueil-hero-interieur">
         <div class="accueil-hero-contenu">
           <p class="accueil-accroche">
-            lusk · Intelligence territoriale en Bretagne
+            Intelligence territoriale en Bretagne
           </p>
           <p class="accueil-sous-titre">
             Lusk transforme les données publiques éparses de la Bretagne en intelligence

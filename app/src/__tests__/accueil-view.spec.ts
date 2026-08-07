@@ -91,11 +91,11 @@ describe('Accueil — le héros', () => {
     expect(wrapper.find('.accueil-marque-caption').text()).toBe("/'lysk/ · breton · élan, mouvement")
   })
 
-  it('porte le titre « lusk · Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
+  it('porte le titre « Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
     const { wrapper } = await monter(async () => payload)
 
     const accroche = wrapper.find('.accueil-accroche').text()
-    expect(accroche).toBe('lusk · Intelligence territoriale en Bretagne')
+    expect(accroche).toBe('Intelligence territoriale en Bretagne')
     expect(accroche).not.toMatch(/\bJe\b/)
     expect(wrapper.find('.accueil-sous-titre').exists()).toBe(true)
   })
