@@ -46,15 +46,16 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
   expect_true(all(payload$indicateurs$theme == "milieux"))
 })
 
-test_that("chaque territoire publie la fenêtre 2021-2025 (ha) et la série annuelle 2011-2024", {
+test_that("chaque territoire publie la fenêtre 2021-2025 (ha), la série annuelle 2011-2024 et la trajectoire ZAN", {
   payload <- compute_payload(communes_fixture_milieux(),
                              theme = theme_milieux())
 
-  # les DEUX clés de l'indicateur livré (issue #172) — la fenêtre et la série
+  # les TROIS clés du thème (issue #172 + #173) — la fenêtre, la série et la
+  # trajectoire — chacune avec SA multiplicité
   expect_setequal(unique(payload$indicateurs$key),
-                  c("conso_enaf_fenetre", "conso_enaf_annuel"))
-  # 10 territoires x 1 (fenêtre) + 10 x 14 (annuels) = 150 lignes
-  expect_equal(nrow(payload$indicateurs), 10 + 10 * 14)
+                  c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"))
+  # 10 territoires x 1 (fenêtre) + 10 x 14 (annuels) + 10 x 1 (trajectoire) = 160 lignes
+  expect_equal(nrow(payload$indicateurs), 10 + 10 * 14 + 10)
 
   fenetre <- function(code) valeur_payload(payload, code, "conso_enaf_fenetre")
   # la fenêtre : le champ natif naf21art25, converti m² -> ha (la conversion
@@ -103,6 +104,11 @@ test_that("chaque territoire publie la fenêtre 2021-2025 (ha) et la série annu
   expect_true(all(is.na(annuel("29003")$value)))
   # un niveau incomplet garde ses annuels NA
   expect_true(all(is.na(annuel("200000002")$value)))
+
+  # la trajectoire ZAN (#173) : une ligne par territoire, unité « × », ses
+  # valeurs et bornes sont testées à la main dans test-theme-milieux-trajectoire-zan.R
+  trajectoire <- function(code) valeur_payload(payload, code, "trajectoire_zan")
+  expect_true(all(trajectoire("22001")$unit == "×"))
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence (CONSOENAF)", {

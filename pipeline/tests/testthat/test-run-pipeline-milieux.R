@@ -81,13 +81,13 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
 
   payload <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible)
 
-  # le payload de l'indicateur livré : les deux clés du thème
+  # le payload de l'indicateur livré : les trois clés du thème
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "milieux"))
   expect_setequal(unique(payload$indicateurs$key),
-                  c("conso_enaf_fenetre", "conso_enaf_annuel"))
-  # 10 territoires x 1 (fenêtre) + 10 x 14 (annuels) = 150 lignes
-  expect_equal(nrow(payload$indicateurs), 150)
+                  c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"))
+  # 10 territoires x 1 (fenêtre) + 10 x 14 (annuels) + 10 x 1 (trajectoire) = 160 lignes
+  expect_equal(nrow(payload$indicateurs), 160)
   expect_equal(nrow(payload$territoires), 10)
   expect_setequal(unique(payload$territoires$type),
                   c("commune", "epci", "departement", "region"))
@@ -151,7 +151,7 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
-  expect_equal(nrow(ind), 150)  # 10 territoires x (1 fenêtre + 14 annuels)
+  expect_equal(nrow(ind), 160)  # 10 territoires x (1 fenêtre + 14 annuels + 1 trajectoire)
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)
   expect_equal(nrow(ref), 10)
 })
