@@ -184,14 +184,29 @@ lire_ort <- function(chemin) {
 
 # date_iso --------------------------------------------------------------------
 # La date « Dernière actualisation » en ISO (AAAA-MM-JJ), quelle que soit la
-# forme lue : un POSIXct (le classeur réel) ou une chaîne « AAAA-MM-JJ HH:MM:SS »
-# (les fixtures). Jamais l'heure — la fraîcheur est la journée de la
-# convention.
+# forme lue : un POSIXct (le classeur réel documenté), un numéro de série
+# Excel — numérique ou lu en texte (le classeur RÉEL est lu par lire_ort avec
+# col_types = "text", le zéro de tête du code commune préservé : la cellule de
+# date arrive comme sa valeur brute « 46076.5860 », jamais une date ISO) — ou
+# une chaîne « AAAA-MM-JJ HH:MM:SS » (les fixtures). Jamais l'heure — la
+# fraîcheur est la journée de la convention.
 date_iso <- function(x) {
   if (inherits(x, "POSIXt")) {
     format(as.Date(x), "%Y-%m-%d")
   } else {
-    substr(as.character(x), 1, 10)
+    chaine <- as.character(x)
+    # le numéro de série Excel (une valeur purement numérique, entière ou
+    # décimale) est converti depuis l'origine Excel 1899-12-30 ; toute autre
+    # chaîne (les fixtures « AAAA-MM-JJ HH:MM:SS ») garde sa date. La
+    # conversion ne touche QUE les éléments numériques — jamais de NA par
+    # coercition sur les chaînes ISO.
+    serie <- grepl("^[0-9]+(\\.[0-9]+)?$", chaine)
+    resultat <- substr(chaine, 1, 10)
+    if (any(serie)) {
+      resultat[serie] <- format(as.Date(as.numeric(chaine[serie]),
+                                        origin = "1899-12-30"), "%Y-%m-%d")
+    }
+    resultat
   }
 }
 

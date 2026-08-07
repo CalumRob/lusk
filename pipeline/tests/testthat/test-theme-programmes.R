@@ -175,6 +175,24 @@ test_that("lire_ort : le fichier ORT (XLSX, ressource uniquement), filtré Breta
   expect_equal(ort$actualisation[ort$code_commune == "29003"], "2025-12-01")
 })
 
+test_that("date_iso : l'actualisation ORT en ISO, quelle que soit la forme lue", {
+  # la forme du CLASSEUR RÉEL : une cellule de date Excel lue en texte par
+  # readxl (col_types = "text", le zéro de tête du code commune préservé)
+  # arrive comme son NUMÉRO DE SÉRIE en chaîne — jamais une date ISO
+  expect_equal(date_iso("46076.5860"), "2026-02-23")
+  expect_equal(date_iso("45859.5455"), "2025-07-21")
+  expect_equal(date_iso("46203.4863"), "2026-06-30")
+  # la même valeur sous forme numérique (un lecteur qui ne forcerait pas le texte)
+  expect_equal(date_iso(46076.5860), "2026-02-23")
+  # les formes historiques inchangées : POSIXct (le classeur réel documenté)
+  # et chaîne « AAAA-MM-JJ HH:MM:SS » (les fixtures)
+  expect_equal(date_iso(as.POSIXct("2026-04-01 12:00:00", tz = "UTC")), "2026-04-01")
+  expect_equal(date_iso("2025-12-01 00:00:00"), "2025-12-01")
+  # jamais l'heure — la fraîcheur est la journée de la convention
+  expect_true(all(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                        date_iso(c("46076.5860", "2026-04-01 09:30:00")))))
+})
+
 test_that("construire_donnees_programmes : assemble les cinq sources par leur id de manifeste", {
   appels <- new.env()
   local_mocked_bindings(
