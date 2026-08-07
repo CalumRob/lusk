@@ -1,9 +1,9 @@
 # test-programmes-e2e ----------------------------------------------------------
-# Le run de bout en bout du thème Programmes & financements (issue #175) sur
-# les VRAIES sources officielles (pipeline/data/raw/, gitignoré — jamais le
-# réseau) : la couture de téléchargement est MOCKÉE, les lecteurs et le calcul
-# sont RÉELS, les fixtures d'entrée sont les fichiers officiels du worktree.
-# C'est le miroir de test-analytics-mobilite-e2e.R.
+# Le run de bout en bout du thème Programmes & financements (issue #175 +
+# #178) sur les VRAIES sources officielles (pipeline/data/raw/, gitignoré —
+# jamais le réseau) : la couture de téléchargement est MOCKÉE, les lecteurs et
+# le calcul sont RÉELS, les fixtures d'entrée sont les fichiers officiels du
+# worktree. C'est le miroir de test-analytics-mobilite-e2e.R.
 #
 # Ce que le run doit prouver (acceptance #175) :
 #   - la table des adhésions porte les comptes réels VERROUILLÉS :
@@ -31,13 +31,16 @@
 #     l'actualisation PAR LIGNE pour l'ORT) ;
 #   - le run est IDEMPOTENT : un second run produit la même table (l'ingestion
 #     ne duplique rien), et le rapport de run trace les statuts par source ;
-#   - les vintages du thème (5 sources) sont fusionnés dans la table partagée.
+#   - les vintages du thème (les SIX sources — les cinq ANCT/DGALN + la SCDL
+#     des subventions) sont fusionnés dans la table partagée ;
+#   - le FICHIER PARTAGÉ programmes (issue #178) est publié : programmes.json
+#     (les deux tables en un objet) + un parquet par table, bit-à-bit égaux.
 
 # Les fixtures réelles — le seam d'entrée du run mocké --------------------------
-# Les cinq fichiers officiels (ACV, PVD, CRTE, Territoires d'industrie, ORT)
-# et le référentiel EPCI partagé vivent sous pipeline/data/ (gitignoré).
-# Absents hors worktree, le test saute proprement (comme les autres tests
-# « données réelles »).
+# Les cinq fichiers officiels (ACV, PVD, CRTE, Territoires d'industrie, ORT),
+# l'export SCDL des subventions (#176) et le référentiel EPCI partagé vivent
+# sous pipeline/data/ (gitignoré). Absents hors worktree, le test saute
+# proprement (comme les autres tests « données réelles »).
 fixture_e2e_programmes <- function(...) {
   testthat::test_path("..", "..", "data", "raw", ...)
 }
@@ -49,6 +52,7 @@ fixtures_reelles_programmes_presentes <- function() {
     fixture_e2e_programmes("liste-crte-grpt2025-20250717.csv"),
     fixture_e2e_programmes("liste-ti-communes.csv"),
     fixture_e2e_programmes("ort-conventions.xlsx"),
+    fixture_e2e_programmes("subventions_attribuees_scdl0.csv"),
     fixture_e2e_programmes("extracted", "EPCI_au_01-01-2025.xlsx")
   ))
 }
@@ -59,7 +63,8 @@ fabriquer_cache_e2e_programmes <- function(cache) {
               "liste-pvd-com2025-20260427.csv",
               "liste-crte-grpt2025-20250717.csv",
               "liste-ti-communes.csv",
-              "ort-conventions.xlsx")) {
+              "ort-conventions.xlsx",
+              "subventions_attribuees_scdl0.csv")) {
     file.copy(fixture_e2e_programmes(f), cache, overwrite = TRUE)
   }
   file.copy(fixture_e2e_programmes("extracted", "EPCI_au_01-01-2025.xlsx"),
@@ -67,11 +72,13 @@ fabriquer_cache_e2e_programmes <- function(cache) {
   invisible(cache)
 }
 
+# statuts du run Programmes : une ligne par source du manifeste COMPLET du
+# thème (les cinq ANCT/DGALN + la SCDL des subventions, issue #178)
 statuts_programmes <- function(status = "frais") {
   tibble::tibble(
-    id = MANIFEST_PROGRAMMES$id,
-    mode = MANIFEST_PROGRAMMES$mode,
-    status = rep(status, nrow(MANIFEST_PROGRAMMES))
+    id = MANIFEST_PROGRAMMES_COMPLET$id,
+    mode = MANIFEST_PROGRAMMES_COMPLET$mode,
+    status = rep(status, nrow(MANIFEST_PROGRAMMES_COMPLET))
   )
 }
 
@@ -195,25 +202,64 @@ test_that("le run de bout en bout : les lignes d'adhésion aux comptes réels ve
   expect_true(all(!is.na(ort$vintage_date_reference)))
   expect_true(all(grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", ort$vintage_date_reference)))
 
-  # l'artefact analytique est persisté sous data/processed/programmes/
+  # l'artefact analytique est persisté sous data/processed/programmes/ — les
+  # deux tables du payload (adhésions + subventions, issue #178)
   sortie_analytiques <- file.path(dirname(cache), "processed", "programmes")
   expect_true(file.exists(file.path(sortie_analytiques, "membres_programmes.rds")))
   relu <- readRDS(file.path(sortie_analytiques, "membres_programmes.rds"))
   expect_identical(relu, membres)
+  expect_true(file.exists(file.path(sortie_analytiques, "subventions_programmes.rds")))
+  expect_true(nrow(readRDS(file.path(sortie_analytiques,
+                                     "subventions_programmes.rds"))) > 0)
 
-  # les vintages du thème (5 sources) + le rapport de run sont publiés
+  # le payload retourné porte les DEUX tables du contrat (ADR-0013) — les
+  # adhésions (253 lignes) et les agrégats de subventions de l'année de
+  # référence (une ligne par territoire, estampillés hebdomadaire)
+  expect_named(payload, c("membres", "subventions"))
+  subventions <- payload$subventions
+  expect_true(nrow(subventions) > 0)
+  expect_true(all(c("territoire", "type", "annee", "programme_libl", "montant",
+                    "vintage_source", "vintage_version",
+                    "vintage_date_reference", "vintage_date_publication") %in%
+                    names(subventions)))
+  # l'estampille HEBDOMADAIRE de la source SCDL sur chaque ligne d'agrégat
+  scdl <- vintages_programmes()$source[vintages_programmes()$id == "subventions_scdl"]
+  expect_true(all(subventions$vintage_source == scdl))
+  expect_true(all(!is.na(subventions$montant)))
+  expect_true(any(subventions$type == "region"))
+  expect_true(sum(subventions$montant[subventions$type == "region"]) > 0)
+
+  # les vintages du thème (les SIX sources — les cinq ANCT/DGALN + la SCDL) +
+  # le rapport de run sont publiés
   expect_true(file.exists(file.path(sortie, "vintages.parquet")))
   expect_true(file.exists(file.path(sortie, "vintages.json")))
   expect_true(file.exists(file.path(sortie, "run-report.json")))
   vint <- nanoparquet::read_parquet(file.path(sortie, "vintages.parquet"))
-  expect_true(all(MANIFEST_PROGRAMMES$id %in% vint$id))
+  expect_true(all(MANIFEST_PROGRAMMES_COMPLET$id %in% vint$id))
+  expect_true("subventions_scdl" %in% vint$id)
   rapport <- jsonlite::fromJSON(file.path(sortie, "run-report.json"))
-  expect_equal(nrow(rapport$statuts), 5L)
-  expect_setequal(rapport$statuts$id, MANIFEST_PROGRAMMES$id)
-  # le fichier partagé programmes.json/parquet n'est PAS écrit par ce ticket
-  # (issue #178) — le payload est retourné par le seam, jamais le fichier
-  expect_false(file.exists(file.path(sortie, "programmes.json")))
-  expect_false(file.exists(file.path(sortie, "programmes.parquet")))
+  expect_equal(nrow(rapport$statuts), 6L)
+  expect_setequal(rapport$statuts$id, MANIFEST_PROGRAMMES_COMPLET$id)
+
+  # le FICHIER PARTAGÉ programmes (issue #178) : programmes.json (les DEUX
+  # tables en un objet — ce que l'app lit) + un parquet PAR TABLE, écrits vers
+  # la cible du payload
+  expect_true(file.exists(file.path(sortie, "programmes.json")))
+  expect_true(file.exists(file.path(sortie, "programmes_membres.parquet")))
+  expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
+  js <- jsonlite::fromJSON(file.path(sortie, "programmes.json"))
+  expect_named(js, c("membres", "subventions"))
+  expect_equal(nrow(js$membres), nrow(membres))
+  expect_equal(nrow(js$subventions), nrow(subventions))
+
+  # le contrat de non-dérive (ADR-0004) : le JSON se relit BIT À BIT comme les
+  # parquets pour chacune des deux tables
+  verifier_non_derivee(
+    nanoparquet::read_parquet(file.path(sortie, "programmes_membres.parquet")),
+    js$membres, "programmes_membres")
+  verifier_non_derivee(
+    nanoparquet::read_parquet(file.path(sortie, "programmes_subventions.parquet")),
+    js$subventions, "programmes_subventions")
 
   # AUCUN artefact de fiche hors de la cible de publication
   motifs_fiche <- paste("^programmes", "^vintages", "^run-report", sep = "|")
@@ -248,5 +294,5 @@ test_that("un second run ne duplique AUCUNE ligne (l'ingestion est idempotente)"
   expect_equal(sum(membres$sigle == "Territoires d'industrie"), 32L)
   expect_equal(sum(membres$sigle == "ORT"), 17L)  # 11 commune + 6 EPCI
   expect_equal(nrow(membres), 253L)
-  expect_false(anyDuplicated(membres[c("territoire", "sigle")]))
+  expect_equal(anyDuplicated(membres[c("territoire", "sigle")]), 0L)
 })

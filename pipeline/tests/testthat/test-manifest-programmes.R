@@ -81,6 +81,27 @@ test_that("verifier_contrat_programmes : le manifeste réel passe son contrat", 
   expect_true(verifier_contrat_programmes(MANIFEST_PROGRAMMES))
 })
 
+test_that("MANIFEST_PROGRAMMES_COMPLET : le run couvre les SIX sources du payload (issue #178)", {
+  # le manifeste COMPLET du thème : les cinq sources ANCT/DGALN du ticket #175
+  # + la source SCDL des subventions du ticket #176 — c'est LE manifeste que la
+  # machinerie partagée consomme (download_sources, rapport de run, vintages).
+  # Le manifeste #175 reste intact (verifier_contrat_programmes verrouille SES
+  # cinq fragments) ; le fragment SCDL garde SA validation (verifier_contrat_
+  # subventions).
+  complet <- MANIFEST_PROGRAMMES_COMPLET
+
+  expect_equal(complet, dplyr::bind_rows(MANIFEST_PROGRAMMES, MANIFEST_SUBVENTIONS))
+  expect_equal(nrow(complet), 6L)
+  expect_equal(nrow(complet), length(unique(complet$id)))
+  expect_true("subventions_scdl" %in% complet$id)
+  # la source SCDL est un fichier cron hebdomadaire (l'export data.bretagne.bzh)
+  scdl <- complet[complet$id == "subventions_scdl", ]
+  expect_equal(scdl$fichier, MANIFEST_SUBVENTIONS$fichier)
+  expect_equal(scdl$mode, "cron")
+  # le fragment SCDL passe son propre contrat
+  expect_true(verifier_contrat_subventions(MANIFEST_SUBVENTIONS))
+})
+
 test_that("verifier_contrat_programmes : un manifeste corrompu échoue bruyamment", {
   manquer <- function(manif, motif) {
     expect_error(verifier_contrat_programmes(manif), motif)

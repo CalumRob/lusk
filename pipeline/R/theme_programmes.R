@@ -29,12 +29,20 @@
 #     silencieusement) ;
 #   - le SEAM de publication : publier_programmes, câblé — le chaînon
 #     (construire_analytiques_programmes) calcule la table des adhésions, la
-#     valide et la persiste sous data/processed/programmes/. La publication du
-#     FICHIER PARTAGÉ programmes.json/parquet (le contrat « 404 = table
-#     absente », le précédent apercu #116) arrive au ticket #178 : le seam
-#     retourne le payload sans écrire le fichier partagé.
-# Ce qui N'y vit PAS : aucun calcul de subventions (ticket #176), aucune
-# modification de theme_demographie/theme_habitat.
+#     valide et la persiste sous data/processed/programmes/ ; le seam ASSEMBLE
+#     le payload complet (les adhésions + les agrégats de subventions du ticket
+#     #176, via les signatures documentées de subventions.R) et publie le
+#     FICHIER PARTAGÉ programmes.json + les parquets par table (le contrat
+#     « 404 = table absente », le précédent apercu #116 — issue #178) ;
+#   - le manifeste COMPLET du run : MANIFEST_PROGRAMMES_COMPLET — les CINQ
+#     sources ANCT/DGALN du manifeste #175 + la source SCDL des subventions
+#     (#176), pour que le téléchargement, le rapport de run et la table
+#     partagée des vintages couvrent aussi la source des subventions (issue
+#     #178 : « the module's source vintages are merged into the shared vintages
+#     table »).
+# Ce qui N'y vit PAS : aucun calcul de subventions (ticket #176 — le module
+# subventions.R garde SES seams), aucune modification de
+# theme_demographie/theme_habitat.
 
 # Les lecteurs de sources ------------------------------------------------------
 # Chaque lecteur lit SON fichier de cache (par son id de manifeste), filtre
@@ -221,14 +229,35 @@ construire_donnees_programmes <- function(cache = "data/raw") {
   )
 }
 
+# MANIFEST_PROGRAMMES_COMPLET ---------------------------------------------------
+# Le manifeste COMPLET du run du thème (issue #178) : les CINQ sources du
+# manifeste #175 (MANIFEST_PROGRAMMES — ACV, PVD, CRTE, Territoires
+# d'industrie, ORT) + la source SCDL des subventions (#176 — MANIFEST_SUBVENTIONS,
+# subventions_scdl, l'export hebdomadaire de data.bretagne.bzh). C'est LE
+# manifeste que la machinerie partagée consomme (download_sources, rapport de
+# run) — le run télécharge et trace les SIX sources du payload. Le manifeste
+# #175 reste intact (verifier_contrat_programmes continue de verrouiller SES
+# cinq fragments) ; le fragment SCDL garde SA validation (verifier_contrat_
+# subventions). MANIFEST_PROGRAMMES_COMPLET est construit ICI (après les deux
+# modules) : l'ordre de chargement des fichiers garantit que MANIFEST_SUBVENTIONS
+# existe déjà.
+MANIFEST_PROGRAMMES_COMPLET <- dplyr::bind_rows(
+  MANIFEST_PROGRAMMES,
+  MANIFEST_SUBVENTIONS
+)
+
 # vintages_programmes ----------------------------------------------------------
-# Le builder de vintages du thème : la projection générique depuis le
-# manifeste (vintages_depuis_manifest, vintage.R) — chaque source garde SA
-# référence et SA publication. L'ORT : version « en continu », référence et
-# publication NA (la fraîcheur est par ligne, la métadonnée de page est
-# périmée).
+# Le builder de vintages du thème : la projection générique depuis le manifeste
+# COMPLET du run (vintages_depuis_manifest, vintage.R) — les CINQ sources du
+# manifeste #175 + la source SCDL des subventions (#176, subventions_scdl).
+# Chaque source garde SA référence et SA publication. L'ORT : version « en
+# continu », référence et publication NA (la fraîcheur est par ligne, la
+# métadonnée de page est périmée). La projection couvre le manifeste COMPLET
+# pour que la table PARTAGÉE des vintages porte aussi la source des
+# subventions après un run du thème (issue #178, issue #124 — upsert par id,
+# jamais l'écrasement last-writer-wins des sources des autres thèmes).
 vintages_programmes <- function() {
-  vintages_depuis_manifest(MANIFEST_PROGRAMMES)
+  vintages_depuis_manifest(MANIFEST_PROGRAMMES_COMPLET)
 }
 
 # construire_membres_programmes ------------------------------------------------
@@ -460,12 +489,19 @@ construire_analytiques_programmes <- function(donnees, base_epci,
 }
 
 # publier_programmes -----------------------------------------------------------
-# Le seam de publication du thème : lit le référentiel partagé (base_epci du
-# cache), enchaîne le calcul (construire_analytiques_programmes), valide et
-# persiste les artefacts analytiques. Retourne le payload, comme run_pipeline
-# l'attend. La publication du FICHIER PARTAGÉ programmes.json/parquet (issue
-# #178 — le contrat « 404 = table absente », le précédent apercu #116) n'est
-# PAS câblée ici : le seam retourne le payload sans écrire le fichier partagé.
+# Le seam de publication du thème (issue #178) : lit le référentiel partagé
+# (base_epci du cache), enchaîne les DEUX calculs du payload `programmes`
+# (ADR-0013) —
+#   - les LIGNES D'ADHÉSION (ticket #175) : construire_analytiques_programmes
+#     (le chaînon, validé, persisté sous data/processed/programmes/) ;
+#   - les AGRÉGATS DE SUBVENTIONS (ticket #176) : les signatures documentées de
+#     subventions.R — construire_donnees_subventions (l'ingestion SCDL depuis
+#     le cache, par l'id du manifeste) puis construire_analytiques_subventions
+#     (le calcul, estampillé hebdomadaire) ;
+# — assemble le payload `list(membres, subventions)`, publie le FICHIER
+# PARTAGÉ programmes.json + les parquets par table (ecrire_programmes_partage —
+# le contrat « 404 = table absente », le précédent apercu #116) et retourne le
+# payload, comme run_pipeline l'attend.
 publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
                                sortie = "public/data",
                                sortie_analytiques = file.path(dirname(cache),
@@ -474,13 +510,66 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   if (is.null(vintages)) vintages <- vintages_programmes()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
-  payload <- construire_analytiques_programmes(donnees, base_epci, vintages,
-                                               sortie = sortie_analytiques)
+
+  # les adhésions (ticket #175) : le chaînon analytique, validé et persisté
+  analytiques <- construire_analytiques_programmes(donnees, base_epci, vintages,
+                                                   sortie = sortie_analytiques)
+  membres <- analytiques$membres
+
+  # les agrégats de subventions (ticket #176) : l'ingestion SCDL puis le calcul
+  conventions <- construire_donnees_subventions(cache = cache)$conventions
+  subventions <- construire_analytiques_subventions(conventions, base_epci,
+                                                    vintages)
+  readr::write_rds(subventions,
+                   file.path(sortie_analytiques, "subventions_programmes.rds"))
+
+  payload <- list(membres = membres, subventions = subventions)
 
   # le seam de publication du run crée la cible comme publish() — le rapport de
-  # run et les vintages partagés y sont écrits par la machinerie
+  # run et les vintages partagés y sont écrits par la machinerie (même pour un
+  # run à tables vides : la trace du run ne disparaît jamais)
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
+
+  # le fichier PARTAGÉ : écrit SEULEMENT quand une table porte des lignes — un
+  # run vide ne doit JAMAIS clobber la publication existante (issue #178)
+  ecrire_programmes_partage(payload, sortie)
+
   payload
+}
+
+# ecrire_programmes_partage -----------------------------------------------------
+# La publication du FICHIER PARTAGÉ `programmes` (issue #178, le précédent
+# apercu #116 — le contrat « 404 = table absente ») : la cible que l'app lit.
+#   - programmes.json : la projection JSON des DEUX tables en UN objet
+#     { membres, subventions } — la forme que l'app consomme (issue #179) ;
+#   - un parquet PAR TABLE (le format parquet ne tient qu'une table) :
+#     programmes_membres.parquet / programmes_subventions.parquet — les
+#     artefacts canoniques téléchargeables (ADR-0004) ;
+#   - les deux sérialisations sortent des MÊMES tables en mémoire : le JSON se
+#     relit BIT À BIT comme les parquets (le contrat de non-dérive, ADR-0004 —
+#     test-publish-programmes.R, verifier_non_derivee) ;
+#   - la sentinelle : un payload dont AUCUNE table ne porte de lignes n'écrit
+#     RIEN et ne touche à aucun fichier existant — un run vide n'écrase jamais
+#     la publication précédente (le motif de test-publish.R, issue #116).
+ecrire_programmes_partage <- function(payload, sortie = "public/data") {
+  if (nrow(payload$membres) == 0 && nrow(payload$subventions) == 0) {
+    return(invisible(payload))
+  }
+  if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
+
+  nanoparquet::write_parquet(payload$membres,
+                             file.path(sortie, "programmes_membres.parquet"))
+  nanoparquet::write_parquet(payload$subventions,
+                             file.path(sortie, "programmes_subventions.parquet"))
+
+  # digits = 17 : assez de décimales pour qu'un double relu en JSON soit BIT À
+  # BIT le double du parquet (la même discipline que publish, ADR-0004)
+  jsonlite::write_json(
+    list(membres = payload$membres, subventions = payload$subventions),
+    file.path(sortie, "programmes.json"),
+    dataframe = "rows", na = "null", digits = 17, pretty = TRUE
+  )
+  invisible(payload)
 }
 
 # MEMBRES_DESCRIPTEUR_PROGRAMMES ------------------------------------------------
@@ -517,7 +606,7 @@ verifier_descripteur_programmes <- function(descripteur) {
 theme_programmes <- function() {
   descripteur <- list(
     theme = "programmes",
-    manifest = MANIFEST_PROGRAMMES,
+    manifest = MANIFEST_PROGRAMMES_COMPLET,
     vintages = vintages_programmes,
     construire_donnees = construire_donnees_programmes,
     construire_analytiques = construire_analytiques_programmes,

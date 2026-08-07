@@ -412,7 +412,10 @@ test_that("theme_programmes : le descripteur porte les membres requis du contrat
 
   expect_named(th, MEMBRES_DESCRIPTEUR_PROGRAMMES)
   expect_equal(th$theme, "programmes")
-  expect_identical(th$manifest, MANIFEST_PROGRAMMES)
+  # le manifeste du run est le manifeste COMPLET : les cinq sources ANCT/DGALN
+  # (#175) + la source SCDL des subventions (#176) — le téléchargement, le
+  # rapport de run et les vintages partagés couvrent les SIX sources du payload
+  expect_identical(th$manifest, MANIFEST_PROGRAMMES_COMPLET)
   expect_true(is.function(th$vintages))
   expect_true(is.function(th$construire_donnees))
   expect_true(is.function(th$construire_analytiques))
@@ -430,14 +433,18 @@ test_that("verifier_descripteur_programmes : un membre requis manquant échoue b
   expect_error(verifier_descripteur_programmes(list()), "manquant")
 })
 
-test_that("vintages_programmes : cinq sources, chacune avec SA référence et SA publication", {
+test_that("vintages_programmes : six sources (les cinq ANCT/DGALN + la SCDL), chacune avec SA référence et SA publication", {
   v <- vintages_programmes()
 
-  expect_equal(nrow(v), 5L)
+  # le manifeste COMPLET du run (issue #178) : les cinq sources du ticket #175
+  # + la source SCDL des subventions du ticket #176 — la table partagée des
+  # vintages porte la source des subventions après un run du thème
+  expect_equal(nrow(v), 6L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
-                  c("acv", "pvd", "crte", "territoires_industrie", "ort"))
+                  c("acv", "pvd", "crte", "territoires_industrie", "ort",
+                    "subventions_scdl"))
 
   # l'ORT : version « en continu », la fraîcheur est PAR LIGNE — la référence
   # et la publication source sont NA (la métadonnée de page, périmée d'environ
@@ -447,6 +454,12 @@ test_that("vintages_programmes : cinq sources, chacune avec SA référence et SA
   expect_true(is.na(ort$date_reference))
   expect_true(is.na(ort$date_publication))
   expect_equal(ort$licence, "lov2")
+
+  # la SCDL : l'estampille HEBDOMADAIRE de la source des subventions (#176)
+  scdl <- v[v$id == "subventions_scdl", ]
+  expect_equal(scdl$version, MANIFEST_SUBVENTIONS$vintage)
+  expect_equal(scdl$date_reference, MANIFEST_SUBVENTIONS$date_reference)
+  expect_true(!is.na(scdl$date_publication))
 })
 
 test_that("publier_programmes : le seam de publication est câblé (plus un stub)", {
