@@ -8,7 +8,11 @@ import {
   indicateursDemographieFixture,
   indicateursEconomieFixture,
   indicateursMobiliteFixture,
+  membresProgrammesFixture,
+  programmesFixture,
+  programmesVideFixture,
   runReportFraisFixture,
+  subventionsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
@@ -32,6 +36,7 @@ function documentsBruts(overrides: Partial<DocumentsBruts> = {}): DocumentsBruts
     apercu: apercuAvecNAFixture,
     runReport: runReportFraisFixture,
     vintages: vintagesFixture,
+    programmes: programmesFixture,
     ...overrides,
   }
 }
@@ -421,5 +426,118 @@ describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () =>
 
     const erreur = attendErreurValidation(documentsMobilite({ histoires }))
     expect(erreur.message).toMatch(/vintage/)
+  })
+})
+
+describe('parsePayload — the programmes contract (issue #179, ADR-0013)', () => {
+  it('accepts the fixture programmes payload — the two tables parsed into types', () => {
+    const payload = parsePayload(documentsBruts())
+
+    expect(payload.programmes).toEqual(programmesFixture)
+    expect(payload.programmes?.membres).toHaveLength(membresProgrammesFixture.length)
+    expect(payload.programmes?.subventions).toHaveLength(subventionsProgrammesFixture.length)
+  })
+
+  it('carries the five sigles and the two anchor levels on the membership rows', () => {
+    const payload = parsePayload(documentsBruts())
+    const membres = payload.programmes?.membres ?? []
+
+    expect(new Set(membres.map((m) => m.sigle))).toEqual(
+      new Set(['ACV', 'PVD', 'CRTE', "Territoires d'industrie", 'ORT']),
+    )
+    expect(membres.every((m) => m.type === 'commune' || m.type === 'epci')).toBe(true)
+    // l'ACV 22001 porte le rider « convention valant ORT » sur SA ligne de label
+    expect(membres.find((m) => m.territoire === '22001' && m.sigle === 'ACV')).toMatchObject({
+      type: 'commune',
+      convention_valant_ort: true,
+    })
+  })
+
+  it('accepts a null programmes document — the element is simply absent (404)', () => {
+    const payload = parsePayload(documentsBruts({ programmes: null }))
+
+    expect(payload.programmes).toBeNull()
+  })
+
+  it('rejects an unknown programme sigle — drift must be loud', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    ;(programmes.membres[0] as { sigle: string }).sigle = 'GALAXIE'
+
+    const erreur = attendErreurValidation(documentsBruts({ programmes }))
+    expect(erreur.message).toMatch(/sigle/i)
+  })
+
+  it('rejects a membership row referencing an unknown territoire', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    programmes.membres[0].territoire = '99999'
+
+    const erreur = attendErreurValidation(documentsBruts({ programmes }))
+    expect(erreur.message).toMatch(/territoire/i)
+  })
+
+  it('rejects a broken membership row — missing required field', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    delete (programmes.membres[0] as Partial<(typeof programmes.membres)[number]>).convention_valant_ort
+
+    attendErreurValidation(documentsBruts({ programmes }))
+  })
+
+  it('rejects a broken membership row — wrong type (string instead of boolean)', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    ;(programmes.membres[0] as { convention_valant_ort: unknown }).convention_valant_ort = 'true'
+
+    attendErreurValidation(documentsBruts({ programmes }))
+  })
+
+  it('rejects an ORT row without its per-row actualisation (date_reference null)', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    const ort = programmes.membres.find((m) => m.sigle === 'ORT')
+    ;(ort as { vintage_date_reference: string | null }).vintage_date_reference = null
+
+    attendErreurValidation(documentsBruts({ programmes }))
+  })
+
+  it('rejects the « convention valant ORT » rider on a non-label row', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    const crte = programmes.membres.find((m) => m.sigle === 'CRTE')
+    ;(crte as { convention_valant_ort: boolean }).convention_valant_ort = true
+
+    attendErreurValidation(documentsBruts({ programmes }))
+  })
+
+  it('rejects a subvention row with a non-numeric montant', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    ;(programmes.subventions[0] as { montant: unknown }).montant = 'trente mille'
+
+    attendErreurValidation(documentsBruts({ programmes }))
+  })
+
+  it('rejects a subvention aggregate row carrying a programme_libl (null by contract)', () => {
+    const programmes = JSON.parse(JSON.stringify(programmesFixture)) as typeof programmesFixture
+    const epci = programmes.subventions.find((s) => s.type === 'epci')
+    ;(epci as { programme_libl: string | null }).programme_libl = 'Développement économique'
+
+    attendErreurValidation(documentsBruts({ programmes }))
+  })
+
+  it('rejects a non-object programmes document — the file is { membres, subventions }, NOT an array', () => {
+    // la dérive de forme que le PR #186 a épinglée : programmes.json est un
+    // OBJET, jamais un tableau — un tableau doit échouer fort
+    const programmes = membresProgrammesFixture
+
+    const erreur = attendErreurValidation(documentsBruts({ programmes }))
+    expect(erreur.message).toMatch(/objet|tableau/i)
+  })
+
+  it('rejects a programmes document missing the subventions table', () => {
+    const { subventions: _subventions, ...sansSubventions } = programmesFixture
+
+    attendErreurValidation(documentsBruts({ programmes: sansSubventions }))
+  })
+
+  it('accepts a programmes document with an empty table — honest empty state, not drift', () => {
+    const payload = parsePayload(documentsBruts({ programmes: programmesVideFixture }))
+
+    expect(payload.programmes).toEqual({ membres: [], subventions: [] })
   })
 })

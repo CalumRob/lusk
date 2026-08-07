@@ -34,6 +34,7 @@ const payloadDemographie: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 describe('indicateursPourTerritoire — the standard block in contract order', () => {

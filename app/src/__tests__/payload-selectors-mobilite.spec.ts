@@ -34,6 +34,7 @@ const payloadMobilite: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 describe('indicateursPourTerritoire — the Mobilité block in contract order', () => {

@@ -22,6 +22,7 @@ import {
   validerApercu,
   validerHistoires,
   validerIndicateurs,
+  validerProgrammes,
   validerRapportRun,
   validerTerritoires,
   validerVintages,
@@ -100,6 +101,15 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   const apercu = validerApercu(await obtenir('apercu.json', false), 'apercu.json', territoires)
   const runReport = validerRapportRun(await obtenir('run-report.json', true), 'run-report.json')
   const vintages = validerVintages(await obtenir('vintages.json', true), 'vintages.json')
+  // Le payload programmes (issue #179) — optionnel : un 404 sur programmes.json
+  // signifie que l'élément est simplement absent (l'état vide honnête), jamais
+  // une erreur de chargement — la machinerie optionnelle établie (le précédent
+  // run-report / vintages, ADR-0013 « 404 = table absente »).
+  const programmes = validerProgrammes(
+    await obtenir('programmes.json', true),
+    'programmes.json',
+    territoires,
+  )
 
-  return { territoires, indicateurs, histoires, apercu, runReport, vintages }
+  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes }
 }

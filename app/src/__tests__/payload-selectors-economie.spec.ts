@@ -31,6 +31,7 @@ const payloadEconomie: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 describe('indicateursPourTerritoire — the Économie block in contract order', () => {

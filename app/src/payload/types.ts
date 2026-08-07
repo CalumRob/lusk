@@ -227,6 +227,79 @@ export interface ApercuRow {
   unit: string
 }
 
+/**
+ * The programme sigles of the payload contract (ADR-0013, the ANCT/DGALN
+ * sources of the MANIFEST_PROGRAMMES_COMPLET): the two commune labels (ACV,
+ * PVD), the two EPCI contracts (CRTE, Territoires d'industrie) and the ORT
+ * tool-badge (commune + EPCI rows). « Territoires d'industrie » is the sigle
+ * provisional — the programme is officially named without an acronym (PRD
+ * #162). The app's badge vocabulary (sigle → French nom) lives in the display
+ * layer (fiche/apercu.ts), never here.
+ */
+export const SIGLES_PROGRAMMES = [
+  'ACV',
+  'PVD',
+  'CRTE',
+  "Territoires d'industrie",
+  'ORT',
+] as const
+
+export type SigleProgramme = (typeof SIGLES_PROGRAMMES)[number]
+
+/**
+ * One membership row of the programmes payload (ADR-0013) — a territoire ×
+ * programme at the programme's ANCHOR level: ACV/PVD commune rows, CRTE/TI
+ * EPCI rows, ORT commune + EPCI rows. A labelled ACV/PVD commune carries the
+ * « convention valant ORT » rider on ITS label row (never a second ORT row).
+ * The ORT exception: freshness is the per-row « Dernière actualisation »
+ * (vintage_date_reference never null) while the publication source is null by
+ * contract (the stale page metadata is never cited — manifest #175).
+ */
+export interface MembreProgramme {
+  territoire: string
+  type: 'commune' | 'epci'
+  sigle: SigleProgramme
+  /** Le rider « convention valant ORT » — TRUE sur les seules lignes de label ACV/PVD. */
+  convention_valant_ort: boolean
+  vintage_source: string
+  vintage_version: string
+  /** Date ISO — l'actualisation PAR LIGNE pour les lignes ORT, jamais null. */
+  vintage_date_reference: string
+  /** Date ISO, ou null pour les lignes ORT (la publication source est NA par contrat). */
+  vintage_date_publication: string | null
+}
+
+/**
+ * One subvention aggregate row (ADR-0013, issue #176) — precomputed by the
+ * pipeline, never derived in the app: commune rows carry the annual
+ * by-policy-area split (programme_libl + montant), EPCI / département / région
+ * rows the single annual total (programme_libl null). Every row wears the SCDL
+ * weekly vintage stamp.
+ */
+export interface SubventionProgramme {
+  territoire: string
+  type: TerritoireType
+  annee: number
+  /** Le domaine (libellé) sur les lignes communales, null sur les lignes agrégat. */
+  programme_libl: string | null
+  montant: number
+  vintage_source: string
+  vintage_version: string
+  vintage_date_reference: string
+  vintage_date_publication: string
+}
+
+/**
+ * The programmes payload file (programmes.json, issue #178) — a JSON OBJECT
+ * with two arrays (membres + subventions, the two tables of ADR-0013), NOT an
+ * array. Fetched with the « 404 = table absent » contract: a missing file
+ * means the element is absent (payload.programmes null), never a fetch error.
+ */
+export interface ProgrammesPayload {
+  membres: MembreProgramme[]
+  subventions: SubventionProgramme[]
+}
+
 export type ModeSource = 'cron' | 'manuel'
 export type StatutSource = 'frais' | 'échec' | 'à traiter à la main'
 
@@ -263,4 +336,6 @@ export interface Payload {
   runReport: RunReport | null
   /** The shared vintage table (vintages.json) — optional, like run-report. */
   vintages: Vintage[] | null
+  /** The programmes payload (programmes.json) — optional; null = element absent (404). */
+  programmes: ProgrammesPayload | null
 }

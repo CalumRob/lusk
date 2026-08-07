@@ -28,15 +28,19 @@ import type {
   Histoire,
   HistoireMobiliteVingtMinutes,
   Indicateur,
+  MembreProgramme,
   Payload,
+  ProgrammesPayload,
   RunReport,
+  SigleProgramme,
   StatutRun,
+  SubventionProgramme,
   Territoire,
   TerritoireType,
   Theme,
   Vintage,
 } from './types'
-import { THEMES_CANONIQUES } from './types'
+import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from './types'
 
 export type PayloadErrorKind = 'fetch' | 'validation'
 
@@ -806,17 +810,212 @@ export function validerVintages(brut: unknown, fichier: string): Vintage[] | nul
 }
 
 /**
+ * The programmes payload (issue #179, ADR-0013) — the app's half of the
+ * pipeline's verifier_membres_programmes / verifier_contrat_subventions.
+ * programmes.json is a JSON OBJECT with two arrays ({ membres, subventions }),
+ * never an array; null = the file is absent (the « 404 = table absent »
+ * contract — the element is simply absent, never an error).
+ */
+export function validerProgrammes(
+  brut: unknown,
+  fichier: string,
+  territoires: Territoire[],
+): ProgrammesPayload | null {
+  if (brut === null) return null
+  exiger(estObjet(brut), fichier, 0, 'le fichier programmes doit être un objet { membres, subventions }')
+  const ligne = brut as LigneBrute
+
+  const membres = validerMembresProgrammes(ligne['membres'], fichier, territoires)
+  const subventions = validerSubventionsProgrammes(ligne['subventions'], fichier, territoires)
+
+  return { membres, subventions }
+}
+
+/** One membership row per (territoire × sigle), anchored per ADR-0013. */
+function validerMembresProgrammes(
+  brut: unknown,
+  fichier: string,
+  territoires: Territoire[],
+): MembreProgramme[] {
+  exiger(Array.isArray(brut), fichier, 0, 'la table « membres » doit être un tableau')
+  const lignes = brut as unknown[]
+  const reference = indexerReference(territoires)
+  const vus = new Set<string>()
+  // Le rider « convention valant ORT » n'existe que sur les labels ACV/PVD —
+  // le drapeau sur une ligne contrat/ORT est une dérive du contrat (#162-9).
+  const labels = new Set<string>(['ACV', 'PVD'])
+
+  return lignes.map((ligne, i) => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque ligne d\u2019adhésion doit être un objet')
+    verifierReference(ligne, reference, fichier, ligneIndexee)
+
+    const territoire = ligne['territoire'] as string
+    const type = lireType(ligne, fichier, ligneIndexee)
+    // L'ancrage du contrat : les adhésions vivent à la commune ou à l'EPCI,
+    // jamais au département / à la région (ADR-0013 — l'échelle est dérivée).
+    exiger(
+      type === 'commune' || type === 'epci',
+      fichier,
+      ligneIndexee,
+      'une ligne d\u2019adhésion est ancrée commune ou epci, jamais département ou région',
+    )
+
+    const sigle = lireSigle(ligne, fichier, ligneIndexee)
+
+    const cle = `${territoire}\u0000${sigle}`
+    exiger(
+      !vus.has(cle),
+      fichier,
+      ligneIndexee,
+      `ligne en double (territoire × sigle) pour « ${sigle} » de « ${territoire} »`,
+    )
+    vus.add(cle)
+
+    const convention_valant_ort = ligne['convention_valant_ort']
+    exiger(
+      typeof convention_valant_ort === 'boolean',
+      fichier,
+      ligneIndexee,
+      '« convention_valant_ort » doit être un booléen',
+    )
+    if (!labels.has(sigle)) {
+      exiger(
+        convention_valant_ort === false,
+        fichier,
+        ligneIndexee,
+        'le drapeau « convention valant ORT » n\u2019existe que sur les lignes de label ACV/PVD',
+      )
+    }
+
+    const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
+    const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
+    const vintage_date_reference = ligne['vintage_date_reference']
+    // L'ORT porte l'actualisation PAR LIGNE comme référence — jamais null
+    // (verifier_membres_programmes : une ligne ORT sans actualisation échoue).
+    exiger(
+      estDateIso(vintage_date_reference),
+      fichier,
+      ligneIndexee,
+      '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ), jamais null',
+    )
+    // La publication source est NA pour l'ORT par contrat (la métadonnée de
+    // page est périmée — manifest #175) — null légitime, rien d'autre.
+    const vintage_date_publication = ligne['vintage_date_publication']
+    exiger(
+      vintage_date_publication === null || estDateIso(vintage_date_publication),
+      fichier,
+      ligneIndexee,
+      '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ) ou null',
+    )
+
+    return {
+      territoire,
+      type,
+      sigle,
+      convention_valant_ort: convention_valant_ort as boolean,
+      vintage_source,
+      vintage_version,
+      vintage_date_reference: vintage_date_reference as string,
+      vintage_date_publication: vintage_date_publication as string | null,
+    }
+  })
+}
+
+function lireSigle(ligne: LigneBrute, fichier: string, i: number): SigleProgramme {
+  const valeur = ligne['sigle']
+  exiger(
+    estUneDe(valeur, SIGLES_PROGRAMMES),
+    fichier,
+    i,
+    `« sigle » doit être l'un de ${SIGLES_PROGRAMMES.join(' | ')}, reçu « ${String(valeur)} »`,
+  )
+  return valeur
+}
+
+/** One subvention aggregate row — commune splits, EPCI/département/région totals. */
+function validerSubventionsProgrammes(
+  brut: unknown,
+  fichier: string,
+  territoires: Territoire[],
+): SubventionProgramme[] {
+  exiger(Array.isArray(brut), fichier, 0, 'la table « subventions » doit être un tableau')
+  const lignes = brut as unknown[]
+  const reference = indexerReference(territoires)
+
+  return lignes.map((ligne, i) => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque ligne de subvention doit être un objet')
+    verifierReference(ligne, reference, fichier, ligneIndexee)
+
+    const territoire = ligne['territoire'] as string
+    const type = lireType(ligne, fichier, ligneIndexee)
+
+    const annee = ligne['annee']
+    exiger(estNombre(annee), fichier, ligneIndexee, '« annee » doit être un nombre')
+
+    const programme_libl = ligne['programme_libl']
+    // La ventilation par domaine n'existe que sur les lignes communales — un
+    // libellé sur une ligne agrégat est une dérive (#176, ADR-0013).
+    if (type === 'commune') {
+      exiger(estChaine(programme_libl), fichier, ligneIndexee, 'une ligne communale porte « programme_libl » (la ventilation par domaine)')
+    } else {
+      exiger(
+        programme_libl === null,
+        fichier,
+        ligneIndexee,
+        '« programme_libl » est null sur les lignes agrégat (epci / departement / region)',
+      )
+    }
+
+    const montant = ligne['montant']
+    exiger(estNombre(montant), fichier, ligneIndexee, '« montant » doit être un nombre')
+
+    const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
+    const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
+    const vintage_date_reference = ligne['vintage_date_reference']
+    const vintage_date_publication = ligne['vintage_date_publication']
+    // Le vintage SCDL est hebdomadaire et verrouillé : les deux dates sont ISO
+    // (verifier_contrat_subventions — la publication jamais avant la référence).
+    exiger(
+      estDateIso(vintage_date_reference),
+      fichier,
+      ligneIndexee,
+      '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ)',
+    )
+    exiger(
+      estDateIso(vintage_date_publication),
+      fichier,
+      ligneIndexee,
+      '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
+    )
+
+    return {
+      territoire,
+      type,
+      annee: annee as number,
+      programme_libl: programme_libl as string | null,
+      montant: montant as number,
+      vintage_source,
+      vintage_version,
+      vintage_date_reference: vintage_date_reference as string,
+      vintage_date_publication: vintage_date_publication as string,
+    }
+  })
+}
+
+/**
  * Assemble + validate a complete payload from the raw documents (the JSON
  * projections as fetched). The loader merges per-theme facts files before
  * calling this; per-file error attribution lives in the loader.
- */
-export function parsePayload(documents: {
+ */export function parsePayload(documents: {
   territoires: unknown
   indicateurs: unknown
   histoires: unknown
   apercu: unknown
   runReport: unknown
   vintages?: unknown
+  programmes?: unknown
 }): Payload {
   const territoires = validerTerritoires(documents.territoires, 'territoires.json')
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
@@ -824,6 +1023,7 @@ export function parsePayload(documents: {
   const apercu = validerApercu(documents.apercu, 'apercu.json', territoires)
   const runReport = validerRapportRun(documents.runReport, 'run-report.json')
   const vintages = validerVintages(documents.vintages ?? null, 'vintages.json')
+  const programmes = validerProgrammes(documents.programmes ?? null, 'programmes.json', territoires)
 
-  return { territoires, indicateurs, histoires, apercu, runReport, vintages }
+  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes }
 }

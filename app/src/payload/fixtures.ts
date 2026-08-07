@@ -17,7 +17,10 @@ import type {
   ApercuRow,
   Histoire,
   Indicateur,
+  MembreProgramme,
+  ProgrammesPayload,
   RunReport,
+  SubventionProgramme,
   Territoire,
   Vintage,
 } from './types'
@@ -547,4 +550,112 @@ export const histoiresMobiliteFixture: Histoire[] = [
   { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: 0.0100000000000000, dens_min: 8, dens_max: 52, dens_1: 0.00825700000000000, dens_2: 0.0162830000000000, dens_3: 0.0379000000000000, dens_4: 0.0491120000000000, dens_5: 0.0331710000000000, dens_6: 0.0310610000000000, dens_7: 0.0107290000000000, dens_8: 0.00454000000000000, dens_9: 0.00879100000000000, dens_10: 0.00413000000000000, dec_1: 14, dec_2: 18, dec_3: 20, dec_4: 23, dec_5: 24, dec_6: 26, dec_7: 30, dec_8: 33, dec_9: 38, dec_10: 52, classification_saillance: 'saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
   { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', div_loss_t: 24, div_loss_b: 13, delta: 11, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
 ]
+
+/**
+ * Programmes fixture (issue #179, ADR-0013) — VALUES mirror the R-side
+ * contract (theme_programmes.R / subventions.R), nothing invented: the five
+ * sigles of MANIFEST_PROGRAMMES_COMPLET, the two anchor levels, the
+ * « convention valant ORT » rider on the ACV label row (never a second ORT
+ * row for that commune), the ORT rows carrying their per-row actualisation as
+ * date_reference (publication null by contract), and the SCDL weekly vintage
+ * on the subvention aggregates.
+ */
+
+/** Le vintage des labels/contrats ANCT — le tampon de SA source (manifest #175). */
+const vintageAcv = {
+  vintage_source:
+    'ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)',
+  vintage_version: '2025',
+  vintage_date_reference: '2025-01-01',
+  vintage_date_publication: '2025-09-24',
+}
+
+const vintagePvd = {
+  vintage_source:
+    'ANCT — Programme Petites villes de demain : liste des communes sélectionnées (COG 2025)',
+  vintage_version: '2025',
+  vintage_date_reference: '2025-01-01',
+  vintage_date_publication: '2026-04-27',
+}
+
+const vintageCrte = {
+  vintage_source:
+    "ANCT — Contrat de relance et de transition écologique : suivi du périmètre (COG 2025), les groupements couverts par CRTE",
+  vintage_version: '2025',
+  vintage_date_reference: '2025-07-17',
+  vintage_date_publication: '2025-09-24',
+}
+
+const vintageTi = {
+  vintage_source:
+    "ANCT/Banque des Territoires — liste des Territoires d'industrie et des communes concernées (les territoires arrêtés fin 2022)",
+  vintage_version: '2022',
+  vintage_date_reference: '2022-12-31',
+  vintage_date_publication: '2025-09-30',
+}
+
+/** Le vintage ORT — la fraîcheur PAR LIGNE, publication null (manifest #175). */
+const vintageOrt = {
+  vintage_source:
+    'DGALN/ANCT — Liste des communes couvertes par des opérations de revitalisation de territoire (ORT) : conventions signées (classeur XLSX, feuille « Suivi conventions »)',
+  vintage_version: 'en continu',
+  vintage_date_publication: null as string | null,
+}
+
+/**
+ * Les lignes d'adhésion (ADR-0013) : ACV/PVD ancrées à la commune, CRTE/TI à
+ * l'EPCI, ORT aux deux ancrages — la commune 29001 non labellisée et SON EPCI
+ * (les lignes du fixture R : la convention signée porte les deux lignes). La
+ * commune 22001 (ACV) porte le rider « convention valant ORT » sur SA ligne de
+ * label, jamais une seconde ligne ORT. Triées par sigle (le tri R).
+ */
+export const membresProgrammesFixture: MembreProgramme[] = [
+  // ACV — 22001 lauréate, rider « convention valant ORT » true
+  { territoire: '22001', type: 'commune', sigle: 'ACV', convention_valant_ort: true, ...vintageAcv },
+  // PVD — 22002 lauréate, sans rider
+  { territoire: '22002', type: 'commune', sigle: 'PVD', convention_valant_ort: false, ...vintagePvd },
+  // CRTE — l'EPCI X signataire
+  { territoire: '200000001', type: 'epci', sigle: 'CRTE', convention_valant_ort: false, ...vintageCrte },
+  // Territoires d'industrie — l'EPCI Y
+  { territoire: '200000002', type: 'epci', sigle: "Territoires d'industrie", convention_valant_ort: false, ...vintageTi },
+  // ORT — la commune 29001 non labellisée + son EPCI, actualisation par ligne
+  { territoire: '29001', type: 'commune', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-15' },
+  { territoire: '200000002', type: 'epci', sigle: 'ORT', convention_valant_ort: false, ...vintageOrt, vintage_date_reference: '2026-07-15' },
+]
+
+/** Le vintage hebdomadaire SCDL — la source de référence des agrégats (#176). */
+const vintageSubventions = {
+  vintage_source:
+    'Région Bretagne — subventions attribuées (SCDL), subventions_attribuees_scdl0 (data.bretagne.bzh, rafraîchi chaque semaine)',
+  vintage_version: '2026-08-05',
+  vintage_date_reference: '2026-08-05',
+  vintage_date_publication: '2026-08-05',
+}
+
+/**
+ * Les agrégats de subventions (ADR-0013, #176) : les lignes communales portent
+ * la ventilation par domaine (programme_libl + montant), les lignes EPCI /
+ * département / région le total annuel unique (programme_libl null). L'année
+ * de référence 2025 (la plus récente complète). Triées par type puis
+ * territoire (le tri R).
+ */
+export const subventionsProgrammesFixture: SubventionProgramme[] = [
+  { territoire: '22001', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 30000, ...vintageSubventions },
+  { territoire: '22001', type: 'commune', annee: 2025, programme_libl: 'Agriculture', montant: 15000, ...vintageSubventions },
+  { territoire: '200000001', type: 'epci', annee: 2025, programme_libl: null, montant: 45000, ...vintageSubventions },
+  { territoire: '22', type: 'departement', annee: 2025, programme_libl: null, montant: 300000, ...vintageSubventions },
+  { territoire: '53', type: 'region', annee: 2025, programme_libl: null, montant: 2000000, ...vintageSubventions },
+]
+
+/** Le payload programmes complet — l'objet { membres, subventions } du contrat. */
+export const programmesFixture: ProgrammesPayload = {
+  membres: membresProgrammesFixture,
+  subventions: subventionsProgrammesFixture,
+}
+
+/** Le payload programmes vide — l'état honnête quand le fichier est absent. */
+export const programmesVideFixture: ProgrammesPayload = {
+  membres: [],
+  subventions: [],
+}
 

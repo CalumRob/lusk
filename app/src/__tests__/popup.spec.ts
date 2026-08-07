@@ -25,6 +25,7 @@ function payloadAvecApercu(apercu = apercuFixture): Payload {
     apercu,
     runReport: null,
     vintages: vintagesFixture,
+    programmes: null,
   }
 }
 

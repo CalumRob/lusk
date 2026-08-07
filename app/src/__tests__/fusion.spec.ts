@@ -48,6 +48,7 @@ const payload: Payload = {
   apercu: [],
   runReport: null,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 describe('indicateurParTerritoire — the rows that feed a choropleth', () => {
