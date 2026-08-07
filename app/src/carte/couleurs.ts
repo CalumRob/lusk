@@ -20,11 +20,16 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
 }
 
 /** The neutral fill: territory masks in Aperçu + no-data territories.
- *  Un vert-gris assez soutenu pour se détacher du fond CARTO Voyager. */
-export const COULEUR_NEUTRE = '#BFD5D0'
+ *  Un vert-gris clair — lightened (issue #68) so it sits back against the
+ *  CARTO Voyager basemap while still reading at commune level. */
+export const COULEUR_NEUTRE = '#D8E6E2'
 
 /** The outline of the territory masks (reads on both basemap and fills). */
 export const COULEUR_CONTOUR = '#4E6E68'
+
+/** The mask outline width in px — tightened to a hairline (issue #68) that
+ *  stays visible at commune level. */
+export const LARGEUR_CONTOUR = 0.75
 
 const BLANC = { r: 255, g: 255, b: 255 }
 const FONCE = { r: 12, g: 27, b: 25 } // #0C1B19 — the ramps' dark pole (DESIGN.md §2)

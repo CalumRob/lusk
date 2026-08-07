@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
 import MapSidebar from '../components/carte/MapSidebar.vue'
+import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
 import { territoiresFixture } from '../payload/fixtures'
 import { routes } from '../router'
 
@@ -27,6 +28,9 @@ function montage(overrides: Record<string, unknown> = {}) {
       seuils: [],
       unite: '',
       estPourcentage: false,
+      // the map's neutral rendering, threaded through to the legend (issue #68)
+      couleurVide: COULEUR_NEUTRE,
+      couleurContour: COULEUR_CONTOUR,
       ...overrides,
     },
     global: { plugins: [router] },
@@ -76,5 +80,13 @@ describe("MapSidebar — le panneau d'options de la carte", () => {
 
     await wrapper.find('.carte-sidebar-rouvrir').trigger('click')
     expect(wrapper.find('.carte-sidebar').attributes('aria-hidden')).toBe('false')
+  })
+
+  it('forwards the map neutral rendering to the legend — one shared source (issue #68)', () => {
+    const wrapper = montage()
+
+    const legende = wrapper.findComponent({ name: 'MapLegend' })
+    expect(legende.props('couleurVide')).toBe(COULEUR_NEUTRE)
+    expect(legende.props('couleurContour')).toBe(COULEUR_CONTOUR)
   })
 })

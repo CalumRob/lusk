@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { ANCRAGES_THEMES, echelleChoroplethe } from '../carte/couleurs'
+import {
+  ANCRAGES_THEMES,
+  COULEUR_NEUTRE,
+  echelleChoroplethe,
+  LARGEUR_CONTOUR,
+} from '../carte/couleurs'
 
 /**
  * The map's color system (DESIGN.md §2): the choropleth ramp derives from ONE
@@ -17,6 +22,36 @@ describe('ANCRAGES_THEMES — the DESIGN.md §2 anchors, mirrored for the map', 
       habitat: '#C98F6E', // terracotta
       economie: '#7FA875', // green
     })
+  })
+})
+
+describe('COULEUR_NEUTRE — the neutral mask fill (issue #68)', () => {
+  const ANCIENNE_NEUTRE = '#BFD5D0' // avant #68 — trop présente sur le fond CARTO Voyager
+  const luminance = (hex: string) => {
+    const r = Number.parseInt(hex.slice(1, 3), 16)
+    const g = Number.parseInt(hex.slice(3, 5), 16)
+    const b = Number.parseInt(hex.slice(5, 7), 16)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+
+  it('is lighter than the pre-polish value — the fill sits back against the basemap', () => {
+    expect(luminance(COULEUR_NEUTRE)).toBeGreaterThan(luminance(ANCIENNE_NEUTRE))
+  })
+
+  it('stays in the mint/green-grey family (green dominant) — still reads at commune level', () => {
+    const r = Number.parseInt(COULEUR_NEUTRE.slice(1, 3), 16)
+    const g = Number.parseInt(COULEUR_NEUTRE.slice(3, 5), 16)
+    const b = Number.parseInt(COULEUR_NEUTRE.slice(5, 7), 16)
+    expect(COULEUR_NEUTRE).toMatch(/^#[A-Fa-f0-9]{6}$/)
+    expect(g).toBeGreaterThanOrEqual(r)
+    expect(g).toBeGreaterThanOrEqual(b)
+  })
+})
+
+describe('LARGEUR_CONTOUR — the mask outline width (issue #68)', () => {
+  it('is a hairline — tightened below the pre-polish 1.2px, still visible', () => {
+    expect(LARGEUR_CONTOUR).toBeLessThan(1.2)
+    expect(LARGEUR_CONTOUR).toBeGreaterThanOrEqual(0.5)
   })
 })
 

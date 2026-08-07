@@ -5,6 +5,7 @@ import {
   expressionCouleurs,
   indicateurParTerritoire,
 } from '../carte/fusion'
+import { COULEUR_NEUTRE } from '../carte/couleurs'
 import type { CollectionMasque } from '../geo/types'
 import {
   indicateursDemographieFixture,
@@ -110,7 +111,7 @@ describe('expressionCouleurs — the MapLibre fill expression', () => {
 
   it('guards null/missing values to the neutral color', () => {
     const expr = expressionCouleurs([10], ['#e8e8f5', '#8e85c4'])
-    expect(expr).toContain('#BFD5D0')
+    expect(expr).toContain(COULEUR_NEUTRE)
   })
 
   it('collapses to the neutral fill when there are no breaks (no data at all)', () => {

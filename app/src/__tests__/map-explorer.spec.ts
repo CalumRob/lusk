@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import MapExplorer from '../components/carte/MapExplorer.vue'
+import { COULEUR_NEUTRE, LARGEUR_CONTOUR } from '../carte/couleurs'
 import {
   indicateursDemographieFixture,
   territoiresFixture,
@@ -128,6 +129,15 @@ describe('MapExplorer — the GeoJSON mask layers', () => {
     expect(carte?.misesEnPage['masques-epcis-remplissage'].visibility).toBe('none')
   })
 
+  it('paints the mask contour as a hairline — the shared LARGEUR_CONTOUR (issue #68)', async () => {
+    const { carte } = await monter()
+
+    const contour = carte?.couches['masques-communes-contour'] as
+      | { paint?: Record<string, unknown> }
+      | undefined
+    expect(contour?.paint?.['line-width']).toBe(LARGEUR_CONTOUR)
+  })
+
   it('switches the visible level when the niveau prop changes', async () => {
     const { wrapper, carte } = await monter({ masques: masquesDeuxNiveaux })
 
@@ -142,7 +152,7 @@ describe('MapExplorer — the theme-driven indicator layer', () => {
   it('paints the neutral mask fill in Aperçu (no theme)', async () => {
     const { carte } = await monter()
 
-    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe('#BFD5D0')
+    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
 
   it('paints the theme choropleth and joins the indicator onto the source data', async () => {
@@ -169,7 +179,7 @@ describe('MapExplorer — the theme-driven indicator layer', () => {
 
     await wrapper.setProps({ theme: 'mobilite' })
 
-    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe('#BFD5D0')
+    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
 })
 

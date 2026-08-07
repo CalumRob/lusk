@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import CarteView from '../views/CarteView.vue'
+import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
 import { maplibreMock } from './setup'
 import type { ChargerGeometrie } from '../geo/useGeometrie'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
@@ -173,6 +174,14 @@ describe('CarteView — la carte avec fond publié', () => {
     const boutons = wrapper.findAll('[role="radio"]').map((b) => b.text())
     expect(boutons).toEqual(['Communes'])
     expect(wrapper.find('.carte-sidebar-note').text()).toContain('sans géométrie sont indisponibles')
+  })
+
+  it('feeds the legend the map neutral rendering — map and legend share one source (issue #68)', async () => {
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
+
+    const legende = wrapper.findComponent({ name: 'MapLegend' })
+    expect(legende.props('couleurVide')).toBe(COULEUR_NEUTRE)
+    expect(legende.props('couleurContour')).toBe(COULEUR_CONTOUR)
   })
 })
 
