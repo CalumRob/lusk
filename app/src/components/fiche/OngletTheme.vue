@@ -29,6 +29,7 @@ import {
 import { NOMS_THEMES } from '@/fiche/onglets'
 import { storyDemographie } from '@/fiche/storyDemographie'
 import { storyEconomie } from '@/fiche/storyEconomie'
+import { storyMilieux } from '@/fiche/storyMilieux'
 import { storyMobilite } from '@/fiche/storyMobilite'
 import {
   descriptionNuage,
@@ -121,6 +122,7 @@ const nomTerritoire = computed(
 // « L'offre de mobilité alternative ». Les sections découpent l'ordre du
 // contrat (ORDRE_INDICATEURS.mobilite) — chaque groupe reste dans SA section.
 const CLEFS_SOUS_BLOC_MOBILITE = ['offre_tc', 'bornes_recharge', 'places_stationnement_velo_1000']
+
 const CLEFS_GRILLE_MOBILITE = [
   'iso_alimentation',
   'iso_sante',
@@ -154,6 +156,39 @@ const storyMobiliteAngle = computed(() => {
   const lignes = histoiresMobilitePourTerritoire(props.payload, props.territoire)
   if (!lignes) return null
   return storyMobilite(lignes)
+})
+
+// The Milieux Story (issue #174, ADR-0014) — « Se densifier, s'étaler, ou
+// s'en aller », the single Story of the fifth theme: the reading by the
+// signs, its precision riders (renaturation potentielle, les deux horloges,
+// la règle de source de la population) et l'intensité quand elle est publiée.
+const histoireMilieux = computed(() =>
+  histoirePourTerritoire(props.payload, 'milieux', props.territoire),
+)
+
+const storyMilieuxAngle = computed(() => {
+  const histoire = histoireMilieux.value
+  if (histoire?.theme !== 'milieux') return null
+  return storyMilieux(
+    histoire.classification,
+    histoire.delta_population,
+    histoire.conso_fenetre,
+    histoire.intensite_m2_par_habitant,
+    histoire.periode,
+  )
+})
+
+// The Milieux story's sources, exhaustive: la série historique (la population
+// de la lecture — la règle de source d'ADR-0014) et CONSOENAF (la
+// consommation re-sommée sur la même fenêtre). Citées depuis la table
+// vintages — jamais inventées.
+const sourceHistoireMilieux = computed(() => {
+  const vintages = props.payload.vintages
+  if (!vintages) return null
+  const ids = new Set(['serie_historique', 'consoenaf'])
+  const citees = vintages.filter((v) => ids.has(v.id))
+  if (citees.length === 0) return null
+  return citees.map((v) => `${v.source} · ${v.version}`).join(' · ')
 })
 
 // The Mobilité story chart's context cloud (ADR-0011) — the peers' div_loss_t
@@ -204,7 +239,29 @@ function libelleIndicateur(clef: string): string {
          signature moment sits ABOVE the standard indicator grid, per the
          décision of 2026-08-07 (DESIGN.md §5 updated in step). The one-liner
          still carries its own chart, comment-lire, source and Méthodes link. -->
-    <section v-if="storyMobiliteAngle || story || storyEconomieAngle" class="angle-story">
+    <section v-if="storyMobiliteAngle || story || storyEconomieAngle || storyMilieuxAngle" class="angle-story">
+      <!-- The Milieux Story (issue #174, ADR-0014) : « Se densifier, s'étaler,
+           ou s'en aller » — la lecture du territoire contre sa terre, une des
+           quatre lectures par les signes. L'intensité (m² d'ENAF par habitant
+           ajouté) ne s'affiche que publiée (Δpopulation significativement
+           positif) — jamais inventée. -->
+      <template v-if="storyMilieuxAngle">
+        <p class="angle-story-une-ligne">{{ storyMilieuxAngle.uneLigne }}</p>
+        <p class="angle-story-titre">{{ storyMilieuxAngle.titre }}</p>
+        <p v-if="storyMilieuxAngle.intensite" class="angle-story-precision">
+          {{ storyMilieuxAngle.intensite }}
+        </p>
+        <p class="angle-story-comment-lire">
+          <span class="angle-story-etiquette">Comment lire</span>
+          {{ storyMilieuxAngle.commentLire }}
+        </p>
+        <p v-if="sourceHistoireMilieux" class="angle-story-source">
+          <span class="angle-story-etiquette">Source</span>
+          {{ sourceHistoireMilieux }}
+        </p>
+        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+      </template>
+
       <!-- The Mobilité Story (issue #142, ADR-0012) : the flagship's headline.
            The default « Vingt minutes sans voiture » renders its distribution
            chart (density signature, median marked) against the same-scale

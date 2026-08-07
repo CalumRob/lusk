@@ -246,6 +246,15 @@ export const vintagesFixture: Vintage[] = [
     date_reference: '2026-02-28',
     date_publication: '2026-08-06',
   },
+  {
+    id: 'consoenaf',
+    source:
+      "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
+    version: '2025',
+    licence: 'lov2',
+    date_reference: '2025-01-01',
+    date_publication: '2026-07-24',
+  },
 ]
 
 /** A second theme (habitat) — for the payload-driven tab bar (ADR-0007). */
