@@ -49,6 +49,7 @@ const payloadDemographie: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 function chargerAvec(payload: Payload): ChargerPayload {

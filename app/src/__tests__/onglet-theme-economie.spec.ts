@@ -30,6 +30,7 @@ const payloadEconomie: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 async function monter(territoire: string, histoires: Histoire[] = histoiresEconomieFixture) {

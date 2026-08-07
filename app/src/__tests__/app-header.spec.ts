@@ -36,6 +36,7 @@ const payload: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 const charger: ChargerPayload = async () => payload

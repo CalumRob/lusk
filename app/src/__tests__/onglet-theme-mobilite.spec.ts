@@ -31,6 +31,7 @@ const payloadMobilite: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 async function monter(territoire: string, payload: Payload = payloadMobilite) {

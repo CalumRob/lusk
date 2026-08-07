@@ -28,6 +28,7 @@ function payloadAvec(vintages: Payload['vintages']): Payload {
     apercu: apercuAvecNAFixture,
     runReport: null,
     vintages,
+    programmes: null,
   }
 }
 

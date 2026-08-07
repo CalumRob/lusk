@@ -39,6 +39,7 @@ const payload: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: null,
   vintages: vintagesCommites(),
+  programmes: null,
 }
 
 async function monter(charger: ChargerPayload) {

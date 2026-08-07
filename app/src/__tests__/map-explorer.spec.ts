@@ -54,6 +54,7 @@ const payload: Payload = {
   apercu: [],
   runReport: null,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 async function monter(overrides: Record<string, unknown> = {}) {

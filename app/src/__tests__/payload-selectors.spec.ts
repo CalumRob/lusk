@@ -34,6 +34,7 @@ const payloadDemographie: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportEchecFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 describe('themesPresent — the payload-driven tab bar (ADR-0007)', () => {

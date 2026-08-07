@@ -52,6 +52,7 @@ const payload: Payload = {
   apercu: apercuFixture,
   runReport: null,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 function chargerPayloadAvec(p: Payload): ChargerPayload {

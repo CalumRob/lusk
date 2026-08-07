@@ -25,6 +25,7 @@ const payload: Payload = {
   apercu: apercuAvecNAFixture,
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
+  programmes: null,
 }
 
 describe('echelleContexte — the context-switcher ladder', () => {
