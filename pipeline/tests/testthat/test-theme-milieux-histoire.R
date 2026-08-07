@@ -254,3 +254,65 @@ test_that("le schéma de la table est le contrat de l'issue #174", {
                      apercu = APERCU_MILIEUX)
   )
 })
+
+# Données réelles --------------------------------------------------------------
+# Le bloc « données réelles » (hors boucle par défaut — LUSK_RUN_REAL=1, le
+# helper skip_sans_donnees_reelles) : la VRAIE série historique du recensement
+# du cache (pipeline/data/raw/, gitignoré). Il verrouille le CONTRAT RÉEL de
+# la source de population de l'Histoire : les deux millésimes les plus récents
+# de la série sont 2017 et 2023 (la fenêtre de l'Histoire, jamais codée en
+# dur — si l'INSEE publie un nouveau recensement, la fenêtre dérive toute
+# seule), et le run complet du thème sur les vraies données produit une
+# lecture par territoire.
+
+test_that("données réelles : la série historique réelle — la fenêtre dérive des millésimes 2017 et 2023", {
+  extrait <- testthat::test_path("..", "..", "data", "raw", "extracted")
+  fichier <- file.path(extrait, NOM_FICHIER_SERIE_HISTORIQUE)
+  zip_serie <- testthat::test_path("..", "..", "data", "raw",
+                                   "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip")
+  skip_sans_donnees_reelles(
+    file.exists(fichier) || file.exists(zip_serie),
+    "la série historique réelle est absente du cache")
+
+  # extraction idempotente — la même que le builder du thème
+  if (!file.exists(fichier)) {
+    if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+    suppressWarnings(
+      utils::unzip(zip_serie, exdir = extrait, overwrite = FALSE)
+    )
+  }
+
+  serie <- lire_serie_historique_pop(fichier)
+  expect_equal(unique(serie$millesime_debut), 2017)
+  expect_equal(unique(serie$millesime_fin), 2023)
+  # les populations réelles sont strictement positives aux deux bornes
+  expect_true(all(serie$pop_debut > 0))
+  expect_true(all(serie$pop_fin > 0))
+})
+
+test_that("données réelles : le run complet Milieux — une lecture par territoire, la fenêtre 2017-2023", {
+  cache <- testthat::test_path("..", "..", "data", "raw")
+  skip_sans_donnees_reelles(
+    file.exists(file.path(cache, "conso-com.csv")),
+    "le CSV CONSOENAF réel est absent du cache")
+
+  communes <- construire_donnees_milieux(cache = cache,
+                                         sortie = tempfile(fileext = ".rds"))
+  territoires <- construire_territoires_milieux(communes)
+  hist <- compute_histoires_milieux(territoires)
+
+  # une ligne par territoire, la fenêtre dérivée de la série réelle
+  expect_equal(nrow(hist), nrow(territoires))
+  expect_true(all(hist$periode == "2017-2023"))
+  # la donnée réelle est un dénombrement complet : chaque lecture porte soit
+  # une des quatre lectures, soit NA quand la consommation de la fenêtre est
+  # incomplète — jamais une lecture hors contrat
+  lectures <- c("grandir-en-se-densifiant", "grandir-en-setalant",
+                "sen-aller-et-consommer-quand-meme",
+                "les-departs-laissent-la-place-a-la-renaturation")
+  expect_true(all(is.na(hist$classification) |
+                    hist$classification %in% lectures))
+  # les communes qui consomment et gagnent des habitants portent l'intensité
+  ok <- !is.na(hist$classification) & hist$delta_population >= SEUIL_INTENSITE_MILIEUX
+  expect_true(all(!is.na(hist$intensite_m2_par_habitant[ok])))
+})
