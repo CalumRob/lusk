@@ -79,19 +79,23 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
 
   payload <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible)
 
-  # le payload squelettique : les quatre tables du contrat
+  # le payload Milieux : les quatre tables du contrat, deux clés d'indicateurs
+  # (conso_enaf + trajectoire_zan, #173) × une ligne par territoire
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "milieux"))
-  expect_setequal(unique(payload$indicateurs$key), "conso_enaf")
-  # une ligne par territoire : 5 communes + 2 EPCIs + 2 départements + région
-  expect_equal(nrow(payload$indicateurs), 10)
+  expect_setequal(unique(payload$indicateurs$key),
+                  c("conso_enaf", "trajectoire_zan"))
+  # 10 territoires × 2 clés : 5 communes + 2 EPCIs + 2 départements + région
+  expect_equal(nrow(payload$indicateurs), 20)
   expect_equal(nrow(payload$territoires), 10)
   expect_setequal(unique(payload$territoires$type),
                   c("commune", "epci", "departement", "region"))
   # la valeur publiée : la consommation en hectares (m² -> ha prouvé dans le
   # run complet — 1 233 202 m² -> 123,3202 ha pour la commune A1)
   expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "22001"],
+    payload$indicateurs$value[
+      payload$indicateurs$territoire == "22001" &
+        payload$indicateurs$key == "conso_enaf"],
     1233202 / 10000
   )
 
@@ -146,7 +150,7 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
-  expect_equal(nrow(ind), 10)  # 10 territoires × 1 clé
+  expect_equal(nrow(ind), 20)  # 10 territoires × 2 clés
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)
   expect_equal(nrow(ref), 10)
 })

@@ -48,12 +48,17 @@ test_that("chaque territoire porte la clé conso_enaf — la conversion m² -> h
   payload <- compute_payload(communes_fixture_milieux(),
                              theme = theme_milieux())
 
-  expect_setequal(unique(payload$indicateurs$key), "conso_enaf")
-  # une ligne par territoire
-  expect_equal(nrow(payload$indicateurs), nrow(payload$territoires))
+  # deux clés publiées — conso_enaf (ce test) et trajectoire_zan (#173, son
+  # propre fichier de test) — chacune avec SA multiplicité (une ligne par
+  # territoire)
+  expect_setequal(unique(payload$indicateurs$key),
+                  c("conso_enaf", "trajectoire_zan"))
+  expect_equal(nrow(payload$indicateurs), 2L * nrow(payload$territoires))
 
   valeur <- function(code) {
-    payload$indicateurs$value[payload$indicateurs$territoire == code]
+    payload$indicateurs$value[
+      payload$indicateurs$key == "conso_enaf" &
+        payload$indicateurs$territoire == code]
   }
   # communes : les valeurs du reshape (m² -> ha), vérifiées à la main
   expect_equal(valeur("22001"), 1233202 / 10000)   # 123,3202 ha
@@ -69,8 +74,10 @@ test_that("chaque territoire porte la clé conso_enaf — la conversion m² -> h
   expect_true(is.na(valeur("200000002")))
   expect_true(is.na(valeur("29")))
   expect_true(is.na(valeur("53")))
-  # l'unité du contrat
-  expect_true(all(payload$indicateurs$unit == "ha"))
+  # l'unité du contrat : la consommation en hectares (la clé trajectoire_zan
+  # porte SA propre unité — « × », testée dans test-theme-milieux-trajectoire-zan.R)
+  conso <- payload$indicateurs[payload$indicateurs$key == "conso_enaf", ]
+  expect_true(all(conso$unit == "ha"))
 })
 
 test_that("chaque indicateur est estampillé depuis sa source de référence (CONSOENAF)", {
