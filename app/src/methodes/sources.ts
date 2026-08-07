@@ -91,7 +91,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     nom: 'INSEE — Série historique du recensement',
     editeur: 'INSEE',
     url: 'https://www.data.gouv.fr/datasets/serie-historique-du-recensement-de-la-population',
-    themes: ['demographie'],
+    themes: ['demographie', 'milieux'],
   },
   menages: {
     nom: 'INSEE — Ménages (dossier complet)',
@@ -206,5 +206,19 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     editeur: 'Ecolab',
     url: 'https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv',
     themes: ['mobilite'],
+  },
+
+  // ---- Milieux (docs/themes/milieux.md — l'axe terre, ADR-0014) ----
+  // L'ordre du manifeste (manifest_milieux.R) : la source CONSOENAF (l'horloge
+  // annuelle de l'indicateur, l'anomalie d'unité documentée) et la série
+  // historique du recensement — la source PARTAGÉE de la population de
+  // l'Histoire (la même ligne que Démographie, la règle de source d'ADR-0014 :
+  // la population vient TOUJOURS de là, jamais des champs embarqués de
+  // CONSOENAF).
+  consoenaf: {
+    nom: 'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
+    editeur: 'Cerema',
+    url: 'https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025',
+    themes: ['milieux'],
   },
 }

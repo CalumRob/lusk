@@ -69,30 +69,35 @@
   --theme-demographie: #8E85C4;  /* indigo */
   --theme-habitat: #C98F6E;      /* terracotta */
   --theme-economie: #7FA875;     /* green */
+  --theme-milieux: #A99A5E;      /* olive/kaki — le cinquième thème (ADR-0014), l'axe terre */
 
   /* wash — page bg whisper */
   --theme-mobilite-wash: color-mix(in oklab, var(--theme-mobilite) 8%, var(--surface-secondary));
   --theme-demographie-wash: color-mix(in oklab, var(--theme-demographie) 8%, var(--surface-secondary));
   --theme-habitat-wash: color-mix(in oklab, var(--theme-habitat) 8%, var(--surface-secondary));
   --theme-economie-wash: color-mix(in oklab, var(--theme-economie) 8%, var(--surface-secondary));
+  --theme-milieux-wash: color-mix(in oklab, var(--theme-milieux) 8%, var(--surface-secondary));
 
   /* soft — fills, chips, hover */
   --theme-mobilite-soft: color-mix(in oklab, var(--theme-mobilite) 16%, var(--surface-primary));
   --theme-demographie-soft: color-mix(in oklab, var(--theme-demographie) 16%, var(--surface-primary));
   --theme-habitat-soft: color-mix(in oklab, var(--theme-habitat) 16%, var(--surface-primary));
   --theme-economie-soft: color-mix(in oklab, var(--theme-economie) 16%, var(--surface-primary));
+  --theme-milieux-soft: color-mix(in oklab, var(--theme-milieux) 16%, var(--surface-primary));
 
   /* line — underline, icons, legend */
   --theme-mobilite-line: var(--theme-mobilite);
   --theme-demographie-line: var(--theme-demographie);
   --theme-habitat-line: var(--theme-habitat);
   --theme-economie-line: var(--theme-economie);
+  --theme-milieux-line: var(--theme-milieux);
 
   /* strong — text, selected (darkened for contrast) */
   --theme-mobilite-strong: color-mix(in oklab, var(--theme-mobilite) 62%, #0C1B19);
   --theme-demographie-strong: color-mix(in oklab, var(--theme-demographie) 62%, #0C1B19);
   --theme-habitat-strong: color-mix(in oklab, var(--theme-habitat) 62%, #0C1B19);
   --theme-economie-strong: color-mix(in oklab, var(--theme-economie) 62%, #0C1B19);
+  --theme-milieux-strong: color-mix(in oklab, var(--theme-milieux) 62%, #0C1B19);
 
   /* ------------------------------------------------------------------------
    * §2 Color — Modes (semantic, preserved from the original)

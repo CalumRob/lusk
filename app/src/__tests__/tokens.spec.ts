@@ -84,6 +84,7 @@ describe('DESIGN.md §2 — Theme colors', () => {
     demographie: '#8E85C4',
     habitat: '#C98F6E',
     economie: '#7FA875',
+    milieux: '#A99A5E', // le cinquième thème (ADR-0014) — l'ancre provisoire de l'axe terre
   }
 
   it('declares one anchor per theme', () => {

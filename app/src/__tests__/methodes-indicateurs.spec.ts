@@ -53,13 +53,14 @@ function lireFaits(nomFichier: string, balayage: RegExp): { theme: string; clef:
 
 /** Les faits de parité des huit fichiers commis, extraits une seule fois à l'échelle du module. */
 const FAITS: FaitsIndicateurs = {
-  parTheme: { demographie: {}, habitat: {}, economie: {}, mobilite: {} },
-  parStory: { demographie: {}, habitat: {}, economie: {}, mobilite: {} },
+  parTheme: { demographie: {}, habitat: {}, economie: {}, mobilite: {}, milieux: {} },
+  parStory: { demographie: {}, habitat: {}, economie: {}, mobilite: {}, milieux: {} },
   storyKeys: {
     demographie: new Set(),
     habitat: new Set(),
     economie: new Set(),
     mobilite: new Set(),
+    milieux: new Set(),
   },
 }
 
@@ -94,7 +95,7 @@ function classificationsParStory(theme: ThemeConstruit): Record<string, string[]
 
 describe('registre Méthodes — la forme exposée au contrat de parité', () => {
   it('couvre les thèmes construits, dans l\u2019ordre canonique', () => {
-    expect(THEMES_CONSTRUITS).toEqual(['demographie', 'habitat', 'economie', 'mobilite'])
+    expect(THEMES_CONSTRUITS).toEqual(['demographie', 'habitat', 'economie', 'mobilite', 'milieux'])
     expect(Object.keys(THEMES_METHODES)).toEqual(THEMES_CONSTRUITS)
   })
 
@@ -227,6 +228,67 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
 
     // le déclencheur de rebuild — quand le thème se recalcule
     expect(horloge!.declencheur.length).toBeGreaterThan(20)
+  })
+
+  it('le milieux documente le modèle CONTEXT.md — Story unique, les quatre lectures, les deux horloges', () => {
+    // la Story unique « Se densifier, s'étaler, ou s'en aller » (ADR-0014) —
+    // un thème à Story unique comme l'Économie
+    const clefs = new Set(THEMES_METHODES.milieux.stories.map((s) => s.clef))
+    expect(clefs).toEqual(new Set(['se-densifier-setaler-ou-sen-aller']))
+    const story = THEMES_METHODES.milieux.stories[0]
+    expect(story.statut, '« milieux » Story non publiée').toBe('publiee')
+
+    // les QUATRE lectures par signes (seuil 0) — exactement, ni plus ni moins
+    const lectures = new Set(story.lectures.map((l) => l.clef))
+    expect(lectures).toEqual(
+      new Set([
+        'grandir-en-se-densifiant',
+        'grandir-en-setalant',
+        'sen-aller-et-consommer-quand-meme',
+        'les-departs-laissent-la-place-a-la-renaturation',
+      ]),
+    )
+
+    // la lecture renaturation porte SON rider de précision — la renaturation
+    // est POTENTIELLE, jamais mesurée
+    const renaturation = story.lectures.find(
+      (l) => l.clef === 'les-departs-laissent-la-place-a-la-renaturation',
+    )
+    expect(renaturation?.lecture).toMatch(/potentielle, jamais mesurée/)
+
+    // les deux horloges documentées comme fait de première classe (la promesse
+    // de transparence d'ADR-0014 — l'indicateur délibérément plus frais)
+    const horloges = THEMES_METHODES.milieux.deuxHorloges
+    expect(horloges, '« milieux » sans les deux horloges documentées').toBeDefined()
+    expect(horloges!.consommation.length).toBeGreaterThan(20)
+    expect(horloges!.entrees.length).toBeGreaterThan(0)
+    for (const entree of horloges!.entrees) {
+      expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
+      expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
+      expect(entree.reference.length, 'entrée sans référence').toBeGreaterThan(0)
+    }
+    expect(horloges!.declencheur.length).toBeGreaterThan(20)
+  })
+
+  it('le milieux documente la règle de source de la population et la note de recherche', () => {
+    const story = THEMES_METHODES.milieux.stories[0]
+
+    // la règle de source d'ADR-0014 : la population vient de la série
+    // historique, jamais des champs embarqués de CONSOENAF
+    expect(story.definition).toMatch(/série historique/)
+    // la note de recherche qui a fondé le bloc est référencée par son chemin
+    expect(story.definition).toContain('docs/research/zan-rennes.md')
+  })
+
+  it('le milieux documente l\u2019anomalie d\u2019unité m²/ha dans la définition de la fenêtre', () => {
+    const fenetre = THEMES_METHODES.milieux.indicateurs.conso_enaf_fenetre
+    expect(fenetre.unite, '« milieux.conso_enaf_fenetre » en hectares').toBe('ha')
+
+    // l'anomalie documentée, jamais silencieusement ignorée : le dictionnaire
+    // Cerema dit hectares, le fichier distribue des m² — la conversion est
+    // explicite (÷ 10 000) et testée
+    expect(fenetre.definition).toMatch(/mètres carrés|m²/)
+    expect(fenetre.definition).toMatch(/10 000|10 000|÷/)
   })
 
   it('documente chaque lecture publiée (classification non nulle) des thèmes stables', () => {

@@ -1,5 +1,29 @@
 [
   {
+    "id": "epci",
+    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": null
+  },
+  {
+    "id": "consoenaf",
+    "source": "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-07-24"
+  },
+  {
+    "id": "serie_historique",
+    "source": "INSEE — Série historique du recensement",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
     "id": "acv",
     "source": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
     "version": "2025",
@@ -150,14 +174,6 @@
     "licence": "lov2",
     "date_reference": "2023-01-01",
     "date_publication": "2026-07-15"
-  },
-  {
-    "id": "epci",
-    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": null
   },
   {
     "id": "logements",
@@ -358,14 +374,6 @@
     "licence": "lov2",
     "date_reference": null,
     "date_publication": "2026-08-03"
-  },
-  {
-    "id": "serie_historique",
-    "source": "INSEE — Série historique du recensement",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-06-30"
   },
   {
     "id": "menages",

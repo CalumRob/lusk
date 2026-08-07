@@ -48,6 +48,8 @@ function chargerPayloadCommite(): Promise<Payload> {
     'histoires_habitat.json',
     'indicateurs_economie.json',
     'histoires_economie.json',
+    'indicateurs_milieux.json',
+    'histoires_milieux.json',
     'run-report.json',
     'vintages.json',
     'programmes.json',
@@ -170,10 +172,16 @@ describe('payload contract — the committed payload parses and renders', () => 
     })
   })
 
-  it('drives the theme tab bar from the payload (all four themes are built)', async () => {
+  it('drives the theme tab bar from the payload (all five themes are built)', async () => {
     const payload = obtenirPayload()
 
-    expect(themesPresent(payload)).toEqual(['mobilite', 'demographie', 'habitat', 'economie'])
+    expect(themesPresent(payload)).toEqual([
+      'mobilite',
+      'demographie',
+      'habitat',
+      'economie',
+      'milieux',
+    ])
   })
 
   it('formats the committed ranks as French chips', async () => {
@@ -194,13 +202,23 @@ describe('payload contract — the committed payload parses and renders', () => 
   it('loads the committed vintages table — the freshness facts of the Méthodes sources', async () => {
     const payload = obtenirPayload()
 
-    // L'union commise (issues #124/#133) : une ligne par source des QUATRE
-    // thèmes construits — démographie + habitat + economie (les 5 du manifeste
-    // Économie : sirene_snapshot, flores_a38, flores_a88, rp_emploi, rp_chomage)
-    // + les 8 sources mobilité de la course 2026-08-06 (#139/#140/#141) + les
-    // 6 sources programmes du run 2026-08-07 (#175/#176/#178 : acv, pvd, crte,
-    // territoires_industrie, ort, subventions_scdl)
-    expect(payload.vintages).toHaveLength(48)
+    // L'union commise (issues #124/#133/#177) : une ligne par source des
+    // CINQ thèmes construits — démographie + habitat + economie (les 5 du
+    // manifeste Économie : sirene_snapshot, flores_a38, flores_a88, rp_emploi,
+    // rp_chomage) + les 8 sources mobilité de la course 2026-08-06
+    // (#139/#140/#141) + les 6 sources programmes du run 2026-08-07
+    // (#175/#176/#178 : acv, pvd, crte, territoires_industrie, ort,
+    // subventions_scdl) + la source consoenaf du run milieux 2026-08-07 (#177)
+    expect(payload.vintages).toHaveLength(49)
+    const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
+    expect(consoenaf).toMatchObject({
+      source:
+        "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
+      version: '2025',
+      licence: 'lov2',
+      date_reference: '2025-01-01',
+      date_publication: '2026-07-24',
+    })
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
       source: 'INSEE — Série historique du recensement',

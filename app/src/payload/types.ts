@@ -23,6 +23,7 @@ export const THEMES_CANONIQUES = [
   'demographie',
   'habitat',
   'economie',
+  'milieux',
 ] as const
 
 export type Theme = (typeof THEMES_CANONIQUES)[number]
@@ -216,7 +217,33 @@ export interface HistoireMobiliteVeloPreserve extends VintageStamp {
 
 export type HistoireMobilite = HistoireMobiliteVingtMinutes | HistoireMobiliteVeloPreserve
 
-export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite
+/**
+ * The Milieux Story row (issue #174, ADR-0014) — « Se densifier, s'étaler, ou
+ * s'en aller », the single Story of the fifth theme: ONE row per territory,
+ * the reading by the SIGNS alone (threshold 0 — ZAN is a zero-objective, the
+ * data is a complete census: a 0 is a real 0). The two forces: Δpopulation
+ * (from the Démographie série historique — the population-sourcing rule of
+ * ADR-0014, never CONSOENAF's embedded fields) and the window consumption
+ * (the CONSOENAF annuals re-summed on the SAME window — the two-clocks rule:
+ * the window derives from the RP millésimes the série holds, "2017-2023"
+ * today, never hardcoded). The intensity (m² of ENAF per added inhabitant) is
+ * published only when Δpopulation is meaningfully positive (SEUIL_INTENSITE);
+ * classification null = incomplete window (never an invented reading).
+ */
+export interface HistoireMilieux {
+  territoire: string
+  type: TerritoireType
+  theme: 'milieux'
+  story_key: 'se-densifier-setaler-ou-sen-aller'
+  /** La fenêtre dérivée de la série historique — la date du titre, jamais codée en dur. */
+  periode: string
+  delta_population: number
+  conso_fenetre: number
+  intensite_m2_par_habitant: number | null
+  classification: string | null
+}
+
+export type Histoire = HistoireDemographie | HistoireHabitat | HistoireEconomie | HistoireMobilite | HistoireMilieux
 
 /** One basic-stat row per (territoire × key) — the Aperçu tab renders it, never derives it. */
 export interface ApercuRow {

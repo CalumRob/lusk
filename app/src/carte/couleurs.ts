@@ -17,6 +17,7 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
   demographie: '#8E85C4', // indigo
   habitat: '#C98F6E', // terracotta
   economie: '#7FA875', // green
+  milieux: '#A99A5E', // olive/kaki — l'axe terre (ADR-0014), ancrage provisoire
 }
 
 /** The neutral fill: territory masks in Aperçu + no-data territories.

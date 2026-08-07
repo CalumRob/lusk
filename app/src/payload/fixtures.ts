@@ -246,6 +246,15 @@ export const vintagesFixture: Vintage[] = [
     date_reference: '2026-02-28',
     date_publication: '2026-08-06',
   },
+  {
+    id: 'consoenaf',
+    source:
+      "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
+    version: '2025',
+    licence: 'lov2',
+    date_reference: '2025-01-01',
+    date_publication: '2026-07-24',
+  },
 ]
 
 /** A second theme (habitat) — for the payload-driven tab bar (ADR-0007). */
@@ -549,6 +558,88 @@ export const histoiresMobiliteFixture: Histoire[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 29, div_loss_b: 22, delta: 7, pct_iso_full_t: 0.100000000000000, dens_min: 0, dens_max: 53, dens_1: 0.00314500000000000, dens_2: 0.0165130000000000, dens_3: 0.0167950000000000, dens_4: 0.0184880000000000, dens_5: 0.0190630000000000, dens_6: 0.0197990000000000, dens_7: 0.0230430000000000, dens_8: 0.0254610000000000, dens_9: 0.0214220000000000, dens_10: 0.00464500000000000, dec_1: 7, dec_2: 13, dec_3: 19, dec_4: 24, dec_5: 29, dec_6: 34, dec_7: 38, dec_8: 42, dec_9: 47, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
   { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: 0.0100000000000000, dens_min: 8, dens_max: 52, dens_1: 0.00825700000000000, dens_2: 0.0162830000000000, dens_3: 0.0379000000000000, dens_4: 0.0491120000000000, dens_5: 0.0331710000000000, dens_6: 0.0310610000000000, dens_7: 0.0107290000000000, dens_8: 0.00454000000000000, dens_9: 0.00879100000000000, dens_10: 0.00413000000000000, dec_1: 14, dec_2: 18, dec_3: 20, dec_4: 23, dec_5: 24, dec_6: 26, dec_7: 30, dec_8: 33, dec_9: 38, dec_10: 52, classification_saillance: 'saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
   { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', div_loss_t: 24, div_loss_b: 13, delta: 11, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
+]
+
+/** Le vintage CONSOENAF — le tampon de SA source de référence (manifest #171). */
+const vintageConsoenaf = {
+  vintage_source:
+    "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
+  vintage_version: '2025',
+  vintage_date_reference: '2025-01-01',
+  vintage_date_publication: '2026-07-24',
+}
+
+/**
+ * Indicateurs Milieux (issue #172 + #173) — VALUES mirror the R fixture
+ * (helper-milieux.R + test-contract-payload-milieux.R), rien d'inventé : la
+ * fenêtre 2021-2025 conso_enaf_fenetre en hectares (le champ natif naf21art25
+ * converti m² -> ha au reshape — 233 202 m² -> 23,3202 ha pour 22001), la
+ * série annuelle 2011-2024 conso_enaf_annuel (14 lignes par territoire,
+ * detail = l'année) et la trajectoire ZAN trajectoire_zan en × (le rapport
+ * des rythmes annualisés — 0,5 = le −50 % de la loi). Les rangs portent la
+ * même forme que la payload commise (rang en [0,1] ou null).
+ */
+export const indicateursMilieuxFixture: Indicateur[] = [
+  // ---- 22001 — la fenêtre, la série annuelle complète et la trajectoire
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 23.3202, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2011', value: 12, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2012', value: 8, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2013', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2014', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2015', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2016', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2017', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2018', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2019', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2020', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2021', value: 6, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2022', value: 5, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2023', value: 8, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2024', value: 4.3202, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.583005, unit: '×', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  // ---- les autres communes : la fenêtre + la trajectoire (la série annuelle
+  // est exercée sur 22001 — la forme multi-lignes du contrat)
+  { territoire: '22002', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 10, unit: 'ha', rang_epci: 0.25, rang_dep: 0.25, rang_reg: 0.375, ...vintageConsoenaf },
+  { territoire: '22002', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.3125, unit: '×', rang_epci: 0.25, rang_dep: 0.25, rang_reg: 0.375, ...vintageConsoenaf },
+  { territoire: '29001', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 15, unit: 'ha', rang_epci: 0.75, rang_dep: 0.75, rang_reg: 0.625, ...vintageConsoenaf },
+  { territoire: '29001', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.3125, unit: '×', rang_epci: 0.75, rang_dep: 0.75, rang_reg: 0.625, ...vintageConsoenaf },
+  { territoire: '29002', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 2.5, unit: 'ha', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageConsoenaf },
+  { territoire: '29002', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.125, unit: '×', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageConsoenaf },
+  // ---- les agrégats (les sommes des communes — la forme du contrat)
+  { territoire: '200000001', type: 'epci', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 33.3202, unit: 'ha', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageConsoenaf },
+  { territoire: '200000001', type: 'epci', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.46278, unit: '×', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageConsoenaf },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 17.5, unit: 'ha', rang_epci: null, rang_dep: 0.5, rang_reg: 0.5, ...vintageConsoenaf },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.25735, unit: '×', rang_epci: null, rang_dep: 0.5, rang_reg: 0.5, ...vintageConsoenaf },
+  { territoire: '22', type: 'departement', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 33.3202, unit: 'ha', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageConsoenaf },
+  { territoire: '22', type: 'departement', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.46278, unit: '×', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageConsoenaf },
+  { territoire: '29', type: 'departement', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 17.5, unit: 'ha', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageConsoenaf },
+  { territoire: '29', type: 'departement', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.25735, unit: '×', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageConsoenaf },
+  { territoire: '53', type: 'region', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 50.8202, unit: 'ha', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageConsoenaf },
+  { territoire: '53', type: 'region', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.363, unit: '×', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageConsoenaf },
+]
+
+/**
+ * Les Stories Milieux (issue #174, ADR-0014) — « Se densifier, s'étaler, ou
+ * s'en aller » : une ligne par territoire, la lecture par les signes (seuil
+ * 0), les deux forces (Δpopulation de la série historique, consommation de la
+ * fenêtre re-sommée sur les MÊMES millésimes — la règle des deux horloges,
+ * fenêtre 2017-2023 dérivée, jamais codée en dur) et l'intensité (m² d'ENAF
+ * par habitant ajouté — publiée seulement quand le Δpopulation est
+ * significativement positif). Les valeurs reflètent le fixture R
+ * (test-theme-milieux-histoire.R) : 22001/22002 s'étalent, 29001/29002
+ * consomment quand même — les lectures « densifiant » et « renaturation »
+ * sont exercées dans story-milieux.spec.ts (le classifieur pur).
+ */
+export const histoiresMilieuxFixture: Histoire[] = [
+  { territoire: '22001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 200, conso_fenetre: 51, intensite_m2_par_habitant: 2550, classification: 'grandir-en-setalant' },
+  { territoire: '22002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 100, conso_fenetre: 9, intensite_m2_par_habitant: 900, classification: 'grandir-en-setalant' },
+  { territoire: '29001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -150, conso_fenetre: 15.5, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '29002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -10, conso_fenetre: 1.75, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '200000001', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 300, conso_fenetre: 60, intensite_m2_par_habitant: 2000, classification: 'grandir-en-setalant' },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -160, conso_fenetre: 17.25, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '22', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 300, conso_fenetre: 60, intensite_m2_par_habitant: 2000, classification: 'grandir-en-setalant' },
+  { territoire: '29', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -160, conso_fenetre: 17.25, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '53', type: 'region', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 140, conso_fenetre: 77.25, intensite_m2_par_habitant: 5517.85714285714, classification: 'grandir-en-setalant' },
 ]
 
 /**

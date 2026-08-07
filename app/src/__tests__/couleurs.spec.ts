@@ -21,6 +21,7 @@ describe('ANCRAGES_THEMES — the DESIGN.md §2 anchors, mirrored for the map', 
       demographie: '#8E85C4', // indigo
       habitat: '#C98F6E', // terracotta
       economie: '#7FA875', // green
+      milieux: '#A99A5E', // olive/kaki — l'axe terre, l'ancrage provisoire du cinquième thème (ADR-0014)
     })
   })
 })

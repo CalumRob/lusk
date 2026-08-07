@@ -86,6 +86,17 @@ const CLES_HISTOIRES_MOBILITE = [
   'ce-que-le-velo-preserve',
 ] as const
 
+/** Les story_keys du thème Milieux (issue #174, ADR-0014) — la Story unique « Se densifier, s'étaler, ou s'en aller ». */
+const CLES_HISTOIRES_MILIEUX = ['se-densifier-setaler-ou-sen-aller'] as const
+
+/** Les classifications Milieux — les quatre lectures par signes (seuil 0, ADR-0014). */
+const CLASSIFICATIONS_MILIEUX = [
+  'grandir-en-se-densifiant',
+  'grandir-en-setalant',
+  'sen-aller-et-consommer-quand-meme',
+  'les-departs-laissent-la-place-a-la-renaturation',
+] as const
+
 /** Les classifications de saillance du flagship (theme_mobilite.R — la règle du delta réel). */
 const CLASSIFICATIONS_SAILLANCE = ['saillant', 'notable', 'non-saillant'] as const
 
@@ -373,6 +384,10 @@ export function validerHistoires(
     // allumé + la saillance vélo quand le delta est réel — l'invariant devient
     // « une ligne par (territoire × story_key) », jamais deux.
     if (theme === 'mobilite') return lireHistoireMobilite(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, groupesMobilite)
+
+    // Milieux (issue #174) : une ligne par territoire, jamais deux — comme
+    // Démographie / Habitat.
+    if (theme === 'milieux') return lireHistoireMilieux(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, vus)
 
     // Démographie / Habitat : une ligne par territoire, jamais deux.
     exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
@@ -714,6 +729,82 @@ function lireHistoireMobilite(
     ...signature,
     classification_saillance,
     ...estampille,
+  }
+}
+
+/**
+ * Une ligne d'Histoire Milieux (issue #174, ADR-0014) — la Story unique
+ * « Se densifier, s'étaler, ou s'en aller » : une ligne par territoire, la
+ * lecture par les signes (seuil 0). Les deux forces (Δpopulation de la série
+ * historique, consommation de la fenêtre), l'intensité (m² d'ENAF par
+ * habitant ajouté — publiée seulement quand le Δpopulation est
+ * significativement positif) et la classification (null = fenêtre incomplète,
+ * jamais une lecture inventée).
+ */
+function lireHistoireMilieux(
+  ligne: LigneBrute,
+  entete: { territoire: string; type: TerritoireType; theme: 'milieux'; story_key: string },
+  ligneIndexee: number,
+  fichier: string,
+  vus: Set<string>,
+): Histoire {
+  const { territoire, type, theme, story_key } = entete
+
+  exiger(
+    estUneDe(story_key, CLES_HISTOIRES_MILIEUX),
+    fichier,
+    ligneIndexee,
+    `Story Milieux « ${story_key} » inconnue du contrat`,
+  )
+
+  exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
+  vus.add(territoire)
+
+  // La fenêtre dérivée de la série historique — jamais codée en dur (« 2017-2023 »).
+  const periode = lireChaine(ligne, 'periode', fichier, ligneIndexee)
+  exiger(periode.length > 0, fichier, ligneIndexee, '« periode » vide')
+
+  const delta_population = ligne['delta_population']
+  const conso_fenetre = ligne['conso_fenetre']
+  exiger(estNombre(delta_population), fichier, ligneIndexee, '« delta_population » doit être un nombre')
+  exiger(
+    estNombre(conso_fenetre) && conso_fenetre >= 0,
+    fichier,
+    ligneIndexee,
+    '« conso_fenetre » doit être un nombre non négatif',
+  )
+
+  // L'intensité n'existe qu'avec des habitants ajoutés (le dénombrement est
+  // exact — sous le seuil, null, jamais un nombre négatif).
+  const intensite_m2_par_habitant = ligne['intensite_m2_par_habitant']
+  exiger(
+    intensite_m2_par_habitant === null ||
+      (estNombre(intensite_m2_par_habitant) && intensite_m2_par_habitant >= 0),
+    fichier,
+    ligneIndexee,
+    '« intensite_m2_par_habitant » doit être un nombre non négatif ou null',
+  )
+
+  // La classification : l'une des quatre lectures, ou null (fenêtre
+  // incomplète — jamais une lecture hors contrat).
+  const classification = ligne['classification']
+  exiger(
+    classification === null || estUneDe(classification, CLASSIFICATIONS_MILIEUX),
+    fichier,
+    ligneIndexee,
+    `« classification » doit être l'un de ${CLASSIFICATIONS_MILIEUX.join(' | ')}, reçu « ${String(classification)} »`,
+  )
+
+  return {
+    territoire,
+    type,
+    theme,
+    story_key,
+    periode,
+    delta_population: delta_population as number,
+    conso_fenetre: conso_fenetre as number,
+    intensite_m2_par_habitant: intensite_m2_par_habitant as number | null,
+    classification: classification as string | null,
   }
 }
 

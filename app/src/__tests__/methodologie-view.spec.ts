@@ -109,13 +109,33 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligneSerie.text()).toContain('30 juin 2026')
   })
 
-  it('liste les 42 sources commises (l\u2019union est le contrat)', async () => {
+  it('liste les 43 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
     // Le comptage est borné à la table de la section #sources — la page porte
     // aussi la table des sources de l'élément Programmes & financements (6
     // lignes, issue #180) : les deux registres sont documentés séparément.
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(42)
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(43)
+  })
+
+  it('rend la source CONSOENAF avec son URL, ses dates, sa licence et l\u2019anomalie d\u2019unité (issue #177)', async () => {
+    const { wrapper } = await monter(async () => payloadAvecVintages)
+
+    const ligne = wrapper.find('tr#source-consoenaf')
+    expect(ligne.exists()).toBe(true)
+    expect(ligne.text()).toContain('Cerema')
+    expect(ligne.text()).toContain('CONSOENAF')
+    // l'anomalie d'unité documentée dans le libellé — le dictionnaire dit
+    // hectares, le fichier distribue des m², la conversion est explicite
+    expect(ligne.text()).toMatch(/mètres carrés|m²/)
+    // les faits de fraîcheur en direct depuis la table vintages
+    expect(ligne.text()).toContain('Licence Ouverte 2.0')
+    expect(ligne.text()).toContain('1 janvier 2025')
+    expect(ligne.text()).toContain('24 juillet 2026')
+    const lien = ligne.find('a.lien-source')
+    expect(lien.attributes('href')).toBe(
+      'https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025',
+    )
   })
 
   it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
@@ -171,10 +191,10 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 42 lignes dans la table des sources, fraîcheur en tirets
+    // La page ne casse jamais : 43 lignes dans la table des sources, fraîcheur en tirets
     // (la table des sources de l'élément Programmes & financements, 6 lignes statiques,
     // reste rendue — elle ne dépend pas des vintages, issue #180).
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(42)
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(43)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

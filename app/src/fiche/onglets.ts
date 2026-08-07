@@ -8,7 +8,7 @@
  * active panel (the shell's contract with C2/C3).
  */
 
-import { Building2, Home, LayoutDashboard, Route, Users } from 'lucide-vue-next'
+import { Building2, Home, LayoutDashboard, Route, Trees, Users } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 import type { TerritoireType, Theme } from '@/payload/types'
@@ -19,6 +19,7 @@ export const NOMS_THEMES: Record<Theme, string> = {
   demographie: 'Démographie',
   habitat: 'Habitat',
   economie: 'Économie',
+  milieux: 'Milieux',
 }
 
 /** One lucide icon per theme tab (ui-elements.md: « lucide icon + label »). */
@@ -27,6 +28,7 @@ export const ICONES_THEMES: Record<Theme, Component> = {
   demographie: Users,
   habitat: Home,
   economie: Building2,
+  milieux: Trees,
 }
 
 /** The Aperçu tab's icon — the cross-theme default, on the brand ramp. */

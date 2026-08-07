@@ -118,6 +118,25 @@ function uniteAffichage(unite: string): string {
           {{ THEMES_METHODES[theme].horlogeLente.declencheur }}
         </p>
       </div>
+      <div v-if="THEMES_METHODES[theme].deuxHorloges" class="groupe-horloge">
+        <h3 class="groupe-titre">Les deux horloges</h3>
+        <p class="horloge-consommation">{{ THEMES_METHODES[theme].deuxHorloges.consommation }}</p>
+        <dl class="horloge-entrees">
+          <div
+            v-for="(entree, index) in THEMES_METHODES[theme].deuxHorloges.entrees"
+            :key="index"
+            class="horloge-entree"
+          >
+            <dt class="horloge-donnee">{{ entree.donnee }}</dt>
+            <dd class="horloge-frequence">{{ entree.frequence }}</dd>
+            <dd class="horloge-reference">Référence : {{ entree.reference }}</dd>
+          </div>
+        </dl>
+        <p class="horloge-declencheur">
+          <span class="horloge-etiquette">Déclencheur de recalcul</span>
+          {{ THEMES_METHODES[theme].deuxHorloges.declencheur }}
+        </p>
+      </div>
     </article>
   </section>
 </template>

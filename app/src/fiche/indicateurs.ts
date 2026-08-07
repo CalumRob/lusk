@@ -42,6 +42,14 @@ export const NOMS_INDICATEURS: Record<Theme, Record<string, string>> = {
     chomage: 'Chômage (population active)',
     eco_activites: 'Part des éco-activités',
   },
+  // Milieux (issue #172 + #173, ADR-0014) : la fenêtre 2021-2025, la série
+  // annuelle depuis 2011 et la trajectoire ZAN — le libellé « Consommation
+  // d'ENAF » est le nom de l'indicateur (CONTEXT.md), la fenêtre en hectares.
+  milieux: {
+    conso_enaf_fenetre: 'Consommation d’ENAF 2021-2025',
+    conso_enaf_annuel: 'Consommation d’ENAF — série annuelle',
+    trajectoire_zan: 'Trajectoire ZAN',
+  },
 }
 
 /** The structure_age tranche labels (the pipeline's 7 tranches exhaustives). */
