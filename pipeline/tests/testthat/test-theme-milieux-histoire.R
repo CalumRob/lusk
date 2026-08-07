@@ -284,9 +284,13 @@ test_that("données réelles : la série historique réelle — la fenêtre dér
   serie <- lire_serie_historique_pop(fichier)
   expect_equal(unique(serie$millesime_debut), 2017)
   expect_equal(unique(serie$millesime_fin), 2023)
-  # les populations réelles sont strictement positives aux deux bornes
-  expect_true(all(serie$pop_debut > 0))
-  expect_true(all(serie$pop_fin > 0))
+  # les populations réelles ne sont JAMAIS négatives aux deux bornes. Six
+  # communes du département 55 (55039, 55050, 55139, 55189, 55239, 55307 —
+  # les villages détruits de la Meuse, 0 habitant) portent un 0 RÉEL aux deux
+  # bornes : la donnée est un dénombrement exact, le 0 est vrai — l'assertion
+  # borne à >= 0, jamais à > 0 (un 0 n'est pas une corruption).
+  expect_true(all(serie$pop_debut >= 0))
+  expect_true(all(serie$pop_fin >= 0))
 })
 
 test_that("données réelles : le run complet Milieux — une lecture par territoire, la fenêtre 2017-2023", {
