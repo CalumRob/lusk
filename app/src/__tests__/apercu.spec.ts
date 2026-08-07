@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest'
 
 import {
   LIEN_SUBVENTIONS,
+  NOMS_PROGRAMMES,
+  formaterMontant,
   formaterValeurApercu,
   libelleApercu,
+  libelleBadge,
   libelleProgramme,
+  nomProgramme,
+  phraseVoix,
 } from '../fiche/apercu'
 import type { Programme } from '../fiche/apercu'
 import { apercuFixture } from '../payload/fixtures'
 import type { ApercuRow } from '../payload/types'
+import type { BadgeProgramme } from '../payload/selectors'
 
 /**
  * The Aperçu tab's display vocabulary (app/src/fiche/apercu.ts) — the French
@@ -89,5 +95,113 @@ describe('Programme — the programmes & financements element (CONTEXT.md)', () 
   it('points the Région subventions link at the Région Bretagne aides portal', () => {
     expect(LIEN_SUBVENTIONS.href).toBe('https://www.bretagne.bzh/aides/')
     expect(LIEN_SUBVENTIONS.libelle).toBe('Subventions de la Région Bretagne')
+  })
+})
+
+describe('NOMS_PROGRAMMES — la vocabulaire des badges reste dans l’app (PRD #162)', () => {
+  it('déplie chaque sigle vers son nom français complet', () => {
+    expect(NOMS_PROGRAMMES.ACV).toBe('Action Cœur de Ville')
+    expect(NOMS_PROGRAMMES.PVD).toBe('Petites Villes de Demain')
+    expect(NOMS_PROGRAMMES.CRTE).toBe('Contrat de Relance et de Transition Écologique')
+    expect(NOMS_PROGRAMMES.ORT).toBe('Opération de revitalisation de territoire')
+  })
+
+  it('garde le programme sans acronyme comme lui-même — « Territoires d’industrie »', () => {
+    expect(nomProgramme("Territoires d'industrie")).toBe("Territoires d'industrie")
+  })
+
+  it('couvre EXACTEMENT les cinq sigles du contrat payload', () => {
+    expect(Object.keys(NOMS_PROGRAMMES).sort()).toEqual([
+      'ACV',
+      'CRTE',
+      'ORT',
+      'PVD',
+      "Territoires d'industrie",
+    ])
+  })
+})
+
+describe('phraseVoix — le verbe honnête de chaque ancrage (PRD #162-13)', () => {
+  const badge = (voix: BadgeProgramme['voix'], sigle: BadgeProgramme['sigle'], noms: string[]): BadgeProgramme =>
+    ({ sigle, voix, noms, conventionValantOrt: false, vintage: 'x' })
+
+  it('la commune est lauréate de son label', () => {
+    expect(phraseVoix(badge('laureate', 'ACV', []))).toBe('Commune lauréate du programme')
+  })
+
+  it('le territoire est couvert par le contrat — commune par son EPCI, EPCI par son contrat', () => {
+    expect(phraseVoix(badge('couverte', 'CRTE', []))).toBe('Territoire couvert par le contrat')
+  })
+
+  it('l’EPCI porte le programme sur ses communes labellisées (le pluriel suit la liste)', () => {
+    expect(phraseVoix(badge('porte', 'ACV', ['Lorient']))).toBe('Porte le programme sur 1 commune')
+    expect(phraseVoix(badge('porte', 'PVD', ['Hennebont', 'Languidic', 'Plouay']))).toBe(
+      'Porte le programme sur 3 communes',
+    )
+  })
+
+  it('le département/région compte les contrats, les labels et l’ORT avec leurs pluriels', () => {
+    expect(phraseVoix(badge('compte', 'CRTE', ['EPCI X']))).toBe('Compte 1 contrat signé')
+    expect(phraseVoix(badge('compte', "Territoires d'industrie", ['EPCI X', 'EPCI Z']))).toBe(
+      'Compte 2 contrats signés',
+    )
+    expect(phraseVoix(badge('compte', 'PVD', ['Hennebont']))).toBe('Compte 1 commune lauréate')
+    expect(phraseVoix(badge('compte', 'ORT', ['Commune B', 'Commune F']))).toBe(
+      'Compte 2 communes en périmètre ORT',
+    )
+  })
+
+  it('le badge-outil ORT lit le périmètre de la convention signée', () => {
+    expect(phraseVoix(badge('ort', 'ORT', []))).toBe(
+      "Dans le périmètre d'une convention ORT signée",
+    )
+  })
+})
+
+describe('libelleBadge — l’expansion accessible complète d’un badge', () => {
+  it('compose sigle — nom · voix · liste nommée · rider', () => {
+    const acv: BadgeProgramme = {
+      sigle: 'ACV',
+      voix: 'laureate',
+      noms: [],
+      conventionValantOrt: true,
+      vintage: 'x',
+    }
+    expect(libelleBadge(acv)).toBe(
+      'ACV — Action Cœur de Ville · Commune lauréate du programme · convention valant ORT',
+    )
+  })
+
+  it('nomme la liste COMPLÈTE dans l’expansion — jamais tronquée pour l’accessibilité', () => {
+    const crte: BadgeProgramme = {
+      sigle: 'CRTE',
+      voix: 'compte',
+      noms: ['EPCI X', 'EPCI Z'],
+      conventionValantOrt: false,
+      vintage: 'x',
+    }
+    expect(libelleBadge(crte)).toBe(
+      'CRTE — Contrat de Relance et de Transition Écologique · Compte 2 contrats signés : EPCI X, EPCI Z',
+    )
+  })
+
+  it('n’ajoute ni liste ni rider quand ils n’existent pas', () => {
+    const ort: BadgeProgramme = {
+      sigle: 'ORT',
+      voix: 'ort',
+      noms: [],
+      conventionValantOrt: false,
+      vintage: 'x',
+    }
+    expect(libelleBadge(ort)).toBe(
+      "ORT — Opération de revitalisation de territoire · Dans le périmètre d'une convention ORT signée",
+    )
+  })
+})
+
+describe('formaterMontant — les figures de subventions en euros', () => {
+  it('formate un montant avec le séparateur de milliers français', () => {
+    expect(formaterMontant(30000)).toBe('30\u202F000 €')
+    expect(formaterMontant(2000000)).toBe('2\u202F000\u202F000 €')
   })
 })

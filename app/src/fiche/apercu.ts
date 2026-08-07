@@ -17,6 +17,8 @@
  */
 
 import type { ApercuRow } from '@/payload/types'
+import type { SigleProgramme } from '@/payload/types'
+import type { BadgeProgramme } from '@/payload/selectors'
 
 /** The Aperçu keys' French labels — the pipeline's declared libellés, verbatim. */
 const LIBELLES_APERCU: Record<string, string> = {
@@ -65,6 +67,81 @@ export function libelleProgramme(programme: Programme): string {
   return programme.sigle === programme.nom
     ? programme.sigle
     : `${programme.sigle} — ${programme.nom}`
+}
+
+/**
+ * La vocabulaire des badges (PRD #162 — le sigle → le nom français complet,
+ * CONTEXT.md §Programmes & financements) : ACV — Action Cœur de Ville · PVD —
+ * Petites Villes de Demain · CRTE — Contrat de Relance et de Transition
+ * Écologique · Territoires d'industrie (sigle provisoire — le programme est
+ * officiellement nommé sans acronyme) · ORT — Opération de revitalisation de
+ * territoire. La vocabulaire vit ICI, dans l'app — jamais dans le payload
+ * (ADR-0013 : la dérivation est une jointure, les mots sont l'app).
+ */
+export const NOMS_PROGRAMMES: Record<SigleProgramme, string> = {
+  ACV: 'Action Cœur de Ville',
+  PVD: 'Petites Villes de Demain',
+  CRTE: 'Contrat de Relance et de Transition Écologique',
+  "Territoires d'industrie": "Territoires d'industrie",
+  ORT: 'Opération de revitalisation de territoire',
+}
+
+/** Le nom complet d'un sigle — le sigle lui-même quand le programme n'a pas d'acronyme (TI). */
+export function nomProgramme(sigle: SigleProgramme): string {
+  return NOMS_PROGRAMMES[sigle]
+}
+
+/**
+ * La phrase de voix d'un badge — le verbe honnête de l'ancrage (PRD #162-13,
+ * les verbes ne sur-réclament jamais) : la commune « est lauréate » de son
+ * label, le territoire « est couvert » par le contrat (commune par son EPCI,
+ * EPCI par son propre contrat), l'EPCI « porte » les labels de ses communes
+ * membres (le portage nommé), le département/région « compte » avec les
+ * EPCIs/communes nommés, et le badge-outil ORT lit le périmètre de la
+ * convention signée. La liste nommée n'est jamais dans la phrase — elle
+ * s'affiche à part, complète et scrollable.
+ */
+export function phraseVoix(badge: BadgeProgramme): string {
+  const n = badge.noms.length
+  const pluriel = n > 1
+  switch (badge.voix) {
+    case 'laureate':
+      return 'Commune lauréate du programme'
+    case 'couverte':
+      return 'Territoire couvert par le contrat'
+    case 'porte':
+      return `Porte le programme sur ${n} commune${pluriel ? 's' : ''}`
+    case 'compte':
+      if (badge.sigle === 'ORT') {
+        return `Compte ${n} commune${pluriel ? 's' : ''} en périmètre ORT`
+      }
+      if (badge.sigle === 'CRTE' || badge.sigle === "Territoires d'industrie") {
+        return `Compte ${n} contrat${pluriel ? 's' : ''} signé${pluriel ? 's' : ''}`
+      }
+      return `Compte ${n} commune${pluriel ? 's' : ''} lauréate${pluriel ? 's' : ''}`
+    case 'ort':
+      return n > 0
+        ? 'Territoire couvert par une convention ORT signée'
+        : "Dans le périmètre d'une convention ORT signée"
+  }
+}
+
+/**
+ * L'expansion accessible COMPLÈTE d'un badge — le sigle, le nom français, la
+ * voix honnête, la liste nommée (jamais tronquée — les lecteurs d'écran
+ * reçoivent TOUT) et le rider « convention valant ORT » quand le label le
+ * porte (le fait accessible du badge-outil, jamais un second badge).
+ */
+export function libelleBadge(badge: BadgeProgramme): string {
+  const expansion = libelleProgramme({ sigle: badge.sigle, nom: NOMS_PROGRAMMES[badge.sigle] })
+  const noms = badge.noms.length > 0 ? ` : ${badge.noms.join(', ')}` : ''
+  const rider = badge.conventionValantOrt ? ' · convention valant ORT' : ''
+  return `${expansion} · ${phraseVoix(badge)}${noms}${rider}`
+}
+
+/** Un montant en euros, formaté français — « 30 000 € » (digits never jitter). */
+export function formaterMontant(x: number): string {
+  return `${FORMATEUR_NOMBRE.format(x)} €`
 }
 
 /** Le lien « Région subventions » de l'élément — le portail officiel des aides. */
