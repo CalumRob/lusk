@@ -89,6 +89,35 @@ test_that("normaliser_consoenaf : une consommation vide reste NA (jamais 0 inven
   expect_true(is.na(na$naf11art12))
 })
 
+test_that("les 14 colonnes annuelles naf{AA}art{AA+1} se convertissent m² -> ha (2011 -> 2024)", {
+  norm <- normaliser_consoenaf(lire_fixture_consoenaf())
+  a1 <- norm[norm$code == "22001", ]
+
+  # les annuels de tête (2011, 2012) étaient déjà dans la fixture ; la suite
+  # 2013-2024 arrive avec l'indicateur livré (issue #172) — chaque colonne
+  # annuelle se convertit m² -> ha comme les autres champs de consommation
+  expect_equal(a1$naf13art14, 100000 / 10000)   # 10 ha (2013)
+  expect_equal(a1$naf20art21, 100000 / 10000)   # 10 ha (2020)
+  expect_equal(a1$naf21art22, 60000 / 10000)    # 6 ha (2021)
+  expect_equal(a1$naf22art23, 50000 / 10000)    # 5 ha (2022)
+  expect_equal(a1$naf23art24, 80000 / 10000)    # 8 ha (2023)
+  expect_equal(a1$naf24art25, 43202 / 10000)    # 4,3202 ha (2024)
+
+  # la fenêtre 2021-2025 EST la somme des quatre annuels 2021-2024 — la
+  # vérification à la main de l'acceptance criteria : le champ natif naf21art25
+  # (233 202 m²) vaut la somme des quatre annuels de la fenêtre
+  fenetre <- sum(c(a1$naf21art22, a1$naf22art23, a1$naf23art24, a1$naf24art25))
+  expect_equal(fenetre, a1$naf21art25)
+  # la décennie 2011-2021 (le champ naf11art21) vaut la somme des dix premiers
+  # annuels (2011-2020) — la cohérence interne du fixture, vérifiée à la main
+  decennie <- sum(c(a1$naf11art12, a1$naf12art13, a1$naf13art14, a1$naf14art15,
+                    a1$naf15art16, a1$naf16art17, a1$naf17art18, a1$naf18art19,
+                    a1$naf19art20, a1$naf20art21))
+  expect_equal(decennie, a1$naf11art21)
+  # et le total 2011-2025 (naf11art25) = décennie + fenêtre
+  expect_equal(decennie + fenetre, a1$naf11art25)
+})
+
 test_that("normaliser_consoenaf : le rename d'identité (code/nom/departement/epci/nom_epci)", {
   norm <- normaliser_consoenaf(lire_fixture_consoenaf())
 
