@@ -1,0 +1,6 @@
+id_ti;lib_ti;insee_com;lib_com;geom;centroid;Nom Officiel Région;Code Officiel Département;Nom Officiel Département;Code Officiel Région;Nom Officiel EPCI;Code Officiel EPCI
+ti-5301;Territoire Industriel A;22001;Commune A1;;;Bretagne;22;Côtes-d'Armor;53;EPCI X;200000001
+ti-5301;Territoire Industriel A;22002;Commune D;;;Bretagne;22;Côtes-d'Armor;53;EPCI X;200000001
+ti-5302;Territoire Industriel B;29001;Commune B;;;Bretagne;29;Finistère;53;EPCI Y;200000002
+ti-5302;Territoire Industriel B;29002;Commune C;;;Bretagne;29;Finistère;53;EPCI Y;200000002
+ti-8401;Territoire Ailleurs;01001;Commune Z;;;Auvergne-Rhône-Alpes;01;Ain;84;EPCI Z;200000999
