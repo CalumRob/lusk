@@ -7,36 +7,8 @@
 # validations. Ce ticket est le TRACEUR : une seule clé d'indicateur
 # (conso_enaf, la consommation totale 2011-2025 en hectares), des tables
 # d'Histoire et d'Aperçu vides (les tickets #172/#173/#174 les peupleront).
-
-# La base des EPCI du fixture (la forme de lire_epci) — les communes de la
-# fixture CONSOENAF, la référence que squelette_territoires consomme.
-base_epci_milieux <- tibble::tribble(
-  ~CODGEO, ~LIBGEO, ~EPCI, ~LIBEPCI, ~DEP, ~REG,
-  "22001", "Commune A1", "200000001", "EPCI X", "22", "53",
-  "22002", "Commune D", "200000001", "EPCI X", "22", "53",
-  "29001", "Commune B", "200000002", "EPCI Y", "29", "53",
-  "29002", "Commune C", "200000002", "EPCI Y", "29", "53",
-  "29003", "Commune NA", "200000002", "EPCI Y", "29", "53"
-)
-
-# Les communes du fixture, via le VRAI builder (la fixture CSV dans un cache
-# temporaire, la base des EPCI mockée) — le reshape m² -> ha + le filtre
-# Bretagne y sont réels.
-communes_fixture_milieux <- function(cache = NULL) {
-  if (is.null(cache)) {
-    cache <- tempfile("cache-milieux-")
-    dir.create(cache)
-  }
-  file.copy(
-    testthat::test_path("fixtures", "consoenaf-fixture.csv"),
-    file.path(cache, "conso-com.csv"),
-    overwrite = TRUE
-  )
-  local_mocked_bindings(lire_epci = function(chemin) base_epci_milieux,
-                        .package = "lusk")
-  construire_donnees_milieux(cache = cache,
-                             sortie = tempfile(fileext = ".rds"))
-}
+# Les fixtures partagées (base_epci_milieux, communes_fixture_milieux) vivent
+# dans helper-milieux.R.
 
 test_that("theme_milieux() : le descripteur porte les douze membres du contrat", {
   d <- theme_milieux()
