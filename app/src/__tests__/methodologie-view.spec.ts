@@ -118,6 +118,26 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(wrapper.findAll('section#sources tbody tr').length).toBe(43)
   })
 
+  it('rend la source CONSOENAF avec son URL, ses dates, sa licence et l\u2019anomalie d\u2019unité (issue #177)', async () => {
+    const { wrapper } = await monter(async () => payloadAvecVintages)
+
+    const ligne = wrapper.find('tr#source-consoenaf')
+    expect(ligne.exists()).toBe(true)
+    expect(ligne.text()).toContain('Cerema')
+    expect(ligne.text()).toContain('CONSOENAF')
+    // l'anomalie d'unité documentée dans le libellé — le dictionnaire dit
+    // hectares, le fichier distribue des m², la conversion est explicite
+    expect(ligne.text()).toMatch(/mètres carrés|m²/)
+    // les faits de fraîcheur en direct depuis la table vintages
+    expect(ligne.text()).toContain('Licence Ouverte 2.0')
+    expect(ligne.text()).toContain('1 janvier 2025')
+    expect(ligne.text()).toContain('24 juillet 2026')
+    const lien = ligne.find('a.lien-source')
+    expect(lien.attributes('href')).toBe(
+      'https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025',
+    )
+  })
+
   it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
