@@ -20,8 +20,11 @@
  *
  * States: the tab receives the already-loaded payload from the parent; the
  * territory-without-stats edge (no apercu rows) shows an honest one-liner.
- * A payload with no programmes (404 → null) or no rows renders the honest
- * empty state — never « under construction » (principles.md §1).
+ * An absent apercu table (404 → null, issue #122 — the pipeline only
+ * publishes it when a theme HAS an aperçu) reads as no rows and shows the
+ * same honest one-liner. A payload with no programmes (404 → null) or no
+ * rows renders the honest empty state — never « under construction »
+ * (principles.md §1).
  */
 import { computed } from 'vue'
 import { ExternalLink } from 'lucide-vue-next'

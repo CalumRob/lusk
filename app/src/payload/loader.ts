@@ -9,7 +9,10 @@
  * tried in order, a 404 on indicateurs_<theme>.json means the theme is
  * absent (dead tab — never an error), while a present theme without its
  * histoires file is contract drift (loud). run-report.json is optional —
- * a 404 means the static-rhythm freshness claim, never an error.
+ * a 404 means the static-rhythm freshness claim, never an error. So is
+ * apercu.json (issue #122): since #116 the pipeline only publishes it when
+ * a theme HAS an aperçu — a 404 means the Aperçu element is simply not
+ * built, never an error.
  *
  * Failure is typed (PayloadError, validate.ts): kind 'fetch' for transport
  * problems (the UI's error state), kind 'validation' for contract drift.
@@ -98,7 +101,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     histoires.push(...validerHistoires(brutHistoires, fichierHistoires, territoires))
   }
 
-  const apercu = validerApercu(await obtenir('apercu.json', false), 'apercu.json', territoires)
+  const apercu = validerApercu(await obtenir('apercu.json', true), 'apercu.json', territoires)
   const runReport = validerRapportRun(await obtenir('run-report.json', true), 'run-report.json')
   const vintages = validerVintages(await obtenir('vintages.json', true), 'vintages.json')
   // Le payload programmes (issue #179) — optionnel : un 404 sur programmes.json

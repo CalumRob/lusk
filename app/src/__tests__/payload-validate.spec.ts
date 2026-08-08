@@ -104,7 +104,7 @@ describe('parsePayload — accepts the contract shape', () => {
   it('accepts a null apercu value (NA = non calculable) and null ranks', () => {
     const payload = parsePayload(documentsBruts())
 
-    const na = payload.apercu.find((a) => a.value === null)
+    const na = (payload.apercu ?? []).find((a) => a.value === null)
     expect(na).toBeDefined()
     const epci = payload.indicateurs.find((i) => i.territoire === '200000001')
     expect(epci?.rang_epci).toBeNull()

@@ -923,12 +923,18 @@ function lireHistoireMilieux(
   }
 }
 
-/** The apercu basic-stats table (ADR-0007). */
+/**
+ * The apercu basic-stats table (ADR-0007). Optional (404 → null), like the
+ * run report: since #116 the pipeline only publishes apercu.json when a
+ * theme HAS an aperçu — absent, the Aperçu element is simply not built,
+ * never a fetch error.
+ */
 export function validerApercu(
   brut: unknown,
   fichier: string,
   territoires: Territoire[],
-): ApercuRow[] {
+): ApercuRow[] | null {
+  if (brut === null) return null
   exiger(Array.isArray(brut), fichier, 0, 'la table apercu doit être un tableau')
   const lignes = brut as unknown[]
   const reference = indexerReference(territoires)

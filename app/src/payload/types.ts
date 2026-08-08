@@ -393,7 +393,13 @@ export interface Payload {
   territoires: Territoire[]
   indicateurs: Indicateur[]
   histoires: Histoire[]
-  apercu: ApercuRow[]
+  /**
+   * The Aperçu basic-stats table (apercu.json) — optional; null = the file
+   * is absent (404 — issue #122: since #116 the pipeline only publishes it
+   * when a theme HAS an aperçu, so absence means « not built », never an
+   * error).
+   */
+  apercu: ApercuRow[] | null
   runReport: RunReport | null
   /** The shared vintage table (vintages.json) — optional, like run-report. */
   vintages: Vintage[] | null
