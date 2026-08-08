@@ -180,6 +180,24 @@ passage_cog <- function(codes, mappe) {
   unname(ref[codes])
 }
 
+# passage_cog_lenient ----------------------------------------------------------
+# La variante LÉNIENTE de passage_cog : les codes présents dans la table de
+# passage sont mappés vers le COG 2025 ; les codes ABSENTS traversent tels
+# quels (jamais une erreur). Réservée au côté NON-breton d'un segment de
+# frontière (ex. 44006 — un segment 22/44, vérifié : 1 ligne sur le fichier
+# réel) : ce côté n'est jamais une clé de territoire, il ne sert qu'à la règle
+# d'attribution par le côté porteur (ADR-0016). Le côté breton, lui, reste
+# STRICT (passage_cog) — un code breton non mappé est une corruption, jamais
+# une NA silencieuse. Déterministe : l'ordre du vecteur d'entrée est conservé.
+passage_cog_lenient <- function(codes, mappe) {
+  codes <- as.character(codes)
+  if (length(codes) == 0) return(character(0))
+  ref <- stats::setNames(mappe$code_2025, mappe$code_2022)
+  a_mapper <- codes %in% names(ref)
+  codes[a_mapper] <- unname(ref[codes[a_mapper]])
+  codes
+}
+
 # TYPE_PAR_NIVEAU --------------------------------------------------------------
 # L'étiquette de type du contrat de l'app par niveau — le singulier : la table
 # `territoires` du payload porte `type` = "commune" / "epci" / "departement"
