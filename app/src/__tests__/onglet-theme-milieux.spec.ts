@@ -11,7 +11,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Payload } from '../payload/types'
+import type { Payload, Theme } from '../payload/types'
 
 /**
  * OngletTheme — the Milieux block (issue #172 → #174, ADR-0014): the
@@ -32,9 +32,9 @@ const payloadMilieux: Payload = {
   programmes: null,
 }
 
-async function monter(territoire: string, payload: Payload = payloadMilieux) {
+async function monter(territoire: string, payload: Payload = payloadMilieux, theme: Theme = 'milieux') {
   const wrapper = mount(OngletTheme, {
-    props: { theme: 'milieux', payload, territoire },
+    props: { theme, payload, territoire },
     global: { stubs: { RouterLink: RouterLinkStub } },
   })
   await flushPromises()
@@ -158,5 +158,14 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
     const wrapper = await monter('29001', { ...payloadMilieux, histoires })
 
     expect(wrapper.find('.angle-story').exists()).toBe(false)
+  })
+
+  it('does NOT render the Milieux Story in another theme’s tab — the theme gate (issue #219)', async () => {
+    // le payload porte la Story Milieux — le gate doit la tenir hors de l'onglet Démographie (#219)
+    const wrapper = await monter('22001', payloadMilieux, 'demographie')
+
+    expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
+    expect(wrapper.find('.angle-story').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Se densifier, s’étaler, ou s’en aller')
   })
 })
