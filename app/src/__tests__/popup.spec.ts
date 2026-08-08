@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formaterValeurApercu, kpisPourPopup } from '../carte/popup'
+import { contenuTooltip, formaterValeurApercu, kpisPourPopup } from '../carte/popup'
 import {
   apercuAvecNAFixture,
   apercuFixture,
@@ -87,5 +87,25 @@ describe('kpisPourPopup — the 2–3 KPI rows of a popup', () => {
     const kpis = kpisPourPopup(payload, '99999', 'demographie')
 
     expect(kpis).toHaveLength(0)
+  })
+})
+
+describe('contenuTooltip — the hover tooltip (audit #208 item 57)', () => {
+  it('names the territory and shows the selected theme indicator value', () => {
+    const payload = payloadAvecApercu()
+    expect(contenuTooltip(payload, '22001', 'demographie')).toEqual({
+      nom: 'Commune A1',
+      valeur: '200',
+    })
+  })
+
+  it('shows the name only in Aperçu (no theme drives the map)', () => {
+    const payload = payloadAvecApercu()
+    expect(contenuTooltip(payload, '22001', null)).toEqual({ nom: 'Commune A1', valeur: null })
+  })
+
+  it('falls back to the territoire code when the payload has no name row', () => {
+    const payload = payloadAvecApercu()
+    expect(contenuTooltip(payload, '99999', 'demographie')).toEqual({ nom: '99999', valeur: null })
   })
 })

@@ -4,10 +4,15 @@
  * renders what this returns. A KPI the payload cannot compute (null value /
  * absent row) is skipped, never invented: a territory with no data gets a
  * popup with fewer rows, and the figure shows an honest « — ».
+ *
+ * The hover tooltip (audit #208 item 57) reads the same payload seam:
+ * `contenuTooltip` returns the territory name + the selected theme's
+ * indicator value — what the cursor sits on, before the click opens the full
+ * popup.
  */
 
 import type { ApercuRow, Payload, Theme } from '../payload/types'
-import { apercuPourTerritoire, formaterValeur } from '../payload/selectors'
+import { apercuPourTerritoire, formaterValeur, trouverTerritoire } from '../payload/selectors'
 import { configCoucheTheme } from './configCouche'
 
 export interface KpiPopup {
@@ -84,4 +89,31 @@ export function kpisPourPopup(payload: Payload, territoire: string, theme: Theme
   }
 
   return kpis
+}
+
+/** The hover tooltip's content — the territory name + the selected theme's
+ *  indicator value (audit #208 item 57). `theme` null (Aperçu) or a missing
+ *  value → `valeur` null (the tooltip shows the name only, honest). */
+export interface ContenuTooltip {
+  nom: string
+  valeur: string | null
+}
+
+export function contenuTooltip(payload: Payload, territoire: string, theme: Theme | null): ContenuTooltip {
+  const config = theme ? configCoucheTheme(theme) : null
+  let valeur: string | null = null
+  if (config) {
+    const ligne = payload.indicateurs.find(
+      (l) =>
+        l.territoire === territoire &&
+        l.theme === theme &&
+        l.key === config.indicateur &&
+        l.detail === null,
+    )
+    valeur = ligne ? formaterValeur(ligne) : null
+  }
+  return {
+    nom: trouverTerritoire(payload, territoire)?.nom ?? territoire,
+    valeur,
+  }
 }

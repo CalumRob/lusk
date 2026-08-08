@@ -14,6 +14,11 @@
  * Popups: name + 2–3 KPI figures (kpisPourPopup) + « Voir la fiche » → the
  * territory's fiche. A11y: the popup's link is focusable (focusAfterOpen),
  * the map region is labelled, the NavigationControl stays keyboard-reachable.
+ *
+ * Hover (audit #208 item 57): a lightweight tooltip follows the cursor —
+ * the territory name + the selected theme's indicator value (contenuTooltip)
+ * — while the click keeps the full popup. The tooltip is never focusable
+ * (survol ≠ clic) and is removed on mouseleave / over empty space.
  */
 import maplibregl from 'maplibre-gl'
 import type {
@@ -41,8 +46,8 @@ import {
   indicateurParTerritoire,
 } from '@/carte/fusion'
 import type { CollectionAvecValeurs } from '@/carte/fusion'
-import { kpisPourPopup } from '@/carte/popup'
-import { seuilsQuantiles } from '@/carte/seuils'
+import { kpisPourPopup, contenuTooltip } from '@/carte/popup'
+import { seuilsIndicateur } from '@/carte/seuils'
 import type { CollectionMasque, Masques, NiveauMasque } from '@/geo/types'
 import { trouverTerritoire } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
@@ -59,6 +64,7 @@ const router = useRouter()
 const mapContainer = ref<HTMLElement | null>(null)
 let carte: CarteMaple | null = null
 let popup: Popup | null = null
+let tooltip: Popup | null = null
 let observeurTaille: ResizeObserver | null = null
 let derive: ReturnType<typeof setTimeout> | null = null
 
@@ -101,7 +107,7 @@ function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
     const v = (feature.properties as { valeur?: number | null }).valeur
     if (typeof v === 'number') valeurs.push(v)
   }
-  const seuils = seuilsQuantiles(valeurs, NOMBRE_CLASSES)
+  const seuils = seuilsIndicateur(config.indicateur, valeurs, NOMBRE_CLASSES)
   const couleurs = echelleChoroplethe(
     ANCRAGES_THEMES[config.theme],
     Math.max(2, seuils.length + 1),
@@ -172,6 +178,7 @@ function nomTerritoire(territoire: string): string {
 }
 
 function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
+  fermerTooltip()
   const territoire = String(feature.properties.territoire)
   const nom = nomTerritoire(territoire)
   const fiche = trouverTerritoire(props.payload, territoire)
@@ -222,11 +229,44 @@ function surClic(e: maplibregl.MapLayerMouseEvent): void {
   ouvrirPopup(features[0] as MapGeoJSONFeature, e.lngLat)
 }
 
+function fermerTooltip(): void {
+  tooltip?.remove()
+  tooltip = null
+}
+
+function afficherTooltip(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
+  const territoire = String(feature.properties.territoire)
+  const contenu = contenuTooltip(props.payload, territoire, props.theme)
+  const html = `<div class="tooltip-carte">
+    <span class="tooltip-carte-nom">${contenu.nom}</span>
+    ${contenu.valeur ? `<span class="tooltip-carte-valeur">${contenu.valeur}</span>` : ''}
+  </div>`
+  if (tooltip) {
+    tooltip.setLngLat(lngLat).setHTML(html)
+    return
+  }
+  tooltip = new maplibregl.Popup({
+    closeButton: false,
+    closeOnClick: false,
+    focusAfterOpen: false,
+    className: 'tooltip-carte-fenetre',
+    maxWidth: '280px',
+  })
+    .setLngLat(lngLat)
+    .setHTML(html)
+    .addTo(carte as CarteMaple)
+}
+
 function surSurvol(e: maplibregl.MapLayerMouseEvent): void {
   if (!carte) return
   const remplissage = ID_REMPLISSAGE(props.niveau)
   const features = carte.queryRenderedFeatures(e.point, { layers: [remplissage] })
   carte.getCanvas().style.cursor = features.length > 0 ? 'pointer' : ''
+  if (features.length === 0) {
+    fermerTooltip()
+    return
+  }
+  afficherTooltip(features[0] as MapGeoJSONFeature, e.lngLat)
 }
 
 function initialiserCarte(): void {
@@ -271,6 +311,7 @@ function initialiserCarte(): void {
     appliquerNiveau()
     if (carte) carte.on('click', surClic)
     if (carte) carte.on('mousemove', surSurvol)
+    if (carte) carte.on('mouseleave', fermerTooltip)
   })
 
   carte.on('error', (e) => {
@@ -282,6 +323,7 @@ watch(
   () => [props.niveau, props.theme, props.masques, props.payload] as const,
   () => {
     if (!carte || !carte.isStyleLoaded()) return
+    fermerTooltip()
     ajouterCouches()
     appliquerNiveau()
   },
@@ -301,6 +343,7 @@ onBeforeUnmount(() => {
   observeurTaille?.disconnect()
   if (derive) clearTimeout(derive)
   popup?.remove()
+  fermerTooltip()
   carte?.remove()
   carte = null
 })
@@ -395,5 +438,34 @@ onBeforeUnmount(() => {
 
 .popup-carte-lien:hover {
   color: var(--accent-hover);
+}
+
+/* The hover tooltip (audit #208 item 57) — MapLibre renders it outside the
+   component's subtree, so it is styled globally like the popup. Lightweight:
+   no close button, no focus, compact padding — survol ≠ clic. */
+.tooltip-carte-fenetre .maplibregl-popup-content {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-subtle);
+  font-family: var(--font-sans);
+}
+
+.tooltip-carte {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.tooltip-carte-nom {
+  font: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tooltip-carte-valeur {
+  font: var(--text-body-sm);
+  font-variant-numeric: var(--text-numeric-variant);
+  color: var(--text-secondary);
 }
 </style>
