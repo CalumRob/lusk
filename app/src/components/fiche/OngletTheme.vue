@@ -167,6 +167,7 @@ const histoireMilieux = computed(() =>
 )
 
 const storyMilieuxAngle = computed(() => {
+  if (props.theme !== 'milieux') return null
   const histoire = histoireMilieux.value
   if (histoire?.theme !== 'milieux') return null
   return storyMilieux(
