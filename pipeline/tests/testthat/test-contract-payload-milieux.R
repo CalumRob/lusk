@@ -92,15 +92,15 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
   # l'état par habitant : la valeur EST l'état m² / population du millésime
   # qui BORNE l'état (RP 2017 pour M2, RP 2023 pour M3 — le bracket ADR-0017) —
   # vérifiée à la main pour chaque commune du fixture
-  expect_equal(etat("22001", "2021")$value, 0)
+  expect_equal(etat("22001", "2021")$value, 400 / 2200)
   expect_equal(etat("22001", "2025")$value, 1200 / 2400)
   expect_equal(etat("22002", "2021")$value, 0)
   expect_equal(etat("22002", "2025")$value, 800 / 1300)
-  expect_equal(etat("29001", "2021")$value, 0)
+  expect_equal(etat("29001", "2021")$value, 800 / 3100)
   expect_equal(etat("29001", "2024")$value, 1200 / 2950)
   expect_equal(etat("29002", "2021")$value, 0)
   expect_equal(etat("29002", "2024")$value, 800 / 910)
-  expect_equal(etat("35001", "2020")$value, 0)
+  expect_equal(etat("35001", "2020")$value, 400 / 4800)
   expect_equal(etat("35001", "2023")$value, 400 / 5200)
   expect_equal(etat("56001", "2022")$value, 400 / 2900)  # la désartificialisation
   expect_equal(etat("56001", "2024")$value, 0)
@@ -109,11 +109,14 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
   expect_equal(nrow(valeur_payload(payload, "29003", "artif_par_habitant")), 2L)
   expect_true(all(is.na(valeur_payload(payload, "29003",
                                        "artif_par_habitant")$value)))
-  # les agrégats : les états somment (EPCI X = 22001 + 22002 -> 2000 m²),
-  # l'intensité se lit sur la population du niveau (RP 2023 = 2400 + 1300)
-  expect_equal(etat("200000001", "2021")$value, 0)
+  # les agrégats : les états somment (EPCI X = 22001 + 22002 -> M2 400 m² du
+  # désartif de 22001, M3 2000 m²), l'intensité se lit sur la population du
+  # niveau (RP 2017 = 2200 + 1200 pour M2, RP 2023 = 2400 + 1300 pour M3)
+  expect_equal(etat("200000001", "2021")$value, 400 / 3400)
   expect_equal(etat("200000001", "2025")$value, 2000 / 3700)
+  expect_equal(etat("22", "2021")$value, 400 / 3400)
   expect_equal(etat("22", "2025")$value, 2000 / 3700)
+  expect_equal(etat("35", "2020")$value, 400 / 4800)
   expect_equal(etat("35", "2023")$value, 400 / 5200)
   expect_equal(etat("56", "2022")$value, 400 / 2900)
   # EPCI Y / département 29 / région : membre incomplet (29003) -> NA

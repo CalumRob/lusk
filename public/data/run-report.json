@@ -1,6 +1,6 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-07T15:52:58Z",
+  "timestamp": "2026-08-08T13:22:56Z",
   "statuts": [
     {
       "id": "epci",
@@ -14,6 +14,26 @@
     },
     {
       "id": "serie_historique",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_artificialisation_22",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_artificialisation_29",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_artificialisation_35",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_artificialisation_56",
       "mode": "cron",
       "status": "frais"
     }

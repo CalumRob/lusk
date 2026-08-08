@@ -348,7 +348,7 @@ export interface PointNuageMilieux {
   type: TerritoireType
   nom: string
   /** La fenêtre des états OCS-GE du pair — le span multi-dépt porté tel quel (le rider du millésime). */
-  periodeArtif: string
+  periodeArtif: string | null
   /** x — Δpopulation (signé), la première force de la lecture. */
   deltaPopulation: number
   /** y — Δ(m²/hab) = artif_m3_par_habitant − artif_m2_par_habitant (signé), la trajectoire par habitant. */
@@ -374,6 +374,11 @@ export function nuageMilieux(payload: Payload, territoire: string): PointNuageMi
   for (const code of codes) {
     const histoire = payload.histoires.find((h) => h.theme === 'milieux' && h.territoire === code)
     if (histoire?.theme !== 'milieux') continue
+    // un pair aux états absents (le trou NA honnête) n'a pas de point à
+    // tracer — le delta Δ(m²/hab) n'existe pas, le nuage ne l'invente pas
+    if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
+      continue
+    }
     const t = trouverTerritoire(payload, code)
     if (!t) continue
     nuage.push({

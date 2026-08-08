@@ -95,39 +95,58 @@ polygones_flux_ocsge_territoire <- list(
     fenetre = c(2021, 2025),
     polygones = tibble::tribble(
       ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      20, 20, 40, 40, 1L, 400,   # entier dans 22001
-      80, 20, 120, 60, 1L, 1600  # traverse 22001|22002 (frontière x = 100)
+      # 22001 (Δpop +200) : UNE désartificialisation (sens -1, état initial
+      # porté M2=400) + UNE artificialisation (sens +1, état final M3=400) ->
+      # M2=400, M3=400, trajectoire = 1 : le point dégénéré terre immobile
+      # (trajectoire == 1, Δpop > 0) -> se densifie (le signe pair : ratio
+      # == 1 compte pour la baisse, la convention des quadrants ADR-0011)
+      20, 20, 40, 40, -1L, 400,
+      60, 20, 80, 40, 1L, 400,
+      # 22001|22002 : le polygone qui TRAVERSE (frontière x = 100) —
+      # artificialisation, la moitié dans chaque commune (M3 = 800 chacune)
+      80, 20, 120, 60, 1L, 1600
     )
   ),
   "29" = list(
     fenetre = c(2021, 2024),
     polygones = tibble::tribble(
       ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      220, 20, 240, 40, 1L, 400, # entier dans 29001
-      280, 20, 320, 60, 1L, 1600 # traverse 29001|29002 (frontière x = 300)
+      # 29001 (Δpop -150) : M2=800 (désartif) + M3=1200 (artif) ->
+      # trajectoire 1,5 > 1 -> consomme quand même
+      220, 20, 240, 40, -1L, 800,
+      260, 20, 280, 40, 1L, 400,
+      # 29001|29002 : le polygone qui TRAVERSE (frontière x = 300) —
+      # artificialisation, la moitié dans chaque (M3 = 800 chacune)
+      280, 20, 320, 60, 1L, 1600
     )
   ),
   "35" = list(
     fenetre = c(2020, 2023),
     polygones = tibble::tribble(
       ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      120, 120, 140, 140, 1L, 400  # entier dans 35001
+      # 35001 (Δpop +400) : M2=400 (désartif) + M3=400 (artif) ->
+      # trajectoire == 1, Δpop > 0 -> se densifie (le signe pair)
+      120, 120, 140, 140, -1L, 400,
+      160, 120, 180, 140, 1L, 400
     )
   ),
   "56" = list(
     fenetre = c(2022, 2024),
     polygones = tibble::tribble(
       ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      220, 120, 240, 140, -1L, 400  # entier dans 56001 — DÉSARTIFICIALISATION
+      # 56001 (Δpop +200) : M2=400 (désartif), M3=0 -> trajectoire 0 < 1 ->
+      # la terre DIMINUE pendant que la population grandit : se densifie
+      220, 120, 240, 140, -1L, 400
     )
   )
 )
 
 # fixture_gpkg_ocsge_territoire : écrit le VRAI GeoPackage du fixture OCS-GE
-# d'un département (la couche DIFF_ARTIF, EPSG:2154, les colonnes officielles
-# du différentiel IGN — Artif_{m2}/Artif_{m3}, Artificialisation +1/-1, Surface)
-# avec SES polygones et SA fenêtre. Le même motif que fixture_gpkg_ocsge
-# (helper-ocsge.R), positionné sur la grille du fixture territorial.
+# d'un département (la couche zan_evol_{m2}_{m3}, EPSG:2154, les colonnes
+# officielles du différentiel IGN dans SA FORME RÉELLE — les minuscules
+# artif_{m2}/artif_{m3}, artificialisation +1/-1, surface) avec SES polygones
+# et SA fenêtre. Le même motif que fixture_gpkg_ocsge (helper-ocsge.R),
+# positionné sur la grille du fixture territorial.
 fixture_gpkg_ocsge_territoire <- function(chemin, departement) {
   spec <- polygones_flux_ocsge_territoire[[departement]]
   fenetre <- spec$fenetre
@@ -139,20 +158,21 @@ fixture_gpkg_ocsge_territoire <- function(chemin, departement) {
     sf::st_polygon(list(polygone_rectangle(l$x0, l$y0, l$x1, l$y1)))
   })
   tbl <- tibble::tibble(
-    !!paste0("Id_", m2) := paste0("S", seq_len(nrow(lignes)), "_", m2),
-    !!paste0("Cs_", m2) := "CS1.1.1.1",
-    !!paste0("Us_", m2) := "US5",
-    !!paste0("Artif_", m2) := ifelse(lignes$sens == 1L, "Non Artif", "Artif"),
-    !!paste0("Id_", m3) := paste0("S", seq_len(nrow(lignes)), "_", m3),
-    !!paste0("Cs_", m3) := "CS1.1.1.1",
-    !!paste0("Us_", m3) := "US5",
-    !!paste0("Artif_", m3) := ifelse(lignes$sens == 1L, "Artif", "Non Artif"),
-    Artificialisation = lignes$sens,
-    Surface = as.double(lignes$surface)
+    !!paste0("id_", m2) := paste0("S", seq_len(nrow(lignes)), "_", m2),
+    !!paste0("cs_", m2) := "CS1.1.1.1",
+    !!paste0("us_", m2) := "US5",
+    !!paste0("artif_", m2) := ifelse(lignes$sens == 1L, "non artif", "artif"),
+    !!paste0("id_", m3) := paste0("S", seq_len(nrow(lignes)), "_", m3),
+    !!paste0("cs_", m3) := "CS1.1.1.1",
+    !!paste0("us_", m3) := "US5",
+    !!paste0("artif_", m3) := ifelse(lignes$sens == 1L, "artif", "non artif"),
+    artificialisation = lignes$sens,
+    surface = as.double(lignes$surface)
   )
   couche <- sf::st_sf(tbl, geometry = sf::st_sfc(geometries, crs = 2154))
   if (file.exists(chemin)) unlink(chemin)
-  sf::st_write(couche, chemin, layer = COUCHE_OCSGE_ARTIFICIALISATION,
+  sf::st_write(couche, chemin,
+               layer = paste0("zan_evol_", m2, "_", m3),
                quiet = TRUE)
   invisible(chemin)
 }

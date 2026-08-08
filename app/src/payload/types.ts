@@ -235,8 +235,14 @@ export type HistoireMobilite = HistoireMobiliteVingtMinutes | HistoireMobiliteVe
  * the région). Invariant locked by the contract:
  * sign(ratio − 1) = sign(delta) with delta = artif_m3_par_habitant −
  * artif_m2_par_habitant — the classification and the graph can never
- * disagree. Classification null = incomplete window (never an invented
- * reading).
+ * disagree. The states and the trajectory are nullable in two honest cases
+ * (the pipeline's discovery #243): M2 = 0 (102 real communes, ~8 % — the
+ * ratio M3/0 is UNDEFINED, the trajectory and the classification are null,
+ * never an invented infinite ratio) and the absent-state hole (a territory
+ * whose data is missing — all states null, classification null). When the
+ * states are present and M2 per-capita > 0, everything is a number and the
+ * invariant holds. Classification null = incomplete window (never an
+ * invented reading).
  */
 export interface HistoireMilieux {
   territoire: string
@@ -245,19 +251,29 @@ export interface HistoireMilieux {
   story_key: 'se-densifier-setaler-ou-sen-aller'
   /** La fenêtre partagée de la population (le bracket RP — "2017-2023"). */
   periode_pop: string
-  /** La fenêtre des états OCS-GE (le span par département pour les agrégats multi-dépt). */
-  periode_artif: string
+  /**
+   * La fenêtre des états OCS-GE (le span par département pour les agrégats
+   * multi-dépt). Null quand le territoire n'a AUCUNE donnée OCS-GE (le trou
+   * NA honnête — pas de fenêtre sans états) ; la fenêtre de population, elle,
+   * existe toujours.
+   */
+  periode_artif: string | null
   delta_population: number
-  /** La surface artificialisée à l'état initial (M2), en ha. */
-  artif_m2: number
-  /** La surface artificialisée à l'état final (M3), en ha. */
-  artif_m3: number
-  /** La surface artificialisée par habitant à M2, en m²/hab. */
-  artif_m2_par_habitant: number
-  /** La surface artificialisée par habitant à M3, en m²/hab. */
-  artif_m3_par_habitant: number
-  /** Le ratio M3/M2 par habitant — la trajectoire, la seconde force de la lecture. */
-  trajectoire_artif_par_habitant: number
+  /** La surface artificialisée à l'état initial (M2), en ha — null si la donnée manque. */
+  artif_m2: number | null
+  /** La surface artificialisée à l'état final (M3), en ha — null si la donnée manque. */
+  artif_m3: number | null
+  /** La surface artificialisée par habitant à M2, en m²/hab — null si la donnée manque. */
+  artif_m2_par_habitant: number | null
+  /** La surface artificialisée par habitant à M3, en m²/hab — null si la donnée manque. */
+  artif_m3_par_habitant: number | null
+  /**
+   * Le ratio M3/M2 par habitant — la trajectoire, la seconde force de la
+   * lecture. Null quand M2 par habitant est nul (le ratio est indéfini —
+   * découverte #243) ou quand les états manquent ; non négatif sinon (0 = la
+   * renaturation complète, M3 nul).
+   */
+  trajectoire_artif_par_habitant: number | null
   classification: string | null
 }
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
+import type { HistoireMilieux } from '../payload/types'
 import {
   apercuAvecNAFixture,
   histoiresMilieuxFixture,
@@ -228,6 +229,50 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
     const wrapper = await monter('29001', { ...payloadMilieux, histoires })
 
     expect(wrapper.find('.angle-story').exists()).toBe(false)
+  })
+
+  it('renders the honest infobox for an M2 = 0 territory — la lecture absente, jamais inventée (fix #243)', async () => {
+    // La découverte #243 : un territoire sans AUCUNE terre artificialisée à
+    // l'état initial (M2 = 0) a une trajectoire M3/M2 INDÉFINIE — le pipeline
+    // publie trajectoire null + classification null, l'angle affiche une
+    // infobox au lieu d'une lecture fabriquée sur un rapport sans sens.
+    const histoires = (histoiresMilieuxFixture as HistoireMilieux[]).map((h) =>
+      h.territoire === '22001'
+        ? {
+            ...h,
+            artif_m2: 0,
+            artif_m2_par_habitant: 0,
+            trajectoire_artif_par_habitant: null,
+            classification: null,
+          }
+        : h,
+    )
+    const wrapper = await monter('22001', { ...payloadMilieux, histoires })
+
+    expect(wrapper.find('.angle-story').exists()).toBe(true)
+    const infobox = wrapper.find('.angle-story-infobox')
+    expect(infobox.exists()).toBe(true)
+    expect(infobox.attributes('role')).toBe('note')
+    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
+      'La lecture de l’artificialisation n’est pas disponible pour ce territoire.',
+    )
+    // pas de graphe quadrant, pas de lecture inventée
+    expect(wrapper.findComponent(GraphiqueQuadrantMilieux).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('s’étalant')
+    // les figures de l'état restent sous le bloc
+    const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
+    expect(figures).toEqual(['artif_par_habitant', 'conso_enaf_annuel'])
+  })
+
+  it('keeps the silent block for an ABSENT histoire — M2 = 0 n’est pas une donnée manquante', async () => {
+    // Un territoire SANS histoire (la donnée absente, le trou NA) reste
+    // silencieux : l'infobox n'est pas une explication fabriquée pour un
+    // cas qui n'est pas le M2 = 0 de la découverte #243.
+    const histoires = histoiresMilieuxFixture.filter((h) => h.territoire !== '22002')
+    const wrapper = await monter('22002', { ...payloadMilieux, histoires })
+
+    expect(wrapper.find('.angle-story').exists()).toBe(false)
+    expect(wrapper.find('.angle-story-infobox').exists()).toBe(false)
   })
 
   it('does NOT render the Milieux Story in another theme’s tab — the theme gate (issue #219)', async () => {

@@ -184,24 +184,54 @@ describe('payload contract — the committed payload parses and renders', () => 
     ])
   })
 
-  it('keeps histoires_milieux.json in the seam while the payload regenerates — TODO #243', async () => {
+  it('parses the regenerated Milieux histoires — the pivot schema field-by-field (spec #225 → #243)', async () => {
     const payload = obtenirPayload()
 
-    // État transitoire du re-key spec #225 : histoires_milieux.json committé
-    // porte encore l'ANCIEN schéma (periode/conso_fenetre/intensite…) tant
-    // que le pipeline ne le régénère pas sur les états OCS-GE réels (#243).
-    // Le fichier RESTE dans la liste committée (jamais supprimé — le thème
-    // est construit) ; le loader écarte les lignes de l'ancien schéma, donc
-    // les AUTRES thèmes et les indicateurs Milieux rendent, la Story Milieux
-    // reste muette (honnête : pas de lecture inventée).
-    expect(payload.indicateurs.some((i) => i.theme === 'milieux')).toBe(true)
-    expect(payload.histoires.filter((h) => h.theme === 'milieux')).toHaveLength(0)
+    // Le payload régénéré (spec #225 → #243) porte le nouveau schéma — la
+    // Story Milieux est de nouveau une exigence STRICTE du contrat. Les lignes
+    // se lisent champ par champ, l'invariant d'ADR-0017 est prouvé sur le
+    // payload committé.
+    const milieux = payload.histoires.filter((h) => h.theme === 'milieux')
+    expect(milieux.length).toBeGreaterThan(1200)
 
-    // TODO #243 : dès que le payload régénéré valide le nouveau schéma, ce
-    // bloc ré-assert les lignes Milieux champ par champ (periode_pop,
-    // periode_artif, artif_m2, artif_m3, artif_m2_par_habitant,
-    // artif_m3_par_habitant, trajectoire_artif_par_habitant, l'invariant
-    // sign(ratio − 1) = sign(delta)) et la tolérance du loader est supprimée.
+    const allineuc = milieux.find((h) => h.territoire === '22001')
+    expect(allineuc).toMatchObject({
+      type: 'commune',
+      story_key: 'se-densifier-setaler-ou-sen-aller',
+      periode_pop: '2017-2023',
+      periode_artif: '2021-2025',
+      classification: 'sen-aller-et-consommer-quand-meme',
+    })
+    expect(allineuc?.artif_m2 ?? 0).toBeGreaterThan(0)
+    expect(allineuc?.artif_m3 ?? 0).toBeGreaterThan(0)
+    expect(allineuc?.artif_m2_par_habitant ?? 0).toBeGreaterThan(0)
+    expect(allineuc?.artif_m3_par_habitant ?? 0).toBeGreaterThan(0)
+    expect(allineuc?.trajectoire_artif_par_habitant ?? 0).toBeGreaterThan(0)
+
+    // l'invariant ADR-0017 sur tout le payload committé : sign(ratio − 1) =
+    // sign(delta) — la classification et le graphe ne peuvent jamais diverger.
+    // Les lignes SANS trajectoire (M2 = 0 ou états absents — la découverte
+    // #243) sont null de part et d'autre : l'invariant ne s'y applique pas,
+    // la lecture est honnêtement absente (jamais une lecture inventée).
+    for (const h of milieux) {
+      const ratio = h.trajectoire_artif_par_habitant
+      if (ratio === null) {
+        expect(h.classification).toBeNull()
+        continue
+      }
+      const delta = (h.artif_m3_par_habitant ?? 0) - (h.artif_m2_par_habitant ?? 0)
+      expect(Math.sign(ratio - 1)).toBe(Math.sign(delta))
+    }
+
+    // la découverte #243 : les communes à M2 = 0 (l'état initial sans AUCUNE
+    // terre artificialisée, ~8 % du référentiel) n'ont pas de trajectoire —
+    // le payload régénéré le publie null, jamais un rapport infini inventé.
+    const m2zero = milieux.filter((h) => h.artif_m2_par_habitant === 0)
+    expect(m2zero.length).toBeGreaterThan(50)
+    for (const h of m2zero) {
+      expect(h.trajectoire_artif_par_habitant).toBeNull()
+      expect(h.classification).toBeNull()
+    }
   })
 
   it('formats the committed ranks as French chips', async () => {
@@ -229,7 +259,9 @@ describe('payload contract — the committed payload parses and renders', () => 
     // (#139/#140/#141) + les 6 sources programmes du run 2026-08-07
     // (#175/#176/#178 : acv, pvd, crte, territoires_industrie, ort,
     // subventions_scdl) + la source consoenaf du run milieux 2026-08-07 (#177)
-    expect(payload.vintages).toHaveLength(49)
+    // + les QUATRE sources OCS-GE du run milieux 2026-08-08 (le pivot #225,
+    // #234 : ocsge_artificialisation_22/29/35/56)
+    expect(payload.vintages).toHaveLength(53)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:
@@ -238,6 +270,13 @@ describe('payload contract — the committed payload parses and renders', () => 
       licence: 'lov2',
       date_reference: '2025-01-01',
       date_publication: '2026-07-24',
+    })
+    const ocsge22 = payload.vintages?.find((v) => v.id === 'ocsge_artificialisation_22')
+    expect(ocsge22).toMatchObject({
+      version: '2025',
+      licence: 'lov2',
+      date_reference: '2025-01-01',
+      date_publication: '2026-07-03',
     })
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({

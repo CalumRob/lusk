@@ -175,6 +175,14 @@ const storyMilieuxAngle = computed(() => {
   if (props.theme !== 'milieux') return null
   const histoire = histoireMilieux.value
   if (histoire?.theme !== 'milieux') return null
+  if (histoire.classification === null) return null
+  // le contrat #243 : une lecture porte TOUJOURS sa seconde force, ses états
+  // ET sa fenêtre — sans eux, pas de story (jamais un ratio « — » inventé)
+  if (histoire.trajectoire_artif_par_habitant === null) return null
+  if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
+    return null
+  }
+  if (histoire.periode_artif === null) return null
   return storyMilieux(
     histoire.classification,
     histoire.delta_population,
@@ -186,12 +194,54 @@ const storyMilieuxAngle = computed(() => {
   )
 })
 
-// The Milieux Story row, narrowed to the Milieux member of the Histoire union
-// — the quadrant graph reads the OCS-GE state fields (the same theme guard as
-// the story: a territory carries BOTH stories, each block reads its own).
-const histoireMilieuxEtats = computed(() =>
-  histoireMilieux.value?.theme === 'milieux' ? histoireMilieux.value : null,
-)
+// The no-reading case (the pipeline's discovery #243) : M2 = 0 — a territory
+// with NO artificialized land at the initial state has an UNDEFINED M3/M2
+// trajectory, so the pipeline publishes trajectoire = null and classification
+// = null. The block renders an honest infobox instead of an invented reading
+// (102 real communes, ~8 % — issue #254). A territory WITHOUT its histoire
+// row stays silent (absent data ≠ M2 = 0 — never a fabricated explanation).
+const milieuxSansLecture = computed(() => {
+  if (props.theme !== 'milieux') return null
+  const histoire = histoireMilieux.value
+  if (histoire?.theme !== 'milieux') return null
+  if (histoire.classification !== null) return null
+  if (histoire.artif_m2_par_habitant !== 0) return null
+  return histoire
+})
+
+// The Milieux Story row, narrowed to the definite OCS-GE state fields — the
+// quadrant graph reads the two forces (Δpopulation, Δ m²/hab) and the
+// classification. Seulement quand la lecture existe : classification ET
+// trajectoire définies (le contrat #243 — une lecture porte toujours sa
+// seconde force) — les états sont alors forcément des nombres, jamais le
+// trou NA. Le record étroit garde le template typé (la soustraction du
+// delta) sans ré-ouvrir le nullable.
+interface EtatsMilieux {
+  delta_population: number
+  artif_m2_par_habitant: number
+  artif_m3_par_habitant: number
+  periode_artif: string
+  classification: string
+}
+
+const histoireMilieuxEtats = computed<EtatsMilieux | null>(() => {
+  const histoire = histoireMilieux.value
+  if (histoire?.theme !== 'milieux') return null
+  if (histoire.classification === null) return null
+  if (histoire.trajectoire_artif_par_habitant === null) return null
+  if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
+    return null
+  }
+  // une lecture porte toujours sa fenêtre d'états (le contrat #243)
+  if (histoire.periode_artif === null) return null
+  return {
+    delta_population: histoire.delta_population,
+    artif_m2_par_habitant: histoire.artif_m2_par_habitant,
+    artif_m3_par_habitant: histoire.artif_m3_par_habitant,
+    periode_artif: histoire.periode_artif,
+    classification: histoire.classification,
+  }
+})
 
 // The Milieux story chart's context cloud (ADR-0011, issue #241) — the
 // same-scale peers' Δpopulation × Δ(m²/hab), each carrying its OCS-GE state
@@ -282,7 +332,16 @@ function libelleIndicateur(clef: string): string {
          signature moment sits ABOVE the standard indicator grid, per the
          décision of 2026-08-07 (DESIGN.md §5 updated in step). The one-liner
          still carries its own chart, comment-lire, source and Méthodes link. -->
-    <section v-if="storyMobiliteAngle || story || storyEconomieAngle || storyMilieuxAngle" class="angle-story">
+    <section
+      v-if="
+        storyMobiliteAngle ||
+        story ||
+        storyEconomieAngle ||
+        storyMilieuxAngle ||
+        milieuxSansLecture
+      "
+      class="angle-story"
+    >
       <!-- The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) :
            « Se densifier, s'étaler, ou s'en aller » — la lecture du territoire
            contre sa terre, une des quatre lectures par les signes. L'angle
@@ -296,7 +355,7 @@ function libelleIndicateur(clef: string): string {
         <p class="angle-story-une-ligne">{{ storyMilieuxAngle.uneLigne }}</p>
         <p class="angle-story-titre">{{ storyMilieuxAngle.titre }}</p>
         <GraphiqueQuadrantMilieux
-          v-if="histoireMilieuxEtats && histoireMilieuxEtats.classification"
+          v-if="histoireMilieuxEtats"
           :delta-population="histoireMilieuxEtats.delta_population"
           :delta-m2-par-habitant="
             histoireMilieuxEtats.artif_m3_par_habitant -
@@ -314,6 +373,24 @@ function libelleIndicateur(clef: string): string {
         <p v-if="sourceHistoireMilieux" class="angle-story-source">
           <span class="angle-story-etiquette">Source</span>
           {{ sourceHistoireMilieux }}
+        </p>
+        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
+      </template>
+
+      <!-- La lecture absente (la découverte #243 du pipeline) : M2 = 0 — le
+           territoire sans AUCUNE terre artificialisée à l'état initial, la
+           trajectoire M3/M2 indéfinie. L'angle affiche une infobox honnête —
+           jamais une lecture inventée sur un rapport sans sens — et les
+           figures de l'état restent sous le bloc. -->
+      <template v-else-if="milieuxSansLecture">
+        <p class="angle-story-une-ligne">
+          La lecture de l’artificialisation n’est pas disponible pour ce territoire.
+        </p>
+        <p class="angle-story-titre">Se densifier, s’étaler, ou s’en aller</p>
+        <p class="angle-story-infobox" role="note">
+          Ce territoire ne comptait aucune terre artificialisée à l’état initial (M2) :
+          sans surface au départ, la trajectoire de l’artificialisation ne se lit pas.
+          Aucune lecture n’est fabriquée sur un rapport sans sens.
         </p>
         <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
       </template>
@@ -635,6 +712,20 @@ function libelleIndicateur(clef: string): string {
   font: var(--text-display);
   letter-spacing: var(--text-display-tracking);
   color: var(--text-primary);
+}
+
+/* La lecture absente (découverte #243) : l'infobox honnête — l'état initial
+   nul, la trajectoire indéfinie, aucune lecture inventée. Une note encadrée
+   dans l'angle, discrète (jamais un appel à l'action). */
+.angle-story-infobox {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--couleur-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-tertiary);
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
 }
 
 /* The Économie Story's shape (issue #121) — the top-5 specialisations as a
