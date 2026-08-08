@@ -55,6 +55,10 @@ fixtures_reelles_presentes <- function() {
     fixture_e2e_raw("DS_RP_LOGEMENT_PRINC_2023_CSV_FR.zip"),
     fixture_e2e_raw("bretagne-latest.osm.pbf"),
     fixture_e2e_raw("communes_limites.geojson"),
+    # le mode `b` (issue #230, ADR-0016) : le snapshot Geovelo + la table de
+    # passage COG du cache
+    fixture_e2e_raw("france-20260807.parquet"),
+    fixture_e2e_raw("table_passage_annuelle_2025.zip"),
     # le sous-bloc (issue #140) : la base GTFS (les arrêts), la couche
     # bâtiments, les bornes IRVE, le hub stationnement vélo
     fixture_e2e_raw("korrigo-gtfs.zip"),
@@ -83,6 +87,12 @@ fabriquer_cache_e2e <- function(cache) {
   file.copy(fixture_e2e_raw("bretagne-latest.osm.pbf"),
             cache, overwrite = TRUE)
   file.copy(fixture_e2e_raw("communes_limites.geojson"),
+            cache, overwrite = TRUE)
+  # le mode `b` (issue #230, ADR-0016) : le snapshot Geovelo (le parquet) et
+  # la table de passage COG (le zip — l'orchestrateur les lit depuis le cache)
+  file.copy(fixture_e2e_raw("france-20260807.parquet"),
+            cache, overwrite = TRUE)
+  file.copy(fixture_e2e_raw("table_passage_annuelle_2025.zip"),
             cache, overwrite = TRUE)
   for (f in c("korrigo-gtfs.zip", "batiments_residentiels_bretagne.csv",
               "bornes-recharges.csv", "stationnement-velo-commune.csv")) {
@@ -405,9 +415,9 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(round(lire_ind("53", "reseaux", "c_densite")$value, 6),
                3.692786)
   expect_equal(round(lire_ind("53", "reseaux", "b_longueur")$value, 3),
-               950.721)
+               4940.309)
   expect_equal(round(lire_ind("53", "reseaux", "b_densite")$value, 6),
-               0.034639)
+               0.179998)
   expect_equal(round(lire_ind("53", "reseaux", "t_longueur")$value, 3),
                6732.870)
   expect_equal(round(lire_ind("53", "reseaux", "t_densite")$value, 6),
@@ -602,7 +612,11 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   # Les réseaux : les longueurs/densités aux quatre niveaux, RECALCULÉES
   # depuis les parties (les longueurs SOMMÉES, les densités Σ L ÷ Σ surface —
   # jamais la moyenne des densités communales). La région : 101 354 km de
-  # routes (3.69 km/km²), 951 km de pistes cyclables, 6 733 km de trottoirs.
+  # routes (3.69 km/km²), 4 940 km de réseau cyclable Geovelo par direction
+  # (0.18 km/km² — ADR-0016, issue #230 : le comptage par direction de la
+  # table normalisée, ~4 913 km de géométrie unique + 155 lignes
+  # bidirectionnelles, verrouillé sur le snapshot du 2026-08-07), 6 733 km de
+  # trottoirs.
   rt <- readRDS(file.path(sortie_analytiques, "reseaux_territoires.rds"))
   expect_named(rt, c("code", "key", "detail", "value"))
   expect_true(all(rt$key == "reseaux"))
@@ -612,8 +626,8 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   lire_rt <- function(code, detail) rt$value[rt$code == code & rt$detail == detail]
   expect_equal(round(lire_rt("53", "c_longueur"), 3), 101353.736)
   expect_equal(round(lire_rt("53", "c_densite"), 6), 3.692786)
-  expect_equal(round(lire_rt("53", "b_longueur"), 3), 950.721)
-  expect_equal(round(lire_rt("53", "b_densite"), 6), 0.034639)
+  expect_equal(round(lire_rt("53", "b_longueur"), 3), 4940.309)
+  expect_equal(round(lire_rt("53", "b_densite"), 6), 0.179998)
   expect_equal(round(lire_rt("53", "t_longueur"), 3), 6732.870)
   expect_equal(round(lire_rt("53", "t_densite"), 6), 0.245310)
   # le contraste urbain : Rennes à 18.16 km/km² de routes (la densité la plus
