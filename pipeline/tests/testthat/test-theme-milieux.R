@@ -1,13 +1,14 @@
 # test-theme-milieux ------------------------------------------------------------
-# Le descripteur du thème Milieux (issue #171, étendu par #172) : la forme du
-# contrat que la machinerie partagée consomme (les mêmes membres que
-# theme_demographie() / theme_habitat()) — manifeste, table déclarative des
-# indicateurs, aperçu, vintages, construction des données, table des
-# territoires (le squelette partagé, pesé par la consommation), indicateurs,
-# scalaires, Histoire et validations. L'indicateur livré (#172) déclare SES
-# DEUX clés (conso_enaf_fenetre, conso_enaf_annuel) ; les tables d'Histoire et
-# d'Aperçu restent vides (#174 les peuplera). Les fixtures partagées
-# (base_epci_milieux, communes_fixture_milieux) vivent dans helper-milieux.R.
+# Le descripteur du thème Milieux (issue #171, étendu par #172, pivoté par
+# #239) : la forme du contrat que la machinerie partagée consomme (les mêmes
+# membres que theme_demographie() / theme_habitat()) — manifeste, table
+# déclarative des indicateurs, aperçu, vintages, construction des données,
+# table des territoires (le squelette partagé, pesé par la consommation),
+# indicateurs, scalaires, Histoire et validations. L'indicateur livré (#239)
+# déclare SES DEUX clés (artif_par_habitant — l'état M2/M3 m²/hab — et
+# conso_enaf_annuel) ; la fenêtre et la trajectoire ZAN sont mortes avec les
+# flux CONSOENAF (#63). Les fixtures partagées (base_epci_milieux,
+# communes_fixture_milieux) vivent dans helper-milieux.R.
 
 test_that("theme_milieux() : le descripteur porte les douze membres du contrat", {
   d <- theme_milieux()

@@ -3,16 +3,20 @@
 # fiche, l'axe terre. Le TRACEUR (#171) a prouvé la machinerie partagée
 # (download/compute/publish) pour Milieux : l'ingestion CONSOENAF (le
 # manifeste, le reshape m² -> ha, le filtre Bretagne), la table des territoires
-# via le squelette partagé, et un payload squelettique publiable. L'indicateur
-# « Consommation d'ENAF » (#172) livre SES DEUX clés — la fenêtre 2021-2025
-# (conso_enaf_fenetre, en hectares) et la série annuelle 2011-2024
-# (conso_enaf_annuel, une ligne par année), classées sur la PART de la surface
-# du territoire consommée (jamais les hectares bruts, ADR-0014). La trajectoire
-# ZAN (#173) ajoute SA clé — le rapport des rythmes annualisés 2021-2025 contre
-# 2011-2021, échelle libre. L'Histoire « Se densifier, s'étaler, ou s'en
-# aller » (#174) vit ici : la lecture du territoire contre sa terre, sur la
-# règle des DEUX HORLOGES (la fenêtre dérive des millésimes RP de la série
-# historique, la terre se re-somme sur la même fenêtre — jamais codée en dur).
+# via le squelette partagé, et un payload squelettique publiable. Depuis le
+# pivot (#239, ADR-0017), l'indicateur livre SES DEUX clés — l'état
+# artificialisé par habitant aux deux millésimes OCS-GE (artif_par_habitant,
+# m²/hab, DEUX lignes par territoire, échelle libre — la figure « Intensité
+# état ») et la série annuelle 2011-2024 (conso_enaf_annuel, une ligne par
+# année, classée sur la PART de la surface du territoire consommée — jamais
+# les hectares bruts, ADR-0014). La fenêtre (conso_enaf_fenetre, #172) et la
+# trajectoire ZAN (trajectoire_zan, #173) sont mortes avec les flux
+# CONSOENAF : leurs figures quittent la fiche, la story porte la trajectoire
+# (#63). L'Histoire « Se densifier, s'étaler, ou s'en aller » (#174, pivotée
+# par #238) vit ici : la lecture du territoire contre sa terre en STOCK à
+# chaque millésime (jamais en flux), sur la règle des TROIS HORLOGES (la
+# population, les états OCS-GE, la série annuelle — nommées séparément,
+# jamais confondues).
 #
 # Ce qui vit ici, ce qui ne vit pas ici :
 #   - le manifeste CONCATÉNÉ du thème (manifest_milieux.R) : la source
@@ -32,8 +36,8 @@
 #     logements, Milieux pèse par les hectares consommés) ; la surface
 #     s'agrège avec les consommations (le scalaire classé se lit sur les
 #     totaux du niveau) ;
-#   - la table déclarative INDICATEURS_MILIEUX (les trois clés de l'indicateur :
-#     les deux de la « Consommation d'ENAF » #172 + la trajectoire ZAN #173) et
+#   - la table déclarative INDICATEURS_MILIEUX (les DEUX clés de l'indicateur,
+#     pivotées par #239 : l'état M2/M3 + la série annuelle KEPT) et
 #     l'APERCU_<theme> vide (le gating par thème, ADR-0007) ;
 #   - l'Histoire du thème : compute_histoires_milieux — les quatre lectures
 #     « Se densifier, s'étaler, ou s'en aller » (issue #174, pivotées par
@@ -713,7 +717,13 @@ agreger_territoires_milieux <- function(communes, squelette) {
   # la fenêtre OCS-GE par territoire (issue #237) : dérivée des couples
   # (département -> millésimes) distincts des membres — calculée SEULEMENT si
   # la table des communes porte les millésimes OCS-GE (le chemin
-  # rétro-compatible ne crée pas la colonne)
+  # rétro-compatible ne crée pas la colonne). Depuis l'issue #239, le bloc
+  # porte AUSSI le couple UNIQUE de chaque territoire (millesime_ocsge_debut /
+  # millesime_ocsge_fin) — le détail des deux lignes de l'indicateur
+  # artif_par_habitant : un territoire MONO-fenêtre porte son couple (l'année
+  # de ses états), un territoire multi-fenêtres (le span de l'EPCI
+  # transfrontalier, les quatre fenêtres de la région) ou sans donnée porte
+  # NA — jamais un couple inventé.
   if ("millesime_ocsge_debut" %in% names(base)) {
     combos <- base %>%
       dplyr::select(code, departement, epci,
@@ -723,6 +733,10 @@ agreger_territoires_milieux <- function(communes, squelette) {
       dplyr::group_by(code) %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        millesime_ocsge_debut = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
+        millesime_ocsge_fin = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m3), NA_integer_),
         .groups = "drop"
       )
     periode_epci <- combos %>%
@@ -730,17 +744,29 @@ agreger_territoires_milieux <- function(communes, squelette) {
       dplyr::group_by(code = epci) %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        millesime_ocsge_debut = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
+        millesime_ocsge_fin = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m3), NA_integer_),
         .groups = "drop"
       )
     periode_dep <- combos %>%
       dplyr::group_by(code = departement) %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        millesime_ocsge_debut = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
+        millesime_ocsge_fin = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m3), NA_integer_),
         .groups = "drop"
       )
     periode_region <- combos %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        millesime_ocsge_debut = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
+        millesime_ocsge_fin = dplyr::if_else(
+          dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m3), NA_integer_),
         .groups = "drop"
       ) %>%
       dplyr::mutate(code = "53")
@@ -771,31 +797,41 @@ construire_territoires_milieux <- function(donnees) {
 
 # INDICATEURS_MILIEUX -----------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9) : chaque clé du
-# payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages) et sa multiplicité. Les TROIS clés du thème,
-# toutes de la source CONSOENAF :
-#   - conso_enaf_fenetre : la fenêtre 2021-2025, en hectares (le champ natif
-#     naf21art25, converti m² -> ha au reshape) — une ligne PAR TERRITOIRE
-#     (#172) ;
+# payload y est déclarée avec ses sources (ids du manifeste), sa source de
+# référence (l'id qui l'estampille — les vintages) et sa multiplicité. Les
+# DEUX clés du thème, pivotées par #239 sur les états OCS-GE (ADR-0017) :
+#   - artif_par_habitant : l'état artificialisé par habitant aux deux
+#     millésimes OCS-GE (M2/M3), en m²/hab — DEUX lignes par territoire,
+#     detail = le millésime de l'état (le nom « M2 »/« M3 » pour un span
+#     multi-dépt). Sa source de référence est le composant SIGNATURE de
+#     l'indicateur — l'état artificialisé (les couches OCS-GE), jamais le
+#     dénominateur partagé de population (la règle ADR-0009) :
+#     ocsge_artificialisation_22, la première des QUATRE couches du manifeste
+#     (une clé ne porte qu'UNE source de référence ; les quatre couches
+#     partagent le même motif, la source de référence est déclarée, jamais
+#     inférée).
 #   - conso_enaf_annuel : la série annuelle 2011-2024, en hectares (les champs
 #     natifs naf{AA}art{AA+1}) — 14 lignes par territoire, detail = l'année
-#     (la multiplicité, comme structure_age pour Démographie) (#172) ;
-#   - trajectoire_zan : le rapport des rythmes de consommation d'ENAF (la
-#     fenêtre 2021-2025 contre la décennie de référence 2011-2021,
-#     annualisés), un ratio sans échelle (unité « × ») publié tel quel, une
-#     ligne PAR TERRITOIRE (#173).
-# La clé squelettique du traceur (conso_enaf, le total 2011-2025) n'est PAS
-# dans la spec v1 de l'indicateur — elle est remplacée par les deux clés #172.
+#     (la multiplicité, comme structure_age pour Démographie) (#172, KEPT par
+#     #239 — la seule horloge annuelle).
+# La fenêtre (conso_enaf_fenetre) et la trajectoire ZAN (trajectoire_zan)
+# sont mortes avec les flux CONSOENAF : leurs clés quittent le payload (#63 —
+# la story porte la trajectoire). La clé squelettique du traceur (conso_enaf,
+# le total 2011-2025) n'est PAS dans la spec v1 de l'indicateur.
 INDICATEURS_MILIEUX <- tibble::tibble(
-  key = c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"),
+  key = c("artif_par_habitant", "conso_enaf_annuel"),
   libelle = c(
-    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) 2021-2025 — en hectares",
-    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) — consommation annuelle, en hectares",
-    "Trajectoire ZAN — rapport des rythmes de consommation d'ENAF (2021-2025 contre 2011-2021, annualisés), en ×"
+    "Intensité état — surface artificialisée par habitant aux états OCS-GE (M2/M3), en m²/habitant",
+    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) — consommation annuelle, en hectares"
   ),
-  sources = list("consoenaf", "consoenaf", "consoenaf"),
-  source_reference = c("consoenaf", "consoenaf", "consoenaf"),
-  multiplicite = c(1L, 14L, 1L)
+  sources = list(
+    c("ocsge_artificialisation_22", "ocsge_artificialisation_29",
+      "ocsge_artificialisation_35", "ocsge_artificialisation_56",
+      "serie_historique"),
+    "consoenaf"
+  ),
+  source_reference = c("ocsge_artificialisation_22", "consoenaf"),
+  multiplicite = c(2L, 14L)
 )
 
 # APERCU_MILIEUX ----------------------------------------------------------------
@@ -811,21 +847,77 @@ APERCU_MILIEUX <- tibble::tibble(
 
 # Les constructeurs d'indicateurs ----------------------------------------------
 # Mêmes entrées (la table des territoires), mêmes sorties : une table longue
-# code, key, detail, value, unit. Chaque clé de l'indicateur (#172) est un
-# petit module pur — la trajectoire ZAN (#173) a ajouté la sienne par une
-# fonction propre, sans toucher aux autres.
-# Une valeur de consommation vide reste NA — jamais un 0 inventé.
+# code, key, detail, value, unit. Chaque clé de l'indicateur (#239) est un
+# petit module pur. Une valeur vide reste NA — jamais un 0 inventé.
 
-# indicator_conso_enaf_fenetre : la fenêtre 2021-2025, en hectares (le champ
-# natif naf21art25, déjà converti m² -> ha dans la table des territoires), NA
-# pour un territoire au total de fenêtre incomplet.
-indicator_conso_enaf_fenetre <- function(territoires) {
+# intensite_artif_par_habitant --------------------------------------------------
+# L'intensité d'état (m²/habitant) aux DEUX millésimes OCS-GE — la SEULE
+# source de vérité du calcul par habitant, partagée par l'indicateur
+# artif_par_habitant et l'Histoire (compute_histoires_milieux) : jamais une
+# seconde formule. Le bracket de population (ADR-0017) : la population du
+# millésime qui BORNE l'état — RP 2017 (pop_debut) pour l'état initial M2,
+# RP 2023 (pop_fin) pour l'état final M3 — jamais interpolée. Les états
+# arrivent en m² (l'unité native de la table des territoires) : la valeur
+# par habitant est m² / population. Un état NA (fenêtre incomplète) ou une
+# population absente rend l'intensité NA — jamais un 0 inventé.
+intensite_artif_par_habitant <- function(artif_m2, pop_debut, artif_m3, pop_fin) {
+  list(
+    artif_m2_par_habitant = artif_m2 / pop_debut,
+    artif_m3_par_habitant = artif_m3 / pop_fin
+  )
+}
+
+# detail_etats_artif ------------------------------------------------------------
+# Le détail des DEUX lignes de l'état par habitant : le MILLÉSIME de l'état
+# (l'année M2 / l'année M3) quand le territoire porte un couple OCS-GE
+# UNIQUE, le NOM de l'état (« M2 » / « M3 ») sinon — un territoire
+# multi-fenêtres (l'EPCI transfrontalier, la région dont la fenêtre est un
+# span) n'a pas de paire unique, un territoire sans donnée n'a pas de
+# millésime : jamais une année inventée (spec #225). Le couple unique est
+# porté par la table des territoires (millesime_ocsge_debut / _fin,
+# agreger_territoires_milieux — NA pour le span), jamais re-parsé d'une
+# chaîne d'affichage.
+detail_etats_artif <- function(territoires) {
+  list(
+    m2 = ifelse(is.na(territoires$millesime_ocsge_debut), "M2",
+                as.character(territoires$millesime_ocsge_debut)),
+    m3 = ifelse(is.na(territoires$millesime_ocsge_fin), "M3",
+                as.character(territoires$millesime_ocsge_fin))
+  )
+}
+
+# indicator_artif_par_habitant : l'état artificialisé par habitant (m²/hab)
+# aux DEUX millésimes OCS-GE — la figure « Intensité état » (issue #239, spec
+# #225, ADR-0017), DEUX lignes par territoire (la multiplicité de la clé) :
+# la ligne M2 puis la ligne M3, detail = le millésime de l'état (l'année pour
+# une fenêtre unique, « M2 »/« M3 » pour le span — detail_etats_artif), value
+# = l'intensité d'état calculée par la source de vérité partagée
+# (intensite_artif_par_habitant — le MÊME calcul que l'Histoire, jamais une
+# seconde formule). Chemin rétro-compatible (cache sans archives OCS-GE,
+# #237) : la table ne porte pas les états — les DEUX lignes restent publiées,
+# toutes NA (le contrat de multiplicité tient, jamais une valeur inventée).
+indicator_artif_par_habitant <- function(territoires) {
+  if (!"artif_m2" %in% names(territoires)) {
+    return(tibble::tibble(
+      code = rep(territoires$code, each = 2L),
+      key = "artif_par_habitant",
+      detail = rep(c("M2", "M3"), nrow(territoires)),
+      value = NA_real_,
+      unit = "m²/hab"
+    ))
+  }
+  intensite <- intensite_artif_par_habitant(
+    territoires$artif_m2, territoires$pop_debut,
+    territoires$artif_m3, territoires$pop_fin
+  )
+  details <- detail_etats_artif(territoires)
   tibble::tibble(
-    code = territoires$code,
-    key = "conso_enaf_fenetre",
-    detail = NA_character_,
-    value = territoires$naf21art25,
-    unit = "ha"
+    code = rep(territoires$code, each = 2L),
+    key = "artif_par_habitant",
+    detail = as.vector(rbind(details$m2, details$m3)),
+    value = as.vector(rbind(intensite$artif_m2_par_habitant,
+                            intensite$artif_m3_par_habitant)),
+    unit = "m²/hab"
   )
 }
 
@@ -835,7 +927,7 @@ indicator_conso_enaf_fenetre <- function(territoires) {
 # (la multiplicité de la clé). La liste des colonnes se construit depuis la
 # plage d'années — jamais un sous-ensemble implicite : une colonne manquante
 # (une dérive de forme du fichier) échoue fort au lieu de publier une série
-# amputée.
+# amputée. KEPT par #239 : la seule horloge annuelle de la fiche.
 indicator_conso_enaf_annuel <- function(territoires) {
   annees <- 2011:2024
   colonnes <- paste0("naf", substr(annees, 3, 4), "art", substr(annees + 1, 3, 4))
@@ -854,57 +946,16 @@ indicator_conso_enaf_annuel <- function(territoires) {
     dplyr::select(code, key, detail, value, unit)
 }
 
-# trajectoire_zan_territoires ---------------------------------------------------
-# L'indicateur « Trajectoire ZAN » (issue #173) : le rapport des rythmes de
-# consommation d'ENAF — la fenêtre post-loi 2021-2025 contre la décennie de
-# référence 2011-2021 — la réponse à « est-ce que le territoire ralentit vers
-# l'objectif −50 % ? ». La FORMULE (décision #173, docs/research/zan-rennes.md) :
-# les deux fenêtres natives sont ANNUALISÉES avant le rapport — des fenêtres de
-# longueurs différentes (10 ans contre 4 ans) ne sont pas comparables brutes :
-#   rythme_reference = naf11art21 / 10   (1er janv. 2011 -> 1er janv. 2021,
-#                                         la décennie de référence de la loi)
-#   rythme_post_loi  = naf21art25 / 4    (1er janv. 2021 -> 1er janv. 2025,
-#                                         QUATRE tranches annuelles Cerema —
-#                                         naf{AA}art{BB} couvre BB−AA ans ; la
-#                                         recherche docs/research/zan-rennes.md
-#                                         annualise ainsi : 401,7 ha / 4 =
-#                                         100,4 ha/an pour Rennes Métropole)
-#   trajectoire_zan  = rythme_post_loi / rythme_reference
-# Un rapport < 1 = le territoire ralentit vers l'objectif ZAN (0,5 = le −50 % de
-# la loi) ; > 1 = il accélère. Échelle libre : le scalaire classé est la valeur
-# elle-même (compute_ranks — aucun scalaire déclaré dans scalaires_milieux).
-# Les BORNES (documentées, jamais une valeur inventée) :
-#   - une fenêtre NA (commune sans donnée, agrégat incomplet) -> rapport NA,
-#     pas de rang ;
-#   - une décennie de référence à ZÉRO (un 0,0 réel — le fichier Cerema remplit
-#     les zéros) : aucun rythme de référence à diviser par deux — ZAN est un
-#     objectif zéro — le rapport n'existe pas -> NA, pas de rang ;
-#   - une fenêtre post-loi à zéro, elle, est un 0 RÉEL publié : le territoire a
-#     cessé de consommer (le point d'arrivée ZAN).
-trajectoire_zan_territoires <- function(territoires) {
-  tibble::tibble(
-    code = territoires$code,
-    key = "trajectoire_zan",
-    detail = NA_character_,
-    value = ifelse(
-      is.na(territoires$naf11art21) | is.na(territoires$naf21art25) |
-        territoires$naf11art21 == 0,
-      NA_real_,
-      (territoires$naf21art25 / 4) / (territoires$naf11art21 / 10)
-    ),
-    unit = "×"
-  )
-}
-
 # construire_indicateurs_milieux : le thème déclare SES constructeurs — la
-# liste nommée des tables longues que compute_payload() assemble. Les trois
-# clés : les deux de la « Consommation d'ENAF » (#172) + la trajectoire ZAN
-# (#173).
+# liste nommée des tables longues que compute_payload() assemble. Les DEUX
+# clés du pivot (issue #239) : l'état par habitant (artif_par_habitant) et la
+# série annuelle (conso_enaf_annuel). La fenêtre (conso_enaf_fenetre) et la
+# trajectoire ZAN (trajectoire_zan) sont mortes avec les flux CONSOENAF :
+# leurs constructeurs sont supprimés (#63).
 construire_indicateurs_milieux <- function(territoires) {
   list(
-    conso_enaf_fenetre = indicator_conso_enaf_fenetre(territoires),
-    conso_enaf_annuel = indicator_conso_enaf_annuel(territoires),
-    trajectoire_zan = trajectoire_zan_territoires(territoires)
+    artif_par_habitant = indicator_artif_par_habitant(territoires),
+    conso_enaf_annuel = indicator_conso_enaf_annuel(territoires)
   )
 }
 
@@ -912,14 +963,17 @@ construire_indicateurs_milieux <- function(territoires) {
 # Le scalaire classé par indicateur : la valeur elle-même pour les clés
 # scalaires, le scalaire déclaré pour les multi-valeurs (issue #13 — ex.
 # structure_age classée par la part des moins de 20 ans). Pour Milieux
-# (#172), le scalaire des DEUX clés de l'indicateur est la PART de la surface
-# du territoire consommée sur la fenêtre 2021-2025 — jamais les hectares
-# bruts (une grande commune a plus de terre ; ADR-0014). La série annuelle
-# porte le même scalaire que la fenêtre : ses 14 lignes partagent le rang du
-# territoire (le rang de la part, comme structure_age réplique le rang de la
-# part des moins de 20 ans sur ses 7 tranches). La trajectoire ZAN (#173),
-# échelle libre, n'a AUCUN scalaire déclaré : la valeur publiée (le rapport
-# des rythmes) EST le scalaire classé (l'héritage du compute_ranks).
+# (#239) :
+#   - conso_enaf_annuel garde SON scalaire d'origine (KEPT) : la PART de la
+#     surface du territoire consommée sur la fenêtre 2021-2025 — jamais les
+#     hectares bruts (une grande commune a plus de terre ; ADR-0014) ; ses
+#     14 lignes partagent le rang du territoire (comme structure_age réplique
+#     le rang de la part des moins de 20 ans sur ses 7 tranches) ;
+#   - artif_par_habitant est ÉCHELLE LIBRE par construction (le m²/habitant
+#     est déjà par habitant — aucune normalisation de surface) : le scalaire
+#     classé est l'état à M3 lui-même, et les DEUX lignes du territoire
+#     partagent le rang de cet état final (le même motif multi-détails que la
+#     série annuelle).
 
 # part_surface_consoenaf : la part de la surface du territoire consommée sur
 # la fenêtre 2021-2025. La consommation publiée est en hectares (naf21art25,
@@ -931,8 +985,23 @@ part_surface_consoenaf <- function(territoires) {
   territoires$naf21art25 * 10000 / territoires$surfcom2025
 }
 
+# intensite_etat_m3 : le scalaire classé de l'indicateur artif_par_habitant —
+# l'intensité d'état à M3 (m²/hab), la valeur de l'état final publiée TEL QUE
+# (échelle libre par construction : déjà par habitant, aucune normalisation de
+# surface). Les DEUX lignes du territoire partagent le rang de cet état final.
+# Chemin rétro-compatible (sans états OCS-GE) : tout NA — aucun rang fabriqué.
+intensite_etat_m3 <- function(territoires) {
+  if (!"artif_m2" %in% names(territoires)) {
+    return(rep(NA_real_, nrow(territoires)))
+  }
+  intensite_artif_par_habitant(
+    territoires$artif_m2, territoires$pop_debut,
+    territoires$artif_m3, territoires$pop_fin
+  )$artif_m3_par_habitant
+}
+
 scalaires_milieux <- list(
-  conso_enaf_fenetre = part_surface_consoenaf,
+  artif_par_habitant = intensite_etat_m3,
   conso_enaf_annuel = part_surface_consoenaf
 )
 
@@ -1008,18 +1077,24 @@ compute_histoires_milieux <- function(territoires) {
       ))
   }
 
+  # l'intensité d'état (m²/habitant) aux deux millésimes — la SEULE source de
+  # vérité du calcul par habitant (intensite_artif_par_habitant), la MÊME que
+  # l'indicateur artif_par_habitant (jamais une seconde formule) : la
+  # population du millésime qui BORNE l'état (le bracket, ADR-0017 : RP 2017
+  # pour l'état initial, RP 2023 pour l'état final — jamais interpolé). Un
+  # état NA rend l'intensité NA.
+  intensite <- intensite_artif_par_habitant(
+    base$artif_m2, base$pop_debut, base$artif_m3, base$pop_fin
+  )
+  base$artif_m2_par_habitant <- intensite$artif_m2_par_habitant
+  base$artif_m3_par_habitant <- intensite$artif_m3_par_habitant
+
   base %>%
     dplyr::mutate(
       # les états en hectares (m² -> ha, ÷ 10 000 — la conversion documentée,
       # testée ; jamais silencieusement trustée)
       artif_m2 = artif_m2 / 10000,
       artif_m3 = artif_m3 / 10000,
-      # l'intensité d'état : m² par habitant — le ha × 10 000 pour des m²,
-      # divisé par la population du millésime qui BORNE l'état (le bracket,
-      # ADR-0017 : RP 2017 pour l'état initial, RP 2023 pour l'état final —
-      # jamais interpolé). Un état NA rend l'intensité NA.
-      artif_m2_par_habitant = artif_m2 * 10000 / pop_debut,
-      artif_m3_par_habitant = artif_m3 * 10000 / pop_fin,
       # la trajectoire : le ratio M3/M2 par habitant — la seconde force de la
       # lecture. Algébriquement = croissance de la terre ÷ croissance de la
       # population. Le dénominateur (le M2 par habitant) est positif, donc
@@ -1075,18 +1150,54 @@ construire_apercu_milieux <- function(territoires) {
 
 # validations_milieux -----------------------------------------------------------
 # Les vérifications de valeur propres au thème (point 7) : déclarées ici,
-# exécutées par validate_payload() après ses vérifications génériques. Les
-# deux clés de l'indicateur (#172) sont vérifiées.
+# exécutées par validate_payload() après ses vérifications génériques. Depuis
+# le pivot (#239, ADR-0017) : la série annuelle KEPT (#172), l'état par
+# habitant (artif_par_habitant) et l'invariant ratio/delta de l'Histoire.
 validations_milieux <- list(
-  # la consommation d'ENAF est un total non négatif (une valeur NA — commune
-  # sans donnée, total de niveau incomplet — est un cas légitime, jamais une
-  # corruption ; une valeur négative est un fichier qui dérive)
+  # la consommation d'ENAF annuelle est un total non négatif (une valeur NA —
+  # commune sans donnée, total de niveau incomplet — est un cas légitime,
+  # jamais une corruption ; une valeur négative est un fichier qui dérive)
   function(payload) {
     conso <- payload$indicateurs$value[
-      payload$indicateurs$key %in% c("conso_enaf_fenetre", "conso_enaf_annuel")]
+      payload$indicateurs$key == "conso_enaf_annuel"]
     if (any(!is.na(conso) & conso < 0)) {
       stop("Payload invalide : une consommation d'ENAF négative.",
            call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # l'intensité d'état (m²/hab) est non négative — une surface artificialisée
+  # par habitant négative est un fichier qui dérive (le NA — état incomplet —
+  # est un cas légitime)
+  function(payload) {
+    intensite <- payload$indicateurs$value[
+      payload$indicateurs$key == "artif_par_habitant"]
+    if (any(!is.na(intensite) & intensite < 0)) {
+      stop("Payload invalide : une intensité d'état (m²/hab) négative.",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # l'invariant ratio/delta (ADR-0017) : sign(ratio − 1) = sign(delta) où
+  # delta = artif_m3_par_habitant − artif_m2_par_habitant — le dénominateur du
+  # ratio (le M2 par habitant) est positif quand le ratio est défini : la
+  # classification et le graphe quadrant ne peuvent jamais se contredire. Où
+  # le ratio n'est pas défini (état initial nul, fenêtre incomplète), rien
+  # n'est prouvé — jamais une contradiction.
+  function(payload) {
+    h <- payload$histoires
+    defini <- !is.na(h$artif_m2_par_habitant) &
+      h$artif_m2_par_habitant > 0 & is.finite(h$artif_m2_par_habitant) &
+      !is.na(h$artif_m3_par_habitant) &
+      !is.na(h$trajectoire_artif_par_habitant)
+    if (any(defini)) {
+      ratio <- h$trajectoire_artif_par_habitant[defini]
+      delta <- h$artif_m3_par_habitant[defini] -
+        h$artif_m2_par_habitant[defini]
+      if (any(sign(ratio - 1) != sign(delta))) {
+        stop("Payload invalide : l'invariant ratio/delta est violé ",
+             "(sign(ratio − 1) = sign(delta)).", call. = FALSE)
+      }
     }
     invisible(payload)
   }

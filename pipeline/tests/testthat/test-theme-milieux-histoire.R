@@ -109,10 +109,10 @@ test_that("conso_fenetre : les décompositions présentes dans le fixture ne DOU
   # le fixture consoenaf porte désormais, pour CHAQUE année de la fenêtre
   # 2017-2023, le total naf{AA}art{AA+1} ET ses six colonnes de décomposition
   # (art{AA}hab{AA+1}, act, inc, mix, fer, rou) qui somment exactement au
-  # total — la structure du fichier réel Cerema. La fenêtre publiée (la clé
-  # conso_enaf_fenetre de l'indicateur, dont la colonne conso_fenetre de la
-  # table des territoires est la source) doit rester la somme des SEULS
-  # totaux : 51 ha pour 22001, jamais 102 (le doublement du bug #221).
+  # total — la structure du fichier réel Cerema. La colonne conso_fenetre de
+  # la table des territoires (la fenêtre re-sommée sur les annuels, la source
+  # de l'ancienne clé tête de l'indicateur, #172) doit rester la somme des
+  # SEULS totaux : 51 ha pour 22001, jamais 102 (le doublement du bug #221).
   brut <- lire_consoenaf(
     testthat::test_path("fixtures", "consoenaf-fixture.csv")
   )
