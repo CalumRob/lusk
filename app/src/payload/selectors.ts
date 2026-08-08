@@ -41,9 +41,11 @@ export function themesPresent(payload: Payload): Theme[] {
  * The Aperçu tab's basic stats for a territory (ADR-0007): the rows of the
  * apercu table for that territory, NA-gated — a null value (non calculable
  * pour ce territoire) is skipped, never rendered. Payload order preserved.
+ * An absent apercu table (404 → null, issue #122) reads as no rows — the
+ * tab renders the honest empty state, never an error.
  */
 export function apercuPourTerritoire(payload: Payload, territoire: string): ApercuRow[] {
-  return payload.apercu.filter(
+  return (payload.apercu ?? []).filter(
     (ligne) => ligne.territoire === territoire && ligne.value !== null,
   )
 }

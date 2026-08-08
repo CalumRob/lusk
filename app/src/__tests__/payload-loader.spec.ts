@@ -116,6 +116,18 @@ describe('chargerPayload — the single seam', () => {
     expect(payload.runReport).toBeNull()
   })
 
+  it('treats a missing apercu.json (404) as absent — the Aperçu element is simply not built (issue #122)', async () => {
+    // Depuis #116 le pipeline ne crée apercu.json que quand un thème a un
+    // aperçu (seul Démographie le peuple) : un environnement où seuls des
+    // thèmes sans aperçu ont tourné n'a pas le fichier — absent, jamais
+    // une erreur de chargement.
+    const { 'apercu.json': _apercu, ...sansApercu } = fichiersDemographie
+
+    const payload = await chargerPayload(optionsPour(sansApercu))
+
+    expect(payload.apercu).toBeNull()
+  })
+
   it('raises a typed fetch error when a required file is missing', async () => {
     const { 'territoires.json': _territoires, ...sansTerritoires } = fichiersDemographie
 
