@@ -163,14 +163,42 @@ describe('chargerPayload — the single seam', () => {
     ).rejects.toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
   })
 
-  it('tolerates the transitional Milieux histoires (ancien schéma) — les autres thèmes rendent, TODO #243', async () => {
-    // État transitoire du re-key spec #225 : histoires_milieux.json committé
-    // porte encore l'ancien schéma (periode/conso_fenetre/…) jusqu'à ce que le
-    // pipeline le régénère sur les états OCS-GE réels (#243). Le loader écarte
-    // les lignes de l'ancien schéma — le chargement ne casse pas, les autres
-    // thèmes rendent, la Story Milieux reste muette (jamais une lecture
-    // inventée). TODO #243 : ce test (et la tolérance du loader) disparaît
-    // quand le payload régénéré valide le nouveau schéma.
+  it('loads the pivot-schema Milieux histoires strictly (le re-key #225/#243 est exigé, plus aucune tolérance)', async () => {
+    // Le payload régénéré (spec #225 → #243) porte le nouveau schéma — la
+    // Story Milieux redevient une exigence STRICTE du contrat : les lignes du
+    // nouveau schéma chargent, celles de l'ancien (periode/conso_fenetre/…)
+    // sont rejetées par la validation, jamais écartées en silence.
+    const nouveauSchema = [
+      {
+        territoire: '22001',
+        type: 'commune',
+        theme: 'milieux',
+        story_key: 'se-densifier-setaler-ou-sen-aller',
+        periode_pop: '2017-2023',
+        periode_artif: '2021-2025',
+        delta_population: -15,
+        artif_m2: 0.84571,
+        artif_m3: 2.8089577,
+        artif_m2_par_habitant: 14.0018,
+        artif_m3_par_habitant: 47.6902,
+        trajectoire_artif_par_habitant: 3.406,
+        classification: 'sen-aller-et-consommer-quand-meme',
+      },
+    ]
+
+    const payload = await chargerPayload(
+      optionsPour({
+        ...fichiersDemographie,
+        'indicateurs_milieux.json': indicateursMilieuxFixture,
+        'histoires_milieux.json': nouveauSchema,
+      }),
+    )
+
+    expect(payload.histoires.filter((h) => h.theme === 'milieux')).toHaveLength(1)
+    expect(payload.histoires.filter((h) => h.theme === 'demographie')).toHaveLength(9)
+    expect(payload.indicateurs.some((i) => i.theme === 'milieux')).toBe(true)
+
+    // l'ancien schéma est rejeté fort — la tolérance a disparu
     const ancienSchema = [
       {
         territoire: '22001',
@@ -185,17 +213,15 @@ describe('chargerPayload — the single seam', () => {
       },
     ]
 
-    const payload = await chargerPayload(
-      optionsPour({
-        ...fichiersDemographie,
-        'indicateurs_milieux.json': indicateursMilieuxFixture,
-        'histoires_milieux.json': ancienSchema,
-      }),
-    )
-
-    expect(payload.histoires.filter((h) => h.theme === 'milieux')).toHaveLength(0)
-    expect(payload.histoires.filter((h) => h.theme === 'demographie')).toHaveLength(9)
-    expect(payload.indicateurs.some((i) => i.theme === 'milieux')).toBe(true)
+    await expect(
+      chargerPayload(
+        optionsPour({
+          ...fichiersDemographie,
+          'indicateurs_milieux.json': indicateursMilieuxFixture,
+          'histoires_milieux.json': ancienSchema,
+        }),
+      ),
+    ).rejects.toMatchObject({ kind: 'validation' })
   })
 
   it('raises a typed validation error when a story file is missing for a present theme', async () => {

@@ -111,11 +111,14 @@ describe('nuageMilieux — the Milieux quadrant’s context cloud (ADR-0011)', (
       const nuage = nuageMilieux(payloadMilieux, histoire.territoire)
       expect(nuage, `nuage de ${histoire.territoire}`).not.toBeNull()
       for (const point of nuage ?? []) {
-        const ratioMoinsUn = histoireDe(point.territoire).trajectoire_artif_par_habitant - 1
+        // les lignes sans trajectoire (le trou NA honnête) sortent de la
+        // preuve — le nuage ne trace pas de point sans états
+        const ratio = histoireDe(point.territoire).trajectoire_artif_par_habitant
+        if (ratio === null) continue
         expect(
           Math.sign(point.deltaM2ParHabitant),
           `${point.nom} : sign(delta) doit égaler sign(ratio − 1)`,
-        ).toBe(Math.sign(ratioMoinsUn))
+        ).toBe(Math.sign(ratio - 1))
       }
     }
   })

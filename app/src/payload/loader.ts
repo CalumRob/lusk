@@ -95,23 +95,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     }
 
     indicateurs.push(...validerIndicateurs(brutIndicateurs, fichierIndicateurs, territoires))
-    if (theme === 'milieux') {
-      // État transitoire (spec #225 → #243) : histoires_milieux.json committé
-      // porte encore l'ancien schéma (periode/conso_fenetre/…) tant que le
-      // pipeline ne le régénère pas sur les états OCS-GE réels. Tolérance la
-      // moins invasive : les lignes de l'ancien schéma sont écartées (jamais
-      // jetées silencieusement dans le payload — les sélecteurs ne peuvent
-      // pas les lire), les autres thèmes rendent. TODO #243 : supprimer cette
-      // tolérance dès que le payload régénéré valide — la Story Milieux
-      // redevient alors une exigence stricte du contrat.
-      try {
-        histoires.push(...validerHistoires(brutHistoires, fichierHistoires, territoires))
-      } catch (e) {
-        if (!(e instanceof PayloadError) || e.kind !== 'validation') throw e
-      }
-    } else {
-      histoires.push(...validerHistoires(brutHistoires, fichierHistoires, territoires))
-    }
+    histoires.push(...validerHistoires(brutHistoires, fichierHistoires, territoires))
   }
 
   const apercu = validerApercu(await obtenir('apercu.json', false), 'apercu.json', territoires)

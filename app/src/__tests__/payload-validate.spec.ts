@@ -450,7 +450,7 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed 
     for (const histoire of milieux) {
       expect(histoire.story_key).toBe('se-densifier-setaler-ou-sen-aller')
       expect(histoire.periode_pop).toBe('2017-2023')
-      expect(histoire.periode_artif.length).toBeGreaterThan(0)
+      expect(histoire.periode_artif?.length ?? 0).toBeGreaterThan(0)
       expect(typeof histoire.delta_population).toBe('number')
       for (const champ of [
         'artif_m2',
@@ -462,9 +462,13 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed 
         expect(typeof histoire[champ], `« ${champ} »`).toBe('number')
       }
       // l'invariant du contrat : sign(ratio − 1) = sign(delta) — le fixture
-      // entier le satisfait (la lecture et le graphe ne peuvent pas diverger)
-      const delta = histoire.artif_m3_par_habitant - histoire.artif_m2_par_habitant
-      expect(Math.sign(histoire.trajectoire_artif_par_habitant - 1)).toBe(Math.sign(delta))
+      // entier le satisfait (la lecture et le graphe ne peuvent pas diverger) ;
+      // les lignes sans trajectoire (le trou NA honnête) sortent de la preuve
+      const m2 = histoire.artif_m2_par_habitant
+      const m3 = histoire.artif_m3_par_habitant
+      const ratio = histoire.trajectoire_artif_par_habitant
+      if (m2 === null || m3 === null || ratio === null) continue
+      expect(Math.sign(ratio - 1)).toBe(Math.sign(m3 - m2))
     }
     // les QUATRE lectures sont exercées dans le fixture, cas de signes mélangés
     // compris (22002 densifie en grandissant, 200000002 se vide en se renaturant)
@@ -504,6 +508,77 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed 
     expect(milieux[0].classification).toBeNull()
   })
 
+  it('accepts the M2 = 0 shape — trajectoire null, classification null (la découverte #243)', () => {
+    // 102 communes réelles (~8 %) n'ont AUCUNE terre artificialisée à l'état
+    // initial : le ratio M3/0 est indéfini, la trajectoire est null — jamais
+    // un rapport infini inventé, jamais un « s'étale » fabriqué.
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    const ligne = histoires[0] as HistoireMilieux
+    ligne.artif_m2 = 0
+    ligne.artif_m2_par_habitant = 0
+    ligne.trajectoire_artif_par_habitant = null
+    ligne.classification = null
+
+    const payload = parsePayload(documentsMilieux({ histoires }))
+    const milieux = payload.histoires.filter((h): h is HistoireMilieux => h.theme === 'milieux')
+    expect(milieux[0].trajectoire_artif_par_habitant).toBeNull()
+    expect(milieux[0].classification).toBeNull()
+  })
+
+  it('accepts the absent-state shape — tous les états null, la lecture absente (le trou NA honnête)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    const ligne = histoires[0] as HistoireMilieux
+    ligne.artif_m2 = null
+    ligne.artif_m3 = null
+    ligne.artif_m2_par_habitant = null
+    ligne.artif_m3_par_habitant = null
+    ligne.trajectoire_artif_par_habitant = null
+    ligne.classification = null
+
+    const payload = parsePayload(documentsMilieux({ histoires }))
+    const milieux = payload.histoires.filter((h): h is HistoireMilieux => h.theme === 'milieux')
+    expect(milieux[0].trajectoire_artif_par_habitant).toBeNull()
+    expect(milieux[0].classification).toBeNull()
+  })
+
+  it('rejects a defined trajectory with M2 = 0 — le ratio M3/0 est indéfini (fix #243)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as HistoireMilieux).artif_m2 = 0
+    ;(histoires[0] as HistoireMilieux).artif_m2_par_habitant = 0
+    // trajectoire laissée définie (1.13) — un Inf déguisé, rejeté
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/indéfini/)
+  })
+
+  it('rejects a null trajectory with M2 > 0 — la trajectoire est requise', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as HistoireMilieux).trajectoire_artif_par_habitant = null
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/trajectoire/)
+  })
+
+  it('rejects a classification without a trajectory — jamais une lecture sans sa seconde force', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    const ligne = histoires[0] as HistoireMilieux
+    ligne.artif_m2 = 0
+    ligne.artif_m2_par_habitant = 0
+    ligne.trajectoire_artif_par_habitant = null
+    // classification laissée définie — une lecture sans sa trajectoire, rejetée
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/classification/)
+  })
+
+  it('rejects mixed states — les quatre états sont tous présents ou tous absents, jamais un mélange', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as HistoireMilieux).artif_m3 = null
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/états/)
+  })
+
   it('rejects a Milieux histoire missing its forces (delta_population / trajectoire absents)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
     delete (histoires[0] as Partial<HistoireMilieux>).delta_population
@@ -528,9 +603,25 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed 
     expect(erreur.message).toMatch(/artif_m2/)
   })
 
-  it('rejects a non-positive trajectory — le ratio M3/M2 est strictement positif', () => {
+  it('accepts a zero trajectory — la renaturation COMPLÈTE (M3 = 0) est une trajectoire 0 réelle', () => {
+    // 11 communes réelles ont M2 > 0 et M3 = 0 (la renaturation complète) :
+    // la trajectoire 0 est une valeur VRAIE, jamais une corruption — la même
+    // forme que le 56001 du fixture (m2ph > 0, m3ph = 0, delta négatif).
     const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
-    ;(histoires[0] as { trajectoire_artif_par_habitant: number }).trajectoire_artif_par_habitant = 0
+    const ligne = histoires[0] as HistoireMilieux
+    ligne.artif_m3 = 0
+    ligne.artif_m3_par_habitant = 0
+    ligne.trajectoire_artif_par_habitant = 0
+    ligne.classification = 'grandir-en-se-densifiant'
+
+    const payload = parsePayload(documentsMilieux({ histoires }))
+    const milieux = payload.histoires.filter((h): h is HistoireMilieux => h.theme === 'milieux')
+    expect(milieux[0].trajectoire_artif_par_habitant).toBe(0)
+  })
+
+  it('rejects a negative trajectory — jamais un ratio négatif', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as HistoireMilieux).trajectoire_artif_par_habitant = -1
 
     const erreur = attendErreurValidation(documentsMilieux({ histoires }))
     expect(erreur.message).toMatch(/trajectoire/)

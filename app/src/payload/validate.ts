@@ -742,6 +742,15 @@ function lireHistoireMobilite(
  * (null = fenêtre incomplète, jamais une lecture inventée). L'invariant du
  * contrat : sign(ratio − 1) = sign(delta) — le classifieur et le graphe ne
  * peuvent jamais se contredire.
+ *
+ * Trois formes sont contractuelles (la découverte #243 du pipeline) : (1) les
+ * quatre états présents avec M2 par habitant > 0 → la trajectoire est un
+ * nombre strictement positif et l'invariant tient ; (2) les états présents
+ * avec M2 par habitant == 0 (102 communes réelles, ~8 %) → le ratio M3/0 est
+ * INDÉFINI, la trajectoire est null et la classification est null — jamais un
+ * rapport infini inventé, jamais une lecture fabriquée ; (3) les états
+ * absents (le trou NA honnête d'un territoire dont la donnée manque) → tout
+ * est null. Aucune forme mixte, aucun mélange : la cohérence est le contrat.
  */
 function lireHistoireMilieux(
   ligne: LigneBrute,
@@ -766,73 +775,121 @@ function lireHistoireMilieux(
   // #225) : la fenêtre partagée de la population (le bracket RP) et la fenêtre
   // des états OCS-GE (le span par département pour les agrégats multi-dépt).
   // Jamais codées en dur (« 2017-2023 ») ni fusionnées en une seule période.
+  // La fenêtre des états est null quand le territoire n'a AUCUNE donnée OCS-GE
+  // (le trou NA honnête — pas de fenêtre sans états, ADR-0017) ; la fenêtre de
+  // population, elle, existe toujours (la règle de source d'ADR-0014).
   const periode_pop = lireChaine(ligne, 'periode_pop', fichier, ligneIndexee)
   exiger(periode_pop.length > 0, fichier, ligneIndexee, '« periode_pop » vide')
-  const periode_artif = lireChaine(ligne, 'periode_artif', fichier, ligneIndexee)
-  exiger(periode_artif.length > 0, fichier, ligneIndexee, '« periode_artif » vide')
+  const periode_artif = ligne['periode_artif']
+  exiger(
+    periode_artif === null ||
+      (estChaine(periode_artif) && periode_artif.length > 0),
+    fichier,
+    ligneIndexee,
+    '« periode_artif » doit être une chaîne non vide ou null (territoire sans données OCS-GE)',
+  )
 
   const delta_population = ligne['delta_population']
   exiger(estNombre(delta_population), fichier, ligneIndexee, '« delta_population » doit être un nombre')
 
-  // Les états OCS-GE (ha à chaque millésime) — des surfaces, jamais négatives.
+  // Les états OCS-GE (ha à chaque millésime) + la surface par habitant
+  // (m²/hab) — SOIT les quatre présents (nombres non négatifs), SOIT les
+  // quatre absents (null — le trou NA honnête d'un territoire dont la donnée
+  // manque, ADR-0017 « la NA propage, jamais un 0 inventé »). Jamais un
+  // mélange : un état incomplet est une erreur de contrat.
   const artif_m2 = ligne['artif_m2']
   const artif_m3 = ligne['artif_m3']
-  exiger(
-    estNombre(artif_m2) && artif_m2 >= 0,
-    fichier,
-    ligneIndexee,
-    '« artif_m2 » doit être un nombre non négatif (ha à l’état initial)',
-  )
-  exiger(
-    estNombre(artif_m3) && artif_m3 >= 0,
-    fichier,
-    ligneIndexee,
-    '« artif_m3 » doit être un nombre non négatif (ha à l’état final)',
-  )
-
-  // La surface artificialisée par habitant (m²/hab à chaque état) — définie
-  // pour TOUT territoire (plus de trou NA : la leçon de la spec #225).
   const artif_m2_par_habitant = ligne['artif_m2_par_habitant']
   const artif_m3_par_habitant = ligne['artif_m3_par_habitant']
+  const etats = [artif_m2, artif_m3, artif_m2_par_habitant, artif_m3_par_habitant] as const
+  const etatsAbsents = etats.every((e) => e === null)
   exiger(
-    estNombre(artif_m2_par_habitant) && artif_m2_par_habitant >= 0,
+    etatsAbsents || etats.every((e) => estNombre(e) && e >= 0),
     fichier,
     ligneIndexee,
-    '« artif_m2_par_habitant » doit être un nombre non négatif (m²/hab)',
+    'les quatre états (artif_m2, artif_m3, artif_m2_par_habitant, artif_m3_par_habitant) doivent être tous présents (nombres non négatifs) ou tous absents (null)',
   )
-  exiger(
-    estNombre(artif_m3_par_habitant) && artif_m3_par_habitant >= 0,
-    fichier,
-    ligneIndexee,
-    '« artif_m3_par_habitant » doit être un nombre non négatif (m²/hab)',
-  )
+  // NOTA : la fenêtre des états et les états ne sont PAS liés par une
+  // cohérence stricte — la fenêtre dérive des couples (département ->
+  // millésimes) des membres porteurs de donnée, les états suivent la NA
+  // PROPAGÉE (un membre manquant rend le niveau NA, jamais la fenêtre) : un
+  // agrégat peut porter sa fenêtre avec des états NA (le 29 du fixture,
+  // periode_artif « 2021-2024 », états NA par 29003). Seul le territoire
+  // SANS aucune donnée porte les deux à null (29003).
 
-  // La trajectoire M3/M2 par habitant — un rapport de valeurs par habitant :
-  // le dénominateur est toujours positif, la trajectoire est un nombre > 0.
+  // La trajectoire M3/M2 par habitant — le ratio n'existe QUE quand l'état
+  // initial par habitant est strictement positif. Découverte #243 : 102
+  // communes réelles (~8 %) ont M2 = 0 — M3/0 est INDÉFINI, la trajectoire
+  // est null (jamais un rapport infini inventé, jamais un « s'étale » fabriqué
+  // sur un rapport sans sens). L'état absent (le trou NA honnête) rend aussi
+  // la trajectoire null. Une trajectoire définie est NON NÉGATIVE : 0 est la
+  // renaturation COMPLÈTE (M3 = 0 — 11 communes réelles, la même forme que le
+  // 56001 du fixture), jamais un ratio négatif (m3ph >= 0 et m2ph > 0).
   const trajectoire_artif_par_habitant = ligne['trajectoire_artif_par_habitant']
-  exiger(
-    estNombre(trajectoire_artif_par_habitant) && trajectoire_artif_par_habitant > 0,
-    fichier,
-    ligneIndexee,
-    '« trajectoire_artif_par_habitant » doit être un nombre strictement positif (le ratio M3/M2)',
-  )
+  const trajectoireDefinie = estNombre(trajectoire_artif_par_habitant)
+  if (trajectoireDefinie) {
+    exiger(
+      (trajectoire_artif_par_habitant as number) >= 0,
+      fichier,
+      ligneIndexee,
+      '« trajectoire_artif_par_habitant » doit être un nombre non négatif (le ratio M3/M2) quand il est défini',
+    )
+  } else {
+    exiger(
+      trajectoire_artif_par_habitant === null,
+      fichier,
+      ligneIndexee,
+      '« trajectoire_artif_par_habitant » doit être un nombre non négatif (le ratio M3/M2) ou null (état initial nul ou absent — jamais un rapport infini)',
+    )
+  }
 
-  // L'invariant du contrat (spec #225) : sign(ratio − 1) = sign(delta) — la
-  // lecture (le ratio) et le graphe quadrant (le delta signé) ne peuvent
-  // jamais se contredire. Un ratio < 1 exige un delta < 0 (la densification
-  // ou la renaturation MESURÉE — la lecture n'est rigoureuse que de cette
-  // propriété) ; un ratio > 1 exige un delta > 0 ; ratio == 1 ⟺ delta == 0.
-  const delta = (artif_m3_par_habitant as number) - (artif_m2_par_habitant as number)
-  const ratio = trajectoire_artif_par_habitant as number
-  exiger(
-    Math.sign(ratio - 1) === Math.sign(delta),
-    fichier,
-    ligneIndexee,
-    `« trajectoire_artif_par_habitant » (${ratio}) et le delta par habitant (${delta}) se contredisent — sign(ratio − 1) doit valoir sign(delta)`,
-  )
+  if (!etatsAbsents) {
+    // Les états présents : la trajectoire suit l'état initial.
+    if ((artif_m2_par_habitant as number) === 0) {
+      // M2 = 0 (et même les deux états nuls 0/0) : le ratio est indéfini —
+      // la trajectoire DOIT être null (fix #243), jamais un Inf sérialisé.
+      exiger(
+        !trajectoireDefinie,
+        fichier,
+        ligneIndexee,
+        '« trajectoire_artif_par_habitant » doit être null quand l’état initial par habitant est nul — le ratio M3/0 est indéfini',
+      )
+    } else {
+      // M2 par habitant > 0 : la trajectoire est requise — l'invariant du
+      // contrat (spec #225) : sign(ratio − 1) = sign(delta) — la lecture (le
+      // ratio) et le graphe quadrant (le delta signé) ne peuvent jamais se
+      // contredire. Un ratio < 1 exige un delta < 0 (la densification ou la
+      // renaturation MESURÉE) ; un ratio > 1 exige un delta > 0 ; ratio == 1
+      // ⟺ delta == 0.
+      exiger(
+        trajectoireDefinie,
+        fichier,
+        ligneIndexee,
+        '« trajectoire_artif_par_habitant » est requise quand l’état initial par habitant est strictement positif',
+      )
+      const delta = (artif_m3_par_habitant as number) - (artif_m2_par_habitant as number)
+      const ratio = trajectoire_artif_par_habitant as number
+      exiger(
+        Math.sign(ratio - 1) === Math.sign(delta),
+        fichier,
+        ligneIndexee,
+        `« trajectoire_artif_par_habitant » (${ratio}) et le delta par habitant (${delta}) se contredisent — sign(ratio − 1) doit valoir sign(delta)`,
+      )
+    }
+  } else {
+    // États absents : la trajectoire ne peut pas être là sans ses états.
+    exiger(
+      !trajectoireDefinie,
+      fichier,
+      ligneIndexee,
+      '« trajectoire_artif_par_habitant » doit être null quand les états sont absents',
+    )
+  }
 
   // La classification : l'une des quatre lectures, ou null (fenêtre
-  // incomplète — jamais une lecture hors contrat).
+  // incomplète — jamais une lecture hors contrat). Quand la trajectoire est
+  // absente, la lecture est FORCÉMENT null : la seconde force manque, aucune
+  // des quatre lectures ne peut être énoncée (fix #243).
   const classification = ligne['classification']
   exiger(
     classification === null || estUneDe(classification, CLASSIFICATIONS_MILIEUX),
@@ -840,6 +897,14 @@ function lireHistoireMilieux(
     ligneIndexee,
     `« classification » doit être l'un de ${CLASSIFICATIONS_MILIEUX.join(' | ')}, reçu « ${String(classification)} »`,
   )
+  if (!trajectoireDefinie) {
+    exiger(
+      classification === null,
+      fichier,
+      ligneIndexee,
+      '« classification » doit être null quand la trajectoire est absente — jamais une lecture sans sa seconde force',
+    )
+  }
 
   return {
     territoire,
@@ -847,13 +912,13 @@ function lireHistoireMilieux(
     theme,
     story_key,
     periode_pop,
-    periode_artif,
+    periode_artif: periode_artif as string | null,
     delta_population: delta_population as number,
     artif_m2: artif_m2 as number,
     artif_m3: artif_m3 as number,
     artif_m2_par_habitant: artif_m2_par_habitant as number,
     artif_m3_par_habitant: artif_m3_par_habitant as number,
-    trajectoire_artif_par_habitant: ratio,
+    trajectoire_artif_par_habitant: trajectoire_artif_par_habitant as number | null,
     classification: classification as string | null,
   }
 }
