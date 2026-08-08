@@ -338,6 +338,53 @@ export function nuageComparaison(payload: Payload, territoire: string): PointNua
   return nuage
 }
 
+/** One point of the Milieux story chart's context cloud (issue #241, ADR-0017). */
+export interface PointNuageMilieux {
+  territoire: string
+  type: TerritoireType
+  nom: string
+  /** La fenêtre des états OCS-GE du pair — le span multi-dépt porté tel quel (le rider du millésime). */
+  periodeArtif: string
+  /** x — Δpopulation (signé), la première force de la lecture. */
+  deltaPopulation: number
+  /** y — Δ(m²/hab) = artif_m3_par_habitant − artif_m2_par_habitant (signé), la trajectoire par habitant. */
+  deltaM2ParHabitant: number
+}
+
+/**
+ * The Milieux story chart's context cloud (issue #241) — the SAME comparison
+ * scope as the Démographie nuage (codesComparaison, ADR-0011) but reading
+ * each peer's Milieux Story row (ADR-0017): x = Δpopulation, y = Δ(m²/hab) =
+ * artif_m3_par_habitant − artif_m2_par_habitant. Every point carries its
+ * OCS-GE state window, so a cross-département peer's millésime span
+ * (periode_artif with per-dépt dates) is stated, never hidden. The nuage is
+ * derivable app-side from the peers' lines, never a downloaded list — the
+ * same pattern as nuageComparaison / nuageMobilite.
+ */
+export function nuageMilieux(payload: Payload, territoire: string): PointNuageMilieux[] | null {
+  const ref = trouverTerritoire(payload, territoire)
+  if (!ref) return null
+
+  const codes = codesComparaison(payload, ref)
+  const nuage: PointNuageMilieux[] = []
+  for (const code of codes) {
+    const histoire = payload.histoires.find((h) => h.theme === 'milieux' && h.territoire === code)
+    if (histoire?.theme !== 'milieux') continue
+    const t = trouverTerritoire(payload, code)
+    if (!t) continue
+    nuage.push({
+      territoire: code,
+      type: t.type,
+      nom: t.nom,
+      periodeArtif: histoire.periode_artif,
+      deltaPopulation: histoire.delta_population,
+      deltaM2ParHabitant:
+        histoire.artif_m3_par_habitant - histoire.artif_m2_par_habitant,
+    })
+  }
+  return nuage
+}
+
 /** The comparison container the nuage groups come from — the subtitle names it and links to its fiche. */
 export interface ConteneurComparaison {
   code: string
