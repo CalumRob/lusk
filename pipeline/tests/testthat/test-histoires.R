@@ -103,3 +103,10 @@ test_that("chaque histoire porte la clé du thème et une classification", {
   expect_true(all(p$histoires$story_key == "trajectoire-demographique"))
   expect_true(all(!is.na(p$histoires$classification)))
 })
+
+test_that("chaque histoire porte la fenêtre inter-recensement de la trajectoire", {
+  p <- compute_payload(load_fixture())
+  # la même fenêtre (POP 2017 -> POP 2023, 6 ans) que le taux / 6 et la
+  # population moyenne d'ADR-0011 — publiée pour que l'app date le titre
+  expect_true(all(p$histoires$periode == "2017-2023"))
+})
