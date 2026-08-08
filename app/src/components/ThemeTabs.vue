@@ -10,7 +10,9 @@
  * A11y: role="tablist" / role="tab" with aria-selected and aria-controls
  * pointing at the active panel, roving tabindex + arrow-key navigation
  * (Left/Right wrap, Home/End), 44px touch targets, horizontal scroll on
- * mobile. Sticky below the header (DESIGN.md §4 z-index).
+ * mobile. The tab row is centered in the bar (free-space spacers that give
+ * way to the horizontal scroll when the tabs overflow). Sticky below the
+ * header (DESIGN.md §4 z-index).
  */
 import { computed, ref } from 'vue'
 
@@ -119,6 +121,21 @@ function surTouche(ev: KeyboardEvent): void {
   padding: 0 var(--grid-margin-mobile);
   background: var(--surface-primary);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+/* #213 — the tab row is centered in the bar (the audit: « le bouton devrait
+   être centré sur la page »). These zero-width spacers absorb the free space
+   via auto inline margins — collapsing to zero when the tabs overflow, so the
+   overflow-x scroll keeps the first tab reachable (a plain
+   justify-content: center would clip it out of reach). */
+.theme-tabs::before {
+  content: '';
+  margin-inline: auto;
+}
+
+.theme-tabs::after {
+  content: '';
+  margin-inline: auto;
 }
 
 .onglet {
