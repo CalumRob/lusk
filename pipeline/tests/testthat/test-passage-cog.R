@@ -129,6 +129,45 @@ test_that("passage_cog : un vecteur vide reste vide (déterministe)", {
   expect_equal(passage_cog(character(0), mappe), character(0))
 })
 
+# construire_mappe_cog_bretagne ------------------------------------------------
+# L'orchestration de la source COG pour le mode `b` de `reseaux` (issue #230) :
+# le zip INSEE du cache → la table de passage BRETONNE {code_2022, code_2025}.
+# Le lecteur du xlsx est MOCKÉ (la convention du pipeline — lire_table_passage
+# lit le vrai fichier, non testé dans la boucle) ; le filtre Bretagne et la
+# construction de la table sont RÉELS.
+test_that("construire_mappe_cog_bretagne : le zip → la table de passage bretonne", {
+  # le xlsx mocké : la forme réelle (une ligne par commune 2025, CODGEO_2022 le
+  # code du millésime) — une fusion bretonne (Le Cambout → Plumieux), une
+  # identité, une commune HORS Bretagne qui doit tomber
+  fake_xlsx <- tibble::tribble(
+    ~CODGEO_2022, ~CODGEO_2025, ~LIBGEO_2025,
+    "22027", "22241", "Plumieux",   # Le Cambout → Plumieux (fusion)
+    "22241", "22241", "Plumieux",   # l'identité
+    "44006", "44006", "Saint-Nazaire"  # hors Bretagne → tombe
+  )
+  zip <- tempfile("cog-", fileext = ".zip")
+  writeLines("pas un zip réel", zip)
+
+  local_mocked_bindings(
+    lire_table_passage = function(chemin) {
+      # le lecteur est mocké (la convention du pipeline — il lit le vrai
+      # fichier) : il retourne la forme réelle, quel que soit le chemin
+      fake_xlsx
+    },
+    .package = "lusk"
+  )
+
+  mappe <- construire_mappe_cog_bretagne(zip)
+
+  # la table de passage BRETONNE : la fusion mappée, l'identité gardée, la
+  # commune hors Bretagne (44006) tombée — la même forme que construire_
+  # passage_cog, triée
+  expect_named(mappe, c("code_2022", "code_2025"))
+  expect_setequal(mappe$code_2022, c("22027", "22241"))
+  expect_equal(mappe$code_2025[mappe$code_2022 == "22027"], "22241")
+  expect_equal(mappe$code_2022, sort(mappe$code_2022))
+})
+
 # le fichier RÉEL (données réelles — LUSK_RUN_REAL=1) ---------------------------
 # La vérification de bout en bout contre la table INSEE téléchargée dans le
 # cache : les fusions bretonnes réelles 2022→2025 (Le Cambout + Coëtlogon →
@@ -137,25 +176,17 @@ test_that("passage_cog : un vecteur vide reste vide (déterministe)", {
 # toutes hors Bretagne — la 15141 Neussargues en Pinatelle est cantalienne —
 # et ne doivent jamais atteindre le mapping breton), et passage_cog sur des
 # vrais codes Geovelo. Le même motif que la discipline « données réelles » du
-# pipeline (helper-donnees-reelles.R).
+# pipeline (helper-donnees-reelles.R). La mappe réelle est construite par
+# l'orchestration du seam (construire_mappe_cog_bretagne — la même pièce que
+# construire_donnees_mobilite consomme pour le mode `b`).
 test_that("données réelles : la table INSEE réelle — les fusions bretonnes mappées, aucune NA", {
   skip_if(Sys.getenv("LUSK_RUN_REAL") != "1",
           "les tests « données réelles » sont désactivés — LUSK_RUN_REAL=1 pour les inclure")
 
   zip <- "data/raw/table_passage_annuelle_2025.zip"
-  extrait <- "data/raw/extracted"
   skip_if(!file.exists(zip), "la source COG n'est pas dans le cache (data/raw)")
-  if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
-  suppressWarnings(utils::unzip(zip, exdir = extrait, overwrite = TRUE))
-  brut <- lire_table_passage(file.path(extrait, "table_passage_annuelle_2025.xlsx"))
 
-  expect_true(all(c("CODGEO_2022", "CODGEO_2025") %in% names(brut)))
-  expect_gt(nrow(brut), 30000)
-
-  # le filtre Bretagne AVANT la table de passage — le même ordre que le
-  # normaliseur Geovelo (ticket #229)
-  bretagne <- brut[grepl("^(22|29|35|56)", brut$CODGEO_2025), ]
-  mappe <- construire_passage_cog(bretagne)
+  mappe <- construire_mappe_cog_bretagne(zip)
 
   # les fusions réelles vérifiées
   expect_equal(mappe$code_2025[mappe$code_2022 == "22027"], "22241")
