@@ -119,7 +119,7 @@ function uniteAffichage(unite: string): string {
         </p>
       </div>
       <div v-if="THEMES_METHODES[theme].deuxHorloges" class="groupe-horloge">
-        <h3 class="groupe-titre">Les deux horloges</h3>
+        <h3 class="groupe-titre">Les horloges du thème</h3>
         <p class="horloge-consommation">{{ THEMES_METHODES[theme].deuxHorloges.consommation }}</p>
         <dl class="horloge-entrees">
           <div

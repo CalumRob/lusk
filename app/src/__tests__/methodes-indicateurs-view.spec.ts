@@ -142,7 +142,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
     }
   })
 
-  it('documente les deux horloges dans le bloc milieux — fait de première classe (ADR-0014)', async () => {
+  it('documente les horloges dans le bloc milieux — fait de première classe (ADR-0014, étendu ADR-0017)', async () => {
     const wrapper = await monter(async () => payload)
 
     const bloc = wrapper.find('section#indicateurs article#milieux')
@@ -150,7 +150,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
     const texte = bloc.text()
     const horloges = THEMES_METHODES.milieux.deuxHorloges
     expect(horloges).toBeDefined()
-    expect(texte).toContain('Les deux horloges')
+    expect(texte).toContain('Les horloges du thème')
     expect(texte).toContain(horloges!.consommation)
     expect(texte).toContain(horloges!.declencheur)
     for (const entree of horloges!.entrees) {

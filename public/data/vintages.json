@@ -24,6 +24,38 @@
     "date_publication": "2026-06-30"
   },
   {
+    "id": "ocsge_artificialisation_22",
+    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2025 — Côtes-d'Armor (22)",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-07-03"
+  },
+  {
+    "id": "ocsge_artificialisation_29",
+    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2024 — Finistère (29)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-01-01",
+    "date_publication": "2026-06-12"
+  },
+  {
+    "id": "ocsge_artificialisation_35",
+    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2020-2023 — Ille-et-Vilaine (35)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-03-03"
+  },
+  {
+    "id": "ocsge_artificialisation_56",
+    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2022-2024 — Morbihan (56)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-01-01",
+    "date_publication": "2026-06-08"
+  },
+  {
     "id": "acv",
     "source": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
     "version": "2025",

@@ -230,9 +230,9 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     expect(horloge!.declencheur.length).toBeGreaterThan(20)
   })
 
-  it('le milieux documente le modèle CONTEXT.md — Story unique, les quatre lectures, les deux horloges', () => {
-    // la Story unique « Se densifier, s'étaler, ou s'en aller » (ADR-0014) —
-    // un thème à Story unique comme l'Économie
+  it('le milieux documente le modèle CONTEXT.md — Story unique, les quatre lectures, les trois horloges', () => {
+    // la Story unique « Se densifier, s'étaler, ou s'en aller » (ADR-0014,
+    // pivotée ADR-0017) — un thème à Story unique comme l'Économie
     const clefs = new Set(THEMES_METHODES.milieux.stories.map((s) => s.clef))
     expect(clefs).toEqual(new Set(['se-densifier-setaler-ou-sen-aller']))
     const story = THEMES_METHODES.milieux.stories[0]
@@ -250,18 +250,21 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     )
 
     // la lecture renaturation porte SON rider de précision — la renaturation
-    // est POTENTIELLE, jamais mesurée
+    // est MESURÉE (l'état final inférieur à l'état initial, ADR-0017) — jamais
+    // le « potentielle, jamais mesurée » du pivot flux (US 17)
     const renaturation = story.lectures.find(
       (l) => l.clef === 'les-departs-laissent-la-place-a-la-renaturation',
     )
-    expect(renaturation?.lecture).toMatch(/potentielle, jamais mesurée/)
+    expect(renaturation?.lecture).toMatch(/mesurée/)
+    expect(renaturation?.lecture).not.toMatch(/potentielle, jamais mesurée/)
 
-    // les deux horloges documentées comme fait de première classe (la promesse
-    // de transparence d'ADR-0014 — l'indicateur délibérément plus frais)
+    // les trois horloges documentées comme fait de première classe (la
+    // promesse de transparence étendue par ADR-0017 — la population, l'état
+    // OCS-GE, le flux annuel)
     const horloges = THEMES_METHODES.milieux.deuxHorloges
-    expect(horloges, '« milieux » sans les deux horloges documentées').toBeDefined()
+    expect(horloges, '« milieux » sans les horloges documentées').toBeDefined()
     expect(horloges!.consommation.length).toBeGreaterThan(20)
-    expect(horloges!.entrees.length).toBeGreaterThan(0)
+    expect(horloges!.entrees.length).toBe(3)  // les trois horloges, jamais confondues
     for (const entree of horloges!.entrees) {
       expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
       expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
@@ -280,15 +283,15 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     expect(story.definition).toContain('docs/research/zan-rennes.md')
   })
 
-  it('le milieux documente l\u2019anomalie d\u2019unité m²/ha dans la définition de la fenêtre', () => {
-    const fenetre = THEMES_METHODES.milieux.indicateurs.conso_enaf_fenetre
-    expect(fenetre.unite, '« milieux.conso_enaf_fenetre » en hectares').toBe('ha')
+  it('le milieux documente l\u2019anomalie d\u2019unité m²/ha dans la définition de la série annuelle', () => {
+    const fenetre = THEMES_METHODES.milieux.indicateurs.conso_enaf_annuel
+    expect(fenetre.unite, '« milieux.conso_enaf_annuel » en hectares').toBe('ha')
 
     // l'anomalie documentée, jamais silencieusement ignorée : le dictionnaire
     // Cerema dit hectares, le fichier distribue des m² — la conversion est
-    // explicite (÷ 10 000) et testée
+    // explicite (÷ 10 000) et testée (la source CONSOENAF de la série annuelle)
     expect(fenetre.definition).toMatch(/mètres carrés|m²/)
-    expect(fenetre.definition).toMatch(/10 000|10 000|÷/)
+    expect(fenetre.definition).toMatch(/10 000|÷/)
   })
 
   it('documente chaque lecture publiée (classification non nulle) des thèmes stables', () => {

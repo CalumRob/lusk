@@ -205,7 +205,7 @@ lire_communes_limites <- function(chemin) {
   }
   limites %>%
     dplyr::filter(as.character(code_insee_du_departement) %in% DEPT_BRETAGNE) %>%
-    dplyr::select(code_insee) %>%
+    dplyr::select(code_insee, code_insee_du_departement) %>%
     sf::st_make_valid()
 }
 

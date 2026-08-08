@@ -538,27 +538,49 @@ extraire_gpkg_ocsge <- function(archive, extrait) {
 # construire_donnees_milieux pour les états d'artificialisation, #234) : pour
 # CHAQUE couche du manifeste (les quatre départements), extrait l'archive du
 # cache (data/raw — la convention du pipeline, jamais un nouveau dossier),
-# lit le GPKG extrait, normalise, puis agrège l'ensemble contre les LIMITES
-# COMMUNALES fournies (la couche des communes — le code INSEE dans la colonne
-# `code`). Persiste la table par commune sous data/processed/milieux/
-# (idempotent) et la retourne. Le RACCORD des états OCS-GE dans la table des
-# communes du thème (la jointure au payload, les deux horloges de population)
-# est la suite de la spec (#225 — ticket payload).
+# lit le GPKG extrait, normalise, puis agrège contre les LIMITES COMMUNALES
+# fournies (la couche des communes — le code INSEE dans la colonne `code`).
+# Persiste la table par commune sous data/processed/milieux/ (idempotent) et
+# la retourne. Le RACCORD des états OCS-GE dans la table des communes du thème
+# (la jointure au payload, les deux horloges de population) est la suite de la
+# spec (#225 — ticket payload).
+#
+# L'AGRÉGATION est découpée PAR DÉPARTEMENT (vérifié à la première livraison
+# réelle, 2026-08-08) : chaque couche différentielle est découpée par
+# département — mais les communes LIMITROPHES reçoivent des polygones résiduels
+# de la couche du département VOISIN (des slivers de livraison, ~0,1–0,3 m² —
+# la frontière communale n'est pas la frontière de découpe du fichier). La
+# règle de la spec est la fenêtre PAR DÉPARTEMENT : les états d'une commune
+# viennent du fichier de SON département (le couple M2→M3 épinglé au
+# manifeste). Agrégée sans filtre, une commune limitorphe porterait DEUX
+# couples de millésimes (le sien + le sliver du voisin) — deux lignes qui
+# cassent le contrat une-ligne-par-commune (le bug réel découvert par #243).
+# Le filtre est l'alignement couche → communes de SON département
+# (code_insee_du_departement, la colonne du référentiel Admin Express).
 construire_donnees_ocsge <- function(cache = "data/raw",
                                      communes,
                                      sortie = "data/processed/milieux/ocsge_communes.rds") {
   extrait <- file.path(cache, "extracted", "ocsge")
   if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+  if (!"code_insee_du_departement" %in% names(communes)) {
+    stop("La couche des communes doit porter code_insee_du_departement (le ",
+         "référentiel Admin Express) — le découpage par département de ",
+         "l'agrégation OCS-GE en a besoin.", call. = FALSE)
+  }
 
-  flux_list <- lapply(IDS_OCSGE_ARTIFICIALISATION, function(id) {
+  par_departement <- lapply(IDS_OCSGE_ARTIFICIALISATION, function(id) {
     ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
     archive <- file.path(cache, ligne$fichier)
     gpkg <- extraire_gpkg_ocsge(archive, extrait)
-    normaliser_ocsge_artificialisation(lire_ocsge_artificialisation(gpkg))
+    flux <- normaliser_ocsge_artificialisation(
+      lire_ocsge_artificialisation(gpkg)
+    )
+    dep <- sub("^ocsge_artificialisation_", "", id)
+    communes_dep <- communes[
+      as.character(communes$code_insee_du_departement) == dep, ]
+    agreger_artificialisation_communes(flux, communes_dep)
   })
-  flux <- dplyr::bind_rows(flux_list)
-
-  communes_artif <- agreger_artificialisation_communes(flux, communes)
+  communes_artif <- dplyr::bind_rows(par_departement)
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(communes_artif, sortie)
   communes_artif

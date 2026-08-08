@@ -25,7 +25,9 @@ polygone_rectangle <- function(x0, y0, x1, y1) {
 # carrés de 100 m de côté (10 000 m² chacun), placés dans l'ordre des codes.
 # Par défaut une commune par département breton (les quatre quartiers) ; les
 # tests de la fonction pure demandent deux communes adjacentes du MÊME
-# département (ex. c("22001", "22002")) pour les tranches pondérées.
+# département (ex. c("22001", "22002")) pour les tranches pondérées. La couche
+# porte code_insee_du_departement (la forme du référentiel Admin Express — le
+# découpage par département de l'agrégation OCS-GE en a besoin, #243).
 fixture_communes_ocsge <- function(codes = c("22001", "29001", "35001", "56001")) {
   quartiers <- list(
     c(0, 0, 100, 100),     # le quartier bas-gauche
@@ -38,6 +40,7 @@ fixture_communes_ocsge <- function(codes = c("22001", "29001", "35001", "56001")
     sf::st_polygon(list(polygone_rectangle(q[1], q[2], q[3], q[4])))
   })
   sf::st_sf(code = codes,
+            code_insee_du_departement = substr(codes, 1, 2),
             geometry = sf::st_sfc(geom, crs = 2154))
 }
 

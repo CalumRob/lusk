@@ -80,6 +80,25 @@ function sourcesDpe(): Record<string, SourceEditoriale> {
   return sources
 }
 
+/** Les 4 lignes vintages OCS-GE partagent les mêmes faits éditoriaux — générées comme les DVF/DPE. */
+const SOURCE_OCSGE: Omit<SourceEditoriale, 'nom'> = {
+  editeur: 'IGN',
+  url: 'https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION',
+  themes: ['milieux'],
+}
+
+/** Les 4 lignes vintages OCS-GE (une par département breton) — l'état artificialisé du pivot #225. */
+function sourcesOcsGe(): Record<string, SourceEditoriale> {
+  const sources: Record<string, SourceEditoriale> = {}
+  for (const dep of DEPARTEMENTS_BRETAGNE) {
+    sources[`ocsge_artificialisation_${dep}`] = {
+      ...SOURCE_OCSGE,
+      nom: 'IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération)',
+    }
+  }
+  return sources
+}
+
 /**
  * Le registre complet — une entrée par source, indexée par l'id exact de la
  * table vintages. Ordre du registre = ordre d'affichage de la table (les
@@ -221,4 +240,10 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     url: 'https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025',
     themes: ['milieux'],
   },
+  // Les QUATRE sources OCS-GE (le pivot #225, ADR-0017) : une entrée par
+  // id vintage — la même forme générée que les DVF/DPE (sourcesDvf/
+  // sourcesDpe, une donnée déclinée en lignes par département). L'état
+  // artificialisé (OCS GE Artificialisation v2.0, Licence Ouverte 2.0), la
+  // référence officielle ZAN — le différentiel M2→M3 de chaque département.
+  ...sourcesOcsGe(),
 }

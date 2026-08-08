@@ -504,39 +504,29 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
     },
   },
 
-  // ---- Milieux (docs/themes/milieux.md, ADR-0014) ----
-  // L'axe terre du cinquième thème : la consommation d'ENAF (l'indicateur à
-  // deux clés, #172) et la trajectoire ZAN (#173), toutes trois de la source
-  // CONSOENAF — puis l'Histoire unique « Se densifier, s'étaler, ou s'en
-  // aller » (#174) avec ses quatre lectures et le fait de première classe des
-  // DEUX HORLOGES (la promesse de transparence : l'indicateur sur l'horloge
-  // annuelle CONSOENAF, délibérément plus frais que la Story épinglée à
-  // l'horloge de la population).
+  // ---- Milieux (docs/themes/milieux.md, ADR-0014 + ADR-0017) ----
+  // L'axe terre du cinquième thème : l'INTENSITÉ ÉTAT (l'état artificialisé par
+  // habitant aux deux millésimes OCS-GE, #239) et la série annuelle CONSOENAF
+  // (le seul signal annuel, conservé) — puis l'Histoire unique « Se densifier,
+  // s'étaler, ou s'en aller » (#174, pivotée #238) avec ses quatre lectures et
+  // le fait de première classe des TROIS HORLOGES (la promesse de transparence
+  // étendue par ADR-0017 : la population, l'état OCS-GE, le flux annuel — la
+  // règle des deux horloges d'ADR-0014, jamais effacée).
   milieux: {
     indicateurs: {
-      conso_enaf_fenetre: {
-        label: 'Consommation d\u2019ENAF 2021-2025',
+      artif_par_habitant: {
+        label: 'Intensité état',
         definition:
-          'La consommation d\u2019espaces naturels, agricoles et forestiers (ENAF) du territoire sur la fenêtre 2021-2025, en hectares — la période qui suit la loi Climat et Résilience, celle où l\u2019objectif de réduction de moitié se joue. Le classement se lit sur la part de la surface du territoire consommée, jamais sur les hectares bruts : une grande commune a plus de terre. Le fichier Cerema distribue ces consommations en mètres carrés alors que son dictionnaire les annonce en hectares : le pipeline convertit explicitement (÷ 10 000) et le teste — la conversion n\u2019est jamais silencieusement trustée (docs/research/zan-rennes.md).',
-        unite: 'ha',
-        source:
-          'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
-        sourceId: 'consoenaf',
+          'La surface artificialisée par habitant, aux deux millésimes OCS-GE de la fenêtre du territoire (M2 puis M3), en mètres carrés par habitant — un ÉTAT, jamais un flux : la part de terre artificialisée rapportée à la population, à chaque date. Le dénominateur est la population du recensement qui BORNE l\u2019état (RP 2017 pour l\u2019état initial, RP 2023 pour l\u2019état final — jamais interpolée) ; le numérateur est l\u2019état artificialisé de l\u2019IGN (OCS GE Artificialisation v2.0, la référence officielle ZAN). Défini pour TOUT territoire — une commune qui se vide comme une commune qui grandit : l\u2019intensité par habitant ne connaît pas le trou des habitants ajoutés. Le classement se lit tel quel : déjà par habitant, aucune normalisation de surface. Les deux lignes (M2, M3) partagent le rang de l\u2019état final.',
+        unite: 'm²/hab',
+        source: 'IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération)',
+        sourceId: 'ocsge_artificialisation_22',
       },
       conso_enaf_annuel: {
         label: 'Consommation d\u2019ENAF \u2014 série annuelle',
         definition:
-          'La même consommation d\u2019espaces naturels, agricoles et forestiers, année par année depuis 2011 — une ligne par année (2011, 2012, \u2026 2024), en hectares, pour suivre l\u2019évolution du rythme de consommation du territoire. La série partage le classement de la fenêtre : chacune de ses lignes porte le rang de la part de surface consommée du territoire.',
+          'La consommation d\u2019espaces naturels, agricoles et forestiers, année par année depuis 2011 — une ligne par année (2011, 2012, \u2026 2024), en hectares, pour suivre l\u2019évolution du rythme de consommation du territoire. Le seul signal ANNUEL du thème : l\u2019état OCS-GE est triennal, cette série garde la fraîcheur d\u2019un flux chaque année. Le fichier Cerema distribue ces consommations en mètres carrés alors que son dictionnaire les annonce en hectares : le pipeline convertit explicitement (÷ 10 000) et le teste — la conversion n\u2019est jamais silencieusement trustée (docs/research/zan-rennes.md). La série partage le classement de la part de surface consommée du territoire.',
         unite: 'ha',
-        source:
-          'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
-        sourceId: 'consoenaf',
-      },
-      trajectoire_zan: {
-        label: 'Trajectoire ZAN',
-        definition:
-          'Le rapport des rythmes de consommation d\u2019espaces naturels, agricoles et forestiers — la fenêtre 2021-2025 contre la décennie de référence 2011-2021, chacune annualisée avant le rapport : des fenêtres de longueurs différentes ne se comparent pas brutes. Un rapport inférieur à 1 veut dire que le territoire ralentit vers l\u2019objectif ZAN — 0,5 est la réduction de moitié de la loi ; supérieur à 1, il accélère. Le ratio se lit tel quel : il n\u2019a pas d\u2019unité.',
-        unite: '×',
         source:
           'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
         sourceId: 'consoenaf',
@@ -548,53 +538,59 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         titre: 'Se densifier, s\u2019\u00e9taler, ou s\u2019en aller',
         statut: 'publiee',
         definition:
-          'La Story du thème Milieux, la seule : elle lit le territoire contre sa terre — la variation de population contre la consommation d\u2019espaces naturels, agricoles et forestiers, sur la même fenêtre. La population vient de la série historique du recensement (la règle de source : jamais les champs embarqués de CONSOENAF) ; la consommation est la somme des annuels CONSOENAF sur la fenêtre dérivée des deux millésimes les plus récents de la série (2017-2023 aujourd\u2019hui — elle glisse quand l\u2019INSEE publie un nouveau recensement). Chaque territoire lit exactement une des quatre lectures, par le signe seul : le seuil est zéro, et un 0 est un vrai 0 — l\u2019objectif ZAN est un objectif zéro et la donnée est un dénombrement complet. Le bloc est fondé sur la note de recherche docs/research/zan-rennes.md, qui documente la thèse du thème : les problèmes environnementaux ne respectent pas les frontières communales.',
+          'La Story du thème Milieux, la seule : elle lit le territoire contre sa terre — la variation de population contre la TRAJECTOIRE PAR HABITANT, le ratio M3/M2 de la surface artificialisée par habitant (les états OCS-GE, pivot #238, ADR-0017). La population vient de la série historique du recensement (la règle de source : jamais les champs embarqués d\u2019un autre jeu), sur la fenêtre dérivée des millésimes RP (2017-2023 aujourd\u2019hui — elle glisse quand l\u2019INSEE publie). L\u2019état vient de l\u2019IGN (OCS GE Artificialisation v2.0), sur la fenêtre des millésimes OCS-GE du territoire (le couple de SON département — le span pour un EPCI transfrontalier, jamais caché). Chaque territoire lit exactement une des quatre lectures, par le signe seul de chaque force (seuil 0, la règle des quadrants d\u2019ADR-0011). Le bloc est fondé sur les notes de recherche docs/research/zan-rennes.md et docs/research/ocs-ge.md.',
         lectures: [
           {
             clef: 'grandir-en-se-densifiant',
             nom: 'Grandir en se densifiant',
             lecture:
-              'La population augmente et la consommation est nulle — la croissance est absorbée par le bâti existant, le territoire se densifie. Le zéro est un vrai zéro : l\u2019objectif ZAN est atteint sur la fenêtre.',
+              'La population augmente et la surface artificialisée par habitant diminue — la population grandit plus vite que la terre artificialisée : le territoire se densifie.',
           },
           {
             clef: 'grandir-en-setalant',
             nom: 'Grandir en s\u2019\u00e9talant',
             lecture:
-              'La population augmente et la consommation suit — la croissance s\u2019\u00e9tale sur de nouveaux espaces naturels, agricoles et forestiers.',
+              'La population augmente et la surface artificialisée par habitant augmente — la terre artificialisée grandit plus vite que la population : la croissance s\u2019étale.',
           },
           {
             clef: 'sen-aller-et-consommer-quand-meme',
             nom: 'S\u2019en aller, et consommer quand m\u00eame',
             lecture:
-              'La population diminue et la consommation continue — le territoire se vide, et consomme quand même.',
+              'La population diminue et la surface artificialisée par habitant augmente — la pression foncière par personne continue de grimper : le territoire se vide, et consomme quand même.',
           },
           {
             clef: 'les-departs-laissent-la-place-a-la-renaturation',
             nom: 'Les d\u00e9parts laissent la place \u00e0 la renaturation',
             lecture:
-              'La population diminue et la consommation s\u2019arr\u00eate. La renaturation est potentielle, jamais mesurée : la donnée montre l\u2019absence de nouvelle consommation, pas un retour de la nature.',
+              'La population diminue et la surface artificialisée par habitant diminue — la terre artificialisée a réellement SHRINKÉ (l\u2019état final est inférieur à l\u2019état initial) : la désartificialisation est mesurée, jamais une hypothèse.',
           },
         ],
       },
     ],
     deuxHorloges: {
       consommation:
-        'Le thème porte deux horloges, et le dit (la promesse de transparence d\u2019ADR-0014) : l\u2019indicateur « Consommation d\u2019ENAF » tourne sur l\u2019horloge annuelle CONSOENAF et est délibérément plus frais que la Story, épinglée à l\u2019horloge de la population.',
+        'Le thème porte TROIS horloges, et le dit (la promesse de transparence étendue par ADR-0017, la règle des deux horloges d\u2019ADR-0014 jamais effacée) : la population (la fenêtre de la Story), l\u2019état OCS-GE (la fenêtre des états du territoire) et le flux annuel CONSOENAF (la série, délibérément plus fraîche).',
       entrees: [
-        {
-          donnee: 'La consommation d\u2019ENAF — l\u2019indicateur',
-          frequence: 'annuelle — le jeu CONSOENAF est mis à jour chaque année',
-          reference: 'CONSOENAF 2011-2025 (COG 2025)',
-        },
         {
           donnee: 'La population — la fenêtre de la Story',
           frequence:
             'au rythme des recensements — les millésimes de la série historique',
           reference: 'RP 2017 et 2023 (la fenêtre 2017-2023, dérivée, jamais codée en dur)',
         },
+        {
+          donnee: 'L\u2019état artificialisé — les millésimes OCS-GE',
+          frequence: 'triennal — au rythme des prises de vue aériennes de l\u2019IGN',
+          reference:
+            'le couple M2\u2192M3 du département (22 : 2021\u21922025 \u00b7 29 : 2021\u21922024 \u00b7 35 : 2020\u21922023 \u00b7 56 : 2022\u21922024 — le span pour un EPCI transfrontalier)',
+        },
+        {
+          donnee: 'La consommation d\u2019ENAF — la série annuelle',
+          frequence: 'annuelle — le jeu CONSOENAF est mis à jour chaque année',
+          reference: 'CONSOENAF 2011-2025 (COG 2025)',
+        },
       ],
       declencheur:
-        'Quand l\u2019INSEE publie un nouveau recensement dans la série historique, la fenêtre de la Story glisse — elle dérive des deux millésimes les plus récents — et la consommation se re-somme sur la fenêtre dérivée. L\u2019indicateur, lui, suit simplement l\u2019horloge annuelle CONSOENAF.',
+        'Quand l\u2019INSEE publie un nouveau recensement dans la série historique, la fenêtre de la Story glisse ; quand l\u2019IGN publie un nouveau millésime OCS-GE, la fenêtre des états glisse ; la série annuelle, elle, suit simplement l\u2019horloge CONSOENAF. Chaque horloge est nommée sur la fiche, jamais les trois confondues.',
     },
   },
 }

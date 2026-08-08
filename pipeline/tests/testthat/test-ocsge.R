@@ -317,6 +317,78 @@ test_that("construire_donnees_ocsge : les quatre départements du manifeste, cha
   expect_identical(relue, agg)
 })
 
+test_that("construire_donnees_ocsge : une commune LIMITROPHE garde SA fenêtre — le sliver du département voisin ne crée pas de deuxième ligne (bug réel #243)", {
+  cache <- tempfile("cache-ocsge-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+  sortie <- tempfile(fileext = ".rds")
+  on.exit(unlink(sortie))
+
+  # Deux archives actives : 22 (2021-2025) et 35 (2020-2023). La commune 22001
+  # (quartier 0..100 × 0..100) est dans le 22 ; 35001 (100..200 × 0..100) dans
+  # le 35. Le fichier 35 contient AUSSI des polygones qui tombent dans le
+  # quartier de 22001 (la frontière communale n'est pas la frontière de découpe
+  # du fichier — le sliver de livraison, découvert sur le réel par #243).
+  # Sans le découpage par département, 22001 recevrait DEUX couples de
+  # millésimes (le sien + celui du 35) — deux lignes qui cassent le contrat
+  # une-ligne-par-commune. Les archives 29/56 existent (le builder itère les
+  # QUATRE ids) avec leur polygone loin de la grille (aucune commune ne le
+  # reçoit).
+  for (dep in c("22", "35")) {
+    ligne <- MANIFEST_MILIEUX[
+      MANIFEST_MILIEUX$id == paste0("ocsge_artificialisation_", dep), ]
+    writeBin(mini_7z(), file.path(cache, ligne$fichier))
+  }
+  extrait <- file.path(cache, "extracted", "ocsge")
+  if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+  # le fichier 22 : P1 seul (entier dans 22001), fenêtre 2021-2025
+  fixture_gpkg_ocsge(
+    file.path(extrait, sub("[.]7z$", ".gpkg",
+      MANIFEST_MILIEUX$fichier[MANIFEST_MILIEUX$id == "ocsge_artificialisation_22"])),
+    2021, 2025, dx = 0, dy = 0, complet = FALSE
+  )
+  # le fichier 35 : COMPLET — P1 (20,20) et P4 (30,70) tombent dans le quartier
+  # de 22001 (le sliver), P2 (80,20)-(120,60) chevauche la frontière x=100, P3
+  # (150,50) est entier dans 35001. Fenêtre 2020-2023.
+  fixture_gpkg_ocsge(
+    file.path(extrait, sub("[.]7z$", ".gpkg",
+      MANIFEST_MILIEUX$fichier[MANIFEST_MILIEUX$id == "ocsge_artificialisation_35"])),
+    2020, 2023, dx = 0, dy = 0, complet = TRUE
+  )
+  # les archives 29/56 : présentes, polygones loin de la grille (500, 500)
+  for (dep in c("29", "56")) {
+    ligne <- MANIFEST_MILIEUX[
+      MANIFEST_MILIEUX$id == paste0("ocsge_artificialisation_", dep), ]
+    writeBin(mini_7z(), file.path(cache, ligne$fichier))
+    fixture_gpkg_ocsge(
+      file.path(extrait, sub("[.]7z$", ".gpkg", ligne$fichier)),
+      2021, 2024, dx = 500, dy = 500, complet = FALSE
+    )
+  }
+
+  communes <- fixture_communes_ocsge(codes = c("22001", "35001"))
+  agg <- construire_donnees_ocsge(cache = cache, communes = communes,
+                                  sortie = sortie)
+
+  # UNE ligne pour 22001, avec SA fenêtre (22 : 2021-2025) — les slivers du
+  # fichier 35 tombés dans son quartier sont ÉCARTÉS (la fenêtre par
+  # département de la spec) : la mesure est celle du fichier 22, P1 seul
+  expect_equal(nrow(agg[agg$code == "22001", ]), 1L)
+  a <- agg[agg$code == "22001", ]
+  expect_equal(a$millesime_debut, 2021)
+  expect_equal(a$millesime_fin, 2025)
+  expect_equal(a$artif_m3, 400)  # P1 du 22 — jamais P1/P4 du 35 (600 + 400)
+  # 35001 : UNE ligne, SA fenêtre (35 : 2020-2023) — la moitié de P2 (800/0/-800)
+  # + P3 entier (0/400/+400), jamais de ligne du 22
+  expect_equal(nrow(agg[agg$code == "35001", ]), 1L)
+  b <- agg[agg$code == "35001", ]
+  expect_equal(b$millesime_debut, 2020)
+  expect_equal(b$millesime_fin, 2023)
+  expect_equal(b$artif_m2, 800)
+  expect_equal(b$artif_m3, 400)
+  expect_equal(b$flux_net, -400)
+})
+
 test_that("construire_donnees_ocsge : une archive absente du cache échoue bruyamment (jamais un silence)", {
   cache <- tempfile("cache-ocsge-")
   dir.create(cache)

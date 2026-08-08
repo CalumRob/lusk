@@ -229,7 +229,9 @@ describe('payload contract — the committed payload parses and renders', () => 
     // (#139/#140/#141) + les 6 sources programmes du run 2026-08-07
     // (#175/#176/#178 : acv, pvd, crte, territoires_industrie, ort,
     // subventions_scdl) + la source consoenaf du run milieux 2026-08-07 (#177)
-    expect(payload.vintages).toHaveLength(49)
+    // + les QUATRE sources OCS-GE du run milieux 2026-08-08 (le pivot #225,
+    // #234 : ocsge_artificialisation_22/29/35/56)
+    expect(payload.vintages).toHaveLength(53)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:
@@ -238,6 +240,13 @@ describe('payload contract — the committed payload parses and renders', () => 
       licence: 'lov2',
       date_reference: '2025-01-01',
       date_publication: '2026-07-24',
+    })
+    const ocsge22 = payload.vintages?.find((v) => v.id === 'ocsge_artificialisation_22')
+    expect(ocsge22).toMatchObject({
+      version: '2025',
+      licence: 'lov2',
+      date_reference: '2025-01-01',
+      date_publication: '2026-07-03',
     })
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
