@@ -2260,3 +2260,198 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
     apercu = APERCU_MOBILITE
   ), "[0, 1]")
 })
+
+# =============================================================================
+# La figure « L'offre cyclable » (issue #231, la binaison provisoire d'ADR-0016)
+# =============================================================================
+# Les tests unitaires du builder calculer_offre_cyclable_communes : la table
+# communale de la figure (protégé/partagé en km et km/1 000 hab + le total
+# cyclable — le numérateur du ratio « X % de l'infrastructure routière »). Le
+# même jeu Geovelo que le mode `b` de `reseaux`, la même attribution par le
+# côté porteur (ADR-0016), mais la longueur en GÉOMÉTRIE UNIQUE (chaque segment
+# compté UNE fois — le contre-pied assumé du comptage par direction du mode
+# `b` : le ratio compare au réseau `c`, lui-même en géométrie unique, les deux
+# conventions doivent coïncider pour que le « X % » soit honnête, ADR-0016).
+#
+# La binaison provisoire est VERROUILLÉE sur la forme RÉELLE du jeu : une
+# ligne par valeur de l'enum ame_d/ame_g (le schéma national v0.3.5, vérifié
+# sur le fichier réel — 27 797 lignes bretonnes, 2026-08-08), chaque valeur
+# dans SA famille (protégé = pistes, voies vertes, CVCB, mixte piéton-vélo ;
+# partagé = bandes, doubles sens, vélos rues, couloirs bus+vélo, AUTRE,
+# accotements + les auxiliaires GOULOTTE/RAMPE — la décision provisoire).
+
+# fixture_offre_cyclable_binning ------------------------------------------------
+# Un segment de 1 000 m par valeur RÉELLE de l'enum, attribué à la commune
+# 22001 (le motif 3 communes du contrat), sens NA (la géométrie unique ne
+# multiplie jamais). 5 protégés + 9 partagés = 14 km attendus sur 22001.
+fixture_offre_cyclable_binning <- function() {
+  valeurs <- c(
+    # protégé
+    "PISTE CYCLABLE", "DOUBLE SENS CYCLABLE PISTE", "VOIE VERTE",
+    "CHAUSSEE A VOIE CENTRALE BANALISEE",
+    "AMENAGEMENT MIXTE PIETON VELO HORS VOIE VERTE",
+    # partagé
+    "BANDE CYCLABLE", "DOUBLE SENS CYCLABLE BANDE",
+    "DOUBLE SENS CYCLABLE NON MATERIALISE", "VELO RUE",
+    "COULOIR BUS+VELO", "AUTRE", "ACCOTEMENT REVETU HORS CVCB",
+    "GOULOTTE", "RAMPE"
+  )
+  n <- length(valeurs)
+  geoms <- lapply(seq_len(n), function(i) {
+    x0 <- (i - 1) %% 2 * 1000
+    y0 <- floor((i - 1) / 2) * 100 + 100
+    sf::st_linestring(rbind(c(x0, y0), c(x0 + 1000, y0)))
+  })
+  sf::st_sf(
+    id_local = paste0("B", seq_len(n)),
+    code_com_d = rep("22001", n), code_com_g = rep("22001", n),
+    ame_d = valeurs, ame_g = rep("AUCUN", n),
+    sens_d = rep(NA_character_, n), sens_g = rep(NA_character_, n),
+    geometry = sf::st_sfc(geoms),
+    crs = 2154
+  )
+}
+
+# fixture_population_mini -------------------------------------------------------
+# La population communale de l'univers : 22001 (1 000 hab) + DEUX communes SANS
+# aménagement (22002, 29001 — le zéro porté, jamais une ligne manquante).
+fixture_population_mini <- function() {
+  tibble::tibble(
+    commune = c("22001", "22002", "29001"),
+    population = c(1000, 2000, 500)
+  )
+}
+
+test_that("calculer_offre_cyclable_communes : la binaison provisoire verrouillée sur la forme réelle du jeu", {
+  res <- calculer_offre_cyclable_communes(fixture_offre_cyclable_binning(),
+                                          fixture_population_mini())
+
+  # une ligne par commune de l'univers (les 3), la forme du contrat
+  expect_equal(nrow(res), 3)
+  expect_named(res, c("commune", "population", "protege_longueur",
+                      "partage_longueur", "total_longueur",
+                      "protege_km_1000", "partage_km_1000"))
+  lire <- function(commune) res[res$commune == commune, ]
+
+  # la binaison verrouillée : 5 valeurs protégées × 1 km = 5 km, 9 valeurs
+  # partagées × 1 km = 9 km — le total cyclable = protégé + partagé (le
+  # numérateur du ratio, exactement une somme)
+  expect_equal(lire("22001")$protege_longueur, 5.0)
+  expect_equal(lire("22001")$partage_longueur, 9.0)
+  expect_equal(lire("22001")$total_longueur, 14.0)
+  # km / 1 000 hab : 22001 population 1 000 → 5 et 9
+  expect_equal(lire("22001")$protege_km_1000, 5.0)
+  expect_equal(lire("22001")$partage_km_1000, 9.0)
+  # la commune SANS aménagement porte 0 (un fait, jamais une ligne manquante,
+  # jamais supprimée)
+  expect_equal(lire("22002")$protege_longueur, 0)
+  expect_equal(lire("22002")$partage_longueur, 0)
+  expect_equal(lire("22002")$total_longueur, 0)
+  expect_equal(lire("22002")$protege_km_1000, 0)
+  expect_equal(lire("22002")$partage_km_1000, 0)
+  expect_equal(lire("29001")$total_longueur, 0)
+  # déterministe : trié par commune
+  expect_true(!is.unsorted(res$commune))
+})
+
+test_that("calculer_offre_cyclable_communes : la longueur en GÉOMÉTRIE UNIQUE (une piste bidirectionnelle compte 1×)", {
+  # une piste bidirectionnelle de 2 000 m — le mode `b` de `reseaux` la compte
+  # 2× (4 km, ADR-0016, verrouillé par le test de calculer_reseaux_velo_
+  # communes) ; la figure « L'offre cyclable » la compte 1× (2 km) : le
+  # numérateur du ratio compare au réseau `c` (le pbf mesure chaque way une
+  # fois — géométrie unique), les conventions doivent coïncider
+  bidir <- sf::st_sf(
+    id_local = "B1", code_com_d = "22001", code_com_g = "22001",
+    ame_d = "PISTE CYCLABLE", ame_g = "AUCUN",
+    sens_d = "BIDIRECTIONNEL", sens_g = "BIDIRECTIONNEL",
+    geometry = sf::st_sfc(sf::st_linestring(rbind(c(0, 0), c(2000, 0)))),
+    crs = 2154
+  )
+  res <- calculer_offre_cyclable_communes(bidir, fixture_population_mini())
+  expect_equal(res$protege_longueur[res$commune == "22001"], 2.0)
+  expect_equal(res$total_longueur[res$commune == "22001"], 2.0)
+  expect_equal(res$protege_km_1000[res$commune == "22001"], 2.0)
+})
+
+test_that("calculer_offre_cyclable_communes : l'attribution par le CÔTÉ PORTEUR (ADR-0016), le d départage, la famille du côté gagnant", {
+  pop <- tibble::tibble(commune = c("22001", "22002"),
+                        population = c(1000, 2000))
+  segment <- function(code_d, code_g, ame_d, ame_g) {
+    sf::st_sf(
+      id_local = "B", code_com_d = code_d, code_com_g = code_g,
+      ame_d = ame_d, ame_g = ame_g,
+      sens_d = NA_character_, sens_g = NA_character_,
+      geometry = sf::st_sfc(sf::st_linestring(rbind(c(2000, 500), c(2000, 1500)))),
+      crs = 2154
+    )
+  }
+  lire <- function(res, commune) res[res$commune == commune, ]
+
+  # le côté d porte seul → la commune du d, la famille du d (protégé)
+  res <- calculer_offre_cyclable_communes(
+    segment("22001", "22002", "PISTE CYCLABLE", "AUCUN"), pop)
+  expect_equal(lire(res, "22001")$protege_longueur, 1.0)
+  expect_equal(lire(res, "22001")$total_longueur, 1.0)
+  # le côté g porte seul → la commune du g, la famille du g (partagé)
+  res <- calculer_offre_cyclable_communes(
+    segment("22001", "22002", "AUCUN", "BANDE CYCLABLE"), pop)
+  expect_equal(lire(res, "22002")$partage_longueur, 1.0)
+  expect_equal(lire(res, "22002")$total_longueur, 1.0)
+  # les DEUX portent → le d départage, la famille du côté GAGNANT (le d, bande)
+  res <- calculer_offre_cyclable_communes(
+    segment("22001", "22002", "BANDE CYCLABLE", "PISTE CYCLABLE"), pop)
+  expect_equal(lire(res, "22001")$partage_longueur, 1.0)
+  expect_equal(lire(res, "22001")$protege_longueur, 0)
+  expect_equal(lire(res, "22002")$total_longueur, 0)
+  # la longueur totale de la région = la somme des parties (zéro double-compte)
+  expect_equal(sum(res$total_longueur), 1.0)
+})
+
+test_that("calculer_offre_cyclable_communes : la projection EPSG:2154 précède toute mesure (l'entrée WGS84 mesure juste)", {
+  # les MÊMES segments en WGS84 (le crs du lecteur — le normaliseur livre le sf
+  # en EPSG:4326) : le builder projette AVANT st_length — les longueurs restent
+  # en mètres
+  amen <- sf::st_transform(fixture_offre_cyclable_binning(), 4326)
+  res <- calculer_offre_cyclable_communes(amen, fixture_population_mini())
+  lire <- function(commune) res[res$commune == commune, ]
+  expect_equal(round(lire("22001")$protege_longueur, 3), 5.0)
+  expect_equal(round(lire("22001")$partage_longueur, 3), 9.0)
+  expect_equal(round(lire("22001")$total_longueur, 3), 14.0)
+})
+
+test_that("calculer_offre_cyclable_communes : un input corrompu s'arrête bruyamment", {
+  # une colonne requise manquante nomme la colonne fautive
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$ame_g <- NULL
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "ame_g")
+  # une valeur d'enum HORS binaison est une corruption (le contrat du jeu a
+  # changé — jamais une ligne silencieusement perdue)
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$ame_d[1] <- "NOUVEAU TYPE DU JEU"
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "binaison")
+  # un segment sans aménagement des DEUX côtés (AUCUN/AUCUN) est une corruption
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$ame_d[1] <- "AUCUN"
+  defectueux$ame_g[1] <- "AUCUN"
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "AUCUN")
+  # un segment attribué à une commune HORS référentiel (population absente)
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$code_com_d[1] <- "99999"
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "référentiel")
+  # un fichier vide est une corruption
+  vide <- fixture_offre_cyclable_binning()[0, ]
+  expect_error(calculer_offre_cyclable_communes(vide, fixture_population_mini()),
+               "aucune ligne")
+  # une table de population sans la colonne population est refusée
+  expect_error(calculer_offre_cyclable_communes(
+    fixture_offre_cyclable_binning(),
+    tibble::tibble(commune = "22001")), "population")
+})
