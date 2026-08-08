@@ -1,25 +1,28 @@
 /**
- * The Milieux Story copy (issue #174, ADR-0014) — « Se densifier, s'étaler,
- * ou s'en aller », the SINGLE Story of the fifth theme: a territory's growth
- * against its land, read as exactly ONE of four readings by the SIGNS of the
- * two forces (seuil 0 — ZAN is a zero-objective and the data is a complete
- * census: a 0 is a real 0):
+ * The Milieux Story copy (issue #174, ADR-0014, re-keyed by spec #225) —
+ * « Se densifier, s'étaler, ou s'en aller », the SINGLE Story of the fifth
+ * theme: a territory's growth against its land, read as exactly ONE of four
+ * readings by the SIGNS of the two forces (seuil 0 — ZAN is a zero-objective
+ * and the data is a complete census: a 0 is a real 0):
  *
- * - grandir-en-se-densifiant — population up, zero new consumption
- * - grandir-en-setalant — population up, consumption > 0
- * - sen-aller-et-consommer-quand-meme — population down, consumption > 0
+ * - grandir-en-se-densifiant — population up, per-capita state falling
+ * - grandir-en-setalant — population up, per-capita state rising
+ * - sen-aller-et-consommer-quand-meme — population down, per-capita state
+ *   rising
  * - les-departs-laissent-la-place-a-la-renaturation — population down,
- *   zero new consumption. Renaturation is POTENTIAL, never measured: the
- *   flux counts consumption, not renaturation — the prose says it.
+ *   per-capita state falling (requires land itself to shrink — MEASURED
+ *   désartificialisation, never an aspiration)
  *
- * The « comment lire » carries the precision riders: the two forces and
- * their sources (the population from the Démographie série historique, never
- * CONSOENAF's embedded fields), the two-clocks gap (the « Consommation
- * d'ENAF » indicator runs on the annual CONSOENAF clock and is deliberately
- * fresher than this reading, pinned to the population clock whose window
- * derives from the RP millésimes — 2017-2023 today, sliding when RP
- * updates), and the intensity (m² of ENAF per added inhabitant, published
- * only when Δpopulation is meaningfully positive). Pure, isolated,
+ * The land force is the OCS-GE per-capita STATE trajectory
+ * (`trajectoire_artif_par_habitant`, the M3/M2 per-capita ratio) — not the
+ * CONSOENAF flow — so renaturation is measured (artif_m3 < artif_m2 is real
+ * désartificialisation) and the per-capita figure exists for every territory.
+ * The « comment lire » quotes both forces on their own clocks (the population
+ * window `periode_pop` and the OCS-GE state window `periode_artif`), states
+ * the bracketing population rule once (the RP millésimes of `periode_pop`,
+ * never hard-coded), and names the per-département millésimes when the
+ * aggregate mixes them (cross-département EPCIs, the région). The intensity
+ * is the figure's job now (#65) — it stays OUT of the prose. Pure, isolated,
  * deterministic; the copy is keyed by the pipeline's classification.
  */
 
@@ -36,67 +39,98 @@ export interface StoryMilieux {
   titre: string
   uneLigne: string
   commentLire: string
-  /** L'intensité (m² d'ENAF par habitant ajouté) — null sous le seuil (jamais inventée). */
-  intensite: string | null
 }
 
 const TITRE = 'Se densifier, s’étaler, ou s’en aller'
 
 const UNE_LIGNE: Record<LectureMilieux, string> = {
-  'grandir-en-se-densifiant': 'Le territoire grandit sans consommer de nouveaux espaces.',
+  'grandir-en-se-densifiant': 'La population grandit plus vite que la terre artificialisée.',
   'grandir-en-setalant': 'Le territoire grandit en s’étalant.',
   'sen-aller-et-consommer-quand-meme': 'Le territoire se vide — et consomme quand même.',
   'les-departs-laissent-la-place-a-la-renaturation': 'Les départs laissent la place à la renaturation.',
 }
 
-/** Le rider de lecture — ce que le signe dit, en plus du socle commun. */
-const RIDER: Record<LectureMilieux, string> = {
-  'grandir-en-se-densifiant':
-    'La population augmente sans nouvelle consommation : le territoire se densifie, la croissance est absorbée par le bâti existant — le zéro est un vrai zéro, l’objectif ZAN atteint sur la fenêtre.',
-  'grandir-en-setalant':
-    'La population augmente et la consommation suit : la croissance s’étale sur de nouveaux espaces naturels, agricoles et forestiers.',
-  'sen-aller-et-consommer-quand-meme':
-    'La population diminue et la consommation continue : le territoire se vide, et consomme quand même.',
-  'les-departs-laissent-la-place-a-la-renaturation':
-    'La population diminue et la consommation s’arrête. La renaturation est potentielle, jamais mesurée : la donnée montre l’absence de nouvelle consommation, pas un retour de la nature.',
+/**
+ * Le rider de lecture — ce que le signe dit, en plus du socle commun. La
+ * trajectoire par habitant (le ratio M3/M2 publié) y est citée : c'est la
+ * seconde force de la lecture, mesurée. La renaturation, elle, est une phrase
+ * honnête sur ce que l'état est — un état final inférieur à l'état initial,
+ * une désartificialisation MESURÉE (plus aucun disclaimer « potentielle,
+ * jamais mesurée »).
+ */
+const RIDER: Record<LectureMilieux, (ratio: string) => string> = {
+  'grandir-en-se-densifiant': (ratio) =>
+    `La surface artificialisée par habitant diminue (trajectoire par habitant de ${ratio}) : ` +
+    `la population croît plus vite que la terre — le territoire se densifie.`,
+  'grandir-en-setalant': (ratio) =>
+    `La surface artificialisée par habitant augmente (trajectoire par habitant de ${ratio}) : ` +
+    `la population croît moins vite que la terre — le territoire s’étale.`,
+  'sen-aller-et-consommer-quand-meme': (ratio) =>
+    `La population diminue et la surface artificialisée par habitant continue d’augmenter ` +
+    `(trajectoire par habitant de ${ratio}) : le territoire se vide, et consomme quand même.`,
+  'les-departs-laissent-la-place-a-la-renaturation': (ratio) =>
+    `La population diminue et la surface artificialisée par habitant recule ` +
+    `(trajectoire par habitant de ${ratio}) : l’état final est inférieur à l’état initial — ` +
+    `la désartificialisation est mesurée.`,
 }
 
 /**
  * The Story of a Milieux territoire — the copy keyed by the pipeline's
  * classification. Null for an unknown/absent classification — the block
- * never invents a reading.
+ * never invents a reading. The two forces are quoted on their own clocks:
+ * the population window (`periodePop`) and the OCS-GE state window
+ * (`periodeArtif` — a plain M2-M3 pair for a single-département territory, a
+ * per-département span for the cross-département aggregates).
  */
 export function storyMilieux(
   classification: string | null,
   deltaPopulation: number,
-  consoFenetre: number,
-  intensiteM2ParHabitant: number | null,
-  periode: string,
+  artifM2ParHabitant: number,
+  artifM3ParHabitant: number,
+  trajectoire: number,
+  periodePop: string,
+  periodeArtif: string,
 ): StoryMilieux | null {
   if (classification === null || !(classification in UNE_LIGNE)) return null
   const lecture = classification as LectureMilieux
 
-  const population = `${formaterNombreFR(deltaPopulation, 0)} habitant${Math.abs(deltaPopulation) > 1 ? 's' : ''}`
-  const conso = `${formaterNombreFR(consoFenetre, 2)} ha`
-  const intensite =
-    intensiteM2ParHabitant === null
-      ? null
-      : `${formaterNombreFR(Math.round(intensiteM2ParHabitant), 0)} m² d’ENAF par habitant ajouté`
+  const population =
+    `${formaterNombreFR(deltaPopulation, 0)} habitant${Math.abs(deltaPopulation) > 1 ? 's' : ''}`
+  const etatInitial = formaterNombreFR(Math.round(artifM2ParHabitant), 0)
+  const etatFinal = formaterNombreFR(Math.round(artifM3ParHabitant), 0)
+  const ratio = formaterNombreFR(trajectoire, 2)
+
+  // la fenêtre des états : une paire « M2-M3 » (mono-département) ou un span
+  // avec les dates par département (agrégats multi-dépt) — le rider de
+  // mélange ne s'ajoute que dans le second cas, jamais une fenêtre unique
+  // inventée pour un agrégat dont les millésimes diffèrent
+  const etats = /^(\d{4})-(\d{4})$/.exec(periodeArtif)
+  // le bracket RP de la fenêtre de population — les deux millésimes de la
+  // règle de bracketing, jamais codés en dur (ils glissent avec la série)
+  const rp = /^(\d{4})-(\d{4})$/.exec(periodePop)
+
+  const socleCommun = etats
+    ? `Entre ${periodePop}, la population a évolué de ${population} ; entre ` +
+      `${etats[1]} et ${etats[2]} (millésimes OCS-GE), la surface artificialisée ` +
+      `par habitant est passée de ${etatInitial} à ${etatFinal} m².`
+    : `Entre ${periodePop}, la population a évolué de ${population} ; sur la fenêtre ` +
+      `des états OCS-GE, la surface artificialisée par habitant est passée de ` +
+      `${etatInitial} à ${etatFinal} m².`
+
+  const bracketing = rp
+    ? `La population est au recensement le plus proche de chaque état — ` +
+      `${rp[1]} pour l’état initial, ${rp[2]} pour l’état final.`
+    : `La population est au recensement le plus proche de chaque état.`
+
+  const melange = etats
+    ? ''
+    : ` Les millésimes des états OCS-GE diffèrent entre les départements de ce ` +
+      `territoire : ${periodeArtif}.`
 
   return {
     clef: lecture,
     titre: TITRE,
     uneLigne: UNE_LIGNE[lecture],
-    commentLire:
-      `Entre ${periode}, la lecture croise deux forces : ${population} et ` +
-      `${conso} d’espaces naturels, agricoles et forestiers consommés. ` +
-      `La population vient de la série historique du recensement, jamais des ` +
-      `champs embarqués de CONSOENAF ; la consommation est la somme des annuels ` +
-      `CONSOENAF sur la même fenêtre. ${RIDER[lecture]} ` +
-      `La lecture est épinglée à l’horloge de la population — sa fenêtre dérive ` +
-      `des millésimes du recensement et glisse quand l’INSEE publie ; ` +
-      `l’indicateur « Consommation d’ENAF », lui, tourne sur l’horloge annuelle ` +
-      `CONSOENAF et est délibérément plus frais.`,
-    intensite,
+    commentLire: `${socleCommun} ${RIDER[lecture](ratio)} ${bracketing}${melange}`,
   }
 }

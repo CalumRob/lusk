@@ -14,12 +14,13 @@ import {
 import type { Payload, Theme } from '../payload/types'
 
 /**
- * OngletTheme — the Milieux block (issue #172 → #174, ADR-0014): the
- * overline → the Story angle « Se densifier, s'étaler, ou s'en aller » (the
- * one-liner keyed by the reading, the precision riders, l'intensité quand
- * elle est publiée, la source exhaustive série historique + CONSOENAF) → the
- * three indicator figures (la fenêtre, la série annuelle, la trajectoire
- * ZAN). Consumes the payload selectors — never raw JSON.
+ * OngletTheme — the Milieux block (issue #172 → #174, ADR-0014, re-keyed by
+ * spec #225): the overline → the Story angle « Se densifier, s'étaler, ou
+ * s'en aller » (the one-liner keyed by the reading, the precision riders —
+ * les deux horloges, la règle de bracketing, le rider multi-dépt —, la source
+ * exhaustive série historique + CONSOENAF) → the indicator figures. L'intensité
+ * est la figure, pas le prose (#65). Consumes the payload selectors — never
+ * raw JSON.
  */
 
 const payloadMilieux: Payload = {
@@ -91,34 +92,36 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
     )
   })
 
-  it('renders the precision riders in « comment lire » (les deux horloges, la règle de source)', async () => {
+  it('renders the precision riders in « comment lire » (les deux horloges, la règle de bracketing)', async () => {
     const wrapper = await monter('22001')
 
     const commentLire = wrapper.find('.angle-story-comment-lire').text()
-    expect(commentLire).toContain('2017-2023')
-    expect(commentLire).toContain('série historique du recensement')
-    expect(commentLire).toContain('horloge')
-    expect(commentLire).toContain('CONSOENAF')
+    // les deux forces sur leurs propres horloges — jamais fusionnées
+    expect(commentLire).toContain('Entre 2017-2023')
+    expect(commentLire).toContain('entre 2021 et 2025')
+    expect(commentLire).toContain('millésimes OCS-GE')
+    // la règle de bracketing, énoncée une fois (le recensement le plus proche)
+    expect(commentLire).toContain('2017 pour l’état initial')
+    expect(commentLire).toContain('2023 pour l’état final')
   })
 
-  it('renders the intensity when published — 2 550 m² d’ENAF par habitant ajouté', async () => {
+  it('renders NO intensity line in the prose — la figure porte l’intensité, pas le prose (#65)', async () => {
     const wrapper = await monter('22001') // Δpop +200, état final 2550 m²/hab
 
-    expect(wrapper.find('.angle-story-precision').text()).toContain('2 550')
-    expect(wrapper.find('.angle-story-precision').text()).toContain(
-      'm² d’ENAF par habitant ajouté',
-    )
+    expect(wrapper.find('.angle-story-precision').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('m² d’ENAF par habitant ajouté')
+    // l'état par habitant, lui, vit dans le « comment lire » — Y à Z m²
+    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('2 250 à 2 550 m²')
   })
 
-  it('renders the per-capita state for a shrinking territory — définie pour tout territoire (spec #225)', async () => {
+  it('quotes the per-capita state for a shrinking territory — définie pour tout territoire (spec #225, US 7)', async () => {
     // L'ancien « intensité supprimée » (m² d'ENAF par habitant AJOUTÉ, null
     // sous Δpopulation non positif) meurt avec le re-key : l'état par habitant
-    // (m²/hab) existe pour CHAQUE territoire — la leçon de la spec #225.
-    // TODO #240 : la ligne de précision du prose sera réécrite avec la copie —
-    // ici on vérifie juste que l'état final (530 m²/hab) atteint la Story.
+    // (m²/hab) existe pour CHAQUE territoire et atteint le « comment lire »
+    // (Y à Z m²) — la leçon de la spec #225.
     const wrapper = await monter('29001') // Δpop −150, état final 530 m²/hab
 
-    expect(wrapper.find('.angle-story-precision').text()).toContain('530')
+    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('500 à 530 m²')
   })
 
   it('renders the exhaustive source line — série historique + CONSOENAF, from the vintages table', async () => {
@@ -137,7 +140,7 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
     )
   })
 
-  it('renders the renaturation reading with its rider — potentielle, jamais mesurée', async () => {
+  it('renders the renaturation reading stating the measured decrease plainly (spec #225)', async () => {
     const histoires = histoiresMilieuxFixture.map((h) =>
       h.territoire === '29002'
         ? {
@@ -157,7 +160,11 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
       'Les départs laissent la place à la renaturation.',
     )
     const commentLire = wrapper.find('.angle-story-comment-lire').text()
-    expect(commentLire).toMatch(/potentielle, jamais mesurée/)
+    expect(commentLire).toContain('400 à 380 m²')
+    expect(commentLire).toContain('l’état final est inférieur à l’état initial')
+    expect(commentLire).toContain('la désartificialisation est mesurée')
+    // le disclaimer de l'ancienne copie est mort avec les flux
+    expect(commentLire).not.toMatch(/potentielle, jamais mesurée/)
   })
 
   it('renders no invented story for a territory with a null classification', async () => {
