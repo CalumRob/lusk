@@ -102,7 +102,7 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
   })
 
   it('renders the intensity when published — 2 550 m² d’ENAF par habitant ajouté', async () => {
-    const wrapper = await monter('22001') // Δpop +200, 51 ha → 2550 m²/hab
+    const wrapper = await monter('22001') // Δpop +200, état final 2550 m²/hab
 
     expect(wrapper.find('.angle-story-precision').text()).toContain('2 550')
     expect(wrapper.find('.angle-story-precision').text()).toContain(
@@ -110,10 +110,15 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
     )
   })
 
-  it('does NOT render the intensity when suppressed (Δpopulation non positif)', async () => {
-    const wrapper = await monter('29001') // Δpop −150 → intensité null
+  it('renders the per-capita state for a shrinking territory — définie pour tout territoire (spec #225)', async () => {
+    // L'ancien « intensité supprimée » (m² d'ENAF par habitant AJOUTÉ, null
+    // sous Δpopulation non positif) meurt avec le re-key : l'état par habitant
+    // (m²/hab) existe pour CHAQUE territoire — la leçon de la spec #225.
+    // TODO #240 : la ligne de précision du prose sera réécrite avec la copie —
+    // ici on vérifie juste que l'état final (530 m²/hab) atteint la Story.
+    const wrapper = await monter('29001') // Δpop −150, état final 530 m²/hab
 
-    expect(wrapper.find('.angle-story-precision').exists()).toBe(false)
+    expect(wrapper.find('.angle-story-precision').text()).toContain('530')
   })
 
   it('renders the exhaustive source line — série historique + CONSOENAF, from the vintages table', async () => {
@@ -138,9 +143,11 @@ describe('OngletTheme — the Milieux block (la Story + les trois indicateurs)',
         ? {
             ...h,
             delta_population: -10,
-            conso_fenetre: 0,
+            // la renaturation MESURÉE : l'état final par habitant chute
+            artif_m3: 99,
+            artif_m3_par_habitant: 380,
+            trajectoire_artif_par_habitant: 0.95,
             classification: 'les-departs-laissent-la-place-a-la-renaturation',
-            intensite_m2_par_habitant: null,
           }
         : h,
     )

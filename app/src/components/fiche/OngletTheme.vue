@@ -170,12 +170,17 @@ const storyMilieuxAngle = computed(() => {
   if (props.theme !== 'milieux') return null
   const histoire = histoireMilieux.value
   if (histoire?.theme !== 'milieux') return null
+  // Mécanique minimale du re-key spec #225 (le type ne porte plus les champs
+  // flux) : la copie elle-même et la signature de storyMilieux sont réécrites
+  // dans #240, le câblage du graphe quadrant dans #242. Ici on alimente la
+  // copie actuelle avec les états OCS-GE les plus proches (artif_m3 ha,
+  // artif_m3_par_habitant m²/hab, periode_pop le bracket RP).
   return storyMilieux(
     histoire.classification,
     histoire.delta_population,
-    histoire.conso_fenetre,
-    histoire.intensite_m2_par_habitant,
-    histoire.periode,
+    histoire.artif_m3,
+    histoire.artif_m3_par_habitant,
+    histoire.periode_pop,
   )
 })
 

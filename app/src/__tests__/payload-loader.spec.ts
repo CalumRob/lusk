@@ -6,6 +6,7 @@ import {
   histoiresHabitatFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
+  indicateursMilieuxFixture,
   membresProgrammesFixture,
   programmesFixture,
   runReportFraisFixture,
@@ -160,6 +161,41 @@ describe('chargerPayload — the single seam', () => {
     await expect(
       chargerPayload(optionsPour({ ...fichiersDemographie, 'indicateurs_demographie.json': indicateurs })),
     ).rejects.toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
+  })
+
+  it('tolerates the transitional Milieux histoires (ancien schéma) — les autres thèmes rendent, TODO #243', async () => {
+    // État transitoire du re-key spec #225 : histoires_milieux.json committé
+    // porte encore l'ancien schéma (periode/conso_fenetre/…) jusqu'à ce que le
+    // pipeline le régénère sur les états OCS-GE réels (#243). Le loader écarte
+    // les lignes de l'ancien schéma — le chargement ne casse pas, les autres
+    // thèmes rendent, la Story Milieux reste muette (jamais une lecture
+    // inventée). TODO #243 : ce test (et la tolérance du loader) disparaît
+    // quand le payload régénéré valide le nouveau schéma.
+    const ancienSchema = [
+      {
+        territoire: '22001',
+        type: 'commune',
+        theme: 'milieux',
+        story_key: 'se-densifier-setaler-ou-sen-aller',
+        periode: '2017-2023',
+        delta_population: -15,
+        conso_fenetre: 2.605,
+        intensite_m2_par_habitant: null,
+        classification: 'sen-aller-et-consommer-quand-meme',
+      },
+    ]
+
+    const payload = await chargerPayload(
+      optionsPour({
+        ...fichiersDemographie,
+        'indicateurs_milieux.json': indicateursMilieuxFixture,
+        'histoires_milieux.json': ancienSchema,
+      }),
+    )
+
+    expect(payload.histoires.filter((h) => h.theme === 'milieux')).toHaveLength(0)
+    expect(payload.histoires.filter((h) => h.theme === 'demographie')).toHaveLength(9)
+    expect(payload.indicateurs.some((i) => i.theme === 'milieux')).toBe(true)
   })
 
   it('raises a typed validation error when a story file is missing for a present theme', async () => {

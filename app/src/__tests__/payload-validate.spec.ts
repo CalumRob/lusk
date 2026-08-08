@@ -440,7 +440,7 @@ describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () =>
   })
 })
 
-describe('parsePayload — the Milieux contract (issue #174, ADR-0014)', () => {
+describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed par la spec #225)', () => {
   it('accepts the Milieux documents — la Story unique « Se densifier, s’étaler, ou s’en aller »', () => {
     const payload = parsePayload(documentsMilieux())
 
@@ -449,10 +449,34 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014)', () => {
     expect(milieux).toHaveLength(histoiresMilieuxFixture.length)
     for (const histoire of milieux) {
       expect(histoire.story_key).toBe('se-densifier-setaler-ou-sen-aller')
-      expect(histoire.periode).toBe('2017-2023')
+      expect(histoire.periode_pop).toBe('2017-2023')
+      expect(histoire.periode_artif.length).toBeGreaterThan(0)
       expect(typeof histoire.delta_population).toBe('number')
-      expect(typeof histoire.conso_fenetre).toBe('number')
+      for (const champ of [
+        'artif_m2',
+        'artif_m3',
+        'artif_m2_par_habitant',
+        'artif_m3_par_habitant',
+        'trajectoire_artif_par_habitant',
+      ] as const) {
+        expect(typeof histoire[champ], `« ${champ} »`).toBe('number')
+      }
+      // l'invariant du contrat : sign(ratio − 1) = sign(delta) — le fixture
+      // entier le satisfait (la lecture et le graphe ne peuvent pas diverger)
+      const delta = histoire.artif_m3_par_habitant - histoire.artif_m2_par_habitant
+      expect(Math.sign(histoire.trajectoire_artif_par_habitant - 1)).toBe(Math.sign(delta))
     }
+    // les QUATRE lectures sont exercées dans le fixture, cas de signes mélangés
+    // compris (22002 densifie en grandissant, 200000002 se vide en se renaturant)
+    const lectures = new Set(milieux.map((h) => h.classification))
+    expect(lectures).toEqual(
+      new Set([
+        'grandir-en-se-densifiant',
+        'grandir-en-setalant',
+        'sen-aller-et-consommer-quand-meme',
+        'les-departs-laissent-la-place-a-la-renaturation',
+      ]),
+    )
   })
 
   it('rejects a Milieux histoire with an unknown story_key (drift must be loud)', () => {
@@ -480,7 +504,7 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014)', () => {
     expect(milieux[0].classification).toBeNull()
   })
 
-  it('rejects a Milieux histoire missing its forces (delta_population / conso_fenetre absents)', () => {
+  it('rejects a Milieux histoire missing its forces (delta_population / trajectoire absents)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
     delete (histoires[0] as Partial<HistoireMilieux>).delta_population
 
@@ -488,12 +512,54 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014)', () => {
     expect(erreur.message).toMatch(/delta_population/)
   })
 
-  it('rejects a negative intensité — l’intensité n’existe qu’avec des habitants ajoutés', () => {
+  it('rejects a Milieux histoire missing the pivot columns (periode_artif / artif_m2 absents)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
-    ;(histoires[0] as { intensite_m2_par_habitant: number }).intensite_m2_par_habitant = -5
+    delete (histoires[0] as Partial<HistoireMilieux>).periode_artif
 
     const erreur = attendErreurValidation(documentsMilieux({ histoires }))
-    expect(erreur.message).toMatch(/intensite/)
+    expect(erreur.message).toMatch(/periode_artif/)
+  })
+
+  it('rejects a negative artificialized area — une surface ne peut pas être négative', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { artif_m2: number }).artif_m2 = -5
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/artif_m2/)
+  })
+
+  it('rejects a non-positive trajectory — le ratio M3/M2 est strictement positif', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { trajectoire_artif_par_habitant: number }).trajectoire_artif_par_habitant = 0
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/trajectoire/)
+  })
+
+  it('rejects the ratio/delta contradiction — un ratio < 1 doit porter un delta < 0 (l’invariant)', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    // 22001 : delta +300 (2 550 − 2 250) — un ratio < 1 se contredit
+    ;(histoires[0] as { trajectoire_artif_par_habitant: number }).trajectoire_artif_par_habitant = 0.95
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/se contredisent/)
+  })
+
+  it('rejects the inverse contradiction — un ratio > 1 doit porter un delta > 0', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    // 22002 : delta −45 (855 − 900) — un ratio > 1 se contredit
+    ;(histoires[1] as { trajectoire_artif_par_habitant: number }).trajectoire_artif_par_habitant = 1.2
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/se contredisent/)
+  })
+
+  it('rejects ratio == 1 avec un delta non nul — la cohérence est exacte', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
+    ;(histoires[0] as { trajectoire_artif_par_habitant: number }).trajectoire_artif_par_habitant = 1
+
+    const erreur = attendErreurValidation(documentsMilieux({ histoires }))
+    expect(erreur.message).toMatch(/se contredisent/)
   })
 
   it('rejects a duplicate Milieux histoire — une ligne par territoire, jamais deux', () => {
