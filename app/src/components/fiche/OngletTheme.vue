@@ -158,10 +158,13 @@ const storyMobiliteAngle = computed(() => {
   return storyMobilite(lignes)
 })
 
-// The Milieux Story (issue #174, ADR-0014) — « Se densifier, s'étaler, ou
-// s'en aller », the single Story of the fifth theme: the reading by the
-// signs, its precision riders (renaturation potentielle, les deux horloges,
-// la règle de source de la population) et l'intensité quand elle est publiée.
+// The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) — « Se
+// densifier, s'étaler, ou s'en aller », the single Story of the fifth theme:
+// the reading by the signs of the two forces (Δpopulation × trajectoire de la
+// surface artificialisée par habitant), its precision riders (les deux
+// horloges — la fenêtre de population et la fenêtre des états OCS-GE —, la
+// règle de bracketing, le rider de mélange multi-départements). L'intensité
+// est la figure, pas le prose (#65).
 const histoireMilieux = computed(() =>
   histoirePourTerritoire(props.payload, 'milieux', props.territoire),
 )
@@ -170,17 +173,14 @@ const storyMilieuxAngle = computed(() => {
   if (props.theme !== 'milieux') return null
   const histoire = histoireMilieux.value
   if (histoire?.theme !== 'milieux') return null
-  // Mécanique minimale du re-key spec #225 (le type ne porte plus les champs
-  // flux) : la copie elle-même et la signature de storyMilieux sont réécrites
-  // dans #240, le câblage du graphe quadrant dans #242. Ici on alimente la
-  // copie actuelle avec les états OCS-GE les plus proches (artif_m3 ha,
-  // artif_m3_par_habitant m²/hab, periode_pop le bracket RP).
   return storyMilieux(
     histoire.classification,
     histoire.delta_population,
-    histoire.artif_m3,
+    histoire.artif_m2_par_habitant,
     histoire.artif_m3_par_habitant,
+    histoire.trajectoire_artif_par_habitant,
     histoire.periode_pop,
+    histoire.periode_artif,
   )
 })
 
@@ -246,17 +246,15 @@ function libelleIndicateur(clef: string): string {
          décision of 2026-08-07 (DESIGN.md §5 updated in step). The one-liner
          still carries its own chart, comment-lire, source and Méthodes link. -->
     <section v-if="storyMobiliteAngle || story || storyEconomieAngle || storyMilieuxAngle" class="angle-story">
-      <!-- The Milieux Story (issue #174, ADR-0014) : « Se densifier, s'étaler,
-           ou s'en aller » — la lecture du territoire contre sa terre, une des
-           quatre lectures par les signes. L'intensité (m² d'ENAF par habitant
-           ajouté) ne s'affiche que publiée (Δpopulation significativement
-           positif) — jamais inventée. -->
+      <!-- The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) :
+           « Se densifier, s'étaler, ou s'en aller » — la lecture du territoire
+           contre sa terre, une des quatre lectures par les signes. L'intensité
+           (m² d'ENAF par habitant ajouté) est morte du prose avec les flux
+           CONSOENAF : la surface artificialisée par habitant (l'état) vit dans
+           le « comment lire », l'intensité est la figure (#65, #241). -->
       <template v-if="storyMilieuxAngle">
         <p class="angle-story-une-ligne">{{ storyMilieuxAngle.uneLigne }}</p>
         <p class="angle-story-titre">{{ storyMilieuxAngle.titre }}</p>
-        <p v-if="storyMilieuxAngle.intensite" class="angle-story-precision">
-          {{ storyMilieuxAngle.intensite }}
-        </p>
         <p class="angle-story-comment-lire">
           <span class="angle-story-etiquette">Comment lire</span>
           {{ storyMilieuxAngle.commentLire }}
