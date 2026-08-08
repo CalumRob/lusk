@@ -225,3 +225,70 @@ lire_lignes_osm <- function(chemin_pbf) {
   }
   lignes
 }
+
+# lire_amenagements_cyclables ----------------------------------------------------
+# Le lecteur du jeu Geovelo « Aménagements cyclables » (issue #222, ticket
+# #229) : le snapshot parquet mensuel du cache, via nanoparquet — les 28
+# colonnes du fichier (la forme vérifiée : id_local, id_osm, code_com_d/g,
+# ame_d/g, sens_d/g, …, geometry). La colonne geometry est un blob WKB (la
+# lecture nanoparquet — vérifiée sur le fichier réel : 412 681 lignes, blob de
+# 361 octets pour la première ligne) : elle est décodée en sfc et le CRS
+# EPSG:4326 est estampillé depuis les MÉTADONNÉES du fichier (le WKB ne porte
+# pas le CRS — vérifié sur le fichier réel, research note §2b). Non testé dans
+# la boucle (la convention du pipeline — comme lire_lignes_osm).
+lire_amenagements_cyclables <- function(chemin) {
+  brut <- nanoparquet::read_parquet(chemin)
+  geoms <- sf::st_as_sfc(brut$geometry)
+  sf::st_crs(geoms) <- 4326
+  brut$geometry <- NULL
+  sf::st_sf(brut, geometry = geoms)
+}
+
+# normaliser_amenagements_cyclables -----------------------------------------------
+# La normalisation PURE du snapshot Geovelo : le sf brut vers la table de
+# calcul du mode `b` de `reseaux` (issue #222, ticket #229) :
+#   1. les colonnes REQUISES (ame_d, ame_g, code_com_d, code_com_g, geometry)
+#      — une colonne manquante nomme le champ fautif ; un fichier vide est une
+#      corruption (le snapshot cassé du 01/08/2026 était un FeatureCollection
+#      vide) ;
+#   2. le filtre Bretagne : code_com_d ∈ 22/29/35/56, UN côté (ADR-0016) — les
+#      segments dont un côté est breton appartiennent au réseau breton ;
+#   3. le mapping COG 2022 → 2025 via passage_cog (le jeu joint sur des codes
+#      COG 2022, le squelette de l'app est au COG 2025) — un code non mappé
+#      (absent des deux côtés de la table de passage) est une erreur dure,
+#      jamais une NA silencieuse. `mappe` est la table de passage (la sortie
+#      de construire_passage_cog, #227) — fournie par l'orchestrateur qui la
+#      lit depuis le fichier INSEE du cache.
+# Sortie : la table de calcul sf, bretonne, aux clés COG 2025, triée par
+# id_local — déterministe.
+normaliser_amenagements_cyclables <- function(brut, mappe) {
+  requises <- c("ame_d", "ame_g", "code_com_d", "code_com_g", "geometry")
+  manquantes <- setdiff(requises, names(brut))
+  if (length(manquantes) > 0) {
+    stop("Aménagements cyclables corrompus — colonne(s) requise(s) manquante(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  if (nrow(brut) == 0) {
+    stop("Aménagements cyclables corrompus — le snapshot ne porte aucune ligne.",
+         call. = FALSE)
+  }
+
+  bretagne <- brut[grepl("^(22|29|35|56)", as.character(brut$code_com_d)), ]
+
+  # le mapping COG 2022 → 2025 (passage_cog, #227) — STRICT pour les codes
+  # bretons (un code breton non mappé = une corruption de la donnée, jamais une
+  # NA silencieuse), LENIENT pour l'autre côté : le côté non-breton (ex. 44006 —
+  # un segment de frontière 22/44, vérifié : 1 ligne sur le fichier réel) n'est
+  # jamais une clé de territoire, il ne sert qu'à la règle d'attribution par le
+  # côté porteur (ADR-0016) — il traverse tel quel. Le côté breton est toujours
+  # présent (le filtre), c'est lui qui porte la clé.
+  bretagne$code_com_d <- passage_cog(bretagne$code_com_d, mappe)
+  bretagne$code_com_g <- passage_cog_lenient(bretagne$code_com_g, mappe)
+
+  # dplyr::arrange sur un sf dégrade la classe (retourne un tbl_df) — le sf
+  # est restauré après le tri, CRS conservé (le WKB est estampillé 4326 par le
+  # lecteur)
+  trie <- bretagne %>%
+    dplyr::arrange(id_local)
+  sf::st_sf(trie)
+}
