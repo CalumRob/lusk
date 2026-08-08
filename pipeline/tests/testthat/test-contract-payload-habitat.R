@@ -83,8 +83,8 @@ test_that("la table de référence porte les noms réels", {
   tr <- p$territoires
   expect_equal(tr$nom[tr$territoire == "22001"], "Commune A1")
   expect_equal(tr$nom[tr$territoire == "200000001"], "EPCI X")
-  expect_setequal(tr$nom[tr$type == "departement"], c("Département 22",
-                                                      "Département 29"))
+  expect_setequal(tr$nom[tr$type == "departement"], c("Côtes-d'Armor",
+                                                      "Finistère"))
   expect_equal(tr$nom[tr$type == "region"], "Bretagne")
   # le département d'appartenance (pluralité par le stock de logements)
   expect_equal(tr$departement[tr$territoire == "22001"], "22")

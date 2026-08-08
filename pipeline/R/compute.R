@@ -24,6 +24,27 @@ departement_pluralite <- function(population, departement) {
     dplyr::pull(departement)
 }
 
+# nom_departement -------------------------------------------------------------
+# Les VRAIS noms INSEE des départements bretons (issue #115) : le `nom` d'un
+# département est son nom réel (Ille-et-Vilaine, Morbihan…), jamais l'étiquette
+# fonctionnelle « Département XX ». Déclaré dans le squelette PARTAGÉ — chaque
+# thème (et chaque consommateur : fiche, fil d'Ariane, sous-titre d'Histoire)
+# hérite du même nom. Un code hors carte (défensif) garde l'étiquette
+# fonctionnelle — le squelette nomme ce qu'il connaît, ne casse pas ce qu'il
+# ne connaît pas.
+NOMS_DEPARTEMENTS <- c(
+  "22" = "Côtes-d'Armor",
+  "29" = "Finistère",
+  "35" = "Ille-et-Vilaine",
+  "56" = "Morbihan"
+)
+
+nom_departement <- function(code) {
+  unname(ifelse(is.na(NOMS_DEPARTEMENTS[code]),
+                paste0("Département ", code),
+                NOMS_DEPARTEMENTS[code]))
+}
+
 # squelette_territoires -------------------------------------------------------
 # Le squelette PARTAGÉ de la table des territoires (issue #13) : une ligne par
 # territoire (communes + agrégats EPCI / département / région), avec les
@@ -80,7 +101,7 @@ squelette_territoires <- function(communes, poids = "population") {
     dplyr::group_by(departement) %>%
     dplyr::summarise(
       code = dplyr::first(departement),
-      nom = paste0("Département ", dplyr::first(departement)),
+      nom = nom_departement(dplyr::first(departement)),
       type = "departement",
       departement = dplyr::first(departement),
       epci = NA_character_,

@@ -80,8 +80,9 @@ test_that("la table de référence porte les noms réels (LIBGEO/LIBEPCI)", {
   expect_equal(tr$nom[tr$territoire == "200000001"], "EPCI X")
   expect_equal(tr$nom[tr$territoire == "200000002"], "EPCI Y")
   expect_false(any(grepl("^EPCI 200", tr$nom[tr$type == "epci"])))
-  # départements et région
-  expect_setequal(tr$nom[tr$type == "departement"], c("Département 22", "Département 29"))
+  # départements et région — le vrai nom INSEE, jamais « Département XX »
+  # (issue #115)
+  expect_setequal(tr$nom[tr$type == "departement"], c("Côtes-d'Armor", "Finistère"))
   expect_equal(tr$nom[tr$type == "region"], "Bretagne")
 })
 
