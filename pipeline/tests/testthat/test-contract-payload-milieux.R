@@ -10,7 +10,13 @@
 # histoires porte une ligne par territoire : les deux forces de la lecture
 # (Δpopulation de la série historique, consommation de la fenêtre re-sommée),
 # l'intensité et la classification (détaillés dans
-# test-theme-milieux-histoire.R). La conversion m² -> ha est prouvée bout en
+# test-theme-milieux-histoire.R). Depuis le pivot OCS-GE (#238, ADR-0017), la
+# table histoires porte une ligne par territoire : les deux fenêtres nommées
+# (periode_pop, le bracket RP partagé ; periode_artif, la fenêtre des états
+# par département), les états OCS-GE en ha et en m²/habitant (le bracket de
+# population : RP 2017 pour l'état initial, RP 2023 pour l'état final), la
+# trajectoire par habitant et la classification re-keyée sur le signe pair
+# (Δpopulation × trajectoire). La conversion m² -> ha est prouvée bout en
 # bout : la valeur publiée d'une commune EST sa consommation en hectares, et
 # la fenêtre EST la somme des quatre annuels 2021-2024 (vérifiée à la main).
 # L'Aperçu reste VIDE mais présent (la forme du contrat).
@@ -42,13 +48,23 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
     "vintage_source", "vintage_version",
     "vintage_date_reference", "vintage_date_publication"
   ))
-  # histoires : la forme du contrat de l'Histoire (#174) — une ligne par
-  # territoire, les forces de la lecture et la classification
+  # histoires : la forme du contrat de l'Histoire pivotée (#238, ADR-0017) —
+  # une ligne par territoire, les deux fenêtres (periode_pop / periode_artif),
+  # les états OCS-GE en ha et en m²/habitant, la trajectoire par habitant et
+  # la classification re-keyée sur le signe pair (Δpopulation × trajectoire)
   expect_named(payload$histoires, c(
-    "territoire", "type", "theme", "story_key", "periode",
-    "delta_population", "conso_fenetre", "intensite_m2_par_habitant",
+    "territoire", "type", "theme", "story_key",
+    "periode_pop", "periode_artif",
+    "delta_population",
+    "artif_m2", "artif_m3",
+    "artif_m2_par_habitant", "artif_m3_par_habitant",
+    "trajectoire_artif_par_habitant",
     "classification"
   ))
+  # les colonnes doublées de l'ancien schéma (#174) sont PARTIES du contrat
+  expect_false("conso_fenetre" %in% names(payload$histoires))
+  expect_false("intensite_m2_par_habitant" %in% names(payload$histoires))
+  expect_false("periode" %in% names(payload$histoires))
   expect_equal(nrow(payload$histoires), nrow(payload$territoires))
   expect_named(payload$apercu, c("territoire", "type", "key", "value", "unit"))
   expect_equal(nrow(payload$apercu), 0L)

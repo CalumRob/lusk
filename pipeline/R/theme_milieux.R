@@ -36,7 +36,11 @@
 #     les deux de la « Consommation d'ENAF » #172 + la trajectoire ZAN #173) et
 #     l'APERCU_<theme> vide (le gating par thème, ADR-0007) ;
 #   - l'Histoire du thème : compute_histoires_milieux — les quatre lectures
-#     « Se densifier, s'étaler, ou s'en aller » (issue #174).
+#     « Se densifier, s'étaler, ou s'en aller » (issue #174, pivotées par
+#     #238 sur les états OCS-GE — ADR-0017 : la terre se lit en STOCK à
+#     chaque millésime, jamais en flux ; les deux horloges sont nommées
+#     séparément, periode_pop pour la population, periode_artif pour les
+#     états).
 # Ce qui N'y vit PAS : aucune modification de la machinerie partagée.
 
 # NOM_FICHIER_SERIE_HISTORIQUE -------------------------------------------------
@@ -932,62 +936,112 @@ scalaires_milieux <- list(
   conso_enaf_annuel = part_surface_consoenaf
 )
 
-# SEUIL_INTENSITE_MILIEUX ------------------------------------------------------
-# Le seuil « près de zéro » de l'intensité (m² d'ENAF par habitant ajouté,
-# #174). Le recensement est un DÉNOMBREMENT exact (un entier), jamais un
-# échantillon : « significativement positif » veut dire au moins UN habitant
-# ajouté sur la fenêtre. L'intensité est publiée seulement quand le
-# Δpopulation ≥ ce seuil (elle n'a pas de sens pour un territoire qui ne gagne
-# pas d'habitants — 0 ou négatif, elle serait infinie ou négative) ; la
-# classification, elle, ne s'appuie que sur les signes (seuil 0 — ZAN est un
-# objectif zéro, un 0 est un vrai 0, jamais du bruit d'échantillon).
-SEUIL_INTENSITE_MILIEUX <- 1
-
 # compute_histoires_milieux -----------------------------------------------------
-# L'Histoire « Se densifier, s'étaler, ou s'en aller » (issue #174, ADR-0014) :
-# la lecture du territoire contre sa terre. Deux forces, chacune lue par le
+# L'Histoire « Se densifier, s'étaler, ou s'en aller » (issue #174, pivotée
+# par #238 — ADR-0017) : la lecture du territoire contre sa terre, re-keyée
+# des flux CONSOENAF vers les ÉTATS OCS-GE. Deux forces, chacune lue par le
 # SIGNE seul (seuil 0, la règle des quadrants d'ADR-0011) :
 #   - le Δpopulation  = pop_fin - pop_debut — les populations de la SÉRIE
-#     HISTORIQUE du recensement aux DEUX millésimes de la fenêtre (la règle de
-#     source d'ADR-0014 : jamais les populations embarquées de CONSOENAF) ;
-#   - la consommation = conso_fenetre — les ANNUELS CONSOENAF re-sommés sur la
-#     MÊME fenêtre (la règle des DEUX HORLOGES : la fenêtre dérive des
-#     millésimes de la série, jamais codée en dur ; les totaux de période ne
-#     sont jamais sommés).
+#     HISTORIQUE du recensement aux DEUX millésimes de la fenêtre (la règle
+#     de source d'ADR-0014 : jamais les populations embarquées de CONSOENAF) ;
+#   - la trajectoire par habitant = le ratio M3/M2 des états OCS-GE par
+#     habitant (trajectoire_artif_par_habitant = artif_m3_par_habitant /
+#     artif_m2_par_habitant). L'intensité d'état (m²/habitant) à CHAQUE état
+#     se lit sur la population du millésime qui BORNE l'état — RP 2017 pour
+#     l'état initial (pop_debut), RP 2023 pour l'état final (pop_fin) — le
+#     bracket, jamais interpolé (ADR-0017).
 # Les quatre lectures, une par territoire, exactement une (déterministe :
-# même territoire + mêmes données -> même lecture, toujours) :
-#   grandir-en-se-densifiant               Δpop > 0, consommation == 0
-#   grandir-en-setalant                    Δpop > 0, consommation > 0
-#   sen-aller-et-consommer-quand-meme      Δpop <= 0, consommation > 0
-#   les-departs-laissent-la-place-a-la-renaturation  Δpop <= 0, consommation == 0
-# (zéro compte négatif, comme Démographie : un Δpopulation nul ou une
-# consommation nulle ne sont jamais du bruit — la donnée est un dénombrement).
-# Une force NA (total de niveau incomplet, population absente de la série)
-# rend la lecture NA — jamais une lecture inventée. L'intensité (m² d'ENAF par
-# habitant ajouté) est publiée seulement quand le Δpopulation est
-# significativement positif (SEUIL_INTENSITE_MILIEUX) ; sous le seuil, NA. La
-# fenêtre dérivée est portée par la colonne `periode` (« 2017-2023 ») — la
-# date du titre du Story, jamais inventée.
+# même territoire + mêmes données -> même lecture, toujours), les quatre
+# quadrants du plan (Δpopulation × trajectoire), zéro compte négatif (la
+# convention des quadrants d'ADR-0011, la même que Démographie) :
+#   grandir-en-se-densifiant               Δpop > 0, trajectoire < 1
+#       (la population grandit plus vite que la terre artificialisée)
+#   grandir-en-setalant                    Δpop > 0, trajectoire > 1
+#   sen-aller-et-consommer-quand-meme      Δpop <= 0, trajectoire > 1
+#   les-departs-laissent-la-place-a-la-renaturation  Δpop <= 0,
+#       trajectoire < 1 — la renaturation doit être MESURÉE (artif_m3 <
+#       artif_m2) : avec population en baisse, une trajectoire < 1 REQUIERT
+#       artif_m3 < artif_m2 (la propriété est prouvée par le fixture). Sans
+#       la propriété — le point dégénéré Δpop == 0 ET trajectoire == 1 (la
+#       terre n'a pas bougé) — PAS de lecture, jamais une lecture inventée.
+# Une force NA (état incomplet, population absente de la série) rend la
+# lecture NA — jamais une lecture inventée. L'INVARIANT (ADR-0017) :
+# sign(ratio − 1) = sign(delta) où delta = artif_m3_par_habitant −
+# artif_m2_par_habitant — le dénominateur du ratio (le M2 par habitant) est
+# toujours positif : la classification et le futur graphe (x = Δpopulation,
+# y = delta) ne peuvent jamais se contredire.
+# Les DEUX fenêtres, nommées séparément (les deux horloges, jamais
+# confondues) : periode_pop, la paire RP de la série historique (« 2017-2023 »,
+# jamais codée en dur) ; periode_artif, la fenêtre des états OCS-GE du
+# territoire (le couple du département, le SPAN pour un EPCI transfrontalier,
+# les quatre fenêtres pour la région — construite par #237). Les états sont
+# publiés en HECTARES (la conversion ÷ 10 000 de la table des territoires en
+# m² — l'unité native de l'ingestion — la même discipline documentée que
+# CONSOENAF). Chemin rétro-compatible (cache sans archives OCS-GE, #237) : la
+# table ne porte pas les états — le schéma du pivot reste publié, tout NA,
+# jamais une lecture inventée.
 compute_histoires_milieux <- function(territoires) {
-  territoires %>%
+  base <- territoires %>%
     dplyr::mutate(
       delta_population = pop_fin - pop_debut,
-      # l'intensité : la consommation de la fenêtre (ha) × 10 000 pour des m²,
-      # divisée par les habitants ajoutés — NA quand le Δpopulation n'est pas
-      # significativement positif (le dénombrement est exact : sous 1 habitant
-      # ajouté, pas d'« habitants ajoutés » à rapporter à la consommation)
-      intensite_m2_par_habitant = dplyr::if_else(
-        delta_population >= SEUIL_INTENSITE_MILIEUX,
-        conso_fenetre * 10000 / delta_population,
-        NA_real_
-      ),
+      # la fenêtre de population : la paire de millésimes RP de la série
+      # historique — jamais codée en dur (les deux horloges, ADR-0017)
+      periode_pop = paste0(millesime_debut, "-", millesime_fin)
+    )
+
+  if (!"artif_m2" %in% names(base)) {
+    return(base %>%
+      dplyr::transmute(
+        territoire = code,
+        type = type,
+        theme = "milieux",
+        story_key = "se-densifier-setaler-ou-sen-aller",
+        periode_pop = periode_pop,
+        periode_artif = NA_character_,
+        delta_population = delta_population,
+        artif_m2 = NA_real_,
+        artif_m3 = NA_real_,
+        artif_m2_par_habitant = NA_real_,
+        artif_m3_par_habitant = NA_real_,
+        trajectoire_artif_par_habitant = NA_real_,
+        classification = NA_character_
+      ))
+  }
+
+  base %>%
+    dplyr::mutate(
+      # les états en hectares (m² -> ha, ÷ 10 000 — la conversion documentée,
+      # testée ; jamais silencieusement trustée)
+      artif_m2 = artif_m2 / 10000,
+      artif_m3 = artif_m3 / 10000,
+      # l'intensité d'état : m² par habitant — le ha × 10 000 pour des m²,
+      # divisé par la population du millésime qui BORNE l'état (le bracket,
+      # ADR-0017 : RP 2017 pour l'état initial, RP 2023 pour l'état final —
+      # jamais interpolé). Un état NA rend l'intensité NA.
+      artif_m2_par_habitant = artif_m2 * 10000 / pop_debut,
+      artif_m3_par_habitant = artif_m3 * 10000 / pop_fin,
+      # la trajectoire : le ratio M3/M2 par habitant — la seconde force de la
+      # lecture. Algébriquement = croissance de la terre ÷ croissance de la
+      # population. Le dénominateur (le M2 par habitant) est positif, donc
+      # sign(ratio − 1) = sign(delta) par construction (l'invariant ADR-0017).
+      trajectoire_artif_par_habitant =
+        artif_m3_par_habitant / artif_m2_par_habitant,
       classification = dplyr::case_when(
-        delta_population > 0 & conso_fenetre == 0 ~ "grandir-en-se-densifiant",
-        delta_population > 0 & conso_fenetre > 0 ~ "grandir-en-setalant",
-        delta_population <= 0 & conso_fenetre > 0 ~
+        # une force NA (état incomplet, population absente) ou un ratio
+        # indéfini (les deux états nuls : 0/0) -> lecture NA, jamais inventée
+        is.na(delta_population) |
+          is.na(trajectoire_artif_par_habitant) ~ NA_character_,
+        delta_population > 0 &
+          trajectoire_artif_par_habitant > 1 ~ "grandir-en-setalant",
+        delta_population > 0 ~ "grandir-en-se-densifiant",
+        trajectoire_artif_par_habitant > 1 ~
           "sen-aller-et-consommer-quand-meme",
-        delta_population <= 0 & conso_fenetre == 0 ~
-          "les-departs-laissent-la-place-a-la-renaturation"
+        # Δpop <= 0 et trajectoire <= 1 : la lecture « renaturation » exige
+        # la renaturation MESURÉE (artif_m3 < artif_m2) — sans la propriété
+        # (le point dégénéré terre immobile), PAS de lecture
+        artif_m3 < artif_m2 ~
+          "les-departs-laissent-la-place-a-la-renaturation",
+        TRUE ~ NA_character_
       )
     ) %>%
     dplyr::transmute(
@@ -995,13 +1049,19 @@ compute_histoires_milieux <- function(territoires) {
       type = type,
       theme = "milieux",
       story_key = "se-densifier-setaler-ou-sen-aller",
-      # la fenêtre dérivée de la série historique — la date du titre du Story,
-      # jamais codée en dur (les deux horloges, ADR-0014)
-      periode = paste0(millesime_debut, "-", millesime_fin),
-      delta_population,
-      conso_fenetre,
-      intensite_m2_par_habitant,
-      classification
+      # les deux fenêtres, nommées séparément : la paire RP de la série (la
+      # date du titre du Story, jamais codée en dur) et la fenêtre des états
+      # OCS-GE du territoire (construite par #237 — le couple du département,
+      # le SPAN pour le transfrontalier, les quatre fenêtres pour la région)
+      periode_pop = periode_pop,
+      periode_artif = periode_artif,
+      delta_population = delta_population,
+      artif_m2 = artif_m2,
+      artif_m3 = artif_m3,
+      artif_m2_par_habitant = artif_m2_par_habitant,
+      artif_m3_par_habitant = artif_m3_par_habitant,
+      trajectoire_artif_par_habitant = trajectoire_artif_par_habitant,
+      classification = classification
     )
 }
 
