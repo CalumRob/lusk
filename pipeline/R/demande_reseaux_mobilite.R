@@ -110,15 +110,17 @@ agreger_voitures_territoires <- function(voitures_communes, base_epci) {
 }
 
 # Les réseaux t/b/c -----------------------------------------------------------
-# Les trois modes du système de design, leur lecture highway=* (OSM) — le
-# mapping VERROUILLÉ du contrat (mobilite.md §Demand/network tier, la recherche
-# openstreetmap.md §5.2) :
-#   c (voiture — le réseau routier) : les classes circulables motorisées —
-#     motorway/trunk/primary/secondary/tertiary (et leurs bretelles *_link),
-#     unclassified, residential, service, living_street ;
-#   b (vélo — le réseau cyclable) : highway=cycleway (les pistes cyclables
-#     dédiées — jamais les bandes/lanes qui vivent dans other_tags) ;
-#   t (à pied — le réseau piéton) : footway, pedestrian, steps.
+# Les trois modes du système de design et leur source :
+#   - c (voiture — le réseau routier) et t (à pied — le réseau piéton) : lus sur
+#     highway=* de l'extrait OSM (le pbf Geofabrik, voir normaliser_mobilite.R) ;
+#   - b (vélo — le réseau cyclable) : alimenté par le jeu Geovelo « Aménagements
+#     cyclables » (ADR-0016, issues #222/#230) — le pbf ne porte plus l'extraction
+#     maison du mode b (highway=cycleway), remplacée par le comptage par
+#     direction de calculer_reseaux_velo_communes.
+# MODES_RESEAUX_MOBILITE reste le CONTRAT des trois modes (les 6 détails du
+# payload t/b/c × longueur/densité — agreger_reseaux_territoires l'itère) ;
+# MODES_RESEAUX_OSM déclare les modes que le raw OSM alimente (t/c), le b venant
+# du jeu Geovelo.
 # `track` (chemins agricoles/forestiers) et `path` (sentiers partagés) sont
 # EXCLUS : ce ne sont ni des infrastructures routières, ni cyclables dédiées,
 # ni piétonnes urbaines — documenté Méthodes. Le mode est un fait de TAG, la
@@ -133,9 +135,16 @@ MODES_RESEAUX_MOBILITE <- list(
   t = c("footway", "pedestrian", "steps")
 )
 
+# MODES_RESEAUX_OSM -----------------------------------------------------------
+# Les modes LUS par le raw OSM : t/c — le mode `b` (vélo) est alimenté par le
+# jeu Geovelo depuis l'issue #230 (ADR-0016), plus d'extraction maison du b sur
+# le pbf (le fragment osm_reseaux ne sert plus qu'aux modes t/c et au
+# dénominateur routier de la figure « L'offre cyclable »).
+MODES_RESEAUX_OSM <- c("t", "c")
+
 # calculer_reseaux_communes ----------------------------------------------------
-# Les longueurs et densités réseau t/b/c COMMUNALES, depuis les lignes OSM et
-# les limites communales :
+# Les longueurs et densités réseau t/c COMMUNALES, depuis les lignes OSM et les
+# limites communales :
 #   1. les deux entrées sont PROJETÉES en EPSG:2154 (Lambert-93) AVANT toute
 #      mesure — la consigne du contrat (st_length/st_area ne mesurent jamais
 #      en degrés) ;
@@ -147,9 +156,17 @@ MODES_RESEAUX_MOBILITE <- list(
 #   3. par commune × mode : la SOMME des longueurs (km) et la DENSITÉ =
 #      longueur ÷ surface (km/km², la surface du polygone communal projeté,
 #      portée en m² dans la table).
-# Retour : une table par commune (commune, aire_m2, longueur_t/b/c en km,
-# densite_t/b/c en km/km²), triée par commune — déterministe. Une commune sans
+# Le mode `b` (vélo) ne s'y trouve PLUS depuis l'issue #230 (ADR-0016) : il est
+# alimenté par le jeu Geovelo « Aménagements cyclables » (calculer_reseaux_
+# velo_communes) — le pbf reste la source des modes t/c seulement. MODES_
+# RESEAUX_OSM déclare les modes lus sur highway (t/c) ; MODES_RESEAUX_MOBILITE
+# garde les trois modes (le contrat des 6 détails du payload, agreger_).
+# Retour : une table par commune (commune, aire_m2, longueur_t/c en km,
+# densite_t/c en km/km²), triée par commune — déterministe. Une commune sans
 # ligne attribuée porte 0 (zéro réseau — un fait), jamais une ligne manquante.
+# Le seam fusionne ensuite la table b (Geovelo) via fusionner_reseaux_velo_
+# communes — la forme complète du contrat est reconstituée AVANT
+# agreger_reseaux_territoires.
 calculer_reseaux_communes <- function(lignes, limites) {
   if (!inherits(lignes, "sf") || !inherits(limites, "sf")) {
     stop("Réseaux corrompu — les lignes OSM et les limites communales doivent ",
@@ -183,7 +200,7 @@ calculer_reseaux_communes <- function(lignes, limites) {
   attribue <- sf::st_join(points, limites[c("code_insee", "aire_m2")],
                           join = sf::st_intersects, left = TRUE)
 
-  longueurs <- lapply(names(MODES_RESEAUX_MOBILITE), function(mode) {
+  longueurs <- lapply(MODES_RESEAUX_OSM, function(mode) {
     lignes_mode <- lignes[lignes$highway %in% MODES_RESEAUX_MOBILITE[[mode]], ]
     if (nrow(lignes_mode) == 0) {
       tibble::tibble(osm_id = character(),
@@ -196,10 +213,10 @@ calculer_reseaux_communes <- function(lignes, limites) {
       )
     }
   })
-  names(longueurs) <- names(MODES_RESEAUX_MOBILITE)
+  names(longueurs) <- MODES_RESEAUX_OSM
 
   d <- sf::st_drop_geometry(attribue)
-  for (mode in names(MODES_RESEAUX_MOBILITE)) {
+  for (mode in MODES_RESEAUX_OSM) {
     d <- dplyr::left_join(d, longueurs[[mode]], by = "osm_id")
   }
 
@@ -208,15 +225,146 @@ calculer_reseaux_communes <- function(lignes, limites) {
     dplyr::group_by(commune = code_insee, aire_m2) %>%
     dplyr::summarise(
       longueur_t = sum(longueur_m_t, na.rm = TRUE) / 1000,
-      longueur_b = sum(longueur_m_b, na.rm = TRUE) / 1000,
       longueur_c = sum(longueur_m_c, na.rm = TRUE) / 1000,
       .groups = "drop"
     ) %>%
     dplyr::mutate(
       densite_t = longueur_t / (aire_m2 / 1e6),
-      densite_b = longueur_b / (aire_m2 / 1e6),
       densite_c = longueur_c / (aire_m2 / 1e6)
     ) %>%
+    dplyr::arrange(commune)
+}
+
+# calculer_reseaux_velo_communes ------------------------------------------------
+# Les longueurs et densités réseau `b` (vélo) COMMUNALES depuis la table Geovelo
+# NORMALISÉE (la forme de normaliser_amenagements_cyclables — issue #230,
+# ADR-0016) et les limites communales. DEUX règles d'ADR-0016 :
+#   1. le comptage PAR DIRECTION : un segment contribue sa longueur une fois par
+#      direction qu'il sert — une piste bidirectionnelle (sens BIDIRECTIONNEL
+#      sur l'un des deux côtés) compte 2×, une unidirectionnelle (ou sens non
+#      renseigné — la quasi-totalité du fichier) 1×. Vérifié sur le fichier
+#      réel : 155 lignes bretonnes BIDIRECTIONNEL sur 27 797 = +0,5 % ;
+#   2. l'attribution par le CÔTÉ PORTEUR : pour un segment de frontière (les
+#      deux codes communaux diffèrent), la longueur va à la commune dont le
+#      côté porte l'aménagement (ame ≠ AUCUN) ; les DEUX côtés porteurs → le
+#      côté `d` départage (le tiebreak déterministe). Chaque segment aboutit
+#      dans EXACTEMENT une commune — les totaux région/EPCI/département restent
+#      la somme des parties communales, zéro double-compte.
+# La projection EPSG:2154 précède toute mesure (la consigne du contrat). Retour :
+# une table par commune (commune, aire_m2, longueur_b en km, densite_b en
+# km/km²), triée par commune — déterministe. Une commune sans aménagement
+# attribué ne figure pas ici (le zéro est porté par la fusion t/c dans le seam).
+calculer_reseaux_velo_communes <- function(amenagements, limites) {
+  if (!inherits(amenagements, "sf") || !inherits(limites, "sf")) {
+    stop("Réseaux vélo corrompu — les aménagements Geovelo et les limites ",
+         "communales doivent être des objets sf.", call. = FALSE)
+  }
+  requises <- c("ame_d", "ame_g", "code_com_d", "code_com_g",
+                "sens_d", "sens_g")
+  manquantes <- setdiff(requises, names(amenagements))
+  if (length(manquantes) > 0) {
+    stop("Réseaux vélo corrompu — colonne(s) requise(s) manquante(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  if (nrow(amenagements) == 0) {
+    stop("Réseaux vélo corrompu — aucune ligne d'aménagement.", call. = FALSE)
+  }
+  if (!"code_insee" %in% names(limites)) {
+    stop("Réseaux vélo corrompu — les limites communales ne portent pas ",
+         "code_insee.", call. = FALSE)
+  }
+  if (anyDuplicated(limites$code_insee)) {
+    stop("Réseaux vélo corrompu — des limites communales en double (code_insee).",
+         call. = FALSE)
+  }
+  # un segment sans aménagement des DEUX côtés (AUCUN/AUCUN) est une corruption
+  # — vérifié sur le fichier réel : le jeu ne porte aucune ligne « route nue »
+  # (research note §7.10bis), jamais une ligne silencieusement perdue
+  if (any(amenagements$ame_d == "AUCUN" & amenagements$ame_g == "AUCUN")) {
+    stop("Réseaux vélo corrompu — un segment sans aménagement des deux côtés ",
+         "(ame AUCUN/AUCUN) — hors contrat du jeu Geovelo.", call. = FALSE)
+  }
+
+  limites <- limites %>%
+    sf::st_transform(2154) %>%
+    sf::st_make_valid()
+  limites$aire_m2 <- as.numeric(sf::st_area(sf::st_geometry(limites)))
+
+  seg <- sf::st_transform(amenagements, 2154)
+  seg$longueur_m <- as.numeric(sf::st_length(sf::st_geometry(seg)))
+
+  # le comptage par direction (ADR-0016) : 2× si l'un des deux côtés est
+  # BIDIRECTIONNEL, 1× sinon (un sens non renseigné n'est jamais bidirectionnel)
+  bidir <- (seg$sens_d == "BIDIRECTIONNEL") | (seg$sens_g == "BIDIRECTIONNEL")
+  bidir[is.na(bidir)] <- FALSE
+  seg$multiplicateur <- ifelse(bidir, 2, 1)
+
+  # l'attribution par le côté porteur (ADR-0016) : le côté qui porte
+  # l'aménagement gagne ; les deux côtés porteurs → le `d` départage
+  seg$commune <- ifelse(
+    seg$ame_g != "AUCUN" & seg$ame_d == "AUCUN",
+    seg$code_com_g,
+    seg$code_com_d
+  )
+
+  par_commune <- sf::st_drop_geometry(seg) %>%
+    dplyr::group_by(commune) %>%
+    dplyr::summarise(longueur_m = sum(longueur_m * multiplicateur),
+                     .groups = "drop") %>%
+    dplyr::left_join(limites[c("code_insee", "aire_m2")],
+                     by = c("commune" = "code_insee"))
+
+  if (any(is.na(par_commune$aire_m2))) {
+    stop("Réseaux vélo corrompu — un segment attribué à une commune hors ",
+         "référentiel.", call. = FALSE)
+  }
+
+  par_commune %>%
+    dplyr::transmute(
+      commune = commune,
+      aire_m2 = aire_m2,
+      longueur_b = longueur_m / 1000,
+      densite_b = (longueur_m / 1000) / (aire_m2 / 1e6)
+    ) %>%
+    dplyr::arrange(commune)
+}
+
+# fusionner_reseaux_velo_communes ------------------------------------------------
+# Le seam du mode `b` (issue #230) : la table t/c (OSM) et la table b (Geovelo)
+# sont FUSIONNÉES par commune en LA table communale du contrat — les huit
+# colonnes que agreger_reseaux_territoires consomme (la forme reste, la source
+# du b change, ADR-0016). Les deux entrées dérivent la surface du MÊME
+# référentiel (limites) — la surface est coalescée. Une commune présente dans
+# une seule des deux tables porte 0 sur l'autre famille (zéro réseau — un fait,
+# jamais une ligne manquante). Retour : commune × aire_m2 × les six mesures,
+# triée par commune — déterministe.
+fusionner_reseaux_velo_communes <- function(reseaux_communes, velo_communes) {
+  requises <- c("commune", "aire_m2", "longueur_t", "longueur_c",
+                "densite_t", "densite_c")
+  manquantes <- setdiff(requises, names(reseaux_communes))
+  if (length(manquantes) > 0) {
+    stop("Réseaux corrompu — la table t/c ne porte pas les colonnes requises : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  manquantes_b <- setdiff(c("commune", "longueur_b", "densite_b"),
+                          names(velo_communes))
+  if (length(manquantes_b) > 0) {
+    stop("Réseaux vélo corrompu — la table b ne porte pas les colonnes ",
+         "requises : ", paste(manquantes_b, collapse = ", "), ".", call. = FALSE)
+  }
+
+  dplyr::full_join(reseaux_communes, velo_communes, by = "commune") %>%
+    dplyr::mutate(
+      aire_m2 = dplyr::coalesce(.data$aire_m2.x, .data$aire_m2.y),
+      longueur_b = dplyr::coalesce(.data$longueur_b, 0),
+      densite_b = dplyr::coalesce(.data$densite_b, 0),
+      longueur_t = dplyr::coalesce(.data$longueur_t, 0),
+      longueur_c = dplyr::coalesce(.data$longueur_c, 0),
+      densite_t = dplyr::coalesce(.data$densite_t, 0),
+      densite_c = dplyr::coalesce(.data$densite_c, 0)
+    ) %>%
+    dplyr::select(commune, aire_m2, longueur_t, longueur_b, longueur_c,
+                  densite_t, densite_b, densite_c) %>%
     dplyr::arrange(commune)
 }
 
