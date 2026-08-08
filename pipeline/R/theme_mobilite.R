@@ -34,10 +34,12 @@
 #     sources_offre_mobilite.R), tous persistés sous data/processed/mobilite/ ;
 #   - le SEAM de publication : publier_mobilite — le payload contractuel
 #     (territoires / indicateurs / histoires / apercu) publié par la
-#     machinerie partagée publish. Le chaînon publie les ONZE clés du thème
+#     machinerie partagée publish. Le chaînon publie les DOUZE clés du thème
 #     (nb_buildings + voitures_menage + reseaux + offre_tc + bornes_recharge +
-#     places_stationnement_velo_1000 + les 5 parts d'isolation de la grille,
-#     assemblées au ticket #141 avec leurs rangs et l'estampille snapshot).
+#     places_stationnement_velo_1000 + offre_cyclable — la figure « L'offre
+#     cyclable » du sous-bloc, issue #231 — + les 5 parts d'isolation de la
+#     grille, assemblées au ticket #141 avec leurs rangs et l'estampille
+#     snapshot).
 # Ce qui N'y vit PAS : aucun calcul d'indicateur de la grille (la matière
 # analytique est au ticket #138, l'assemblage des clés au #141 — les parts
 # d'isolation sont CALCULÉES par le chaînon et ASSEMBLÉES ici), aucune
@@ -220,7 +222,12 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
 #     stationnement vélo (calculer_stationnement_velo_communes — les places /
 #     1 000 hab du hub Ecolab, millésime le plus récent), agrégés aux quatre
 #     niveaux par SA règle (agreger_offre_territoires — les builders vivent
-#     dans sources_offre_mobilite.R).
+#     dans sources_offre_mobilite.R) ; la figure « L'offre cyclable » (issue
+#     #231 : calculer_offre_cyclable_communes — les km protégé/partagé / 1 000
+#     hab et le total cyclable, la binaison provisoire d'ADR-0016, la longueur
+#     en GÉOMÉTRIE UNIQUE — le numérateur du ratio ; la population du
+#     dénominateur vient du hub stationnement vélo, le même dénominateur que
+#     les places / 1 000 hab du sous-bloc).
 # Tous les artefacts sont persistés sous data/processed/mobilite/ — la matière
 # que le ticket payload (#141) assemble. La garde de forme s'étend aux familles
 # analytiques : un input corrompu s'arrête ICI, avant la moindre écriture.
@@ -491,23 +498,28 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
-# Les indicateurs publiés du thème : les ONZE clés déclarées, alignées sur la
+# Les indicateurs publiés du thème : les DOUZE clés déclarées, alignées sur la
 # référence (un territoire sans donnée porte NA — jamais une ligne manquante,
 # la multiplicité de la table déclarative l'exige), avec leurs rangs et leurs
 # estampilles T7 (la machinerie partagée compute_ranks + assembler_indicateurs
 # pour les clés scalaires, un rang PAR DÉTAIL pour les clés multi-mesures).
 #   - nb_buildings : une ligne par territoire, le rang de compute_ranks (la
 #     machinerie partagée) ;
-#   - voitures_menage / reseaux : une ligne par (territoire × détail) — chaque
-#     MESURE porte le rang-en-contexte de SA valeur (la part sans voiture
-#     classée contre les parts sans voiture des pairs, la longueur cyclable
-#     contre les longueurs cyclables… — jamais un rang unique qui mélangerait
-#     des unités) ;
+#   - voitures_menage / reseaux / offre_cyclable : une ligne par (territoire ×
+#     détail) — chaque MESURE porte le rang-en-contexte de SA valeur (la part
+#     sans voiture classée contre les parts sans voiture des pairs, la
+#     longueur cyclable contre les longueurs cyclables… — jamais un rang
+#     unique qui mélangerait des unités) ;
 #   - offre_tc / bornes_recharge / places_stationnement_velo_1000 (le
 #     sous-bloc, issue #140) : une ligne par territoire, la valeur de
 #     l'agrégat agreger_offre_territoires (la moyenne pondérée par les
 #     bâtiments pour la part, la somme pour le compte, Σ places ÷ Σ population
 #     pour le taux), le rang de compute_ranks ;
+#   - offre_cyclable (le sous-bloc, issue #231) : une ligne par (territoire ×
+#     mesure) — les longueurs protégé/partagé/total et les km/1 000 hab de la
+#     figure « L'offre cyclable » (la multiplicité 5 de la table déclarative),
+#     le rang PAR DÉTAIL de construire_rangs_detail, l'estampille de la source
+#     de référence osm_reseaux (l'horloge lente du ratio) ;
 #   - les 5 parts d'isolation (issue #141, la GRILLE du flagship) : une ligne
 #     par territoire, la valeur de l'artefact analytique isolation_territoires
 #     (la moyenne pondérée par les bâtiments des parts communales — jamais une
@@ -612,9 +624,10 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     territoires
   )
 
-  # l'assemblage : les onze clés + leurs rangs (le détail NA des clés scalaires
-  # joint sur le détail NA des rangs partagés) + les tampons de la table
-  # déclarative — la même forme que la machinerie partagée assembler_indicateurs
+  # l'assemblage : les douze clés + leurs rangs (le détail NA des clés
+  # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
+  # table déclarative — la même forme que la machinerie partagée
+  # assembler_indicateurs
   tampons <- INDICATEURS_MOBILITE %>%
     dplyr::select(key, source_reference) %>%
     dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
@@ -871,7 +884,7 @@ validations_mobilite <- list(
 
 # construire_payload_mobilite --------------------------------------------------
 # L'assembleur du payload du thème : les quatre tables du contrat (la forme
-# d'compute_payload, compute.R) — indicateurs (les onze clés, avec rangs +
+# d'compute_payload, compute.R) — indicateurs (les douze clés, avec rangs +
 # estampilles T7, les 5 parts d'isolation portant l'estampille snapshot),
 # histoires (les deux story keys), territoires (référence partagée) et apercu
 # (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables

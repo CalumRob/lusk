@@ -163,9 +163,10 @@ executer_run_reel <- function(cache, sortie) {
 #     densités Σ L ÷ Σ surface) ;
 #   - payload : 1 268 territoires (1 202 communes + 61 EPCIs + 4 départements +
 #     la région — le squelette partagé, les 2 communes hors snapshot portent NA
-#     pour l'indicateur, jamais une ligne manquante), × 17 clés/détails
-#     (nb_buildings 1 + voitures_menage 2 + reseaux 6 + le sous-bloc 3 + les 5
-#     parts d'isolation de la grille = 21 556 lignes) ;
+#     pour l'indicateur, jamais une ligne manquante), × 22 clés/détails
+#     (nb_buildings 1 + voitures_menage 2 + reseaux 6 + le sous-bloc 3 +
+#     offre_cyclable 5 + les 5 parts d'isolation de la grille = 27 896
+#     lignes) ;
 #     histoires : 1 405 lignes — 1 266 « vingt-minutes-sans-voiture » (une
 #     ligne par territoire, la Story par défaut) + 139 « ce-que-le-velo-
 #     preserve » (la saillance : 130 communes + 9 EPCIs au delta ≥ 10) ;
