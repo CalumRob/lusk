@@ -25,7 +25,8 @@ test_that("artif_par_habitant : classé TEL QUEL sur l'état à M3 (m²/hab, jam
 
   # la valeur publiée EST l'état par habitant (m²/hab) — jamais une part de
   # surface, jamais les hectares bruts
-  expect_equal(valeur_payload(p, "22001", "artif_par_habitant", "2021")$value, 0)
+  expect_equal(valeur_payload(p, "22001", "artif_par_habitant", "2021")$value,
+               400 / 2200)
   expect_equal(valeur_payload(p, "22001", "artif_par_habitant", "2025")$value,
                1200 / 2400)
   expect_equal(valeur_payload(p, "56001", "artif_par_habitant", "2022")$value,
@@ -77,7 +78,7 @@ test_that("artif_par_habitant : les DEUX lignes du territoire partagent le rang 
   expect_equal(m2$rang_dep, m3$rang_dep)
   expect_equal(m2$rang_reg, 0)  # l'état final (0 m²/hab) est le plus faible
 
-  # 22001 : M2 nul, M3 = 0,5 — même rang partagé (3/6 en région)
+  # 22001 : M2 = 400/2200 (le désartif), M3 = 0,5 — même rang partagé (3/6 en région)
   expect_equal(valeur_payload(p, "22001", "artif_par_habitant", "2021")$rang_reg,
                valeur_payload(p, "22001", "artif_par_habitant", "2025")$rang_reg)
   expect_equal(valeur_payload(p, "22001", "artif_par_habitant", "2025")$rang_reg,

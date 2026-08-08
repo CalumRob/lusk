@@ -105,11 +105,13 @@ test_that("les communes portent LEURS propres valeurs (mono-département), et la
   territoires <- construire_territoires_milieux(communes)
 
   t <- function(code) territoires[territoires$code == code, ]
-  # 22001 : le polygone entier (400 m²) + la moitié du polygone qui traverse
-  # la frontière 22001|22002 (800 m²) — la fenêtre du 22, dérivée de la donnée
-  expect_equal(t("22001")$artif_m2, 0)
+  # 22001 : la désartificialisation (400 m² portés à l'état initial) + le
+  # polygone entier (400 m² à l'état final) + la moitié du polygone qui
+  # traverse la frontière 22001|22002 (800 m²) — la fenêtre du 22, dérivée
+  # de la donnée
+  expect_equal(t("22001")$artif_m2, 400)
   expect_equal(t("22001")$artif_m3, 1200)
-  expect_equal(t("22001")$flux_net, 1200)
+  expect_equal(t("22001")$flux_net, 800)
   expect_equal(t("22001")$periode_artif, "2021-2025")
   # 22002 : la moitié du polygone qui traverse (800 m²) — le flux passe signé
   expect_equal(t("22002")$artif_m3, 800)
@@ -141,9 +143,9 @@ test_that("les agrégats : EPCI/département/région = la SOMME naïve des membr
   t <- function(code) territoires[territoires$code == code, ]
 
   # EPCI X (mono-département 22) : 22001 + 22002
-  expect_equal(t("200000001")$artif_m2, 0)
+  expect_equal(t("200000001")$artif_m2, 400)
   expect_equal(t("200000001")$artif_m3, 2000)
-  expect_equal(t("200000001")$flux_net, 2000)
+  expect_equal(t("200000001")$flux_net, 1600)
   # le département 22 suit ses communes
   expect_equal(t("22")$artif_m3, 2000)
   # EPCI Y : 29003 est SANS donnée -> le total de son niveau est NA, JAMAIS un
@@ -156,9 +158,9 @@ test_that("les agrégats : EPCI/département/région = la SOMME naïve des membr
   expect_true(is.na(t("53")$artif_m3))
   # EPCI Z (transfrontalier 35+56) : la somme signée des deux membres — le flux
   # net de 56001 est NÉGATIF, la somme ne fait jamais un abs()
-  expect_equal(t("200000003")$artif_m2, 400)
+  expect_equal(t("200000003")$artif_m2, 800)
   expect_equal(t("200000003")$artif_m3, 400)
-  expect_equal(t("200000003")$flux_net, 0)
+  expect_equal(t("200000003")$flux_net, -400)
   # l'invariant flux_net == artif_m3 - artif_m2 tient aux niveaux agrégés aussi
   expect_equal(territoires$flux_net[territoires$type != "commune"],
                territoires$artif_m3[territoires$type != "commune"] -

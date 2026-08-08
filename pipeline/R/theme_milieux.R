@@ -1135,10 +1135,18 @@ compute_histoires_milieux <- function(territoires) {
       artif_m3 = artif_m3 / 10000,
       # la trajectoire : le ratio M3/M2 par habitant — la seconde force de la
       # lecture. Algébriquement = croissance de la terre ÷ croissance de la
-      # population. Le dénominateur (le M2 par habitant) est positif, donc
+      # population. Le ratio est INDÉFINI quand le dénominateur (le M2 par
+      # habitant) est nul — un territoire sans AUCUNE terre artificialisée à
+      # l'état initial (le cas réel découvert par #243 : 102 communes
+      # bretonnes sur 1 266, ~8 %) : M3/0 n'a pas de sens, la seconde force ne
+      # se lit pas, la lecture est NA (jamais un « s'étale » inventé sur un
+      # rapport infini). Quand le dénominateur est strictement positif,
       # sign(ratio − 1) = sign(delta) par construction (l'invariant ADR-0017).
       trajectoire_artif_par_habitant =
-        artif_m3_par_habitant / artif_m2_par_habitant,
+        dplyr::if_else(
+          artif_m2_par_habitant == 0, NA_real_,
+          artif_m3_par_habitant / artif_m2_par_habitant
+        ),
       classification = dplyr::case_when(
         # une force NA (état incomplet, population absente) ou un ratio
         # indéfini (les deux états nuls : 0/0) -> lecture NA, jamais inventée
