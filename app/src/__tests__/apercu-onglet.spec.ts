@@ -273,4 +273,16 @@ describe("ApercuOnglet — l'état vide honnête (jamais « under construction �
     expect(wrapper.text()).toContain('Aucune donnée disponible pour ce territoire.')
     expect(wrapper.findAll('.puce-programme')).toHaveLength(0)
   })
+
+  it('gère un apercu absent (404 → null) — l’état vide honnête, jamais une erreur (issue #122)', () => {
+    // Depuis #116 le pipeline ne publie apercu.json que quand un thème a un
+    // aperçu — sans le fichier, la table entière est absente : la vue doit
+    // rendre l'état vide proprement, pas crasher.
+    const sansApercu: Payload = { ...payloadDemographie, apercu: null }
+    const wrapper = monter('22001', sansApercu)
+
+    expect(wrapper.find('.apercu-stats').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Aucune donnée disponible pour ce territoire.')
+    expect(wrapper.find('.apercu-programmes').exists()).toBe(true)
+  })
 })
