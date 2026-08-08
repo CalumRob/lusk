@@ -71,6 +71,23 @@ test_that("conso_annuelles_fenetre : la fenêtre glisse — d'autres millésimes
                                "naf22art23"))
 })
 
+test_that("conso_annuelles_fenetre : les colonnes de DÉCOMPOSITION art{AA}{dest}{AA+1} ne sont JAMAIS sommées — le total naf{AA}art{AA+1} suffit (#221)", {
+  # le fichier réel Cerema porte, pour CHAQUE année, le total naf{AA}art{AA+1}
+  # ET ses six colonnes de décomposition (art{AA}hab{AA+1}, act, inc, mix,
+  # fer, rou) qui somment EXACTEMENT au total. Le motif des ANNUELS ne doit
+  # donc retenir QUE le total : les décompositions, sommées en plus,
+  # DOUBLERAIENT la consommation de la fenêtre (le bug #221).
+  noms <- c(
+    "naf17art18", "art17hab18", "art17act18", "art17inc18", "art17mix18",
+    "art17fer18", "art17rou18",                 # 2017 : le total + ses 6 décompositions
+    "naf18art19", "art18hab19",                 # 2018 : idem (extrait)
+    "naf22art23", "art22hab23", "art22rou23"    # 2022 : idem (extrait)
+  )
+  annuelles <- conso_annuelles_fenetre(noms, millesime_debut = 2017,
+                                       millesime_fin = 2023)
+  expect_setequal(annuelles, c("naf17art18", "naf18art19", "naf22art23"))
+})
+
 # Les quatre lectures sur le fixture -------------------------------------------
 
 test_that("les quatre lectures : une ligne par territoire, la classification par signes (seuil 0)", {
@@ -102,6 +119,38 @@ test_that("les quatre lectures : une ligne par territoire, la classification par
   expect_equal(h("29003")$delta_population, 0)
   expect_true(is.na(h("29003")$conso_fenetre))
   expect_true(is.na(h("29003")$classification))
+})
+
+test_that("conso_fenetre : les décompositions de la fenêtre présentes dans le fixture ne DOUBLENT jamais la consommation (#221)", {
+  # le fixture consoenaf porte désormais, pour CHAQUE année de la fenêtre
+  # 2017-2023, le total naf{AA}art{AA+1} ET ses six colonnes de décomposition
+  # (art{AA}hab{AA+1}, act, inc, mix, fer, rou) qui somment exactement au
+  # total — la structure du fichier réel Cerema. La fenêtre publiée doit
+  # rester la somme des SEULS totaux : 51 ha pour 22001, jamais 102 (le
+  # doublement du bug #221).
+  brut <- lire_consoenaf(
+    testthat::test_path("fixtures", "consoenaf-fixture.csv")
+  )
+  a1 <- brut[brut$idcom == "22001", ]
+  dest <- c("hab", "act", "inc", "mix", "fer", "rou")
+  for (aa in 17:22) {
+    total <- as.double(a1[[sprintf("naf%02dart%02d", aa, aa + 1)]])
+    decomp <- sum(as.double(unlist(a1[sprintf("art%02d%s%02d", aa, dest, aa + 1)])))
+    expect_equal(decomp, total, info = sprintf("année 20%02d", aa))
+  }
+
+  p <- compute_payload(communes_fixture_milieux(), theme = theme_milieux())
+  h <- function(code) p$histoires[p$histoires$territoire == code, ]
+
+  # les quatre communes portent leur fenêtre de totaux, JAMAIS doublée
+  expect_equal(h("22001")$conso_fenetre, 51)
+  expect_equal(h("22002")$conso_fenetre, 9)
+  expect_equal(h("29001")$conso_fenetre, 15.5)
+  expect_equal(h("29002")$conso_fenetre, 1.75)
+  # la commune sans donnée reste NA (les décompositions ne créent rien)
+  expect_true(is.na(h("29003")$conso_fenetre))
+  # l'agrégat EPCI X = 22001 + 22002 = 60 ha, jamais 120
+  expect_equal(h("200000001")$conso_fenetre, 60)
 })
 
 test_that("les agrégats : mêmes signes, même lecture — un total incomplet reste NA", {
