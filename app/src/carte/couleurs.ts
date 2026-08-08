@@ -1,8 +1,16 @@
 /**
  * The map's color system — DESIGN.md §2: one anchor hex per theme, the ramp
  * derives from it (the same one-hex-change-follows rule as the CSS tokens).
- * MapLibre paints cannot read CSS custom properties, so the choropleth ramp
- * is computed here from the anchors — the app-side mirror of tokens.css.
+ * MapLibre paints cannot read CSS custom properties, so the theme ramp roles
+ * are computed here from the anchors — the app-side mirror of tokens.css.
+ *
+ * The ramp roles are the tokens.css §2 recipes, verbatim (color-mix in OKLab):
+ * wash = 8 % anchor over surface-secondary, soft = 16 % anchor over
+ * surface-primary, line = the anchor, strong = 62 % anchor over #0C1B19. The
+ * fiche reads those roles; the choropleth must read the same ramp (audit #208
+ * item 56): `echelleChoroplethe` samples the role path wash → soft → line →
+ * strong, so the map's darkest class IS the theme's strong, its lightest IS
+ * the theme's wash.
  *
  * A11y (DESIGN.md §8): the ramp is the fill, never the sole carrier — every
  * territory also carries its formatted value (popup, legend buckets), so the
@@ -32,10 +40,25 @@ export const COULEUR_CONTOUR = '#4E6E68'
  *  stays visible at commune level. */
 export const LARGEUR_CONTOUR = 0.75
 
-const BLANC = { r: 255, g: 255, b: 255 }
-const FONCE = { r: 12, g: 27, b: 25 } // #0C1B19 — the ramps' dark pole (DESIGN.md §2)
+/** The ramp poles — tokens.css §2: the surfaces the roles mix over, and the
+ *  dark pole every strong role mixes toward. */
+const SURFACE_SECONDAIRE = '#F8FBFB' // the wash base (page background)
+const SURFACE_PRIMAIRE = '#FFFFFF' // the soft base (cards, header)
+const FONCE = '#0C1B19' // the ramps' dark pole (DESIGN.md §2)
 
-function hexVersRgb(hex: string): { r: number; g: number; b: number } {
+interface Rgb {
+  r: number
+  g: number
+  b: number
+}
+
+interface Oklab {
+  L: number
+  a: number
+  b: number
+}
+
+function hexVersRgb(hex: string): Rgb {
   const propre = hex.replace(/^#/, '')
   const valeur = Number.parseInt(propre, 16)
   if (![3, 6].includes(propre.length) || Number.isNaN(valeur)) {
@@ -55,26 +78,105 @@ function hexVersRgb(hex: string): { r: number; g: number; b: number } {
   }
 }
 
-function melanger(a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }, t: number): string {
-  const c = (x: number, y: number) => Math.round(x + (y - x) * t)
-  const valeur = (c(a.r, b.r) << 16) | (c(a.g, b.g) << 8) | c(a.b, b.b)
+function versLineaire(c: number): number {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+}
+
+function depuisLineaire(c: number): number {
+  const borne = Math.max(0, Math.min(1, c))
+  return borne <= 0.0031308 ? 12.92 * borne : 1.055 * Math.pow(borne, 1 / 2.4) - 0.055
+}
+
+/** sRGB → OKLab (the tokens.css color-mix space). */
+function rgbVersOklab({ r, g, b }: Rgb): Oklab {
+  const rl = versLineaire(r / 255)
+  const gl = versLineaire(g / 255)
+  const bl = versLineaire(b / 255)
+  let l = 0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl
+  let m = 0.2119034982 * rl + 0.6806995451 * gl + 0.1073969566 * bl
+  let s = 0.0883024619 * rl + 0.2817188376 * gl + 0.6299787005 * bl
+  l = Math.cbrt(l)
+  m = Math.cbrt(m)
+  s = Math.cbrt(s)
+  return {
+    L: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  }
+}
+
+/** OKLab → sRGB. */
+function oklabVersRgb({ L, a, b }: Oklab): Rgb {
+  let l = L + 0.3963377774 * a + 0.2158037573 * b
+  let m = L - 0.1055613458 * a - 0.0638541728 * b
+  let s = L - 0.0894841775 * a - 1.291485548 * b
+  l = l * l * l
+  m = m * m * m
+  s = s * s * s
+  return {
+    r: depuisLineaire(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) * 255,
+    g: depuisLineaire(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) * 255,
+    b: depuisLineaire(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s) * 255,
+  }
+}
+
+function rgbVersHex({ r, g, b }: Rgb): string {
+  const c = (x: number) => Math.max(0, Math.min(255, Math.round(x)))
+  const valeur = (c(r) << 16) | (c(g) << 8) | c(b)
   return `#${valeur.toString(16).padStart(6, '0')}`
 }
 
+/** The tokens.css §2 mix recipe: color-mix(in oklab, ancre P%, base) — the
+ *  anchor's P % share over the base, mixed in OKLab. Throws on an invalid hex
+ *  (a drift guard). */
+function melangerOklab(ancre: string, base: string, partAncre: number): string {
+  const A = rgbVersOklab(hexVersRgb(ancre))
+  const B = rgbVersOklab(hexVersRgb(base))
+  return rgbVersHex(
+    oklabVersRgb({
+      L: A.L * partAncre + B.L * (1 - partAncre),
+      a: A.a * partAncre + B.a * (1 - partAncre),
+      b: A.b * partAncre + B.b * (1 - partAncre),
+    }),
+  )
+}
+
+/** The theme ramp's four roles (tokens.css §2, computed for the map — the
+ *  exact recipes the CSS tokens declare: the fiche and the map now read the
+ *  same ramp). `line` is the anchor itself. */
+export interface RolesRampesTheme {
+  wash: string
+  soft: string
+  line: string
+  strong: string
+}
+
+export function rolesRampesTheme(ancrage: string): RolesRampesTheme {
+  return {
+    wash: melangerOklab(ancrage, SURFACE_SECONDAIRE, 0.08), // 8 % sur surface-secondary
+    soft: melangerOklab(ancrage, SURFACE_PRIMAIRE, 0.16), // 16 % sur surface-primary
+    line: ancrage,
+    strong: melangerOklab(ancrage, FONCE, 0.62), // 62 % sur #0C1B19
+  }
+}
+
 /**
- * The choropleth ramp for a theme anchor: `nombreEtapes` steps from a light
- * mix (anchor + white) to a dark mix (anchor + #0C1B19) — perceptually even,
- * single hue, per DESIGN.md §2. Throws on an invalid hex (a drift guard).
+ * The choropleth ramp for a theme anchor: `nombreEtapes` steps sampled along
+ * the theme's role path wash → soft → line → strong (in OKLab, the tokens.css
+ * space), lightest to darkest. The map's extremes are literally the theme's
+ * wash and strong — the same two poles the fiche reads. Throws on an invalid
+ * hex or fewer than 2 steps (a drift guard).
  */
 export function echelleChoroplethe(ancrage: string, nombreEtapes: number): string[] {
   if (nombreEtapes < 2) throw new RangeError('La rampe demande au moins 2 étapes')
-  const ancre = hexVersRgb(ancrage)
-  const claire = melanger(ancre, BLANC, 0.88)
-  const foncee = melanger(ancre, FONCE, 0.45)
+  const { wash, soft, line, strong } = rolesRampesTheme(ancrage)
+  const chemin: string[] = [wash, soft, line, strong]
   const etapes: string[] = []
   for (let i = 0; i < nombreEtapes; i++) {
-    const t = i / (nombreEtapes - 1)
-    etapes.push(melanger(hexVersRgb(claire), hexVersRgb(foncee), t))
+    const position = (i / (nombreEtapes - 1)) * (chemin.length - 1)
+    const segment = Math.min(Math.floor(position), chemin.length - 2)
+    const fraction = position - segment
+    etapes.push(melangerOklab(chemin[segment], chemin[segment + 1], 1 - fraction))
   }
   return etapes
 }
