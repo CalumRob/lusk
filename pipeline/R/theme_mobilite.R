@@ -335,13 +335,17 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     les ménages, JAMAIS une moyenne de parts. Source de référence : le cube
 #     RP exploitation principale (rp_logement_princ — le code de table épinglé
 #     LOG T12) ;
-#   - « reseaux » (l'étage réseaux, #139) : les longueurs et densités des
-#     réseaux t/b/c (à pied / vélo / voiture), une ligne par (territoire ×
-#     mesure) — la multiplicité 6 (longueur + densité × trois modes), les
-#     longueurs SOMMÉES et les densités Σ L ÷ Σ surface depuis les parties
-#     communales. Source de référence : l'extrait OSM Geofabrik (osm_reseaux —
-#     le timestamp d'extraction comme vintage, ODbL) ; les limites communales
-#     (communes_limites) fournissent la surface du dénominateur.
+#   - « reseaux » (l'étage réseaux, #139, mode `b` alimenté par le jeu Geovelo
+#     depuis #222/#228) : les longueurs et densités des réseaux t/b/c (à pied /
+#     vélo / voiture), une ligne par (territoire × mesure) — la multiplicité 6
+#     (longueur + densité × trois modes), les longueurs SOMMÉES et les densités
+#     Σ L ÷ Σ surface depuis les parties communales. Source de référence : le
+#     jeu Geovelo « Aménagements cyclables » (amenagements_cyclables — le mode
+#     `b` est la composante SIGNATURE de l'indicateur, sa fraîcheur mensuelle
+#     est ce que l'indicateur promet ; règle « Reference source » de
+#     CONTEXT.md) ; l'extrait OSM (osm_reseaux, les modes t/c) et les limites
+#     communales (communes_limites, la surface du dénominateur) restent des
+#     sources de l'indicateur.
 #   - « offre_tc » (le sous-bloc, #140) : la VRAIE part des bâtiments près
 #     d'un arrêt — la fraction des BÂTIMENTS de la commune à moins de 500 m
 #     d'un arrêt GTFS (la correction de la méthode), une ligne par territoire,
@@ -382,14 +386,15 @@ INDICATEURS_MOBILITE <- tibble::tibble(
   sources = list(
     "mobilite_snapshot",
     "rp_logement_princ",
-    c("osm_reseaux", "communes_limites"),
+    c("amenagements_cyclables", "osm_reseaux", "communes_limites"),
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
     "stationnement-velo",
     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
     "mobilite_snapshot", "mobilite_snapshot"
   ),
-  source_reference = c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
+  source_reference = c("mobilite_snapshot", "rp_logement_princ",
+                       "amenagements_cyclables",
                        "korrigo", "bornes-recharges", "stationnement-velo",
                        rep("mobilite_snapshot", 5)),
   multiplicite = c(1L, 2L, 6L, 1L, 1L, 1L, rep(1L, 5))

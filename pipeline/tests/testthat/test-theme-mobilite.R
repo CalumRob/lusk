@@ -10,27 +10,30 @@
 # (les 5 parts d'isolation, div_loss et la Story arrivent au ticket #138) et ne
 # PUBLIE rien par lui-même : il lie les pièces existantes.
 
-test_that("MANIFEST_MOBILITE : les huit sources du thème, les 11 colonnes standard", {
+test_that("MANIFEST_MOBILITE : les dix sources du thème, les 11 colonnes standard", {
   m <- MANIFEST_MOBILITE
 
-  # le manifeste est un tibble de HUIT lignes : le snapshot porté + les trois
+  # le manifeste est un tibble de DIX lignes : le snapshot porté + les quatre
   # sources de l'étage demande/réseaux (issue #139 : voitures/ménage RP,
-  # réseaux OSM, limites communales) + les quatre sources du sous-bloc
-  # « L'offre de mobilité alternative » (issue #140 : korrigo — la base GTFS
-  # dont les arrêts —, batiments_residentiels — la couche bâtiments —,
-  # bornes-recharges IRVE et stationnement-velo, le hub Ecolab).
+  # réseaux t/c OSM + réseaux b Geovelo depuis #222/#228, limites communales)
+  # + les quatre sources du sous-bloc « L'offre de mobilité alternative »
+  # (issue #140 : korrigo — la base GTFS dont les arrêts —,
+  # batiments_residentiels — la couche bâtiments —, bornes-recharges IRVE et
+  # stationnement-velo, le hub Ecolab) + la table de passage COG partagée
+  # (#222/#227).
   # mobibreizh-stops et communes-france sont ABSENTS (issue #140, correction) :
   # les arrêts viennent du stops.txt GTFS (mobibreizh-stops ne porte AUCUN
   # arrêt STAR — un constat de qualité de la donnée, documenté dans le
   # fragment korrigo) et la couche bâtiments porte elle-même code_commune_insee
   # (plus de jointure spatiale aux polygones communaux).
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 9L)
+  expect_equal(nrow(m), 10L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
-                    "communes_limites", "korrigo", "batiments_residentiels",
-                    "bornes-recharges", "stationnement-velo", "cog_passage"))
+                    "amenagements_cyclables", "communes_limites", "korrigo",
+                    "batiments_residentiels", "bornes-recharges",
+                    "stationnement-velo", "cog_passage"))
 
   # les 11 colonnes standard du manifeste (SIRENE / Flores / RP / Habitat)
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
@@ -93,17 +96,18 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   expect_error(verifier_descripteur_mobilite(list()), "manquant")
 })
 
-test_that("vintages_mobilite : neuf sources, chacune avec SA référence et SA publication", {
+test_that("vintages_mobilite : dix sources, chacune avec SA référence et SA publication", {
   v <- vintages_mobilite()
 
-  # neuf sources (issues #139+#140+#222), la forme du contrat — jamais alignées
-  expect_equal(nrow(v), 9L)
+  # dix sources (issues #139+#140+#222), la forme du contrat — jamais alignées
+  expect_equal(nrow(v), 10L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
-                    "communes_limites", "korrigo", "batiments_residentiels",
-                    "bornes-recharges", "stationnement-velo", "cog_passage"))
+                    "amenagements_cyclables", "communes_limites", "korrigo",
+                    "batiments_residentiels", "bornes-recharges",
+                    "stationnement-velo", "cog_passage"))
 
   # le snapshot porté : SA référence (l'instantané) et SA publication (le portage)
   snap <- v[v$id == "mobilite_snapshot", ]
@@ -1385,11 +1389,11 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # le manifeste réel passe sa propre validation de contrat
   expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
 
-  # un manifeste amputé d'une source échoue bruyamment (les NEUF sources du
-  # thème — le snapshot + les trois de l'étage demande/réseaux (#139) + les
+  # un manifeste amputé d'une source échoue bruyamment (les DIX sources du
+  # thème — le snapshot + les quatre de l'étage demande/réseaux (#139) + les
   # quatre du sous-bloc (#140) + la table de passage COG partagée (#222/#227))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "NEUF")
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE
@@ -1784,8 +1788,10 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillé
   #   - nb_buildings              -> le snapshot porté (l'horloge lente) ;
   #   - voitures_menage           -> le cube RP exploitation principale (le
   #     code de table LOG T12) ;
-  #   - reseaux                   -> l'extrait OSM Geofabrik (le timestamp
-  #     d'extraction comme vintage, ODbL) ;
+  #   - reseaux                   -> le jeu Geovelo « Aménagements cyclables »
+  #     (le mode `b` est la composante SIGNATURE de l'indicateur — sa
+  #     fraîcheur mensuelle est ce que l'indicateur promet, règle « Reference
+  #     source » ; osm_reseaux reste une source pour les modes t/c) ;
   #   - offre_tc                  -> korrigo (les arrêts GTFS — la couche
   #     SIGNATURE de la part des bâtiments près d'un arrêt, ODbL) ;
   #   - bornes_recharge           -> bornes-recharges (IRVE, Licence Ouverte) ;
@@ -1798,7 +1804,7 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillé
                "mobilite_snapshot")
   expect_equal(ind$source_reference[ind$key == "voitures_menage"],
                "rp_logement_princ")
-  expect_equal(ind$source_reference[ind$key == "reseaux"], "osm_reseaux")
+  expect_equal(ind$source_reference[ind$key == "reseaux"], "amenagements_cyclables")
   expect_equal(ind$source_reference[ind$key == "offre_tc"], "korrigo")
   expect_equal(ind$source_reference[ind$key == "bornes_recharge"],
                "bornes-recharges")

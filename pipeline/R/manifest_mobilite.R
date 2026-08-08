@@ -199,6 +199,46 @@ MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
   "manuel", "fichier"
 )
 
+# MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES --------------------------------------
+# Le fragment AMENAGEMENTS CYCLABLES (issue #222, ticket #228) : la source du
+# mode `b` (vélo) de `reseaux` — le jeu Geovelo « Aménagements cyclables
+# France Métropolitaine » (data.gouv.fr, ODbL — ADR-0001), snapshot parquet
+# mensuel, normalisé au schéma national v0.3.5, rattaché aux communes par côté
+# (code_com_d/g, COG 2022 — la table de passage cog_passage les projette vers
+# le COG 2025 du squelette). REMPLACE le raw OSM pour le vélo : plus
+# d'extraction maison du mode `b` — la longueur/densité devient une somme sur
+# les lignes du fichier. `osm_reseaux` reste le fragment des modes `t`/`c` (le
+# pbf n'est pas retiré). Vérifié sur le jeu réel (research note §4, 2026-08-08) :
+# chaque snapshot est UNE ressource distincte (pas d'alias « latest » stable) —
+# le manifeste épingle un snapshot précis (france-20260807.parquet, 64,5 Mo,
+# 412 681 lignes) ; la mise à jour mensuelle du pin est le travail du Watchdog.
+# Le VINTAGE est la date du snapshot (2026-08), jamais « aujourd'hui ».
+MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "amenagements_cyclables",
+  "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001)",
+  "https://static.data.gouv.fr/resources/amenagements-cyclables-france-metropolitaine/20260807-093413/france-20260807.parquet",
+  "france-20260807.parquet", "2026-08", "2026-08-07", "2026-08-07", "odbl",
+  paste0(
+    "Le réseau cyclable du bloc Mobilité (le mode `b` de `reseaux` — la ",
+    "longueur/densité à vélo) : le jeu Geovelo « Aménagements cyclables ",
+    "France Métropolitaine », l'ensemble des aménagements cyclables OSM ",
+    "normalisés au schéma national v0.3.5, rattachés aux communes par côté ",
+    "(code_com_d/g, COG 2022 → 2025 via cog_passage). REMPLACE le raw OSM ",
+    "(issue #222) : plus d'extraction maison du mode `b` — la longueur devient ",
+    "une somme sur les lignes du fichier, la règle par direction d'ADR-0016. ",
+    "Snapshot parquet MENSUEL épinglé (chaque snapshot est une ressource ",
+    "distincte, sans alias « latest » stable — le pin mensuel est le travail ",
+    "du Watchdog ; france-20260807.parquet : 64,5 Mo, 412 681 lignes). ",
+    "VINTAGE = la date du snapshot (2026-08-07), jamais « aujourd'hui ». ",
+    "ODbL (ADR-0001) : attribution « © OpenStreetMap contributors ». Le pbf ",
+    "Geofabrik (osm_reseaux) reste la source des modes t/c et du dénominateur ",
+    "routier de la figure « L'offre cyclable »."
+  ),
+  "cron", "fichier"
+)
+
 # MANIFEST_MOBILITE_COMMUNES_LIMITES -------------------------------------------
 # Le fragment LIMITES (issue #139) : les limites communales Admin Express COG
 # (WFS data.geopf.fr) — l'attribution des lignes OSM et la surface des densités.
@@ -484,12 +524,15 @@ MANIFEST_MOBILITE_COG_PASSAGE <- tibble::tribble(
 # batiments_residentiels, bornes-recharges, stationnement-velo). Depuis l'issue
 # #222 (ticket #227), le manifeste porte aussi la table de passage COG partagée
 # (cog_passage — le composant qui projette les codes 2022 du jeu Geovelo vers
-# le COG 2025 du squelette). NEUF lignes, neuf ids uniques, chaque source garde
-# SON vintage. Validé par verifier_contrat_manifest_mobilite.
+# le COG 2025 du squelette) ; depuis le ticket #228, le mode `b` de `reseaux`
+# est alimenté par le jeu Geovelo (amenagements_cyclables, cron mensuel) —
+# osm_reseaux reste le fragment des modes t/c. DIX lignes, dix ids uniques,
+# chaque source garde SON vintage. Validé par verifier_contrat_manifest_mobilite.
 MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_SNAPSHOT,
   MANIFEST_MOBILITE_RP_LOGEMENT,
   MANIFEST_MOBILITE_OSM_RESEAUX,
+  MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES,
   MANIFEST_MOBILITE_COMMUNES_LIMITES,
   MANIFEST_MOBILITE_KORRIGO,
   MANIFEST_MOBILITE_BATIMENTS,
@@ -654,7 +697,11 @@ verifier_contrat_mobilite_demande_reseaux <- function(manifest) {
   # — osm_reseaux : le pbf Geofabrik Bretagne épinglé, ODbL (ADR-0001), mode
   # manuel (312 Mo, jamais un cron), et la RÉFÉRENCE est le timestamp
   # d'EXTRACTION (le vintage n'est JAMAIS « aujourd'hui » : la référence doit
-  # précéder strictement la publication — l'extrait est antérieur au portage)
+  # précéder strictement la publication — l'extrait est antérieur au portage).
+  # Depuis l'issue #222 (ticket #228) : la source des modes `t`/`c` (à pied /
+  # voiture) SEULEMENT — le mode `b` (vélo) est alimenté par le jeu Geovelo
+  # (amenagements_cyclables), le pbf reste pour t/c et le dénominateur routier
+  # de la figure « L'offre cyclable ».
   osm <- fragment("osm_reseaux")
   if (valeur(osm, "fichier") != "bretagne-latest.osm.pbf") {
     manquer("fichier", paste0(
@@ -677,6 +724,37 @@ verifier_contrat_mobilite_demande_reseaux <- function(manifest) {
     manquer("date_reference", paste0(
       "la référence est le timestamp d'extraction — jamais « aujourd'hui » : ",
       "elle doit précéder strictement la publication (le portage)"
+    ))
+  }
+
+  # — amenagements_cyclables : le jeu Geovelo épinglé (issue #222, ticket #228),
+  # ODbL (ADR-0001), mode cron mensuel (jamais manuel — c'est le point du swap :
+  # la fraîcheur mensuelle du jeu), le vintage est le MOIS du snapshot
+  # (AAAA-MM, jamais « aujourd'hui »). La référence est la date du snapshot,
+  # la publication sa mise en ligne.
+  amen <- fragment("amenagements_cyclables")
+  if (valeur(amen, "fichier") != "france-20260807.parquet") {
+    manquer("fichier", paste0(
+      "le contrat épingle le snapshot parquet mensuel du jeu Geovelo ",
+      "(france-20260807.parquet) — jamais le geojson (~305 Mo), jamais un ",
+      "autre millésime"
+    ))
+  }
+  if (valeur(amen, "licence") != "odbl") {
+    manquer("licence", "licence attendue : 'odbl' (Geovelo/OSM, ADR-0001)")
+  }
+  if (valeur(amen, "mode") != "cron") {
+    manquer("mode", "mode attendu : 'cron' (le snapshot mensuel du jeu — le swap promet la fraîcheur mensuelle)")
+  }
+  dates_iso(amen)
+  if (!grepl("^[0-9]{4}-[0-9]{2}$", valeur(amen, "vintage"))) {
+    manquer("vintage", "vintage attendu : le mois du snapshot (AAAA-MM)")
+  }
+  if (as.Date(valeur(amen, "date_reference")) >
+      as.Date(valeur(amen, "date_publication"))) {
+    manquer("date_reference", paste0(
+      "la référence est la date du snapshot, la publication sa mise en ligne — ",
+      "la publication jamais antérieure à la référence"
     ))
   }
 
@@ -873,8 +951,8 @@ verifier_contrat_mobilite_stationnement_velo <- function(fragment) {
 
 # verifier_contrat_manifest_mobilite --------------------------------------------
 # Le contrat du MANIFESTE CONCATÉNÉ du thème (issues #139 + #140 + #222, la
-# même idée que les contrats de manifeste des fragments) : NEUF lignes, neuf
-# ids uniques et exacts (le snapshot porté + les trois sources de l'étage
+# même idée que les contrats de manifeste des fragments) : DIX lignes, dix ids
+# uniques et exacts (le snapshot porté + les quatre sources de l'étage
 # demande/réseaux + les quatre sources du sous-bloc + la table de passage COG
 # partagée), chaque fragment passe SON contrat, les dates du manifeste sont
 # bien formées (la publication jamais antérieure à la référence) et chaque id
@@ -890,17 +968,18 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 9L) {
-    manquer("forme", paste0("le manifeste concaténé porte NEUF sources (le ",
-                            "snapshot + les trois de l'étage demande/réseaux ",
+  if (nrow(manifest) != 10L) {
+    manquer("forme", paste0("le manifeste concaténé porte DIX sources (le ",
+                            "snapshot + les quatre de l'étage demande/réseaux ",
                             "(#139) + les quatre du sous-bloc (#140) + la ",
                             "table de passage COG partagée (#222/#227)), pas ",
                             nrow(manifest)))
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
-                "communes_limites", "korrigo", "batiments_residentiels",
-                "bornes-recharges", "stationnement-velo", "cog_passage")
+                "amenagements_cyclables", "communes_limites", "korrigo",
+                "batiments_residentiels", "bornes-recharges",
+                "stationnement-velo", "cog_passage")
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }

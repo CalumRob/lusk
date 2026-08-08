@@ -260,7 +260,7 @@ comptes_payload_reels <- c(
   histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
-  vintages = 9         # snapshot + RP voitures + OSM + limites (#139) + korrigo + bâtiments + bornes + vélo (#140) + cog_passage (#222/#227)
+  vintages = 10        # snapshot + RP voitures + osm t/c + amenagements b (#222) + limites (#139) + korrigo + bâtiments + bornes + vélo (#140) + cog_passage (#222/#227)
 )
 # les comptes des Story keys (la forme multi-lignes du contrat histoires)
 comptes_histoires_reels <- c(
@@ -508,9 +508,9 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_true(all(pour("voitures_menage")$vintage_date_reference == "2023-01-01"))
   expect_true(all(pour("voitures_menage")$vintage_date_publication == "2026-07-29"))
   expect_true(all(pour("reseaux")$vintage_source ==
-                    vintages$source[vintages$id == "osm_reseaux"]))
-  expect_true(all(pour("reseaux")$vintage_date_reference == "2026-08-05"))
-  expect_true(all(pour("reseaux")$vintage_date_publication == "2026-08-06"))
+                    vintages$source[vintages$id == "amenagements_cyclables"]))
+  expect_true(all(pour("reseaux")$vintage_date_reference == "2026-08-07"))
+  expect_true(all(pour("reseaux")$vintage_date_publication == "2026-08-07"))
   ref_korrigo <- vintages[vintages$id == "korrigo", ]
   expect_true(all(pour("offre_tc")$vintage_source == ref_korrigo$source))
   expect_true(all(pour("offre_tc")$vintage_date_reference == "2026-02-03"))
