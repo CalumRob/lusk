@@ -92,6 +92,94 @@ filtrer_geometrie <- function(collection, niveau) {
   collection
 }
 
+# passage COG — la table de passage millésime-à-millésime -----------------------
+# Le composant partagé « passage COG » (issue #222, ticket #227) : projeter des
+# codes communaux d'un millésime COG vers un autre — la discipline que l'issue
+# supposait existante mais qui n'existait pas (le pipeline n'avait que des
+# gardes de FORMAT COG, jamais de table millésime-à-millésime). Usage : le jeu
+# Geovelo « Aménagements cyclables » joint ses segments sur des codes COG 2022,
+# le squelette de l'app est au COG 2025 — la table de passage projette l'un
+# vers l'autre.
+# Source (fragment `cog_passage` du manifeste) : INSEE « Table de passage
+# annuelle 2025 » — la feuille COM : UNE ligne par commune de la géographie
+# 2025, avec CODGEO_<année> = le code que la commune portait dans chaque
+# millésime depuis 2003. Une commune issue d'une fusion y figure en PLUSIEURS
+# lignes (une par ancienne commune) ; une commune inchangée en une seule ligne
+# (l'identité). Vérifié sur le fichier réel (2026-08-08) : 36 760 lignes × 47
+# colonnes ; les fusions bretonnes 2022→2025 sont Le Cambout (22027) +
+# Coëtlogon (22043) → Plumieux (22241), Pléven (22200) → Val-d'Arguenon
+# (22237), Saint-Launeuc (22309) → Merdrignac (22147), Fleurigné (35112) → La
+# Chapelle-Fleurigné (35062) ; 1 270 communes bretonnes 2025, aucune créée
+# après 2022 ; aucun code 2022 breton ne mappe vers PLUSIEURS codes 2025 (0
+# scission postérieure — les scissions du fichier sont toutes antérieures à
+# 2022, ex. Hédé 35130 en 2008).
+
+# lire_table_passage ------------------------------------------------------------
+# Le lecteur de la table de passage annuelle INSEE : la feuille COM du zip
+# (les 4 premières lignes sont titre + métadonnées, la 5e l'en-tête réel —
+# NIVGEO, CODGEO_2003, LIBGEO_2003, …, CODGEO_2025, LIBGEO_2025). Non testé
+# dans la boucle (la convention du pipeline — comme lire_epci) ; la forme
+# réelle est vérifiée par construire_passage_cog sur les fixtures.
+lire_table_passage <- function(chemin) {
+  readxl::read_excel(chemin, sheet = "COM", col_types = "text", skip = 5)
+}
+
+# construire_passage_cog ---------------------------------------------------------
+# La table WIDE (CODGEO_2022 → CODGEO_2025) vers la table LONG de passage :
+# {code_2022, code_2025}, une ligne par code 2022, les lignes identité
+# (Plumieux → Plumieux) dédupliquées, triée par code_2022 — déterministe.
+# Gardes : les deux colonnes requises (une colonne manquante nomme le champ
+# fautif), et un code 2022 qui mappe vers PLUSIEURS codes 2025 (une scission —
+# le code se diviserait en deux communes) est une corruption : jamais un choix
+# silencieux.
+construire_passage_cog <- function(table_wide) {
+  requises <- c("CODGEO_2022", "CODGEO_2025")
+  manquantes <- setdiff(requises, names(table_wide))
+  if (length(manquantes) > 0) {
+    stop("Table de passage COG corrompue — colonne(s) requise(s) manquante(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  table_wide %>%
+    dplyr::transmute(code_2022 = CODGEO_2022, code_2025 = CODGEO_2025) %>%
+    dplyr::distinct() %>%
+    dplyr::group_by(code_2022) %>%
+    dplyr::filter(dplyr::n() > 1) %>%
+    dplyr::ungroup() %>%
+    {
+      multi <- .
+      if (nrow(multi) > 0) {
+        stop("Table de passage COG corrompue — le code 2022 '",
+             multi$code_2022[1], "' mappe vers plusieurs codes 2025 (une ",
+             "scission) — jamais un choix silencieux.", call. = FALSE)
+      }
+      NULL
+    }
+  table_wide %>%
+    dplyr::transmute(code_2022 = CODGEO_2022, code_2025 = CODGEO_2025) %>%
+    dplyr::distinct() %>%
+    dplyr::arrange(code_2022)
+}
+
+# passage_cog -------------------------------------------------------------------
+# Applique la table de passage à un vecteur de codes : chaque code 2022 est
+# remplacé par son code 2025 ; un code présent dans la table des 2025 (l'identité
+# — la commune inchangée) passe tel quel ; un code NON mappé (absent des deux
+# côtés de la table) s'arrête bruyamment en nommant le code fautif — jamais une
+# NA silencieuse (un segment Geovelo dont la commune a disparu des deux
+# millésimes est une corruption de la donnée, pas un drop). Déterministe : le
+# vecteur d'entrée est conservé dans l'ordre.
+passage_cog <- function(codes, mappe) {
+  codes <- as.character(codes)
+  if (length(codes) == 0) return(character(0))
+  ref <- stats::setNames(mappe$code_2025, mappe$code_2022)
+  manquants <- setdiff(codes, names(ref))
+  if (length(manquants) > 0) {
+    stop("Passage COG — code(s) non mappé(s) vers le COG 2025 : ",
+         paste(manquants, collapse = ", "), ".", call. = FALSE)
+  }
+  unname(ref[codes])
+}
+
 # TYPE_PAR_NIVEAU --------------------------------------------------------------
 # L'étiquette de type du contrat de l'app par niveau — le singulier : la table
 # `territoires` du payload porte `type` = "commune" / "epci" / "departement"

@@ -260,7 +260,7 @@ comptes_payload_reels <- c(
   histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
-  vintages = 8         # snapshot + RP voitures + OSM + limites (#139) + korrigo + bâtiments + bornes + vélo (#140)
+  vintages = 9         # snapshot + RP voitures + OSM + limites (#139) + korrigo + bâtiments + bornes + vélo (#140) + cog_passage (#222/#227)
 )
 # les comptes des Story keys (la forme multi-lignes du contrat histoires)
 comptes_histoires_reels <- c(

@@ -427,15 +427,65 @@ MANIFEST_MOBILITE_STATIONNEMENT_VELO <- tibble::tribble(
   "cron", "fichier"
 )
 
+# MANIFEST_MOBILITE_COG_PASSAGE ------------------------------------------------
+# Le fragment COG PASSAGE (issue #222, ticket #227) : la table de passage
+# annuelle INSEE 2022 → 2025 — le composant PARTAGÉ (le même pattern que la
+# base EPCI partagée de Milieux : un id/URL unique, le cache idempotent évite
+# le re-téléchargement). La discipline que l'issue #222 supposait existante
+# mais qui n'existait pas : le pipeline n'avait que des gardes de FORMAT COG
+# (codes 5 chiffres, département breton), jamais de table millésime-à-millésime.
+# Le jeu Geovelo « Aménagements cyclables » joint ses segments sur des codes
+# COG 2022 (§3 du research note) — la table de passage les projette vers le
+# COG 2025 du squelette de l'app (EPCI_au_01-01-2025.xlsx, Admin Express
+# LATEST). Source : INSEE « Table de passage annuelle 2025 » (la feuille COM —
+# une ligne par commune de la géographie 2025, CODGEO_<année> = le code de la
+# commune dans chaque millésime depuis 2003 ; vérifié sur le fichier réel :
+# 36 760 lignes × 47 colonnes, 1 270 communes bretonnes 2025, les fusions
+# bretonnes 2022→2025 = Le Cambout 22027 + Coëtlogon 22043 → Plumieux 22241,
+# Pléven 22200 → Val-d'Arguenon 22237, Saint-Launeuc 22309 → Merdrignac
+# 22147, Fleurigné 35112 → La Chapelle-Fleurigné 35062). Licence Ouverte 2.0,
+# mise à jour annuelle ; la référence est le millésime (2025-01-01), la
+# publication la mise en ligne (2026-05-06 — la version corrigée, 3 lignes
+# incohérentes supprimées). Le lecteur + les builders vivent dans geometrie.R
+# (les helpers partagés du référentiel), pas dans le thème.
+MANIFEST_MOBILITE_COG_PASSAGE <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "cog_passage",
+  "INSEE — Table de passage annuelle des communes (COG 2025) : la correspondance des codes communaux entre les millésimes 2003-2025",
+  "https://www.insee.fr/fr/statistiques/fichier/7671867/table_passage_annuelle_2025.zip",
+  "table_passage_annuelle_2025.zip",
+  "2025", "2025-01-01", "2026-05-06", "lov2",
+  paste0(
+    "La table de passage annuelle INSEE (COG 2025, Licence Ouverte 2.0, mise ",
+    "à jour annuelle) : pour chaque commune de la géographie 2025, son code ",
+    "dans chaque millésime depuis 2003 (la feuille COM, une ligne par commune, ",
+    "36 760 lignes × 47 colonnes — vérifiée sur le fichier réel). Le composant ",
+    "partagé qui projette les codes COG 2022 du jeu Geovelo « Aménagements ",
+    "cyclables » vers le COG 2025 du squelette de l'app (la discipline que ",
+    "#222 supposait existante — la table de passage n'existait pas, elle est ",
+    "construite ici). Vérifié sur le fichier réel : les fusions bretonnes ",
+    "2022→2025 sont Le Cambout (22027) + Coëtlogon (22043) → Plumieux (22241), ",
+    "Pléven (22200) → Val-d'Arguenon (22237), Saint-Launeuc (22309) → ",
+    "Merdrignac (22147), Fleurigné (35112) → La Chapelle-Fleurigné (35062) ; ",
+    "1 270 communes bretonnes 2025, aucune créée après 2022 (0 NA CODGEO_2022). ",
+    "Référence : le millésime (2025-01-01) ; publication : la mise en ligne de ",
+    "la version corrigée du 06/05/2025 (3 lignes incohérentes supprimées)."
+  ),
+  "cron", "fichier"
+)
+
 # MANIFEST_MOBILITE -------------------------------------------------------------
 # Le manifeste CONCATÉNÉ du thème (la même forme que MANIFEST_ECONOMIE) : les
 # fragments, dans l'ordre — le snapshot porté (l'horloge lente du flagship), les
 # trois sources de l'étage demande/réseaux (issue #139 : le cube RP voitures,
 # l'extrait OSM, les limites communales), puis les quatre sources du sous-bloc
 # « L'offre de mobilité alternative » (issue #140 : korrigo GTFS,
-# batiments_residentiels, bornes-recharges, stationnement-velo). HUIT lignes,
-# huit ids uniques, chaque source garde SON vintage. Validé par
-# verifier_contrat_manifest_mobilite.
+# batiments_residentiels, bornes-recharges, stationnement-velo). Depuis l'issue
+# #222 (ticket #227), le manifeste porte aussi la table de passage COG partagée
+# (cog_passage — le composant qui projette les codes 2022 du jeu Geovelo vers
+# le COG 2025 du squelette). NEUF lignes, neuf ids uniques, chaque source garde
+# SON vintage. Validé par verifier_contrat_manifest_mobilite.
 MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_SNAPSHOT,
   MANIFEST_MOBILITE_RP_LOGEMENT,
@@ -444,7 +494,8 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_KORRIGO,
   MANIFEST_MOBILITE_BATIMENTS,
   MANIFEST_MOBILITE_BORNES,
-  MANIFEST_MOBILITE_STATIONNEMENT_VELO
+  MANIFEST_MOBILITE_STATIONNEMENT_VELO,
+  MANIFEST_MOBILITE_COG_PASSAGE
 )
 
 # verifier_contrat_mobilite_snapshot ---------------------------------------------
@@ -676,6 +727,47 @@ verifier_contrat_mobilite_korrigo <- function(fragment) {
   invisible(TRUE)
 }
 
+# verifier_contrat_mobilite_cog_passage ------------------------------------------
+# Le contrat du fragment COG PASSAGE (issue #222, ticket #227) : UNE source —
+# cog_passage, le zip INSEE « table_passage_annuelle_2025 » (le composant
+# partagé, le même pattern que la base EPCI de Milieux). Licence Ouverte 2.0
+# (lov2), vintage 2025 (le millésime), mode cron, type fichier, dates ISO bien
+# formées (publication ≥ référence).
+verifier_contrat_mobilite_cog_passage <- function(fragment) {
+  manquer <- function(champ, detail) {
+    stop(sprintf("Contrat Mobilité COG passage violé — %s : %s.", champ, detail),
+         call. = FALSE)
+  }
+  if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) {
+    manquer("forme", "le fragment COG passage porte UNE source (la table de passage INSEE)")
+  }
+  if (fragment$id != "cog_passage") {
+    manquer("id", "id attendu : 'cog_passage'")
+  }
+  if (fragment$fichier != "table_passage_annuelle_2025.zip") {
+    manquer("fichier", paste0(
+      "le contrat épingle le zip INSEE « table_passage_annuelle_2025 » — ",
+      "jamais un autre millésime ni la table 2003-2025 (la annuelle porte la ",
+      "correspondance de TOUS les codes 2022 vers le COG 2025)"
+    ))
+  }
+  if (fragment$licence != "lov2") {
+    manquer("licence", "licence attendue : 'lov2' (INSEE, Licence Ouverte)")
+  }
+  if (fragment$mode != "cron" || fragment$type != "fichier") {
+    manquer("mode/type", "mode 'cron' et type 'fichier'")
+  }
+  if (fragment$vintage != "2025") {
+    manquer("vintage", "vintage attendu : '2025' (le millésime COG 2025)")
+  }
+  if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
+      !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
+      as.Date(fragment$date_publication) < as.Date(fragment$date_reference)) {
+    manquer("dates", "dates ISO bien formées, publication jamais antérieure à la référence")
+  }
+  invisible(TRUE)
+}
+
 # verifier_contrat_mobilite_batiments -------------------------------------------
 # Le contrat du fragment BATIMENTS (issue #140, la correction de la méthode) :
 # UNE source — batiments_residentiels, la couche BDNB portée comme le snapshot
@@ -780,15 +872,16 @@ verifier_contrat_mobilite_stationnement_velo <- function(fragment) {
 
 
 # verifier_contrat_manifest_mobilite --------------------------------------------
-# Le contrat du MANIFESTE CONCATÉNÉ du thème (issues #139 + #140, la même idée
-# que les contrats de manifeste des fragments) : HUIT lignes, huit ids uniques
-# et exacts (le snapshot porté + les trois sources de l'étage demande/réseaux
-# + les quatre sources du sous-bloc), chaque fragment passe SON contrat, les
-# dates du manifeste sont bien formées (la publication jamais antérieure à la
-# référence) et chaque id de la table des indicateurs du thème est couvert par
-# une source du manifeste. Un manifeste corrompu — une source manquante, un id
-# dupliqué, une licence hors contrat, un fragment incohérent — échoue
-# bruyamment en nommant le champ fautif.
+# Le contrat du MANIFESTE CONCATÉNÉ du thème (issues #139 + #140 + #222, la
+# même idée que les contrats de manifeste des fragments) : NEUF lignes, neuf
+# ids uniques et exacts (le snapshot porté + les trois sources de l'étage
+# demande/réseaux + les quatre sources du sous-bloc + la table de passage COG
+# partagée), chaque fragment passe SON contrat, les dates du manifeste sont
+# bien formées (la publication jamais antérieure à la référence) et chaque id
+# de la table des indicateurs du thème est couvert par une source du manifeste.
+# Un manifeste corrompu — une source manquante, un id dupliqué, une licence
+# hors contrat, un fragment incohérent — échoue bruyamment en nommant le champ
+# fautif.
 verifier_contrat_manifest_mobilite <- function(manifest) {
   manquer <- function(champ, detail) {
     stop(sprintf("Contrat Mobilité manifeste violé — %s : %s.", champ, detail),
@@ -797,16 +890,17 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 8L) {
-    manquer("forme", paste0("le manifeste concaténé porte HUIT sources (le ",
+  if (nrow(manifest) != 9L) {
+    manquer("forme", paste0("le manifeste concaténé porte NEUF sources (le ",
                             "snapshot + les trois de l'étage demande/réseaux ",
-                            "(#139) + les quatre du sous-bloc (#140)), pas ",
+                            "(#139) + les quatre du sous-bloc (#140) + la ",
+                            "table de passage COG partagée (#222/#227)), pas ",
                             nrow(manifest)))
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                 "communes_limites", "korrigo", "batiments_residentiels",
-                "bornes-recharges", "stationnement-velo")
+                "bornes-recharges", "stationnement-velo", "cog_passage")
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -823,6 +917,8 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
     manifest[manifest$id == "bornes-recharges", ])
   verifier_contrat_mobilite_stationnement_velo(
     manifest[manifest$id == "stationnement-velo", ])
+  verifier_contrat_mobilite_cog_passage(
+    manifest[manifest$id == "cog_passage", ])
 
   # les dates de tout le manifeste — ISO, publication jamais antérieure à la
   # référence (l'horloge lente du snapshot et les vintages du sous-bloc). La

@@ -25,12 +25,12 @@ test_that("MANIFEST_MOBILITE : les huit sources du thème, les 11 colonnes stand
   # fragment korrigo) et la couche bâtiments porte elle-même code_commune_insee
   # (plus de jointure spatiale aux polygones communaux).
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 8L)
+  expect_equal(nrow(m), 9L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     "communes_limites", "korrigo", "batiments_residentiels",
-                    "bornes-recharges", "stationnement-velo"))
+                    "bornes-recharges", "stationnement-velo", "cog_passage"))
 
   # les 11 colonnes standard du manifeste (SIRENE / Flores / RP / Habitat)
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
@@ -93,17 +93,17 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   expect_error(verifier_descripteur_mobilite(list()), "manquant")
 })
 
-test_that("vintages_mobilite : huit sources, chacune avec SA référence et SA publication", {
+test_that("vintages_mobilite : neuf sources, chacune avec SA référence et SA publication", {
   v <- vintages_mobilite()
 
-  # huit sources (issues #139+#140), la forme du contrat — jamais alignées
-  expect_equal(nrow(v), 8L)
+  # neuf sources (issues #139+#140+#222), la forme du contrat — jamais alignées
+  expect_equal(nrow(v), 9L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     "communes_limites", "korrigo", "batiments_residentiels",
-                    "bornes-recharges", "stationnement-velo"))
+                    "bornes-recharges", "stationnement-velo", "cog_passage"))
 
   # le snapshot porté : SA référence (l'instantané) et SA publication (le portage)
   snap <- v[v$id == "mobilite_snapshot", ]
@@ -1385,11 +1385,11 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # le manifeste réel passe sa propre validation de contrat
   expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
 
-  # un manifeste amputé d'une source échoue bruyamment (les HUIT sources du
+  # un manifeste amputé d'une source échoue bruyamment (les NEUF sources du
   # thème — le snapshot + les trois de l'étage demande/réseaux (#139) + les
-  # quatre du sous-bloc (#140))
+  # quatre du sous-bloc (#140) + la table de passage COG partagée (#222/#227))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "HUIT")
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "NEUF")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE
