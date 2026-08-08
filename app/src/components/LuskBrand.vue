@@ -59,13 +59,15 @@ defineProps<{
 }
 
 .lusk-marque__ermine {
-  width: 26px;
-  height: 26px;
+  /* em relatif au mot : l'hermine suit la taille du wordmark, jamais une
+     taille fixe — la marque garde ses proportions à toute taille de texte. */
+  width: 1.18em;
+  height: 1.18em;
   flex-shrink: 0;
 }
 
 .lusk-marque--verticale .lusk-marque__ermine {
-  width: 34px;
-  height: 34px;
+  width: 1.55em;
+  height: 1.55em;
 }
 </style>

@@ -1,5 +1,5 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import AccueilView from '../views/AccueilView.vue'
@@ -18,9 +18,9 @@ import { routes } from '../router'
 
 /**
  * L'accueil — the landing (layouts.md §1 + site-map.md): the claim → subtitle →
- * search → carte link + freshness line → EXEMPLES (random carousel) → OUTRO
- * (Sources & Méthodes + the thesis teaser). Order rationale: claim → prove →
- * entice → trust. Loading → skeleton; error → icon + message + Retry.
+ * search → carte link + freshness line → OUTRO (Sources & Méthodes + the
+ * thesis teaser). Order rationale: claim → prove → entice → trust. Loading →
+ * skeleton; error → icon + message + Retry.
  */
 
 const payload: Payload = {
@@ -150,41 +150,27 @@ describe('Accueil — la ligne de fraîcheur', () => {
   })
 })
 
-describe('Accueil — EXEMPLES (Sélection aléatoire)', () => {
-  it('affiche le carrousel de fiches au hasard avec le libellé du carrousel', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+describe('Accueil — le carrousel est retiré (#204)', () => {
+  it('ne rend plus la « Sélection aléatoire » — ni carrousel, ni tirage au hasard', async () => {
     const { wrapper } = await monter(async () => payload)
 
-    expect(wrapper.text()).toContain('Sélection aléatoire')
-    expect(wrapper.findAll('.carrousel-carte').length).toBeGreaterThan(0)
-    vi.restoreAllMocks()
+    expect(wrapper.find('.accueil-exemples').exists()).toBe(false)
+    expect(wrapper.find('.carrousel-carte').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Sélection aléatoire')
   })
 
-  it('chaque carte mène à la fiche du territoire', async () => {
-    const { wrapper } = await monter(async () => payload)
-
-    const liens = wrapper.findAll('.carrousel-carte')
-    expect(liens[0].attributes('href')).toMatch(/^\/territoire\/(commune|epci|departement|region)\//)
-  })
-})
-
-describe('Accueil — héros vs carrousel : fonds et séparation verticale', () => {
-  it('le héros est une bande pleine largeur, distincte de la zone de contenu du carrousel', async () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  it('garde le héros en bande pleine largeur, distincte de la zone de contenu', async () => {
     const { wrapper } = await monter(async () => payload)
 
     const hero = wrapper.find('.accueil-hero')
     const interieur = wrapper.find('.accueil-interieur')
-    const carrousel = wrapper.find('.accueil-exemples')
 
     expect(hero.exists()).toBe(true)
     expect(interieur.exists()).toBe(true)
-    expect(carrousel.exists()).toBe(true)
 
     // Le héros est une bande à part entière (pleine largeur), pas une zone
-    // dans la page : le carrousel vit sur le fond de page, en dessous.
+    // dans la page : la zone de contenu (outro) vit en dessous.
     expect(hero.element.parentElement?.classList.contains('accueil')).toBe(true)
-    expect(carrousel.element.parentElement?.classList.contains('accueil-interieur')).toBe(true)
     expect(interieur.element.contains(hero.element)).toBe(false)
   })
 })

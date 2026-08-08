@@ -5,27 +5,24 @@
  * the LuskBrand lockup and the title « lusk · Intelligence territoriale en
  * Bretagne » (mock/brand/iterations/v8.html — the brand moment, DESIGN.md §1);
  * the GlobalSearchBar is the way into any fiche; the freshness line makes the
- * "alive" promise literal (ligneFraicheur from the run report); EXEMPLES shows
- * a random selection of fiches (EntityCarousel); the outro closes with the
- * thesis-as-evidence teaser and Sources & Méthodes.
+ * "alive" promise literal (ligneFraicheur from the run report); the outro
+ * closes with the thesis-as-evidence teaser and Sources & Méthodes.
  *
  * The hero is its own full-bleed band on --surface-hero, separated vertically
- * from the carousel zone (plain page surface) by the band edge + border
- * (DESIGN.md §7) — the two landing zones never blur together.
+ * from the plain page surface by the band edge + border (DESIGN.md §7) — the
+ * two zones never blur together. The carousel was removed (#204): the landing
+ * is hero → outro, with no random draw.
  *
  * States (ui-elements.md): skeleton while the payload loads; typed
  * PayloadError with a Retry button; honest static-rhythm freshness fallback.
- * The search bar and the carousel need the reference table — the carousel's
- * auto-advance is disabled under prefers-reduced-motion (DESIGN.md §6).
+ * The search bar needs the reference table.
  */
 import { AlertCircle, ArrowRight, Map } from 'lucide-vue-next'
-import { computed, ref, watchEffect } from 'vue'
+import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
-import EntityCarousel from '@/components/landing/EntityCarousel.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import LuskBrand from '@/components/LuskBrand.vue'
-import { selectionAleatoire } from '@/landing/selection'
 import { ligneFraicheur } from '@/payload/selectors'
 import type { Territoire } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
@@ -42,23 +39,6 @@ const fraicheur = computed(() => {
 const messagesErreur = computed(() =>
   erreur.value ? 'Impossible de charger les données.' : null,
 )
-
-// Les exemples : un tirage aléatoire des territoires, stable par session (la
-// sélection ne change pas à chaque rendu — le carrousel n'est pas une loterie).
-const exemples = ref<Territoire[]>([])
-watchEffect(() => {
-  if (payload.value && exemples.value.length === 0) {
-    exemples.value = selectionAleatoire(payload.value.territoires, 6)
-  }
-})
-
-// L'auto-avance du carrousel respecte prefers-reduced-motion (DESIGN.md §6).
-const automatique = ref(true)
-watchEffect(() => {
-  if (typeof window.matchMedia === 'function') {
-    automatique.value = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  }
-})
 </script>
 
 <template>
@@ -111,13 +91,6 @@ watchEffect(() => {
     </header>
 
     <div class="accueil-interieur">
-      <EntityCarousel
-        v-if="exemples.length > 0"
-        class="accueil-exemples"
-        :territoires="exemples"
-        :automatique="automatique"
-      />
-
       <footer class="accueil-outro">
         <RouterLink to="/methodologie" class="accueil-methodes">Sources &amp; Méthodes</RouterLink>
         <p class="accueil-teaser">
@@ -190,9 +163,11 @@ watchEffect(() => {
 }
 
 .accueil-hero-marque :deep(.lusk-marque__ermine) {
-  width: 156px;
-  height: 156px;
-  margin-bottom: -56px;
+  /* em sur la taille du mot (clamp) : l'hermine suit le texte — les
+     proportions de la colonne tiennent quand le mot réduit sur mobile (#204). */
+  width: 1.3em;
+  height: 1.3em;
+  margin-bottom: -0.467em;
 }
 
 .accueil-marque-caption {
