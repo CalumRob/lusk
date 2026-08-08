@@ -18,6 +18,7 @@ import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
+import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import {
@@ -39,6 +40,7 @@ import {
   histoiresMobilitePourTerritoire,
   indicateursGroupeesPourTerritoire,
   nuageComparaison,
+  nuageMilieux,
   nuageMobilite,
   trouverTerritoire,
 } from '@/payload/selectors'
@@ -184,14 +186,49 @@ const storyMilieuxAngle = computed(() => {
   )
 })
 
-// The Milieux story's sources, exhaustive: la série historique (la population
-// de la lecture — la règle de source d'ADR-0014) et CONSOENAF (la
-// consommation re-sommée sur la même fenêtre). Citées depuis la table
-// vintages — jamais inventées.
+// The Milieux Story row, narrowed to the Milieux member of the Histoire union
+// — the quadrant graph reads the OCS-GE state fields (the same theme guard as
+// the story: a territory carries BOTH stories, each block reads its own).
+const histoireMilieuxEtats = computed(() =>
+  histoireMilieux.value?.theme === 'milieux' ? histoireMilieux.value : null,
+)
+
+// The Milieux story chart's context cloud (ADR-0011, issue #241) — the
+// same-scale peers' Δpopulation × Δ(m²/hab), each carrying its OCS-GE state
+// window. The Démographie nuage pattern: computed from the selector, fed to
+// the quadrant graph.
+const nuageMilieuxComputed = computed(() =>
+  props.theme === 'milieux' ? nuageMilieux(props.payload, props.territoire) ?? [] : [],
+)
+
+// The Milieux block's figure set (spec #225, ADR-0017) : « Intensité état ·
+// Série annuelle » — artif_par_habitant (l'état par habitant, deux lignes
+// M2/M3) puis conso_enaf_annuel (la seule horloge annuelle). La fenêtre et la
+// trajectoire ZAN sont mortes avec les flux CONSOENAF : leurs figures ne
+// rendent plus (la story porte la trajectoire — #63).
+const CLEFS_FIGURES_MILIEUX = ['artif_par_habitant', 'conso_enaf_annuel']
+
+function groupesMilieuxFigures() {
+  return groupes.value.filter((g) => CLEFS_FIGURES_MILIEUX.includes(g.key))
+}
+
+// The Milieux story's sources, exhaustive (spec #225) : la série historique
+// (la population de la lecture — la règle de source d'ADR-0014) et les
+// vintages OCS-GE d'artificialisation (les états — la seconde force). Citées
+// depuis la table vintages — jamais inventées. TODO #243 : les ids
+// ocsge_artificialisation_* n'entrent dans la table qu'avec la régénération
+// réelle — la ligne cite ce que la table fournit aujourd'hui (la série
+// historique seule), et ré-assert les vintages OCS-GE dès qu'ils y sont.
 const sourceHistoireMilieux = computed(() => {
   const vintages = props.payload.vintages
   if (!vintages) return null
-  const ids = new Set(['serie_historique', 'consoenaf'])
+  const ids = new Set([
+    'serie_historique',
+    'ocsge_artificialisation_22',
+    'ocsge_artificialisation_29',
+    'ocsge_artificialisation_35',
+    'ocsge_artificialisation_56',
+  ])
   const citees = vintages.filter((v) => ids.has(v.id))
   if (citees.length === 0) return null
   return citees.map((v) => `${v.source} · ${v.version}`).join(' · ')
@@ -248,13 +285,28 @@ function libelleIndicateur(clef: string): string {
     <section v-if="storyMobiliteAngle || story || storyEconomieAngle || storyMilieuxAngle" class="angle-story">
       <!-- The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) :
            « Se densifier, s'étaler, ou s'en aller » — la lecture du territoire
-           contre sa terre, une des quatre lectures par les signes. L'intensité
-           (m² d'ENAF par habitant ajouté) est morte du prose avec les flux
-           CONSOENAF : la surface artificialisée par habitant (l'état) vit dans
-           le « comment lire », l'intensité est la figure (#65, #241). -->
+           contre sa terre, une des quatre lectures par les signes. L'angle
+           porte le GRAPHE QUADRANT (issue #241, ADR-0011) — le nuage des
+           pairs au même échelle (x = Δpopulation, y = Δ m²/hab) — au premier
+           plan, la lecture d'abord (issue #71). L'intensité (m² d'ENAF par
+           habitant ajouté) est morte du prose avec les flux CONSOENAF : la
+           surface artificialisée par habitant (l'état) vit dans le « comment
+           lire », l'intensité est la figure (#65, #241). -->
       <template v-if="storyMilieuxAngle">
         <p class="angle-story-une-ligne">{{ storyMilieuxAngle.uneLigne }}</p>
         <p class="angle-story-titre">{{ storyMilieuxAngle.titre }}</p>
+        <GraphiqueQuadrantMilieux
+          v-if="histoireMilieuxEtats && histoireMilieuxEtats.classification"
+          :delta-population="histoireMilieuxEtats.delta_population"
+          :delta-m2-par-habitant="
+            histoireMilieuxEtats.artif_m3_par_habitant -
+            histoireMilieuxEtats.artif_m2_par_habitant
+          "
+          :classification="histoireMilieuxEtats.classification"
+          :nom="nomTerritoire"
+          :periode-artif="histoireMilieuxEtats.periode_artif"
+          :nuage="nuageMilieuxComputed"
+        />
         <p class="angle-story-comment-lire">
           <span class="angle-story-etiquette">Comment lire</span>
           {{ storyMilieuxAngle.commentLire }}
@@ -410,6 +462,20 @@ function libelleIndicateur(clef: string): string {
       </template>
       <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
     </template>
+
+    <!-- The Milieux figure set (spec #225, ADR-0017) : « Intensité état ·
+         Série annuelle » — les DEUX figures du contrat, jamais une fenêtre ni
+         une trajectoire ZAN résiduelles (mortes avec les flux CONSOENAF). -->
+    <div v-else-if="theme === 'milieux'" class="grille-indicateurs">
+      <IndicatorFigure
+        v-for="groupe in groupesMilieuxFigures()"
+        :key="groupe.key"
+        :clef="groupe.key"
+        :lignes="groupe.lignes"
+        :libelle="libelleIndicateur(groupe.key)"
+        :labels-detail="NOMS_TRANCHES_AGE"
+      />
+    </div>
 
     <div v-else class="grille-indicateurs">
       <IndicatorFigure

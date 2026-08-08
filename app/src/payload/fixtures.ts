@@ -570,18 +570,55 @@ const vintageConsoenaf = {
 }
 
 /**
- * Indicateurs Milieux (issue #172 + #173) — VALUES mirror the R fixture
- * (helper-milieux.R + test-contract-payload-milieux.R), rien d'inventé : la
- * fenêtre 2021-2025 conso_enaf_fenetre en hectares (le champ natif naf21art25
- * converti m² -> ha au reshape — 233 202 m² -> 23,3202 ha pour 22001), la
- * série annuelle 2011-2024 conso_enaf_annuel (14 lignes par territoire,
- * detail = l'année) et la trajectoire ZAN trajectoire_zan en × (le rapport
- * des rythmes annualisés — 0,5 = le −50 % de la loi). Les rangs portent la
- * même forme que la payload commise (rang en [0,1] ou null).
+ * Le vintage OCS-GE d'artificialisation — le tampon de SA source (manifest
+ * #234, spec #225) : les QUATRE différentiels officiels « OCS GE
+ * Artificialisation » v2.0 (IGN, Nouvelle Génération) de la Géoplateforme,
+ * un par département breton. Le fixture exerce les couches de SES deux
+ * départements (22 : 2021→2025 ; 29 : 2021→2024 — les paires de la spec), la
+ * région portant la citation combinée de ses deux départements (le span
+ * multi-dépt, la discipline du mélange).
+ */
+const vintageOcsge22 = {
+  vintage_source:
+    "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2025 — Côtes-d'Armor (22)",
+  vintage_version: '2025',
+  vintage_date_reference: '2025-01-01',
+  vintage_date_publication: '2026-07-03',
+}
+
+const vintageOcsge29 = {
+  vintage_source:
+    'IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2024 — Finistère (29)',
+  vintage_version: '2024',
+  vintage_date_reference: '2024-01-01',
+  vintage_date_publication: '2026-06-12',
+}
+
+const vintageOcsgeRegion = {
+  vintage_source:
+    "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiels 22 (2021-2025) · 29 (2021-2024)",
+  vintage_version: '2025 · 2024',
+  vintage_date_reference: '2024-01-01',
+  vintage_date_publication: '2026-07-03',
+}
+
+/**
+ * Indicateurs Milieux (issue #172 + #173, re-keyés par la spec #225) — VALUES
+ * mirror the histoires fixture (artif_m2_par_habitant / artif_m3_par_habitant
+ * — l'état par habitant, m²/inhab, deux lignes par territoire : le millésime
+ * M2 puis M3, detail = l'année de l'état pour les fenêtres simples, le nom de
+ * l'état « M2 »/« M3 » pour la région dont la fenêtre est multi-dépt — le
+ * span n'a pas de paire unique) et la série annuelle 2011-2024
+ * conso_enaf_annuel (14 lignes pour 22001, detail = l'année — la forme
+ * multi-lignes du contrat). La fenêtre et la trajectoire ZAN (conso_enaf_fenetre,
+ * trajectoire_zan) sont MORTS avec les flux CONSOENAF : leurs lignes quittent
+ * le bloc (la story porte la trajectoire). Les deux lignes de l'état partagent
+ * le rang du territoire (l'état à M3, le même rang que la série annuelle).
  */
 export const indicateursMilieuxFixture: Indicateur[] = [
-  // ---- 22001 — la fenêtre, la série annuelle complète et la trajectoire
-  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 23.3202, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
+  // ---- 22001 — l'état complet + la série annuelle complète
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 2250, unit: 'm²/hab', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageOcsge22 },
+  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2025', value: 2550, unit: 'm²/hab', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageOcsge22 },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2011', value: 12, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2012', value: 8, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2013', value: 10, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
@@ -596,26 +633,27 @@ export const indicateursMilieuxFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2022', value: 5, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2023', value: 8, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2024', value: 4.3202, unit: 'ha', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
-  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.583005, unit: '×', rang_epci: 0.5, rang_dep: 0.5, rang_reg: 0.75, ...vintageConsoenaf },
-  // ---- les autres communes : la fenêtre + la trajectoire (la série annuelle
-  // est exercée sur 22001 — la forme multi-lignes du contrat)
-  { territoire: '22002', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 10, unit: 'ha', rang_epci: 0.25, rang_dep: 0.25, rang_reg: 0.375, ...vintageConsoenaf },
-  { territoire: '22002', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.3125, unit: '×', rang_epci: 0.25, rang_dep: 0.25, rang_reg: 0.375, ...vintageConsoenaf },
-  { territoire: '29001', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 15, unit: 'ha', rang_epci: 0.75, rang_dep: 0.75, rang_reg: 0.625, ...vintageConsoenaf },
-  { territoire: '29001', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.3125, unit: '×', rang_epci: 0.75, rang_dep: 0.75, rang_reg: 0.625, ...vintageConsoenaf },
-  { territoire: '29002', type: 'commune', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 2.5, unit: 'ha', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageConsoenaf },
-  { territoire: '29002', type: 'commune', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.125, unit: '×', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageConsoenaf },
+  // ---- les autres communes : l'état seul (la série annuelle est exercée sur
+  // 22001 — la forme multi-lignes du contrat)
+  { territoire: '22002', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 900, unit: 'm²/hab', rang_epci: 0.25, rang_dep: 0.25, rang_reg: 0.375, ...vintageOcsge22 },
+  { territoire: '22002', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2025', value: 855, unit: 'm²/hab', rang_epci: 0.25, rang_dep: 0.25, rang_reg: 0.375, ...vintageOcsge22 },
+  { territoire: '29001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 500, unit: 'm²/hab', rang_epci: 0.75, rang_dep: 0.75, rang_reg: 0.625, ...vintageOcsge29 },
+  { territoire: '29001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2024', value: 530, unit: 'm²/hab', rang_epci: 0.75, rang_dep: 0.75, rang_reg: 0.625, ...vintageOcsge29 },
+  { territoire: '29002', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 400, unit: 'm²/hab', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageOcsge29 },
+  { territoire: '29002', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2024', value: 403, unit: 'm²/hab', rang_epci: 0, rang_dep: 0, rang_reg: 0.25, ...vintageOcsge29 },
   // ---- les agrégats (les sommes des communes — la forme du contrat)
-  { territoire: '200000001', type: 'epci', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 33.3202, unit: 'ha', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageConsoenaf },
-  { territoire: '200000001', type: 'epci', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.46278, unit: '×', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageConsoenaf },
-  { territoire: '200000002', type: 'epci', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 17.5, unit: 'ha', rang_epci: null, rang_dep: 0.5, rang_reg: 0.5, ...vintageConsoenaf },
-  { territoire: '200000002', type: 'epci', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.25735, unit: '×', rang_epci: null, rang_dep: 0.5, rang_reg: 0.5, ...vintageConsoenaf },
-  { territoire: '22', type: 'departement', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 33.3202, unit: 'ha', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageConsoenaf },
-  { territoire: '22', type: 'departement', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.46278, unit: '×', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageConsoenaf },
-  { territoire: '29', type: 'departement', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 17.5, unit: 'ha', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageConsoenaf },
-  { territoire: '29', type: 'departement', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.25735, unit: '×', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageConsoenaf },
-  { territoire: '53', type: 'region', theme: 'milieux', key: 'conso_enaf_fenetre', detail: null, value: 50.8202, unit: 'ha', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageConsoenaf },
-  { territoire: '53', type: 'region', theme: 'milieux', key: 'trajectoire_zan', detail: null, value: 0.363, unit: '×', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageConsoenaf },
+  { territoire: '200000001', type: 'epci', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 1500, unit: 'm²/hab', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageOcsge22 },
+  { territoire: '200000001', type: 'epci', theme: 'milieux', key: 'artif_par_habitant', detail: '2025', value: 1750, unit: 'm²/hab', rang_epci: null, rang_dep: 0, rang_reg: 0, ...vintageOcsge22 },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 420, unit: 'm²/hab', rang_epci: null, rang_dep: 0.5, rang_reg: 0.5, ...vintageOcsge29 },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', key: 'artif_par_habitant', detail: '2024', value: 410, unit: 'm²/hab', rang_epci: null, rang_dep: 0.5, rang_reg: 0.5, ...vintageOcsge29 },
+  { territoire: '22', type: 'departement', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 1500, unit: 'm²/hab', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageOcsge22 },
+  { territoire: '22', type: 'departement', theme: 'milieux', key: 'artif_par_habitant', detail: '2025', value: 1750, unit: 'm²/hab', rang_epci: null, rang_dep: null, rang_reg: 0, ...vintageOcsge22 },
+  { territoire: '29', type: 'departement', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 420, unit: 'm²/hab', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageOcsge29 },
+  { territoire: '29', type: 'departement', theme: 'milieux', key: 'artif_par_habitant', detail: '2024', value: 425, unit: 'm²/hab', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageOcsge29 },
+  // la région (53) : la fenêtre multi-dépt n'a pas de paire d'années unique —
+  // les lignes portent les noms des états (M2/M3), jamais une année inventée
+  { territoire: '53', type: 'region', theme: 'milieux', key: 'artif_par_habitant', detail: 'M2', value: 750, unit: 'm²/hab', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageOcsgeRegion },
+  { territoire: '53', type: 'region', theme: 'milieux', key: 'artif_par_habitant', detail: 'M3', value: 830, unit: 'm²/hab', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageOcsgeRegion },
 ]
 
 /**
