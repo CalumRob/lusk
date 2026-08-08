@@ -123,17 +123,20 @@ lire_serie_historique_pop <- function(chemin) {
 # conso_annuelles_fenetre ------------------------------------------------------
 # La part du thème côté terre (la règle des deux horloges, #174) : les
 # colonnes ANNUELES CONSOENAF dont l'année tombe dans la fenêtre
-# [millesime_debut, millesime_fin). Chaque annuel naf{AA}art{AA+1} (ou
-# art{AA}{dest}{AA+1}) couvre l'ANNÉE {AA} — du 1er janvier {AA} au 1er
-# janvier {AA+1} — et les millésimes RP étant des dates au 1er janvier, la
-# fenêtre de terre re-somme la MÊME période que la fenêtre de population. Les
-# TOTAUX de période (naf11art25, naf11art21, naf21art25...) ne sont JAMAIS
-# sommés : seul est annuel un champ dont la deuxième paire d'années suit la
-# première (AA+1 == AA + 1). La fenêtre arrive du lecteur de la série
-# historique — jamais une liste d'années codée en dur.
+# [millesime_debut, millesime_fin). Chaque annuel naf{AA}art{AA+1} couvre
+# l'ANNÉE {AA} — du 1er janvier {AA} au 1er janvier {AA+1} — et les millésimes
+# RP étant des dates au 1er janvier, la fenêtre de terre re-somme la MÊME
+# période que la fenêtre de population. Seuls les TOTAUX naf{AA}art{AA+1} sont
+# sommés — JAMAIS les colonnes de décomposition art{AA}{dest}{AA+1} (hab, act,
+# inc, mix, fer, rou) que le fichier Cerema distribue à côté de chaque total :
+# elles somment EXACTEMENT au total, les sommer en plus DOUBLERAIT la
+# consommation (le bug #221). Les TOTAUX de période (naf11art25, naf11art21,
+# naf21art25...) ne sont JAMAIS sommés : seul est annuel un champ dont la
+# deuxième paire d'années suit la première (AA+1 == AA + 1). La fenêtre arrive
+# du lecteur de la série historique — jamais une liste d'années codée en dur.
 conso_annuelles_fenetre <- function(noms, millesime_debut, millesime_fin) {
   m <- regmatches(noms, regexec(
-    "^(?:naf|art)([0-9]{2})(?:art|hab|act|mix|rou|fer|inc)([0-9]{2})$", noms
+    "^naf([0-9]{2})art([0-9]{2})$", noms
   ))
   annees <- vapply(m, function(mm) if (length(mm) > 0) mm[[2]] else NA_character_,
                    character(1))
