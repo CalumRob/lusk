@@ -21,7 +21,7 @@ import ThemeTabs from '@/components/ThemeTabs.vue'
 import { ANCRAGES_THEMES, COULEUR_CONTOUR, COULEUR_NEUTRE, echelleChoroplethe } from '@/carte/couleurs'
 import { configCoucheTheme } from '@/carte/configCouche'
 import { indicateurParTerritoire } from '@/carte/fusion'
-import { seuilsQuantiles } from '@/carte/seuils'
+import { seuilsIndicateur } from '@/carte/seuils'
 import { idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { NIVEAUX_MASQUE } from '@/geo/types'
@@ -117,7 +117,7 @@ const legende = computed(() => {
   for (const ligne of parTerritoire.values()) {
     if (ligne.value !== null) valeurs.push(ligne.value)
   }
-  const seuils = seuilsQuantiles(valeurs, NOMBRE_CLASSES)
+  const seuils = seuilsIndicateur(cfg.indicateur, valeurs, NOMBRE_CLASSES)
   const couleurs = echelleChoroplethe(
     ANCRAGES_THEMES[selection.value],
     Math.max(2, seuils.length + 1),

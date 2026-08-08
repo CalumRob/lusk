@@ -1,8 +1,31 @@
 import { describe, expect, it } from 'vitest'
 
-import { seuilsQuantiles } from '../carte/seuils'
+import { SEUILS_INDICATEURS, seuilsIndicateur, seuilsQuantiles } from '../carte/seuils'
 
-/** The choropleth's quantile breaks (the map's class bounds — pure logic). */
+/** The choropleth's class breaks: per-indicator FIXED scales (audit #208 item
+ *  58) with the quantile fallback for an indicator without a locked scale. */
+
+describe('SEUILS_INDICATEURS — the per-indicator fixed scales (audit #208 item 58)', () => {
+  it('locks a sensible density ladder (hab/km²) — the INSEE density categories', () => {
+    expect(SEUILS_INDICATEURS.densite).toEqual([30, 60, 100, 300])
+  })
+
+  it('locks the passoires scale as fractions — the DPE passoire line at 17 %', () => {
+    expect(SEUILS_INDICATEURS.part_passoires).toEqual([0.1, 0.17, 0.25, 0.35])
+  })
+})
+
+describe('seuilsIndicateur — the per-indicator breaks', () => {
+  it('returns the fixed scale for an indicator with a locked scale', () => {
+    expect(seuilsIndicateur('densite', [1, 2, 3], 5)).toEqual([30, 60, 100, 300])
+    expect(seuilsIndicateur('part_passoires', [1, 2, 3], 5)).toEqual([0.1, 0.17, 0.25, 0.35])
+  })
+
+  it('falls back to quantiles for an indicator without a locked scale', () => {
+    const valeurs = Array.from({ length: 100 }, (_, i) => i + 1)
+    expect(seuilsIndicateur('sans-echelle', valeurs, 5)).toEqual(seuilsQuantiles(valeurs, 5))
+  })
+})
 
 describe('seuilsQuantiles — the class breaks', () => {
   it('returns empty breaks for no finite values', () => {

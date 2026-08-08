@@ -1,9 +1,35 @@
 /**
- * The choropleth's class breaks — pure logic (TDD's meat): quantile breaks so
- * the map's buckets carry roughly equal territory counts (the legacy map used
- * the same quantile philosophy). Each bucket's numeric range is also shown in
- * the legend — color is never the sole carrier (DESIGN.md §8).
+ * The choropleth's class breaks — pure logic (TDD's meat). Two sources:
+ *
+ * - Per-indicator FIXED scales (SEUILS_INDICATEURS) — the audit's item 58:
+ *   each indicator carries its OWN sensible class breaks in its own unit
+ *   (densité in hab/km², part de passoires as a fraction), never a shared
+ *   default. The break VALUES are the map's contract — they read in the
+ *   legend, so color is never the sole carrier (DESIGN.md §8).
+ *
+ * - Quantile breaks (seuilsQuantiles) — the honest generic fallback for an
+ *   indicator without a locked scale yet (the legacy map used the same
+ *   quantile philosophy).
  */
+
+export const SEUILS_INDICATEURS: Readonly<Record<string, readonly number[]>> = {
+  // Densité (hab/km²) — the INSEE density ladder, rounded to read in the legend.
+  densite: [30, 60, 100, 300],
+  // Part de passoires thermiques — a fraction in [0,1] (unit %) — the DPE
+  // passoire line: 10 %, 17 % (seuil passoire F/G), 25 %, 35 %.
+  part_passoires: [0.1, 0.17, 0.25, 0.35],
+}
+
+/**
+ * The choropleth breaks for an indicator: its fixed scale when the indicator
+ * has one locked, otherwise quantiles over the actual values (the generic
+ * fallback). MapLibre `step` upper bounds — value < seuils[0] → classe 1, etc.
+ */
+export function seuilsIndicateur(indicateur: string, valeurs: readonly number[], nombreClasses: number): number[] {
+  const fixes = SEUILS_INDICATEURS[indicateur]
+  if (fixes) return [...fixes]
+  return seuilsQuantiles(valeurs, nombreClasses)
+}
 
 /**
  * Quantile breaks for `nombreClasses` buckets, as MapLibre `step` upper
