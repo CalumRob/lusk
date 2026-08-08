@@ -54,7 +54,13 @@
 #     PRINC — le code de table épinglé LOG T12, voir manifest_mobilite.R) ;
 #   - les limites communales Admin Express (le référentiel géométrique des
 #     réseaux — attribution + surface) ;
-#   - les lignes OSM de l'extrait Geofabrik Bretagne (la couche `lines`).
+#   - les lignes OSM de l'extrait Geofabrik Bretagne (la couche `lines`, les
+#     modes t/c) ;
+#   - depuis l'issue #230 (ADR-0016), le snapshot Geovelo « Aménagements
+#     cyclables » (le mode `b`) via construire_amenagements_cyclables — la
+#     porte de qualité + le repli sur le dernier bon, la table normalisée
+#     bretonne aux clés COG 2025 (la table de passage COG est construite
+#     depuis le zip du cache par construire_mappe_cog_bretagne).
 # Issue #140 : le seam assemble aussi les QUATRE sources du sous-bloc
 # « L'offre de mobilité alternative » (construire_sources_offre_mobilite —
 # korrigo GTFS, batiments_residentiels, bornes-recharges, stationnement-velo),
@@ -89,18 +95,32 @@ construire_donnees_mobilite <- function(cache = "data/raw",
   lignes <- lire_lignes_osm(
     file.path(cache, fichier_source("osm_reseaux"))
   )
+  # le mode `b` (issue #230, ADR-0016) : la table Geovelo normalisée via
+  # l'orchestrateur (porte de qualité + repli sur le dernier bon) — la table
+  # de passage COG vient du zip du cache, le dernier bon vit à côté du
+  # snapshot porté (le même dossier processed du thème)
+  if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
+  amenagements <- construire_amenagements_cyclables(
+    file.path(cache, fichier_source("amenagements_cyclables")),
+    sortie = file.path(dirname(sortie), "amenagements_dernier_bon.rds"),
+    vintage = MANIFEST_MOBILITE$date_reference[
+      MANIFEST_MOBILITE$id == "amenagements_cyclables"],
+    mappe = construire_mappe_cog_bretagne(
+      file.path(cache, fichier_source("cog_passage"))
+    )
+  )
   if (is.null(sources)) {
     sources <- construire_sources_offre_mobilite(cache)
   }
 
-  if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(table, sortie)
 
   c(list(
     mobilite_snapshot = table,
     voitures_communes = voitures,
     communes_limites = limites,
-    lignes_osm = lignes
+    lignes_osm = lignes,
+    amenagements_cyclables = amenagements$table
   ), sources)
 }
 
@@ -242,13 +262,20 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 
   # l'étage demande/réseaux (issue #139) : la demande (voitures/ménage — la
   # moyenne pondérée par les ménages, jamais une moyenne de parts) et les
-  # réseaux t/b/c (longueurs sommées, densités Σ L ÷ Σ surface — la règle
-  # d'agrégation partagée, les builders dans demande_reseaux_mobilite.R)
+  # réseaux t/c (OSM) + b (le jeu Geovelo depuis l'issue #230, ADR-0016 — le
+  # comptage par direction, l'attribution par le côté porteur). Les longueurs
+  # sont sommées, les densités Σ L ÷ Σ surface — la règle d'agrégation
+  # partagée, les builders dans demande_reseaux_mobilite.R ; la table communale
+  # complète (t/c du OSM, b du Geovelo) est fusionnée AVANT l'agrégation — la
+  # forme du contrat est celle que agreger_reseaux_territoires lit (inchangé)
   voitures_communes <- calculer_voitures_communes(donnees$voitures_communes)
   voitures_territoires <- agreger_voitures_territoires(voitures_communes,
                                                        base_epci)
-  reseaux_communes <- calculer_reseaux_communes(donnees$lignes_osm,
-                                                donnees$communes_limites)
+  reseaux_communes <- fusionner_reseaux_velo_communes(
+    calculer_reseaux_communes(donnees$lignes_osm, donnees$communes_limites),
+    calculer_reseaux_velo_communes(donnees$amenagements_cyclables,
+                                   donnees$communes_limites)
+  )
   reseaux_territoires <- agreger_reseaux_territoires(reseaux_communes,
                                                      base_epci)
 

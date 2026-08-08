@@ -198,6 +198,28 @@ passage_cog_lenient <- function(codes, mappe) {
   codes
 }
 
+# construire_mappe_cog_bretagne ------------------------------------------------
+# La table de passage COG 2022 → 2025 BRETONNE depuis le zip INSEE du cache (le
+# fragment cog_passage du manifeste — issue #222, ticket #227) : le zip est
+# décompressé (idempotent — les fichiers déjà extraits sont laissés intacts),
+# la feuille COM est lue, filtrée à la Bretagne (1 270 communes 2025 — vérifié
+# sur le fichier réel), et la table de passage est construite. C'est l'ORCHES-
+# TRATION de la source COG pour le mode `b` de `reseaux` : normaliser_
+# amenagements_cyclables la consomme (strict côté breton, lénient côté
+# non-breton — ADR-0016). Retour : la table {code_2022, code_2025}, triée.
+construire_mappe_cog_bretagne <- function(chemin_zip) {
+  extrait <- file.path(dirname(chemin_zip), "extracted")
+  if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+  suppressWarnings(
+    utils::unzip(chemin_zip, exdir = extrait, overwrite = FALSE)
+  )
+  brut <- lire_table_passage(
+    file.path(extrait, "table_passage_annuelle_2025.xlsx")
+  )
+  bretagne <- brut[grepl("^(22|29|35|56)", brut$CODGEO_2025), ]
+  construire_passage_cog(bretagne)
+}
+
 # TYPE_PAR_NIVEAU --------------------------------------------------------------
 # L'étiquette de type du contrat de l'app par niveau — le singulier : la table
 # `territoires` du payload porte `type` = "commune" / "epci" / "departement"
