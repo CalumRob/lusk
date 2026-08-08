@@ -178,6 +178,12 @@ normaliser_consoenaf <- function(table_conso) {
 # d'ADR-0014, jamais les populations embarquées de CONSOENAF) et calcule la
 # consommation de la FENÊTRE (les annuels re-sommés sur les deux millésimes
 # dérivés de la série — la règle des deux horloges, jamais codée en dur).
+# Depuis l'issue #237 (spec #225), quand les QUATRE archives OCS-GE du
+# manifeste sont présentes dans le cache, la table porte EN PLUS les états
+# d'artificialisation par commune (artif_m2 / artif_m3 / flux_net + les
+# millésimes OCS-GE) — le raccord construire_ocsge_milieux (le référentiel
+# géométrique partagé communes_limites.geojson, la même source que Mobilité).
+# Archives absentes -> la table de base inchangée (le chemin rétro-compatible).
 # Persiste la table des communes sous data/processed/milieux/ (idempotent,
 # comme les builders des sources) et la retourne — la forme que
 # construire_territoires_milieux consomme.
@@ -249,6 +255,18 @@ construire_donnees_milieux <- function(cache = "data/raw",
       millesime_debut = millesime_debut,
       millesime_fin = millesime_fin
     )
+
+  # les états OCS-GE (issue #237, spec #225) : quand les QUATRE archives du
+  # manifeste sont présentes dans le cache, la table des communes porte les
+  # états d'artificialisation par commune (artif_m2 / artif_m3 / flux_net en
+  # m² — l'unité native de l'ingestion, la conversion en hectares se fait au
+  # payload #238 — et les millésimes OCS-GE renommés millesime_ocsge_debut/fin,
+  # la collision de noms avec la population résolue dans
+  # rattacher_ocsge_communes). Archives absentes -> la table de base inchangée
+  # (le chemin rétro-compatible).
+  if (archives_ocsge_presentes(cache)) {
+    communes <- construire_ocsge_milieux(cache, communes, sortie)
+  }
 
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(communes, sortie)
@@ -522,11 +540,98 @@ construire_donnees_ocsge <- function(cache = "data/raw",
   communes_artif
 }
 
+# archives_ocsge_presentes ------------------------------------------------------
+# La GARDE du raccord OCS-GE dans le builder du thème (issue #237, spec #225) :
+# les QUATRE archives du manifeste (les .7z Géoplateforme) sont présentes dans
+# le cache. C'est le test qui décide si la table des communes porte les états
+# d'artificialisation : un cache sans les archives (le chemin rétro-compatible)
+# laisse la table de base inchangée — jamais un échec, jamais des colonnes
+# vides inventées.
+archives_ocsge_presentes <- function(cache) {
+  all(file.exists(file.path(cache, MANIFEST_MILIEUX_OCSGE$fichier)))
+}
+
+# rattacher_ocsge_communes ------------------------------------------------------
+# Le RACCORD des états OCS-GE dans la table des communes du thème (issue #237,
+# spec #225 — la jointure au payload) : joint les valeurs par commune de
+# l'ingestion (#234, construire_donnees_ocsge) sur la table des communes, par
+# code INSEE. PIÈGE DU TICKET : la table OCS-GE porte les colonnes
+# millesime_debut/millesime_fin qui COLLIDENT avec les millésimes de population
+# de la table des communes (les deux RP de la série historique, 2017/2023 — le
+# dénominateur de l'Histoire) — elles sont renommées millesime_ocsge_debut /
+# millesime_ocsge_fin AVANT la jointure (renommer après aurait écrasé la
+# population). Une commune absente de la table OCS-GE (aucun polygone de flux
+# sur son territoire) garde NA — jamais un 0 inventé.
+rattacher_ocsge_communes <- function(communes, ocsge) {
+  ocsge <- ocsge %>%
+    dplyr::rename(millesime_ocsge_debut = millesime_debut,
+                  millesime_ocsge_fin = millesime_fin)
+  dplyr::left_join(communes, ocsge, by = "code")
+}
+
+# construire_ocsge_milieux ------------------------------------------------------
+# Le raccord OCS-GE du thème (issue #237, spec #225) : quand les archives sont
+# dans le cache, le référentiel géométrique PARTAGÉ communes_limites.geojson
+# (le même WFS Admin Express que le thème Mobilité lit — lire_communes_limites,
+# la source partagée) est lu, aligné sur les codes INSEE de la table des
+# communes (code_insee -> code, semi_join : une commune du référentiel hors
+# base tombe, une commune de la base hors référentiel reste sans donnée -> NA),
+# puis construire_donnees_ocsge agrège les états par commune sur cette
+# géométrie et rattacher_ocsge_communes les porte dans la table. Une archive
+# présente SANS le référentiel échoue bruyamment (jamais un silence) :
+# l'intersection pondérée a besoin de LA géométrie.
+construire_ocsge_milieux <- function(cache, communes, sortie) {
+  chemin_limites <- file.path(cache, "communes_limites.geojson")
+  if (!file.exists(chemin_limites)) {
+    stop("Le référentiel géométrique communes_limites.geojson est absent du ",
+         "cache (", chemin_limites, ") — nécessaire au raccord OCS-GE (le ",
+         "même WFS Admin Express que le thème Mobilité, la source partagée).",
+         call. = FALSE)
+  }
+  limites <- lire_communes_limites(chemin_limites) %>%
+    dplyr::rename(code = code_insee) %>%
+    dplyr::semi_join(communes, by = "code")
+  ocsge <- construire_donnees_ocsge(
+    cache = cache, communes = limites,
+    sortie = file.path(dirname(sortie), "ocsge_communes.rds")
+  )
+  rattacher_ocsge_communes(communes, ocsge)
+}
+
 # La construction de la table des territoires du thème -------------------------
 # Le squelette partagé (squelette_territoires, compute.R) fournit les codes,
 # les vrais noms, la hiérarchie et la règle de pluralité départementale ; le
 # thème ajoute SES colonnes d'agrégation : les consommations d'ENAF (toutes les
 # colonnes du reshape, déjà en hectares), sommées par niveau de territoire.
+
+# construire_periode_artif ------------------------------------------------------
+# La fenêtre OCS-GE d'un territoire depuis les couples (département ->
+# millésimes) DISTINCTS de ses membres — la règle « la fenêtre dérive de la
+# donnée » (spec #225, jamais codée en dur) :
+#   - aucun couple (aucun membre porteur de donnée OCS-GE) -> NA ;
+#   - un couple unique -> « 2021-2025 » : un territoire mono-département
+#     homogène dit sa paire simplement, sans parenthèses ;
+#   - plusieurs couples -> le SPAN avec les dates par département, trié par
+#     code de département : « 2020-2023 (35) · 2022-2024 (56) ». Le mélange
+#     est DIT, jamais aplati : un EPCI transfrontalier est honnête sur ses
+#     deux horloges (les départements de ses communes), la région sur ses
+#     quatre (story #8 et #9 de la spec).
+construire_periode_artif <- function(departements, millesime_debut,
+                                     millesime_fin) {
+  combos <- unique(data.frame(
+    departement = as.character(departements),
+    millesime_debut = as.integer(millesime_debut),
+    millesime_fin = as.integer(millesime_fin),
+    stringsAsFactors = FALSE
+  ))
+  combos <- combos[!is.na(combos$millesime_debut) & !is.na(combos$millesime_fin),
+                   , drop = FALSE]
+  if (nrow(combos) == 0) return(NA_character_)
+  combos <- combos[order(combos$departement), , drop = FALSE]
+  paires <- paste0(combos$millesime_debut, "-", combos$millesime_fin)
+  if (nrow(combos) == 1) return(paires)
+  paste0(paires, " (", combos$departement, ")", collapse = " · ")
+}
 
 # agreger_territoires_milieux : la part du thème — les colonnes de consommation
 # (le motif conso_en_m2 — la même source de vérité que le reshape) et la
@@ -543,35 +648,49 @@ construire_donnees_ocsge <- function(cache = "data/raw",
 # surfaces de ses communes (le dénominateur du scalaire classé, #172). Les
 # deux MILLÉSIMES de la fenêtre sont des constantes du run : la table des
 # territoires les porte (pour l'Histoire), sans les sommer.
+# Depuis l'issue #237 (spec #225), quand la table des communes porte les états
+# OCS-GE, les TROIS mesures d'artificialisation (artif_m2 / artif_m3 /
+# flux_net, en m² — l'unité native de l'ingestion ; la conversion en hectares
+# se fait au payload, #238) s'agrègent de la même façon : la somme naïve des
+# membres, NA propagé (une commune sans donnée rend son niveau NA, jamais un 0
+# inventé). Et la fenêtre OCS-GE du territoire (periode_artif) dérive des
+# couples (département -> millésimes) distincts de ses membres (le couple du
+# département pour un territoire mono-département, le SPAN pour un EPCI
+# transfrontalier, les quatre fenêtres pour la région — construire_periode_artif).
+# Les millésimes de population (millesime_debut/fin, RP 2017/2023) restent
+# INTACTS — ce sont les deux horloges de la spec, jamais confondues.
 agreger_territoires_milieux <- function(communes, squelette) {
   base <- communes %>%
     dplyr::mutate(dplyr::across(c(departement, epci), as.character))
   colonnes_conso <- conso_en_m2(names(base))
   # les mesures agrégées du thème : les consommations + la surface (le
   # scalaire classé, #172) + la consommation de fenêtre et les populations de
-  # l'Histoire (#174)
+  # l'Histoire (#174) + les états OCS-GE quand la table les porte (#237)
   colonnes_mesure <- c(colonnes_conso, "surfcom2025",
                        "conso_fenetre", "pop_debut", "pop_fin")
+  colonnes_artif <- intersect(c("artif_m2", "artif_m3", "flux_net"),
+                              names(base))
+  toutes <- c(colonnes_mesure, colonnes_artif)
 
   mesures <- dplyr::bind_rows(
-    base[c("code", colonnes_mesure)],
+    base[c("code", toutes)],
     base %>%
       dplyr::group_by(epci) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
+        dplyr::across(dplyr::all_of(toutes), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = epci),
     base %>%
       dplyr::group_by(departement) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
+        dplyr::across(dplyr::all_of(toutes), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = departement),
     base %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(colonnes_mesure), sum),
+        dplyr::across(dplyr::all_of(toutes), sum),
         .groups = "drop"
       ) %>%
       dplyr::mutate(code = "53")
@@ -580,10 +699,54 @@ agreger_territoires_milieux <- function(communes, squelette) {
   territoires <- dplyr::left_join(squelette, mesures, by = "code")
   # les millésimes de la fenêtre : des constantes du run — la première valeur
   # non manquante des communes (la même paire partout), portées pour l'Histoire
+  # (la fenêtre de POPULATION — jamais les millésimes OCS-GE, les deux horloges
+  # de la spec #225 ne sont jamais confondues)
   territoires$millesime_debut <-
     stats::na.omit(unique(communes$millesime_debut))[1]
   territoires$millesime_fin <-
     stats::na.omit(unique(communes$millesime_fin))[1]
+
+  # la fenêtre OCS-GE par territoire (issue #237) : dérivée des couples
+  # (département -> millésimes) distincts des membres — calculée SEULEMENT si
+  # la table des communes porte les millésimes OCS-GE (le chemin
+  # rétro-compatible ne crée pas la colonne)
+  if ("millesime_ocsge_debut" %in% names(base)) {
+    combos <- base %>%
+      dplyr::select(code, departement, epci,
+                    m2 = millesime_ocsge_debut, m3 = millesime_ocsge_fin) %>%
+      dplyr::filter(!is.na(m2) & !is.na(m3))
+    periode_communes <- combos %>%
+      dplyr::group_by(code) %>%
+      dplyr::summarise(
+        periode_artif = construire_periode_artif(departement, m2, m3),
+        .groups = "drop"
+      )
+    periode_epci <- combos %>%
+      dplyr::filter(!is.na(epci)) %>%
+      dplyr::group_by(code = epci) %>%
+      dplyr::summarise(
+        periode_artif = construire_periode_artif(departement, m2, m3),
+        .groups = "drop"
+      )
+    periode_dep <- combos %>%
+      dplyr::group_by(code = departement) %>%
+      dplyr::summarise(
+        periode_artif = construire_periode_artif(departement, m2, m3),
+        .groups = "drop"
+      )
+    periode_region <- combos %>%
+      dplyr::summarise(
+        periode_artif = construire_periode_artif(departement, m2, m3),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(code = "53")
+    territoires <- dplyr::left_join(
+      territoires,
+      dplyr::bind_rows(periode_communes, periode_epci, periode_dep,
+                       periode_region),
+      by = "code"
+    )
+  }
   territoires
 }
 
