@@ -42,7 +42,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 6.4386722317117888,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22004",
@@ -117,7 +117,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 22.478978494627334,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22011",
@@ -492,7 +492,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.1356055363335917,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22040",
@@ -507,7 +507,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 10.206992481201873,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22041",
@@ -882,7 +882,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 122.83534883717736,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22070",
@@ -1047,7 +1047,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 30.450213428255839,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22083",
@@ -1227,7 +1227,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 24.307544910183541,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22096",
@@ -1257,7 +1257,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 5.1495926412662785,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22098",
@@ -1317,7 +1317,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 4.607981836523642,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22104",
@@ -1332,7 +1332,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.7363055062156625,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22105",
@@ -1407,7 +1407,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.9774206349196715,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22110",
@@ -1452,7 +1452,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 68.391543939604716,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22113",
@@ -1557,7 +1557,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.8664967105290442,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22121",
@@ -1812,7 +1812,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 17.840351437704712,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22141",
@@ -2052,7 +2052,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 32.980421283297972,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22161",
@@ -2442,7 +2442,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 30.54470169189652,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22189",
@@ -3297,7 +3297,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 0.31488561109753521,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22251",
@@ -3447,7 +3447,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.5836327126654965,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22263",
@@ -3537,7 +3537,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 17.86673949580128,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22269",
@@ -3777,7 +3777,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 25.958875968991851,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22286",
@@ -3837,7 +3837,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 7.1422380952332443,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22291",
@@ -4017,7 +4017,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.2181375406556127,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22308",
@@ -4302,7 +4302,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 57.808375384589461,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22328",
@@ -4347,7 +4347,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 15.655767195760298,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22332",
@@ -4437,7 +4437,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 20.549250334673999,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "22339",
@@ -4497,7 +4497,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 17.326848072569121,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22343",
@@ -4617,7 +4617,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 14.794983479869877,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22351",
@@ -4977,7 +4977,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 18.96846491231166,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22379",
@@ -5052,7 +5052,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 15.061305114635509,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22385",
@@ -5112,7 +5112,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 25.280113565861743,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "22389",
@@ -6012,7 +6012,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 13.561256768980662,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29061",
@@ -6192,7 +6192,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 5.9812101910816935,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29073",
@@ -6357,7 +6357,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 15.792021563343633,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29086",
@@ -6507,7 +6507,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 0.26405222872587497,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29099",
@@ -6597,7 +6597,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 23.159636363635446,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "29105",
@@ -6777,7 +6777,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 49.992468354438294,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29117",
@@ -6897,7 +6897,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 20.225142857134724,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29128",
@@ -6972,7 +6972,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.5014662379434718,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29134",
@@ -7422,7 +7422,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 0.97045977011460127,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "29169",
@@ -8247,7 +8247,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.1530923076926212,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "29229",
@@ -8382,7 +8382,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.992374269007426,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29239",
@@ -8682,7 +8682,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 8.6929147981983004,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29262",
@@ -9012,7 +9012,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 11.908398517907335,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29285",
@@ -9072,7 +9072,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 14.248328075710994,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29289",
@@ -9102,7 +9102,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 20.619796806962366,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29291",
@@ -9132,7 +9132,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 26.221350482324997,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "29293",
@@ -9267,7 +9267,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 42.121530864198,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "29302",
@@ -9387,7 +9387,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 24.769845474609017,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35008",
@@ -9942,7 +9942,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 10.645442524681663,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35050",
@@ -9987,7 +9987,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.6893861386026594,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35054",
@@ -10032,7 +10032,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.4251820388342802,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35057",
@@ -10062,7 +10062,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 19.242889060101003,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35059",
@@ -10317,7 +10317,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 27.287575757589547,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35078",
@@ -10392,7 +10392,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 11.381598877984258,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35084",
@@ -10527,7 +10527,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 13.528756038642673,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35093",
@@ -10647,7 +10647,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 25.938738884402841,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35102",
@@ -11052,7 +11052,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 18.287304439744034,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35132",
@@ -11202,7 +11202,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 9.8275667655878323,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35142",
@@ -11247,7 +11247,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 42.384882459329781,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35145",
@@ -11307,7 +11307,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 12.528973384028175,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35150",
@@ -11367,7 +11367,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 26.342613065307191,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35154",
@@ -11397,7 +11397,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 30.25273504269866,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35156",
@@ -11667,7 +11667,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.5232718894031234,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35175",
@@ -11772,7 +11772,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 9.6104330708625643,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35183",
@@ -11817,7 +11817,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 24.026505576198225,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35186",
@@ -11877,7 +11877,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 0.92691403187866117,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35190",
@@ -12282,7 +12282,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.8816426193080189,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35219",
@@ -12672,7 +12672,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 8.2183431197919958,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35245",
@@ -12897,7 +12897,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 5.7373674911624812,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35261",
@@ -12912,7 +12912,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 5.7778354978254507,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35262",
@@ -12972,7 +12972,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 11.546712485669495,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35266",
@@ -13107,7 +13107,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.8166359446975724,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35277",
@@ -13122,7 +13122,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 49.148169761258387,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35278",
@@ -13212,7 +13212,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 30.428015122835937,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35284",
@@ -13512,7 +13512,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 15.811446949019386,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35308",
@@ -13617,7 +13617,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 0.07379746835430144,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35316",
@@ -13662,7 +13662,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.9759337349397295,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35319",
@@ -13692,7 +13692,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 86.73921755292973,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "35321",
@@ -13902,7 +13902,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 36.111301843306478,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35336",
@@ -13962,7 +13962,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 9.0811671924275128,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35340",
@@ -14232,7 +14232,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.1389107981184314,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "35362",
@@ -14337,7 +14337,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.5352355790388466,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56006",
@@ -14517,7 +14517,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.6097842401503464,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56019",
@@ -14952,7 +14952,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 12.305852577017022,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56051",
@@ -14982,7 +14982,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 14.106330416881066,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56053",
@@ -15117,7 +15117,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 4.1955603448353429,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56063",
@@ -15132,7 +15132,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.3668127643210259,
     "trajectoire_artif_par_habitant": null,
-    "classification": "sen-aller-et-consommer-quand-meme"
+    "classification": null
   },
   {
     "territoire": "56065",
@@ -15267,7 +15267,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 0.18062127659574467,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56074",
@@ -15327,7 +15327,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 7.6795955510623699,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56078",
@@ -15432,7 +15432,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 10.766806451608268,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56085",
@@ -15477,7 +15477,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.4755873015857537,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56088",
@@ -15747,7 +15747,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 20.81249669128686,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56107",
@@ -15927,7 +15927,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.8742145125830456,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56119",
@@ -16017,7 +16017,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 5.1342931563644356,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56125",
@@ -16227,7 +16227,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 23.159093333312889,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56140",
@@ -17202,7 +17202,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 22.376404494353061,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56210",
@@ -17412,7 +17412,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 21.641388888893928,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56225",
@@ -17682,7 +17682,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 2.322171322366902,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56244",
@@ -17832,7 +17832,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 30.522804005717703,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56254",
@@ -17922,7 +17922,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 7.8643158084997609,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56260",
@@ -17967,7 +17967,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 1.7208529245642645,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56263",
@@ -17982,7 +17982,7 @@
     "artif_m2_par_habitant": 0,
     "artif_m3_par_habitant": 3.1579058497763541,
     "trajectoire_artif_par_habitant": null,
-    "classification": "grandir-en-setalant"
+    "classification": null
   },
   {
     "territoire": "56264",
