@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest'
 /**
  * Contract test for issue #70 — the fiche subheader delimits the background
  * zones, and the fiche's action row (type chip + context switcher) is centered.
+ * Re-tested in #213: the theme tabs of the subheader are centered too, without
+ * breaking the horizontal scroll when they overflow.
  *
  * DESIGN.md is a local-only working doc (gitignored); the committed source of
  * truth is the component CSS + these contract assertions, in the same spirit as
@@ -53,5 +55,16 @@ describe('#70 — les boutons d’action de la fiche sont centrés', () => {
   it('centre la rangée d’actions (chip de type + contexte) sous le titre', () => {
     expect(regle(cssTerritoire, '\\.fiche-actions')).toContain('justify-content: center')
     expect(regle(cssTerritoire, '\\.fiche-actions')).toContain('flex-wrap: wrap')
+  })
+})
+
+describe('#213 — les onglets du sous-en-tête des thèmes sont centrés', () => {
+  it('centre le bandeau d’onglets : deux cales ::before/::after à marges auto absorbant l’espace libre', () => {
+    expect(regle(cssThemeTabs, '\\.theme-tabs::before')).toContain('margin-inline: auto')
+    expect(regle(cssThemeTabs, '\\.theme-tabs::after')).toContain('margin-inline: auto')
+  })
+
+  it('préserve le défilement horizontal quand les onglets débordent (mobile)', () => {
+    expect(regle(cssThemeTabs, '\\.theme-tabs')).toContain('overflow-x: auto')
   })
 })
