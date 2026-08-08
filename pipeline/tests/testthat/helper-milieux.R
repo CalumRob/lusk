@@ -124,10 +124,11 @@ polygones_flux_ocsge_territoire <- list(
 )
 
 # fixture_gpkg_ocsge_territoire : écrit le VRAI GeoPackage du fixture OCS-GE
-# d'un département (la couche DIFF_ARTIF, EPSG:2154, les colonnes officielles
-# du différentiel IGN — Artif_{m2}/Artif_{m3}, Artificialisation +1/-1, Surface)
-# avec SES polygones et SA fenêtre. Le même motif que fixture_gpkg_ocsge
-# (helper-ocsge.R), positionné sur la grille du fixture territorial.
+# d'un département (la couche zan_evol_{m2}_{m3}, EPSG:2154, les colonnes
+# officielles du différentiel IGN dans SA FORME RÉELLE — les minuscules
+# artif_{m2}/artif_{m3}, artificialisation +1/-1, surface) avec SES polygones
+# et SA fenêtre. Le même motif que fixture_gpkg_ocsge (helper-ocsge.R),
+# positionné sur la grille du fixture territorial.
 fixture_gpkg_ocsge_territoire <- function(chemin, departement) {
   spec <- polygones_flux_ocsge_territoire[[departement]]
   fenetre <- spec$fenetre
@@ -139,20 +140,21 @@ fixture_gpkg_ocsge_territoire <- function(chemin, departement) {
     sf::st_polygon(list(polygone_rectangle(l$x0, l$y0, l$x1, l$y1)))
   })
   tbl <- tibble::tibble(
-    !!paste0("Id_", m2) := paste0("S", seq_len(nrow(lignes)), "_", m2),
-    !!paste0("Cs_", m2) := "CS1.1.1.1",
-    !!paste0("Us_", m2) := "US5",
-    !!paste0("Artif_", m2) := ifelse(lignes$sens == 1L, "Non Artif", "Artif"),
-    !!paste0("Id_", m3) := paste0("S", seq_len(nrow(lignes)), "_", m3),
-    !!paste0("Cs_", m3) := "CS1.1.1.1",
-    !!paste0("Us_", m3) := "US5",
-    !!paste0("Artif_", m3) := ifelse(lignes$sens == 1L, "Artif", "Non Artif"),
-    Artificialisation = lignes$sens,
-    Surface = as.double(lignes$surface)
+    !!paste0("id_", m2) := paste0("S", seq_len(nrow(lignes)), "_", m2),
+    !!paste0("cs_", m2) := "CS1.1.1.1",
+    !!paste0("us_", m2) := "US5",
+    !!paste0("artif_", m2) := ifelse(lignes$sens == 1L, "non artif", "artif"),
+    !!paste0("id_", m3) := paste0("S", seq_len(nrow(lignes)), "_", m3),
+    !!paste0("cs_", m3) := "CS1.1.1.1",
+    !!paste0("us_", m3) := "US5",
+    !!paste0("artif_", m3) := ifelse(lignes$sens == 1L, "artif", "non artif"),
+    artificialisation = lignes$sens,
+    surface = as.double(lignes$surface)
   )
   couche <- sf::st_sf(tbl, geometry = sf::st_sfc(geometries, crs = 2154))
   if (file.exists(chemin)) unlink(chemin)
-  sf::st_write(couche, chemin, layer = COUCHE_OCSGE_ARTIFICIALISATION,
+  sf::st_write(couche, chemin,
+               layer = paste0("zan_evol_", m2, "_", m3),
                quiet = TRUE)
   invisible(chemin)
 }

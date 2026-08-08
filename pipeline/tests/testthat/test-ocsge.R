@@ -16,7 +16,7 @@
 
 # Le lecteur et la normalisation ------------------------------------------------
 
-test_that("lire_ocsge_artificialisation : le GPKG du fixture se lit sous la couche du contrat, colonnes officielles", {
+test_that("lire_ocsge_artificialisation : le GPKG du fixture se lit sous la couche du contrat (zan_evol_), colonnes officielles", {
   gpkg <- tempfile(fileext = ".gpkg")
   on.exit(unlink(gpkg))
   fixture_gpkg_ocsge(gpkg, 2021, 2025)
@@ -24,12 +24,13 @@ test_that("lire_ocsge_artificialisation : le GPKG du fixture se lit sous la couc
   flux <- lire_ocsge_artificialisation(gpkg)
   expect_s3_class(flux, "sf")
   expect_equal(nrow(flux), 4L)
-  # les colonnes officielles du différentiel IGN (Doc_artif.pdf) traversent
-  # telles quelles — on ne re-dérive rien à la lecture
-  expect_true(all(c("Artif_2021", "Artif_2025", "Artificialisation",
-                    "Surface") %in% names(flux)))
+  # les colonnes officielles du différentiel IGN dans SA FORME RÉELLE (les
+  # minuscules artif_*/artificialisation/surface, vérifiées 2026-08-08)
+  # traversent telles quelles — on ne re-dérive rien à la lecture
+  expect_true(all(c("artif_2021", "artif_2025", "artificialisation",
+                    "surface") %in% names(flux)))
   expect_equal(sf::st_crs(flux)$epsg, 2154)
-  expect_setequal(flux$Artificialisation, c(1L, -1L))
+  expect_setequal(flux$artificialisation, c(1L, -1L))
 })
 
 test_that("lire_ocsge_artificialisation : une couche absente échoue en nommant les couches disponibles", {
@@ -40,12 +41,12 @@ test_that("lire_ocsge_artificialisation : une couche absente échoue en nommant 
   expect_error(lire_ocsge_artificialisation(gpkg, couche = "OCCUPATION_SOL"),
                "OCCUPATION_SOL")
   expect_error(lire_ocsge_artificialisation(gpkg, couche = "OCCUPATION_SOL"),
-               "DIFF_ARTIF")  # la couche disponible est nommée
+               "zan_evol_")  # la couche disponible est nommée
   expect_error(lire_ocsge_artificialisation(tempfile(fileext = ".gpkg")),
                "absent")
 })
 
-test_that("normaliser_ocsge_artificialisation : la fenêtre dérive de LA DONNÉE (les colonnes Artif_*), jamais codée en dur", {
+test_that("normaliser_ocsge_artificialisation : la fenêtre dérive de LA DONNÉE (les colonnes artif_*), jamais codée en dur", {
   gpkg <- tempfile(fileext = ".gpkg")
   on.exit(unlink(gpkg))
   fixture_gpkg_ocsge(gpkg, 2021, 2025)
@@ -70,18 +71,18 @@ test_that("normaliser_ocsge_artificialisation : artif_m2, artif_m3 et flux_net p
   fixture_gpkg_ocsge(gpkg, 2021, 2025)
   norm <- normaliser_ocsge_artificialisation(lire_ocsge_artificialisation(gpkg))
 
-  # P1 : Non Artif -> Artif, Surface 400 -> artif_m2 = 0, artif_m3 = 400,
+  # P1 : non artif -> artif, surface 400 -> artif_m2 = 0, artif_m3 = 400,
   #     flux = +1 x 400 = +400
-  # P2 : Artif -> Non Artif, Surface 1600 -> artif_m2 = 1600, artif_m3 = 0,
+  # P2 : artif -> non artif, surface 1600 -> artif_m2 = 1600, artif_m3 = 0,
   #     flux = -1 x 1600 = -1600
-  # P3 : Non Artif -> Artif, Surface 400 -> 0 / 400 / +400
-  # P4 : Non Artif -> Artif, Surface 600 (géométrie 400) -> 0 / 600 / +600
+  # P3 : non artif -> artif, surface 400 -> 0 / 400 / +400
+  # P4 : non artif -> artif, surface 600 (géométrie 400) -> 0 / 600 / +600
   expect_equal(norm$artif_m2, c(0, 1600, 0, 0))
   expect_equal(norm$artif_m3, c(400, 0, 400, 600))
   expect_equal(norm$flux_net, c(400, -1600, 400, 600))
   # l'invariant : flux_net == artif_m3 - artif_m2 par polygone
   expect_equal(norm$flux_net, norm$artif_m3 - norm$artif_m2)
-  # la surface de la géométrie en m² (EPSG:2154) : P4 diffère de SA Surface
+  # la surface de la géométrie en m² (EPSG:2154) : P4 diffère de SA surface
   # officielle (600 vs 400) — la mesure de l'État n'est pas la géométrie
   expect_equal(norm$aire_m2, c(400, 1600, 400, 400))
   expect_equal(sf::st_crs(norm)$epsg, 2154)
@@ -97,8 +98,8 @@ test_that("normaliser_ocsge_artificialisation : la projection EPSG:2154 est une 
     crs = 4326
   )
   flux <- sf::st_sf(
-    Artif_2021 = "Non Artif", Artif_2025 = "Artif",
-    Artificialisation = 1L, Surface = 900000,
+    artif_2021 = "non artif", artif_2025 = "artif",
+    artificialisation = 1L, surface = 900000,
     geometry = geom
   )
   norm <- normaliser_ocsge_artificialisation(flux)
@@ -114,23 +115,23 @@ test_that("normaliser_ocsge_artificialisation : une couche qui dérive échoue f
   fixture_gpkg_ocsge(gpkg, 2021, 2025)
   base <- lire_ocsge_artificialisation(gpkg)
 
-  # un sens hors contrat (Artificialisation != +1/-1)
+  # un sens hors contrat (artificialisation != +1/-1)
   derive <- base
-  derive$Artificialisation <- 0L
+  derive$artificialisation <- 0L
   expect_error(normaliser_ocsge_artificialisation(derive), "\\+1")
 
-  # un Artificialisation incohérent avec les statuts (le fichier a dérivé)
+  # un artificialisation incohérent avec les statuts (le fichier a dérivé)
   derive <- base
-  derive$Artificialisation[1] <- -1L  # P1 est Non Artif -> Artif, donc +1 attendu
+  derive$artificialisation[1] <- -1L  # P1 est non artif -> artif, donc +1 attendu
   expect_error(normaliser_ocsge_artificialisation(derive), "incohérent")
 
-  # les colonnes Artif_* absentes (une couche différente est passée)
-  sans <- base[setdiff(names(base), "Artif_2025")]
-  expect_error(normaliser_ocsge_artificialisation(sans), "Artif_\\{millesime\\}")
+  # les colonnes artif_* absentes (une couche différente est passée)
+  sans <- base[setdiff(names(base), "artif_2025")]
+  expect_error(normaliser_ocsge_artificialisation(sans), "artif_\\{millesime\\}")
 
   # une surface négative (un fichier corrompu) est rejetée par le contrat ±1
   derive <- base
-  derive$Surface <- -50
+  derive$surface <- -50
   expect_error(normaliser_ocsge_artificialisation(derive))
 })
 

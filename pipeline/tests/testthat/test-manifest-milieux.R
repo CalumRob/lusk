@@ -140,8 +140,8 @@ test_that("MANIFEST_MILIEUX : la note OCS-GE documente licence, couche différen
     MANIFEST_MILIEUX$id == "ocsge_artificialisation_22"]
   expect_true(grepl("Licence Ouverte", note))
   expect_true(grepl("différentiel", note, ignore.case = TRUE))
-  expect_true(grepl("Artif", note))
-  expect_true(grepl("Surface", note))
+  expect_true(grepl("artif", note))
+  expect_true(grepl("surface", note))
   # la mesure de l'État lue, jamais re-dérivée (les couches brutes ne sont pas
   # superposées) + les seuils réglementaires déjà appliqués par l'IGN
   expect_true(grepl("jamais re-dérivée", note))
