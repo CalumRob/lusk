@@ -184,6 +184,26 @@ describe('payload contract — the committed payload parses and renders', () => 
     ])
   })
 
+  it('keeps histoires_milieux.json in the seam while the payload regenerates — TODO #243', async () => {
+    const payload = obtenirPayload()
+
+    // État transitoire du re-key spec #225 : histoires_milieux.json committé
+    // porte encore l'ANCIEN schéma (periode/conso_fenetre/intensite…) tant
+    // que le pipeline ne le régénère pas sur les états OCS-GE réels (#243).
+    // Le fichier RESTE dans la liste committée (jamais supprimé — le thème
+    // est construit) ; le loader écarte les lignes de l'ancien schéma, donc
+    // les AUTRES thèmes et les indicateurs Milieux rendent, la Story Milieux
+    // reste muette (honnête : pas de lecture inventée).
+    expect(payload.indicateurs.some((i) => i.theme === 'milieux')).toBe(true)
+    expect(payload.histoires.filter((h) => h.theme === 'milieux')).toHaveLength(0)
+
+    // TODO #243 : dès que le payload régénéré valide le nouveau schéma, ce
+    // bloc ré-assert les lignes Milieux champ par champ (periode_pop,
+    // periode_artif, artif_m2, artif_m3, artif_m2_par_habitant,
+    // artif_m3_par_habitant, trajectoire_artif_par_habitant, l'invariant
+    // sign(ratio − 1) = sign(delta)) et la tolérance du loader est supprimée.
+  })
+
   it('formats the committed ranks as French chips', async () => {
     const payload = obtenirPayload()
 
