@@ -566,12 +566,24 @@ calculer_stationnement_velo_communes <- function(velo) {
 #     ZÉRO porté par toute commune du référentiel sans station (une commune
 #     sans borne a 0 borne — un fait, jamais un NA) ;
 #   - places_stationnement_velo_1000 (un taux) : Σ places ÷ Σ population
-#     × 1 000 — recomposé depuis les parties, jamais la moyenne des taux.
-# Sortie longue (code × key × value), une ligne par (territoire × clé), triée
-# par code puis clé — déterministe. Les communes sans EPCI (les îles) n'agrègent
-# à AUCUN niveau EPCI (la règle du fix « Sans objet » #131).
+#     × 1 000 — recomposé depuis les parties, jamais la moyenne des taux ;
+#   - offre_cyclable (issue #231, la figure « L'offre cyclable ») : une clé
+#     MULTI-MESURE (5 détails) — les longueurs protégé/partagé/total SOMMÉES,
+#     les km/1 000 hab RECOMPOSÉS depuis les parties (Σ km ÷ Σ population
+#     × 1 000, jamais la moyenne des taux communaux), le ZÉRO porté par toute
+#     commune sans aménagement (un fait, jamais un NA — la même règle que les
+#     bornes).
+# Sortie longue (code × key × detail × value), une ligne par (territoire ×
+# clé × détail), triée par code puis clé puis détail — déterministe. Depuis
+# l'issue #231, la sortie porte une colonne `detail` : NA pour les clés
+# scalaires du sous-bloc (offre_tc / bornes_recharge /
+# places_stationnement_velo_1000), le nom de la mesure pour offre_cyclable —
+# la forme longue du contrat, la même que les autres clés multi-mesures du
+# payload. Les communes sans EPCI (les îles) n'agrègent à AUCUN niveau EPCI
+# (la règle du fix « Sans objet » #131).
 agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
-                                      velo_communes, base_epci) {
+                                      velo_communes, base_epci,
+                                      offre_cyclable_communes = NULL) {
   ref <- base_epci[c("CODGEO", "EPCI", "DEP")]
 
   # offre_tc : la moyenne pondérée par les bâtiments de la couche (le
@@ -592,7 +604,7 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       value = sum(part_proche * n_batiments) / sum(n_batiments),
       .groups = "drop")
   ) %>%
-    dplyr::mutate(key = "offre_tc")
+    dplyr::mutate(key = "offre_tc", detail = NA_character_)
 
   # bornes : la SOMME, avec le zéro porté par toute commune du référentiel
   # partagé (base_epci — jamais un NA) ; les communes sans EPCI (les îles)
@@ -618,7 +630,7 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
     ctx_b %>% dplyr::summarise(code = "53", value = sum(value),
                                .groups = "drop")
   ) %>%
-    dplyr::mutate(key = "bornes_recharge")
+    dplyr::mutate(key = "bornes_recharge", detail = NA_character_)
 
   # velo : Σ places ÷ Σ population × 1 000 — recomposé depuis les parties
   # (jamais la moyenne des taux) ; les communes sans EPCI n'agrègent à aucun
@@ -639,9 +651,74 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       value = sum(places) / sum(population) * 1000,
       .groups = "drop")
   ) %>%
-    dplyr::mutate(key = "places_stationnement_velo_1000")
+    dplyr::mutate(key = "places_stationnement_velo_1000",
+                  detail = NA_character_)
 
-  dplyr::bind_rows(offre_tc, bornes, velo) %>%
-    dplyr::select(code, key, value) %>%
-    dplyr::arrange(code, key)
+  # offre_cyclable (issue #231) : les cinq mesures de la figure, chacune
+  # agrégée par SA règle — les longueurs (protégé/partagé/total) SOMMÉES, les
+  # km/1 000 hab RECOMPOSÉS depuis les parties (Σ km ÷ Σ population × 1 000).
+  # La commune sans aménagement porte 0 (la forme de calculer_offre_cyclable_
+  # communes : TOUTES les communes de l'univers y figurent) ; les communes
+  # sans EPCI n'agrègent à aucun niveau EPCI.
+  cyclable <- NULL
+  if (!is.null(offre_cyclable_communes)) {
+    # les km/1 000 hab sont RECOMPOSÉS depuis les LONGUEURS (la colonne sœur)
+    # — Σ km ÷ Σ population × 1 000, jamais une somme de taux
+    longueur_des_taux <- c(protege_km_1000 = "protege_longueur",
+                           partage_km_1000 = "partage_longueur")
+    mesures_longueur <- c("protege_longueur", "partage_longueur",
+                          "total_longueur")
+    mesures_taux <- c("protege_km_1000", "partage_km_1000")
+    ctx_c <- offre_cyclable_communes %>%
+      dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+    agreger_longueur_c <- function(colonne) {
+      dplyr::bind_rows(
+        ctx_c %>% dplyr::transmute(code = commune, valeur = .data[[colonne]]),
+        ctx_c %>% dplyr::filter(!is.na(EPCI)) %>%
+          dplyr::group_by(code = EPCI) %>%
+          dplyr::summarise(valeur = sum(.data[[colonne]]), .groups = "drop"),
+        ctx_c %>% dplyr::group_by(code = DEP) %>%
+          dplyr::summarise(valeur = sum(.data[[colonne]]), .groups = "drop"),
+        ctx_c %>% dplyr::summarise(code = "53",
+                                   valeur = sum(.data[[colonne]]),
+                                   .groups = "drop")
+      ) %>%
+        dplyr::transmute(code, key = "offre_cyclable",
+                         detail = colonne, value = valeur)
+    }
+    agreger_taux_c <- function(colonne) {
+      colonne_longueur <- longueur_des_taux[[colonne]]
+      dplyr::bind_rows(
+        ctx_c %>% dplyr::transmute(code = commune, valeur = .data[[colonne]]),
+        ctx_c %>% dplyr::filter(!is.na(EPCI)) %>%
+          dplyr::group_by(code = EPCI) %>%
+          dplyr::summarise(
+            valeur = sum(.data[[colonne_longueur]]) / sum(population) * 1000,
+            .groups = "drop"),
+        ctx_c %>% dplyr::group_by(code = DEP) %>%
+          dplyr::summarise(
+            valeur = sum(.data[[colonne_longueur]]) / sum(population) * 1000,
+            .groups = "drop"),
+        ctx_c %>% dplyr::summarise(
+          code = "53",
+          valeur = sum(.data[[colonne_longueur]]) / sum(population) * 1000,
+          .groups = "drop")
+      ) %>%
+        dplyr::transmute(code, key = "offre_cyclable",
+                         detail = colonne, value = valeur)
+    }
+    cyclable <- dplyr::bind_rows(
+      lapply(c(mesures_longueur, mesures_taux), function(colonne) {
+        if (colonne %in% mesures_longueur) {
+          agreger_longueur_c(colonne)
+        } else {
+          agreger_taux_c(colonne)
+        }
+      })
+    )
+  }
+
+  dplyr::bind_rows(offre_tc, bornes, velo, cyclable) %>%
+    dplyr::select(code, key, detail, value) %>%
+    dplyr::arrange(code, key, detail)
 }

@@ -279,7 +279,18 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   reseaux_territoires <- agreger_reseaux_territoires(reseaux_communes,
                                                      base_epci)
 
-  # le sous-bloc « L'offre de mobilité alternative » (issue #140)
+  # le sous-bloc « L'offre de mobilité alternative » (issue #140) + la figure
+  # « L'offre cyclable » (issue #231, la binaison provisoire d'ADR-0016) :
+  # l'offre TC (la VRAIE part des bâtiments à 500 m d'un arrêt GTFS), les
+  # bornes de recharge (les stations IRVE par commune), le stationnement vélo
+  # (les places / 1 000 hab du hub Ecolab) et l'offre cyclable (les km
+  # protégé/partagé / 1 000 hab + le total cyclable — le numérateur du ratio,
+  # la longueur en GÉOMÉTRIE UNIQUE, l'attribution par le côté porteur
+  # d'ADR-0016). La population communale du dénominateur des km/1 000 hab est
+  # celle du hub stationnement vélo (la population INSEE du hub — le même
+  # dénominateur que les places / 1 000 hab du sous-bloc, la cohérence des
+  # deux taux). L'agrégation des QUATRE clés passe par agreger_offre_territoires
+  # (la forme longue code × key × detail × value du contrat).
   offre_tc_communes <- calculer_part_proches_arret_communes(
     donnees$korrigo, donnees$batiments_residentiels
   )
@@ -288,9 +299,13 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   stationnement_velo_communes <- calculer_stationnement_velo_communes(
     donnees$stationnement_velo
   )
+  offre_cyclable_communes <- calculer_offre_cyclable_communes(
+    donnees$amenagements_cyclables,
+    stationnement_velo_communes[c("commune", "population")]
+  )
   offre_territoires <- agreger_offre_territoires(
     offre_tc_communes, bornes_communes, stationnement_velo_communes,
-    base_epci
+    base_epci, offre_cyclable_communes
   )
 
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
@@ -323,6 +338,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "bornes_communes.rds"))
   readr::write_rds(stationnement_velo_communes,
                    file.path(sortie, "stationnement_velo_communes.rds"))
+  readr::write_rds(offre_cyclable_communes,
+                   file.path(sortie, "offre_cyclable_communes.rds"))
   readr::write_rds(offre_territoires,
                    file.path(sortie, "offre_territoires.rds"))
 
@@ -342,6 +359,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_tc_communes = offre_tc_communes,
     bornes_communes = bornes_communes,
     stationnement_velo_communes = stationnement_velo_communes,
+    offre_cyclable_communes = offre_cyclable_communes,
     offre_territoires = offre_territoires
   )
 }
@@ -349,8 +367,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 # INDICATEURS_MOBILITE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. ONZE clés depuis les
-# issues #139 + #140 + #141 :
+# l'estampille — les vintages T7) et sa multiplicité. DOUZE clés depuis les
+# issues #139 + #140 + #141 + #231 :
 #   - « nb_buildings » (la « Taille » du thème — le nombre de bâtiments
 #     résidentiels analysés par commune, le poids du thème dans le squelette),
 #     une ligne PAR TERRITOIRE (commune / EPCI / département / région : les
@@ -385,6 +403,17 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #   - « places_stationnement_velo_1000 » (le sous-bloc, #140) : le hub Ecolab
 #     pris tel quel — les places / 1 000 hab, la multiplicité 1. Source de
 #     référence : stationnement-velo (ODbL, producteur OSM).
+#   - « offre_cyclable » (le sous-bloc, #231) : la figure « L'offre cyclable »
+#     — les km protégé / partagé (et / 1 000 hab) + le total cyclable (le
+#     numérateur du ratio « X % de l'infrastructure routière »), la
+#     multiplicité 5, la longueur en GÉOMÉTRIE UNIQUE (la convention du ratio,
+#     jamais le comptage par direction du mode `b` — ADR-0016). Source de
+#     RÉFÉRENCE : l'extrait OSM (osm_reseaux — l'horloge lente) : le headline
+#     compare le vélo au réseau `c` (OSM), le ratio est limité par SA plus
+#     lente horloge — jamais le vintage Geovelo frais (décision #226, US6) ;
+#     le jeu Geovelo (amenagements_cyclables) et la population du hub
+#     (stationnement-velo, le dénominateur des km/1 000 hab) restent des
+#     sources de l'indicateur.
 #   - les CINQ parts d'isolation (issue #141) : iso_alimentation, iso_sante,
 #     iso_administration, iso_ecole, iso_banque — la GRILLE du flagship, les
 #     parts des bâtiments SANS accès à pied ou en transports en commun à 20
@@ -396,6 +425,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("nb_buildings", "voitures_menage", "reseaux",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+          "offre_cyclable",
           names(CLES_ISOLATION_MOBILITE)),
   libelle = c(
     "Bâtiments résidentiels analysés",
@@ -404,6 +434,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "Part des bâtiments près d'un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
+    "L'offre cyclable (protégé / partagé)",
     "Part des bâtiments sans accès à l'alimentation",
     "Part des bâtiments sans accès à la santé",
     "Part des bâtiments sans accès aux services administratifs",
@@ -417,14 +448,16 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
     "stationnement-velo",
+    c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
     "mobilite_snapshot", "mobilite_snapshot"
   ),
   source_reference = c("mobilite_snapshot", "rp_logement_princ",
                        "amenagements_cyclables",
                        "korrigo", "bornes-recharges", "stationnement-velo",
+                       "osm_reseaux",
                        rep("mobilite_snapshot", 5)),
-  multiplicite = c(1L, 2L, 6L, 1L, 1L, 1L, rep(1L, 5))
+  multiplicite = c(1L, 2L, 6L, 1L, 1L, 1L, 5L, rep(1L, 5))
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -552,6 +585,18 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     c(t_longueur = "km", b_longueur = "km", c_longueur = "km",
       t_densite = "km/km²", b_densite = "km/km²", c_densite = "km/km²")
   )
+  # la figure « L'offre cyclable » (issue #231) : les cinq mesures de la clé
+  # multi-mesures — les longueurs protégé/partagé/total et les km/1 000 hab —
+  # alignées sur le squelette (le détail NA des clés scalaires du sous-bloc ne
+  # les concerne pas : la clé porte SES détails, la même forme que reseaux)
+  offre_cyclable <- aligner_detail(
+    analytiques$offre_territoires %>%
+      dplyr::filter(key == "offre_cyclable"),
+    "offre_cyclable",
+    c(protege_longueur = "km", protege_km_1000 = "km / 1 000 hab",
+      partage_longueur = "km", partage_km_1000 = "km / 1 000 hab",
+      total_longueur = "km")
+  )
 
   # le rang PAR DÉTAIL : chaque mesure est classée dans SON groupe de
   # comparaison (le percentile partagé de compute.R, jamais re-forké)
@@ -560,6 +605,11 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
   )
   rangs_reseaux <- construire_rangs_detail(
     analytiques$reseaux_territoires, territoires
+  )
+  rangs_offre_cyclable <- construire_rangs_detail(
+    analytiques$offre_territoires %>%
+      dplyr::filter(key == "offre_cyclable"),
+    territoires
   )
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés scalaires
@@ -580,7 +630,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     })),
     rangs_isolation,
     rangs_voitures,
-    rangs_reseaux
+    rangs_reseaux,
+    rangs_offre_cyclable
   )
 
   dplyr::bind_rows(
@@ -590,7 +641,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     tables$places_stationnement_velo_1000,
     dplyr::bind_rows(isolation),
     voitures,
-    reseaux
+    reseaux,
+    offre_cyclable
   ) %>%
     dplyr::left_join(rangs_combines, by = c("code", "key", "detail")) %>%
     dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
@@ -787,6 +839,19 @@ validations_mobilite <- list(
     if (any(!is.na(v) & v < 0)) {
       stop("Payload invalide : un taux de stationnement vélo négatif.",
            call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # la figure « L'offre cyclable » (issue #231) : des longueurs et taux non
+  # négatifs (une longueur protégé/partagé/total négative — le numérateur du
+  # ratio — ou un km/1 000 hab négatif est une corruption, jamais une offre
+  # publiée négative)
+  function(payload) {
+    cyclable <- payload$indicateurs$value[
+      payload$indicateurs$key == "offre_cyclable"]
+    if (any(!is.na(cyclable) & cyclable < 0)) {
+      stop("Payload invalide : une longueur ou un km/1 000 hab de l'offre ",
+           "cyclable négatif.", call. = FALSE)
     }
     invisible(payload)
   },
