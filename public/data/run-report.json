@@ -1,39 +1,24 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-08T13:22:56Z",
+  "timestamp": "2026-08-08T18:43:45Z",
   "statuts": [
-    {
-      "id": "epci",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "consoenaf",
-      "mode": "cron",
-      "status": "frais"
-    },
     {
       "id": "serie_historique",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_22",
+      "id": "menages",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_29",
+      "id": "age_detail",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_35",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_56",
+      "id": "epci",
       "mode": "cron",
       "status": "frais"
     }

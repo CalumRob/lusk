@@ -99,6 +99,13 @@ INDICATEURS_DEMOGRAPHIE <- tibble::tibble(
 # naissances/décès cumulés entre recensements — une ligne par commune.
 # OBS_STATUS = "A" écarte les lignes K/W (doublons d'inclusion) ; on ne garde
 # que les mesures et périodes du contrat.
+
+# PERIODE_TRAJECTOIRE : la fenêtre inter-recensement que l'Histoire lit — les
+# DEUX mêmes millésimes (POP 2017 -> POP 2023, 6 ans) que le taux / 6 et la
+# population moyenne d'ADR-0011. Publiée à côté des taux, pour que l'app date
+# le titre de la trajectoire depuis le payload (jamais un littéral de l'app).
+PERIODE_TRAJECTOIRE <- "2017-2023"
+
 pivoter_serie <- function(long) {
   long %>%
     dplyr::filter(
@@ -432,6 +439,7 @@ compute_histoires_demographie <- function(territoires) {
       type = type,
       theme = "demographie",
       story_key = "trajectoire-demographique",
+      periode = PERIODE_TRAJECTOIRE,
       solde_naturel,
       solde_migratoire,
       taux_solde_naturel,
