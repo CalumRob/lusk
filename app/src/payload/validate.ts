@@ -733,13 +733,15 @@ function lireHistoireMobilite(
 }
 
 /**
- * Une ligne d'Histoire Milieux (issue #174, ADR-0014) — la Story unique
- * « Se densifier, s'étaler, ou s'en aller » : une ligne par territoire, la
- * lecture par les signes (seuil 0). Les deux forces (Δpopulation de la série
- * historique, consommation de la fenêtre), l'intensité (m² d'ENAF par
- * habitant ajouté — publiée seulement quand le Δpopulation est
- * significativement positif) et la classification (null = fenêtre incomplète,
- * jamais une lecture inventée).
+ * Une ligne d'Histoire Milieux (issue #174, ADR-0014, re-keyed par la spec
+ * #225) — la Story unique « Se densifier, s'étaler, ou s'en aller » : une
+ * ligne par territoire, la lecture par les signes (seuil 0). Les deux forces
+ * (Δpopulation de la série historique, trajectoire de la surface artificialisée
+ * par habitant — les états OCS-GE), les deux fenêtres nommées séparément
+ * (population / états — la règle des deux horloges) et la classification
+ * (null = fenêtre incomplète, jamais une lecture inventée). L'invariant du
+ * contrat : sign(ratio − 1) = sign(delta) — le classifieur et le graphe ne
+ * peuvent jamais se contredire.
  */
 function lireHistoireMilieux(
   ligne: LigneBrute,
@@ -760,29 +762,73 @@ function lireHistoireMilieux(
   exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
   vus.add(territoire)
 
-  // La fenêtre dérivée de la série historique — jamais codée en dur (« 2017-2023 »).
-  const periode = lireChaine(ligne, 'periode', fichier, ligneIndexee)
-  exiger(periode.length > 0, fichier, ligneIndexee, '« periode » vide')
+  // Les deux fenêtres nommées séparément — la règle des deux horloges (spec
+  // #225) : la fenêtre partagée de la population (le bracket RP) et la fenêtre
+  // des états OCS-GE (le span par département pour les agrégats multi-dépt).
+  // Jamais codées en dur (« 2017-2023 ») ni fusionnées en une seule période.
+  const periode_pop = lireChaine(ligne, 'periode_pop', fichier, ligneIndexee)
+  exiger(periode_pop.length > 0, fichier, ligneIndexee, '« periode_pop » vide')
+  const periode_artif = lireChaine(ligne, 'periode_artif', fichier, ligneIndexee)
+  exiger(periode_artif.length > 0, fichier, ligneIndexee, '« periode_artif » vide')
 
   const delta_population = ligne['delta_population']
-  const conso_fenetre = ligne['conso_fenetre']
   exiger(estNombre(delta_population), fichier, ligneIndexee, '« delta_population » doit être un nombre')
+
+  // Les états OCS-GE (ha à chaque millésime) — des surfaces, jamais négatives.
+  const artif_m2 = ligne['artif_m2']
+  const artif_m3 = ligne['artif_m3']
   exiger(
-    estNombre(conso_fenetre) && conso_fenetre >= 0,
+    estNombre(artif_m2) && artif_m2 >= 0,
     fichier,
     ligneIndexee,
-    '« conso_fenetre » doit être un nombre non négatif',
+    '« artif_m2 » doit être un nombre non négatif (ha à l’état initial)',
+  )
+  exiger(
+    estNombre(artif_m3) && artif_m3 >= 0,
+    fichier,
+    ligneIndexee,
+    '« artif_m3 » doit être un nombre non négatif (ha à l’état final)',
   )
 
-  // L'intensité n'existe qu'avec des habitants ajoutés (le dénombrement est
-  // exact — sous le seuil, null, jamais un nombre négatif).
-  const intensite_m2_par_habitant = ligne['intensite_m2_par_habitant']
+  // La surface artificialisée par habitant (m²/hab à chaque état) — définie
+  // pour TOUT territoire (plus de trou NA : la leçon de la spec #225).
+  const artif_m2_par_habitant = ligne['artif_m2_par_habitant']
+  const artif_m3_par_habitant = ligne['artif_m3_par_habitant']
   exiger(
-    intensite_m2_par_habitant === null ||
-      (estNombre(intensite_m2_par_habitant) && intensite_m2_par_habitant >= 0),
+    estNombre(artif_m2_par_habitant) && artif_m2_par_habitant >= 0,
     fichier,
     ligneIndexee,
-    '« intensite_m2_par_habitant » doit être un nombre non négatif ou null',
+    '« artif_m2_par_habitant » doit être un nombre non négatif (m²/hab)',
+  )
+  exiger(
+    estNombre(artif_m3_par_habitant) && artif_m3_par_habitant >= 0,
+    fichier,
+    ligneIndexee,
+    '« artif_m3_par_habitant » doit être un nombre non négatif (m²/hab)',
+  )
+
+  // La trajectoire M3/M2 par habitant — un rapport de valeurs par habitant :
+  // le dénominateur est toujours positif, la trajectoire est un nombre > 0.
+  const trajectoire_artif_par_habitant = ligne['trajectoire_artif_par_habitant']
+  exiger(
+    estNombre(trajectoire_artif_par_habitant) && trajectoire_artif_par_habitant > 0,
+    fichier,
+    ligneIndexee,
+    '« trajectoire_artif_par_habitant » doit être un nombre strictement positif (le ratio M3/M2)',
+  )
+
+  // L'invariant du contrat (spec #225) : sign(ratio − 1) = sign(delta) — la
+  // lecture (le ratio) et le graphe quadrant (le delta signé) ne peuvent
+  // jamais se contredire. Un ratio < 1 exige un delta < 0 (la densification
+  // ou la renaturation MESURÉE — la lecture n'est rigoureuse que de cette
+  // propriété) ; un ratio > 1 exige un delta > 0 ; ratio == 1 ⟺ delta == 0.
+  const delta = (artif_m3_par_habitant as number) - (artif_m2_par_habitant as number)
+  const ratio = trajectoire_artif_par_habitant as number
+  exiger(
+    Math.sign(ratio - 1) === Math.sign(delta),
+    fichier,
+    ligneIndexee,
+    `« trajectoire_artif_par_habitant » (${ratio}) et le delta par habitant (${delta}) se contredisent — sign(ratio − 1) doit valoir sign(delta)`,
   )
 
   // La classification : l'une des quatre lectures, ou null (fenêtre
@@ -800,10 +846,14 @@ function lireHistoireMilieux(
     type,
     theme,
     story_key,
-    periode,
+    periode_pop,
+    periode_artif,
     delta_population: delta_population as number,
-    conso_fenetre: conso_fenetre as number,
-    intensite_m2_par_habitant: intensite_m2_par_habitant as number | null,
+    artif_m2: artif_m2 as number,
+    artif_m3: artif_m3 as number,
+    artif_m2_par_habitant: artif_m2_par_habitant as number,
+    artif_m3_par_habitant: artif_m3_par_habitant as number,
+    trajectoire_artif_par_habitant: ratio,
     classification: classification as string | null,
   }
 }

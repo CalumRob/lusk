@@ -619,27 +619,28 @@ export const indicateursMilieuxFixture: Indicateur[] = [
 ]
 
 /**
- * Les Stories Milieux (issue #174, ADR-0014) — « Se densifier, s'étaler, ou
- * s'en aller » : une ligne par territoire, la lecture par les signes (seuil
- * 0), les deux forces (Δpopulation de la série historique, consommation de la
- * fenêtre re-sommée sur les MÊMES millésimes — la règle des deux horloges,
- * fenêtre 2017-2023 dérivée, jamais codée en dur) et l'intensité (m² d'ENAF
- * par habitant ajouté — publiée seulement quand le Δpopulation est
- * significativement positif). Les valeurs reflètent le fixture R
- * (test-theme-milieux-histoire.R) : 22001/22002 s'étalent, 29001/29002
- * consomment quand même — les lectures « densifiant » et « renaturation »
- * sont exercées dans story-milieux.spec.ts (le classifieur pur).
+ * Les Stories Milieux (issue #174, ADR-0014, re-keyées par la spec #225) —
+ * « Se densifier, s'étaler, ou s'en aller » : une ligne par territoire, la
+ * lecture par les signes (seuil 0), les deux forces (Δpopulation de la série
+ * historique, trajectoire de la surface artificialisée par habitant — les
+ * états OCS-GE) et les deux fenêtres nommées séparément (periode_pop, le
+ * bracket RP partagé « 2017-2023 » ; periode_artif, la fenêtre des états par
+ * département — le span multi-dépt pour la région). Les valeurs respectent
+ * l'invariant du contrat (sign(ratio − 1) = sign(delta)) et exercent les
+ * QUATRE lectures, cas de signes mélangés compris : 22002 grandit mais se
+ * densifie (ratio < 1, delta < 0), 200000002 se vide avec une renaturation
+ * MESURÉE (artif_m3 < artif_m2, ratio < 1, delta < 0).
  */
 export const histoiresMilieuxFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 200, conso_fenetre: 51, intensite_m2_par_habitant: 2550, classification: 'grandir-en-setalant' },
-  { territoire: '22002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 100, conso_fenetre: 9, intensite_m2_par_habitant: 900, classification: 'grandir-en-setalant' },
-  { territoire: '29001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -150, conso_fenetre: 15.5, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '29002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -10, conso_fenetre: 1.75, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '200000001', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 300, conso_fenetre: 60, intensite_m2_par_habitant: 2000, classification: 'grandir-en-setalant' },
-  { territoire: '200000002', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -160, conso_fenetre: 17.25, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '22', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 300, conso_fenetre: 60, intensite_m2_par_habitant: 2000, classification: 'grandir-en-setalant' },
-  { territoire: '29', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: -160, conso_fenetre: 17.25, intensite_m2_par_habitant: null, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '53', type: 'region', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode: '2017-2023', delta_population: 140, conso_fenetre: 77.25, intensite_m2_par_habitant: 5517.85714285714, classification: 'grandir-en-setalant' },
+  { territoire: '22001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 200, artif_m2: 240, artif_m3: 300, artif_m2_par_habitant: 2250, artif_m3_par_habitant: 2550, trajectoire_artif_par_habitant: 1.1333333333333333, classification: 'grandir-en-setalant' },
+  { territoire: '22002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 100, artif_m2: 120, artif_m3: 129, artif_m2_par_habitant: 900, artif_m3_par_habitant: 855, trajectoire_artif_par_habitant: 0.95, classification: 'grandir-en-se-densifiant' },
+  { territoire: '29001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -150, artif_m2: 150, artif_m3: 155, artif_m2_par_habitant: 500, artif_m3_par_habitant: 530, trajectoire_artif_par_habitant: 1.06, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '29002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -10, artif_m2: 100, artif_m3: 100.75, artif_m2_par_habitant: 400, artif_m3_par_habitant: 403, trajectoire_artif_par_habitant: 1.0075, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '200000001', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 300, artif_m2: 360, artif_m3: 435, artif_m2_par_habitant: 1500, artif_m3_par_habitant: 1750, trajectoire_artif_par_habitant: 1.1666666666666667, classification: 'grandir-en-setalant' },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -160, artif_m2: 250, artif_m3: 246, artif_m2_par_habitant: 420, artif_m3_par_habitant: 410, trajectoire_artif_par_habitant: 0.9761904761904762, classification: 'les-departs-laissent-la-place-a-la-renaturation' },
+  { territoire: '22', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 300, artif_m2: 360, artif_m3: 435, artif_m2_par_habitant: 1500, artif_m3_par_habitant: 1750, trajectoire_artif_par_habitant: 1.1666666666666667, classification: 'grandir-en-setalant' },
+  { territoire: '29', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -160, artif_m2: 250, artif_m3: 252, artif_m2_par_habitant: 420, artif_m3_par_habitant: 425, trajectoire_artif_par_habitant: 1.011904761904762, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '53', type: 'region', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025 (22) · 2021-2024 (29)', delta_population: 140, artif_m2: 610, artif_m3: 690, artif_m2_par_habitant: 750, artif_m3_par_habitant: 830, trajectoire_artif_par_habitant: 1.1066666666666667, classification: 'grandir-en-setalant' },
 ]
 
 /**

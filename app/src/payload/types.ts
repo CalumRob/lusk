@@ -218,28 +218,46 @@ export interface HistoireMobiliteVeloPreserve extends VintageStamp {
 export type HistoireMobilite = HistoireMobiliteVingtMinutes | HistoireMobiliteVeloPreserve
 
 /**
- * The Milieux Story row (issue #174, ADR-0014) — « Se densifier, s'étaler, ou
- * s'en aller », the single Story of the fifth theme: ONE row per territory,
- * the reading by the SIGNS alone (threshold 0 — ZAN is a zero-objective, the
- * data is a complete census: a 0 is a real 0). The two forces: Δpopulation
- * (from the Démographie série historique — the population-sourcing rule of
- * ADR-0014, never CONSOENAF's embedded fields) and the window consumption
- * (the CONSOENAF annuals re-summed on the SAME window — the two-clocks rule:
- * the window derives from the RP millésimes the série holds, "2017-2023"
- * today, never hardcoded). The intensity (m² of ENAF per added inhabitant) is
- * published only when Δpopulation is meaningfully positive (SEUIL_INTENSITE);
- * classification null = incomplete window (never an invented reading).
+ * The Milieux Story row (issue #174, ADR-0014, re-keyed by spec #225) —
+ * « Se densifier, s'étaler, ou s'en aller », the single Story of the fifth
+ * theme: ONE row per territory, the reading by the SIGNS alone (threshold 0).
+ * The pivot (spec #225) replaces the CONSOENAF flow columns with the OCS-GE
+ * STATES (the stock of artificialized land at each millésime, IGN
+ * OCS-GE Artificialisation NG v2.0) — renaturation becomes measurable
+ * (artif_m3 < artif_m2) and the per-capita figure exists for every territory
+ * (no NA hole). The two forces: Δpopulation (from the Démographie série
+ * historique — the population-sourcing rule of ADR-0014) and the per-capita
+ * state trajectory `trajectoire_artif_par_habitant` (M3/M2 per-capita ratio).
+ * The two windows are named separately (the two-clocks discipline):
+ * `periode_pop` (the shared population window, the RP bracketing rule —
+ * 2017 initial, 2023 final) and `periode_artif` (the per-département OCS-GE
+ * state window; a span with per-dépt dates for cross-département EPCIs and
+ * the région). Invariant locked by the contract:
+ * sign(ratio − 1) = sign(delta) with delta = artif_m3_par_habitant −
+ * artif_m2_par_habitant — the classification and the graph can never
+ * disagree. Classification null = incomplete window (never an invented
+ * reading).
  */
 export interface HistoireMilieux {
   territoire: string
   type: TerritoireType
   theme: 'milieux'
   story_key: 'se-densifier-setaler-ou-sen-aller'
-  /** La fenêtre dérivée de la série historique — la date du titre, jamais codée en dur. */
-  periode: string
+  /** La fenêtre partagée de la population (le bracket RP — "2017-2023"). */
+  periode_pop: string
+  /** La fenêtre des états OCS-GE (le span par département pour les agrégats multi-dépt). */
+  periode_artif: string
   delta_population: number
-  conso_fenetre: number
-  intensite_m2_par_habitant: number | null
+  /** La surface artificialisée à l'état initial (M2), en ha. */
+  artif_m2: number
+  /** La surface artificialisée à l'état final (M3), en ha. */
+  artif_m3: number
+  /** La surface artificialisée par habitant à M2, en m²/hab. */
+  artif_m2_par_habitant: number
+  /** La surface artificialisée par habitant à M3, en m²/hab. */
+  artif_m3_par_habitant: number
+  /** Le ratio M3/M2 par habitant — la trajectoire, la seconde force de la lecture. */
+  trajectoire_artif_par_habitant: number
   classification: string | null
 }
 
