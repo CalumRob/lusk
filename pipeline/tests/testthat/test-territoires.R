@@ -21,10 +21,22 @@ test_that("les EPCIs portent leur LIBEPCI, pas leur SIREN", {
   expect_false(any(grepl("^EPCI 200", epcis$nom)))
 })
 
-test_that("les départements et la région portent leurs étiquettes", {
+test_that("les départements portent leur vrai nom INSEE (issue #115), la région son étiquette", {
   bt <- build_territoires(load_fixture())
-  expect_equal(bt$nom[bt$type == "departement"], c("Département 22", "Département 29"))
+  expect_equal(bt$nom[bt$type == "departement"], c("Côtes-d'Armor", "Finistère"))
+  expect_false(any(grepl("^Département ", bt$nom[bt$type == "departement"])))
   expect_equal(bt$nom[bt$type == "region"], "Bretagne")
+})
+
+test_that("nom_departement : les quatre départements bretons portent leur nom INSEE (issue #115)", {
+  # le mapping partagé du squelette — jamais l'étiquette fonctionnelle
+  # « Département XX » ; un code hors carte garde l'étiquette (défensif : le
+  # squelette nomme ce qu'il connaît, ne casse pas ce qu'il ne connaît pas)
+  expect_equal(nom_departement("22"), "Côtes-d'Armor")
+  expect_equal(nom_departement("29"), "Finistère")
+  expect_equal(nom_departement("35"), "Ille-et-Vilaine")
+  expect_equal(nom_departement("56"), "Morbihan")
+  expect_equal(nom_departement("99"), "Département 99")
 })
 
 test_that("les EPCIs n'appartiennent à aucun EPCI — la colonne epci ne concerne que les communes", {
