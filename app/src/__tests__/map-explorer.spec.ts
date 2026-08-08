@@ -221,3 +221,57 @@ describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => 
     expect(popup?.contenu).not.toContain('Voir la fiche')
   })
 })
+
+describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
+  it('shows a lightweight tooltip with the territory name and its value on mousemove', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('mousemove', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)
+    expect(tooltip?.contenu).toContain('Commune A1')
+    expect(tooltip?.contenu).toContain('200')
+    // survol ≠ clic : pas de lien fiche, pas de focus (léger, non bloquant)
+    expect(tooltip?.contenu).not.toContain('Voir la fiche')
+    expect(tooltip?.options.focusAfterOpen).toBeFalsy()
+  })
+
+  it('follows the cursor: the tooltip moves with the mousemove', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('mousemove', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    carte?.fire('mousemove', { point: { x: 20, y: 20 }, lngLat: { lng: -3, lat: 49 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)
+    expect(tooltip?.position).toEqual({ lng: -3, lat: 49 })
+  })
+
+  it('removes the tooltip when the cursor leaves a territory', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+    carte?.fire('mousemove', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    expect(maplibreMock.instancesPopups.at(-1)?.enlevee).toBe(false)
+
+    carteFake.queryRenderedFeatures = () => [] as never
+    carte?.fire('mousemove', { point: { x: 99, y: 99 }, lngLat: { lng: -9, lat: 44 } })
+
+    expect(maplibreMock.instancesPopups.at(-1)?.enlevee).toBe(true)
+  })
+})
