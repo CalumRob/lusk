@@ -1,15 +1,16 @@
 # test-run-pipeline-milieux -----------------------------------------------------
 # run_pipeline(theme = theme_milieux()) — le run Milieux de bout en bout
-# (issue #171, étendu par #172) : la source CONSOENAF téléchargée une seule
-# fois (cache idempotent), le reshape RÉEL (m² -> ha + filtre Bretagne), le
-# squelette partagé, le payload de L'INDICATEUR livré (les deux clés — la
-# fenêtre 2021-2025 et la série annuelle 2011-2024, classées sur la part de
-# surface), la validation générique et la publication — les fichiers par
-# thème, la référence partagée, les vintages et le rapport de run. Le réseau
-# et les vrais fichiers n'entrent jamais dans la boucle de test
-# (download_sources / lire_epci / publier_geometrie mockés, la fixture CSV
-# fournie dans le cache) ; la publication est RÉELLE — ce qui est testé est ce
-# qui part.
+# (issue #171, étendu par #172, pivoté par #239) : la source CONSOENAF
+# téléchargée une seule fois (cache idempotent), le reshape RÉEL (m² -> ha +
+# filtre Bretagne), le squelette partagé, le payload DE L'INDICATEUR livré
+# (les deux clés — l'état M2/M3 artif_par_habitant et la série annuelle
+# 2011-2024 conso_enaf_annuel ; la fenêtre et la trajectoire ZAN sont mortes
+# avec les flux, #63), la validation générique et la publication — les
+# fichiers par thème, la référence partagée, les vintages et le rapport de
+# run. Le réseau et les vrais fichiers n'entrent jamais dans la boucle de
+# test (download_sources / lire_epci / publier_geometrie mockés, la fixture
+# CSV fournie dans le cache) ; la publication est RÉELLE — ce qui est testé
+# est ce qui part.
 
 # statuts du run Milieux — une ligne par source du manifeste, dans son ordre
 statuts_milieux <- function(status = "frais") {
@@ -84,24 +85,25 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
 
   payload <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible)
 
-  # le payload de l'indicateur livré : les trois clés du thème
+  # le payload de l'indicateur livré : les deux clés du thème (issue #239) —
+  # l'état M2/M3 (artif_par_habitant) et la série annuelle (conso_enaf_annuel) ;
+  # la fenêtre et la trajectoire ZAN sont mortes avec les flux CONSOENAF (#63)
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "milieux"))
   expect_setequal(unique(payload$indicateurs$key),
-                  c("conso_enaf_fenetre", "conso_enaf_annuel", "trajectoire_zan"))
-  # 10 territoires x 1 (fenêtre) + 10 x 14 (annuels) + 10 x 1 (trajectoire) = 160 lignes
+                  c("artif_par_habitant", "conso_enaf_annuel"))
+  # 10 territoires x 2 (l'état M2/M3) + 10 x 14 (annuels) = 160 lignes
   expect_equal(nrow(payload$indicateurs), 160)
   expect_equal(nrow(payload$territoires), 10)
   expect_setequal(unique(payload$territoires$type),
                   c("commune", "epci", "departement", "region"))
-  # la valeur publiée : la fenêtre 2021-2025 en hectares (m² -> ha prouvé dans
-  # le run complet — 233 202 m² -> 23,3202 ha pour la commune A1)
-  expect_equal(
-    payload$indicateurs$value[
-      payload$indicateurs$territoire == "22001" &
-        payload$indicateurs$key == "conso_enaf_fenetre"],
-    233202 / 10000
-  )
+  # le cache de ce run n'a PAS les archives OCS-GE (chemin rétro-compatible,
+  # #237) : l'état par habitant reste publié (le contrat de multiplicité), ses
+  # lignes toutes NA — jamais un trou de lignes, jamais une valeur inventée
+  etat <- payload$indicateurs[payload$indicateurs$key == "artif_par_habitant", ]
+  expect_equal(nrow(etat), 10 * 2)
+  expect_true(all(is.na(etat$value)))
+  expect_true(all(etat$unit == "m²/hab"))
 
   # les fichiers par thème + la référence partagée + vintages + rapport.
   # L'Aperçu est vide par design : le fichier partagé apercu n'est NI écrit
@@ -162,7 +164,7 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
-  expect_equal(nrow(ind), 160)  # 10 territoires x (1 fenêtre + 14 annuels + 1 trajectoire)
+  expect_equal(nrow(ind), 160)  # 10 territoires x (2 lignes d'état + 14 annuels)
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)
   expect_equal(nrow(ref), 10)
 })
