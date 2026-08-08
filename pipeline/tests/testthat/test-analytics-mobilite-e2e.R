@@ -234,8 +234,13 @@ comptes_saillance_reels <- c(
 #   - bornes_communes : 709 lignes (les communes du référentiel avec ≥ 1
 #     station), 1 918 stations au total ;
 #   - stationnement_velo_communes : 1 202 lignes (le millésime 2025) ;
-#   - offre_territoires : 3 802 lignes — offre_tc 1 266 (1 200 communes + 61
-#     EPCIs + 4 départements + la région) + bornes 1 268 + velo 1 268.
+#   - offre_cyclable_communes : 1 202 lignes (la figure « L'offre cyclable »,
+#     issue #231 — TOUTES les communes de l'univers population, la commune
+#     sans aménagement porte 0 : un fait, jamais une ligne manquante ;
+#     437 communes bretonnes à zéro sur le fichier réel) ;
+#   - offre_territoires : 10 142 lignes — offre_tc 1 266 (1 200 communes + 61
+#     EPCIs + 4 départements + la région) + bornes 1 268 + velo 1 268 + la clé
+#     offre_cyclable 6 340 (1 268 territoires × 5 mesures).
 comptes_sources_offre_reels <- c(
   korrigo = 27297,
   batiments_residentiels = 1235417,
@@ -246,11 +251,12 @@ comptes_sous_bloc_analytiques_reels <- c(
   offre_tc_communes = 1200,
   bornes_communes = 709,
   stationnement_velo_communes = 1202,
-  offre_territoires = 3802
+  offre_cyclable_communes = 1202,
+  offre_territoires = 10142
 )
 # les comptes par niveau du sous-bloc : l'offre TC ne couvre que les 1 200
-# communes à bâtiments ; les bornes et le vélo couvrent les 1 202 communes du
-# référentiel.
+# communes à bâtiments ; les bornes, le vélo et l'offre cyclable couvrent les
+# 1 202 communes du référentiel (× 5 mesures pour l'offre cyclable).
 comptes_offre_par_niveau_reels <- c(
   offre_tc_commune = 1200,
   offre_tc_epci = 61,
@@ -263,10 +269,14 @@ comptes_offre_par_niveau_reels <- c(
   velo_commune = 1202,
   velo_epci = 61,
   velo_departement = 4,
-  velo_region = 1
+  velo_region = 1,
+  cyclable_commune = 6010,   # 1 202 × 5 mesures
+  cyclable_epci = 305,       # 61 × 5
+  cyclable_departement = 20, # 4 × 5
+  cyclable_region = 5        # 1 × 5
 )
 comptes_payload_reels <- c(
-  indicateurs = 21556,  # 17 clés/détails × 1 268 territoires (nb_buildings 1 + voitures 2 + reseaux 6 + sous-bloc 3 + isolation 5)
+  indicateurs = 27896,  # 22 clés/détails × 1 268 territoires (nb_buildings 1 + voitures 2 + reseaux 6 + sous-bloc 3 + offre_cyclable 5 + isolation 5)
   histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
@@ -326,16 +336,17 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   # les clés publiées : la « Taille » (nb_buildings) + l'étage demande/réseaux
   # (issue #139 : voitures_menage, reseaux) + le sous-bloc « L'offre de
   # mobilité alternative » (issue #140 : offre_tc, bornes_recharge,
-  # places_stationnement_velo_1000) + les 5 parts d'isolation de la GRILLE
-  # (issue #141 : iso_alimentation, iso_sante, iso_administration, iso_ecole,
-  # iso_banque) — une ligne par territoire × multiplicité, avec leurs rangs.
-  # La matrice complète ne part JAMAIS dans le payload : les seules clés du
-  # payload sont les onze déclarées (aucune clé dens_div_t_*, div_loss_t_dec_*,
-  # share_* — la leçon de l'issue #131)
+  # places_stationnement_velo_1000 + issue #231 : offre_cyclable) + les 5
+  # parts d'isolation de la GRILLE (issue #141 : iso_alimentation, iso_sante,
+  # iso_administration, iso_ecole, iso_banque) — une ligne par territoire ×
+  # multiplicité, avec leurs rangs. La matrice complète ne part JAMAIS dans le
+  # payload : les seules clés du payload sont les douze déclarées (aucune clé
+  # dens_div_t_*, div_loss_t_dec_*, share_* — la leçon de l'issue #131)
   expect_setequal(unique(payload$indicateurs$key),
                   c("nb_buildings", "voitures_menage", "reseaux",
                     "offre_tc", "bornes_recharge",
                     "places_stationnement_velo_1000",
+                    "offre_cyclable",
                     "iso_alimentation", "iso_sante", "iso_administration",
                     "iso_ecole", "iso_banque"))
   expect_false(any(grepl("dens_|dec_|share_|norm_score|tot_loss",
@@ -347,6 +358,13 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
                 "places_stationnement_velo_1000")) {
     expect_equal(sum(payload$indicateurs$key == cle), 1268, info = cle)
   }
+  # la figure « L'offre cyclable » (issue #231) : 5 mesures par territoire —
+  # les longueurs protégé/partagé/total et les km/1 000 hab
+  expect_equal(sum(payload$indicateurs$key == "offre_cyclable"), 1268 * 5)
+  expect_setequal(unique(payload$indicateurs$detail[
+    payload$indicateurs$key == "offre_cyclable"]),
+    c("protege_longueur", "protege_km_1000", "partage_longueur",
+      "partage_km_1000", "total_longueur"))
   # les 5 parts d'isolation : une ligne par territoire (les agrégats EPCI /
   # département / région sont recalculés depuis les parties — la moyenne
   # pondérée par les bâtiments, jamais une moyenne de parts), chacune avec ses
@@ -534,6 +552,17 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
                     "2022-2025"))
   expect_true(all(pour("places_stationnement_velo_1000")$vintage_date_reference ==
                     "2025-01-01"))
+  # la figure « L'offre cyclable » (issue #231) : l'estampille de SA source de
+  # référence — l'extrait OSM (osm_reseaux, l'horloge LENTE : la référence est
+  # le timestamp d'extraction 2026-08-05, la publication le portage 2026-08-06)
+  # — JAMAIS le vintage Geovelo frais (2026-08-07) : le ratio « X % de
+  # l'infrastructure routière » est limité par sa plus lente horloge (décision
+  # #226 US6)
+  ref_osm <- vintages[vintages$id == "osm_reseaux", ]
+  expect_true(all(pour("offre_cyclable")$vintage_source == ref_osm$source))
+  expect_true(all(pour("offre_cyclable")$vintage_date_reference == "2026-08-05"))
+  expect_true(all(pour("offre_cyclable")$vintage_date_publication == "2026-08-06"))
+  expect_false(any(pour("offre_cyclable")$vintage_date_reference == "2026-08-07"))
 
   # la référence des territoires : le squelette partagé (communes + EPCIs +
   # départements + région), les noms réels, l'EPCI de chaque commune
@@ -757,19 +786,22 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
 
   # les comptes par niveau du sous-bloc (la forme « comptes par niveau » de
   # l'acceptance) : l'offre TC ne couvre que les 1 200 communes à bâtiments
-  # (les îles sans bâtiment géocodé n'ont pas de part) ; bornes et vélo
-  # couvrent les 1 202 communes du référentiel.
+  # (les îles sans bâtiment géocodé n'ont pas de part) ; bornes, vélo et
+  # l'offre cyclable couvrent les 1 202 communes du référentiel (× 5 mesures
+  # pour l'offre cyclable).
   offre <- readRDS(file.path(sortie_analytiques, "offre_territoires.rds"))
-  expect_named(offre, c("code", "key", "value"))
+  expect_named(offre, c("code", "key", "detail", "value"))
   comptes_offre <- table(offre$key, type_territoire_mobilite(offre$code))
   for (cle in names(comptes_offre_par_niveau_reels)) {
     bits <- strsplit(cle, "_")[[1]]
     # le niveau est le DERNIER élément (« offre_tc_commune » → « commune ») ;
-    # le préfixe est la clé du sous-bloc (« offre_tc », « bornes », « velo »)
+    # le préfixe est la clé du sous-bloc (« offre_tc », « bornes », « velo »,
+    # « cyclable »)
     cle_key <- switch(paste(bits[-length(bits)], collapse = "_"),
                       offre_tc = "offre_tc",
                       bornes = "bornes_recharge",
-                      velo = "places_stationnement_velo_1000")
+                      velo = "places_stationnement_velo_1000",
+                      cyclable = "offre_cyclable")
     niveau <- bits[length(bits)]
     expect_equal(unname(comptes_offre[cle_key, niveau]),
                  unname(comptes_offre_par_niveau_reels[[cle]]), info = cle)
@@ -786,9 +818,22 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   #     Ille-et-Vilaine 634, Rennes 49 ;
   #   - places_stationnement_velo_1000 : le hub Ecolab 2025 pris tel quel —
   #     région 18,4989 (la même valeur que le fichier région du hub — la
-  #     recomposition communale est exactement le calcul du hub).
-  lire_offre <- function(code, key) {
-    offre$value[offre$code == code & offre$key == key]
+  #     recomposition communale est exactement le calcul du hub) ;
+  #   - offre_cyclable (issue #231) : la figure « L'offre cyclable » — la
+  #     LONGUEUR en GÉOMÉTRIE UNIQUE (jamais le comptage par direction du mode
+  #     `b`) : région 4 913,2 km de total cyclable (protégé 3 290,5 + partagé
+  #     1 622,7 — le mode `b` par direction donne 4 940,3 : la différence de
+  #     +0,5 % documentée par ADR-0016), le numérateur du headline « X % de
+  #     l'infrastructure routière » (le dénominateur `c` — 101 353,7 km — est
+  #     une ligne du payload, la règle du « dans l'EPCI : X % » d'ADR-0015 :
+  #     l'app regarde les lignes existantes) ; Rennes 263,1 km (105,0 protégé
+  #     + 158,1 partagé), Brest 126,4, Bohars 1,47, Plumieux 0 (la commune de
+  #     la fusion COG 2022→2025 SANS aménagement — le zéro porté, jamais une
+  #     ligne manquante).
+  lire_offre <- function(code, key, detail = NA) {
+    ok <- offre$code == code & offre$key == key &
+      (if (is.na(detail)) is.na(offre$detail) else offre$detail %in% detail)
+    offre$value[ok]
   }
   # offre_tc — commune, EPCI Brest Métropole, département 29, région
   expect_equal(round(lire_offre("35238", "offre_tc"), 4), 0.9957)
@@ -824,6 +869,60 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(round(lire_offre("29011", "places_stationnement_velo_1000"), 4),
                13.3479)
 
+  # la figure « L'offre cyclable » (issue #231) — la clé multi-mesures aux
+  # valeurs VERROUILLÉES sur le run réel : les longueurs en GÉOMÉTRIE UNIQUE
+  # (protégé + partagé = total, exactement une somme) et les km/1 000 hab
+  # RECOMPOSÉS depuis les parties (Σ km ÷ Σ population × 1 000)
+  lire_cyclable <- function(code, detail) {
+    lire_offre(code, "offre_cyclable", detail)
+  }
+  # région : protégé 3 290,5 km / partagé 1 622,7 / total 4 913,2 — le total
+  # est le numérateur du ratio (le mode `b` par direction = 4 940,3 km, la
+  # différence +0,5 % d'ADR-0016 : les deux conventions restent distinctes)
+  expect_equal(round(lire_cyclable("53", "protege_longueur"), 3), 3290.494)
+  expect_equal(round(lire_cyclable("53", "partage_longueur"), 3), 1622.739)
+  expect_equal(round(lire_cyclable("53", "total_longueur"), 3), 4913.233)
+  expect_equal(round(lire_cyclable("53", "protege_km_1000"), 6), 0.961333)
+  expect_equal(round(lire_cyclable("53", "partage_km_1000"), 6), 0.474091)
+  # le numérateur du headline : le total cyclable de la région vs le réseau
+  # `c` (101 353,7 km — la ligne reseaux du payload, la règle du « dans
+  # l'EPCI : X % » d'ADR-0015 : le dénominateur est une ligne existante,
+  # l'app regarde, jamais une seconde mesure publiée) : ~4,85 %
+  expect_equal(round(lire_cyclable("53", "total_longueur") /
+                       lire_rt("53", "c_longueur"), 4), 0.0485)
+  # Rennes : 263,1 km de total (105,0 protégé + 158,1 partagé) — la métropole
+  # du sous-bloc, et ses km/1 000 hab
+  expect_equal(round(lire_cyclable("35238", "protege_longueur"), 3), 105.005)
+  expect_equal(round(lire_cyclable("35238", "partage_longueur"), 3), 158.103)
+  expect_equal(round(lire_cyclable("35238", "total_longueur"), 3), 263.108)
+  expect_equal(round(lire_cyclable("35238", "protege_km_1000"), 6), 0.460891)
+  expect_equal(round(lire_cyclable("35238", "partage_km_1000"), 6), 0.693953)
+  # Brest, Bohars, l'EPCI Rennes Métropole et le département 35
+  expect_equal(round(lire_cyclable("29019", "total_longueur"), 3), 126.420)
+  expect_equal(round(lire_cyclable("29011", "total_longueur"), 3), 1.473)
+  expect_equal(round(lire_cyclable("243500139", "total_longueur"), 3), 678.612)
+  expect_equal(round(lire_cyclable("35", "total_longueur"), 3), 1420.886)
+  # Plumieux (22241 — la commune de la fusion COG 2022→2025) SANS aménagement
+  # : le ZÉRO porté — un fait, jamais une ligne manquante, jamais supprimée
+  expect_equal(lire_cyclable("22241", "total_longueur"), 0)
+  expect_equal(lire_cyclable("22241", "protege_longueur"), 0)
+  # l'île de Sein : zéro cyclable (le réseau `b` porte 0 aussi — le contraste
+  # routier n'existe pas), l'île de Molène : 7,24 km de partagé
+  expect_equal(lire_cyclable("29083", "total_longueur"), 0)
+  expect_equal(round(lire_cyclable("29084", "partage_longueur"), 3), 7.239)
+  # la règle d'agrégation : un km/1 000 hab de niveau = Σ km ÷ Σ population
+  # (jamais la moyenne des taux communaux) — le contraste réel (la moyenne
+  # des 1 202 taux communaux vs la valeur recomposée de la région)
+  taux_communaux <- offre$value[
+    offre$key == "offre_cyclable" & offre$detail == "protege_km_1000" &
+      type_territoire_mobilite(offre$code) == "commune"]
+  expect_false(isTRUE(all.equal(lire_cyclable("53", "protege_km_1000"),
+                                mean(taux_communaux))))
+  # toutes les valeurs publiées restent non négatives (le validateur du
+  # payload couvre la nouvelle clé — jamais une longueur publiée négative)
+  v_cyclable <- offre$value[offre$key == "offre_cyclable"]
+  expect_true(all(!is.na(v_cyclable) & v_cyclable >= 0))
+
   # la couche communale de l'offre TC porte la VRAIE part des bâtiments (les
   # comptes qui la fondent — la correction de la méthode, jamais une part de
   # superficie) : Rennes 20 314 bâtiments proches sur 20 401
@@ -834,6 +933,30 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(rennes$n_batiments, 20401L)
   expect_equal(rennes$n_proches, 20314L)
   expect_equal(round(rennes$part_proche, 4), 0.9957)
+
+  # la couche communale de l'offre cyclable (issue #231) : UNE ligne par
+  # commune de l'univers population (1 202 — la commune sans aménagement porte
+  # 0, jamais une ligne manquante), la forme du contrat, la population portée
+  # et Rennes aux valeurs verrouillées
+  cyclable_communes <- readRDS(file.path(sortie_analytiques,
+                                         "offre_cyclable_communes.rds"))
+  expect_named(cyclable_communes, c("commune", "population",
+                                    "protege_longueur", "partage_longueur",
+                                    "total_longueur", "protege_km_1000",
+                                    "partage_km_1000"))
+  expect_equal(nrow(cyclable_communes), 1202)
+  # 437 communes bretonnes SANS aménagement portent 0 (un fait — jamais
+  # supprimées, jamais une ligne manquante)
+  expect_equal(sum(cyclable_communes$total_longueur == 0), 437)
+  rennes_c <- cyclable_communes[cyclable_communes$commune == "35238", ]
+  expect_equal(round(rennes_c$total_longueur, 3), 263.108)
+  expect_equal(round(rennes_c$protege_km_1000, 6), 0.460891)
+  # l'île de Molène : 7,24 km de partagé (un fait de la donnée), l'île de Sein
+  # : zéro (le zéro porté, jamais une ligne manquante)
+  expect_equal(round(cyclable_communes$partage_longueur[
+    cyclable_communes$commune == "29084"], 3), 7.239)
+  expect_equal(cyclable_communes$total_longueur[
+    cyclable_communes$commune == "29083"], 0)
 
   # les Stories : les deux story keys aux comptes verrouillés — le défaut
   # « vingt-minutes-sans-voiture » une ligne par territoire, la saillance
