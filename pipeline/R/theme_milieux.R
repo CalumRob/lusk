@@ -255,6 +255,273 @@ construire_donnees_milieux <- function(cache = "data/raw",
   communes
 }
 
+# L'ingestion OCS-GE (issue #234, spec #225) -----------------------------------
+# Les états d'artificialisation OCS-GE entrent dans le pipeline sur la MÊME
+# forme que CONSOENAF — manifeste -> lecteur -> normalisation -> agrégation —
+# avec TROIS fonctions pures (lecteur / normalisation / agrégation), testées
+# sur un petit GPKG de fixture (jamais de réseau dans la boucle de test). La
+# source : les QUATRE couches différentielles officielles « OCS GE
+# Artificialisation » v2.0 de la Géoplateforme (une par département breton,
+# MANIFEST_MILIEUX_OCSGE) — le référentiel ZAN de l'État. Chaque couche porte
+# les CHANGEMENTS de statut d'artificialisation entre les millésimes M2 et M3
+# du département, dans UN SEUL fichier :
+#   - Artif_{M2} / Artif_{M3}  : le statut d'artificialisation à chaque
+#     millésime (caractères « Artif » / « Non Artif ») ;
+#   - Artificialisation         : le sens du changement (entier +1 =
+#     artificialisation, -1 = désartificialisation) ;
+#   - Surface                   : la superficie en m² du changement mesuré
+#     (les seuils réglementaires du décret 2023-1096, 50 m² bâti / 2500 m²
+#     autres, déjà appliqués par l'IGN).
+# (Descriptif de contenu IGN Doc_artif.pdf — la source primaire.) On lit la
+# MESURE de l'État, jamais re-dérivée : les couches brutes OCCUPATION_SOL ne
+# sont jamais superposées nous-mêmes. La fenêtre dérive de la DONNÉE — les
+# millésimes sont lus dans les noms des colonnes Artif_* (les DEUX horloges,
+# jamais codées en dur) : la même couche lue avec d'autres millésimes glisse
+# toute seule. La livraison Géoplateforme est un .7z (aucun extracteur .7z en
+# R — ni le paquet `archive`, ni un binaire 7-Zip) : le seam d'extraction
+# (extraire_gpkg_ocsge) est l'étape DOCUMENTÉE avant le lecteur, testée sur le
+# format zip que R sait écrire.
+
+# COUCHE_OCSGE_ARTIFICIALISATION ----------------------------------------------
+# Le nom de la couche dans le GPKG Géoplateforme de l'artificialisation. Le
+# nom EXACT du produit réel sera confirmé à la première livraison (le lecteur
+# échoue bruyamment en listant les couches disponibles si le nom dérive —
+# c'est un changement d'une constante, pas un silence).
+COUCHE_OCSGE_ARTIFICIALISATION <- "DIFF_ARTIF"
+
+# IDS_OCSGE_ARTIFICIALISATION --------------------------------------------------
+# Les ids des quatre couches OCS-GE dans le manifeste du thème — l'ordre de
+# construction (le builder les lit dans cet ordre, l'ordre du manifeste).
+IDS_OCSGE_ARTIFICIALISATION <- c(
+  "ocsge_artificialisation_22", "ocsge_artificialisation_29",
+  "ocsge_artificialisation_35", "ocsge_artificialisation_56"
+)
+
+# lire_ocsge_artificialisation --------------------------------------------------
+# Le LECTEUR (pur) : le GPKG Géoplateforme -> les polygones longs de la couche
+# différentielle, TELS QUELS (les colonnes officielles — on ne re-dérive rien).
+# La couche est lue sous COUCHE_OCSGE_ARTIFICIALISATION ; une couche absente
+# échoue bruyamment en nommant les couches disponibles (une dérive du produit
+# doit être visible, pas silencieuse).
+lire_ocsge_artificialisation <- function(chemin,
+                                         couche = COUCHE_OCSGE_ARTIFICIALISATION) {
+  if (!file.exists(chemin)) {
+    stop("Le GPKG OCS-GE est absent : ", chemin, call. = FALSE)
+  }
+  disponibles <- sf::st_layers(chemin)$name
+  if (!couche %in% disponibles) {
+    stop("La couche ", couche, " est absente du GPKG ", basename(chemin),
+         " — couches disponibles : ", paste(disponibles, collapse = ", "),
+         ".", call. = FALSE)
+  }
+  sf::st_read(chemin, layer = couche, quiet = TRUE)
+}
+
+# normaliser_ocsge_artificialisation -------------------------------------------
+# La NORMALISATION (pure) : la couche différentielle officielle -> les mesures
+# en m² (EPSG:2154). La fenêtre dérive de la DONNÉE : les deux millésimes sont
+# lus dans les noms des colonnes Artif_{AAAA} de la couche (jamais codés en
+# dur — la même fonction lit n'importe quelle paire). Par polygone :
+#   - artif_m2 : la surface (m²) du changement artificialisée au millésime M2
+#     (Surface si le statut Artif_{M2} vaut « Artif », 0 sinon) ;
+#   - artif_m3 : idem au millésime M3 ;
+#   - flux_net : le flux net signé en m² (Artificialisation × Surface — le
+#     +1/-1 de l'État appliqué à la surface du changement qu'il mesure) ;
+#   - aire_m2  : la surface du polygone en m², calculée par sf::st_area APRÈS
+#     projection EPSG:2154 (les différentiels sont livrés en LAMB93 ; la
+#     projection est une garantie, pas une hypothèse).
+# L'intégrité de la couche est vérifiée (un fichier qui dérive échoue fort) :
+# Artificialisation ne vaut que +1/-1, et il doit concorder avec les statuts —
+# flux_net == artif_m3 - artif_m2 par construction (dans une couche de
+# CHANGEMENTS, exactement un des deux statuts vaut « Artif »). La géométrie
+# est rendue valide (le motif des autres lecteurs géométriques du pipeline).
+normaliser_ocsge_artificialisation <- function(flux) {
+  if (!inherits(flux, "sf")) {
+    stop("La couche OCS-GE doit être un objet sf (lire_ocsge_artificialisation).",
+         call. = FALSE)
+  }
+  noms_artif <- grep("^Artif_[0-9]{4}$", names(flux), value = TRUE)
+  if (length(noms_artif) != 2L) {
+    stop("La couche différentielle OCS-GE doit porter les deux statuts ",
+         "Artif_{millesime} (Artif / Non Artif) — trouvés : ",
+         paste(noms_artif, collapse = ", "), ".", call. = FALSE)
+  }
+  if (!all(c("Artificialisation", "Surface") %in% names(flux))) {
+    stop("La couche différentielle OCS-GE doit porter Artificialisation et ",
+         "Surface.", call. = FALSE)
+  }
+  millesimes <- sort(as.integer(sub("^Artif_", "", noms_artif)))
+  m2 <- as.character(millesimes[1])
+  m3 <- as.character(millesimes[2])
+  sens <- as.integer(flux$Artificialisation)
+  if (any(!sens %in% c(1L, -1L))) {
+    stop("Artificialisation doit valoir +1 (artificialisation) ou -1 ",
+         "(désartificialisation) — la couche a dérivé.", call. = FALSE)
+  }
+  derive <- as.integer(flux[[paste0("Artif_", m3)]] == "Artif") -
+    as.integer(flux[[paste0("Artif_", m2)]] == "Artif")
+  if (any(!(sens == derive), na.rm = TRUE) || any(is.na(derive))) {
+    stop("Artificialisation incohérent avec les statuts Artif_* — la couche ",
+         "a dérivé.", call. = FALSE)
+  }
+  surf <- as.numeric(flux$Surface)
+  if (any(surf < 0, na.rm = TRUE) || any(is.na(surf))) {
+    stop("Surface doit être positive et présente (la superficie en m² du ",
+         "changement mesuré) — la couche a dérivé.", call. = FALSE)
+  }
+  geometrie <- sf::st_transform(sf::st_geometry(flux), 2154)
+  geometrie <- sf::st_make_valid(geometrie)
+  sf::st_sf(
+    artif_m2 = ifelse(flux[[paste0("Artif_", m2)]] == "Artif", surf, 0),
+    artif_m3 = ifelse(flux[[paste0("Artif_", m3)]] == "Artif", surf, 0),
+    flux_net = sens * surf,
+    aire_m2 = as.numeric(sf::st_area(geometrie)),
+    millesime_debut = millesimes[1],
+    millesime_fin = millesimes[2],
+    geometry = geometrie
+  )
+}
+
+# agreger_artificialisation_communes -------------------------------------------
+# L'AGRÉGATION (pure) : l'intersection PONDÉRÉE PAR LA SURFACE des polygones
+# de flux avec les limites communales -> une ligne par commune :
+#   code · artif_m2 · artif_m3 · flux_net · millesime_debut · millesime_fin
+# Un polygone entièrement DANS une commune lui donne sa pleine mesure ; un
+# polygone qui TRAVERSE la frontière donne à A et B leurs tranches pondérées
+# par la surface — la mesure OFFICIELLE du polygone (artif_m2/artif_m3/
+# flux_net, en m²) est répartie au prorata de la partie de SA géométrie
+# (aire_m2) tombant dans chaque commune. Un polygone hors de toutes les
+# communes tombe (aucune commune ne le porte). Les millésimes sont portés par
+# commune (les polygones d'une commune viennent du différentiel de SON
+# département — une commune a un seul couple de millésimes ; la table reste
+# honnête si jamais deux couples se croisaient : deux lignes). La géométrie
+# n'est pas publiée : la sortie est une table plate (le contrat de la table
+# des territoires).
+agreger_artificialisation_communes <- function(flux, communes) {
+  if (!inherits(flux, "sf") || !inherits(communes, "sf")) {
+    stop("flux et communes doivent être des objets sf.", call. = FALSE)
+  }
+  if (!"code" %in% names(communes)) {
+    stop("La couche des communes doit porter la colonne `code` (INSEE).",
+         call. = FALSE)
+  }
+  flux <- flux[flux$aire_m2 > 0, ]  # un polygone de surface nulle ne porte rien
+  flux <- sf::st_make_valid(flux)
+  communes <- sf::st_make_valid(communes)
+  if (sf::st_crs(flux) != sf::st_crs(communes)) {
+    communes <- sf::st_transform(communes, sf::st_crs(flux))
+  }
+  # l'avertissement « attribute variables are assumed to be spatially constant »
+  # est le comportement ATTENDU ici : les mesures du polygone sont constantes
+  # sur toutes ses tranches (c'est ce que la pondération répartit)
+  pieces <- suppressWarnings(
+    sf::st_intersection(flux, communes["code"])
+  )
+  pieces$part <- as.numeric(sf::st_area(pieces)) / pieces$aire_m2
+  pieces$artif_m2 <- pieces$artif_m2 * pieces$part
+  pieces$artif_m3 <- pieces$artif_m3 * pieces$part
+  pieces$flux_net <- pieces$flux_net * pieces$part
+  pieces <- sf::st_drop_geometry(pieces)
+  pieces %>%
+    dplyr::group_by(code, millesime_debut, millesime_fin) %>%
+    dplyr::summarise(
+      artif_m2 = sum(artif_m2), artif_m3 = sum(artif_m3),
+      flux_net = sum(flux_net),
+      .groups = "drop"
+    )
+}
+
+# chemin_gpkg_extrait -----------------------------------------------------------
+# Le GPKG extrait attendu d'une archive dans le dossier d'extraction : le
+# même « stem » que l'archive (le nom de la sous-ressource Géoplateforme),
+# l'extension .gpkg, cherché en récursif (l'archive peut contenir un dossier).
+# Retourne le chemin, ou NA si aucun GPKG ne correspond.
+chemin_gpkg_extrait <- function(extrait, archive) {
+  stem <- tools::file_path_sans_ext(basename(archive))
+  candidats <- list.files(extrait, pattern = "[.]gpkg$",
+                          recursive = TRUE, full.names = TRUE)
+  correspond <- candidats[grepl(stem, basename(candidats), fixed = TRUE)]
+  if (length(correspond) > 0) correspond[1] else NA_character_
+}
+
+# extraire_gpkg_ocsge -----------------------------------------------------------
+# Le SEAM d'extraction des livraisons OCS-GE (le format Géoplateforme est le
+# .7z ; le paquet `archive` n'est pas dans renv.lock et aucun binaire 7-Zip
+# n'est sur le chemin — l'extraction .7z ne peut pas être faite en R sans
+# nouvelle dépendance). DÉCISION issue #234 : le seam le plus petit, documenté
+# et testé.
+#   - le GPKG déjà extrait dans le dossier (peu importe le format d'archive) :
+#     réutilisé tel quel — idempotent, y compris pour le .7z dont l'extraction
+#     manuelle documentée a déjà été faite (un .7z ré-extrait à chaque run ne
+#     le serait pas de toute façon) ;
+#   - un .zip : extrait avec utils::unzip (ce que R sait faire sans dépendance
+#     — le format du FIXTURE de test) ;
+#   - un .7z SANS GPKG déjà extrait : échoue bruyamment avec l'étape manuelle
+#     documentée (7-Zip vers le dossier d'extraction), jamais silencieusement.
+# Le GPKG extrait est cherché par stem (chemin_gpkg_extrait) : le nom de la
+# sous-ressource Géoplateforme est le contrat, pas la disposition dans
+# l'archive (qui peut contenir un dossier).
+extraire_gpkg_ocsge <- function(archive, extrait) {
+  if (!file.exists(archive)) {
+    stop("L'archive OCS-GE est absente du cache : ", archive, call. = FALSE)
+  }
+  if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+  deja <- chemin_gpkg_extrait(extrait, archive)
+  if (!is.na(deja)) return(deja)  # déjà extraite (zip OU .7z manuel) — idempotent
+  ext <- tools::file_ext(archive)
+  if (ext == "zip") {
+    suppressWarnings(utils::unzip(archive, exdir = extrait, overwrite = FALSE))
+    deja <- chemin_gpkg_extrait(extrait, archive)
+    if (is.na(deja)) {
+      stop("L'archive ", basename(archive), " ne contient aucun GPKG après ",
+           "extraction.", call. = FALSE)
+    }
+    return(deja)
+  }
+  if (ext == "7z") {
+    stop(paste0(
+      "L'extraction du .7z ", basename(archive), " nécessite l'étape MANUELLE ",
+      "documentée : aucun extracteur .7z n'est disponible en R (le paquet ",
+      "`archive` n'est pas dans renv.lock, aucun binaire 7-Zip sur le ",
+      "chemin). Extraire le GPKG (7-Zip ou équivalent) vers : ", extrait,
+      " — le GPKG doit porter le même nom de base que l'archive. Le seam est ",
+      "testé sur le format zip que R sait écrire (issue #234)."
+    ), call. = FALSE)
+  }
+  stop("Format d'archive OCS-GE inconnu : .", ext, call. = FALSE)
+}
+
+# construire_donnees_ocsge ------------------------------------------------------
+# L'acte « trouver la donnée » OCS-GE du thème (le pendant de
+# construire_donnees_milieux pour les états d'artificialisation, #234) : pour
+# CHAQUE couche du manifeste (les quatre départements), extrait l'archive du
+# cache (data/raw — la convention du pipeline, jamais un nouveau dossier),
+# lit le GPKG extrait, normalise, puis agrège l'ensemble contre les LIMITES
+# COMMUNALES fournies (la couche des communes — le code INSEE dans la colonne
+# `code`). Persiste la table par commune sous data/processed/milieux/
+# (idempotent) et la retourne. Le RACCORD des états OCS-GE dans la table des
+# communes du thème (la jointure au payload, les deux horloges de population)
+# est la suite de la spec (#225 — ticket payload).
+construire_donnees_ocsge <- function(cache = "data/raw",
+                                     communes,
+                                     sortie = "data/processed/milieux/ocsge_communes.rds") {
+  extrait <- file.path(cache, "extracted", "ocsge")
+  if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+
+  flux_list <- lapply(IDS_OCSGE_ARTIFICIALISATION, function(id) {
+    ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
+    archive <- file.path(cache, ligne$fichier)
+    gpkg <- extraire_gpkg_ocsge(archive, extrait)
+    normaliser_ocsge_artificialisation(lire_ocsge_artificialisation(gpkg))
+  })
+  flux <- dplyr::bind_rows(flux_list)
+
+  communes_artif <- agreger_artificialisation_communes(flux, communes)
+  if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
+  readr::write_rds(communes_artif, sortie)
+  communes_artif
+}
+
 # La construction de la table des territoires du thème -------------------------
 # Le squelette partagé (squelette_territoires, compute.R) fournit les codes,
 # les vrais noms, la hiérarchie et la règle de pluralité départementale ; le

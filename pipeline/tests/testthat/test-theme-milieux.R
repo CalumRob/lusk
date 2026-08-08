@@ -94,14 +94,30 @@ test_that("construire_territoires_milieux : le squelette partagé — communes +
   )
 })
 
-test_that("vintages_milieux : la projection générique depuis le manifeste", {
+test_that("vintages_milieux : la projection générique depuis le manifeste (les sept sources, OCS-GE compris, #234)", {
   v <- vintages_milieux()
 
   expect_equal(nrow(v), nrow(MANIFEST_MILIEUX))
-  expect_setequal(v$id, c("epci", "consoenaf", "serie_historique"))
+  expect_setequal(v$id, c("epci", "consoenaf", "serie_historique",
+                          "ocsge_artificialisation_22",
+                          "ocsge_artificialisation_29",
+                          "ocsge_artificialisation_35",
+                          "ocsge_artificialisation_56"))
   conso <- v[v$id == "consoenaf", ]
   expect_equal(conso$version, "2025")
   expect_equal(conso$date_reference, "2025-01-01")
   expect_equal(conso$date_publication, "2026-07-24")
   expect_equal(conso$licence, "lov2")
+
+  # les quatre OCS-GE portent leur vintage (le millésime final) et leurs dates
+  # — le builder générique les projette SANS changement (#234)
+  v22 <- v[v$id == "ocsge_artificialisation_22", ]
+  expect_equal(v22$version, "2025")
+  expect_equal(v22$date_reference, "2025-01-01")
+  expect_equal(v22$date_publication, "2026-07-03")
+  expect_equal(v22$licence, "lov2")
+  v35 <- v[v$id == "ocsge_artificialisation_35", ]
+  expect_equal(v35$version, "2023")
+  expect_equal(v35$date_reference, "2023-01-01")
+  expect_equal(v35$date_publication, "2026-03-03")
 })

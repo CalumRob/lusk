@@ -126,10 +126,15 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   expect_equal(hist$territoire, payload$histoires$territoire)
   expect_equal(hist$classification, payload$histoires$classification)
 
-  # vintages.parquet : une ligne par source du manifeste Milieux (les trois)
+  # vintages.parquet : une ligne par source du manifeste Milieux (les sept,
+  # OCS-GE compris — #234)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_MILIEUX))
-  expect_setequal(vint$id, c("epci", "consoenaf", "serie_historique"))
+  expect_setequal(vint$id, c("epci", "consoenaf", "serie_historique",
+                             "ocsge_artificialisation_22",
+                             "ocsge_artificialisation_29",
+                             "ocsge_artificialisation_35",
+                             "ocsge_artificialisation_56"))
 
   # le rapport de run : mode full, une ligne par source
   rapport <- jsonlite::fromJSON(file.path(cible, "run-report.json"))
@@ -162,7 +167,7 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   expect_equal(nrow(ref), 10)
 })
 
-test_that("le téléchargement CONSOENAF est idempotent : une seule fois, le cache fait foi", {
+test_that("le téléchargement Milieux est idempotent : une seule fois, le cache fait foi (les sept sources, OCS-GE compris)", {
   cache <- tempfile("cache-dl-")
   dir.create(cache)
   on.exit(unlink(cache, recursive = TRUE))
@@ -171,23 +176,31 @@ test_that("le téléchargement CONSOENAF est idempotent : une seule fois, le cac
   local_mocked_bindings(
     telecharger_fichier = function(url, cible) {
       telecharge <<- c(telecharge, basename(cible))
-      if (grepl("\\.zip$", cible)) writeBin(mini_zip_milieux(), cible)
-      else writeLines("idcom,idcomtxt,iddep", cible)
+      if (grepl("\\.zip$", cible)) {
+        writeBin(mini_zip_milieux(), cible)
+      } else if (grepl("\\.7z$", cible)) {
+        writeBin(mini_7z(), cible)  # les OCS-GE : la signature 7-Zip suffit
+      } else {
+        writeLines("idcom,idcomtxt,iddep", cible)
+      }
     },
     .package = "lusk"
   )
 
-  # premier appel : les TROIS sources du manifeste sont téléchargées
+  # premier appel : les SEPT sources du manifeste sont téléchargées
   premier <- download_sources(MANIFEST_MILIEUX, cache)
-  expect_setequal(telecharge, c("epci_au_01-01-2025.zip", "conso-com.csv",
-                                "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip"))
-  expect_equal(premier$status, c("frais", "frais", "frais"))
+  attendus <- c("epci_au_01-01-2025.zip", "conso-com.csv",
+                "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip",
+                MANIFEST_MILIEUX_OCSGE$fichier)
+  expect_setequal(telecharge, attendus)
+  expect_equal(premier$status, rep("frais", nrow(MANIFEST_MILIEUX)))
 
   # deuxième appel : le cache fait foi, RIEN n'est re-téléchargé
   second <- download_sources(MANIFEST_MILIEUX, cache)
-  expect_equal(telecharge, c("epci_au_01-01-2025.zip", "conso-com.csv",
-                             "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip"))
-  expect_equal(second$status, c("frais", "frais", "frais"))
+  expect_setequal(telecharge, attendus)
+  expect_equal(second$status, rep("frais", nrow(MANIFEST_MILIEUX)))
   # la source CONSOENAF n'a donc été téléchargée qu'UNE fois
   expect_equal(sum(telecharge == "conso-com.csv"), 1L)
+  # les OCS-GE aussi : chaque .7z intact est laissé intact
+  expect_equal(sum(grepl("[.]7z$", telecharge)), 4L)
 })

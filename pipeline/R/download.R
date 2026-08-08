@@ -17,9 +17,14 @@
 # verifier_fichier ------------------------------------------------------------
 # L'intégrité d'un fichier du cache : il existe, il n'est pas vide, et s'il
 # s'agit d'un zip il s'ouvre (ou d'un .rds il se relit — le format de cache
-# des sources api, issue #13). C'est le garde-fou de l'idempotence (point 3) :
-# un téléchargement partiel ou corrompu est détecté et re-téléchargé au lieu
-# d'être traité comme complet pour toujours.
+# des sources api, issue #13 ; ou d'un .7z il porte la signature 7-Zip — les
+# couches OCS-GE de la Géoplateforme, issue #234). C'est le garde-fou de
+# l'idempotence (point 3) : un téléchargement partiel ou corrompu est détecté
+# et re-téléchargé au lieu d'être traité comme complet pour toujours.
+# La signature .7z (les six octets magiques « 37 7A BC AF 27 1C ») est la
+# seule vérification possible SANS dépendance : ni le paquet `archive` ni un
+# binaire 7-Zip ne sont disponibles (renv.lock) — une archive tronquée ou un
+# texte déguisé en .7z est rejeté, un vrai .7z passe.
 verifier_fichier <- function(chemin) {
   if (!file.exists(chemin)) return(FALSE)
   if (file.size(chemin) == 0) return(FALSE)
@@ -35,6 +40,13 @@ verifier_fichier <- function(chemin) {
     ok <- tryCatch({
       readRDS(chemin)
       TRUE
+    }, error = function(e) FALSE)
+    if (!ok) return(FALSE)
+  }
+  if (ext == "7z") {
+    ok <- tryCatch({
+      magie <- readBin(chemin, what = "raw", n = 6L)
+      identical(magie, as.raw(c(0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c)))
     }, error = function(e) FALSE)
     if (!ok) return(FALSE)
   }
