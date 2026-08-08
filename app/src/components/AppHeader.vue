@@ -15,6 +15,11 @@
  * Mobile (<768px): full-screen drawer — transform-only, scroll-lock, focus
  * trap, Escape closes. Données is a small disclosure dropdown to the three
  * lists (site-map.md: « may be a small dropdown »).
+ *
+ * #205: the drawer is a sibling of <header>, never a child — the header's
+ * backdrop-filter would become the containing block for its `position:
+ * fixed; inset: 0` and collapse the panel to the header's own height (the
+ * "burger doesn't work" bug). Sibling keeps it viewport-sized.
  */
 import { ChevronDown, ExternalLink, Menu, Search, X } from 'lucide-vue-next'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
@@ -135,6 +140,10 @@ function focusablesTiroir(): HTMLElement[] {
 async function ouvrir(): Promise<void> {
   ouvert.value = true
   elementPrecedent = boutonMenu.value
+  // Lock both html and body: base.css clips html's overflow, so a body-only
+  // lock never reaches the viewport and the page keeps scrolling behind the
+  // drawer (#205).
+  document.documentElement.classList.add('tiroir-verrouille')
   document.body.classList.add('tiroir-verrouille')
   await nextTick()
   focusablesTiroir()[0]?.focus()
@@ -142,6 +151,7 @@ async function ouvrir(): Promise<void> {
 
 function fermer(rendreFocus = true): void {
   ouvert.value = false
+  document.documentElement.classList.remove('tiroir-verrouille')
   document.body.classList.remove('tiroir-verrouille')
   if (rendreFocus) elementPrecedent?.focus()
 }
@@ -177,6 +187,7 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', fermerDonneesHors, true)
   document.removeEventListener('pointerdown', fermerRechercheHors, true)
   document.removeEventListener('keydown', surToucheRecherche, true)
+  document.documentElement.classList.remove('tiroir-verrouille')
   document.body.classList.remove('tiroir-verrouille')
 })
 </script>
@@ -283,63 +294,69 @@ onUnmounted(() => {
         aria-label="Menu"
         @click="ouvert ? fermer() : ouvrir()"
       >
-        <AppIcon :icone="Menu" :taille="24" />
+        <!-- Pattern ACI (#205): the toggle swaps to a cross while the drawer is open. -->
+        <AppIcon :icone="ouvert ? X : Menu" :taille="24" />
       </button>
     </div>
-
-    <div
-      id="menu-mobile"
-      ref="tiroir"
-      class="tiroir"
-      :class="{ 'tiroir--ouvert': ouvert }"
-      :aria-hidden="ouvert ? 'false' : 'true'"
-    >
-      <div class="tiroir-tete">
-        <RouterLink to="/" class="en-tete-marque" @click="fermer()">
-          <LuskBrand />
-        </RouterLink>
-        <button
-          type="button"
-          class="tiroir-fermer"
-          aria-label="Fermer le menu"
-          @click="fermer()"
-        >
-          <AppIcon :icone="X" :taille="24" />
-        </button>
-      </div>
-      <div class="tiroir-recherche">
-        <GlobalSearchBar
-          :territoires="territoires"
-          :chargement="chargement"
-          :erreur="messageErreur"
-          @select="fermer()"
-        />
-      </div>
-      <nav class="nav-tiroir" aria-label="Navigation principale">
-        <RouterLink
-          v-for="lien in LIENS_TIROIR"
-          :key="lien.chemin"
-          :to="lien.chemin"
-          class="tiroir-lien"
-          @click="fermer()"
-        >{{ lien.label }}</RouterLink>
-        <RouterLink
-          v-for="sous in SOUS_LIENS_DONNEES"
-          :key="sous.chemin"
-          :to="sous.chemin"
-          class="tiroir-lien tiroir-lien--sous"
-          @click="fermer()"
-        >{{ sous.label }}</RouterLink>
-        <a
-          class="tiroir-lien"
-          href="https://calumrobertson.fr"
-          target="_blank"
-          rel="noopener noreferrer"
-          @click="fermer()"
-        >Contact</a>
-      </nav>
-    </div>
   </header>
+
+  <!-- #205: the drawer is a SIBLING of the header, never a child. The header's
+       backdrop-filter would otherwise become the containing block for this
+       `position: fixed; inset: 0` panel, collapsing it to the 60px header
+       height (the mobile burger "didn't work"). A sibling keeps it viewport-
+       sized. -->
+  <div
+    id="menu-mobile"
+    ref="tiroir"
+    class="tiroir"
+    :class="{ 'tiroir--ouvert': ouvert }"
+    :aria-hidden="ouvert ? 'false' : 'true'"
+  >
+    <div class="tiroir-tete">
+      <RouterLink to="/" class="en-tete-marque" @click="fermer()">
+        <LuskBrand />
+      </RouterLink>
+      <button
+        type="button"
+        class="tiroir-fermer"
+        aria-label="Fermer le menu"
+        @click="fermer()"
+      >
+        <AppIcon :icone="X" :taille="24" />
+      </button>
+    </div>
+    <div class="tiroir-recherche">
+      <GlobalSearchBar
+        :territoires="territoires"
+        :chargement="chargement"
+        :erreur="messageErreur"
+        @select="fermer()"
+      />
+    </div>
+    <nav class="nav-tiroir" aria-label="Navigation principale">
+      <RouterLink
+        v-for="lien in LIENS_TIROIR"
+        :key="lien.chemin"
+        :to="lien.chemin"
+        class="tiroir-lien"
+        @click="fermer()"
+      >{{ lien.label }}</RouterLink>
+      <RouterLink
+        v-for="sous in SOUS_LIENS_DONNEES"
+        :key="sous.chemin"
+        :to="sous.chemin"
+        class="tiroir-lien tiroir-lien--sous"
+        @click="fermer()"
+      >{{ sous.label }}</RouterLink>
+      <a
+        class="tiroir-lien"
+        href="https://calumrobertson.fr"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click="fermer()"
+      >Contact</a>
+    </nav>
+  </div>
 </template>
 
 <style scoped>

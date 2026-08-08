@@ -62,6 +62,7 @@ async function montage(chemin = '/', options: Record<string, unknown> = {}) {
 afterEach(() => {
   montee?.unmount()
   montee = null
+  document.documentElement.classList.remove('tiroir-verrouille')
   document.body.classList.remove('tiroir-verrouille')
   document.body.innerHTML = ''
 })
@@ -200,6 +201,16 @@ describe('AppHeader — le tiroir mobile', () => {
     expect(document.body.classList.contains('tiroir-verrouille')).toBe(true)
   })
 
+  it('locks scroll on <html> too — html carries overflow-x: clip, so a body-only lock never reaches the viewport (#205)', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-menu').trigger('click')
+    expect(document.documentElement.classList.contains('tiroir-verrouille')).toBe(true)
+
+    await wrapper.find('.bouton-menu').trigger('click')
+    expect(document.documentElement.classList.contains('tiroir-verrouille')).toBe(false)
+  })
+
   it('moves focus into the drawer when it opens', async () => {
     const { wrapper } = await montage()
 
@@ -241,6 +252,38 @@ describe('AppHeader — le tiroir mobile', () => {
     await wrapper.find('.tiroir a[href="/carte"]').trigger('click')
 
     expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('renders the drawer as a sibling of the header, never nested inside it (#205)', async () => {
+    const { wrapper } = await montage()
+
+    const parent = wrapper.find('.en-tete').element.parentElement
+    expect(wrapper.find('.tiroir').element.parentElement).toBe(parent)
+    expect(parent?.contains(wrapper.find('.en-tete').element)).toBe(true)
+  })
+
+  it('toggles closed again on a second press of the burger button', async () => {
+    const { wrapper } = await montage()
+    const bouton = wrapper.find('.bouton-menu')
+
+    await bouton.trigger('click')
+    expect(wrapper.find('.tiroir').classes()).toContain('tiroir--ouvert')
+
+    await bouton.trigger('click')
+    expect(wrapper.find('.tiroir').classes()).not.toContain('tiroir--ouvert')
+    expect(bouton.attributes('aria-expanded')).toBe('false')
+  })
+
+  it('swaps the toggle icon for a close cross while the drawer is open (pattern ACI)', async () => {
+    const { wrapper } = await montage()
+    const bouton = wrapper.find('.bouton-menu')
+
+    expect(bouton.find('.lucide-menu').exists()).toBe(true)
+    expect(bouton.find('.lucide-x').exists()).toBe(false)
+
+    await bouton.trigger('click')
+    expect(bouton.find('.lucide-x').exists()).toBe(true)
+    expect(bouton.find('.lucide-menu').exists()).toBe(false)
   })
 })
 

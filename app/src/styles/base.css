@@ -81,6 +81,14 @@ a:hover {
   overflow: hidden;
 }
 
+/* #205: html carries `overflow-x: clip` (above), so body's overflow never
+   propagates to the viewport — a body-only lock left the page scrollable
+   behind the drawer. Clipping the root too (both axes) actually locks it,
+   without turning html into a scroll container (sticky stays intact). */
+html.tiroir-verrouille {
+  overflow: clip;
+}
+
 /* Skeleton loading blocks (ui-elements.md §Loading) — pulse via opacity,
    never layout (DESIGN.md §6). */
 .squelette {
