@@ -83,7 +83,7 @@ describe('DESIGN.md §2 — Theme colors', () => {
     mobilite: '#6BA3B5',
     demographie: '#8E85C4',
     habitat: '#C98F6E',
-    economie: '#7FA875',
+    economie: '#D9A441', // or/ambre (ADR décision #214) — distincte du vert-bleu de marque
     milieux: '#A99A5E', // le cinquième thème (ADR-0014) — l'ancre provisoire de l'axe terre
   }
 

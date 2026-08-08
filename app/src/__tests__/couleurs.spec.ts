@@ -20,7 +20,7 @@ describe('ANCRAGES_THEMES — the DESIGN.md §2 anchors, mirrored for the map', 
       mobilite: '#6BA3B5', // teal
       demographie: '#8E85C4', // indigo
       habitat: '#C98F6E', // terracotta
-      economie: '#7FA875', // green
+      economie: '#D9A441', // amber — or/ambre, hors du vert-bleu de marque (#214)
       milieux: '#A99A5E', // olive/kaki — l'axe terre, l'ancrage provisoire du cinquième thème (ADR-0014)
     })
   })

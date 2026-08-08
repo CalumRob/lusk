@@ -16,7 +16,7 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
   mobilite: '#6BA3B5', // teal
   demographie: '#8E85C4', // indigo
   habitat: '#C98F6E', // terracotta
-  economie: '#7FA875', // green
+  economie: '#D9A441', // amber — or/ambre, hors du vert-bleu de marque (#214)
   milieux: '#A99A5E', // olive/kaki — l'axe terre (ADR-0014), ancrage provisoire
 }
 
