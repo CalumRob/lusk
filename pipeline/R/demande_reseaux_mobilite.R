@@ -368,6 +368,167 @@ fusionner_reseaux_velo_communes <- function(reseaux_communes, velo_communes) {
     dplyr::arrange(commune)
 }
 
+# OFFRE_CYCLABLE_PROTEGE / OFFRE_CYCLABLE_PARTAGE ---------------------------------
+# La binaison PROVISOIRE de la figure « L'offre cyclable » (ADR-0016, issue
+# #231) : chaque valeur RÉELLE de l'enum ame_d/ame_g du jeu Geovelo (schéma
+# national v0.3.5 — vérifiée sur le fichier réel du 2026-08-08, 27 797 lignes
+# bretonnes) tombe dans une des deux familles :
+#   - protégé : l'espace SÉPARÉ du trafic motorisé — pistes (PISTE CYCLABLE,
+#     DOUBLE SENS CYCLABLE PISTE), voies vertes (VOIE VERTE), CVCB (CHAUSSEE A
+#     VOIE CENTRALE BANALISEE), mixte piéton-vélo (AMENAGEMENT MIXTE PIETON
+#     VELO HORS VOIE VERTE) ;
+#   - partagé : l'espace PARTAGÉ / non séparé — bandes (BANDE CYCLABLE, DOUBLE
+#     SENS CYCLABLE BANDE), doubles sens (DOUBLE SENS CYCLABLE NON
+#     MATERIALISE), vélos rues (VELO RUE), couloirs bus+vélo (COULOIR
+#     BUS+VELO), AUTRE, accotements (ACCOTEMENT REVETU HORS CVCB) et les
+#     auxiliaires GOULOTTE / RAMPE (décision provisoire : des équipements non
+#     séparés du trafic, la famille la plus proche de AUTRE — 57 lignes
+#     GOULOTTE, 0 RAMPE sur le fichier réel breton ; jamais une ligne
+#     silencieusement perdue).
+# La binaison est FIGÉE par un test sur la forme réelle (une ligne par valeur
+# de l'enum — test-theme-mobilite.R, fixture_offre_cyclable_binning).
+OFFRE_CYCLABLE_PROTEGE <- c(
+  "PISTE CYCLABLE", "DOUBLE SENS CYCLABLE PISTE",
+  "VOIE VERTE",
+  "CHAUSSEE A VOIE CENTRALE BANALISEE",
+  "AMENAGEMENT MIXTE PIETON VELO HORS VOIE VERTE"
+)
+OFFRE_CYCLABLE_PARTAGE <- c(
+  "BANDE CYCLABLE", "DOUBLE SENS CYCLABLE BANDE",
+  "DOUBLE SENS CYCLABLE NON MATERIALISE",
+  "VELO RUE", "COULOIR BUS+VELO", "AUTRE",
+  "ACCOTEMENT REVETU HORS CVCB",
+  "GOULOTTE", "RAMPE"
+)
+
+# calculer_offre_cyclable_communes ------------------------------------------------
+# La table COMMUNALE de la figure « L'offre cyclable » (issue #231) : les km
+# protégé / partagé, les km / 1 000 hab (la population communale) et le
+# numérateur du ratio « X % de l'infrastructure routière » — le total cyclable
+# en GÉOMÉTRIE UNIQUE. Le même jeu Geovelo que calculer_reseaux_velo_communes
+# (le mode `b`), avec DEUX décisions d'ADR-0016 et UNE exception de convention :
+#   1. l'attribution par le CÔTÉ PORTEUR (la règle d'ADR-0016, identique au
+#      mode `b`) : pour un segment de frontière, la longueur va à la commune
+#      dont le côté porte l'aménagement (ame ≠ AUCUN) ; les DEUX côtés porteurs
+#      → le `d` départage. Chaque segment aboutit dans EXACTEMENT une commune —
+#      les totaux région/EPCI/département restent la somme des parties
+#      communales, zéro double-compte ;
+#   2. la LONGUEUR en GÉOMÉTRIE UNIQUE (chaque segment compté UNE fois, quel
+#      que soit le sens — jamais le multiplicateur par direction du mode `b`) :
+#      le contre-pied ASSUMÉ d'ADR-0016. La figure compare le vélo au réseau
+#      `c` (le pbf OSM mesure chaque way une fois — géométrie unique) : le
+#      « X % » n'est honnête que si les deux conventions coïncident (décision
+#      2026-08-08, conséquences d'ADR-0016). Le numérateur = protégé + partagé,
+#      exactement — une somme, jamais une seconde mesure.
+# La binaison provisoire (OFFRE_CYCLABLE_PROTEGE/PARTAGE) répartit chaque
+# segment : une valeur d'enum hors binaison est une corruption (le contrat du
+# jeu a changé — jamais une ligne silencieusement perdue). La famille du
+# segment est celle du côté GAGNANT de l'attribution (le côté porteur — jamais
+# l'autre côté). `population` (commune × population — la population communale,
+# le dénominateur des km / 1 000 hab, portée par le hub stationnement vélo
+# dans le seam) définit l'univers : une commune SANS aménagement porte 0 (un
+# fait, jamais une ligne manquante, jamais supprimée), un segment attribué à
+# une commune hors référentiel est une corruption. Retour : commune ×
+# population × protege_longueur / partage_longueur / total_longueur (km) ×
+# protege_km_1000 / partage_km_1000, trié par commune — déterministe.
+calculer_offre_cyclable_communes <- function(amenagements, population) {
+  if (!inherits(amenagements, "sf")) {
+    stop("Offre cyclable corrompue — les aménagements Geovelo doivent être ",
+         "un objet sf.", call. = FALSE)
+  }
+  requises <- c("ame_d", "ame_g", "code_com_d", "code_com_g")
+  manquantes <- setdiff(requises, names(amenagements))
+  if (length(manquantes) > 0) {
+    stop("Offre cyclable corrompue — colonne(s) requise(s) manquante(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  if (nrow(amenagements) == 0) {
+    stop("Offre cyclable corrompue — aucune ligne d'aménagement.", call. = FALSE)
+  }
+  if (!all(c("commune", "population") %in% names(population))) {
+    stop("Offre cyclable corrompue — la table de population doit porter ",
+         "commune et population.", call. = FALSE)
+  }
+  if (anyDuplicated(population$commune)) {
+    stop("Offre cyclable corrompue — des communes en double dans la table de ",
+         "population.", call. = FALSE)
+  }
+  if (any(is.na(population$population) | population$population <= 0)) {
+    stop("Offre cyclable corrompue — une population communale non positive.",
+         call. = FALSE)
+  }
+  # un segment sans aménagement des DEUX côtés (AUCUN/AUCUN) est une corruption
+  # — la même garde que le mode `b` : le jeu ne porte aucune ligne « route
+  # nue » (vérifié §7.10bis), jamais une ligne silencieusement perdue
+  if (any(amenagements$ame_d == "AUCUN" & amenagements$ame_g == "AUCUN")) {
+    stop("Offre cyclable corrompue — un segment sans aménagement des deux ",
+         "côtés (ame AUCUN/AUCUN) — hors contrat du jeu Geovelo.", call. = FALSE)
+  }
+
+  # la projection EPSG:2154 précède toute mesure (la consigne du contrat)
+  seg <- sf::st_transform(amenagements, 2154)
+  seg$longueur_m <- as.numeric(sf::st_length(sf::st_geometry(seg)))
+
+  # l'attribution par le côté porteur (ADR-0016) : le côté qui porte
+  # l'aménagement gagne ; les deux côtés porteurs → le `d` départage
+  seg$commune <- ifelse(
+    seg$ame_g != "AUCUN" & seg$ame_d == "AUCUN",
+    seg$code_com_g,
+    seg$code_com_d
+  )
+
+  # la famille du côté GAGNANT (le côté porteur) — jamais l'autre côté ; une
+  # valeur hors binaison est une corruption (le contrat du jeu a changé)
+  porter <- ifelse(seg$ame_g != "AUCUN" & seg$ame_d == "AUCUN",
+                   seg$ame_g, seg$ame_d)
+  inconnus <- setdiff(unique(porter),
+                      c(OFFRE_CYCLABLE_PROTEGE, OFFRE_CYCLABLE_PARTAGE))
+  if (length(inconnus) > 0) {
+    stop("Offre cyclable corrompue — une valeur d'enum hors binaison : ",
+         paste(inconnus, collapse = ", "), ".", call. = FALSE)
+  }
+  seg$famille <- ifelse(porter %in% OFFRE_CYCLABLE_PROTEGE,
+                        "protege", "partage")
+
+  par_commune <- sf::st_drop_geometry(seg) %>%
+    dplyr::group_by(commune) %>%
+    dplyr::summarise(
+      protege_m = sum(longueur_m[famille == "protege"]),
+      partage_m = sum(longueur_m[famille == "partage"]),
+      .groups = "drop"
+    )
+
+  # la garde du référentiel : un segment attribué à une commune hors de la
+  # table de population (la population absente) est une corruption
+  hors_referentiel <- setdiff(par_commune$commune, population$commune)
+  if (length(hors_referentiel) > 0) {
+    stop("Offre cyclable corrompue — un segment attribué à une commune hors ",
+         "référentiel (population absente) : ",
+         paste(hors_referentiel, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # la commune SANS aménagement porte 0 (un fait) — l'univers est la table de
+  # population, jamais une ligne manquante, jamais supprimée
+  univers <- population %>%
+    dplyr::left_join(par_commune, by = "commune") %>%
+    dplyr::mutate(
+      protege_m = dplyr::coalesce(protege_m, 0),
+      partage_m = dplyr::coalesce(partage_m, 0)
+    )
+
+  univers %>%
+    dplyr::transmute(
+      commune = commune,
+      population = population,
+      protege_longueur = protege_m / 1000,
+      partage_longueur = partage_m / 1000,
+      total_longueur = (protege_m + partage_m) / 1000,
+      protege_km_1000 = (protege_m / 1000) / population * 1000,
+      partage_km_1000 = (partage_m / 1000) / population * 1000
+    ) %>%
+    dplyr::arrange(commune)
+}
+
 # agreger_reseaux_territoires --------------------------------------------------
 # Les longueurs et densités réseau aux QUATRE niveaux de territoire, RECALCULÉS
 # depuis les parties communales (la règle d'agrégation partagée) :

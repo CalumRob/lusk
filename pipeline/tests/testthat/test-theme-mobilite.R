@@ -613,9 +613,18 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
       tibble::tibble(commune = "22001", annee = "2025", places = 30,
                      population = 1000, places_1000 = 30)
     },
-    agreger_offre_territoires = function(offre_tc, bornes, velo, base_epci) {
+    calculer_offre_cyclable_communes = function(amenagements, population) {
+      pousser("offre_cyclable_communes")
+      tibble::tibble(commune = "22001", population = 1000,
+                     protege_longueur = 2.0, partage_longueur = 1.0,
+                     total_longueur = 3.0, protege_km_1000 = 2.0,
+                     partage_km_1000 = 1.0)
+    },
+    agreger_offre_territoires = function(offre_tc, bornes, velo, base_epci,
+                                         offre_cyclable) {
       pousser("offre_territoires")
-      tibble::tibble(code = "22001", key = "offre_tc", value = 0.9)
+      tibble::tibble(code = "22001", key = "offre_tc", detail = NA_character_,
+                     value = 0.9)
     },
     .package = "lusk"
   )
@@ -634,10 +643,11 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                  "reseaux_communes", "reseaux_velo_communes",
                  "reseaux_territoires",
                  "offre_tc_communes", "bornes_communes", "velo_communes",
-                 "offre_territoires"))
+                 "offre_cyclable_communes", "offre_territoires"))
 
   # les tables analytiques exposées : le poids + les artefacts flagship +
-  # l'étage demande/réseaux (issue #139) + le sous-bloc (issue #140)
+  # l'étage demande/réseaux (issue #139) + le sous-bloc (issue #140) + la
+  # figure « L'offre cyclable » (issue #231)
   expect_named(res, c("mobilite_communes", "nb_buildings_territoires",
                       "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
@@ -645,7 +655,8 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                       "voitures_communes", "voitures_territoires",
                       "reseaux_communes", "reseaux_territoires",
                       "offre_tc_communes", "bornes_communes",
-                      "stationnement_velo_communes", "offre_territoires"))
+                      "stationnement_velo_communes",
+                      "offre_cyclable_communes", "offre_territoires"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -658,6 +669,7 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_equal(res$offre_tc_communes$part_proche, 0.9)
   expect_equal(res$bornes_communes$nb_bornes, 3L)
   expect_equal(res$stationnement_velo_communes$places_1000, 30)
+  expect_equal(res$offre_cyclable_communes$total_longueur, 3.0)
   expect_equal(res$offre_territoires$value, 0.9)
 
   # les artefacts sont PERSISTÉS sous le dossier analytique du run
@@ -675,6 +687,7 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_true(file.exists(file.path(sortie, "offre_tc_communes.rds")))
   expect_true(file.exists(file.path(sortie, "bornes_communes.rds")))
   expect_true(file.exists(file.path(sortie, "stationnement_velo_communes.rds")))
+  expect_true(file.exists(file.path(sortie, "offre_cyclable_communes.rds")))
   expect_true(file.exists(file.path(sortie, "offre_territoires.rds")))
 })
 
@@ -1966,11 +1979,18 @@ test_that("calculer_stationnement_velo_communes : le millésime le plus récent 
 
 # agreger_offre_territoires ------------------------------------------------------
 # Le fixture d'agrégation : 4 communes sur 2 EPCIs / 2 départements, et les
-# trois tables communales du sous-bloc. Les valeurs attendues sont calculées à
-# la main — jamais une moyenne de valeurs. L'offre TC est agrégée par la règle
-# du thème : la moyenne PONDÉRÉE par les bâtiments (n_batiments de la couche —
-# la correction : le poids EST le dénominateur de la part), jamais la moyenne
-# des parts communales.
+# QUATRE tables communales du sous-bloc (depuis l'issue #231, la figure
+# « L'offre cyclable »). Les valeurs attendues sont calculées à la main —
+# jamais une moyenne de valeurs. L'offre TC est agrégée par la règle du thème :
+# la moyenne PONDÉRÉE par les bâtiments (n_batiments de la couche — la
+# correction : le poids EST le dénominateur de la part), jamais la moyenne des
+# parts communales. La clé offre_cyclable est MULTI-MESURE (5 détails) : les
+# longueurs sont SOMMÉES, les km/1 000 hab RECOMPOSÉS depuis les parties
+# (Σ km ÷ Σ population × 1 000 — jamais la moyenne des taux communaux), le
+# zéro porté par toute commune sans aménagement.
+# Les trois clés scalaires du sous-bloc portent le détail NA — la forme longue
+# (code × key × detail × value) du contrat, la même que les autres clés
+# multi-mesures du payload.
 test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle", {
   base <- tibble::tribble(
     ~CODGEO, ~EPCI, ~DEP,
@@ -1997,16 +2017,32 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
     "29001", "2025", 40, 2000, 20,
     "29002", "2025", 120, 4000, 30
   )
+  # la figure « L'offre cyclable » (issue #231) : la forme de
+  # calculer_offre_cyclable_communes — 29001 SANS aménagement (le zéro porté)
+  cyclable <- tibble::tribble(
+    ~commune, ~population, ~protege_longueur, ~partage_longueur,
+    ~total_longueur, ~protege_km_1000, ~partage_km_1000,
+    "22001", 1000, 3.0, 2.0, 5.0, 3.0, 2.0,
+    "22002", 3000, 1.0, 1.0, 2.0, 1 / 3, 1 / 3,
+    "29001", 2000, 0, 0, 0, 0, 0,
+    "29002", 4000, 2.0, 4.0, 6.0, 0.5, 1.0
+  )
 
-  agg <- agreger_offre_territoires(offre_tc, bornes, velo, base)
+  agg <- agreger_offre_territoires(offre_tc, bornes, velo, base, cyclable)
 
-  # la forme : une ligne par (territoire × clé) — 4 communes + 2 EPCIs +
-  # 2 départements + la région, les trois clés
-  expect_named(agg, c("code", "key", "value"))
-  expect_equal(nrow(agg), (4 + 2 + 2 + 1) * 3)
+  # la forme : une ligne par (territoire × clé × détail) — 4 communes + 2
+  # EPCIs + 2 départements + la région, les trois clés scalaires (détail NA)
+  # + les 5 détails de la clé offre_cyclable
+  expect_named(agg, c("code", "key", "detail", "value"))
+  expect_equal(nrow(agg), (4 + 2 + 2 + 1) * (3 + 5))
   expect_setequal(unique(agg$key), c("offre_tc", "bornes_recharge",
-                                     "places_stationnement_velo_1000"))
-  lire <- function(code, key) agg$value[agg$code == code & agg$key == key]
+                                     "places_stationnement_velo_1000",
+                                     "offre_cyclable"))
+  lire <- function(code, key, detail = NA) {
+    ok <- agg$code == code & agg$key == key &
+      (if (is.na(detail)) is.na(agg$detail) else agg$detail %in% detail)
+    agg$value[ok]
+  }
 
   # offre_tc : la moyenne PONDÉRÉE par les bâtiments (jamais la moyenne des
   # parts) — EPCI 200000001 : (0.5×100 + 0.8×300) ÷ 400 = 0.725
@@ -2037,24 +2073,61 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
   expect_equal(lire("200000002", "places_stationnement_velo_1000"), 20)
   expect_equal(lire("200000002", "bornes_recharge"), 0)
   expect_equal(lire("29", "bornes_recharge"), 2)
-  # déterministe : trié par code puis clé
-  expect_true(!is.unsorted(paste(agg$code, agg$key)))
+
+  # la clé offre_cyclable (issue #231) : les LONGUEURS SOMMÉES et les
+  # km/1 000 hab RECOMPOSÉS depuis les parties (Σ km ÷ Σ population × 1 000 —
+  # jamais la moyenne des taux communaux)
+  # EPCI 200000001 (22001 + 22002) : protégé 3 + 1 = 4 km, partagé 2 + 1 = 3,
+  # total 7 ; km/1 000 hab : 4 ÷ 4 000 × 1 000 = 1,0 et 3 ÷ 4 000 × 1 000 =
+  # 0,75
+  expect_equal(lire("200000001", "offre_cyclable", "protege_longueur"), 4.0)
+  expect_equal(lire("200000001", "offre_cyclable", "partage_longueur"), 3.0)
+  expect_equal(lire("200000001", "offre_cyclable", "total_longueur"), 7.0)
+  expect_equal(lire("200000001", "offre_cyclable", "protege_km_1000"), 1.0)
+  expect_equal(lire("200000001", "offre_cyclable", "partage_km_1000"), 0.75)
+  # EPCI 200000002 : n'agrège QUE 29001 (sans aménagement) — le zéro porté,
+  # jamais un NA (29002 est la commune sans EPCI, exclue)
+  for (detail in c("protege_longueur", "partage_longueur", "total_longueur",
+                   "protege_km_1000", "partage_km_1000")) {
+    expect_equal(lire("200000002", "offre_cyclable", detail), 0, info = detail)
+  }
+  # département 29 (29001 + 29002) : protégé 0 + 2 = 2, partagé 0 + 4 = 4 ;
+  # km/1 000 hab : 2 ÷ 6 000 × 1 000 = 1/3
+  expect_equal(lire("29", "offre_cyclable", "protege_longueur"), 2.0)
+  expect_equal(lire("29", "offre_cyclable", "partage_longueur"), 4.0)
+  expect_equal(lire("29", "offre_cyclable", "total_longueur"), 6.0)
+  expect_equal(lire("29", "offre_cyclable", "protege_km_1000"), 1 / 3)
+  # région : protégé 6, partagé 7, total 13 ; km/1 000 hab sur 10 000 hab
+  expect_equal(lire("53", "offre_cyclable", "protege_longueur"), 6.0)
+  expect_equal(lire("53", "offre_cyclable", "partage_longueur"), 7.0)
+  expect_equal(lire("53", "offre_cyclable", "total_longueur"), 13.0)
+  expect_equal(lire("53", "offre_cyclable", "protege_km_1000"), 0.6)
+  expect_equal(lire("53", "offre_cyclable", "partage_km_1000"), 0.7)
+  # la commune garde SES valeurs telles quelles
+  expect_equal(lire("22001", "offre_cyclable", "protege_longueur"), 3.0)
+  expect_equal(lire("22001", "offre_cyclable", "protege_km_1000"), 3.0)
+  # la commune sans aménagement porte 0 à tous les détails
+  expect_equal(lire("29001", "offre_cyclable", "total_longueur"), 0)
+  # déterministe : trié par code puis clé puis détail
+  expect_true(!is.unsorted(paste(agg$code, agg$key, agg$detail)))
 })
 
 # INDICATEURS_MOBILITE -----------------------------------------------------------
-test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillée de SA source de référence", {
+test_that("INDICATEURS_MOBILITE : les douze clés du payload, chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
 
   # la « Taille » (le tracer bullet #137/#138) + les deux clés multi-mesures
   # de l'étage demande/réseaux (issue #139 : voitures_menage × 2, reseaux × 6)
-  # + les trois clés du sous-bloc « L'offre de mobilité alternative »
-  # (issue #140) + les CINQ parts d'isolation de la grille (issue #141) — une
-  # ligne par clé, la multiplicité de chacune (1 / 2 / 6 / 1 / 1 / 1 et les
-  # cinq 1 des parts d'isolation)
-  expect_equal(nrow(ind), 11L)
+  # + les QUATRE clés du sous-bloc « L'offre de mobilité alternative »
+  # (issue #140 : offre_tc, bornes_recharge, places_stationnement_velo_1000 ;
+  # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
+  # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 2 / 6 /
+  # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
+  expect_equal(nrow(ind), 12L)
   expect_setequal(ind$key, c("nb_buildings", "voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
                              "places_stationnement_velo_1000",
+                             "offre_cyclable",
                              "iso_alimentation", "iso_sante",
                              "iso_administration", "iso_ecole", "iso_banque"))
   expect_equal(ind$multiplicite[ind$key == "nb_buildings"], 1L)
@@ -2063,6 +2136,9 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillé
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
   expect_equal(ind$multiplicite[ind$key == "places_stationnement_velo_1000"], 1L)
+  # la figure « L'offre cyclable » (issue #231) : la multiplicité 5 — les
+  # longueurs protégé/partagé/total et les km/1 000 hab
+  expect_equal(ind$multiplicite[ind$key == "offre_cyclable"], 5L)
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$multiplicite[ind$key == cle], 1L, info = cle)
   }
@@ -2080,6 +2156,10 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillé
   #   - bornes_recharge           -> bornes-recharges (IRVE, Licence Ouverte) ;
   #   - places_stationnement_velo_1000 -> stationnement-velo (le hub Ecolab,
   #     ODbL — producteur OSM) ;
+  #   - offre_cyclable            -> osm_reseaux (l'horloge LENTE — la
+  #     décision #226 US6 : le ratio « X % de l'infrastructure routière » est
+  #     limité par sa plus lente horloge, le réseau `c` OSM — JAMAIS le
+  #     vintage Geovelo frais) ;
   #   - les 5 parts d'isolation (issue #141) -> le snapshot porté, comme la
   #     « Taille » : l'estampille SNAPSHOT du flagship (la date d'instantané
   #     de l'analyse comme référence — la grille est la matière du snapshot).
@@ -2093,6 +2173,7 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload, chacune estampillé
                "bornes-recharges")
   expect_equal(ind$source_reference[ind$key == "places_stationnement_velo_1000"],
                "stationnement-velo")
+  expect_equal(ind$source_reference[ind$key == "offre_cyclable"], "osm_reseaux")
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$source_reference[ind$key == cle], "mobilite_snapshot",
                  info = cle)
@@ -2143,11 +2224,23 @@ fixture_indicateurs_mobilite <- function() {
                "c_longueur", "c_densite")
   ) %>%
     dplyr::mutate(key = "reseaux", value = 1)
-  offre_territoires <- tidyr::crossing(
-    code = codes, key = c("offre_tc", "bornes_recharge",
-                          "places_stationnement_velo_1000")
-  ) %>%
-    dplyr::mutate(value = dplyr::if_else(key == "offre_tc", 0.5, 10))
+  # le sous-bloc depuis l'issue #231 : la forme longue (code, key, detail,
+  # value) du contrat — les trois clés scalaires portent le détail NA, la
+  # clé offre_cyclable ses cinq mesures
+  offre_territoires <- dplyr::bind_rows(
+    tidyr::crossing(
+      code = codes, key = c("offre_tc", "bornes_recharge",
+                            "places_stationnement_velo_1000")
+    ) %>%
+      dplyr::mutate(detail = NA_character_,
+                    value = dplyr::if_else(key == "offre_tc", 0.5, 10)),
+    tidyr::crossing(
+      code = codes,
+      detail = c("protege_longueur", "protege_km_1000", "partage_longueur",
+                 "partage_km_1000", "total_longueur")
+    ) %>%
+      dplyr::mutate(key = "offre_cyclable", value = 1)
+  )
 
   list(
     nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
@@ -2159,7 +2252,7 @@ fixture_indicateurs_mobilite <- function() {
   )
 }
 
-test_that("construire_indicateurs_mobilite : les onze clés, avec les 5 parts d'isolation, leurs rangs et l'estampille snapshot", {
+test_that("construire_indicateurs_mobilite : les douze clés, avec les 5 parts d'isolation, leurs rangs et l'estampille snapshot", {
   fx <- fixture_indicateurs_mobilite()
   base <- base_epci_mini_analytique()
   poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
@@ -2170,16 +2263,17 @@ test_that("construire_indicateurs_mobilite : les onze clés, avec les 5 parts d'
 
   ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
 
-  # les onze clés : la « Taille » + la demande/réseaux + le sous-bloc + les 5
-  # parts d'isolation (issue #141) — une ligne par (territoire × détail)
-  # (9 territoires × 17 détails)
+  # les douze clés : la « Taille » + la demande/réseaux + le sous-bloc
+  # (issue #140 + #231) + les 5 parts d'isolation (issue #141) — une ligne
+  # par (territoire × détail) (9 territoires × 22 détails)
   expect_setequal(unique(ind$key), c(
     "nb_buildings", "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+    "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque"
   ))
-  expect_equal(nrow(ind), 9 * 17)
+  expect_equal(nrow(ind), 9 * 22)
   expect_equal(sum(ind$key == "nb_buildings"), 9)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 2)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
@@ -2187,6 +2281,13 @@ test_that("construire_indicateurs_mobilite : les onze clés, avec les 5 parts d'
                 "places_stationnement_velo_1000")) {
     expect_equal(sum(ind$key == cle), 9, info = cle)
   }
+  # la figure « L'offre cyclable » (issue #231) : les 5 mesures par territoire
+  expect_equal(sum(ind$key == "offre_cyclable"), 9 * 5)
+  expect_setequal(unique(ind$detail[ind$key == "offre_cyclable"]),
+                  c("protege_longueur", "protege_km_1000", "partage_longueur",
+                    "partage_km_1000", "total_longueur"))
+  # les détails des clés scalaires du sous-bloc restent NA
+  expect_true(all(is.na(ind$detail[ind$key == "offre_tc"])))
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(sum(ind$key == cle), 9, info = cle)
   }
@@ -2209,6 +2310,26 @@ test_that("construire_indicateurs_mobilite : les onze clés, avec les 5 parts d'
   expect_equal(rang("22001", "iso_alimentation", "rang_reg"), 0.75)
   expect_equal(rang("53", "iso_banque", "rang_reg"), 0.75)
 
+  # la figure « L'offre cyclable » (issue #231) : les valeurs MOCKÉES de
+  # l'artefact offre_territoires, la multiplicité 5 et les RANGS PAR DÉTAIL
+  # (construire_rangs_detail — chaque mesure classée dans SON groupe)
+  lire_detail <- function(code, detail) {
+    ind$value[ind$territoire == code & ind$key == "offre_cyclable" &
+                ind$detail == detail]
+  }
+  expect_equal(lire_detail("22001", "total_longueur"), 1)
+  expect_equal(lire_detail("22001", "protege_longueur"), 1)
+  expect_equal(lire_detail("53", "partage_km_1000"), 1)
+  rang_detail <- function(code, detail, col) {
+    ind[[col]][ind$territoire == code & ind$key == "offre_cyclable" &
+                 ind$detail == detail]
+  }
+  # le rang d'un détail est celui de SA valeur parmi les pairs (la machinerie
+  # partagée — une valeur 1 partout classe le premier à 0, NA aux niveaux sans
+  # groupe : la région nulle part)
+  expect_true(all(!is.na(rang_detail("22001", "total_longueur", "rang_epci"))))
+  expect_true(is.na(rang_detail("53", "total_longueur", "rang_reg")))
+
   # l'estampille SNAPSHOT : chaque part d'isolation est estampillée du vintage
   # de SA source de référence (le snapshot porté — la date d'instantané de
   # l'analyse, comme la « Taille »)
@@ -2220,6 +2341,15 @@ test_that("construire_indicateurs_mobilite : les onze clés, avec les 5 parts d'
   expect_true(all(iso_ind$vintage_date_publication == "2026-08-06"))
   # le détail des clés d'isolation est NA (les clés scalaires de la grille)
   expect_true(all(is.na(iso_ind$detail)))
+
+  # l'estampille de l'offre cyclable : le vintage de SA source de référence —
+  # l'extrait OSM (osm_reseaux, l'horloge LENTE : la référence 2026-08-05, le
+  # timestamp d'extraction — JAMAIS le vintage Geovelo frais 2026-08-07)
+  cyclable_ind <- ind[ind$key == "offre_cyclable", ]
+  ref_osm <- vintages_mobilite()$source[vintages_mobilite()$id == "osm_reseaux"]
+  expect_true(all(cyclable_ind$vintage_source == ref_osm))
+  expect_true(all(cyclable_ind$vintage_date_reference == "2026-08-05"))
+  expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
 })
 
 test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer la validation bruyamment", {
@@ -2259,4 +2389,221 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
     validations = validations_mobilite,
     apercu = APERCU_MOBILITE
   ), "[0, 1]")
+
+  # une longueur de l'offre cyclable NÉGATIVE (une corruption — jamais une
+  # offre publiée négative, le validateur du payload couvre la nouvelle clé,
+  # issue #231) fait échouer la validation bruyamment
+  payload <- list(
+    indicateurs = construire_indicateurs_mobilite(fx, territoires,
+                                                  vintages_mobilite()),
+    histoires = tibble::tibble(),
+    territoires = reference_territoires(territoires),
+    apercu = assemble_apercu(territoires, list())
+  )
+  payload$indicateurs$value[
+    payload$indicateurs$key == "offre_cyclable" &
+      payload$indicateurs$detail == "protege_longueur" &
+      payload$indicateurs$territoire == "22001"] <- -1
+  expect_error(validate_payload(
+    payload,
+    indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(),
+    validations = validations_mobilite,
+    apercu = APERCU_MOBILITE
+  ), "offre cyclable")
+})
+
+# =============================================================================
+# La figure « L'offre cyclable » (issue #231, la binaison provisoire d'ADR-0016)
+# =============================================================================
+# Les tests unitaires du builder calculer_offre_cyclable_communes : la table
+# communale de la figure (protégé/partagé en km et km/1 000 hab + le total
+# cyclable — le numérateur du ratio « X % de l'infrastructure routière »). Le
+# même jeu Geovelo que le mode `b` de `reseaux`, la même attribution par le
+# côté porteur (ADR-0016), mais la longueur en GÉOMÉTRIE UNIQUE (chaque segment
+# compté UNE fois — le contre-pied assumé du comptage par direction du mode
+# `b` : le ratio compare au réseau `c`, lui-même en géométrie unique, les deux
+# conventions doivent coïncider pour que le « X % » soit honnête, ADR-0016).
+#
+# La binaison provisoire est VERROUILLÉE sur la forme RÉELLE du jeu : une
+# ligne par valeur de l'enum ame_d/ame_g (le schéma national v0.3.5, vérifié
+# sur le fichier réel — 27 797 lignes bretonnes, 2026-08-08), chaque valeur
+# dans SA famille (protégé = pistes, voies vertes, CVCB, mixte piéton-vélo ;
+# partagé = bandes, doubles sens, vélos rues, couloirs bus+vélo, AUTRE,
+# accotements + les auxiliaires GOULOTTE/RAMPE — la décision provisoire).
+
+# fixture_offre_cyclable_binning ------------------------------------------------
+# Un segment de 1 000 m par valeur RÉELLE de l'enum, attribué à la commune
+# 22001 (le motif 3 communes du contrat), sens NA (la géométrie unique ne
+# multiplie jamais). 5 protégés + 9 partagés = 14 km attendus sur 22001.
+fixture_offre_cyclable_binning <- function() {
+  valeurs <- c(
+    # protégé
+    "PISTE CYCLABLE", "DOUBLE SENS CYCLABLE PISTE", "VOIE VERTE",
+    "CHAUSSEE A VOIE CENTRALE BANALISEE",
+    "AMENAGEMENT MIXTE PIETON VELO HORS VOIE VERTE",
+    # partagé
+    "BANDE CYCLABLE", "DOUBLE SENS CYCLABLE BANDE",
+    "DOUBLE SENS CYCLABLE NON MATERIALISE", "VELO RUE",
+    "COULOIR BUS+VELO", "AUTRE", "ACCOTEMENT REVETU HORS CVCB",
+    "GOULOTTE", "RAMPE"
+  )
+  n <- length(valeurs)
+  geoms <- lapply(seq_len(n), function(i) {
+    x0 <- (i - 1) %% 2 * 1000
+    y0 <- floor((i - 1) / 2) * 100 + 100
+    sf::st_linestring(rbind(c(x0, y0), c(x0 + 1000, y0)))
+  })
+  sf::st_sf(
+    id_local = paste0("B", seq_len(n)),
+    code_com_d = rep("22001", n), code_com_g = rep("22001", n),
+    ame_d = valeurs, ame_g = rep("AUCUN", n),
+    sens_d = rep(NA_character_, n), sens_g = rep(NA_character_, n),
+    geometry = sf::st_sfc(geoms),
+    crs = 2154
+  )
+}
+
+# fixture_population_mini -------------------------------------------------------
+# La population communale de l'univers : 22001 (1 000 hab) + DEUX communes SANS
+# aménagement (22002, 29001 — le zéro porté, jamais une ligne manquante).
+fixture_population_mini <- function() {
+  tibble::tibble(
+    commune = c("22001", "22002", "29001"),
+    population = c(1000, 2000, 500)
+  )
+}
+
+test_that("calculer_offre_cyclable_communes : la binaison provisoire verrouillée sur la forme réelle du jeu", {
+  res <- calculer_offre_cyclable_communes(fixture_offre_cyclable_binning(),
+                                          fixture_population_mini())
+
+  # une ligne par commune de l'univers (les 3), la forme du contrat
+  expect_equal(nrow(res), 3)
+  expect_named(res, c("commune", "population", "protege_longueur",
+                      "partage_longueur", "total_longueur",
+                      "protege_km_1000", "partage_km_1000"))
+  lire <- function(commune) res[res$commune == commune, ]
+
+  # la binaison verrouillée : 5 valeurs protégées × 1 km = 5 km, 9 valeurs
+  # partagées × 1 km = 9 km — le total cyclable = protégé + partagé (le
+  # numérateur du ratio, exactement une somme)
+  expect_equal(lire("22001")$protege_longueur, 5.0)
+  expect_equal(lire("22001")$partage_longueur, 9.0)
+  expect_equal(lire("22001")$total_longueur, 14.0)
+  # km / 1 000 hab : 22001 population 1 000 → 5 et 9
+  expect_equal(lire("22001")$protege_km_1000, 5.0)
+  expect_equal(lire("22001")$partage_km_1000, 9.0)
+  # la commune SANS aménagement porte 0 (un fait, jamais une ligne manquante,
+  # jamais supprimée)
+  expect_equal(lire("22002")$protege_longueur, 0)
+  expect_equal(lire("22002")$partage_longueur, 0)
+  expect_equal(lire("22002")$total_longueur, 0)
+  expect_equal(lire("22002")$protege_km_1000, 0)
+  expect_equal(lire("22002")$partage_km_1000, 0)
+  expect_equal(lire("29001")$total_longueur, 0)
+  # déterministe : trié par commune
+  expect_true(!is.unsorted(res$commune))
+})
+
+test_that("calculer_offre_cyclable_communes : la longueur en GÉOMÉTRIE UNIQUE (une piste bidirectionnelle compte 1×)", {
+  # une piste bidirectionnelle de 2 000 m — le mode `b` de `reseaux` la compte
+  # 2× (4 km, ADR-0016, verrouillé par le test de calculer_reseaux_velo_
+  # communes) ; la figure « L'offre cyclable » la compte 1× (2 km) : le
+  # numérateur du ratio compare au réseau `c` (le pbf mesure chaque way une
+  # fois — géométrie unique), les conventions doivent coïncider
+  bidir <- sf::st_sf(
+    id_local = "B1", code_com_d = "22001", code_com_g = "22001",
+    ame_d = "PISTE CYCLABLE", ame_g = "AUCUN",
+    sens_d = "BIDIRECTIONNEL", sens_g = "BIDIRECTIONNEL",
+    geometry = sf::st_sfc(sf::st_linestring(rbind(c(0, 0), c(2000, 0)))),
+    crs = 2154
+  )
+  res <- calculer_offre_cyclable_communes(bidir, fixture_population_mini())
+  expect_equal(res$protege_longueur[res$commune == "22001"], 2.0)
+  expect_equal(res$total_longueur[res$commune == "22001"], 2.0)
+  expect_equal(res$protege_km_1000[res$commune == "22001"], 2.0)
+})
+
+test_that("calculer_offre_cyclable_communes : l'attribution par le CÔTÉ PORTEUR (ADR-0016), le d départage, la famille du côté gagnant", {
+  pop <- tibble::tibble(commune = c("22001", "22002"),
+                        population = c(1000, 2000))
+  segment <- function(code_d, code_g, ame_d, ame_g) {
+    sf::st_sf(
+      id_local = "B", code_com_d = code_d, code_com_g = code_g,
+      ame_d = ame_d, ame_g = ame_g,
+      sens_d = NA_character_, sens_g = NA_character_,
+      geometry = sf::st_sfc(sf::st_linestring(rbind(c(2000, 500), c(2000, 1500)))),
+      crs = 2154
+    )
+  }
+  lire <- function(res, commune) res[res$commune == commune, ]
+
+  # le côté d porte seul → la commune du d, la famille du d (protégé)
+  res <- calculer_offre_cyclable_communes(
+    segment("22001", "22002", "PISTE CYCLABLE", "AUCUN"), pop)
+  expect_equal(lire(res, "22001")$protege_longueur, 1.0)
+  expect_equal(lire(res, "22001")$total_longueur, 1.0)
+  # le côté g porte seul → la commune du g, la famille du g (partagé)
+  res <- calculer_offre_cyclable_communes(
+    segment("22001", "22002", "AUCUN", "BANDE CYCLABLE"), pop)
+  expect_equal(lire(res, "22002")$partage_longueur, 1.0)
+  expect_equal(lire(res, "22002")$total_longueur, 1.0)
+  # les DEUX portent → le d départage, la famille du côté GAGNANT (le d, bande)
+  res <- calculer_offre_cyclable_communes(
+    segment("22001", "22002", "BANDE CYCLABLE", "PISTE CYCLABLE"), pop)
+  expect_equal(lire(res, "22001")$partage_longueur, 1.0)
+  expect_equal(lire(res, "22001")$protege_longueur, 0)
+  expect_equal(lire(res, "22002")$total_longueur, 0)
+  # la longueur totale de la région = la somme des parties (zéro double-compte)
+  expect_equal(sum(res$total_longueur), 1.0)
+})
+
+test_that("calculer_offre_cyclable_communes : la projection EPSG:2154 précède toute mesure (l'entrée WGS84 mesure juste)", {
+  # les MÊMES segments en WGS84 (le crs du lecteur — le normaliseur livre le sf
+  # en EPSG:4326) : le builder projette AVANT st_length — les longueurs restent
+  # en mètres
+  amen <- sf::st_transform(fixture_offre_cyclable_binning(), 4326)
+  res <- calculer_offre_cyclable_communes(amen, fixture_population_mini())
+  lire <- function(commune) res[res$commune == commune, ]
+  expect_equal(round(lire("22001")$protege_longueur, 3), 5.0)
+  expect_equal(round(lire("22001")$partage_longueur, 3), 9.0)
+  expect_equal(round(lire("22001")$total_longueur, 3), 14.0)
+})
+
+test_that("calculer_offre_cyclable_communes : un input corrompu s'arrête bruyamment", {
+  # une colonne requise manquante nomme la colonne fautive
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$ame_g <- NULL
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "ame_g")
+  # une valeur d'enum HORS binaison est une corruption (le contrat du jeu a
+  # changé — jamais une ligne silencieusement perdue)
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$ame_d[1] <- "NOUVEAU TYPE DU JEU"
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "binaison")
+  # un segment sans aménagement des DEUX côtés (AUCUN/AUCUN) est une corruption
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$ame_d[1] <- "AUCUN"
+  defectueux$ame_g[1] <- "AUCUN"
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "AUCUN")
+  # un segment attribué à une commune HORS référentiel (population absente)
+  defectueux <- fixture_offre_cyclable_binning()
+  defectueux$code_com_d[1] <- "99999"
+  expect_error(calculer_offre_cyclable_communes(defectueux,
+                                                fixture_population_mini()),
+               "référentiel")
+  # un fichier vide est une corruption
+  vide <- fixture_offre_cyclable_binning()[0, ]
+  expect_error(calculer_offre_cyclable_communes(vide, fixture_population_mini()),
+               "aucune ligne")
+  # une table de population sans la colonne population est refusée
+  expect_error(calculer_offre_cyclable_communes(
+    fixture_offre_cyclable_binning(),
+    tibble::tibble(commune = "22001")), "population")
 })
