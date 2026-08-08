@@ -42,13 +42,17 @@ export const NOMS_INDICATEURS: Record<Theme, Record<string, string>> = {
     chomage: 'Chômage (population active)',
     eco_activites: 'Part des éco-activités',
   },
-  // Milieux (issue #172 + #173, ADR-0014) : la fenêtre 2021-2025, la série
-  // annuelle depuis 2011 et la trajectoire ZAN — le libellé « Consommation
-  // d'ENAF » est le nom de l'indicateur (CONTEXT.md), la fenêtre en hectares.
+  // Milieux (issue #172 + #173, re-keyé par la spec #225, ADR-0017) :
+  // « Intensité état · Série annuelle » — l'état artificialisé par habitant
+  // (artif_par_habitant, une ligne par millésime M2/M3, m²/inhab — la figure
+  // d'état définie pour TOUT territoire, jamais le trou NA des flux) et la
+  // série annuelle CONSOENAF (conso_enaf_annuel, la seule horloge annuelle).
+  // La fenêtre (conso_enaf_fenetre) et la trajectoire ZAN (trajectoire_zan)
+  // sont mortes avec les flux : leurs figures ne rendent plus (la story porte
+  // la trajectoire — #63, #65).
   milieux: {
-    conso_enaf_fenetre: 'Consommation d’ENAF 2021-2025',
+    artif_par_habitant: 'Intensité état',
     conso_enaf_annuel: 'Consommation d’ENAF — série annuelle',
-    trajectoire_zan: 'Trajectoire ZAN',
   },
 }
 

@@ -142,6 +142,10 @@ const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
     'bornes_recharge',
     'places_stationnement_velo_1000',
   ],
+  // Milieux (spec #225, ADR-0017) : « Intensité état · Série annuelle » —
+  // l'état par habitant (artif_par_habitant) puis la série annuelle
+  // CONSOENAF (conso_enaf_annuel) — l'ordre du bloc, pas celui du JSON.
+  milieux: ['artif_par_habitant', 'conso_enaf_annuel'],
 }
 
 /** The standard indicator rows for a territoire + theme, in the contract's order. */
