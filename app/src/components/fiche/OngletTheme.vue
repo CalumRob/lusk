@@ -20,8 +20,10 @@ import { RouterLink } from 'vue-router'
 import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
+import FigureOffreCyclable from '@/components/fiche/FigureOffreCyclable.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import {
+  NOMS_DETAILS_OFFRE_CYCLABLE,
   NOMS_DETAILS_RESEAUX,
   NOMS_DETAILS_VOITURES_MENAGE,
   NOMS_INDICATEURS,
@@ -123,7 +125,14 @@ const nomTerritoire = computed(
 // d'isolation (les 5 parts) → l'étage demande/réseaux → le sous-bloc
 // « L'offre de mobilité alternative ». Les sections découpent l'ordre du
 // contrat (ORDRE_INDICATEURS.mobilite) — chaque groupe reste dans SA section.
-const CLEFS_SOUS_BLOC_MOBILITE = ['offre_tc', 'bornes_recharge', 'places_stationnement_velo_1000']
+const CLEFS_SOUS_BLOC_MOBILITE = [
+  'offre_tc',
+  'bornes_recharge',
+  'places_stationnement_velo_1000',
+  // la figure « L'offre cyclable » (issue #232) — jamais supprimée : une
+  // commune à 0 km montre 0 (le zéro porté du payload, jamais une absence)
+  'offre_cyclable',
+]
 
 const CLEFS_GRILLE_MOBILITE = [
   'iso_alimentation',
@@ -293,8 +302,15 @@ const nuageMobiliteComputed = computed(() =>
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
   if (clef === 'reseaux') return NOMS_DETAILS_RESEAUX
   if (clef === 'voitures_menage') return NOMS_DETAILS_VOITURES_MENAGE
+  if (clef === 'offre_cyclable') return NOMS_DETAILS_OFFRE_CYCLABLE
   return undefined
 }
+
+// La figure « L'offre cyclable » (issue #232) lit le dénominateur de SON
+// headline dans les lignes reseaux du MÊME territoire (reseaux.c_longueur —
+// la règle du « dans l'EPCI : X % » d'ADR-0015 : l'app regarde les lignes
+// existantes, jamais une seconde mesure publiée).
+const groupesReseaux = computed(() => groupesMobilite(['reseaux']))
 
 /** The Mobilité block's sections — the Taille, the isolation grid, the demand/network tier and the labelled sub-block. */
 interface SectionMobilite {
@@ -526,15 +542,24 @@ function libelleIndicateur(clef: string): string {
           class="grille-indicateurs"
           :class="{ 'grille-isolation': section.isolation }"
         >
-          <IndicatorFigure
-            v-for="groupe in section.groupes"
-            :key="groupe.key"
-            :clef="groupe.key"
-            :lignes="groupe.lignes"
-            :libelle="libelleIndicateur(groupe.key)"
-            :labels-detail="labelsDetailPour(groupe.key)"
-            :large="groupe.key === 'reseaux'"
-          />
+          <template v-for="groupe in section.groupes" :key="groupe.key">
+            <FigureOffreCyclable
+              v-if="groupe.key === 'offre_cyclable'"
+              :clef="groupe.key"
+              :lignes="groupe.lignes"
+              :reseaux="groupesReseaux[0]?.lignes ?? []"
+              :libelle="libelleIndicateur(groupe.key)"
+              :labels-detail="labelsDetailPour(groupe.key)"
+            />
+            <IndicatorFigure
+              v-else
+              :clef="groupe.key"
+              :lignes="groupe.lignes"
+              :libelle="libelleIndicateur(groupe.key)"
+              :labels-detail="labelsDetailPour(groupe.key)"
+              :large="groupe.key === 'reseaux'"
+            />
+          </template>
         </div>
       </template>
       <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
