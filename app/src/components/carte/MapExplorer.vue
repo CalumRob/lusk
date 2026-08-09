@@ -1,8 +1,11 @@
 <script setup lang="ts">
 /**
  * MapExplorer — the full-bleed map shell (layouts.md §3 + ui-elements.md
- * §Map shell, ported per ADR-0008: PMTiles → GeoJSON). CARTO Voyager raster
- * basemap, territory masks (communes / EPCIs / départements) as plain GeoJSON
+ * §Map shell, ported per ADR-0008: PMTiles → GeoJSON; basemap per ADR-0018:
+ * CARTO → Etalab). Positron d'Etalab en tuiles vecteur (OSM, ODbL), style
+ * local sans labels (app/public/positron-nolabels.json — l'attribution OSM
+ * obligatoire vient du TileJSON, contrôle ⓘ compact par défaut de MapLibre),
+ * territory masks (communes / EPCIs / départements) as plain GeoJSON
  * sources — no PMTiles protocol — and the selected theme's indicator layer
  * joined from the fiche payload.
  *
@@ -271,32 +274,14 @@ function surSurvol(e: maplibregl.MapLayerMouseEvent): void {
 
 function initialiserCarte(): void {
   if (!mapContainer.value || carte) return
+  // Le fond de plan : positron d'Etalab en tuiles vecteur (ADR-0018), OSM sous
+  // ODbL — style local sans labels (app/public/positron-nolabels.json, le look
+  // voyager_nolabels conservé). L'attribution OSM obligatoire est lue depuis
+  // le TileJSON de la source (planet-vector.json) et rendue par le contrôle
+  // d'attribution compact par défaut de MapLibre.
   carte = new maplibregl.Map({
     container: mapContainer.value,
-    style: {
-      version: 8,
-      sources: {
-        'fond-cartographique': {
-          type: 'raster',
-          tiles: [
-            'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-            'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-            'https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-            'https://d.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}@2x.png',
-          ],
-          tileSize: 256,
-          attribution:
-            '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> · © <a href="https://carto.com/attributions">CARTO</a>',
-        },
-      },
-      layers: [
-        {
-          id: 'fond-carte',
-          type: 'raster',
-          source: 'fond-cartographique',
-        },
-      ],
-    },
+    style: '/positron-nolabels.json',
     transformRequest: (url) => ({ url }),
     center: [-2.8, 48.2],
     zoom: 8,

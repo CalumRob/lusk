@@ -30,7 +30,7 @@ describe('ANCRAGES_THEMES — the DESIGN.md §2 anchors, mirrored for the map', 
 })
 
 describe('COULEUR_NEUTRE — the neutral mask fill (issue #68)', () => {
-  const ANCIENNE_NEUTRE = '#BFD5D0' // avant #68 — trop présente sur le fond CARTO Voyager
+  const ANCIENNE_NEUTRE = '#BFD5D0' // avant #68 — trop présente sur le fond positron clair
   const luminance = (hex: string) => {
     const r = Number.parseInt(hex.slice(1, 3), 16)
     const g = Number.parseInt(hex.slice(3, 5), 16)

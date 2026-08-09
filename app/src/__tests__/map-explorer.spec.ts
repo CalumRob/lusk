@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -18,11 +21,12 @@ import type { Masques } from '../geo/types'
 
 /**
  * MapExplorer (ADR-0008 + layouts.md §3) — the ported shell, PMTiles swapped
- * for plain GeoJSON sources: CARTO Voyager raster basemap with the OSM
- * attribution, one GeoJSON source + fill/line layers per present mask level,
- * the theme's choropleth driving the active fill (Aperçu = neutral masks),
- * and click popups (name + KPIs + « Voir la fiche »). The specs assert the
- * map contract against the structural maplibre fake (setup.ts).
+ * for plain GeoJSON sources: Etalab positron vector basemap (ADR-0018, local
+ * vendored style without labels, OSM attribution from the TileJSON), one
+ * GeoJSON source + fill/line layers per present mask level, the theme's
+ * choropleth driving the active fill (Aperçu = neutral masks), and click
+ * popups (name + KPIs + « Voir la fiche »). The specs assert the map contract
+ * against the structural maplibre fake (setup.ts).
  */
 
 function feature(territoire: string, nom: string) {
@@ -83,22 +87,32 @@ afterEach(() => {
   maplibreMock.instancesPopups.length = 0
 })
 
-describe('MapExplorer — the basemap (ADR-0008)', () => {
-  it('initializes with the CARTO Voyager raster tiles (a/b/c/d) and the OSM attribution', async () => {
+describe('MapExplorer — the basemap (ADR-0018)', () => {
+  it('initializes with the vendored Etalab positron style (local, no remote CARTO)', async () => {
     const { carte } = await monter()
-    const style = carte?.options.style as {
-      sources: Record<string, { type: string; tiles?: string[]; attribution?: string }>
-      layers: { id: string; type: string }[]
+
+    // Le style est servi localement (app/public/positron-nolabels.json) — la
+    // carte ne parle jamais au CDN CARTO ; les tuiles vecteur viennent d'Etalab.
+    expect(carte?.options.style).toBe('/positron-nolabels.json')
+  })
+
+  it('vendored positron style: vector source from Etalab, zero symbol layers (labels dropped)', () => {
+    const style = JSON.parse(
+      readFileSync(join(process.cwd(), 'public', 'positron-nolabels.json'), 'utf-8'),
+    ) as {
+      version: number
+      sources: Record<string, { type: string; url?: string }>
+      layers: { type: string }[]
     }
 
-    const voyager = style.sources['fond-cartographique']
-    expect(voyager.type).toBe('raster')
-    expect(voyager.tiles).toHaveLength(4)
-    expect(voyager.tiles?.[0]).toContain('a.basemaps.cartocdn.com')
-    expect(voyager.tiles?.[3]).toContain('d.basemaps.cartocdn.com')
-    expect(voyager.tiles?.[0]).toContain('voyager_nolabels')
-    expect(voyager.attribution).toContain('OpenStreetMap contributors')
-    expect(style.layers.some((l) => l.id === 'fond-carte' && l.type === 'raster')).toBe(true)
+    expect(style.version).toBe(8)
+    // La source vecteur pointe sur les tuiles OpenMapTiles d'Etalab.
+    const source = style.sources['openmaptiles']
+    expect(source.type).toBe('vector')
+    expect(source.url).toContain('openmaptiles.data.gouv.fr')
+    // Les labels ont été retirés (look voyager_nolabels conservé) : aucune
+    // couche symbol — MapLibre ne charge alors ni glyphs ni sprites.
+    expect(style.layers.some((l) => l.type === 'symbol')).toBe(false)
   })
 
   it('adds a NavigationControl (keyboard-reachable map controls)', async () => {

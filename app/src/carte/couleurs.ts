@@ -30,7 +30,7 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
 
 /** The neutral fill: territory masks in Aperçu + no-data territories.
  *  Un vert-gris clair — lightened (issue #68) so it sits back against the
- *  CARTO Voyager basemap while still reading at commune level. */
+ *  light positron basemap (ADR-0018) while still reading at commune level. */
 export const COULEUR_NEUTRE = '#D8E6E2'
 
 /** The outline of the territory masks (reads on both basemap and fills). */

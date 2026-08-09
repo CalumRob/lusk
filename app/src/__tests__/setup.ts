@@ -43,9 +43,9 @@ vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 /**
  * MapLibre — happy-dom has no WebGL. A structural fake records the map's
  * construction options, sources/layers/paints (the specs assert the map
- * contract: CARTO Voyager basemap, GeoJSON sources, theme-driven fills) and
- * lets specs fire 'load' to walk the init path. MapExplorer tests reach the
- * fake through `instancesCarteMaple`.
+ * contract: Etalab positron vector basemap, GeoJSON sources, theme-driven
+ * fills) and lets specs fire 'load' to walk the init path. MapExplorer tests
+ * reach the fake through `instancesCarteMaple`.
  */
 const maplibreMock = vi.hoisted(() => {
   type Ecouteur = (...args: unknown[]) => void
