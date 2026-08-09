@@ -143,6 +143,7 @@ const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
     'offre_tc',
     'bornes_recharge',
     'places_stationnement_velo_1000',
+    'offre_cyclable',
   ],
   // Milieux (spec #225, ADR-0017) : « Intensité état · Série annuelle » —
   // l'état par habitant (artif_par_habitant) puis la série annuelle
@@ -546,6 +547,27 @@ export function formaterValeur(indicateur: Indicateur): string | null {
 export function formaterSolde(x: number): string {
   const signe = x > 0 ? '+' : ''
   return `${signe}${formaterNombreFR(x, 0)}`
+}
+
+/**
+ * The « L'offre cyclable » headline ratio (issue #232) — the total cyclable
+ * length ÷ the territory's OWN c network. Both rows already exist in the
+ * payload (offre_cyclable.total_longueur and reseaux.c_longueur) — the
+ * ADR-0015 « dans l'EPCI : X % » seam: the app derives what is derivable from
+ * existing rows, never a second published measure. Unique geometry on BOTH
+ * sides (ADR-0016 — the like-for-like convention of the headline). Null when
+ * either side is missing or the c network is zero — the figure shows an
+ * honest « — », never an invented ratio.
+ */
+export function ratioOffreCyclable(
+  offreLignes: Indicateur[],
+  reseauxLignes: Indicateur[],
+): number | null {
+  const total = offreLignes.find((l) => l.detail === 'total_longueur')?.value
+  const c = reseauxLignes.find((l) => l.detail === 'c_longueur')?.value
+  if (total === null || total === undefined) return null
+  if (c === null || c === undefined || c <= 0) return null
+  return total / c
 }
 
 const MOIS_COURTS = [
