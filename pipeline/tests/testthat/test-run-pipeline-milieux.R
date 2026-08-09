@@ -129,7 +129,8 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   expect_equal(hist$classification, payload$histoires$classification)
 
   # vintages.parquet : une ligne par source du manifeste Milieux (les onze,
-  # OCS-GE compris — #234 amendé #243)
+  # OCS-GE compris — #234 amendé #243), et les ids RETIRÉS du manifeste (les
+  # quatre différentielles, #243) ont quitté la table partagée
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_MILIEUX))
   expect_setequal(vint$id, c("epci", "consoenaf", "serie_historique",
@@ -141,6 +142,7 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
                              "ocsge_artificialisation_35_2023",
                              "ocsge_artificialisation_56_2022",
                              "ocsge_artificialisation_56_2024"))
+  expect_false(any(grepl("ocsge_artificialisation_(22|29|35|56)$", vint$id)))
 
   # le rapport de run : mode full, une ligne par source
   rapport <- jsonlite::fromJSON(file.path(cible, "run-report.json"))

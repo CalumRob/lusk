@@ -10,7 +10,7 @@
 # flux CONSOENAF (#63). Les fixtures partagées (base_epci_milieux,
 # communes_fixture_milieux) vivent dans helper-milieux.R.
 
-test_that("theme_milieux() : le descripteur porte les douze membres du contrat", {
+test_that("theme_milieux() : le descripteur porte les treize membres du contrat", {
   d <- theme_milieux()
 
   expect_equal(d$theme, "milieux")
@@ -25,6 +25,11 @@ test_that("theme_milieux() : le descripteur porte les douze membres du contrat",
   expect_type(d$scalaires, "list")
   expect_true(is.function(d$compute_histoires))
   expect_type(d$validations, "list")
+  # les ids retirés du manifeste (amendement #243) : les quatre différentielles
+  # OCS-GE sorties au profit des huit archives d'état millésimées
+  expect_setequal(d$retire_vintages,
+                  c("ocsge_artificialisation_22", "ocsge_artificialisation_29",
+                    "ocsge_artificialisation_35", "ocsge_artificialisation_56"))
 })
 
 test_that("verifier_descripteur_milieux : un descripteur incomplet échoue bruyamment", {

@@ -95,8 +95,16 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # un écrasement last-writer-wins qui cacherait les sources des autres thèmes
   # au Story qui les cite). La table du compute reste celle du thème
   # (l'estampillage par source de référence) ; le merge n'intervient qu'à la
-  # sérialisation.
-  vintages <- fusionner_vintages(vintages, sortie)
+  # sérialisation. Issue #243 : le thème peut déclarer les ids RETIRÉS de son
+  # manifeste (retire_vintages — les différentielles OCS-GE sorties par
+  # l'amendement) : ils sont retirés de la table partagée au merge, jamais
+  # laissés estampiller « fraîche » à côté de leur remplaçante.
+  retires <- if ("retire_vintages" %in% names(theme)) {
+    theme$retire_vintages
+  } else {
+    character(0)
+  }
+  vintages <- fusionner_vintages(vintages, sortie, retires = retires)
   nanoparquet::write_parquet(vintages, file.path(sortie, "vintages.parquet"))
   # Issue #73 : la table des vintages est aussi projetée en JSON — la table
   # partagée que l'app lit pour citer les sources d'un bloc (le Story cite SES

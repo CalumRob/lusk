@@ -1376,13 +1376,16 @@ vintages_milieux <- function() {
 # Les membres requis du descripteur — le contrat de FORME du thème (ce que la
 # machinerie partagée consomme : theme, manifest, indicateurs, apercu,
 # vintages, construire_donnees, construire_territoires, construire_indicateurs,
-# construire_apercu, scalaires, compute_histoires, validations). La même idée
-# que verifier_contrat_milieux : un descripteur incomplet échoue FORT, en
-# nommant le membre fautif.
+# construire_apercu, scalaires, compute_histoires, validations, et — depuis
+# l'amendement #243 — retire_vintages, les ids retirés du manifeste du thème
+# que le run retire de la table partagée des vintages). La même idée que
+# verifier_contrat_milieux : un descripteur incomplet échoue FORT, en nommant
+# le membre fautif.
 MEMBRES_DESCRIPTEUR_MILIEUX <- c(
   "theme", "manifest", "indicateurs", "apercu", "vintages",
   "construire_donnees", "construire_territoires", "construire_indicateurs",
-  "construire_apercu", "scalaires", "compute_histoires", "validations"
+  "construire_apercu", "scalaires", "compute_histoires", "validations",
+  "retire_vintages"
 )
 
 # verifier_descripteur_milieux --------------------------------------------------
@@ -1418,7 +1421,16 @@ theme_milieux <- function() {
     construire_apercu = construire_apercu_milieux,
     scalaires = scalaires_milieux,
     compute_histoires = compute_histoires_milieux,
-    validations = validations_milieux
+    validations = validations_milieux,
+    # les ids RETIRÉS du manifeste par l'amendement #243 : les quatre
+    # différentielles OCS-GE (ocsge_artificialisation_22/29/35/56) sorties au
+    # profit des huit archives d'état millésimées — le run les retire de la
+    # table partagée des vintages au merge (fusionner_vintages, jamais laissées
+    # estampiller « fraîche » à côté de leur remplaçante)
+    retire_vintages = c(
+      "ocsge_artificialisation_22", "ocsge_artificialisation_29",
+      "ocsge_artificialisation_35", "ocsge_artificialisation_56"
+    )
   )
   verifier_descripteur_milieux(descripteur)
   descripteur
