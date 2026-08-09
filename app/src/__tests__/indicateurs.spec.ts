@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { NOMS_INDICATEURS, NOMS_TRANCHES_AGE } from '../fiche/indicateurs'
+import {
+  NOMS_DETAILS_OFFRE_CYCLABLE,
+  NOMS_INDICATEURS,
+  NOMS_TRANCHES_AGE,
+} from '../fiche/indicateurs'
 
 /**
  * The indicator vocabulary (fiche contract): French labels for the standard
@@ -38,5 +42,24 @@ describe('NOMS_INDICATEURS — the Économie block vocabulary', () => {
   it('keeps the structure_age tranche labels exhaustive', () => {
     expect(NOMS_TRANCHES_AGE['<15']).toBe('Moins de 15 ans')
     expect(NOMS_TRANCHES_AGE['80+']).toBe('80 ans et plus')
+  })
+})
+
+describe('NOMS_INDICATEURS — la figure « L’offre cyclable » (issue #232)', () => {
+  it('labels the key in the contract vocabulary', () => {
+    expect(NOMS_INDICATEURS.mobilite.offre_cyclable).toBe('L’offre cyclable')
+  })
+
+  it('labels the protégé/partagé details of the figure', () => {
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.protege_km_1000).toBe('Protégé')
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.partage_km_1000).toBe('Partagé')
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.total_longueur).toBe('Longueur totale')
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.protege_longueur).toBe('Longueur protégée')
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.partage_longueur).toBe('Longueur partagée')
+  })
+
+  it('never uses « à venir » for the figure (a commune at 0 km shows 0)', () => {
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.protege_km_1000).not.toContain('à venir')
+    expect(NOMS_DETAILS_OFFRE_CYCLABLE.partage_km_1000).not.toContain('à venir')
   })
 })
