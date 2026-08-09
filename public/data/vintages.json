@@ -144,6 +144,14 @@
     "date_publication": "2026-08-06"
   },
   {
+    "id": "amenagements_cyclables",
+    "source": "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001)",
+    "version": "2026-08",
+    "licence": "odbl",
+    "date_reference": "2026-08-07",
+    "date_publication": "2026-08-07"
+  },
+  {
     "id": "communes_limites",
     "source": "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
     "version": "2025",

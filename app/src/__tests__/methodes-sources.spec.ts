@@ -56,8 +56,31 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     expect(registreSeul).toEqual([])
   })
 
-  it('déclare 47 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 4 OCS-GE)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(47)
+  it('déclare 48 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 4 OCS-GE + le jeu Geovelo)', () => {
+    expect(Object.keys(SOURCES_METHODES).length).toBe(48)
+  })
+
+  it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {
+    // la figure « L'offre cyclable » cite le jeu Geovelo « Aménagements
+    // cyclables France Métropolitaine » — la source du numérateur du ratio
+    const geovelo = SOURCES_METHODES['amenagements_cyclables']
+    expect(geovelo).toBeDefined()
+    expect(geovelo.nom).toContain('Geovelo')
+    expect(geovelo.nom).toMatch(/ODbL/)
+    expect(geovelo.editeur).toBe('Geovelo')
+    expect(geovelo.themes).toEqual(['mobilite'])
+    // l'URL publique du jeu sur data.gouv.fr — jamais une URL inventée
+    expect(geovelo.url).toBe(
+      'https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/',
+    )
+    // la licence ODbL est aussi le fait de fraîcheur de la table vintages
+    const vintages = lireVintagesCommites()
+    const ligne = vintages.find((v) => v.id === 'amenagements_cyclables')
+    expect(ligne).toMatchObject({
+      version: '2026-08',
+      licence: 'odbl',
+      date_reference: '2026-08-07',
+    })
   })
 })
 

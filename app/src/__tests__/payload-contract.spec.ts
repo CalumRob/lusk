@@ -256,12 +256,13 @@ describe('payload contract — the committed payload parses and renders', () => 
     // CINQ thèmes construits — démographie + habitat + economie (les 5 du
     // manifeste Économie : sirene_snapshot, flores_a38, flores_a88, rp_emploi,
     // rp_chomage) + les 8 sources mobilité de la course 2026-08-06
-    // (#139/#140/#141) + les 6 sources programmes du run 2026-08-07
-    // (#175/#176/#178 : acv, pvd, crte, territoires_industrie, ort,
-    // subventions_scdl) + la source consoenaf du run milieux 2026-08-07 (#177)
-    // + les QUATRE sources OCS-GE du run milieux 2026-08-08 (le pivot #225,
-    // #234 : ocsge_artificialisation_22/29/35/56)
-    expect(payload.vintages).toHaveLength(53)
+    // (#139/#140/#141) + le jeu Geovelo des aménagements cyclables (#228,
+    // #233 — la source du mode `b` et de la figure « L'offre cyclable ») + les
+    // 6 sources programmes du run 2026-08-07 (#175/#176/#178 : acv, pvd, crte,
+    // territoires_industrie, ort, subventions_scdl) + la source consoenaf du
+    // run milieux 2026-08-07 (#177) + les QUATRE sources OCS-GE du run milieux
+    // 2026-08-08 (le pivot #225, #234 : ocsge_artificialisation_22/29/35/56)
+    expect(payload.vintages).toHaveLength(54)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:
