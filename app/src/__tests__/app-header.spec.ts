@@ -328,6 +328,17 @@ describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
     expect(panneau.element.contains(document.activeElement)).toBe(true)
   })
 
+  it('renders the search panel as a sibling of the header, never nested inside it (#270)', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const parent = wrapper.find('.en-tete').element.parentElement
+    expect(wrapper.find('.recherche-superposee').element.parentElement).toBe(parent)
+    expect(parent?.contains(wrapper.find('.en-tete').element)).toBe(true)
+  })
+
   it('closes on Escape and returns focus to the button', async () => {
     const { wrapper } = await montage()
     const bouton = wrapper.find('.bouton-recherche').element as HTMLButtonElement
@@ -356,6 +367,22 @@ describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
 
     expect(wrapper.find('.recherche-superposee').exists()).toBe(false)
     expect(wrapper.find('.bouton-recherche').attributes('aria-expanded')).toBe('false')
+  })
+
+  it('stays open on a click inside the panel — the panel is now a sibling, `conteneurRecherche` no longer wraps it (#270)', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.recherche-superposee').exists()).toBe(true)
+
+    wrapper
+      .find('.recherche-superposee')
+      .element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.recherche-superposee').exists()).toBe(true)
+    expect(wrapper.find('.bouton-recherche').attributes('aria-expanded')).toBe('true')
   })
 
   it('searches the payload territoires once expanded', async () => {
