@@ -100,6 +100,8 @@ describe('#270 — le panneau de recherche est hors du header (contenant bloc du
     const panneau = regle('\\.recherche-superposee')
     expect(panneau).toContain('position: fixed')
     expect(panneau).toContain('top: var(--header-height)')
+    expect(panneau).toContain('left: 0')
+    expect(panneau).toContain('right: 0')
   })
 
   it('masque le panneau sur mobile — sorti du header, il n’est plus couvert par le `display: none` de .en-tete-recherche (<768px) : le panneau est desktop-only, la recherche mobile vit dans le tiroir', () => {

@@ -13,8 +13,8 @@
  * the mobile drawer.
  *
  * Mobile (<768px): full-screen drawer — transform-only, scroll-lock, focus
- * trap, Escape closes. Données is a small disclosure dropdown to the three
- * lists (site-map.md: « may be a small dropdown »).
+ * trap, Escape closes. Données renders as a non-link group label with the
+ * three lists nested beneath it (desktop keeps the disclosure dropdown).
  *
  * #205: the drawer is a sibling of <header>, never a child — the header's
  * backdrop-filter would become the containing block for its `position:
@@ -693,7 +693,6 @@ onUnmounted(() => {
   color: var(--text-tertiary);
   font: var(--text-body-sm);
   font-weight: 600;
-  letter-spacing: 0.04em;
 }
 
 .tiroir-lien:hover {

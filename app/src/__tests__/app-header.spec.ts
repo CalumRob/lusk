@@ -357,9 +357,9 @@ describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
     await wrapper.find('.bouton-recherche').trigger('click')
     await wrapper.vm.$nextTick()
 
-    const parent = wrapper.find('.en-tete').element.parentElement
-    expect(wrapper.find('.recherche-superposee').element.parentElement).toBe(parent)
-    expect(parent?.contains(wrapper.find('.en-tete').element)).toBe(true)
+    const panneau = wrapper.find('.recherche-superposee')
+    expect(panneau.element.parentElement).toBe(wrapper.find('.en-tete').element.parentElement)
+    expect(wrapper.find('.en-tete').element.contains(panneau.element)).toBe(false)
   })
 
   it('closes on Escape and returns focus to the button', async () => {
@@ -400,7 +400,7 @@ describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
     expect(wrapper.find('.recherche-superposee').exists()).toBe(true)
 
     wrapper
-      .find('.recherche-superposee')
+      .find('.recherche-superposee-interieur')
       .element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     await wrapper.vm.$nextTick()
 
