@@ -196,6 +196,19 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     url: 'https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf',
     themes: ['mobilite'],
   },
+  // Le jeu Geovelo « Aménagements cyclables France Métropolitaine » (issue
+  // #222, ADR-0016) : la source du mode `b` de `reseaux` ET du numérateur de
+  // la figure « L'offre cyclable » (issue #231) — le réseau cyclable OSM
+  // normalisé au schéma national, snapshots mensuels, ODbL (la même famille
+  // qu'ADR-0001). La source de RÉFÉRENCE du ratio reste osm_reseaux (le
+  // dénominateur routier — l'horloge lente) : les deux horloges sont
+  // documentées sur la fiche, le gap jamais dissimulé.
+  amenagements_cyclables: {
+    nom: 'Geovelo \u2014 Am\u00e9nagements cyclables France M\u00e9tropolitaine (sch\u00e9ma national v0.3.5, ODbL \u2014 \u00a9 OpenStreetMap contributors, ADR-0001)',
+    editeur: 'Geovelo',
+    url: 'https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/',
+    themes: ['mobilite'],
+  },
   communes_limites: {
     nom: 'IGN \u2014 Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)',
     editeur: 'IGN',

@@ -122,7 +122,12 @@ construire_donnees_mobilite <- function(cache = "data/raw",
     voitures_communes = voitures,
     communes_limites = limites,
     lignes_osm = lignes,
-    amenagements_cyclables = amenagements$table
+    amenagements_cyclables = amenagements$table,
+    # l'issue #233 : le diagnostic de couverture du snapshot Geovelo (lignes +
+    # km par département, courant vs précédent, le signal de régression) — la
+    # matière du run report, portée par le seam d'entrée du run quand
+    # l'orchestrateur le fournit (NULL pour les autres thèmes)
+    couverture = amenagements$couverture
   ), sources)
 }
 

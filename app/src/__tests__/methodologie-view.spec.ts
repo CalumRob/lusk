@@ -109,13 +109,15 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligneSerie.text()).toContain('30 juin 2026')
   })
 
-  it('liste les 47 sources commises (l\u2019union est le contrat)', async () => {
+  it('liste les 48 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
-    // Le comptage est borné à la table de la section #sources — la page porte
+    // Le comptage est borné à la table de la section #sources - la page porte
     // aussi la table des sources de l'élément Programmes & financements (6
     // lignes, issue #180) : les deux registres sont documentés séparément.
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(47)
+    // 48 depuis l'issue #233 : le jeu Geovelo des aménagements cyclables
+    // s'ajoute aux 47 sources des cinq thèmes (l'union est le contrat).
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(48)
   })
 
   it('rend la source CONSOENAF avec son URL, ses dates, sa licence et l\u2019anomalie d\u2019unité (issue #177)', async () => {
@@ -191,10 +193,12 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 47 lignes dans la table des sources, fraîcheur en tirets
-    // (la table des sources de l'élément Programmes & financements, 6 lignes statiques,
-    // reste rendue — elle ne dépend pas des vintages, issue #180).
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(47)
+    // La page ne casse jamais : 48 lignes dans la table des sources, fraîcheur
+    // en tirets (le jeu Geovelo des aménagements cyclables s'ajoute depuis
+    // l'issue #233 ; la table des sources de l'élément Programmes &
+    // financements, 6 lignes statiques, reste rendue - elle ne dépend pas des
+    // vintages, issue #180).
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(48)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

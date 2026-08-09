@@ -60,3 +60,68 @@ test_that("le rapport distingue les statuts cron et manuel (mode = 'cron')", {
   expect_equal(manuel$mode, "manuel")
   expect_equal(manuel$status, "à traiter à la main")
 })
+
+# le diagnostic de couverture (issue #233) -------------------------------------
+# Le run report porte aussi le diagnostic par département (lignes + km du
+# snapshot courant vs le précédent, plus le signal de régression) quand le
+# thème le fournit — un fait de première classe du run, distinct des statuts
+# par source (la porte de qualité reste un crash, le diagnostic un signal).
+
+test_that("rapport_run porte le diagnostic de couverture quand il est fourni (issue #233)", {
+  statuts <- tibble::tibble(
+    id = "amenagements_cyclables", mode = "cron", status = "frais"
+  )
+  couverture <- tibble::tibble(
+    departement = c("22", "29", "35", "56"),
+    lignes_actuel = c(100, 200, 300, 400),
+    km_actuel = c(10, 20, 30, 40),
+    lignes_precedent = c(100, 200, 300, 400),
+    km_precedent = c(10, 20, 30, 40),
+    regression = c(FALSE, FALSE, FALSE, FALSE)
+  )
+
+  rapport <- rapport_run(statuts, "cron", timestamp = "2026-08-08T10:00:00Z",
+                         couverture = couverture)
+
+  expect_named(rapport, c("mode", "timestamp", "statuts", "couverture"))
+  expect_identical(rapport$couverture, couverture)
+})
+
+test_that("ecrire_rapport_run écrit le diagnostic de couverture dans run-report.json (issue #233)", {
+  statuts <- tibble::tibble(
+    id = "amenagements_cyclables", mode = "cron", status = "frais"
+  )
+  couverture <- tibble::tibble(
+    departement = c("22", "29", "35"),
+    lignes_actuel = c(100, 200, 300),
+    km_actuel = c(10, 20, 30),
+    lignes_precedent = c(100, 50, 300),
+    km_precedent = c(10, 5, 30),
+    regression = c(FALSE, TRUE, FALSE)
+  )
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  ecrire_rapport_run(statuts, mode = "cron", cible = cible,
+                     timestamp = "2026-08-08T10:00:00Z", couverture = couverture)
+
+  rapport <- jsonlite::fromJSON(file.path(cible, "run-report.json"))
+  expect_named(rapport, c("mode", "timestamp", "statuts", "couverture"))
+  expect_equal(nrow(rapport$couverture), 3)
+  expect_equal(rapport$couverture$departement, c("22", "29", "35"))
+  # le signal de régression voyage tel quel — 29 a perdu la moitié de ses km
+  expect_true(rapport$couverture$regression[rapport$couverture$departement == "29"])
+  expect_false(rapport$couverture$regression[rapport$couverture$departement == "22"])
+})
+
+test_that("le rapport SANS couverture garde la forme historique — jamais une clé vide (issue #233)", {
+  statuts <- tibble::tibble(
+    id = "serie_historique", mode = "cron", status = "frais"
+  )
+
+  rapport <- rapport_run(statuts, "cron", timestamp = "2026-08-08T10:00:00Z")
+
+  # les thèmes sans diagnostic (Démographie, Habitat…) écrivent la forme
+  # historique — la clé couverture n'apparaît pas
+  expect_named(rapport, c("mode", "timestamp", "statuts"))
+})

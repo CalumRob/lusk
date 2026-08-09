@@ -283,6 +283,61 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     expect(story.definition).toContain('docs/research/zan-rennes.md')
   })
 
+  it('la mobilité documente « L\u2019offre cyclable » — la figure du sous-bloc (issue #233, ADR-0016)', () => {
+    const figure = THEMES_METHODES.mobilite.indicateurs.offre_cyclable
+    expect(figure, '« mobilite.offre_cyclable » non documentée').toBeDefined()
+    expect(figure!.label).toBe('L\u2019offre cyclable')
+    expect(figure!.unite).toBe('km')
+    expect(figure!.definition.length).toBeGreaterThan(100)
+
+    // la source Geovelo citée (le jeu « Aménagements cyclables », ODbL)
+    expect(figure!.source).toMatch(/Geovelo/)
+    expect(figure!.definition).toMatch(/Aménagements cyclables/)
+    expect(figure!.definition).toMatch(/ODbL/)
+
+    // la règle de longueur PAR DIRECTION (ADR-0016) — jamais un détail absent
+    expect(figure!.definition).toMatch(/direction/)
+
+    // l'attribution par le CÔTÉ PORTEUR de l'aménagement (ADR-0016)
+    expect(figure!.definition).toMatch(/porteur/)
+
+    // la définition du réseau = l'enum complet des aménagements (ame_d/g)
+    expect(figure!.definition).toMatch(/PISTE CYCLABLE/)
+    expect(figure!.definition).toMatch(/VOIE VERTE/)
+    expect(figure!.definition).toMatch(/VELO RUE/)
+
+    // le caveat de couverture OSM hétérogène en rural breton — lié, jamais
+    // dissimulé (la promesse de transparence, docs/research/openstreetmap.md
+    // §1.6 — le même modèle de référence que la note zan-rennes du Milieux)
+    expect(figure!.definition).toContain('docs/research/openstreetmap.md')
+    expect(figure!.definition).toMatch(/couverture|hétérogène|hétérogene/i)
+
+    // la source de référence du ratio (l'horloge lente) nommée dans la figure
+    expect(figure!.definition).toMatch(/OpenStreetMap/)
+  })
+
+  it('la mobilité documente les DEUX horloges du ratio — le gap est un fait de première classe (issue #233)', () => {
+    const horloges = THEMES_METHODES.mobilite.deuxHorloges
+    expect(horloges, '« mobilite » sans les deux horloges du ratio documentées').toBeDefined()
+
+    // ce que les deux horloges sont, en une phrase — jamais vide
+    expect(horloges!.consommation.length).toBeGreaterThan(20)
+
+    // les deux horloges nommées, jamais confondues : Geovelo frais (le
+    // numérateur) vs l'extrait OSM lent (le dénominateur — la référence)
+    expect(horloges!.entrees.length).toBe(2)
+    for (const entree of horloges!.entrees) {
+      expect(entree.donnee.length, 'entrée sans donnée').toBeGreaterThan(0)
+      expect(entree.frequence.length, 'entrée sans fréquence').toBeGreaterThan(0)
+      expect(entree.reference.length, 'entrée sans référence').toBeGreaterThan(0)
+    }
+    expect(horloges!.declencheur.length).toBeGreaterThan(20)
+    // le gap est un fait assumé : le ratio est limité par SA plus lente horloge,
+    // la source de référence est l'extrait OSM — jamais le vintage Geovelo frais
+    expect(horloges!.consommation).toMatch(/OSM|OpenStreetMap/)
+    expect(horloges!.consommation).toMatch(/Geovelo/)
+  })
+
   it('le milieux documente l\u2019anomalie d\u2019unité m²/ha dans la définition de la série annuelle', () => {
     const fenetre = THEMES_METHODES.milieux.indicateurs.conso_enaf_annuel
     expect(fenetre.unite, '« milieux.conso_enaf_annuel » en hectares').toBe('ha')

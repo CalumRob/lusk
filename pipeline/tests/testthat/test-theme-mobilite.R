@@ -344,10 +344,13 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
 
   # la liste nommée : le snapshot porté + les quatre sources de l'étage
   # demande/réseaux (les voitures, les limites, le OSM t/c, le Geovelo b) +
-  # les QUATRE sources du sous-bloc, dans l'ordre du contrat
+  # les QUATRE sources du sous-bloc + le diagnostic de couverture (issue #233,
+  # NULL quand l'orchestrateur est mocké sans couverture), dans l'ordre du
+  # contrat
   expect_named(donnees,
                c("mobilite_snapshot", "voitures_communes",
                  "communes_limites", "lignes_osm", "amenagements_cyclables",
+                 "couverture",
                  "korrigo", "batiments_residentiels",
                  "bornes_recharges", "stationnement_velo"))
   expect_identical(donnees$mobilite_snapshot, table_snapshot)

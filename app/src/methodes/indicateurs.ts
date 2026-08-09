@@ -412,6 +412,15 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
           'Ecolab \u2014 Nombre de places de stationnement v\u00e9lo pour 1 000 hab. (hub d\u2019indicateurs territoriaux de transition \u00e9cologique ; source OSM : Base Nationale du Stationnement Cyclable)',
         sourceId: 'stationnement-velo',
       },
+      offre_cyclable: {
+        label: 'L’offre cyclable',
+        definition:
+          'La figure « L’offre cyclable » du sous-bloc « L’offre de mobilité alternative » : la longueur (en kilomètres) du réseau cyclable du territoire, relevée dans le jeu Geovelo « Aménagements cyclables France Métropolitaine » (data.gouv.fr, licence ODbL — la même famille que l’extrait OpenStreetMap, ADR-0001). La figure lit l’offre sous deux angles : le ratio « X % de l’infrastructure routière » — la longueur cyclable rapportée au réseau routier du territoire — et les barres protégé / partagé en kilomètres pour 1 000 habitants, la composition de l’offre entre l’espace séparé du trafic motorisé (pistes, voies vertes, CVCB, aménagements mixtes piéton-vélo) et l’espace partagé (bandes, doubles sens, vélos rues, couloirs bus+vélo). Le réseau est défini par l’enum complet du schéma national : PISTE CYCLABLE, BANDE CYCLABLE, DOUBLE SENS CYCLABLE PISTE, DOUBLE SENS CYCLABLE BANDE, DOUBLE SENS CYCLABLE NON MATERIALISE, VOIE VERTE, VELO RUE, COULOIR BUS+VELO, CHAUSSEE A VOIE CENTRALE BANALISEE, ACCOTEMENT REVETU HORS CVCB, AMENAGEMENT MIXTE PIETON VELO HORS VOIE VERTE, GOULOTTE, RAMPE et AUTRE (AUCUN marque le côté sans aménagement). La longueur suit la règle de l’ADR-0016 : chaque segment contribue une fois par direction qu’il sert — une piste bidirectionnelle compte deux fois — et chaque segment aboutit dans exactement une commune, celle du côté porteur de l’aménagement (le côté gauche gagne quand le droit est vide ; le côté droit départage quand les deux portent). Pour le ratio, les deux longueurs comparées suivent la même convention de géométrie unique — chaque segment compté une fois, quel que soit le sens : la comparaison avec le réseau routier ne gonfle jamais le numérateur. Une limite de source est documentée, jamais dissimulée : le jeu dérive de la cartographie participative OpenStreetMap, dont la couverture est hétérogène dans le rural breton (docs/research/openstreetmap.md §1.6) — les communes peu cartographiées voient leur offre sous-estimée. La figure est limitée par sa plus lente horloge : sa source de référence est l’extrait OpenStreetMap (le réseau routier du dénominateur), jamais le snapshot Geovelo frais — le décalage entre les deux horloges est un fait de première classe, documenté sur la fiche.',
+        unite: 'km',
+        source:
+          'Geovelo \u2014 Am\u00e9nagements cyclables France M\u00e9tropolitaine (sch\u00e9ma national v0.3.5, ODbL \u2014 \u00a9 OpenStreetMap contributors, ADR-0001)',
+        sourceId: 'amenagements_cyclables',
+      },
       iso_alimentation: {
         label: 'Part des bâtiments sans accès à l’alimentation',
         definition:
@@ -501,6 +510,27 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       ],
       declencheur:
         'Le thème se recalcule à la main, sur décision — jamais automatiquement : quand l’une de ses données de référence bouge de façon significative (un nouveau millésime d’équipements, une actualisation majeure des réseaux ou des bâtiments), l’analyse est re-générée, figée à sa nouvelle date d’instantané, puis re-portée dans le pipeline. La date publiée est celle de l’instantané : le thème ne prétend jamais être plus frais que son calcul.',
+    },
+    deuxHorloges: {
+      consommation:
+        'La figure « L’offre cyclable » vit sur DEUX horloges, et le thème le dit (la promesse de transparence des deux horloges, jamais effacée) : l’offre vélo — le numérateur du ratio — sur l’horloge fraîche du jeu Geovelo « Aménagements cyclables » (snapshots mensuels), le réseau routier — le dénominateur du « X % de l’infrastructure routière » — sur l’horloge lente de l’extrait OpenStreetMap. Le ratio est limité par sa plus lente horloge : la source de référence est l’extrait OpenStreetMap, jamais le snapshot Geovelo frais — le décalage entre les deux est un fait de première classe, jamais dissimulé.',
+      entrees: [
+        {
+          donnee:
+            'L’offre vélo — le numérateur du ratio (le jeu Geovelo « Aménagements cyclables »)',
+          frequence: 'mensuelle — un snapshot du jeu publié chaque mois',
+          reference: 'snapshot 2026-08 (la date du fichier épinglé par le pipeline)',
+        },
+        {
+          donnee:
+            'Le réseau routier — le dénominateur du ratio (l’extrait OpenStreetMap de Bretagne)',
+          frequence:
+            'l’extrait est reconstruit chaque jour, mais le pipeline le fige sur un rythme lent',
+          reference: 'extrait du 5 août 2026',
+        },
+      ],
+      declencheur:
+        'La figure se recalcule quand l’une des deux horloges bouge, mais le vintage publié est celui de sa source de référence — la plus lente : l’extrait OpenStreetMap (le dénominateur routier). Le ratio ne prétend jamais être plus frais que son dénominateur, même quand l’offre vélo Geovelo est plus récente.',
     },
   },
 

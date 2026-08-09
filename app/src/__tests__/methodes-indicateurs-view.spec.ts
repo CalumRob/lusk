@@ -158,6 +158,37 @@ describe('MethodologieView — la section « les indicateurs »', () => {
     }
   })
 
+  it('rend la figure « L\u2019offre cyclable » dans le bloc mobilité — la documentation de la règle (issue #233)', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#mobilite')
+    expect(bloc.exists()).toBe(true)
+    const figure = THEMES_METHODES.mobilite.indicateurs.offre_cyclable
+    expect(figure).toBeDefined()
+    const blocFigure = bloc.find('.bloc-indicateur[data-clef="offre_cyclable"]')
+    expect(blocFigure.exists(), '« mobilite.offre_cyclable » non rendue').toBe(true)
+    expect(blocFigure.text()).toContain(figure!.label)
+    expect(blocFigure.text()).toContain(figure!.definition)
+    expect(blocFigure.text()).toContain(figure!.source)
+    expect(blocFigure.text()).toContain('km')
+  })
+
+  it('documente les deux horloges du ratio dans le bloc mobilité — fait de première classe (issue #233)', async () => {
+    const wrapper = await monter(async () => payload)
+
+    const bloc = wrapper.find('section#indicateurs article#mobilite')
+    expect(bloc.exists()).toBe(true)
+    const texte = bloc.text()
+    const horloges = THEMES_METHODES.mobilite.deuxHorloges
+    expect(horloges).toBeDefined()
+    expect(texte).toContain('Les horloges du thème')
+    expect(texte).toContain(horloges!.consommation)
+    expect(texte).toContain(horloges!.declencheur)
+    for (const entree of horloges!.entrees) {
+      expect(texte).toContain(entree.donnee)
+    }
+  })
+
   it('marque la Story en pause comme non publiée, jamais comme une Story active', async () => {
     const wrapper = await monter(async () => payload)
 
