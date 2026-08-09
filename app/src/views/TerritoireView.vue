@@ -127,8 +127,6 @@ watch(
         <nav class="fil-ariane" aria-label="Fil d’ariane">
           <RouterLink to="/">Accueil</RouterLink>
           <AppIcon :icone="ChevronRight" :taille="14" class="fil-ariane-separateur" />
-          <span>Données</span>
-          <AppIcon :icone="ChevronRight" :taille="14" class="fil-ariane-separateur" />
           <RouterLink
             v-if="listeLien"
             :to="listeLien.chemin"

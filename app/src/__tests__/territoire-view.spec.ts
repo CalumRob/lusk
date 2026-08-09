@@ -121,7 +121,7 @@ describe('TerritoireView — l’en-tête de la fiche', () => {
 
     const fil = wrapper.find('.fil-ariane')
     expect(fil.text()).toContain('Accueil')
-    expect(fil.text()).toContain('Données')
+    expect(fil.text()).not.toContain('Données')
     expect(fil.text()).toContain('Les communes')
     expect(fil.find('a[href="/"]').exists()).toBe(true)
     expect(fil.find('a[href="/communes"]').exists()).toBe(true)

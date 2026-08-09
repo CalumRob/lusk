@@ -117,15 +117,22 @@ describe('ListeTerritoires — chargement, erreur, vide', () => {
 })
 
 describe('ListeTerritoires — l’en-tête', () => {
-  it('renders the breadcrumb Accueil / Données / Les communes and the H1', async () => {
+  it('renders the breadcrumb Accueil / Les communes and the H1', async () => {
     const { wrapper } = await monter('/communes', chargerAvec(payloadDemographie))
 
     const fil = wrapper.find('.fil-ariane')
     expect(fil.text()).toContain('Accueil')
-    expect(fil.text()).toContain('Données')
+    expect(fil.text()).not.toContain('Données')
     expect(fil.text()).toContain('Les communes')
     expect(fil.find('a[href="/"]').exists()).toBe(true)
     expect(wrapper.find('h1').text()).toBe('Les communes')
+  })
+
+  it('keeps the actions layout inside table cells', async () => {
+    const { wrapper } = await monter('/communes', chargerAvec(payloadDemographie))
+
+    expect(wrapper.find('thead .colonne-actions').element.tagName).toBe('TH')
+    expect(wrapper.find('tbody .colonne-actions-contenu').exists()).toBe(true)
   })
 })
 

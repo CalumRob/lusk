@@ -183,8 +183,6 @@ function choisirEpci(code: string): void {
         <nav class="fil-ariane" aria-label="Fil d’ariane">
           <RouterLink to="/">Accueil</RouterLink>
           <AppIcon :icone="ChevronRight" :taille="14" class="fil-ariane-separateur" />
-          <span>Données</span>
-          <AppIcon :icone="ChevronRight" :taille="14" class="fil-ariane-separateur" />
           <span aria-current="page">{{ config.titre }}</span>
         </nav>
 
@@ -268,8 +266,10 @@ function choisirEpci(code: string): void {
                 <template v-else>{{ valeurCellule(t, col.cle) }}</template>
               </td>
               <td class="colonne-actions">
-                <RouterLink :to="cheminFiche(t)" class="action">Voir la fiche</RouterLink>
-                <RouterLink to="/carte" class="action">Explorer sur la carte</RouterLink>
+                <div class="colonne-actions-contenu">
+                  <RouterLink :to="cheminFiche(t)" class="action">Voir la fiche</RouterLink>
+                  <RouterLink to="/carte" class="action">Explorer sur la carte</RouterLink>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -509,6 +509,10 @@ function choisirEpci(code: string): void {
 }
 
 .colonne-actions {
+  text-align: right;
+}
+
+.colonne-actions-contenu {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-4);
