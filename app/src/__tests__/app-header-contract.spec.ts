@@ -30,6 +30,20 @@ function regle(selecteur: string): string {
   return match[1]
 }
 
+function blocMedia(maxWidth: string): string {
+  const debut = source.indexOf(`@media (max-width: ${maxWidth}) {`)
+  if (debut === -1) throw new Error(`media query introuvable : max-width: ${maxWidth}`)
+  let profondeur = 0
+  for (let i = debut; i < source.length; i++) {
+    if (source[i] === '{') profondeur++
+    else if (source[i] === '}') {
+      profondeur--
+      if (profondeur === 0) return source.slice(debut, i + 1)
+    }
+  }
+  throw new Error('media query non fermée')
+}
+
 describe('#80 — la navigation du header est centrée entre le logo et le bouton Contact', () => {
   it('fait de la nav un élément flex qui absorbe l’espace libre (flex: 1), centré par justify-content', () => {
     const nav = regle('\\.nav-bureau')
@@ -69,6 +83,29 @@ describe('#205 — le tiroir mobile est hors du header (contenant bloc du backdr
   it('garde le flou d’arrière-plan (backdrop-filter) sur le chrome du header — inchangé au desktop', () => {
     const enTete = regle('\\.en-tete')
     expect(enTete).toContain('backdrop-filter')
+  })
+})
+
+describe('#270 — le panneau de recherche est hors du header (contenant bloc du backdrop-filter)', () => {
+  it('rend le panneau (#recherche-superposee) en dehors de l’élément <header> — le même piège que #205, latent sur le panneau desktop : le `backdrop-filter` de .en-tete en ferait un contenant bloc et réduirait `position: fixed; left: 0; right: 0` à la boîte du header', () => {
+    const finHeader = source.indexOf('</header>')
+    const panneau = source.indexOf('id="recherche-superposee"')
+
+    expect(finHeader).toBeGreaterThan(-1)
+    expect(panneau).toBeGreaterThan(-1)
+    expect(finHeader).toBeLessThan(panneau)
+  })
+
+  it('garde le panneau en fixed sous le header : `position: fixed` + `top: var(--header-height)` — la position reste inchangée une fois sibling (le header garde `position: sticky; top: 0`)', () => {
+    const panneau = regle('\\.recherche-superposee')
+    expect(panneau).toContain('position: fixed')
+    expect(panneau).toContain('top: var(--header-height)')
+    expect(panneau).toContain('left: 0')
+    expect(panneau).toContain('right: 0')
+  })
+
+  it('masque le panneau sur mobile — sorti du header, il n’est plus couvert par le `display: none` de .en-tete-recherche (<768px) : le panneau est desktop-only, la recherche mobile vit dans le tiroir', () => {
+    expect(blocMedia('767.98px')).toMatch(/\.recherche-superposee\s*\{\s*display:\s*none\s*;\s*\}/)
   })
 })
 

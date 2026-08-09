@@ -13,8 +13,8 @@
  * the mobile drawer.
  *
  * Mobile (<768px): full-screen drawer — transform-only, scroll-lock, focus
- * trap, Escape closes. Données is a small disclosure dropdown to the three
- * lists (site-map.md: « may be a small dropdown »).
+ * trap, Escape closes. Données renders as a non-link group label with the
+ * three lists nested beneath it (desktop keeps the disclosure dropdown).
  *
  * #205: the drawer is a sibling of <header>, never a child — the header's
  * backdrop-filter would become the containing block for its `position:
@@ -43,12 +43,6 @@ const SOUS_LIENS_DONNEES = [
   { label: 'Les communes', chemin: '/communes' },
   { label: 'Les EPCI', chemin: '/epcis' },
   { label: 'Les départements', chemin: '/departements' },
-] as const
-
-const LIENS_TIROIR = [
-  { label: 'Carte', chemin: '/carte' },
-  { label: 'Données', chemin: '/communes' },
-  { label: 'Méthodes', chemin: '/methodologie' },
 ] as const
 
 function correspond(prefixes: readonly string[], chemin: string): boolean {
@@ -103,9 +97,12 @@ function fermerRecherche(rendreFocus = true): void {
 }
 
 function fermerRechercheHors(ev: Event): void {
-  if (conteneurRecherche.value && !conteneurRecherche.value.contains(ev.target as Node)) {
-    fermerRecherche()
-  }
+  const cible = ev.target as Node
+  const dansBouton = conteneurRecherche.value?.contains(cible) ?? false
+  // #270: the panel is now a sibling of the header — `conteneurRecherche` no
+  // longer wraps it, so a click inside the panel must count as "inside".
+  const dansPanneau = panneauRecherche.value?.contains(cible) ?? false
+  if (!dansBouton && !dansPanneau) fermerRecherche()
 }
 
 function surToucheRecherche(ev: KeyboardEvent): void {
@@ -256,23 +253,6 @@ onUnmounted(() => {
           <AppIcon :icone="Search" :taille="18" />
           Rechercher
         </button>
-
-        <div
-          v-if="rechercheOuverte"
-          id="recherche-superposee"
-          ref="panneauRecherche"
-          class="recherche-superposee"
-        >
-          <div class="recherche-superposee-interieur">
-            <GlobalSearchBar
-              class="recherche-superposee-barre"
-              :territoires="territoires"
-              :chargement="chargement"
-              :erreur="messageErreur"
-              @select="fermerRecherche(); fermer()"
-            />
-          </div>
-        </div>
       </div>
 
       <a
@@ -299,6 +279,29 @@ onUnmounted(() => {
       </button>
     </div>
   </header>
+
+  <!-- #270: the desktop search overlay is a SIBLING of the header for the same
+       reason as the drawer (#205) — the header's backdrop-filter would make it
+       the containing block for this `position: fixed` panel, so `left: 0;
+       right: 0` would resolve against the 60px header box instead of the
+       viewport. A sibling keeps it viewport-sized, full-width under the
+       header. -->
+  <div
+    v-if="rechercheOuverte"
+    id="recherche-superposee"
+    ref="panneauRecherche"
+    class="recherche-superposee"
+  >
+    <div class="recherche-superposee-interieur">
+      <GlobalSearchBar
+        class="recherche-superposee-barre"
+        :territoires="territoires"
+        :chargement="chargement"
+        :erreur="messageErreur"
+        @select="fermerRecherche(); fermer()"
+      />
+    </div>
+  </div>
 
   <!-- #205: the drawer is a SIBLING of the header, never a child. The header's
        backdrop-filter would otherwise become the containing block for this
@@ -334,13 +337,11 @@ onUnmounted(() => {
       />
     </div>
     <nav class="nav-tiroir" aria-label="Navigation principale">
-      <RouterLink
-        v-for="lien in LIENS_TIROIR"
-        :key="lien.chemin"
-        :to="lien.chemin"
-        class="tiroir-lien"
-        @click="fermer()"
-      >{{ lien.label }}</RouterLink>
+      <RouterLink to="/carte" class="tiroir-lien" @click="fermer()">Carte</RouterLink>
+
+      <!-- Données is a non-link group label in the drawer (never a deep link to
+           /communes) — the three lists sit directly beneath it. -->
+      <span class="tiroir-lien tiroir-groupe-titre">Données</span>
       <RouterLink
         v-for="sous in SOUS_LIENS_DONNEES"
         :key="sous.chemin"
@@ -348,6 +349,8 @@ onUnmounted(() => {
         class="tiroir-lien tiroir-lien--sous"
         @click="fermer()"
       >{{ sous.label }}</RouterLink>
+
+      <RouterLink to="/methodologie" class="tiroir-lien" @click="fermer()">Méthodes</RouterLink>
       <a
         class="tiroir-lien"
         href="https://calumrobertson.fr"
@@ -594,6 +597,13 @@ onUnmounted(() => {
     display: none;
   }
 
+  /* #270: the panel is a header sibling now, so .en-tete-recherche's
+     display: none no longer covers it — hide it explicitly (mobile search
+     lives in the drawer). */
+  .recherche-superposee {
+    display: none;
+  }
+
   .bouton-contact {
     display: none;
   }
@@ -675,6 +685,14 @@ onUnmounted(() => {
   padding-left: var(--space-10);
   font: var(--text-body);
   color: var(--text-secondary);
+}
+
+/* The drawer's « Données » is a section label, not a link — muted, sm, semibold
+   so the three lists read as nested under it. */
+.tiroir-groupe-titre {
+  color: var(--text-tertiary);
+  font: var(--text-body-sm);
+  font-weight: 600;
 }
 
 .tiroir-lien:hover {
