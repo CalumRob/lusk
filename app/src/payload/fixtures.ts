@@ -473,9 +473,53 @@ const vintageStationnementVeloMobilite = {
   vintage_date_publication: '2026-02-03',
 }
 
-/** Les ONZE clés du thème (INDICATEURS_MOBILITE) : la « Taille », les 5 parts
+/**
+ * La figure « L'offre cyclable » (issue #232, PRD #226) — la clé multi-mesures
+ * du sous-bloc : les longueurs protégé/partagé/total (km, GÉOMÉTRIE UNIQUE —
+ * la convention du ratio, ADR-0016) et les km / 1 000 hab précomputés. Les
+ * valeurs : la région porte les chiffres verrouillés par l'e2e de #231
+ * (protégé 3 290,5 + partagé 1 622,7 = total 4 913,2 km ; 0,961333 /
+ * 0,474091 km / 1 000 hab), l'EPCI et le département des valeurs réalistes
+ * (total = protégé + partagé, la somme exacte du pipeline), et la commune
+ * 22001 porte le ZÉRO — le fait de la commune sans aménagement, jamais une
+ * ligne manquante, jamais supprimée. L'estampille est celle de la source de
+ * référence osm_reseaux (l'horloge lente du ratio, #226 US6). Le ratio
+ * « X % de l'infrastructure routière » n'est PAS dans le payload : l'app le
+ * dérive des lignes existantes (total_longueur ÷ reseaux.c_longueur — la
+ * règle du « dans l'EPCI : X % » d'ADR-0015, jamais une seconde mesure).
+ */
+export const indicateursOffreCyclableFixture: Indicateur[] = [
+  // ---- 22001 — la commune SANS aménagement : le zéro porté (un fait)
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_longueur', value: 0, unit: 'km', rang_epci: 0.05, rang_dep: 0.05, rang_reg: 0.05, ...vintageReseauxMobilite },
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_km_1000', value: 0, unit: 'km / 1 000 hab', rang_epci: 0.05, rang_dep: 0.05, rang_reg: 0.05, ...vintageReseauxMobilite },
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_longueur', value: 0, unit: 'km', rang_epci: 0.05, rang_dep: 0.05, rang_reg: 0.05, ...vintageReseauxMobilite },
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_km_1000', value: 0, unit: 'km / 1 000 hab', rang_epci: 0.05, rang_dep: 0.05, rang_reg: 0.05, ...vintageReseauxMobilite },
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 0, unit: 'km', rang_epci: 0.05, rang_dep: 0.05, rang_reg: 0.05, ...vintageReseauxMobilite },
+  // ---- l'EPCI X — des valeurs réalistes (total = protégé + partagé)
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_longueur', value: 21.4, unit: 'km', rang_epci: null, rang_dep: 0.6, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_km_1000', value: 0.764, unit: 'km / 1 000 hab', rang_epci: null, rang_dep: 0.6, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_longueur', value: 12.8, unit: 'km', rang_epci: null, rang_dep: 0.6, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_km_1000', value: 0.457, unit: 'km / 1 000 hab', rang_epci: null, rang_dep: 0.6, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 34.2, unit: 'km', rang_epci: null, rang_dep: 0.6, rang_reg: 0.5, ...vintageReseauxMobilite },
+  // ---- le département 22
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_longueur', value: 412.3, unit: 'km', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_km_1000', value: 0.681, unit: 'km / 1 000 hab', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_longueur', value: 187.9, unit: 'km', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_km_1000', value: 0.311, unit: 'km / 1 000 hab', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageReseauxMobilite },
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 600.2, unit: 'km', rang_epci: null, rang_dep: null, rang_reg: 0.5, ...vintageReseauxMobilite },
+  // ---- la région 53 — les valeurs verrouillées de l'e2e #231
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_longueur', value: 3290.494, unit: 'km', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'protege_km_1000', value: 0.961333, unit: 'km / 1 000 hab', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_longueur', value: 1622.739, unit: 'km', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'partage_km_1000', value: 0.474091, unit: 'km / 1 000 hab', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 4913.233, unit: 'km', rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
+]
+
+/** Les DOUZE clés du thème (INDICATEURS_MOBILITE) : la « Taille », les 5 parts
  * d'isolation de la grille, l'étage demande/réseaux et le sous-bloc — valeurs
- * réelles du payload reshapé, une ligne par (territoire × key × detail). */
+ * réelles du payload reshapé, une ligne par (territoire × key × detail), plus
+ * la clé multi-mesures « L'offre cyclable » (issue #232, les lignes
+ * d'indicateursOffreCyclableFixture). */
 export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'nb_buildings', detail: null, value: 168, unit: "bâtiments", rang_epci: 0.0789473684210526, rang_dep: 0.151162790697674, rang_reg: 0.0941666666666667, ...vintageSnapshotMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0, unit: "%", rang_epci: 0.289473684210526, rang_dep: 0.216569767441860, rang_reg: 0.160833333333333, ...vintageOffreTcMobilite },
@@ -545,6 +589,9 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 'c_longueur', value: 101353.736321719, unit: "km", rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 't_densite', value: 0.245309603230585, unit: "km/km²", rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 't_longueur', value: 6732.87001274969, unit: "km", rang_epci: null, rang_dep: null, rang_reg: null, ...vintageReseauxMobilite },
+  // la douzième clé du thème (issue #232) : la figure « L'offre cyclable » du
+  // sous-bloc — 5 mesures par territoire (indicateursOffreCyclableFixture)
+  ...indicateursOffreCyclableFixture,
 ]
 
 /** Les Stories Mobilité (issue #142) — le défaut « vingt-minutes-sans-voiture »

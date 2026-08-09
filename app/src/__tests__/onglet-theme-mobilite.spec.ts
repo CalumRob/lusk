@@ -44,7 +44,7 @@ async function monter(territoire: string, payload: Payload = payloadMobilite) {
 }
 
 describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-bloc)', () => {
-  it('renders the theme overline and the 11 figures in block order', async () => {
+  it('renders the theme overline and the 12 figures in block order', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
@@ -61,6 +61,7 @@ describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',
+      'offre_cyclable',
     ])
   })
 
@@ -128,6 +129,7 @@ describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',
+      'offre_cyclable',
     ])
   })
 
@@ -222,7 +224,68 @@ describe('OngletTheme — the Mobilité Story angle', () => {
       .findAllComponents(RouterLinkStub)
       .find((l) => l.props('to') === '/methodologie')
     expect(methodes).toBeTruthy()
-    expect(wrapper.findAll('.figure-indicateur')).toHaveLength(11)
+    expect(wrapper.findAll('.figure-indicateur')).toHaveLength(12)
+  })
+})
+
+describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () => {
+  it("renders the headline « X % de l'infrastructure routière » — computed app-side from the payload rows", async () => {
+    // la région 53 : 4 913,233 km ÷ 101 353,736 km ≈ 4,8 % (l'e2e #231)
+    const wrapper = await monter('53')
+
+    const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
+    expect(figure.exists()).toBe(true)
+    expect(figure.find('.valeur-numerique').text()).toBe('4,8 %')
+    expect(figure.text()).toContain('de l’infrastructure routière')
+  })
+
+  it('renders the protégé vs partagé bars in km / 1 000 hab with their labels', async () => {
+    const wrapper = await monter('53')
+
+    const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
+    expect(figure.text()).toContain('Protégé')
+    expect(figure.text()).toContain('Partagé')
+    expect(figure.text()).toContain('0,96')
+    expect(figure.text()).toContain('0,47')
+    expect(figure.text()).toContain('km / 1 000 hab')
+    expect(figure.find('.barre-segmentee').exists()).toBe(true)
+    expect(figure.findAll('.barre-segment')).toHaveLength(2)
+  })
+
+  it('shows 0 for a commune at 0 km — never an absent figure, never « à venir »', async () => {
+    const wrapper = await monter('22001')
+
+    const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
+    expect(figure.exists()).toBe(true)
+    expect(figure.find('.valeur-numerique').text()).toBe('0 %')
+    expect(figure.text()).toContain('de l’infrastructure routière')
+    expect(figure.text()).not.toContain('à venir')
+  })
+
+  it('keeps its vintage stamp (osm_reseaux) and its per-detail ranks as labels', async () => {
+    const wrapper = await monter('22001')
+
+    const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
+    // l'estampille de la source de référence osm_reseaux (l'horloge lente)
+    expect(figure.find('.estampille-vintage').text()).toContain(
+      'OpenStreetMap — réseaux routier/cyclable/piéton',
+    )
+    // le rang PAR DÉTAIL, comme un label (jamais merge) — la commune 22001
+    // porte rang_epci 0,05 → P5 de l'EPCI
+    expect(figure.findAll('.puce-rang')).toHaveLength(2)
+    expect(figure.findAll('.puce-rang').map((p) => p.text())).toEqual([
+      "P5 de l'EPCI",
+      "P5 de l'EPCI",
+    ])
+  })
+
+  it("reads the c network denominator from the SAME territory (la règle « dans l'EPCI : X % »)", async () => {
+    // l'EPCI X : 34,2 km ÷ 1 140,338 km ≈ 3 %
+    const wrapper = await monter('200000001')
+
+    const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
+    expect(figure.find('.valeur-numerique').text()).toBe('3 %')
+    expect(figure.text()).toContain('de l’infrastructure routière')
   })
 })
 

@@ -15,6 +15,7 @@ import {
   indicateursGroupeesPourTerritoire,
   indicateursPourTerritoire,
   nuageMobilite,
+  ratioOffreCyclable,
 } from '../payload/selectors'
 import type { HistoireMobilite, Payload } from '../payload/types'
 
@@ -38,7 +39,7 @@ const payloadMobilite: Payload = {
 }
 
 describe('indicateursPourTerritoire — the Mobilité block in contract order', () => {
-  it('returns the 11 keys in the block order (Taille → grille → demande/réseaux → sous-bloc)', () => {
+  it('returns the 12 keys in the block order (Taille → grille → demande/réseaux → sous-bloc)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     expect(groupes.map((g) => g.key)).toEqual([
@@ -53,6 +54,7 @@ describe('indicateursPourTerritoire — the Mobilité block in contract order', 
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',
+      'offre_cyclable',
     ])
   })
 
@@ -76,6 +78,7 @@ describe('indicateursPourTerritoire — the Mobilité block in contract order', 
         'offre_tc',
         'bornes_recharge',
         'places_stationnement_velo_1000',
+        'offre_cyclable',
       ])
     }
   })
@@ -94,7 +97,7 @@ describe('indicateursPourTerritoire — the Mobilité block in contract order', 
     expect(grille.map((l) => formaterValeur(l))).toEqual(['100', '100', '64', '100', '100'])
   })
 
-  it('keeps the multi-detail keys as one key (voitures_menage ×2, reseaux ×6)', () => {
+  it('keeps the multi-detail keys as one key (voitures_menage ×2, reseaux ×6, offre_cyclable ×5)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     const voitures = groupes.find((g) => g.key === 'voitures_menage')
@@ -108,6 +111,46 @@ describe('indicateursPourTerritoire — the Mobilité block in contract order', 
       't_densite',
       't_longueur',
     ])
+    const cyclable = groupes.find((g) => g.key === 'offre_cyclable')
+    expect(cyclable?.lignes.map((l) => l.detail)).toEqual([
+      'protege_longueur',
+      'protege_km_1000',
+      'partage_longueur',
+      'partage_km_1000',
+      'total_longueur',
+    ])
+  })
+})
+
+describe("ratioOffreCyclable — le headline « X % de l'infrastructure routière » (issue #232)", () => {
+  const groupes = (territoire: string) =>
+    indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', territoire)
+
+  it('derives the ratio app-side: total_longueur ÷ reseaux.c_longueur (the ADR-0015 seam)', () => {
+    const cyclable = groupes('53').find((g) => g.key === 'offre_cyclable')?.lignes ?? []
+    const reseaux = groupes('53').find((g) => g.key === 'reseaux')?.lignes ?? []
+
+    // 4 913,233 km ÷ 101 353,736 km ≈ 0,0485 — le chiffre verrouillé de l'e2e #231
+    expect(ratioOffreCyclable(cyclable, reseaux)).toBeCloseTo(0.0485, 4)
+  })
+
+  it('returns 0 for a commune at 0 km — the figure shows 0, never suppressed', () => {
+    const cyclable = groupes('22001').find((g) => g.key === 'offre_cyclable')?.lignes ?? []
+    const reseaux = groupes('22001').find((g) => g.key === 'reseaux')?.lignes ?? []
+
+    expect(ratioOffreCyclable(cyclable, reseaux)).toBe(0)
+  })
+
+  it('returns null when the c network row is absent (honest « — », never an invented ratio)', () => {
+    const cyclable = groupes('22001').find((g) => g.key === 'offre_cyclable')?.lignes ?? []
+
+    expect(ratioOffreCyclable(cyclable, [])).toBeNull()
+  })
+
+  it('returns null when the offre_cyclable rows are absent', () => {
+    const reseaux = groupes('22001').find((g) => g.key === 'reseaux')?.lignes ?? []
+
+    expect(ratioOffreCyclable([], reseaux)).toBeNull()
   })
 })
 

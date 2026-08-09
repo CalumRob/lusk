@@ -32,6 +32,12 @@ export const NOMS_INDICATEURS: Record<Theme, Record<string, string>> = {
     offre_tc: 'Part des bâtiments près d’un arrêt (à 500 m)',
     bornes_recharge: 'Bornes de recharge pour véhicules électriques',
     places_stationnement_velo_1000: 'Places de stationnement vélo pour 1 000 hab.',
+    // La figure « L'offre cyclable » (issue #232, PRD #226) : le headline
+    // « X % de l'infrastructure routière » est dérivé app-side depuis les
+    // lignes du payload (offre_cyclable.total_longueur ÷ reseaux.c_longueur —
+    // le seam « dans l'EPCI : X % » d'ADR-0015), la clé ne porte que le
+    // libellé du sous-bloc.
+    offre_cyclable: 'L’offre cyclable',
   },
   habitat: {},
   // Économie (issue #121, forme reshapée) : le bloc est 3 indicateurs — taille
@@ -86,4 +92,18 @@ export const NOMS_DETAILS_RESEAUX: Record<string, string> = {
 export const NOMS_DETAILS_VOITURES_MENAGE: Record<string, string> = {
   sans_voiture: 'Ménages sans voiture',
   deux_plus: 'Ménages avec 2 voitures ou plus',
+}
+
+/**
+ * The offre_cyclable detail labels (issue #232) — the protégé/partagé bars of
+ * the « L'offre cyclable » figure. The two displayed measures are the
+ * km/1 000 hab (the bars); the raw longueurs are computation material (they
+ * feed the headline ratio), still labelled by the contract vocabulary.
+ */
+export const NOMS_DETAILS_OFFRE_CYCLABLE: Record<string, string> = {
+  protege_longueur: 'Longueur protégée',
+  protege_km_1000: 'Protégé',
+  partage_longueur: 'Longueur partagée',
+  partage_km_1000: 'Partagé',
+  total_longueur: 'Longueur totale',
 }
