@@ -91,7 +91,8 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$geometrie_cible_vue <- cible
       invisible(NULL)
     },
-    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL) {
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
+                                  couverture = NULL) {
       appels$rapport_statuts_vus <- statuts
       appels$rapport_mode_vu <- mode
       appels$rapport_cible_vue <- cible
@@ -184,7 +185,8 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     vintages_demographie = function() faux_vintages,
     compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
-    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL)
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
+                                  couverture = NULL)
       invisible(NULL),
     .package = "lusk"
   )
@@ -198,6 +200,59 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
 
   run_pipeline()
   expect_equal(mode_vu, "full")
+})
+
+test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapport (issue #233)", {
+  # le seam d'entrée porte la couverture (la Mobilité via son orchestrateur
+  # Geovelo) — le run la transmet telle quelle au rapport, un fait de première
+  # classe du run, distinct des statuts par source
+  couverture <- tibble::tibble(
+    departement = c("22", "29", "35", "56"),
+    lignes_actuel = c(100, 200, 300, 400),
+    km_actuel = c(10, 20, 30, 40),
+    lignes_precedent = c(100, 200, 300, 400),
+    km_precedent = c(10, 20, 30, 40),
+    regression = c(FALSE, FALSE, FALSE, FALSE)
+  )
+  recu <- NULL
+  faux_statuts <- tibble::tibble(
+    id = "amenagements_cyclables", mode = "cron", status = "frais"
+  )
+  faux_vintages <- tibble::tibble(
+    id = "amenagements_cyclables",
+    source = "Geovelo — Aménagements cyclables France Métropolitaine",
+    version = "2026-08",
+    licence = "odbl",
+    date_reference = "2026-08-07",
+    date_publication = "2026-08-07"
+  )
+
+  local_mocked_bindings(
+    download_sources = function(manifest, cache, mode) faux_statuts,
+    construire_donnees_brut = function(cache) list(couverture = couverture),
+    vintages_demographie = function() faux_vintages,
+    compute_payload = function(data, theme = NULL, vintages = NULL) list(),
+    publish = function(payload, cible, backend = NULL) invisible(payload),
+    publier_geometrie = function(cible = "public/data", fetch = NULL)
+      invisible(NULL),
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
+                                  couverture = NULL) {
+      recu <<- couverture
+      invisible(NULL)
+    },
+    .package = "lusk"
+  )
+  local_mocked_bindings(
+    write_parquet = function(x, file) invisible(NULL),
+    .package = "nanoparquet"
+  )
+  local_mocked_bindings(
+    write_json = function(x, path, ...) invisible(NULL),
+    .package = "jsonlite"
+  )
+
+  run_pipeline()
+  expect_identical(recu, couverture)
 })
 
 test_that("un échec cron écrit le rapport de run avant l'arrêt bruyant", {
@@ -215,7 +270,8 @@ test_that("un échec cron écrit le rapport de run avant l'arrêt bruyant", {
     download_sources = function(manifest, cache, mode) {
       stop(erreur_telechargement(statuts_echec, "https://example.invalid/epci.zip"))
     },
-    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL) {
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
+                                  couverture = NULL) {
       ecrit <<- list(statuts = statuts, mode = mode, cible = cible)
       invisible(NULL)
     },

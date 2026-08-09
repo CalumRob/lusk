@@ -335,7 +335,8 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
     },
     publish = function(payload, cible, backend = "static") invisible(payload),
     publier_geometrie = function(cible = "public/data", fetch = NULL) invisible(NULL),
-    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL)
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
+                                  couverture = NULL)
       invisible(NULL),
     .package = "lusk"
   )

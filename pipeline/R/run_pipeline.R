@@ -19,6 +19,10 @@
 # run et l'entrée du seam de notification. Sur un échec cron, les statuts sont
 # portés par l'erreur (issue #8) : le rapport est écrit AVANT l'arrêt bruyant,
 # pour que l'échec reste tracé.
+# Issue #233 : quand le thème porte un diagnostic de couverture (la Mobilité —
+# les lignes + km par département du snapshot Geovelo courant vs le précédent,
+# le signal de régression distinct de la porte de qualité), le rapport l'écrit
+# à côté des statuts — un fait de première classe du run, jamais un crash.
 # Issue #13 : `theme` est le descripteur du thème (theme_demographie() par
 # défaut) — le run compose les MÊMES étapes partagées avec les pièces du thème
 # (manifeste, construction des données, vintages, compute). Un thème suivant
@@ -45,6 +49,13 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   )
 
   brut <- theme$construire_donnees(cache = cache)
+
+  # Issue #233 : le diagnostic de couverture du thème (lignes + km par
+  # département, courant vs précédent) quand il le porte — NULL pour les
+  # thèmes sans diagnostic (le rapport garde sa forme historique). La lecture
+  # passe par `names` : le seam peut rendre une table (tbl_df) dont `$`
+  # dplyr lèverait une erreur sur une colonne inconnue.
+  couverture <- if ("couverture" %in% names(brut)) brut$couverture else NULL
 
   # Issue #19 : le cache du run atteint le builder de vintages du thème —
   # vintages_habitat(cache = ...) lit la date de pull des DPE (base roulante)
@@ -95,8 +106,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                        digits = 17, pretty = TRUE)
 
   # Le rapport du run réussi, écrit après la publication — il décrit un run
-  # complet.
-  ecrire_rapport_run(statuts, mode, sortie)
+  # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème
+  # le porte.
+  ecrire_rapport_run(statuts, mode, sortie, couverture = couverture)
 
   payload
 }

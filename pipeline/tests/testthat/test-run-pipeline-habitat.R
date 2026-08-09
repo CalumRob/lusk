@@ -44,7 +44,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
            histoires = data.frame(y = 2),
            territoires = data.frame(territoire = "53", nom = "Bretagne")),
     publish = function(payload, cible, backend = NULL) invisible(payload),
-    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL)
+    ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
+                                  couverture = NULL)
       invisible(NULL),
     .package = "lusk"
   )

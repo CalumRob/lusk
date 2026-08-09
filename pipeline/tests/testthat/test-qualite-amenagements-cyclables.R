@@ -39,6 +39,26 @@ mappe_test <- function() {
   )
 }
 
+# fixture_couverture ----------------------------------------------------------
+# Un snapshot breton sf minimal pour le diagnostic de couverture (issue #233) :
+# une ligne par département, segment horizontal de 0,1° (~7,4 km à 48,5°N en
+# EPSG:2154) — les formes que le diagnostic lit.
+fixture_couverture <- function() {
+  sf::st_sf(
+    id_local = c("seg_22", "seg_29", "seg_35", "seg_56"),
+    code_com_d = c("22001", "29001", "35001", "56001"),
+    code_com_g = c("22001", "29001", "35001", "56001"),
+    ame_d = "PISTE CYCLABLE", ame_g = "PISTE CYCLABLE",
+    geometry = sf::st_sfc(
+      sf::st_linestring(rbind(c(-3.0, 48.5), c(-2.9, 48.5))),
+      sf::st_linestring(rbind(c(-4.5, 48.2), c(-4.4, 48.2))),
+      sf::st_linestring(rbind(c(-1.5, 48.0), c(-1.4, 48.0))),
+      sf::st_linestring(rbind(c(-2.8, 47.7), c(-2.7, 47.7))),
+      crs = 4326
+    )
+  )
+}
+
 # normaliser_amenagements_cyclables ----------------------------------------------
 
 test_that("normaliser_amenagements_cyclables : la forme réelle → la table de calcul bretonne", {
@@ -187,11 +207,70 @@ test_that("construire_amenagements_cyclables : le succès met la table en cache 
 
   expect_equal(res$vintage, "2026-08-07")
   expect_s3_class(res$table, "sf")
+  # l'issue #233 : le succès porte aussi le diagnostic de couverture — le
+  # premier run (sans précédent) compare à NA, jamais un signal inventé
+  expect_true("couverture" %in% names(res))
+  expect_equal(res$couverture$departement, c("22", "29", "35", "56"))
+  expect_equal(res$couverture$lignes_actuel, c(n, 0L, 0L, 0L))
+  expect_true(all(is.na(res$couverture$regression)))
   # le dernier bon est en cache, avec SA date
   expect_true(file.exists(sortie))
   cache_table <- readRDS(sortie)
   expect_equal(cache_table$vintage, "2026-08-07")
   expect_equal(nrow(cache_table$table), n)
+})
+
+test_that("construire_amenagements_cyclables : le succès diagnostique le frais vs le PRÉCÉDENT (le signal, jamais le cache écrasé)", {
+  cache <- tempfile("cache-")
+  sortie <- tempfile("dernier-bon-")
+  dir.create(cache, recursive = TRUE)
+
+  # un dernier bon du mois précédent, riche en 22 (11 lignes bretonnes)
+  precedent <- list(
+    vintage = "2026-07-01",
+    table = dplyr::bind_rows(
+      fixture_couverture(),
+      sf::st_sf(
+        id_local = paste0("extra_22_", 1:10),
+        code_com_d = rep("22002", 10), code_com_g = rep("22002", 10),
+        ame_d = "BANDE CYCLABLE", ame_g = "AUCUN",
+        geometry = sf::st_sfc(lapply(seq(-3.0, -2.0, length.out = 10), function(lon) {
+          sf::st_linestring(rbind(c(lon, 48.6), c(lon + 0.01, 48.6)))
+        })),
+        crs = 4326
+      )
+    )
+  )
+  readr::write_rds(precedent, sortie)
+
+  # le frais : 22 est retombé à une seule ligne (la porte France entière
+  # passe largement — le signal est invisible pour la porte, visible pour le
+  # diagnostic)
+  n <- 12000
+  frais <- sf::st_sf(
+    id_local = c(sprintf("geovelo_%d_22001", seq_len(n))),
+    code_com_d = rep("22001", n),
+    code_com_g = rep("22001", n),
+    ame_d = rep("PISTE CYCLABLE", n), ame_g = rep("PISTE CYCLABLE", n),
+    geometry = sf::st_sfc(lapply(seq_len(n), function(i) {
+      sf::st_linestring(rbind(c(-1.5, 48.5), c(-1.5 + i / 1e6, 48.5)))
+    }), crs = 4326)
+  )
+  readr::write_rds(frais, file.path(cache, "frais.rds"))
+
+  res <- construire_amenagements_cyclables(
+    file.path(cache, "frais.rds"), sortie = sortie, vintage = "2026-08-07",
+    mappe = mappe_test(), lire = function(chemin) readRDS(chemin)
+  )
+
+  # le diagnostic a été calculé AVANT l'écrasement du cache : 29/35/56 ont
+  # disparu du frais (0 ligne) — un signal de régression par département,
+  # alors que la porte d'ensemble ne dit rien ; 22 a grandi, aucun signal
+  expect_equal(res$couverture$regression, c(FALSE, TRUE, TRUE, TRUE))
+  expect_equal(res$couverture$lignes_actuel,
+               c(n, 0L, 0L, 0L))
+  expect_equal(res$couverture$lignes_precedent,
+               c(11L, 1L, 1L, 1L))
 })
 
 test_that("construire_amenagements_cyclables : l'échec de la porte → repli sur le dernier bon, avec SON vintage", {
@@ -228,6 +307,11 @@ test_that("construire_amenagements_cyclables : l'échec de la porte → repli su
 
   expect_equal(res$vintage, "2026-07-01")  # le vintage du DERNIER BON, jamais celui du cassé
   expect_equal(nrow(res$table), 1L)
+  # l'issue #233 : le repli porte aussi le diagnostic — le publié est comparé
+  # à lui-même (la couverture publiée ne bouge pas) : aucun signal, jamais un
+  # crash ; la trace du repli reste celle du vintage retourné
+  expect_true("couverture" %in% names(res))
+  expect_false(any(res$couverture$regression))
 })
 
 test_that("construire_amenagements_cyclables : l'échec SANS dernier bon en cache est une erreur dure", {
@@ -250,4 +334,103 @@ test_that("construire_amenagements_cyclables : l'échec SANS dernier bon en cach
                                       mappe = mappe_test(), lire = lire_fixture),
     "aucun dernier bon"
   )
+})
+
+# diagnostic_couverture_amenagements --------------------------------------------
+# Le diagnostic de couverture par département (issue #233) : pour chaque
+# département breton, les LIGNES et les KM du snapshot COURANT vs le PRÉCÉDENT
+# (le dernier bon du cache) — le signal de régression DISTINCT de la porte de
+# qualité : la porte vérifie la forme d'ENSEMBLE (France entière, Bretagne non
+# vide) et s'arrête bruyamment ; le diagnostic regarde CHAQUE département — une
+# chute nette (lignes ou km qui s'effondrent) est un signal pour l'humain,
+# jamais un crash.
+
+test_that("diagnostic_couverture_amenagements : lignes + km par département, courant vs précédent — stable = aucun signal", {
+  stable <- fixture_couverture()
+  diag <- diagnostic_couverture_amenagements(stable, stable)
+
+  # les QUATRE départements bretons, triés — jamais une ligne manquante
+  expect_equal(diag$departement, c("22", "29", "35", "56"))
+  # chaque département porte ses lignes et ses km, courant et précédent
+  expect_equal(diag$lignes_actuel, c(1L, 1L, 1L, 1L))
+  expect_equal(diag$lignes_precedent, c(1L, 1L, 1L, 1L))
+  expect_true(all(diag$km_actuel > 0))
+  expect_equal(diag$km_actuel, diag$km_precedent)
+  # aucun signal quand rien ne bouge
+  expect_false(any(diag$regression))
+})
+
+test_that("diagnostic_couverture_amenagements : une chute nette des LIGNES d'un département est un signal, pas un crash", {
+  precedent <- dplyr::bind_rows(
+    fixture_couverture(),
+    # dix lignes de plus en 22 — le snapshot précédent était bien fourni là
+    sf::st_sf(
+      id_local = paste0("extra_22_", 1:10),
+      code_com_d = rep("22002", 10), code_com_g = rep("22002", 10),
+      ame_d = "BANDE CYCLABLE", ame_g = "AUCUN",
+      geometry = sf::st_sfc(lapply(seq(-3.0, -2.0, length.out = 10), function(lon) {
+        sf::st_linestring(rbind(c(lon, 48.6), c(lon + 0.01, 48.6)))
+      })),
+      crs = 4326
+    )
+  )
+  actuel <- fixture_couverture()  # 22 retombe à UNE ligne
+
+  diag <- diagnostic_couverture_amenagements(actuel, precedent)
+
+  # le département 22 a perdu 11/12 de ses lignes — le signal est levé
+  expect_equal(diag$lignes_actuel[diag$departement == "22"], 1L)
+  expect_equal(diag$lignes_precedent[diag$departement == "22"], 11L)
+  expect_true(diag$regression[diag$departement == "22"])
+  # les autres départements, inchangés — aucun signal
+  expect_false(any(diag$regression[diag$departement != "22"]))
+})
+
+test_that("diagnostic_couverture_amenagements : une chute nette des KM d'un département est un signal, jamais un crash", {
+  # le même nombre de lignes en 35, mais des segments dix fois plus courts
+  precedent <- fixture_couverture()
+  actuel <- fixture_couverture()
+  i35 <- which(actuel$code_com_d == "35001")
+  sf::st_geometry(actuel)[i35] <- sf::st_sfc(
+    sf::st_linestring(rbind(c(-1.5, 48.0), c(-1.499, 48.0)))
+  )
+
+  diag <- diagnostic_couverture_amenagements(actuel, precedent)
+
+  expect_equal(diag$lignes_actuel[diag$departement == "35"], 1L)
+  expect_true(diag$km_actuel[diag$departement == "35"] <
+                SEUIL_REGRESSION_COUVERTURE * diag$km_precedent[diag$departement == "35"])
+  expect_true(diag$regression[diag$departement == "35"])
+  expect_false(any(diag$regression[diag$departement != "35"]))
+})
+
+test_that("diagnostic_couverture_amenagements : un département ABSENT du courant porte 0 et le signal — jamais une ligne manquante", {
+  precedent <- fixture_couverture()
+  actuel <- fixture_couverture()
+  actuel <- actuel[actuel$code_com_d != "56001", ]  # 56 disparaît du courant
+
+  diag <- diagnostic_couverture_amenagements(actuel, precedent)
+
+  expect_equal(nrow(diag), 4L)  # les quatre départements restent
+  expect_equal(diag$lignes_actuel[diag$departement == "56"], 0L)
+  expect_equal(diag$lignes_precedent[diag$departement == "56"], 1L)
+  expect_true(diag$regression[diag$departement == "56"])
+})
+
+test_that("diagnostic_couverture_amenagements : le PREMIER run (sans précédent) porte le courant et NA — un signal est impossible sans base", {
+  diag <- diagnostic_couverture_amenagements(fixture_couverture())
+
+  expect_equal(diag$departement, c("22", "29", "35", "56"))
+  expect_equal(diag$lignes_actuel, c(1L, 1L, 1L, 1L))
+  expect_true(all(is.na(diag$lignes_precedent)))
+  expect_true(all(is.na(diag$km_precedent)))
+  expect_true(all(is.na(diag$regression)))
+})
+
+test_that("diagnostic_couverture_amenagements : un input non-sf s'arrête bruyamment", {
+  expect_error(diagnostic_couverture_amenagements(tibble::tibble(code_com_d = "22001")),
+               "sf")
+  expect_error(diagnostic_couverture_amenagements(fixture_couverture(),
+                                                  tibble::tibble(code_com_d = "22001")),
+               "sf")
 })
