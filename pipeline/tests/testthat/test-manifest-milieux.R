@@ -1,36 +1,41 @@
 # test-manifest-milieux ---------------------------------------------------------
-# Le manifeste du thème Milieux (issue #171, étendu par #234) : la source
-# CONSOENAF — le jeu Cerema « Consommation d'espaces naturels, agricoles et
-# forestiers du 1er janvier 2011 au 1er janvier 2025 » (data.gouv.fr, Licence
-# Ouverte 2.0, mises à jour annuelles, COG 2025) — plus la base des EPCI
+# Le manifeste du thème Milieux (issue #171, étendu par #234, amendé par #243) :
+# la source CONSOENAF — le jeu Cerema « Consommation d'espaces naturels,
+# agricoles et forestiers du 1er janvier 2011 au 1er janvier 2025 » (data.gouv.fr,
+# Licence Ouverte 2.0, mises à jour annuelles, COG 2025) — plus la base des EPCI
 # partagée (le référentiel commune -> EPCI -> département -> région que la
 # table des territoires consomme ; le même id/URL que Démographie/Habitat — le
 # cache idempotent évite le re-téléchargement), la série historique du
-# recensement (la source partagée de la population, #174) et les QUATRE
-# couches OCS-GE d'artificialisation (issue #234, spec #225) — une par
-# département breton, Licence Ouverte 2.0, chacune avec SA paire de millésimes
-# M2→M3 (22 : 2021→2025 · 29 : 2021→2024 · 35 : 2020→2023 · 56 : 2022→2024,
-# docs/research/ocs-ge.md §2.3) et SA publication. La discipline des fragments
-# (issue #13) : une ligne par source, chaque source garde SON vintage, SA
-# référence et SA publication — aucun alignement de date.
+# recensement (la source partagée de la population, #174) et les HUIT archives
+# d'état OCS-GE « surfaces artificialisées » (issue #234, amendement #243 —
+# ADR-0017 : le DIFF sort, l'ÉTAT millésimé entre) — deux millésimes par
+# département breton (22 : 2021/2025 · 29 : 2021/2024 · 35 : 2020/2023 · 56 :
+# 2022/2024), Licence Ouverte 2.0, chacune avec SA référence (le millésime) et
+# SA publication (les dates vérifiées dans l'API Géoplateforme, 2026-08-09).
+# La discipline des fragments (issue #13) : une ligne par source, chaque source
+# garde SON vintage, SA référence et SA publication — aucun alignement de date.
 
-test_that("MANIFEST_MILIEUX : les SEPT sources, les 11 colonnes standard", {
+test_that("MANIFEST_MILIEUX : les ONZE sources, les 11 colonnes standard", {
   m <- MANIFEST_MILIEUX
 
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 7L)
+  expect_equal(nrow(m), 11L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id, c("epci", "consoenaf", "serie_historique",
-                          "ocsge_artificialisation_22",
-                          "ocsge_artificialisation_29",
-                          "ocsge_artificialisation_35",
-                          "ocsge_artificialisation_56"))
+                          "ocsge_artificialisation_22_2021",
+                          "ocsge_artificialisation_22_2025",
+                          "ocsge_artificialisation_29_2021",
+                          "ocsge_artificialisation_29_2024",
+                          "ocsge_artificialisation_35_2020",
+                          "ocsge_artificialisation_35_2023",
+                          "ocsge_artificialisation_56_2022",
+                          "ocsge_artificialisation_56_2024"))
 
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
                     "date_reference", "date_publication", "licence",
                     "note", "mode", "type") %in% names(m)))
 
-  # les sept sources sont des fichiers téléchargeables en cron (des jeux
+  # les onze sources sont des fichiers téléchargeables en cron (des jeux
   # officiels ouverts — jamais un portage à la main), Licence Ouverte 2.0
   expect_true(all(m$type == "fichier"))
   expect_true(all(m$mode == "cron"))
@@ -96,12 +101,18 @@ test_that("MANIFEST_MILIEUX : la série historique du recensement est la source 
                     ignore.case = TRUE))
 })
 
-test_that("MANIFEST_MILIEUX : les quatre couches OCS-GE — une par département, la paire de millésimes de la spec, Licence Ouverte 2.0", {
-  ids <- paste0("ocsge_artificialisation_", c("22", "29", "35", "56"))
+test_that("MANIFEST_MILIEUX : les HUIT archives d'état — deux millésimes par département, le produit millésimé « surfaces artificialisées », Licence Ouverte 2.0", {
+  ids <- c(
+    paste0("ocsge_artificialisation_22_", c(2021, 2025)),
+    paste0("ocsge_artificialisation_29_", c(2021, 2024)),
+    paste0("ocsge_artificialisation_35_", c(2020, 2023)),
+    paste0("ocsge_artificialisation_56_", c(2022, 2024))
+  )
   for (id in ids) {
     ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
     expect_equal(nrow(ligne), 1L, info = id)
-    expect_true(grepl("OCS GE Artificialisation", ligne$source), info = id)
+    expect_true(grepl("OCS GE", ligne$source), info = id)
+    expect_true(grepl("millésime", ligne$source), info = id)
     expect_true(grepl("data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/",
                       ligne$url), info = id)
     expect_equal(ligne$licence, "lov2", info = id)
@@ -112,41 +123,50 @@ test_that("MANIFEST_MILIEUX : les quatre couches OCS-GE — une par département
     expect_false(is.na(ligne$date_publication), info = id)
   }
 
-  # les paires de millésimes de la spec (#225) — PINNÉES dans le nom de fichier
-  # et dans les dates du vintage (la référence = le millésime final, la fin de
-  # la fenêtre — la convention de CONSOENAF)
+  # le produit millésimé « surfaces artificialisées » épinglé — le motif
+  # OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0XX_{YYYY}-01-01, jamais le
+  # différentiel (le DIFF est sorti du manifeste par l'amendement #243)
   spec <- tibble::tribble(
-    ~dep, ~m2, ~m3, ~date_publication,
-    "22", "2021", "2025", "2026-07-03",
-    "29", "2021", "2024", "2026-06-12",
-    "35", "2020", "2023", "2026-03-03",
-    "56", "2022", "2024", "2026-06-08"
+    ~dep, ~millesime, ~date_publication,
+    "22", "2021", "2025-09-12",
+    "22", "2025", "2026-07-03",
+    "29", "2021", "2025-03-07",
+    "29", "2024", "2026-06-12",
+    "35", "2020", "2026-03-03",
+    "35", "2023", "2026-03-04",
+    "56", "2022", "2025-03-07",
+    "56", "2024", "2026-06-10"
   )
   for (i in seq_len(nrow(spec))) {
     dep <- spec$dep[i]
-    ligne <- MANIFEST_MILIEUX[
-      MANIFEST_MILIEUX$id == paste0("ocsge_artificialisation_", dep), ]
-    motif <- paste0("_DIFF-", spec$m2[i], "-", spec$m3[i],
-                    "_GPKG_LAMB93_D0", dep, "_", spec$date_publication[i], "[.]7z$")
-    expect_true(grepl(motif, ligne$fichier), info = dep)
-    expect_equal(ligne$vintage, spec$m3[i], info = dep)
-    expect_equal(ligne$date_reference, paste0(spec$m3[i], "-01-01"), info = dep)
-    expect_equal(ligne$date_publication, spec$date_publication[i], info = dep)
+    mill <- spec$millesime[i]
+    id <- paste0("ocsge_artificialisation_", dep, "_", mill)
+    ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
+    motif <- paste0("OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0", dep, "_",
+                    mill, "-01-01[.]7z$")
+    expect_true(grepl(motif, ligne$fichier), info = id)
+    # le vintage : le millésime lui-même (l'ÉTAT porte son année, jamais la fin
+    # d'une fenêtre différentielle) ; la référence = le 1er janvier du millésime
+    expect_equal(ligne$vintage, mill, info = id)
+    expect_equal(ligne$date_reference, paste0(mill, "-01-01"), info = id)
+    expect_equal(ligne$date_publication, spec$date_publication[i], info = id)
   }
+
+  # le DIFF a quitté le manifeste : plus aucune source différentielle
+  expect_false(any(grepl("DIFF", MANIFEST_MILIEUX$fichier)))
 })
 
-test_that("MANIFEST_MILIEUX : la note OCS-GE documente licence, couche différentielle, seuils du décret et livraison .7z", {
+test_that("MANIFEST_MILIEUX : la note OCS-GE documente le produit millésimé, l'attribut Artif, la surface en m² (EPSG:2154) et la livraison .7z", {
   note <- MANIFEST_MILIEUX$note[
-    MANIFEST_MILIEUX$id == "ocsge_artificialisation_22"]
+    MANIFEST_MILIEUX$id == "ocsge_artificialisation_22_2021"]
   expect_true(grepl("Licence Ouverte", note))
-  expect_true(grepl("différentiel", note, ignore.case = TRUE))
+  expect_true(grepl("millésim", note, ignore.case = TRUE))
   expect_true(grepl("artif", note))
   expect_true(grepl("surface", note))
   # la mesure de l'État lue, jamais re-dérivée (les couches brutes ne sont pas
-  # superposées) + les seuils réglementaires déjà appliqués par l'IGN
+  # superposées) + l'EPSG:2154 et l'étape d'extraction documentée
   expect_true(grepl("jamais re-dérivée", note))
-  expect_true(grepl("2023-1096", note))
-  # la livraison .7z et l'étape d'extraction documentée
+  expect_true(grepl("2154", note))
   expect_true(grepl("7z", note))
   expect_true(grepl("extraire_gpkg_ocsge", note))
 })
@@ -160,8 +180,8 @@ test_that("verifier_contrat_milieux : un manifeste corrompu échoue bruyamment",
     expect_error(verifier_contrat_milieux(manif), motif)
   }
 
-  # une source manquante (le contrat exige les SEPT)
-  manquer(MANIFEST_MILIEUX[MANIFEST_MILIEUX$id != "consoenaf", ], "SEPT")
+  # une source manquante (le contrat exige les ONZE)
+  manquer(MANIFEST_MILIEUX[MANIFEST_MILIEUX$id != "consoenaf", ], "ONZE")
 
   # un id dupliqué
   duplique <- dplyr::bind_rows(MANIFEST_MILIEUX, MANIFEST_MILIEUX[1, ])
@@ -172,7 +192,7 @@ test_that("verifier_contrat_milieux : un manifeste corrompu échoue bruyamment",
   defectueux$licence[defectueux$id == "consoenaf"] <- "odbl"
   manquer(defectueux, "lov2")
   defectueux <- MANIFEST_MILIEUX
-  defectueux$licence[defectueux$id == "ocsge_artificialisation_22"] <- "odbl"
+  defectueux$licence[defectueux$id == "ocsge_artificialisation_22_2021"] <- "odbl"
   manquer(defectueux, "lov2")
 
   # une source qui n'est pas un fichier téléchargeable
@@ -185,12 +205,19 @@ test_that("verifier_contrat_milieux : un manifeste corrompu échoue bruyamment",
   defectueux$fichier[defectueux$id == "consoenaf"] <- "conso-com-metro.gpkg"
   manquer(defectueux, "conso-com.csv")
 
-  # le fichier OCS-GE épinglé ne peut PAS dériver : une paire de millésimes
-  # changée dans le nom est un signal de fichier déplacé, pas un détail
+  # le fichier OCS-GE épinglé ne peut PAS dériver : un millésime changé dans le
+  # nom est un signal de fichier déplacé, pas un détail
   defectueux <- MANIFEST_MILIEUX
-  defectueux$fichier[defectueux$id == "ocsge_artificialisation_22"] <-
-    "OCS-GE-ARTIFICIALISATION_2-0_DIFF-2020-2025_GPKG_LAMB93_D022_2026-07-03.7z"
-  manquer(defectueux, "2021-2025")
+  defectueux$fichier[defectueux$id == "ocsge_artificialisation_22_2021"] <-
+    "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2020-01-01.7z"
+  manquer(defectueux, "2021-01-01")
+
+  # un différentiel ressorti du chapeau est hors contrat (le DIFF est sorti du
+  # manifeste par l'amendement #243 — un fichier _DIFF- est un signal)
+  defectueux <- MANIFEST_MILIEUX
+  defectueux$fichier[defectueux$id == "ocsge_artificialisation_22_2021"] <-
+    "OCS-GE-ARTIFICIALISATION_2-0_DIFF-2021-2025_GPKG_LAMB93_D022_2026-07-03.7z"
+  manquer(defectueux, "ARTIFICIALISATION_GPKG_LAMB93_D022_2021-01-01")
 
   # une date de publication antérieure à la référence (CONSOENAF ET OCS-GE —
   # la vérification est généralisée à toute source datée)
@@ -198,7 +225,7 @@ test_that("verifier_contrat_milieux : un manifeste corrompu échoue bruyamment",
   defectueux$date_publication[defectueux$id == "consoenaf"] <- "2024-01-01"
   manquer(defectueux, "publication")
   defectueux <- MANIFEST_MILIEUX
-  defectueux$date_publication[defectueux$id == "ocsge_artificialisation_29"] <-
+  defectueux$date_publication[defectueux$id == "ocsge_artificialisation_29_2021"] <-
     "2020-01-01"
   manquer(defectueux, "publication")
 })

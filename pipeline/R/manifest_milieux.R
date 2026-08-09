@@ -100,59 +100,73 @@ MANIFEST_MILIEUX_SERIE_HISTORIQUE <- tibble::tribble(
 )
 
 # MANIFEST_MILIEUX_OCSGE --------------------------------------------------------
-# Le fragment OCS-GE (issue #234, spec #225) : les QUATRE couches
-# différentielles officielles « OCS GE Artificialisation » v2.0 (IGN, Nouvelle
-# Génération) de la Géoplateforme — une par département breton (22/29/35/56) —
-# le référentiel ZAN de l'État. Chaque couche est le DIFFÉRENTIEL M2→M3 du
-# département (les changements de statut d'artificialisation entre les deux
-# millésimes — jamais les couches brutes OCCUPATION_SOL : la mesure de l'État
-# est lue, jamais re-dérivée). Les paires de millésimes de la spec (#225) :
-#   22 : 2021→2025 · 29 : 2021→2024 · 35 : 2020→2023 · 56 : 2022→2024
-# (vérifiées vivantes dans l'API Géoplateforme, docs/research/ocs-ge.md §2.3 —
-# les dates de publication sont celles des fichiers de la recherche). Le nom de
-# fichier suit le motif Géoplateforme vérifié :
-#   OCS-GE-ARTIFICIALISATION_2-0_DIFF-{M2}-{M3}_GPKG_LAMB93_D0XX_{pub}.7z
+# Le fragment OCS-GE (issue #234, amendé par #243 — ADR-0017) : les HUIT
+# archives d'état « surfaces artificialisées » du produit millésimé OCS GE
+# Artificialisation v2.0 (IGN, Nouvelle Génération) de la Géoplateforme —
+# DEUX millésimes par département breton (22 : 2021/2025 · 29 : 2021/2024 ·
+# 35 : 2020/2023 · 56 : 2022/2024) — le référentiel ZAN de l'État. L'amendement
+# #243 a sorti les QUATRE couches DIFFÉRENTIELLES du manifeste : la couche
+# différentielle n'est pas un état (elle ne porte que les CHANGEMENTS — le bug
+# flux-et-état documenté dans docs/research/ocs-ge-etat-vs-flux.md) ; le
+# produit millésimé porte l'ÉTAT complet — l'attribut `Artif` de chaque
+# polygone est le résultat de la méthode officielle en trois étapes (matrice
+# de croisement couverture×usage × seuils du décret 2023-1096 × forçage des
+# surfaces adjacentes au bâti). La règle « jamais de superposition brute
+# OCCUPATION_SOL — la mesure de l'État est lue, jamais re-dérivée » tient
+# intégralement. Le nom de fichier suit le motif Géoplateforme vérifié à la
+# première livraison réelle (2026-08-09) :
+#   OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0{XX}_{YYYY}-01-01.7z
 # et l'URL le motif documenté de l'API de téléchargement :
 #   https://data.geopf.fr/telechargement/download/OCSGE-ARTIFICIALISATION/{sub}/{sub}.7z
+# La couche d'état dans le GPKG est nommée `artif_{YYYY}_{DD}` (découverte par
+# le motif COUCHE_OCSGE_ARTIFICIALISATION, « dérive de la donnée ») ; ses
+# attributs : artif (artif / non artif), aire (la surface du polygone en m²,
+# EPSG:2154 — le CRS natif du produit) et millesime (l'année de l'état).
 # Licence Ouverte 2.0 (les deux jeux data.gouv, ocs-ge et
 # ocs-ge-artificialisation). La discipline des fragments : une ligne par source
-# (par département), chaque source garde SA référence (le millésime final M3,
-# la fin de la fenêtre — la même convention que CONSOENAF) et SA publication.
-# La couche est livrée en .7z : l'extraction est le seam documenté du thème
-# (extraire_gpkg_ocsge, theme_milieux.R — aucun extracteur .7z en R, l'étape
-# manuelle documentée, testée sur le format zip que R sait écrire).
-ligne_ocsge <- function(departement, nom_departement, m2, m3, date_publication) {
-  base <- paste0("OCS-GE-ARTIFICIALISATION_2-0_DIFF-", m2, "-", m3,
-                 "_GPKG_LAMB93_D0", departement, "_", date_publication)
+# (par département × millésime), chaque source garde SA référence (le millésime
+# de l'état — le produit millésimé porte SON année, jamais la fin d'une fenêtre
+# différentielle) et SA publication (les dates `updated` de l'API
+# Géoplateforme, vérifiées 2026-08-09). La couche est livrée en .7z :
+# l'extraction est le seam documenté du thème (extraire_gpkg_ocsge,
+# theme_milieux.R — aucun extracteur .7z en R, l'étape manuelle documentée,
+# testée sur le format zip que R sait écrire).
+ligne_ocsge_etat <- function(departement, nom_departement, millesime,
+                             date_publication) {
+  base <- paste0("OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0", departement,
+                 "_", millesime, "-01-01")
   tibble::tibble(
-    id = paste0("ocsge_artificialisation_", departement),
+    id = paste0("ocsge_artificialisation_", departement, "_", millesime),
     source = paste0(
-      "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — ",
-      "différentiel ", m2, "-", m3, " — ", nom_departement, " (", departement, ")"
+      "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — ",
+      nom_departement, " (", departement, "), millésime ", millesime
     ),
     url = paste0("https://data.geopf.fr/telechargement/download/",
                  "OCSGE-ARTIFICIALISATION/", base, "/", base, ".7z"),
     fichier = paste0(base, ".7z"),
-    vintage = as.character(m3),
-    date_reference = paste0(m3, "-01-01"),
+    vintage = as.character(millesime),
+    date_reference = paste0(millesime, "-01-01"),
     date_publication = date_publication,
     licence = "lov2",
     note = paste0(
-      "Le différentiel officiel OCS GE Artificialisation v2.0 (IGN, Nouvelle ",
-      "Génération) pour le département ", departement, " — les CHANGEMENTS de ",
-      "statut d'artificialisation entre les millésimes ", m2, " et ", m3,
-      " (couche zan_evol_ du GPKG Géoplateforme, Licence Ouverte 2.0). On lit ",
-      "la mesure de l'État, jamais re-dérivée : la couche porte les statuts ",
-      "artif_", m2, "/artif_", m3, " (artif / non artif), le sens ",
-      "artificialisation (+1 = artificialisation, -1 = désartificialisation) ",
-      "et surface (m² du changement mesuré — les seuils réglementaires du ",
-      "décret 2023-1096, 50 m² bâti / 2500 m² autres, déjà appliqués par ",
-      "l'IGN ; les colonnes en MINUSCULES, la forme réelle vérifiée à la ",
-      "première livraison 2026-08-08). Livraison .7z via l'API Géoplateforme ",
+      "L'ÉTAT artificialisé du produit millésimé OCS GE Artificialisation ",
+      "v2.0 (IGN, Nouvelle Génération) pour le département ", departement,
+      " au millésime ", millesime, " — la couche `artif_", millesime, "_",
+      departement, "` du GPKG Géoplateforme (produit « surfaces ",
+      "artificialisées », Licence Ouverte 2.0). Chaque polygone porte ",
+      "l'attribut `artif` (artif / non artif) — le résultat COMPLET de la ",
+      "méthode officielle en trois étapes (matrice de croisement couverture",
+      "×usage, seuils du décret 2023-1096, forçage des surfaces adjacentes au ",
+      "bâti) — et `aire`, la surface du polygone en m² (EPSG:2154, le CRS ",
+      "natif du produit), plus `millesime` (l'année de l'état, dans la ",
+      "donnée). On lit la MESURE de l'État, jamais re-dérivée : les couches ",
+      "brutes OCCUPATION_SOL ne sont jamais superposées nous-mêmes. Le DIFF ",
+      "est sorti du manifeste (amendement #243, ADR-0017) : la couche ",
+      "différentielle n'est pas un état. Livraison .7z via l'API Géoplateforme ",
       "(data.geopf.fr) : l'extraction est l'étape documentée du thème ",
-      "(extraire_gpkg_ocsge). Référence : le millésime final (", m3, "-01-01, ",
-      "la fin de la fenêtre — la convention de CONSOENAF) ; publication : la ",
-      "mise en ligne du fichier (", date_publication, ")."
+      "(extraire_gpkg_ocsge). Référence : le millésime de l'état (", millesime,
+      "-01-01) ; publication : la mise en ligne du fichier (", date_publication,
+      ")."
     ),
     mode = "cron",
     type = "fichier"
@@ -160,10 +174,14 @@ ligne_ocsge <- function(departement, nom_departement, m2, m3, date_publication) 
 }
 
 MANIFEST_MILIEUX_OCSGE <- dplyr::bind_rows(
-  ligne_ocsge("22", "Côtes-d'Armor", 2021, 2025, "2026-07-03"),
-  ligne_ocsge("29", "Finistère", 2021, 2024, "2026-06-12"),
-  ligne_ocsge("35", "Ille-et-Vilaine", 2020, 2023, "2026-03-03"),
-  ligne_ocsge("56", "Morbihan", 2022, 2024, "2026-06-08")
+  ligne_ocsge_etat("22", "Côtes-d'Armor", 2021, "2025-09-12"),
+  ligne_ocsge_etat("22", "Côtes-d'Armor", 2025, "2026-07-03"),
+  ligne_ocsge_etat("29", "Finistère", 2021, "2025-03-07"),
+  ligne_ocsge_etat("29", "Finistère", 2024, "2026-06-12"),
+  ligne_ocsge_etat("35", "Ille-et-Vilaine", 2020, "2026-03-03"),
+  ligne_ocsge_etat("35", "Ille-et-Vilaine", 2023, "2026-03-04"),
+  ligne_ocsge_etat("56", "Morbihan", 2022, "2025-03-07"),
+  ligne_ocsge_etat("56", "Morbihan", 2024, "2026-06-10")
 )
 
 # MANIFEST_MILIEUX --------------------------------------------------------------
@@ -171,9 +189,9 @@ MANIFEST_MILIEUX_OCSGE <- dplyr::bind_rows(
 # partagée (la même ligne que Démographie/Habitat — jamais re-déclarée avec un
 # autre id, le cache idempotent évite le re-téléchargement) + la série
 # historique du recensement (la même ligne que Démographie — la source
-# partagée de la population de l'Histoire, #174) + les QUATRE couches OCS-GE
-# d'artificialisation (issue #234). SEPT lignes, sept ids uniques. Validé par
-# verifier_contrat_milieux.
+# partagée de la population de l'Histoire, #174) + les HUIT archives d'état
+# OCS-GE « surfaces artificialisées » (issue #234, amendées par #243).
+# ONZE lignes, onze ids uniques. Validé par verifier_contrat_milieux.
 MANIFEST_MILIEUX <- dplyr::bind_rows(
   tibble::tribble(
     ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
@@ -192,11 +210,11 @@ MANIFEST_MILIEUX <- dplyr::bind_rows(
 
 # verifier_contrat_milieux ------------------------------------------------------
 # La validation du contrat du manifeste Milieux (la discipline des fragments,
-# comme verifier_contrat_programmes) : SEPT sources, sept ids uniques et
+# comme verifier_contrat_programmes) : ONZE sources, onze ids uniques et
 # exacts, chaque source sur SON contrat — le fichier épinglé, la licence
 # Ouverte, le mode cron, le type fichier, les dates bien formées (la
 # publication jamais antérieure à la référence pour toute source datée — les
-# quatre OCS-GE comme CONSOENAF ; la publication de la base EPCI reste NA, la
+# huit OCS-GE comme CONSOENAF ; la publication de la base EPCI reste NA, la
 # convention partagée). Un manifeste corrompu échoue bruyamment en nommant le
 # champ fautif.
 verifier_contrat_milieux <- function(manifest) {
@@ -208,15 +226,17 @@ verifier_contrat_milieux <- function(manifest) {
     manquer("forme", "le manifeste doit être un tibble")
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
-  if (nrow(manifest) != 7L) {
-    manquer("forme", paste0("le manifeste porte SEPT sources (la base EPCI ",
+  if (nrow(manifest) != 11L) {
+    manquer("forme", paste0("le manifeste porte ONZE sources (la base EPCI ",
                             "partagée + CONSOENAF + la série historique du ",
-                            "recensement + les quatre couches OCS-GE ",
-                            "d'artificialisation), pas ", nrow(manifest)))
+                            "recensement + les huit archives d'état OCS-GE ",
+                            "« surfaces artificialisées »), pas ", nrow(manifest)))
   }
   attendus <- c("epci", "consoenaf", "serie_historique",
-                "ocsge_artificialisation_22", "ocsge_artificialisation_29",
-                "ocsge_artificialisation_35", "ocsge_artificialisation_56")
+                paste0("ocsge_artificialisation_22_", c(2021, 2025)),
+                paste0("ocsge_artificialisation_29_", c(2021, 2024)),
+                paste0("ocsge_artificialisation_35_", c(2020, 2023)),
+                paste0("ocsge_artificialisation_56_", c(2022, 2024)))
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -224,7 +244,7 @@ verifier_contrat_milieux <- function(manifest) {
   # le contrat commun : fichier téléchargeable en cron (les jeux officiels
   # ouverts — jamais un portage à la main), Licence Ouverte 2.0
   if (any(manifest$mode != "cron")) {
-    manquer("mode", "mode attendu : 'cron' pour les sept sources")
+    manquer("mode", "mode attendu : 'cron' pour les onze sources")
   }
   if (any(manifest$type != "fichier")) {
     manquer("type", "type attendu : 'fichier'")
@@ -248,31 +268,38 @@ verifier_contrat_milieux <- function(manifest) {
       "le contrat épingle le zip DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip de la ",
       "série historique du recensement (le même fichier que Démographie)"))
   }
-  # les quatre couches OCS-GE : le fichier Géoplateforme ÉPINGLÉ, motif
-  # OCS-GE-ARTIFICIALISATION_2-0_DIFF-{M2}-{M3}_GPKG_LAMB93_D0XX_{pub}.7z — la
-  # paire de millésimes de la spec (#225) et la date de publication de la
-  # recherche (docs/research/ocs-ge.md §2.3) sont PINNÉES : une dérive du nom
-  # (millésimes ou date) est un signal de fichier déplacé, pas un simple détail.
+  # les huit archives d'état OCS-GE : le fichier Géoplateforme ÉPINGLÉ, motif
+  # OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0{XX}_{YYYY}-01-01.7z — le
+  # millésime de la spec et la date de publication vérifiée dans l'API
+  # Géoplateforme (2026-08-09) sont PINNÉS : une dérive du nom (millésime ou
+  # date) est un signal de fichier déplacé, pas un simple détail. Le DIFF est
+  # hors contrat : un fichier _DIFF- ressorti du chapeau est un signal
+  # (l'amendement #243 a sorti le différentiel du manifeste).
   fichiers_ocsge <- c(
-    "22" = "OCS-GE-ARTIFICIALISATION_2-0_DIFF-2021-2025_GPKG_LAMB93_D022_2026-07-03.7z",
-    "29" = "OCS-GE-ARTIFICIALISATION_2-0_DIFF-2021-2024_GPKG_LAMB93_D029_2026-06-12.7z",
-    "35" = "OCS-GE-ARTIFICIALISATION_2-0_DIFF-2020-2023_GPKG_LAMB93_D035_2026-03-03.7z",
-    "56" = "OCS-GE-ARTIFICIALISATION_2-0_DIFF-2022-2024_GPKG_LAMB93_D056_2026-06-08.7z"
+    "22_2021" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2021-01-01.7z",
+    "22_2025" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D022_2025-01-01.7z",
+    "29_2021" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2021-01-01.7z",
+    "29_2024" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D029_2024-01-01.7z",
+    "35_2020" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2020-01-01.7z",
+    "35_2023" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D035_2023-01-01.7z",
+    "56_2022" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2022-01-01.7z",
+    "56_2024" = "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D056_2024-01-01.7z"
   )
-  for (dep in names(fichiers_ocsge)) {
-    id <- paste0("ocsge_artificialisation_", dep)
-    if (fichiers[[id]] != fichiers_ocsge[[dep]]) {
+  for (cle in names(fichiers_ocsge)) {
+    id <- paste0("ocsge_artificialisation_", cle)
+    if (fichiers[[id]] != fichiers_ocsge[[cle]]) {
       manquer("fichier", paste0(
-        "le contrat épingle le fichier OCS-GE ", dep, " : ",
-        fichiers_ocsge[[dep]], " (la paire de millésimes M2→M3 de la spec ",
-        "#225 et la date de publication de la recherche — une dérive du nom ",
-        "est un signal, pas un détail)"))
+        "le contrat épingle le fichier OCS-GE ", cle, " : ",
+        fichiers_ocsge[[cle]], " (le produit millésimé « surfaces ",
+        "artificialisées » — le millésime de la spec et la date de ",
+        "publication de l'API Géoplateforme ; une dérive du nom est un ",
+        "signal, pas un détail)"))
     }
   }
 
   # les dates : ISO et bien formées pour toute source datée ; la publication
   # jamais antérieure à la référence pour TOUTE source qui porte les deux
-  # dates (CONSOENAF et les quatre OCS-GE) ; la base EPCI porte SA publication
+  # dates (CONSOENAF et les huit OCS-GE) ; la base EPCI porte SA publication
   # NA (la convention partagée — insee.fr n'expose pas de date de fichier)
   iso <- grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", manifest$date_reference) |
     is.na(manifest$date_reference)
@@ -287,7 +314,7 @@ verifier_contrat_milieux <- function(manifest) {
   if (any(as.Date(datees$date_publication) < as.Date(datees$date_reference))) {
     manquer("date_publication", paste0(
       "la publication doit être postérieure ou égale à la référence (les ",
-      "quatre OCS-GE comme CONSOENAF)"))
+      "huit OCS-GE comme CONSOENAF)"))
   }
 
   invisible(TRUE)
