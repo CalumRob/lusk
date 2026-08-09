@@ -45,12 +45,6 @@ const SOUS_LIENS_DONNEES = [
   { label: 'Les départements', chemin: '/departements' },
 ] as const
 
-const LIENS_TIROIR = [
-  { label: 'Carte', chemin: '/carte' },
-  { label: 'Données', chemin: '/communes' },
-  { label: 'Méthodes', chemin: '/methodologie' },
-] as const
-
 function correspond(prefixes: readonly string[], chemin: string): boolean {
   return prefixes.some(
     (p) => p === '/' ? chemin === '/' : chemin === p || chemin.startsWith(`${p}/`),
@@ -343,13 +337,11 @@ onUnmounted(() => {
       />
     </div>
     <nav class="nav-tiroir" aria-label="Navigation principale">
-      <RouterLink
-        v-for="lien in LIENS_TIROIR"
-        :key="lien.chemin"
-        :to="lien.chemin"
-        class="tiroir-lien"
-        @click="fermer()"
-      >{{ lien.label }}</RouterLink>
+      <RouterLink to="/carte" class="tiroir-lien" @click="fermer()">Carte</RouterLink>
+
+      <!-- Données is a non-link group label in the drawer (never a deep link to
+           /communes) — the three lists sit directly beneath it. -->
+      <span class="tiroir-lien tiroir-groupe-titre">Données</span>
       <RouterLink
         v-for="sous in SOUS_LIENS_DONNEES"
         :key="sous.chemin"
@@ -693,6 +685,15 @@ onUnmounted(() => {
   padding-left: var(--space-10);
   font: var(--text-body);
   color: var(--text-secondary);
+}
+
+/* The drawer's « Données » is a section label, not a link — muted, sm, semibold
+   so the three lists read as nested under it. */
+.tiroir-groupe-titre {
+  color: var(--text-tertiary);
+  font: var(--text-body-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .tiroir-lien:hover {

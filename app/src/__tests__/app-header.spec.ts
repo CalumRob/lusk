@@ -245,6 +245,29 @@ describe('AppHeader — le tiroir mobile', () => {
     }
   })
 
+  it('renders Données as a non-link group label, with the three lists nested directly beneath it', async () => {
+    const { wrapper } = await montage()
+
+    await wrapper.find('.bouton-menu').trigger('click')
+    const nav = wrapper.find('.nav-tiroir')
+
+    expect(nav.findAll('a').filter((a) => a.text().trim() === 'Données')).toHaveLength(0)
+    const etiquette = nav.find('.tiroir-groupe-titre')
+    expect(etiquette.exists()).toBe(true)
+    expect(etiquette.element.tagName).toBe('SPAN')
+    expect(etiquette.text().trim()).toBe('Données')
+
+    const liens = nav.findAll('a').map((a) => a.text().trim())
+    expect(liens).toEqual([
+      'Carte',
+      'Les communes',
+      'Les EPCI',
+      'Les départements',
+      'Méthodes',
+      'Contact',
+    ])
+  })
+
   it('closes when a drawer link is chosen', async () => {
     const { wrapper } = await montage()
 
