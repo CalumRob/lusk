@@ -281,55 +281,60 @@ construire_donnees_milieux <- function(cache = "data/raw",
   communes
 }
 
-# L'ingestion OCS-GE (issue #234, spec #225) -----------------------------------
+# L'ingestion OCS-GE (issue #234, amendée par #243) -----------------------------
 # Les états d'artificialisation OCS-GE entrent dans le pipeline sur la MÊME
 # forme que CONSOENAF — manifeste -> lecteur -> normalisation -> agrégation —
 # avec TROIS fonctions pures (lecteur / normalisation / agrégation), testées
 # sur un petit GPKG de fixture (jamais de réseau dans la boucle de test). La
-# source : les QUATRE couches différentielles officielles « OCS GE
-# Artificialisation » v2.0 de la Géoplateforme (une par département breton,
-# MANIFEST_MILIEUX_OCSGE) — le référentiel ZAN de l'État. Chaque couche porte
-# les CHANGEMENTS de statut d'artificialisation entre les millésimes M2 et M3
-# du département, dans UN SEUL fichier :
-#   - Artif_{M2} / Artif_{M3}  : le statut d'artificialisation à chaque
-#     millésime (caractères « Artif » / « Non Artif ») ;
-#   - Artificialisation         : le sens du changement (entier +1 =
-#     artificialisation, -1 = désartificialisation) ;
-#   - Surface                   : la superficie en m² du changement mesuré
-#     (les seuils réglementaires du décret 2023-1096, 50 m² bâti / 2500 m²
-#     autres, déjà appliqués par l'IGN).
-# (Descriptif de contenu IGN Doc_artif.pdf — la source primaire.) On lit la
-# MESURE de l'État, jamais re-dérivée : les couches brutes OCCUPATION_SOL ne
-# sont jamais superposées nous-mêmes. La fenêtre dérive de la DONNÉE — les
-# millésimes sont lus dans les noms des colonnes Artif_* (les DEUX horloges,
-# jamais codées en dur) : la même couche lue avec d'autres millésimes glisse
-# toute seule. La livraison Géoplateforme est un .7z (aucun extracteur .7z en
-# R — ni le paquet `archive`, ni un binaire 7-Zip) : le seam d'extraction
+# source : les HUIT archives millésimées « surfaces artificialisées » du
+# produit OCS GE Artificialisation v2.0 de la Géoplateforme (DEUX millésimes
+# par département breton, MANIFEST_MILIEUX_OCSGE) — le référentiel ZAN de
+# l'État. Depuis l'amendement #243 (ADR-0017), le DIFF est sorti : les couches
+# différentielles `zan_evol_*` ne portent QUE les changements — le bug
+# flux-et-état documenté dans docs/research/ocs-ge-etat-vs-flux.md — et
+# l'ÉTAT est lu dans le produit millésimé, dont chaque polygone porte le
+# statut d'artificialisation complet :
+#   - Artif             : le statut d'artificialisation du polygone
+#     (caractères « artif » / « non artif » — le résultat COMPLET de la
+#     méthode officielle en trois étapes : matrice de croisement couverture
+#     × usage × seuils du décret 2023-1096 × forçage des surfaces adjacentes
+#     au bâti, jamais re-dérivé d'une superposition brute OCCUPATION_SOL) ;
+#   - Aire               : la superficie du polygone en m² (EPSG:2154 — le CRS
+#     natif du produit) ;
+#   - Millesime          : l'année de l'état, DANS la donnée (la fenêtre
+#     dérive de la donnée — jamais codée en dur).
+# (Descriptif de contenu IGN Doc_artif.pdf + la forme réelle vérifiée à la
+# première livraison 2026-08-09 — la source primaire.) La livraison
+# Géoplateforme est un .7z (aucun extracteur .7z en R — ni le paquet
+# `archive`, ni un binaire 7-Zip) : le seam d'extraction
 # (extraire_gpkg_ocsge) est l'étape DOCUMENTÉE avant le lecteur, testée sur le
 # format zip que R sait écrire.
 
 # COUCHE_OCSGE_ARTIFICIALISATION ----------------------------------------------
-# Le MOTIF du nom de la couche dans le GPKG Géoplateforme de l'artificialisation
-# — « zan_evol_{M2}_{M3}_{DEPT} » (la couche des évolutions ZAN). Confirmé à la
-# première livraison réelle (2026-08-08) : la constante « DIFF_ARTIF » du
-# Doc_artif.pdf était une hypothèse — le produit réel nomme la couche d'après
-# ses millésimes et son département. Le nom dérive de LA DONNÉE : le lecteur
-# DISCOUVRE la couche par ce motif parmi les couches disponibles, et échoue
-# bruyamment en les listant si le motif ne correspond à rien (une dérive du
-# produit doit être visible, pas silencieuse).
-COUCHE_OCSGE_ARTIFICIALISATION <- "^zan_evol_"
+# Le MOTIF du nom de la couche dans le GPKG Géoplateforme du produit
+# millésimé « surfaces artificialisées » — « artif_{YYYY}_{DD} » (l'année de
+# l'état et le département). Confirmé à la première livraison réelle
+# (2026-08-09) : la couche du GPKG d'état porte le millésime et le département
+# dans son nom. Le nom dérive de LA DONNÉE : le lecteur DISCOUVRE la couche
+# par ce motif parmi les couches disponibles, et échoue bruyamment en les
+# listant si le motif ne correspond à rien (une dérive du produit doit être
+# visible, pas silencieuse).
+COUCHE_OCSGE_ARTIFICIALISATION <- "^artif_"
 
 # IDS_OCSGE_ARTIFICIALISATION --------------------------------------------------
-# Les ids des quatre couches OCS-GE dans le manifeste du thème — l'ordre de
-# construction (le builder les lit dans cet ordre, l'ordre du manifeste).
+# Les ids des huit archives d'état OCS-GE dans le manifeste du thème — l'ordre
+# de construction (le builder les lit dans cet ordre, l'ordre du manifeste :
+# département puis millésime).
 IDS_OCSGE_ARTIFICIALISATION <- c(
-  "ocsge_artificialisation_22", "ocsge_artificialisation_29",
-  "ocsge_artificialisation_35", "ocsge_artificialisation_56"
+  "ocsge_artificialisation_22_2021", "ocsge_artificialisation_22_2025",
+  "ocsge_artificialisation_29_2021", "ocsge_artificialisation_29_2024",
+  "ocsge_artificialisation_35_2020", "ocsge_artificialisation_35_2023",
+  "ocsge_artificialisation_56_2022", "ocsge_artificialisation_56_2024"
 )
 
 # lire_ocsge_artificialisation --------------------------------------------------
 # Le LECTEUR (pur) : le GPKG Géoplateforme -> les polygones longs de la couche
-# différentielle, TELS QUELS (les colonnes officielles — on ne re-dérive rien).
+# d'état, TELS QUELS (les colonnes officielles — on ne re-dérive rien).
 # La couche est lue sous COUCHE_OCSGE_ARTIFICIALISATION ; une couche absente
 # échoue bruyamment en nommant les couches disponibles (une dérive du produit
 # doit être visible, pas silencieuse).
@@ -339,133 +344,124 @@ lire_ocsge_artificialisation <- function(chemin,
     stop("Le GPKG OCS-GE est absent : ", chemin, call. = FALSE)
   }
   disponibles <- sf::st_layers(chemin)$name
-  # La couche est DISCOUVERTE par le motif (« zan_evol_{M2}_{M3}_{DEPT} » — le
-  # nom dérive de la donnée, jamais codé en dur) : exactement une couche doit
+  # La couche est DISCOUVERTE par le motif (« artif_{YYYY}_{DD} » — le nom
+  # dérive de la donnée, jamais codé en dur) : exactement une couche doit
   # correspondre, sinon échec bruyant listant les couches disponibles.
   candidates <- disponibles[grepl(couche, disponibles)]
   if (length(candidates) != 1L) {
     stop("Le GPKG ", basename(chemin), " doit porter EXACTEMENT une couche du ",
-         "motif « ", couche, " » (l'artificialisation Géoplateforme — trouvées : ",
-         length(candidates), ") — couches disponibles : ",
+         "motif « ", couche, " » (l'état artificialisé Géoplateforme — ",
+         "trouvées : ", length(candidates), ") — couches disponibles : ",
          paste(disponibles, collapse = ", "), ".", call. = FALSE)
   }
   sf::st_read(chemin, layer = candidates, quiet = TRUE)
 }
 
 # normaliser_ocsge_artificialisation -------------------------------------------
-# La NORMALISATION (pure) : la couche différentielle officielle -> les mesures
-# en m² (EPSG:2154). La fenêtre dérive de la DONNÉE : les deux millésimes sont
-# lus dans les noms des colonnes artif_{AAAA} de la couche (jamais codés en
-# dur — la même fonction lit n'importe quelle paire). Par polygone :
-#   - artif_m2 : la surface (m²) du changement artificialisée au millésime M2
-#     (surface si le statut artif_{M2} vaut « artif », 0 sinon) ;
-#   - artif_m3 : idem au millésime M3 ;
-#   - flux_net : le flux net signé en m² (artificialisation × surface — le
-#     +1/-1 de l'État appliqué à la surface du changement qu'il mesure) ;
+# La NORMALISATION (pure) : la couche d'état officielle -> les mesures en m²
+# (EPSG:2154). Le millésime dérive de LA DONNÉE : la colonne `millesime` de la
+# couche (jamais codé en dur — la même fonction lit n'importe quel millésime).
+# Par polygone :
+#   - artif    : la surface (m²) artificialisée du polygone — l'attribut
+#     officiel `aire` si le statut `artif` vaut « artif », 0 sinon (la MESURE
+#     de l'État est lue, jamais re-dérivée de la géométrie — un polygone
+#     « non artif » ne compte pas, c'est le résultat officiel) ;
 #   - aire_m2  : la surface du polygone en m², calculée par sf::st_area APRÈS
-#     projection EPSG:2154 (les différentiels sont livrés en LAMB93 ; la
-#     projection est une garantie, pas une hypothèse).
-# Le produit réel (vérifié à la première livraison, 2026-08-08) porte les
-# colonnes en MINUSCULES — artif_{AAAA}, artificialisation, surface — et les
-# statuts « artif » / « non artif » : c'est LA forme lue, jamais l'hypothèse
-# capitalisée du Doc_artif.pdf (la constante DIFF_ARTIF était erronée).
-# L'intégrité de la couche est vérifiée (un fichier qui dérive échoue fort) :
-# artificialisation ne vaut que +1/-1, et il doit concorder avec les statuts —
-# flux_net == artif_m3 - artif_m2 par construction (dans une couche de
-# CHANGEMENTS, exactement un des deux statuts vaut « artif »). La géométrie
-# est rendue valide (le motif des autres lecteurs géométriques du pipeline).
-normaliser_ocsge_artificialisation <- function(flux) {
-  if (!inherits(flux, "sf")) {
+#     projection EPSG:2154 (le produit est livré en LAMB93 ; la projection est
+#     une garantie, pas une hypothèse) — le dénominateur de la pondération ;
+#   - millesime : l'année de l'état, lue dans la colonne `millesime`.
+# Le produit réel (vérifié à la première livraison, 2026-08-09) porte les
+# colonnes en MINUSCULES — artif, aire, millesime — et les statuts « artif » /
+# « non artif » : c'est LA forme lue, jamais l'hypothèse capitalisée du
+# Doc_artif.pdf. L'intégrité de la couche est vérifiée (un fichier qui dérive
+# échoue fort) : les statuts ne valent que « artif » / « non artif », la
+# surface `aire` est positive, le millésime est unique. La géométrie est
+# rendue valide (le motif des autres lecteurs géométriques du pipeline).
+normaliser_ocsge_artificialisation <- function(etat) {
+  if (!inherits(etat, "sf")) {
     stop("La couche OCS-GE doit être un objet sf (lire_ocsge_artificialisation).",
          call. = FALSE)
   }
-  noms_artif <- grep("^artif_[0-9]{4}$", names(flux), value = TRUE)
-  if (length(noms_artif) != 2L) {
-    stop("La couche différentielle OCS-GE doit porter les deux statuts ",
-         "artif_{millesime} (artif / non artif) — trouvés : ",
-         paste(noms_artif, collapse = ", "), ".", call. = FALSE)
+  if (!"artif" %in% names(etat)) {
+    stop("La couche d'état OCS-GE doit porter la colonne `artif` (artif / ",
+         "non artif).", call. = FALSE)
   }
-  if (!all(c("artificialisation", "surface") %in% names(flux))) {
-    stop("La couche différentielle OCS-GE doit porter artificialisation et ",
-         "surface.", call. = FALSE)
+  if (!"aire" %in% names(etat)) {
+    stop("La couche d'état OCS-GE doit porter la colonne `aire` (la surface ",
+         "du polygone en m², EPSG:2154).", call. = FALSE)
   }
-  millesimes <- sort(as.integer(sub("^artif_", "", noms_artif)))
-  m2 <- as.character(millesimes[1])
-  m3 <- as.character(millesimes[2])
-  sens <- as.integer(flux$artificialisation)
-  if (any(!sens %in% c(1L, -1L))) {
-    stop("artificialisation doit valoir +1 (artificialisation) ou -1 ",
-         "(désartificialisation) — la couche a dérivé.", call. = FALSE)
+  if (!"millesime" %in% names(etat)) {
+    stop("La couche d'état OCS-GE doit porter la colonne `millesime` (l'année ",
+         "de l'état, dans la donnée).", call. = FALSE)
   }
-  derive <- as.integer(flux[[paste0("artif_", m3)]] == "artif") -
-    as.integer(flux[[paste0("artif_", m2)]] == "artif")
-  if (any(!(sens == derive), na.rm = TRUE) || any(is.na(derive))) {
-    stop("artificialisation incohérent avec les statuts artif_* — la couche ",
-         "a dérivé.", call. = FALSE)
+  statuts <- unique(as.character(etat$artif))
+  if (!all(statuts %in% c("artif", "non artif"))) {
+    stop("artif doit valoir « artif » ou « non artif » — la couche a dérivé.",
+         call. = FALSE)
   }
-  surf <- as.numeric(flux$surface)
+  surf <- as.numeric(etat$aire)
   if (any(surf < 0, na.rm = TRUE) || any(is.na(surf))) {
-    stop("surface doit être positive et présente (la superficie en m² du ",
-         "changement mesuré) — la couche a dérivé.", call. = FALSE)
+    stop("aire doit être positive et présente (la superficie du polygone en ",
+         "m²) — la couche a dérivé.", call. = FALSE)
   }
-  geometrie <- sf::st_transform(sf::st_geometry(flux), 2154)
+  millesimes <- unique(etat$millesime)
+  if (length(millesimes) != 1L) {
+    stop("La couche d'état OCS-GE doit porter UN SEUL millésime (la colonne ",
+         "`millesime` — trouvés : ", paste(millesimes, collapse = ", "),
+         ") — la couche a dérivé.", call. = FALSE)
+  }
+  geometrie <- sf::st_transform(sf::st_geometry(etat), 2154)
   geometrie <- sf::st_make_valid(geometrie)
   sf::st_sf(
-    artif_m2 = ifelse(flux[[paste0("artif_", m2)]] == "artif", surf, 0),
-    artif_m3 = ifelse(flux[[paste0("artif_", m3)]] == "artif", surf, 0),
-    flux_net = sens * surf,
+    artif = ifelse(as.character(etat$artif) == "artif", surf, 0),
     aire_m2 = as.numeric(sf::st_area(geometrie)),
-    millesime_debut = millesimes[1],
-    millesime_fin = millesimes[2],
+    millesime = as.integer(millesimes[1]),
     geometry = geometrie
   )
 }
 
 # agreger_artificialisation_communes -------------------------------------------
 # L'AGRÉGATION (pure) : l'intersection PONDÉRÉE PAR LA SURFACE des polygones
-# de flux avec les limites communales -> une ligne par commune :
-#   code · artif_m2 · artif_m3 · flux_net · millesime_debut · millesime_fin
+# d'état avec les limites communales -> une ligne par (commune × millésime) :
+#   code · artif · millesime
 # Un polygone entièrement DANS une commune lui donne sa pleine mesure ; un
 # polygone qui TRAVERSE la frontière donne à A et B leurs tranches pondérées
-# par la surface — la mesure OFFICIELLE du polygone (artif_m2/artif_m3/
-# flux_net, en m²) est répartie au prorata de la partie de SA géométrie
-# (aire_m2) tombant dans chaque commune. Un polygone hors de toutes les
-# communes tombe (aucune commune ne le porte). Les millésimes sont portés par
-# commune (les polygones d'une commune viennent du différentiel de SON
-# département — une commune a un seul couple de millésimes ; la table reste
-# honnête si jamais deux couples se croisaient : deux lignes). La géométrie
-# n'est pas publiée : la sortie est une table plate (le contrat de la table
-# des territoires).
-agreger_artificialisation_communes <- function(flux, communes) {
-  if (!inherits(flux, "sf") || !inherits(communes, "sf")) {
-    stop("flux et communes doivent être des objets sf.", call. = FALSE)
+# par la surface — la mesure OFFICIELLE du polygone (artif, en m² — la surface
+# artificialisée du polygone, 0 pour un « non artif ») est répartie au prorata
+# de la partie de SA géométrie (aire_m2) tombant dans chaque commune. Un
+# polygone hors de toutes les communes tombe (aucune commune ne le porte). Le
+# millésime est porté par commune (les polygones d'une commune viennent de
+# l'archive de SON département × SON millésime — la table reste honnête si
+# jamais deux millésimes se croisaient : deux lignes). La géométrie n'est pas
+# publiée : la sortie est une table plate (le contrat de la table des
+# territoires).
+agreger_artificialisation_communes <- function(etat, communes) {
+  if (!inherits(etat, "sf") || !inherits(communes, "sf")) {
+    stop("etat et communes doivent être des objets sf.", call. = FALSE)
   }
   if (!"code" %in% names(communes)) {
     stop("La couche des communes doit porter la colonne `code` (INSEE).",
          call. = FALSE)
   }
-  flux <- flux[flux$aire_m2 > 0, ]  # un polygone de surface nulle ne porte rien
-  flux <- sf::st_make_valid(flux)
+  etat <- etat[etat$aire_m2 > 0, ]  # un polygone de surface nulle ne porte rien
+  etat <- sf::st_make_valid(etat)
   communes <- sf::st_make_valid(communes)
-  if (sf::st_crs(flux) != sf::st_crs(communes)) {
-    communes <- sf::st_transform(communes, sf::st_crs(flux))
+  if (sf::st_crs(etat) != sf::st_crs(communes)) {
+    communes <- sf::st_transform(communes, sf::st_crs(etat))
   }
   # l'avertissement « attribute variables are assumed to be spatially constant »
   # est le comportement ATTENDU ici : les mesures du polygone sont constantes
   # sur toutes ses tranches (c'est ce que la pondération répartit)
   pieces <- suppressWarnings(
-    sf::st_intersection(flux, communes["code"])
+    sf::st_intersection(etat, communes["code"])
   )
   pieces$part <- as.numeric(sf::st_area(pieces)) / pieces$aire_m2
-  pieces$artif_m2 <- pieces$artif_m2 * pieces$part
-  pieces$artif_m3 <- pieces$artif_m3 * pieces$part
-  pieces$flux_net <- pieces$flux_net * pieces$part
+  pieces$artif <- pieces$artif * pieces$part
   pieces <- sf::st_drop_geometry(pieces)
   pieces %>%
-    dplyr::group_by(code, millesime_debut, millesime_fin) %>%
+    dplyr::group_by(code, millesime) %>%
     dplyr::summarise(
-      artif_m2 = sum(artif_m2), artif_m3 = sum(artif_m3),
-      flux_net = sum(flux_net),
+      artif = sum(artif),
       .groups = "drop"
     )
 }
@@ -535,27 +531,37 @@ extraire_gpkg_ocsge <- function(archive, extrait) {
 
 # construire_donnees_ocsge ------------------------------------------------------
 # L'acte « trouver la donnée » OCS-GE du thème (le pendant de
-# construire_donnees_milieux pour les états d'artificialisation, #234) : pour
-# CHAQUE couche du manifeste (les quatre départements), extrait l'archive du
-# cache (data/raw — la convention du pipeline, jamais un nouveau dossier),
-# lit le GPKG extrait, normalise, puis agrège contre les LIMITES COMMUNALES
+# construire_donnees_milieux pour les états d'artificialisation, #234, amendé
+# par #243) : pour CHAQUE archive d'état du manifeste (les huit — deux
+# millésimes × quatre départements), extrait l'archive du cache (data/raw — la
+# convention du pipeline, jamais un nouveau dossier), lit le GPKG extrait,
+# normalise (le millésime dérive de LA DONNÉE — la colonne `millesime` de la
+# couche — et doit concorder avec le millésime épinglé à l'id du manifeste :
+# un fichier qui dérive échoue fort), puis agrège contre les LIMITES COMMUNALES
 # fournies (la couche des communes — le code INSEE dans la colonne `code`).
+# L'agrégation par archive produit une ligne par (commune × millésime) ; le
+# builder PIVOTE les deux millésimes de chaque département en artif_m2 /
+# artif_m3 (la borne M2 = le millésime le plus ancien du département, M3 = le
+# plus récent — dérivé des ids du manifeste, jamais codé en dur) et porte les
+# millésimes sous LEUR PROPRE NOM (millesime_ocsge_debut/fin — la collision de
+# noms avec les millésimes RP de la population est résolue ici, avant la
+# jointure). flux_net a QUITTÉ la table (le DIFF est sorti — amendement #243).
 # Persiste la table par commune sous data/processed/milieux/ (idempotent) et
 # la retourne. Le RACCORD des états OCS-GE dans la table des communes du thème
 # (la jointure au payload, les deux horloges de population) est la suite de la
 # spec (#225 — ticket payload).
 #
 # L'AGRÉGATION est découpée PAR DÉPARTEMENT (vérifié à la première livraison
-# réelle, 2026-08-08) : chaque couche différentielle est découpée par
-# département — mais les communes LIMITROPHES reçoivent des polygones résiduels
-# de la couche du département VOISIN (des slivers de livraison, ~0,1–0,3 m² —
-# la frontière communale n'est pas la frontière de découpe du fichier). La
-# règle de la spec est la fenêtre PAR DÉPARTEMENT : les états d'une commune
-# viennent du fichier de SON département (le couple M2→M3 épinglé au
-# manifeste). Agrégée sans filtre, une commune limitorphe porterait DEUX
-# couples de millésimes (le sien + le sliver du voisin) — deux lignes qui
-# cassent le contrat une-ligne-par-commune (le bug réel découvert par #243).
-# Le filtre est l'alignement couche → communes de SON département
+# réelle, 2026-08-08) : chaque archive est découpée par département — mais les
+# communes LIMITROPHES reçoivent des polygones résiduels de l'archive du
+# département VOISIN (des slivers de livraison, ~0,1–0,3 m² — la frontière
+# communale n'est pas la frontière de découpe du fichier). La règle de la spec
+# est la fenêtre PAR DÉPARTEMENT : les états d'une commune viennent des
+# archives de SON département (le couple M2→M3 épinglé au manifeste). Agrégée
+# sans filtre, une commune limitorphe porterait les états du département voisin
+# (des polygones d'état tombés dans son quartier) — deux fenêtres qui cassent
+# le contrat une-ligne-par-commune (le bug réel découvert par #243). Le filtre
+# est l'alignement archive → communes de SON département
 # (code_insee_du_departement, la colonne du référentiel Admin Express).
 construire_donnees_ocsge <- function(cache = "data/raw",
                                      communes,
@@ -568,19 +574,65 @@ construire_donnees_ocsge <- function(cache = "data/raw",
          "l'agrégation OCS-GE en a besoin.", call. = FALSE)
   }
 
-  par_departement <- lapply(IDS_OCSGE_ARTIFICIALISATION, function(id) {
+  par_archive <- lapply(IDS_OCSGE_ARTIFICIALISATION, function(id) {
     ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
     archive <- file.path(cache, ligne$fichier)
     gpkg <- extraire_gpkg_ocsge(archive, extrait)
-    flux <- normaliser_ocsge_artificialisation(
+    etat <- normaliser_ocsge_artificialisation(
       lire_ocsge_artificialisation(gpkg)
     )
-    dep <- sub("^ocsge_artificialisation_", "", id)
+    # le millésime dérive de la DONNÉE (la colonne millesime de la couche) et
+    # doit CONCORDER avec le millésime épinglé à l'id du manifeste : un fichier
+    # déplacé (une archive d'un autre millésime au mauvais nom) est une dérive
+    # visible, jamais une NA silencieuse
+    millesime_attendu <- as.integer(sub("^ocsge_artificialisation_[0-9]{2}_",
+                                        "", id))
+    if (!all(unique(etat$millesime) == millesime_attendu)) {
+      stop("L'archive ", basename(archive), " porte le millésime ",
+           paste(unique(etat$millesime), collapse = ", "),
+           " mais le manifeste épingle ", millesime_attendu,
+           " — la couche a dérivé.", call. = FALSE)
+    }
+    dep <- sub("^ocsge_artificialisation_([0-9]{2})_.*", "\\1", id)
     communes_dep <- communes[
       as.character(communes$code_insee_du_departement) == dep, ]
-    agreger_artificialisation_communes(flux, communes_dep)
+    agreger_artificialisation_communes(etat, communes_dep)
   })
-  communes_artif <- dplyr::bind_rows(par_departement)
+  long <- dplyr::bind_rows(par_archive)
+
+  # les bornes M2/M3 par département, dérivées des ids du manifeste (jamais
+  # codées en dur) : M2 = le millésime le plus ancien du département, M3 = le
+  # plus récent. La même table sert au pivot (artif_m2/artif_m3) et aux
+  # millésimes portés par commune (millesime_ocsge_debut/fin).
+  bornes <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id %in% IDS_OCSGE_ARTIFICIALISATION, ] %>%
+    dplyr::mutate(
+      departement = sub("^ocsge_artificialisation_([0-9]{2})_.*$", "\\1", id),
+      millesime = as.integer(sub("^ocsge_artificialisation_[0-9]{2}_([0-9]{4})$",
+                                 "\\1", id))
+    ) %>%
+    dplyr::group_by(departement) %>%
+    dplyr::mutate(borne = dplyr::if_else(
+      millesime == min(millesime), "m2", "m3")) %>%
+    dplyr::ungroup()
+
+  communes_artif <- long %>%
+    dplyr::mutate(departement = substr(code, 1, 2)) %>%
+    dplyr::left_join(
+      dplyr::select(bornes, departement, millesime, borne),
+      by = c("departement", "millesime")
+    ) %>%
+    tidyr::pivot_wider(id_cols = c(code, departement),
+                       names_from = borne, values_from = artif) %>%
+    dplyr::rename(artif_m2 = m2, artif_m3 = m3) %>%
+    dplyr::left_join(
+      bornes %>%
+        tidyr::pivot_wider(id_cols = departement,
+                           names_from = borne, values_from = millesime) %>%
+        dplyr::rename(millesime_ocsge_debut = m2, millesime_ocsge_fin = m3),
+      by = "departement"
+    ) %>%
+    dplyr::select(-departement)
+
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(communes_artif, sortie)
   communes_artif
@@ -601,31 +653,41 @@ archives_ocsge_presentes <- function(cache) {
 # Le RACCORD des états OCS-GE dans la table des communes du thème (issue #237,
 # spec #225 — la jointure au payload) : joint les valeurs par commune de
 # l'ingestion (#234, construire_donnees_ocsge) sur la table des communes, par
-# code INSEE. PIÈGE DU TICKET : la table OCS-GE porte les colonnes
-# millesime_debut/millesime_fin qui COLLIDENT avec les millésimes de population
-# de la table des communes (les deux RP de la série historique, 2017/2023 — le
-# dénominateur de l'Histoire) — elles sont renommées millesime_ocsge_debut /
-# millesime_ocsge_fin AVANT la jointure (renommer après aurait écrasé la
-# population). Une commune absente de la table OCS-GE (aucun polygone de flux
-# sur son territoire) garde NA — jamais un 0 inventé.
+# code INSEE. Depuis l'amendement #243, le builder porte les millésimes OCS-GE
+# sous LEUR PROPRE NOM (millesime_ocsge_debut / millesime_ocsge_fin — la
+# collision de noms avec les millésimes RP de la population est résolue à la
+# construction, plus ici) : la jointure est une simple left_join. Une commune
+# absente de la table OCS-GE (aucun polygone d'état sur son territoire — un
+# désalignement COG, jamais un 0 inventé) garde NA.
 rattacher_ocsge_communes <- function(communes, ocsge) {
-  ocsge <- ocsge %>%
-    dplyr::rename(millesime_ocsge_debut = millesime_debut,
-                  millesime_ocsge_fin = millesime_fin)
   dplyr::left_join(communes, ocsge, by = "code")
 }
 
 # construire_ocsge_milieux ------------------------------------------------------
-# Le raccord OCS-GE du thème (issue #237, spec #225) : quand les archives sont
-# dans le cache, le référentiel géométrique PARTAGÉ communes_limites.geojson
-# (le même WFS Admin Express que le thème Mobilité lit — lire_communes_limites,
-# la source partagée) est lu, aligné sur les codes INSEE de la table des
-# communes (code_insee -> code, semi_join : une commune du référentiel hors
-# base tombe, une commune de la base hors référentiel reste sans donnée -> NA),
-# puis construire_donnees_ocsge agrège les états par commune sur cette
-# géométrie et rattacher_ocsge_communes les porte dans la table. Une archive
-# présente SANS le référentiel échoue bruyamment (jamais un silence) :
-# l'intersection pondérée a besoin de LA géométrie.
+# Le raccord OCS-GE du thème (issue #237, spec #225, amendé par #243) : quand
+# les archives sont dans le cache, le référentiel géométrique PARTAGÉ
+# communes_limites.geojson (le même WFS Admin Express que le thème Mobilité
+# lit — lire_communes_limites, la source partagée) est lu, aligné sur les codes
+# INSEE de la table des communes (code_insee -> code), puis
+# construire_donnees_ocsge agrège les états par commune sur cette géométrie et
+# rattacher_ocsge_communes les porte dans la table.
+#
+# L'ALIGNEMENT COG 2025 (amendement #243) : la géométrie d'intersection doit
+# être à l'édition 01/01/2025 du squelette (la base EPCI — COG 2025). Si
+# l'édition du cache diffère (des codes du référentiel absents de la base —
+# une commune fusionnée portée sous son ancien code, ou une édition plus
+# récente), les codes sont TRADUITS via passage_cog (#227 — la table de
+# passage INSEE table_passage_annuelle_2025.zip du cache) et RE-SOMMÉS avant
+# la jointure : deux anciennes communes traduites vers le même code 2025
+# s'agrègent dans la frontière courante (le groupement par code de
+# l'agrégation les fusionne). Jamais une NA silencieuse : une édition différente
+# SANS la table de passage échoue bruyamment (le strict pour les codes bretons
+# est celui de passage_cog — un code non mappé s'arrête en nommant le code).
+# Le semi_join final garde les communes de la base — une commune du référentiel
+# hors base tombe, une commune de la base hors référentiel reste sans donnée
+# -> NA (attrapé par la garde « toute commune a un état > 0 »).
+# Une archive présente SANS le référentiel échoue bruyamment (jamais un
+# silence) : l'intersection pondérée a besoin de LA géométrie.
 construire_ocsge_milieux <- function(cache, communes, sortie) {
   chemin_limites <- file.path(cache, "communes_limites.geojson")
   if (!file.exists(chemin_limites)) {
@@ -635,7 +697,28 @@ construire_ocsge_milieux <- function(cache, communes, sortie) {
          call. = FALSE)
   }
   limites <- lire_communes_limites(chemin_limites) %>%
-    dplyr::rename(code = code_insee) %>%
+    dplyr::rename(code = code_insee)
+
+  # l'édition du cache : tout code du référentiel doit appartenir à la base
+  # (COG 2025). Hors base -> l'édition diffère -> traduire via passage_cog.
+  base_codes <- unique(as.character(communes$code))
+  hors_base <- setdiff(as.character(limites$code), base_codes)
+  if (length(hors_base) > 0) {
+    zip_cog <- file.path(cache, "table_passage_annuelle_2025.zip")
+    if (!file.exists(zip_cog)) {
+      stop("L'édition du référentiel communes_limites.geojson du cache diffère ",
+           "du COG 2025 de la base (", length(hors_base), " code(s) hors base, ",
+           "ex. ", paste(utils::head(hors_base, 3), collapse = ", "), ") et la ",
+           "table de passage table_passage_annuelle_2025.zip (le fragment ",
+           "partagé cog_passage, #227) est absente du cache — jamais une NA ",
+           "silencieuse : fournir la table de passage ou une géométrie COG ",
+           "2025.", call. = FALSE)
+    }
+    mappe <- construire_mappe_cog_bretagne(zip_cog)
+    limites$code <- passage_cog(limites$code, mappe)
+  }
+
+  limites <- limites %>%
     dplyr::semi_join(communes, by = "code")
   ocsge <- construire_donnees_ocsge(
     cache = cache, communes = limites,
@@ -694,17 +777,18 @@ construire_periode_artif <- function(departements, millesime_debut,
 # surfaces de ses communes (le dénominateur du scalaire classé, #172). Les
 # deux MILLÉSIMES de la fenêtre sont des constantes du run : la table des
 # territoires les porte (pour l'Histoire), sans les sommer.
-# Depuis l'issue #237 (spec #225), quand la table des communes porte les états
-# OCS-GE, les TROIS mesures d'artificialisation (artif_m2 / artif_m3 /
-# flux_net, en m² — l'unité native de l'ingestion ; la conversion en hectares
-# se fait au payload, #238) s'agrègent de la même façon : la somme naïve des
-# membres, NA propagé (une commune sans donnée rend son niveau NA, jamais un 0
-# inventé). Et la fenêtre OCS-GE du territoire (periode_artif) dérive des
-# couples (département -> millésimes) distincts de ses membres (le couple du
-# département pour un territoire mono-département, le SPAN pour un EPCI
-# transfrontalier, les quatre fenêtres pour la région — construire_periode_artif).
-# Les millésimes de population (millesime_debut/fin, RP 2017/2023) restent
-# INTACTS — ce sont les deux horloges de la spec, jamais confondues.
+  # Depuis l'issue #237 (spec #225), quand la table des communes porte les états
+  # OCS-GE, les DEUX mesures d'état (artif_m2 / artif_m3, en m² — l'unité
+  # native de l'ingestion ; la conversion en hectares se fait au payload,
+  # #238) s'agrègent de la même façon : la somme naïve des membres, NA propagé
+  # (une commune sans donnée rend son niveau NA, jamais un 0 inventé). flux_net
+  # a QUITTÉ la table (le DIFF est sorti — amendement #243). Et la fenêtre
+  # OCS-GE du territoire (periode_artif) dérive des couples (département ->
+  # millésimes) distincts de ses membres (le couple du département pour un
+  # territoire mono-département, le SPAN pour un EPCI transfrontalier, les
+  # quatre fenêtres pour la région — construire_periode_artif).
+  # Les millésimes de population (millesime_debut/fin, RP 2017/2023) restent
+  # INTACTS — ce sont les deux horloges de la spec, jamais confondues.
 agreger_territoires_milieux <- function(communes, squelette) {
   base <- communes %>%
     dplyr::mutate(dplyr::across(c(departement, epci), as.character))
@@ -714,8 +798,7 @@ agreger_territoires_milieux <- function(communes, squelette) {
   # l'Histoire (#174) + les états OCS-GE quand la table les porte (#237)
   colonnes_mesure <- c(colonnes_conso, "surfcom2025",
                        "conso_fenetre", "pop_debut", "pop_fin")
-  colonnes_artif <- intersect(c("artif_m2", "artif_m3", "flux_net"),
-                              names(base))
+  colonnes_artif <- intersect(c("artif_m2", "artif_m3"), names(base))
   toutes <- c(colonnes_mesure, colonnes_artif)
 
   mesures <- dplyr::bind_rows(
@@ -842,12 +925,12 @@ construire_territoires_milieux <- function(donnees) {
 #     millésimes OCS-GE (M2/M3), en m²/hab — DEUX lignes par territoire,
 #     detail = le millésime de l'état (le nom « M2 »/« M3 » pour un span
 #     multi-dépt). Sa source de référence est le composant SIGNATURE de
-#     l'indicateur — l'état artificialisé (les couches OCS-GE), jamais le
-#     dénominateur partagé de population (la règle ADR-0009) :
-#     ocsge_artificialisation_22, la première des QUATRE couches du manifeste
-#     (une clé ne porte qu'UNE source de référence ; les quatre couches
-#     partagent le même motif, la source de référence est déclarée, jamais
-#     inférée).
+#     l'indicateur — l'état artificialisé (les archives d'état OCS-GE), jamais
+#     le dénominateur partagé de population (la règle ADR-0009) :
+#     ocsge_artificialisation_22_2025, l'archive de l'état FINAL du 22 (la
+#     première des HUIT archives du manifeste — une clé ne porte qu'UNE source
+#     de référence ; les huit archives partagent le même produit, la source de
+#     référence est déclarée, jamais inférée).
 #   - conso_enaf_annuel : la série annuelle 2011-2024, en hectares (les champs
 #     natifs naf{AA}art{AA+1}) — 14 lignes par territoire, detail = l'année
 #     (la multiplicité, comme structure_age pour Démographie) (#172, KEPT par
@@ -863,12 +946,14 @@ INDICATEURS_MILIEUX <- tibble::tibble(
     "Consommation d'espaces naturels, agricoles et forestiers (ENAF) — consommation annuelle, en hectares"
   ),
   sources = list(
-    c("ocsge_artificialisation_22", "ocsge_artificialisation_29",
-      "ocsge_artificialisation_35", "ocsge_artificialisation_56",
+    c("ocsge_artificialisation_22_2021", "ocsge_artificialisation_22_2025",
+      "ocsge_artificialisation_29_2021", "ocsge_artificialisation_29_2024",
+      "ocsge_artificialisation_35_2020", "ocsge_artificialisation_35_2023",
+      "ocsge_artificialisation_56_2022", "ocsge_artificialisation_56_2024",
       "serie_historique"),
     "consoenaf"
   ),
-  source_reference = c("ocsge_artificialisation_22", "consoenaf"),
+  source_reference = c("ocsge_artificialisation_22_2025", "consoenaf"),
   multiplicite = c(2L, 14L)
 )
 
@@ -1198,7 +1283,8 @@ construire_apercu_milieux <- function(territoires) {
 # Les vérifications de valeur propres au thème (point 7) : déclarées ici,
 # exécutées par validate_payload() après ses vérifications génériques. Depuis
 # le pivot (#239, ADR-0017) : la série annuelle KEPT (#172), l'état par
-# habitant (artif_par_habitant) et l'invariant ratio/delta de l'Histoire.
+# habitant (artif_par_habitant), l'invariant ratio/delta de l'Histoire et —
+# depuis l'amendement #243 — la garde « toute commune a un état > 0 ».
 validations_milieux <- list(
   # la consommation d'ENAF annuelle est un total non négatif (une valeur NA —
   # commune sans donnée, total de niveau incomplet — est un cas légitime,
@@ -1244,6 +1330,35 @@ validations_milieux <- list(
         stop("Payload invalide : l'invariant ratio/delta est violé ",
              "(sign(ratio − 1) = sign(delta)).", call. = FALSE)
       }
+    }
+    invisible(payload)
+  },
+  # la garde « toute commune a un état > 0 » (amendement #243, ADR-0017) :
+  # l'état est un STOCK — une commune bâtie n'a jamais 0, et le produit
+  # millésimé couvre tout le département (une commune sans état est une
+  # corruption). La garde attrape à la fois le bug flux-et-état (un état nul
+  # publié — les 102 communes à M2 = 0 du payload différentiel) et un
+  # désalignement COG qui produirait des NA (une commune absente de
+  # l'intersection). Chemin rétro-compatible (cache sans archives OCS-GE) :
+  # AUCUN état publié -> rien à vérifier (le schéma du pivot reste présent,
+  # tout NA). Dès qu'au moins une commune porte un état, TOUTES les communes
+  # doivent porter les DEUX états, strictement positifs.
+  function(payload) {
+    communes <- payload$histoires[
+      payload$histoires$type == "commune", ]
+    if (all(is.na(communes$artif_m2))) {
+      return(invisible(payload))
+    }
+    etat <- communes$artif_m2 / communes$artif_m3  # NA si l'un manque
+    defectueuses <- is.na(etat) | communes$artif_m2 <= 0 |
+      communes$artif_m3 <= 0
+    if (any(defectueuses)) {
+      stop("Payload invalide : des communes sans état artificialisé ",
+           "strictement positif (le stock n'est jamais 0, une commune bâtie ",
+           "a toujours de la terre artificialisée) — le bug flux-et-état ou ",
+           "un désalignement COG : ",
+           paste(utils::head(communes$territoire[defectueuses], 5),
+                 collapse = ", "), ".", call. = FALSE)
     }
     invisible(payload)
   }
