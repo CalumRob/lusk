@@ -49,14 +49,17 @@ communes_fixture_milieux <- function(cache = NULL) {
                              sortie = tempfile(fileext = ".rds"))
 }
 
-# Les fixtures du câblage territorial OCS-GE (issue #237) ----------------------
+# Les fixtures du câblage territorial OCS-GE (issue #237, amendés par #243) ---
 # La base des EPCI du fixture OCS-GE territorial : SEPT communes — 22001/22002
-# dans l'EPCI X du 22, 29001/29002/29003 dans l'EPCI Y du 29 (29003 SANS donnée
-# OCS-GE — le cas NA), 35001/56001 dans l'EPCI Z TRANSFRONTALIER 35+56 (le cas
-# du span de fenêtres). La même forme que base_epci_milieux (lire_epci). La
-# géométrie du fixture (grille_communes_ocsge) est sur la même grille que les
-# polygones de flux et le référentiel communes_limites.geojson — les tests de
-# câblage (test-territoire-ocsge.R) vérifient les valeurs par commune à la main.
+# dans l'EPCI X du 22, 29001/29002/29003 dans l'EPCI Y du 29, 35001/56001 dans
+# l'EPCI Z TRANSFRONTALIER 35+56 (le cas du span de fenêtres). Depuis
+# l'amendement #243, CHAQUE commune porte SES états (le produit millésimé
+# couvre tout le département — la « commune sans donnée » serait une
+# corruption, la garde « toute commune a un état > 0 » l'attrape). La même
+# forme que base_epci_milieux (lire_epci). La géométrie du fixture
+# (grille_communes_ocsge) est sur la même grille que les polygones d'état et
+# le référentiel communes_limites.geojson — les tests de câblage
+# (test-territoire-ocsge.R) vérifient les valeurs par commune à la main.
 
 base_epci_milieux_ocsge <- tibble::tribble(
   ~CODGEO, ~LIBGEO, ~EPCI, ~LIBEPCI, ~DEP, ~REG,
@@ -72,7 +75,7 @@ base_epci_milieux_ocsge <- tibble::tribble(
 # grille_communes_ocsge : la grille communale du fixture OCS-GE territorial —
 # sept carrés de 100 m de côté (10 000 m² chacun) en EPSG:2154, dans l'ordre
 # des codes de la base. Les communes du MÊME département sont ADJACENTES
-# (22001|22002 à x = 100, 29001|29002 à x = 300) pour que le polygone de flux
+# (22001|22002 à x = 100, 29001|29002 à x = 300) pour que le polygone d'état
 # qui TRAVERSE la frontière ait un vrai sens.
 grille_communes_ocsge <- list(
   "22001" = c(0, 0, 100, 100),
@@ -84,101 +87,131 @@ grille_communes_ocsge <- list(
   "56001" = c(200, 100, 300, 200)
 )
 
-# polygones_flux_ocsge_territoire : pour CHAQUE département, les polygones de
-# flux du fixture avec SA fenêtre (m2, m3) et SES coordonnées de base — UN
-# polygone entièrement dans la première commune + UN polygone qui TRAVERSE la
-# frontière de ses deux communes (la preuve de la pondération par la surface,
-# #234). Le polygone du 56 est une DÉSARTIFICIALISATION (sens -1) : la table
-# des territoires doit porter le flux net signé (jamais un abs() silencieux).
-polygones_flux_ocsge_territoire <- list(
+# polygones_etat_ocsge_territoire : pour CHAQUE département, les polygones
+# d'ÉTAT du fixture à SES deux millésimes (le produit millésimé « surfaces
+# artificialisées » — artif « artif »/« non artif », aire en m², la forme
+# réelle vérifiée 2026-08-09). Chaque archive porte les ÉTATS (des stocks,
+# jamais des flux) : un polygone entièrement dans une commune + un polygone
+# qui TRAVERSE la frontière de ses deux communes (la preuve de la pondération
+# par la surface, #234) + des « non artif » (le statut officiel fait foi —
+# jamais une superposition brute). Les états par commune (en m²) :
+#   22001 : 400 -> 1200 (22, 2021/2025)   35001 : 400 -> 400  (35, 2020/2023)
+#   22002 : 400 -> 800  (22, 2021/2025)   56001 : 800 -> 600  (56, 2022/2024 —
+#   29001 : 800 -> 1200 (29, 2021/2024)          la renaturation MESURÉE :
+#   29002 : 800 -> 800  (29, 2021/2024)          M3 < M2, les deux > 0)
+#   29003 : 500 -> 700  (29, 2021/2024)
+polygones_etat_ocsge_territoire <- list(
   "22" = list(
     fenetre = c(2021, 2025),
-    polygones = tibble::tribble(
-      ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      # 22001 (Δpop +200) : UNE désartificialisation (sens -1, état initial
-      # porté M2=400) + UNE artificialisation (sens +1, état final M3=400) ->
-      # M2=400, M3=400, trajectoire = 1 : le point dégénéré terre immobile
-      # (trajectoire == 1, Δpop > 0) -> se densifie (le signe pair : ratio
-      # == 1 compte pour la baisse, la convention des quadrants ADR-0011)
-      20, 20, 40, 40, -1L, 400,
-      60, 20, 80, 40, 1L, 400,
-      # 22001|22002 : le polygone qui TRAVERSE (frontière x = 100) —
-      # artificialisation, la moitié dans chaque commune (M3 = 800 chacune)
-      80, 20, 120, 60, 1L, 1600
+    etats = list(
+      "2021" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        # 22001 : 400 m² d'état initial
+        20, 20, 40, 40, "artif", 400,
+        # 22002 : 400 m² d'état initial
+        120, 20, 140, 40, "artif", 400,
+        # un « non artif » dans 22001 : le statut officiel, jamais re-dérivé
+        60, 60, 80, 80, "non artif", 400
+      ),
+      "2025" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        # 22001 : 400 (entier) + la moitié du polygone qui traverse (800)
+        20, 20, 40, 40, "artif", 400,
+        80, 20, 120, 60, "artif", 1600
+      )
     )
   ),
   "29" = list(
     fenetre = c(2021, 2024),
-    polygones = tibble::tribble(
-      ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      # 29001 (Δpop -150) : M2=800 (désartif) + M3=1200 (artif) ->
-      # trajectoire 1,5 > 1 -> consomme quand même
-      220, 20, 240, 40, -1L, 800,
-      260, 20, 280, 40, 1L, 400,
-      # 29001|29002 : le polygone qui TRAVERSE (frontière x = 300) —
-      # artificialisation, la moitié dans chaque (M3 = 800 chacune)
-      280, 20, 320, 60, 1L, 1600
+    etats = list(
+      "2021" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        # 29001 : 800 m² d'état initial
+        220, 20, 260, 40, "artif", 800,
+        # 29002 : 800 m² d'état initial
+        320, 20, 360, 40, "artif", 800,
+        # 29003 : 500 m² d'état initial
+        20, 120, 40, 145, "artif", 500
+      ),
+      "2024" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        # 29001 : 400 (entier) + la moitié du polygone qui traverse (800)
+        220, 20, 240, 40, "artif", 400,
+        280, 20, 320, 60, "artif", 1600,
+        # 29003 : 400 + 300 = 700 m² d'état final
+        20, 120, 40, 140, "artif", 400,
+        50, 150, 80, 160, "artif", 300
+      )
     )
   ),
   "35" = list(
     fenetre = c(2020, 2023),
-    polygones = tibble::tribble(
-      ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      # 35001 (Δpop +400) : M2=400 (désartif) + M3=400 (artif) ->
-      # trajectoire == 1, Δpop > 0 -> se densifie (le signe pair)
-      120, 120, 140, 140, -1L, 400,
-      160, 120, 180, 140, 1L, 400
+    etats = list(
+      "2020" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        120, 120, 140, 140, "artif", 400
+      ),
+      "2023" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        160, 120, 180, 140, "artif", 400
+      )
     )
   ),
   "56" = list(
     fenetre = c(2022, 2024),
-    polygones = tibble::tribble(
-      ~x0, ~y0, ~x1, ~y1, ~sens, ~surface,
-      # 56001 (Δpop +200) : M2=400 (désartif), M3=0 -> trajectoire 0 < 1 ->
-      # la terre DIMINUE pendant que la population grandit : se densifie
-      220, 120, 240, 140, -1L, 400
+    etats = list(
+      "2022" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        220, 120, 260, 140, "artif", 800
+      ),
+      "2024" = tibble::tribble(
+        ~x0, ~y0, ~x1, ~y1, ~artif, ~aire,
+        # 56001 : 400 + 200 = 600 m² d'état final — la renaturation MESURÉE
+        # (M3 < M2, les deux > 0 : un STOCK qui diminue, jamais un 0)
+        220, 120, 240, 140, "artif", 400,
+        260, 120, 280, 130, "artif", 200
+      )
     )
   )
 )
 
 # fixture_gpkg_ocsge_territoire : écrit le VRAI GeoPackage du fixture OCS-GE
-# d'un département (la couche zan_evol_{m2}_{m3}, EPSG:2154, les colonnes
-# officielles du différentiel IGN dans SA FORME RÉELLE — les minuscules
-# artif_{m2}/artif_{m3}, artificialisation +1/-1, surface) avec SES polygones
-# et SA fenêtre. Le même motif que fixture_gpkg_ocsge (helper-ocsge.R),
+# d'un département à UN millésime (la couche artif_{millesime}_{dep},
+# EPSG:2154, les colonnes officielles du produit millésimé « surfaces
+# artificialisées » dans SA FORME RÉELLE — id / code_cs / code_us / millesime /
+# source / ossature / id_origine / code_or / aire / artif / crit_seuil) avec
+# SES polygones d'état. Le même motif que fixture_gpkg_ocsge (helper-ocsge.R),
 # positionné sur la grille du fixture territorial.
-fixture_gpkg_ocsge_territoire <- function(chemin, departement) {
-  spec <- polygones_flux_ocsge_territoire[[departement]]
-  fenetre <- spec$fenetre
-  m2 <- fenetre[1]
-  m3 <- fenetre[2]
-  lignes <- spec$polygones
+fixture_gpkg_ocsge_territoire <- function(chemin, departement, millesime) {
+  spec <- polygones_etat_ocsge_territoire[[departement]]
+  lignes <- spec$etats[[as.character(millesime)]]
   geometries <- lapply(seq_len(nrow(lignes)), function(i) {
     l <- lignes[i, ]
     sf::st_polygon(list(polygone_rectangle(l$x0, l$y0, l$x1, l$y1)))
   })
   tbl <- tibble::tibble(
-    !!paste0("id_", m2) := paste0("S", seq_len(nrow(lignes)), "_", m2),
-    !!paste0("cs_", m2) := "CS1.1.1.1",
-    !!paste0("us_", m2) := "US5",
-    !!paste0("artif_", m2) := ifelse(lignes$sens == 1L, "non artif", "artif"),
-    !!paste0("id_", m3) := paste0("S", seq_len(nrow(lignes)), "_", m3),
-    !!paste0("cs_", m3) := "CS1.1.1.1",
-    !!paste0("us_", m3) := "US5",
-    !!paste0("artif_", m3) := ifelse(lignes$sens == 1L, "artif", "non artif"),
-    artificialisation = lignes$sens,
-    surface = as.double(lignes$surface)
+    id = paste0("OCSGE", sprintf("%07d", seq_len(nrow(lignes)))),
+    code_cs = "CS1.1.1.1",
+    code_us = "US5",
+    millesime = as.character(millesime),
+    source = "calcul",
+    ossature = 0,
+    id_origine = "NC",
+    code_or = "NC",
+    aire = as.double(lignes$aire),
+    artif = lignes$artif,
+    crit_seuil = FALSE
   )
   couche <- sf::st_sf(tbl, geometry = sf::st_sfc(geometries, crs = 2154))
   if (file.exists(chemin)) unlink(chemin)
   sf::st_write(couche, chemin,
-               layer = paste0("zan_evol_", m2, "_", m3),
+               layer = paste0("artif_", millesime, "_", departement),
                quiet = TRUE)
   invisible(chemin)
 }
 
 # fixture_limites_ocsge : la couche des limites communales du fixture OCS-GE
-# territorial — la MÊME grille que les polygones de flux, dans la forme du WFS
+# territorial — la MÊME grille que les polygones d'état, dans la forme du WFS
 # Admin Express que lire_communes_limites consomme (code_insee,
 # code_insee_du_departement), EPSG:2154. C'est le contenu du
 # communes_limites.geojson du cache du fixture.
@@ -195,12 +228,13 @@ fixture_limites_ocsge <- function(codes = names(grille_communes_ocsge)) {
 }
 
 # cache_ocsge_milieux : le cache COMPLET du fixture OCS-GE territorial (issue
-# #237) — la fixture CONSOENAF à SEPT communes, la série historique à sept
-# communes (déposée extraite, la forme que le builder lit), les QUATRE archives
-# OCS-GE (le .7z de signature valide au nom exact du manifeste + le GPKG déjà
-# extrait par l'étape manuelle documentée — le motif du test du builder #234)
-# et le référentiel géométrique partagé communes_limites.geojson sur la même
-# grille. Zéro réseau : tout est généré ou copié depuis les fixtures.
+# #237, amendé par #243) — la fixture CONSOENAF à SEPT communes, la série
+# historique à sept communes (déposée extraite, la forme que le builder lit),
+# les HUIT archives d'état OCS-GE (le .7z de signature valide au nom exact du
+# manifeste + le GPKG déjà extrait par l'étape manuelle documentée — le motif
+# du test du builder #234) et le référentiel géométrique partagé
+# communes_limites.geojson sur la même grille. Zéro réseau : tout est généré
+# ou copié depuis les fixtures.
 cache_ocsge_milieux <- function() {
   cache <- tempfile("cache-milieux-ocsge-")
   dir.create(cache)
@@ -218,14 +252,16 @@ cache_ocsge_milieux <- function() {
   )
   extrait_ocsge <- file.path(extrait, "ocsge")
   if (!dir.exists(extrait_ocsge)) dir.create(extrait_ocsge, recursive = TRUE)
-  for (dep in names(polygones_flux_ocsge_territoire)) {
-    ligne <- MANIFEST_MILIEUX[
-      MANIFEST_MILIEUX$id == paste0("ocsge_artificialisation_", dep), ]
-    writeBin(mini_7z(), file.path(cache, ligne$fichier))
-    fixture_gpkg_ocsge_territoire(
-      file.path(extrait_ocsge, sub("[.]7z$", ".gpkg", ligne$fichier)),
-      dep
-    )
+  for (dep in names(polygones_etat_ocsge_territoire)) {
+    for (millesime in polygones_etat_ocsge_territoire[[dep]]$fenetre) {
+      id <- paste0("ocsge_artificialisation_", dep, "_", millesime)
+      ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
+      writeBin(mini_7z(), file.path(cache, ligne$fichier))
+      fixture_gpkg_ocsge_territoire(
+        file.path(extrait_ocsge, sub("[.]7z$", ".gpkg", ligne$fichier)),
+        dep, millesime
+      )
+    }
   }
   sf::st_write(fixture_limites_ocsge(),
                file.path(cache, "communes_limites.geojson"), quiet = TRUE)

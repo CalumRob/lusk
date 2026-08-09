@@ -91,41 +91,43 @@ test_that("chaque territoire publie l'état M2/M3 (m²/hab) et la série annuell
   }
   # l'état par habitant : la valeur EST l'état m² / population du millésime
   # qui BORNE l'état (RP 2017 pour M2, RP 2023 pour M3 — le bracket ADR-0017) —
-  # vérifiée à la main pour chaque commune du fixture
+  # vérifiée à la main pour chaque commune du fixture. Depuis l'amendement
+  # #243, ce sont des STOCKS (le produit millésimé) — chaque commune a les
+  # DEUX états strictement positifs, jamais un 0 (le bug flux-et-état).
   expect_equal(etat("22001", "2021")$value, 400 / 2200)
   expect_equal(etat("22001", "2025")$value, 1200 / 2400)
-  expect_equal(etat("22002", "2021")$value, 0)
+  expect_equal(etat("22002", "2021")$value, 400 / 1200)
   expect_equal(etat("22002", "2025")$value, 800 / 1300)
   expect_equal(etat("29001", "2021")$value, 800 / 3100)
   expect_equal(etat("29001", "2024")$value, 1200 / 2950)
-  expect_equal(etat("29002", "2021")$value, 0)
+  expect_equal(etat("29002", "2021")$value, 800 / 920)
   expect_equal(etat("29002", "2024")$value, 800 / 910)
+  expect_equal(etat("29003", "2021")$value, 500 / 500)
+  expect_equal(etat("29003", "2024")$value, 700 / 500)
   expect_equal(etat("35001", "2020")$value, 400 / 4800)
   expect_equal(etat("35001", "2023")$value, 400 / 5200)
-  expect_equal(etat("56001", "2022")$value, 400 / 2900)  # la désartificialisation
-  expect_equal(etat("56001", "2024")$value, 0)
-  # la commune sans donnée (29003) garde SES DEUX lignes NA — jamais un trou
-  # de lignes, jamais un 0 inventé
-  expect_equal(nrow(valeur_payload(payload, "29003", "artif_par_habitant")), 2L)
-  expect_true(all(is.na(valeur_payload(payload, "29003",
-                                       "artif_par_habitant")$value)))
-  # les agrégats : les états somment (EPCI X = 22001 + 22002 -> M2 400 m² du
-  # désartif de 22001, M3 2000 m²), l'intensité se lit sur la population du
-  # niveau (RP 2017 = 2200 + 1200 pour M2, RP 2023 = 2400 + 1300 pour M3)
-  expect_equal(etat("200000001", "2021")$value, 400 / 3400)
+  expect_equal(etat("56001", "2022")$value, 800 / 2900)  # la renaturation
+  expect_equal(etat("56001", "2024")$value, 600 / 3100)  # MESURÉE (M3 < M2)
+  # les agrégats : les états somment (EPCI X = 22001 + 22002 -> M2 800 m²,
+  # M3 2000 m²), l'intensité se lit sur la population du niveau (RP 2017 =
+  # 2200 + 1200 pour M2, RP 2023 = 2400 + 1300 pour M3)
+  expect_equal(etat("200000001", "2021")$value, 800 / 3400)
   expect_equal(etat("200000001", "2025")$value, 2000 / 3700)
-  expect_equal(etat("22", "2021")$value, 400 / 3400)
+  expect_equal(etat("22", "2021")$value, 800 / 3400)
   expect_equal(etat("22", "2025")$value, 2000 / 3700)
   expect_equal(etat("35", "2020")$value, 400 / 4800)
   expect_equal(etat("35", "2023")$value, 400 / 5200)
-  expect_equal(etat("56", "2022")$value, 400 / 2900)
-  # EPCI Y / département 29 / région : membre incomplet (29003) -> NA
-  expect_true(all(is.na(valeur_payload(payload, "200000002",
-                                       "artif_par_habitant")$value)))
-  expect_true(all(is.na(valeur_payload(payload, "29",
-                                       "artif_par_habitant")$value)))
-  expect_true(all(is.na(valeur_payload(payload, "53",
-                                       "artif_par_habitant")$value)))
+  expect_equal(etat("56", "2022")$value, 800 / 2900)
+  expect_equal(etat("56", "2024")$value, 600 / 3100)
+  # EPCI Y / département 29 : 29001 + 29002 + 29003 (toutes portent leurs
+  # états depuis l'amendement #243)
+  expect_equal(etat("200000002", "2021")$value, 2100 / 4520)
+  expect_equal(etat("200000002", "2024")$value, 2700 / 4360)
+  expect_equal(etat("29", "2021")$value, 2100 / 4520)
+  expect_equal(etat("29", "2024")$value, 2700 / 4360)
+  # la région : les sept communes
+  expect_equal(etat("53", "M2")$value, 4100 / 15620)
+  expect_equal(etat("53", "M3")$value, 5700 / 16360)
   # l'unité du contrat : m²/hab pour l'état, partout
   expect_true(all(valeur_payload(payload, "22001",
                                  "artif_par_habitant")$unit == "m²/hab"))
@@ -189,14 +191,14 @@ test_that("chaque indicateur est estampillé depuis sa source de référence (OC
                              theme = theme_milieux())
 
   v <- vintages_milieux()
-  ocsge22 <- v[v$id == "ocsge_artificialisation_22", ]
+  ocsge22 <- v[v$id == "ocsge_artificialisation_22_2025", ]
   conso <- v[v$id == "consoenaf", ]
   # l'état par habitant est estampillé du vintage OCS-GE de SA source de
   # référence — le composant signature de l'indicateur (l'état artificialisé,
   # jamais le dénominateur partagé de population, la règle ADR-0009) :
-  # ocsge_artificialisation_22, la première des quatre couches du manifeste
-  # (une clé ne porte qu'UNE source de référence ; les quatre couches
-  # partagent le même motif — la source de référence est déclarée, jamais
+  # ocsge_artificialisation_22_2025, la première des huit archives du manifeste
+  # (une clé ne porte qu'UNE source de référence ; les huit archives
+  # partagent le même produit — la source de référence est déclarée, jamais
   # inférée)
   etat <- payload$indicateurs[payload$indicateurs$key == "artif_par_habitant", ]
   expect_true(all(etat$vintage_source == ocsge22$source))
@@ -264,5 +266,46 @@ test_that("une dérive de valeur du payload Milieux échoue bruyamment", {
                      validations = validations_milieux,
                      apercu = APERCU_MILIEUX),
     "non déclarée"
+  )
+})
+
+test_that("la garde « toute commune a un état > 0 » : un état nul ou NA est une corruption (amendement #243)", {
+  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+                             theme = theme_milieux())
+
+  # un état initial nul (le bug flux-et-état — les 102 communes à M2 = 0 du
+  # payload différentiel) : la garde l'attrape, jamais un stock nul publié
+  zero <- payload
+  zero$histoires$artif_m2[zero$histoires$territoire == "22001" &
+                            zero$histoires$type == "commune"] <- 0
+  expect_error(
+    validate_payload(zero,
+                     indicateurs = INDICATEURS_MILIEUX,
+                     vintages = vintages_milieux(),
+                     validations = validations_milieux,
+                     apercu = APERCU_MILIEUX),
+    "état artificialisé"
+  )
+
+  # une commune sans état (NA — un désalignement COG) : la garde l'attrape
+  sans_etat <- payload
+  sans_etat$histoires$artif_m3[sans_etat$histoires$territoire == "29003" &
+                                 sans_etat$histoires$type == "commune"] <- NA_real_
+  expect_error(
+    validate_payload(sans_etat,
+                     indicateurs = INDICATEURS_MILIEUX,
+                     vintages = vintages_milieux(),
+                     validations = validations_milieux,
+                     apercu = APERCU_MILIEUX),
+    "état artificialisé"
+  )
+
+  # le fixture complet passe la garde (toutes les communes portent leurs états)
+  expect_no_error(
+    validate_payload(payload,
+                     indicateurs = INDICATEURS_MILIEUX,
+                     vintages = vintages_milieux(),
+                     validations = validations_milieux,
+                     apercu = APERCU_MILIEUX)
   )
 })

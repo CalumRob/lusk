@@ -95,30 +95,38 @@ test_that("construire_territoires_milieux : le squelette partagé — communes +
   )
 })
 
-test_that("vintages_milieux : la projection générique depuis le manifeste (les sept sources, OCS-GE compris, #234)", {
+test_that("vintages_milieux : la projection générique depuis le manifeste (les onze sources, OCS-GE compris, #234 amendé #243)", {
   v <- vintages_milieux()
 
   expect_equal(nrow(v), nrow(MANIFEST_MILIEUX))
   expect_setequal(v$id, c("epci", "consoenaf", "serie_historique",
-                          "ocsge_artificialisation_22",
-                          "ocsge_artificialisation_29",
-                          "ocsge_artificialisation_35",
-                          "ocsge_artificialisation_56"))
+                          "ocsge_artificialisation_22_2021",
+                          "ocsge_artificialisation_22_2025",
+                          "ocsge_artificialisation_29_2021",
+                          "ocsge_artificialisation_29_2024",
+                          "ocsge_artificialisation_35_2020",
+                          "ocsge_artificialisation_35_2023",
+                          "ocsge_artificialisation_56_2022",
+                          "ocsge_artificialisation_56_2024"))
   conso <- v[v$id == "consoenaf", ]
   expect_equal(conso$version, "2025")
   expect_equal(conso$date_reference, "2025-01-01")
   expect_equal(conso$date_publication, "2026-07-24")
   expect_equal(conso$licence, "lov2")
 
-  # les quatre OCS-GE portent leur vintage (le millésime final) et leurs dates
-  # — le builder générique les projette SANS changement (#234)
-  v22 <- v[v$id == "ocsge_artificialisation_22", ]
-  expect_equal(v22$version, "2025")
-  expect_equal(v22$date_reference, "2025-01-01")
-  expect_equal(v22$date_publication, "2026-07-03")
+  # les huit OCS-GE portent leur vintage (le millésime de l'état) et leurs
+  # dates — le builder générique les projette SANS changement (#234, #243)
+  v22 <- v[v$id == "ocsge_artificialisation_22_2021", ]
+  expect_equal(v22$version, "2021")
+  expect_equal(v22$date_reference, "2021-01-01")
+  expect_equal(v22$date_publication, "2025-09-12")
   expect_equal(v22$licence, "lov2")
-  v35 <- v[v$id == "ocsge_artificialisation_35", ]
+  v22b <- v[v$id == "ocsge_artificialisation_22_2025", ]
+  expect_equal(v22b$version, "2025")
+  expect_equal(v22b$date_reference, "2025-01-01")
+  expect_equal(v22b$date_publication, "2026-07-03")
+  v35 <- v[v$id == "ocsge_artificialisation_35_2023", ]
   expect_equal(v35$version, "2023")
   expect_equal(v35$date_reference, "2023-01-01")
-  expect_equal(v35$date_publication, "2026-03-03")
+  expect_equal(v35$date_publication, "2026-03-04")
 })

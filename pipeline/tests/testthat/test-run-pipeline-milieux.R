@@ -128,15 +128,19 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   expect_equal(hist$territoire, payload$histoires$territoire)
   expect_equal(hist$classification, payload$histoires$classification)
 
-  # vintages.parquet : une ligne par source du manifeste Milieux (les sept,
-  # OCS-GE compris — #234)
+  # vintages.parquet : une ligne par source du manifeste Milieux (les onze,
+  # OCS-GE compris — #234 amendé #243)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_MILIEUX))
   expect_setequal(vint$id, c("epci", "consoenaf", "serie_historique",
-                             "ocsge_artificialisation_22",
-                             "ocsge_artificialisation_29",
-                             "ocsge_artificialisation_35",
-                             "ocsge_artificialisation_56"))
+                             "ocsge_artificialisation_22_2021",
+                             "ocsge_artificialisation_22_2025",
+                             "ocsge_artificialisation_29_2021",
+                             "ocsge_artificialisation_29_2024",
+                             "ocsge_artificialisation_35_2020",
+                             "ocsge_artificialisation_35_2023",
+                             "ocsge_artificialisation_56_2022",
+                             "ocsge_artificialisation_56_2024"))
 
   # le rapport de run : mode full, une ligne par source
   rapport <- jsonlite::fromJSON(file.path(cible, "run-report.json"))
@@ -203,6 +207,7 @@ test_that("le téléchargement Milieux est idempotent : une seule fois, le cache
   expect_equal(second$status, rep("frais", nrow(MANIFEST_MILIEUX)))
   # la source CONSOENAF n'a donc été téléchargée qu'UNE fois
   expect_equal(sum(telecharge == "conso-com.csv"), 1L)
-  # les OCS-GE aussi : chaque .7z intact est laissé intact
-  expect_equal(sum(grepl("[.]7z$", telecharge)), 4L)
+  # les OCS-GE aussi : chaque .7z intact est laissé intact — les HUIT archives
+  # d'état du produit millésimé (#243)
+  expect_equal(sum(grepl("[.]7z$", telecharge)), 8L)
 })
