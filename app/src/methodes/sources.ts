@@ -209,6 +209,17 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     url: 'https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/',
     themes: ['mobilite'],
   },
+  // La table de passage COG (issue #222, ticket #227) : la projection des codes
+  // COG 2022 du jeu Geovelo vers le COG 2025 du squelette — un composant
+  // partagé du référentiel (geometrie.R, passage_cog), jamais une source
+  // thématique au sens fraîcheur : sa ligne vintage documente le millésime
+  // porté, pas une horloge de contenu.
+  cog_passage: {
+    nom: 'INSEE \u2014 Table de passage annuelle des communes (COG 2025)',
+    editeur: 'INSEE',
+    url: 'https://www.insee.fr/fr/statistiques/fichier/7671867/table_passage_annuelle_2025.zip',
+    themes: ['mobilite'],
+  },
   communes_limites: {
     nom: 'IGN \u2014 Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)',
     editeur: 'IGN',

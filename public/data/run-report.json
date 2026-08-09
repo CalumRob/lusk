@@ -1,26 +1,90 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-08T19:36:57Z",
+  "timestamp": "2026-08-09T15:22:28Z",
   "statuts": [
     {
-      "id": "serie_historique",
+      "id": "mobilite_snapshot",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "rp_logement_princ",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "menages",
+      "id": "osm_reseaux",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "amenagements_cyclables",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "age_detail",
+      "id": "communes_limites",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "epci",
+      "id": "korrigo",
       "mode": "cron",
       "status": "frais"
+    },
+    {
+      "id": "batiments_residentiels",
+      "mode": "manuel",
+      "status": "frais"
+    },
+    {
+      "id": "bornes-recharges",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "stationnement-velo",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "cog_passage",
+      "mode": "cron",
+      "status": "frais"
+    }
+  ],
+  "couverture": [
+    {
+      "departement": "22",
+      "lignes_actuel": 3651,
+      "km_actuel": 798.99909668954933,
+      "lignes_precedent": 3651,
+      "km_precedent": 798.99909668954933,
+      "regression": false
+    },
+    {
+      "departement": "29",
+      "lignes_actuel": 7408,
+      "km_actuel": 1297.963829307557,
+      "lignes_precedent": 7408,
+      "km_precedent": 1297.963829307557,
+      "regression": false
+    },
+    {
+      "departement": "35",
+      "lignes_actuel": 9699,
+      "km_actuel": 1420.8862050937166,
+      "lignes_precedent": 9699,
+      "km_precedent": 1420.8862050937166,
+      "regression": false
+    },
+    {
+      "departement": "56",
+      "lignes_actuel": 7039,
+      "km_actuel": 1395.3838890008069,
+      "lignes_precedent": 7039,
+      "km_precedent": 1395.3838890008069,
+      "regression": false
     }
   ]
 }
