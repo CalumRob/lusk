@@ -28,6 +28,7 @@ import {
 } from '../fiche/indicateurs'
 import { SCALAIRES_STORY } from '../fiche/storyScalaires'
 import { clesIndicateursDuTheme } from '../payload/selectors'
+import type { CoucheProgramme } from './programmesCouches'
 
 /** Where the layer's rows live — the indicateur table or a story scalar. */
 export type SourceCouche = 'indicateur' | 'histoire'
@@ -45,6 +46,10 @@ export interface Couche {
   parDefaut: boolean
 }
 
+/** A layer of the carte — a theme layer (indicateur/histoire) or a programmes
+ *  layer (membre/subvention — ADR-0019 #282). Discriminated by `source`. */
+export type CoucheCarte = Couche | CoucheProgramme
+
 /** An expandable sidebar entry — the detail-layers of a multi-detail key, or the story-pool siblings. */
 export interface GroupeCouches {
   libelle: string
@@ -52,7 +57,7 @@ export interface GroupeCouches {
 }
 
 export type EntreeCouches =
-  | { type: 'couche'; couche: Couche }
+  | { type: 'couche'; couche: CoucheCarte }
   | { type: 'groupe'; groupe: GroupeCouches }
 
 export interface CouchesTheme {

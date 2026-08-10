@@ -40,18 +40,24 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
+  ANCRAGE_PROGRAMMES,
   ANCRAGES_THEMES,
   COULEUR_CONTOUR,
+  COULEUR_MEMBRE,
   COULEUR_NEUTRE,
   LARGEUR_CONTOUR,
   echelleChoroplethe,
   rampeDivergente,
 } from '@/carte/couleurs'
-import type { Couche } from '@/carte/coucheModel'
+import type { Couche, CoucheCarte } from '@/carte/coucheModel'
 import {
+  collectionAvecMembres,
   collectionAvecValeurs,
   expressionCouleurs,
+  expressionMembres,
   indicateurParTerritoire,
+  membresParTerritoire,
+  subventionsParTerritoire,
   valeurHistoireParTerritoire,
 } from '@/carte/fusion'
 import type { CollectionAvecValeurs } from '@/carte/fusion'
@@ -65,8 +71,9 @@ const props = defineProps<{
   masques: Masques
   payload: Payload
   theme: Theme | null
-  /** The active layer — null in Aperçu or for a theme whose default is absent (Économie). */
-  couche: Couche | null
+  /** The active layer — a theme layer (null in Aperçu / Économie) or a
+   *  programmes layer (membre / subvention, #282). */
+  couche: CoucheCarte | null
   niveau: NiveauMasque
 }>()
 
@@ -94,37 +101,67 @@ function masqueDe(niveau: NiveauMasque): CollectionMasque | null {
   return props.masques[niveau] ?? null
 }
 
-/** The active level's fill — joined to the active layer's rows (indicateur
- *  clef + detail, or the histoire scalar — ADR-0019). */
-function collectionActive(niveau: NiveauMasque): CollectionAvecValeurs | CollectionMasque | null {
+/** The active level's fill — joined to the active layer's rows. A theme layer
+ *  reads its indicateur clef + detail (or the histoire scalar, ADR-0019); a
+ *  programmes layer reads the membership boolean (membre) or the subvention
+ *  total (subvention, #282). */
+function collectionActive(
+  niveau: NiveauMasque,
+): CollectionAvecValeurs | CollectionAvecMembres | CollectionMasque | null {
   const collection = masqueDe(niveau)
   if (!collection) return null
-  const { theme, couche } = props
-  if (!couche || !theme) return collection
+  const { couche } = props
+  if (!couche) return collection
+  if (couche.source === 'membre') {
+    return collectionAvecMembres(collection, membresParTerritoire(props.payload, couche.sigle, niveau))
+  }
+  if (couche.source === 'subvention') {
+    return collectionAvecValeurs(collection, subventionsParTerritoire(props.payload, niveau))
+  }
+  if (!props.theme) return collection
   const parTerritoire =
     couche.source === 'indicateur'
-      ? indicateurParTerritoire(props.payload.indicateurs, theme, couche.clef, couche.detail)
-      : valeurHistoireParTerritoire(props.payload, theme, couche.clef)
+      ? indicateurParTerritoire(props.payload.indicateurs, props.theme, couche.clef, couche.detail)
+      : valeurHistoireParTerritoire(props.payload, props.theme, couche.clef)
   return collectionAvecValeurs(collection, parTerritoire)
 }
 
 type PaintRemplissage = FillLayerSpecification['paint']
 
-function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
-  const { theme, couche } = props
-  if (!couche || !theme) return null
-  const collection = collectionActive(niveau)
-  if (!collection) return null
+function valeursDeLaCollection(
+  collection: CollectionAvecValeurs | CollectionAvecMembres | CollectionMasque,
+): number[] {
   const valeurs: number[] = []
   for (const feature of collection.features) {
     const v = (feature.properties as { valeur?: number | null }).valeur
     if (typeof v === 'number') valeurs.push(v)
   }
-  const echelle = echelleValeurs(valeurs)
+  return valeurs
+}
+
+function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
+  const { couche } = props
+  if (!couche) return null
+  // #282 — les couches programmes : le highlight catégoriel in/out (membre)
+  // à côté de la choroplèthe de valeurs (subvention), sur la rampe de marque.
+  if (couche.source === 'membre') {
+    return { 'fill-color': expressionMembres(COULEUR_MEMBRE) }
+  }
+  if (couche.source === 'subvention') {
+    const collection = collectionActive(niveau)
+    if (!collection) return null
+    const echelle = echelleValeurs(valeursDeLaCollection(collection))
+    const couleurs = echelleChoroplethe(ANCRAGE_PROGRAMMES, Math.max(2, echelle.seuils.length + 1))
+    return { 'fill-color': expressionCouleurs(echelle.seuils, couleurs) }
+  }
+  if (!props.theme) return null
+  const collection = collectionActive(niveau)
+  if (!collection) return null
+  const echelle = echelleValeurs(valeursDeLaCollection(collection))
   const couleurs =
     echelle.type === 'divergente'
-      ? rampeDivergente(ANCRAGES_THEMES[theme], echelle.seuils)
-      : echelleChoroplethe(ANCRAGES_THEMES[theme], Math.max(2, echelle.seuils.length + 1))
+      ? rampeDivergente(ANCRAGES_THEMES[props.theme], echelle.seuils)
+      : echelleChoroplethe(ANCRAGES_THEMES[props.theme], Math.max(2, echelle.seuils.length + 1))
   return { 'fill-color': expressionCouleurs(echelle.seuils, couleurs) }
 }
 
@@ -190,13 +227,21 @@ function nomTerritoire(territoire: string): string {
   return trouverTerritoire(props.payload, territoire)?.nom ?? territoire
 }
 
+/** La couche de thème pour le popup — les couches programmes (#282) ne
+ *  portent ni clef ni détail (le popup rejoint le thème seulement, #281). */
+function couchePourPopup(): Couche | null {
+  const { couche } = props
+  if (couche && (couche.source === 'indicateur' || couche.source === 'histoire')) return couche
+  return null
+}
+
 function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
   fermerTooltip()
   const territoire = String(feature.properties.territoire)
   const nom = nomTerritoire(territoire)
   const fiche = trouverTerritoire(props.payload, territoire)
 
-  const kpis = kpisPourPopup(props.payload, territoire, props.theme, props.couche)
+  const kpis = kpisPourPopup(props.payload, territoire, props.theme, couchePourPopup())
   const lignesKpis = kpis
     .map(
       (k) =>
@@ -275,7 +320,7 @@ function hauteurSousAncre(popup: Popup): number {
 
 function afficherTooltip(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
   const territoire = String(feature.properties.territoire)
-  const contenu = contenuTooltip(props.payload, territoire, props.theme, props.couche)
+  const contenu = contenuTooltip(props.payload, territoire, props.theme, couchePourPopup())
   const html = `<div class="tooltip-carte">
     <span class="tooltip-carte-nom">${contenu.nom}</span>
     ${contenu.valeur ? `<span class="tooltip-carte-valeur">${contenu.valeur}</span>` : ''}

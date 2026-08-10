@@ -13,6 +13,8 @@ import type { Couche } from '../carte/coucheModel'
 import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  membresProgrammesFixture,
+  subventionsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
@@ -62,6 +64,30 @@ const payload: Payload = {
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,
+}
+
+/** Le payload avec l'onglet programmes — les lignes partagées + une ligne de
+ *  subvention communale supplémentaire (22002) pour que la choroplèthe ait
+ *  des valeurs à joindre. */
+const payloadProgrammes: Payload = {
+  ...payload,
+  programmes: {
+    membres: membresProgrammesFixture,
+    subventions: [
+      ...subventionsProgrammesFixture,
+      {
+        territoire: '22002',
+        type: 'commune',
+        annee: 2025,
+        programme_libl: null,
+        montant: 12000,
+        vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
+        vintage_version: '2026-08-05',
+        vintage_date_reference: '2026-08-05',
+        vintage_date_publication: '2026-08-05',
+      },
+    ],
+  },
 }
 
 /** The Démographie densité layer — the previous config's equivalent, as a Couche. */
@@ -231,6 +257,66 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
     const { wrapper, carte } = await monter()
 
     await wrapper.setProps({ theme: 'economie', couche: null })
+
+    expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
+  })
+})
+
+describe('MapExplorer — les couches de l’onglet « Programmes & financements » (#282)', () => {
+  it('peint le highlight catégoriel d’une couche d’adhésion (in/out — jamais une rampe)', async () => {
+    const { wrapper, carte } = await monter()
+
+    await wrapper.setProps({
+      payload: payloadProgrammes,
+      couche: { source: 'membre', sigle: 'ACV', libelle: 'ACV', niveau: 'communes' },
+    })
+
+    const peinture = carte?.peintures['masques-communes-remplissage']['fill-color'] as unknown[]
+    expect(peinture[0]).toBe('case')
+    expect(peinture[1]).toEqual(['==', ['get', 'membre'], true])
+    // les données jointes portent le booléen membre — pas un nombre, pas une rampe
+    const donnees = carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; membre: boolean } }[]
+    }
+    const a1 = donnees.features.find((f) => f.properties.territoire === '22001')
+    const d = donnees.features.find((f) => f.properties.territoire === '22002')
+    expect(a1?.properties.membre).toBe(true) // lauréate ACV
+    expect(d?.properties.membre).toBe(false) // PVD, pas ACV
+  })
+
+  it('choroplèthe la couche subventions — le total € par territoire joint sur la source', async () => {
+    const { wrapper, carte } = await monter()
+
+    await wrapper.setProps({
+      payload: payloadProgrammes,
+      couche: { source: 'subvention', libelle: 'Subventions totales' },
+    })
+
+    const peinture = carte?.peintures['masques-communes-remplissage']['fill-color'] as unknown[]
+    expect(peinture[0]).toBe('case')
+    const step = peinture[2] as unknown[]
+    expect(step[0]).toBe('step')
+    const donnees = carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null } }[]
+    }
+    const a1 = donnees.features.find((f) => f.properties.territoire === '22001')
+    const d = donnees.features.find((f) => f.properties.territoire === '22002')
+    expect(a1?.properties.valeur).toBe(45000) // la somme des deux domaines
+    expect(d?.properties.valeur).toBe(12000)
+  })
+
+  it('garde le neutre en secours quand la couche subventions ne joint aucune ligne (payload absent)', async () => {
+    const { wrapper, carte } = await monter()
+
+    await wrapper.setProps({ couche: { source: 'subvention', libelle: 'Subventions totales' } })
+
+    const peinture = carte?.peintures['masques-communes-remplissage']['fill-color'] as unknown[]
+    expect(peinture[0]).toBe('case')
+    expect(JSON.stringify(peinture)).toContain(COULEUR_NEUTRE)
+  })
+
+  it('garde les masques neutres quand la couche programme est inactive (aucune couche)', async () => {
+    const { carte } = await monter()
 
     expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
