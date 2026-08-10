@@ -74,12 +74,7 @@ const histoireDemographie = computed(() =>
 const story = computed(() => {
   const histoire = histoireDemographie.value
   if (!histoire) return null
-  return storyDemographie(
-    histoire.classification,
-    histoire.taux_solde_naturel,
-    histoire.taux_solde_migratoire,
-    histoire.periode,
-  )
+  return storyDemographie(histoire)
 })
 
 // The Économie Story (issue #121): the LQ is the Story — the block's top-5
@@ -184,23 +179,9 @@ const storyMilieuxAngle = computed(() => {
   if (props.theme !== 'milieux') return null
   const histoire = histoireMilieux.value
   if (histoire?.theme !== 'milieux') return null
-  if (histoire.classification === null) return null
-  // le contrat #243 : une lecture porte TOUJOURS sa seconde force, ses états
-  // ET sa fenêtre — sans eux, pas de story (jamais un ratio « — » inventé)
-  if (histoire.trajectoire_artif_par_habitant === null) return null
-  if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
-    return null
-  }
-  if (histoire.periode_artif === null) return null
-  return storyMilieux(
-    histoire.classification,
-    histoire.delta_population,
-    histoire.artif_m2_par_habitant,
-    histoire.artif_m3_par_habitant,
-    histoire.trajectoire_artif_par_habitant,
-    histoire.periode_pop,
-    histoire.periode_artif,
-  )
+  // le mapper garde les cas incomplets du contrat #243 (classification nulle,
+  // trajectoire/états/fenêtre manquants) — jamais une lecture inventée
+  return storyMilieux(histoire)
 })
 
 // The no-reading case (the pipeline's discovery #243) : M2 = 0 — a territory

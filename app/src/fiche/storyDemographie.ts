@@ -7,7 +7,9 @@
  * and publishes it as the histoires table's `classification`. This module
  * maps that classification to the app-side copy: the serif one-liner and the
  * "comment lire" line, which quotes the territory's ACTUAL rates (issue #73:
- * the story speaks the territory's own two forces, nothing relative).
+ * the story speaks the territory's own two forces, nothing relative). The two
+ * rate field names come from the SCALAIRES_STORY declaration (ADR-0019 — the
+ * fiche and the carte read the same list).
  *
  * The reading is the SIGN of the two rates (ADR-0011 — the four quadrants of
  * a plot whose axes cross at 0); the copy is MAGNITUDE-AWARE within the two
@@ -17,10 +19,15 @@
  * les naissances" — never "compensent".
  *
  * Wording is PROVISIONAL (theme contract) and deliberately factual/neutral —
- * no dramatic wording even when a rate is negative (issue #73). Unknown or
- * missing classification → null: the block never invents a one-liner; a
- * missing rate → null: the comment-lire would have nothing to quote.
+ * no dramatic wording even when a rate is negative (issue #73). An unknown or
+ * missing classification → null: the block never invents a one-liner. The
+ * rates are non-nullable on the row by contract — a row that validated
+ * carries its two forces, the comment-lire always has something to quote.
  */
+
+import type { HistoireDemographie } from '@/payload/types'
+
+import { SCALAIRES_STORY } from './storyScalaires'
 
 export type ClassificationDemographie =
   | 'attire-renouvelle'
@@ -107,18 +114,16 @@ const ANGLES_PAR_CLASSIFICATION: Record<ClassificationDemographie, AngleParClass
   },
 }
 
-export function storyDemographie(
-  classification: string | null | undefined,
-  tauxNaturel: number | null | undefined,
-  tauxMigratoire: number | null | undefined,
-  /** The inter-censal window the rates annualize (pipeline, "2017-2023") — dates the title when published. */
-  periode: string | null | undefined = null,
-): AngleStory | null {
+export function storyDemographie(histoire: HistoireDemographie): AngleStory | null {
+  const { classification, periode } = histoire
   if (!classification) return null
   const angle = ANGLES_PAR_CLASSIFICATION[classification as ClassificationDemographie]
   if (!angle) return null
-  if (tauxNaturel === null || tauxNaturel === undefined) return null
-  if (tauxMigratoire === null || tauxMigratoire === undefined) return null
+  // les deux forces de la lecture — les champs de la déclaration, jamais
+  // codés en dur (ADR-0019 : ajouter un scalaire met la fiche ET la carte à jour)
+  const [champNaturel, champMigratoire] = SCALAIRES_STORY.demographie
+  const tauxNaturel = histoire[champNaturel]
+  const tauxMigratoire = histoire[champMigratoire]
   return {
     classification,
     titre: periode ? `${angle.titre} (${periode})` : angle.titre,
