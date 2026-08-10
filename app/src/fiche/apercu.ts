@@ -139,9 +139,31 @@ export function libelleBadge(badge: BadgeProgramme): string {
   return `${expansion} · ${phraseVoix(badge)}${noms}${rider}`
 }
 
-/** Un montant en euros, formaté français — « 30 000 € » (digits never jitter). */
+/**
+ * Un montant en euros, formaté français — « 30 000 € » sous le million, et le
+ * contrat #305 : à partir de 1 000 000 € le montant bascule en millions
+ * « X,XX M€ » (DEUX décimales, jamais tronquées — « 7 725 740 € » →
+ * « 7,73 M€ », « 1 000 000 € » → « 1,00 M€ »). Un seul formateur pour le
+ * total ET les axes.
+ */
 export function formaterMontant(x: number): string {
+  if (x >= 1_000_000) {
+    const [entiers, decimales] = (x / 1_000_000).toFixed(2).split('.')
+    return `${entiers.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202F')},${decimales} M€`
+  }
   return `${FORMATEUR_NOMBRE.format(x)} €`
+}
+
+/** La cible de la part de contexte (issue #305) — « du total de l'EPCI » / « du total de la région ». */
+export function libellePartContexte(parent: 'epci' | 'region'): string {
+  return parent === 'epci' ? "du total de l'EPCI" : 'du total de la région'
+}
+
+/** Le texte du lien de provenance (issue #305) — « communes de l'EPCI » / « communes du département » / « communes de Bretagne ». */
+export function libelleProvenance(niveau: 'epci' | 'departement' | 'region'): string {
+  if (niveau === 'epci') return "communes de l'EPCI"
+  if (niveau === 'departement') return 'communes du département'
+  return 'communes de Bretagne'
 }
 
 /** Le lien « Région subventions » de l'élément — le portail officiel des aides. */

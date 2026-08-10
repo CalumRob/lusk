@@ -200,8 +200,18 @@ describe('libelleBadge — l’expansion accessible complète d’un badge', () 
 })
 
 describe('formaterMontant — les figures de subventions en euros', () => {
-  it('formate un montant avec le séparateur de milliers français', () => {
+  it('formate un montant avec le séparateur de milliers français sous le seuil du million', () => {
     expect(formaterMontant(30000)).toBe('30\u202F000 €')
-    expect(formaterMontant(2000000)).toBe('2\u202F000\u202F000 €')
+    expect(formaterMontant(999999)).toBe('999\u202F999 €')
+  })
+
+  it('bascule en millions au seuil des 1 000 000 € — « X,XX M€ », deux décimales (issue #305)', () => {
+    expect(formaterMontant(1000000)).toBe('1,00 M€')
+    expect(formaterMontant(7725740)).toBe('7,73 M€')
+  })
+
+  it('arrondit le million au centime près', () => {
+    expect(formaterMontant(1999999)).toBe('2,00 M€')
+    expect(formaterMontant(1234567)).toBe('1,23 M€')
   })
 })

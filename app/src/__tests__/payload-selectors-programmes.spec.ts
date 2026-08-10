@@ -29,9 +29,13 @@ import type { Payload } from '../payload/types'
  *     nommés en entier — un EPCI transversal (EPCI Z, 22+29) compte dans les
  *     DEUX départements (dérivé de l'appartenance des communes, jamais du
  *     champ `departement` de la ligne EPCI).
- * Les subventions : la ventilation par domaine sur les fiches communales (le
- * top-N + « autres » précalculé par le pipeline), le total annuel unique
- * ailleurs. Chaque badge et chaque figure portent leur estampille vintage.
+ * Les subventions (contrat révisé #305) : la ventilation COMPLÈTE par domaine
+ * sur les fiches communales — le pipeline publie chaque domaine (jamais une
+ * ligne « autres »), l'app trie par montant décroissant (libellé en départage)
+ * et le composant plie le top-5 + la révélation. Le total annuel unique
+ * ailleurs, avec la part de contexte (commune → son EPCI, EPCI/département →
+ * la région) et la provenance (la somme des communes, niveau agrégé seulement).
+ * Chaque badge et chaque figure portent leur estampille vintage.
  */
 
 const payloadDemographie: Payload = {
@@ -204,9 +208,11 @@ describe('programmesPourTerritoire — l’agrégat au DÉPARTEMENT / RÉGION (l
 })
 
 describe('programmesPourTerritoire — les subventions', () => {
-  it('ventile le total annuel par domaine sur une fiche communale (la somme des axes = le total)', () => {
+  it('ventile le total annuel par domaine sur une fiche communale (la somme des axes = le total, triés par montant décroissant)', () => {
     const rendu = programmesPourTerritoire(payloadDemographie, '22001')
 
+    // le fixture porte les axes NON triés (Agriculture avant Développement
+    // économique) — le sélecteur les rend par montant décroissant
     expect(rendu.subventions).toEqual({
       annee: 2025,
       axes: [
@@ -215,14 +221,27 @@ describe('programmesPourTerritoire — les subventions', () => {
       ],
       total: 45000,
       vintage: expect.stringContaining('SCDL'),
+      partContexte: { part: 1, parent: 'epci' },
+      provenance: null,
     })
   })
 
-  it('porte la ventilation LARGE telle quelle — le top-N + « autres » est PRÉCALCULÉ par le pipeline, jamais re-dérivé', () => {
+  it('tri les axes par montant DÉCROISSANT, le libellé en départage — la ventilation COMPLÈTE, jamais une ligne « autres »', () => {
     const rendu = programmesPourTerritoire(payloadEchelle, '29003')
 
-    expect(rendu.subventions?.axes).toHaveLength(7)
-    expect(rendu.subventions?.axes?.map((a) => a.libelle)).toContain('« autres »')
+    expect(rendu.subventions?.axes?.map((a) => a.libelle)).toEqual([
+      'Développement économique', // 50 000 €
+      'Agriculture', // 40 000 €
+      'Culture', // 30 000 €
+      'Sport', // 20 000 €
+      'Environnement', // 10 000 €
+      'Enseignement', // 6 000 € — le départage alphabétique du montant égal
+      'Tourisme', // 6 000 €
+    ])
+    expect(rendu.subventions?.axes?.map((a) => a.montant)).toEqual([
+      50000, 40000, 30000, 20000, 10000, 6000, 6000,
+    ])
+    expect(rendu.subventions?.axes).not.toContainEqual({ libelle: '« autres »', montant: 7000 })
     expect(rendu.subventions?.total).toBe(162000)
   })
 
@@ -242,6 +261,54 @@ describe('programmesPourTerritoire — les subventions', () => {
     expect(programmesPourTerritoire(payloadDemographie, '29').subventions).toBeNull()
     // une commune avec des badges mais sans subventions : la figure est absente
     expect(programmesPourTerritoire(payloadDemographie, '29002').subventions).toBeNull()
+  })
+
+  it('calcule la part de contexte d’une commune — son total dans celui de SON EPCI (même année de référence)', () => {
+    const rendu = programmesPourTerritoire(payloadEchelle, '29003')
+
+    expect(rendu.subventions?.partContexte).toMatchObject({ parent: 'epci' })
+    expect(rendu.subventions?.partContexte?.part).toBeCloseTo(162000 / 172000, 4)
+  })
+
+  it('calcule la part de contexte d’un EPCI (transversal compris) et d’un département dans le total de la RÉGION', () => {
+    const epci = programmesPourTerritoire(payloadEchelle, '200000003') // EPCI Z, 22+29
+    expect(epci.subventions?.partContexte).toMatchObject({ parent: 'region' })
+    expect(epci.subventions?.partContexte?.part).toBeCloseTo(172000 / 2000000, 4)
+
+    const departement = programmesPourTerritoire(payloadDemographie, '22')
+    expect(departement.subventions?.partContexte).toMatchObject({ parent: 'region' })
+    expect(departement.subventions?.partContexte?.part).toBeCloseTo(300000 / 2000000, 4)
+  })
+
+  it('ne lit AUCUNE part de contexte sur la région — elle n’a pas de parent', () => {
+    const region = programmesPourTerritoire(payloadDemographie, '53')
+
+    expect(region.subventions?.partContexte).toBeNull()
+  })
+
+  it('garde la part silencieuse — une commune dont le parent n’a pas de total agrégé (ou sans aucune ligne)', () => {
+    // 29001 a une ligne de subvention mais SON EPCI (Y) n’a pas de total agrégé
+    const commune = programmesPourTerritoire(payloadEchelle, '29001')
+    expect(commune.subventions).not.toBeNull()
+    expect(commune.subventions?.partContexte).toBeNull()
+    // 29002 n’a aucune ligne — pas de figure, pas de part
+    expect(programmesPourTerritoire(payloadDemographie, '29002').subventions).toBeNull()
+  })
+
+  it('lit la provenance d’une fiche agrégée — la somme des communes, avec la cible du lien', () => {
+    const epci = programmesPourTerritoire(payloadDemographie, '200000001')
+    const departement = programmesPourTerritoire(payloadDemographie, '22')
+    const region = programmesPourTerritoire(payloadDemographie, '53')
+
+    expect(epci.subventions?.provenance).toEqual({ niveau: 'epci', code: '200000001' })
+    expect(departement.subventions?.provenance).toEqual({ niveau: 'departement', code: '22' })
+    expect(region.subventions?.provenance).toEqual({ niveau: 'region' })
+  })
+
+  it('ne lit AUCUNE provenance sur une fiche communale — la somme n’a pas de sens à l’échelle de la commune', () => {
+    const rendu = programmesPourTerritoire(payloadEchelle, '29003')
+
+    expect(rendu.subventions?.provenance).toBeNull()
   })
 })
 

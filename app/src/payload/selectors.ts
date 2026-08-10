@@ -749,11 +749,37 @@ export interface AxeSubvention {
 }
 
 /**
+ * La part de contexte d'une fiche (issue #305) — le total du territoire dans
+ * celui de son parent agrégé, DÉRIVÉ app-side depuis les lignes existantes
+ * (le seam « dans l'EPCI : X % » d'ADR-0015, jamais une seconde mesure
+ * publiée) : une commune → le total de son EPCI, un EPCI/département → le
+ * total de la région. La région n'a pas de parent — pas de part.
+ */
+export interface PartContexteSubvention {
+  /** La part — une fraction [0,1], « X,X % du total de … » côté affichage. */
+  part: number
+  /** Le parent du total : l'EPCI d'une commune, la région d'un EPCI/département. */
+  parent: 'epci' | 'region'
+}
+
+/**
+ * La provenance d'une fiche agrégée (issue #305) — la somme des subventions
+ * des communes du niveau, avec la cible du lien vers la liste filtrée.
+ * Communes : pas de provenance (la somme n'a pas de sens à leur échelle).
+ */
+export type ProvenanceSubventions =
+  | { niveau: 'epci'; code: string }
+  | { niveau: 'departement'; code: string }
+  | { niveau: 'region' }
+
+/**
  * Les faits de subventions d'une fiche — le total annuel de l'année de
- * référence, ventilé par domaine sur les fiches communales (le top-N +
- * « autres » PRÉCALCULÉ par le pipeline, jamais re-dérivé ici — ADR-0013), le
- * total unique ailleurs. Null quand le payload ne porte aucune ligne pour le
- * territoire (l'état vide honnête, jamais un zéro inventé).
+ * référence, ventilé par domaine sur les fiches communales (la ventilation
+ * COMPLÈTE publiée par le pipeline, triée par montant décroissant ici —
+ * ADR-0013 + contrat révisé #305), le total unique ailleurs, la part de
+ * contexte et la provenance quand elles existent. Null quand le payload ne
+ * porte aucune ligne pour le territoire (l'état vide honnête, jamais un zéro
+ * inventé).
  */
 export interface SubventionsFiche {
   annee: number
@@ -761,6 +787,10 @@ export interface SubventionsFiche {
   axes: AxeSubvention[] | null
   total: number
   vintage: string
+  /** La part de contexte — X,X % du total de l'EPCI / de la région (null sans parent). */
+  partContexte: PartContexteSubvention | null
+  /** La provenance — la somme des communes, niveau agrégé seulement (null sur une commune). */
+  provenance: ProvenanceSubventions | null
 }
 
 /** Le rendu de l'élément Programmes & financements pour une fiche. */
@@ -808,6 +838,49 @@ function communesDe(payload: Payload, epci: string): Territoire[] {
 }
 
 /**
+ * La part de contexte d'une fiche (issue #305) — dérivée app-side depuis les
+ * lignes d'agrégat existantes (le seam « dans l'EPCI : X % » d'ADR-0015) :
+ * une commune → le total de SON EPCI (du référentiel, jamais un champ de la
+ * ligne commune), un EPCI/département → le total de la région. Même année de
+ * référence, uniquement là où un total parent existe (le parent sans ligne,
+ * ou le total nul, gardent la part silencieuse — jamais une part inventée).
+ * La région n'a pas de parent — pas de part.
+ */
+function partContextePour(
+  payload: Payload,
+  ref: Territoire,
+  annee: number,
+  total: number,
+): PartContexteSubvention | null {
+  if (ref.type === 'region') return null
+  const parent: PartContexteSubvention['parent'] = ref.type === 'commune' ? 'epci' : 'region'
+  const idParent =
+    parent === 'epci'
+      ? ref.epci
+      : payload.territoires.find((t) => t.type === 'region')?.territoire ?? null
+  if (idParent === null) return null
+  const ligne = payload.programmes?.subventions.find(
+    (s) => s.territoire === idParent && s.annee === annee,
+  )
+  if (!ligne || ligne.montant <= 0) return null
+  return { part: total / ligne.montant, parent }
+}
+
+/**
+ * La provenance d'une fiche agrégée (issue #305) — la somme des subventions
+ * des communes du niveau, et la cible du lien vers la liste filtrée
+ * (EPCI → /communes?epci=…, département → /communes?departement=…, région →
+ * /communes). Une commune n'a pas de provenance — la somme n'a pas de sens à
+ * son échelle.
+ */
+function provenancePour(ref: Territoire): ProvenanceSubventions | null {
+  if (ref.type === 'commune') return null
+  return ref.type === 'region'
+    ? { niveau: 'region' }
+    : { niveau: ref.type, code: ref.territoire }
+}
+
+/**
  * LA DÉRIVATION EN ÉCHELLE (issue #181, ADR-0013) — le rendu de l'élément
  * Programmes & financements d'une fiche, depuis les lignes d'adhésion du
  * payload + le référentiel `territoires` (la jointure relationnelle que le
@@ -824,10 +897,15 @@ function communesDe(payload: Payload, epci: string): Territoire[] {
  *     nommés, des labels et de l'ORT avec les communes nommées, jamais un badge
  *     plat que le niveau n'a pas signé ; un EPCI transversal compte dans les
  *     deux départements.
- * Les subventions : la ventilation par domaine sur les fiches communales (telle
- * quelle — le top-N + « autres » est précalculé), le total annuel unique
- * ailleurs. Chaque badge et chaque figure portent leur estampille vintage. Un
- * payload absent (404 → null) ou un territoire inconnu rendent l'état vide.
+ * Les subventions (contrat révisé #305) : la ventilation COMPLÈTE par domaine
+ * sur les fiches communales — le pipeline publie chaque domaine (jamais une
+ * ligne « autres »), ce sélecteur la trie par montant décroissant (le libellé
+ * en départage) et le composant plie le top-5 + la révélation. Le total annuel
+ * unique ailleurs, avec la part de contexte (commune → son EPCI,
+ * EPCI/département → la région — dérivée app-side, ADR-0015) et la provenance
+ * (la somme des communes, niveau agrégé seulement). Chaque badge et chaque
+ * figure portent leur estampille vintage. Un payload absent (404 → null) ou un
+ * territoire inconnu rendent l'état vide.
  */
 export function programmesPourTerritoire(payload: Payload, territoire: string): RenderingProgrammes {
   const programmes = payload.programmes
@@ -842,14 +920,23 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
 
   let subventionsFiche: SubventionsFiche | null = null
   if (subventions.length > 0) {
+    const annee = subventions[0].annee
+    const total = subventions.reduce((somme, s) => somme + s.montant, 0)
+    // la ventilation COMPLÈTE du pipeline, triée ici par montant décroissant
+    // (le libellé en départage) — le top-5 + la révélation sont l'affaire du
+    // composant, le sélecteur reste pur (issue #305)
     const axes = ref.type === 'commune'
-      ? subventions.map((s) => ({ libelle: s.programme_libl ?? '', montant: s.montant }))
+      ? subventions
+          .map((s) => ({ libelle: s.programme_libl ?? '', montant: s.montant }))
+          .sort((a, b) => b.montant - a.montant || a.libelle.localeCompare(b.libelle, 'fr'))
       : null
     subventionsFiche = {
-      annee: subventions[0].annee,
+      annee,
       axes,
-      total: subventions.reduce((somme, s) => somme + s.montant, 0),
+      total,
       vintage: formaterVintage(subventions[0]),
+      partContexte: partContextePour(payload, ref, annee, total),
+      provenance: provenancePour(ref),
     }
   }
 
