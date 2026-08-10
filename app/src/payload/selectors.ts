@@ -10,6 +10,7 @@
 import type {
   ApercuRow,
   ColonneRang,
+  ColonneTailleRang,
   Histoire,
   HistoireEconomie,
   HistoireMobilite,
@@ -57,14 +58,32 @@ const SUFFIXE_RANG: Record<ColonneRang, string> = {
   rang_reg: 'de la région',
 }
 
+/** The group-size column paired with each rank column (ADR-0015 — the « / Y »). */
+const TAILLE_RANG: Record<ColonneRang, ColonneTailleRang> = {
+  rang_epci: 'rang_epci_n',
+  rang_dep: 'rang_dep_n',
+  rang_reg: 'rang_reg_n',
+}
+
+/** Le nombre ordinal français : 1er, 2e, 3e… (jamais « 1e », jamais « 2er »). */
+function ordinalFrancais(n: number): string {
+  return n === 1 ? '1er' : `${n}e`
+}
+
 /**
- * The rank-in-context chip: fraction × 100 → "P25 de l'EPCI". A null rank
- * means no comparison group at that level — no chip (null).
+ * The rank-in-context chip (ADR-0015): the direction-aware ordinal position
+ * with its group size — « 1er/41 de l'EPCI » (1 = best). A null rank means no
+ * comparison group at that level — no chip (null). The group size is always
+ * shown: the « / Y » of the ordinal, never hidden.
  */
-export function formaterRang(rang: number | null, colonne: ColonneRang): string | null {
+export function formaterRang(
+  rang: number | null,
+  taille: number | null,
+  colonne: ColonneRang,
+): string | null {
   if (rang === null) return null
-  const centile = Math.round(rang * 100)
-  return `P${centile} ${SUFFIXE_RANG[colonne]}`
+  const sur = taille === null ? '' : `/${taille}`
+  return `${ordinalFrancais(rang)}${sur} ${SUFFIXE_RANG[colonne]}`
 }
 
 const MOIS_FRANCAIS = [
@@ -530,12 +549,13 @@ const COLONNES_RANG: readonly ColonneRang[] = ['rang_epci', 'rang_dep', 'rang_re
 
 /**
  * The rank-in-context chip of the nearest available comparison group: a
- * commune shows its EPCI rank, an EPCI its département rank, the région none.
- * A null rank at every level → null (no chip).
+ * commune shows its EPCI rank, an EPCI its regional rank, the région none.
+ * A null rank at every level → null (no chip). The group size of the chosen
+ * level is always carried (« 1er/41 de l'EPCI », ADR-0015).
  */
 export function rangEnContexte(indicateur: Indicateur): string | null {
   for (const colonne of COLONNES_RANG) {
-    const libelle = formaterRang(indicateur[colonne], colonne)
+    const libelle = formaterRang(indicateur[colonne], indicateur[TAILLE_RANG[colonne]], colonne)
     if (libelle !== null) return libelle
   }
   return null

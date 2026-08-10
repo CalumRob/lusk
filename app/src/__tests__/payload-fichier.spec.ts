@@ -156,7 +156,8 @@ describe('chargerFichier — the per-file seam', () => {
 
   it('raises a typed validation error when the file drifts from the contract', async () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
-    indicateurs[0].rang_epci = 25
+    // la dérive ordinale classique (ADR-0015) : une fraction (le percentile retiré)
+    indicateurs[0].rang_epci = 0.25
 
     await expect(
       chargerFichier(

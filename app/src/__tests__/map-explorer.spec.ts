@@ -369,7 +369,7 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     // la valeur de la couche active, formatée en français, avec son rang-en-contexte
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
-    expect(popup?.contenu).toContain("P50 de l'EPCI")
+    expect(popup?.contenu).toContain("1er/2 de l'EPCI")
     expect(popup?.contenu).toContain('popup-carte-rang')
     // la popup répond « comment ce territoire se situe sur CETTE variable » —
     // pas le mur de KPI du thème (plus de ligne Population)
@@ -412,7 +412,7 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
 
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('133,33')
-    expect(popup?.contenu).toContain('P0 du département')
+    expect(popup?.contenu).toContain('2e/2 de la région')
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 
@@ -521,7 +521,7 @@ describe('MapExplorer — le zoom de recherche (#283)', () => {
     expect(popup?.contenu).toContain('Commune A1')
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
-    expect(popup?.contenu).toContain("P50 de l'EPCI")
+    expect(popup?.contenu).toContain("1er/2 de l'EPCI")
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 
@@ -539,7 +539,7 @@ describe('MapExplorer — le zoom de recherche (#283)', () => {
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('EPCI X')
     expect(popup?.contenu).toContain('133,33')
-    expect(popup?.contenu).toContain('P0 du département')
+    expect(popup?.contenu).toContain('2e/2 de la région')
     expect(popup?.contenu).toContain('Voir la fiche')
   })
 

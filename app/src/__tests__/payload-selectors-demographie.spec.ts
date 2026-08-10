@@ -90,21 +90,21 @@ describe('histoirePourTerritoire — the Story row', () => {
   })
 })
 
-describe('rangEnContexte — the rank chip of the nearest comparison group', () => {
-  it('shows the EPCI rank for a commune (nearest group first)', () => {
+describe('rangEnContexte — the rank chip of the nearest comparison group (ADR-0015)', () => {
+  it('shows the EPCI rank for a commune, with its group size', () => {
     const densite22001 = indicateursDemographieFixture.find(
       (l) => l.territoire === '22001' && l.key === 'densite',
     )!
 
-    expect(rangEnContexte(densite22001)).toBe("P50 de l'EPCI")
+    expect(rangEnContexte(densite22001)).toBe("1er/2 de l'EPCI")
   })
 
-  it('falls back to the département rank when the EPCI rank is null', () => {
+  it('falls back to the régional rank when the EPCI rank is null (an EPCI ranks among its peers)', () => {
     const densiteEpci = indicateursDemographieFixture.find(
       (l) => l.territoire === '200000001' && l.key === 'densite',
     )!
 
-    expect(rangEnContexte(densiteEpci)).toBe('P0 du département')
+    expect(rangEnContexte(densiteEpci)).toBe('2e/2 de la région')
   })
 
   it('returns null when every rank is null (the région ranks nowhere)', () => {

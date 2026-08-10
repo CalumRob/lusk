@@ -87,7 +87,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       libelle: 'Densité de population',
       valeur: '200',
       unite: 'hab/km²',
-      rang: "P50 de l'EPCI",
+      rang: "1er/2 de l'EPCI",
     })
   })
 
@@ -108,14 +108,14 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTrancheMoin15)
 
-    expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: "P40 de l'EPCI" })
+    expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: "1er/2 de l'EPCI" })
   })
 
-  it('an EPCI row shows the next comparison group when it has no EPCI rank (rang_epci null)', () => {
+  it('an EPCI row shows its régional rank when it has no EPCI rank (rang_epci null)', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '200000001', 'demographie', coucheDensite)
 
-    expect(kpis[0]?.rang).toBe('P0 du département')
+    expect(kpis[0]?.rang).toBe('2e/2 de la région')
   })
 
   it('a layer row with no rank column at all (la région) shows the value without a rank', () => {

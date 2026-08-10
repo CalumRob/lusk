@@ -112,9 +112,27 @@ describe('parsePayload — accepts the contract shape', () => {
 })
 
 describe('parsePayload — rejects contract drift, loudly', () => {
-  it('rejects a rank outside [0,1] (the classic 25 instead of 0.25 drift)', () => {
+  it('rejects a fractional rank (the legacy percentile form — ADR-0015 retires Pxx)', () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    indicateurs[0].rang_epci = 0.25
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('rejects a rank exceeding its group size (competition ranking — rang ≤ rang_*_n)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    // la densité de 22001 est classée 1er/2 dans son EPCI — un rang 25 dépasse
+    // la taille du groupe (le « / Y » du rendu), jamais silencieux
     indicateurs[0].rang_epci = 25
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/rang/i)
+  })
+
+  it('rejects a group size without its rank (les deux vont ensemble — ADR-0015)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
+    indicateurs[0].rang_epci = null
 
     const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
     expect(erreur.message).toMatch(/rang/i)

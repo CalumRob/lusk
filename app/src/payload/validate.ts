@@ -127,9 +127,18 @@ function estUneDe<T extends string>(x: unknown, valeurs: readonly T[]): x is T {
   return typeof x === 'string' && (valeurs as readonly string[]).includes(x)
 }
 
-/** Un rang vit dans [0,1] ou est null (NA = pas de groupe de comparaison). */
+/**
+ * Un rang ordinal directionnel (ADR-0015) : 1 = meilleur, un entier ≥ 1 — ou
+ * null (NA = pas de groupe de comparaison à ce niveau). Une fraction (le
+ * percentile retiré du payload) ou un rang ≤ 0 est une dérive du contrat.
+ */
 function estRang(x: unknown): x is number | null {
-  return x === null || (estNombre(x) && x >= 0 && x <= 1)
+  return x === null || (estNombre(x) && x >= 1 && Number.isInteger(x))
+}
+
+/** La taille du groupe de comparaison — le dénominateur du rang (entier ≥ 1). */
+function estTailleGroupe(x: unknown): x is number | null {
+  return x === null || (estNombre(x) && x >= 1 && Number.isInteger(x))
 }
 
 function estDateIso(x: unknown): x is string {
@@ -190,7 +199,18 @@ function lireTheme(ligne: LigneBrute, fichier: string, i: number): Theme {
 
 function lireRang(ligne: LigneBrute, champ: string, fichier: string, i: number): number | null {
   const valeur = ligne[champ]
-  exiger(estRang(valeur), fichier, i, `« ${champ} » doit être un rang dans [0,1] ou null`)
+  exiger(estRang(valeur), fichier, i, `« ${champ} » doit être un rang ordinal (entier ≥ 1, 1 = meilleur) ou null`)
+  return valeur
+}
+
+function lireTailleGroupe(
+  ligne: LigneBrute,
+  champ: string,
+  fichier: string,
+  i: number,
+): number | null {
+  const valeur = ligne[champ]
+  exiger(estTailleGroupe(valeur), fichier, i, `« ${champ} » doit être la taille du groupe (entier ≥ 1) ou null`)
   return valeur
 }
 
@@ -309,6 +329,26 @@ export function validerIndicateurs(
     const rang_epci = lireRang(ligne, 'rang_epci', fichier, ligneIndexee)
     const rang_dep = lireRang(ligne, 'rang_dep', fichier, ligneIndexee)
     const rang_reg = lireRang(ligne, 'rang_reg', fichier, ligneIndexee)
+    const rang_epci_n = lireTailleGroupe(ligne, 'rang_epci_n', fichier, ligneIndexee)
+    const rang_dep_n = lireTailleGroupe(ligne, 'rang_dep_n', fichier, ligneIndexee)
+    const rang_reg_n = lireTailleGroupe(ligne, 'rang_reg_n', fichier, ligneIndexee)
+
+    // Le contrat ordinal (ADR-0015) : chaque rang porte la taille de SON groupe
+    // (le « / Y » du rendu) — les deux présents ou absents ensemble, et un rang
+    // ne dépasse jamais la taille de son groupe (competition ranking).
+    for (const [colonne, taille] of [
+      ['rang_epci', rang_epci_n],
+      ['rang_dep', rang_dep_n],
+      ['rang_reg', rang_reg_n],
+    ] as const) {
+      const position = ligne[colonne] as number | null
+      if (position === null && taille !== null) {
+        throw erreur(fichier, ligneIndexee, `« ${colonne} » est null mais « ${colonne}_n » est porté — le rang et sa taille vont ensemble`)
+      }
+      if (position !== null && (taille === null || position > taille)) {
+        throw erreur(fichier, ligneIndexee, `« ${colonne} » (${position}) dépasse la taille de son groupe « ${colonne}_n » (${taille ?? 'null'})`)
+      }
+    }
 
     const vintage_source = lireChaine(ligne, 'vintage_source', fichier, ligneIndexee)
     const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
@@ -340,6 +380,9 @@ export function validerIndicateurs(
       rang_epci,
       rang_dep,
       rang_reg,
+      rang_epci_n,
+      rang_dep_n,
+      rang_reg_n,
       vintage_source,
       vintage_version,
       vintage_date_reference,
