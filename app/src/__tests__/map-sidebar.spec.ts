@@ -78,6 +78,8 @@ function montage(overrides: Record<string, unknown> = {}) {
       // the map's neutral rendering, threaded through to the legend (issue #68)
       couleurVide: COULEUR_NEUTRE,
       couleurContour: COULEUR_CONTOUR,
+      // the membership highlight, threaded through to the legend (#282)
+      couleurMembre: '#2f4745',
       ...overrides,
     },
     global: { plugins: [router] },
