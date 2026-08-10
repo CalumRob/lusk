@@ -18,6 +18,9 @@ const props = defineProps<{
   config: ConfigCouche | null
   couleurs: string[]
   seuils: number[]
+  /** Une rampe divergente (ADR-0019) : les bornes positives portent leur signe
+   *  explicite (« +12 », jamais « 12 ») — la couleur n'est jamais le seul porteur. */
+  estDivergente: boolean
   unite: string
   estPourcentage: boolean
   /** The map's neutral fill — the no-data swatch renders it verbatim (issue #68). */
@@ -28,14 +31,16 @@ const props = defineProps<{
 
 const repliee = ref(false)
 
-/** French number — comma decimal, thin-space thousands (the legend's bounds). */
+/** French number — comma decimal, thin-space thousands (the legend's bounds).
+ *  On a diverging ramp, positive bounds carry their explicit « + » (ADR-0019). */
 function formaterSeuil(x: number): string {
   const brute = props.estPourcentage ? x * 100 : x
   const fixe = brute.toFixed(brute % 1 === 0 ? 0 : 1)
   const [entiers, decPart = ''] = fixe.split('.')
   const decs = decPart.replace(/0+$/, '')
   const groupes = entiers.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
-  return decs ? `${groupes},${decs}` : groupes
+  const nombre = decs ? `${groupes},${decs}` : groupes
+  return props.estDivergente && brute > 0 ? `+${nombre}` : nombre
 }
 
 const bornes = computed<{ couleur: string; debut: string | null; fin: string | null }[]>(() => {
