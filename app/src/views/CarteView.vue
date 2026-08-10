@@ -19,6 +19,15 @@
  * l'état : elle survit au rechargement. States follow the shell's pattern:
  * skeleton while the payload/geometry load, a typed error with Retry, and
  * the honest « Fonds de carte indisponible. » when no mask file is published.
+ *
+ * T7 (#303) — la carte neutre d'abord : le wait-set de la carte est
+ * ['territoires', 'run-report'] (la géométrie vient de son propre seam,
+ * useGeometrie). La carte neutre (masques + noms de référence) rend dès que
+ * ce set se règle ; la liste de couches et les choroplèthes se remplissent
+ * progressivement au fil de l'atterrissage des paires de thèmes (et du fichier
+ * programmes pour l'onglet « Programmes & financements »). La normalisation
+ * d'URL garde un thème canonique en vol — elle n'écrit jamais sur un état
+ * encore en chargement.
  */
 import { AlertCircle, MapPinOff } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
@@ -52,7 +61,7 @@ import { NIVEAUX_MASQUE } from '@/geo/types'
 import type { NiveauMasque } from '@/geo/types'
 import { useGeometrie } from '@/geo/useGeometrie'
 import { themesPresent } from '@/payload/selectors'
-import { SIGLES_PROGRAMMES } from '@/payload/types'
+import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from '@/payload/types'
 import type { SigleProgramme, Territoire, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
@@ -64,7 +73,7 @@ const {
   erreur: erreurPayload,
   chargement: chargementPayload,
   recharger: rechargerPayload,
-} = usePayload()
+} = usePayload({ attendre: ['territoires', 'run-report'] })
 const {
   masques,
   erreur: erreurGeometrie,
@@ -124,14 +133,21 @@ function choisirOnglet(slug: SlugOnglet): void {
 // mutuellement exclusifs — l'onglet l'emporte, un thème inconnu ou un sigle
 // inconnu retombe sur l'état neutre ({}), jamais un état partiel.
 watch(
-  () => [route.query.theme, route.query.onglet, route.query.programme, payload.value, chargementPayload.value] as const,
-  ([theme, onglet, programme, pl, busy]) => {
-    // Le payload grandit : la normalisation attend que le wait-set soit
-    // réglé — un thème absent pendant le chargement n'est pas encore une
-    // normalisation à faire (jamais une réécriture d'URL sur du vide).
-    if (!pl || busy) return
+  () =>
+    [route.query.theme, route.query.onglet, route.query.programme, payload.value, chargementPayload.value, erreurPayload.value] as const,
+  ([theme, onglet, programme, pl, busy, enErreur]) => {
+    // La normalisation attend que le wait-set soit réglé et que la carte ne
+    // soit pas en erreur — un échec du wait-set ne prouve pas l'absence d'un
+    // thème, l'URL n'est pas réécrite avant que Retry ait refait ses preuves
+    // (le même garde que la fiche, #302).
+    if (!pl || busy || enErreur) return
     const themesValides = themesPresent(pl) as string[]
     const themeValide = typeof theme === 'string' && themesValides.includes(theme)
+    // Un thème canonique absent du payload peut encore atterrir (le payload
+    // grandit) : sa réécriture attend son arrivée, l'état neutre honnête
+    // s'affiche jusque-là (T7, #303).
+    const themeCanonique =
+      typeof theme === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(theme)
     const ongletValide = onglet === 'programmes'
     const programmeValide =
       typeof programme === 'string' && (SIGLES_PROGRAMMES as readonly string[]).includes(programme)
@@ -148,8 +164,14 @@ watch(
       if (onglet !== undefined) router.replace({ query: { theme } })
       return
     }
-    if (theme !== undefined || onglet !== undefined || programme !== undefined) {
+    // Un thème non canonique ne peut jamais rendre → il est nettoyé ; un
+    // thème canonique en vol est GARDÉ (il peut encore atterrir).
+    if (theme !== undefined && !themeCanonique) {
       router.replace({ query: {} })
+      return
+    }
+    if (onglet !== undefined || programme !== undefined) {
+      router.replace({ query: themeCanonique ? { theme } : {} })
     }
   },
   { immediate: true },
