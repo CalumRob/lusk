@@ -13,6 +13,7 @@ import type { Couche } from '../carte/coucheModel'
 import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  indicateursHabitatFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
@@ -52,6 +53,16 @@ const masquesCommunes: Masques = {
 const masquesDeuxNiveaux: Masques = {
   ...masquesCommunes,
   epcis: { type: 'FeatureCollection', features: [feature('200000001', 'EPCI X')] },
+}
+
+/** Deux EPCIs — les deux lignes densite du fixture (133,33 et 150) : le
+ *  re-join au niveau EPCI recale ses seuils sur ces valeurs. */
+const masquesDeuxEpcis: Masques = {
+  ...masquesCommunes,
+  epcis: {
+    type: 'FeatureCollection',
+    features: [feature('200000001', 'EPCI X'), feature('200000002', 'EPCI Y')],
+  },
 }
 
 const payload: Payload = {
@@ -236,8 +247,8 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
   })
 })
 
-describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => {
-  it('opens a popup with the territory name, its KPIs and the fiche link', async () => {
+describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
+  it('ouvre une popup qui mène par la valeur de la couche active + son rang, puis « Voir la fiche »', async () => {
     const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
@@ -251,10 +262,54 @@ describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => 
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('Commune A1')
     expect(popup?.contenu).toContain('Voir la fiche')
-    // l'indicateur du thème sélectionné, formaté en français
+    // la valeur de la couche active, formatée en français, avec son rang-en-contexte
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
+    expect(popup?.contenu).toContain("P50 de l'EPCI")
+    expect(popup?.contenu).toContain('popup-carte-rang')
+    // la popup répond « comment ce territoire se situe sur CETTE variable » —
+    // pas le mur de KPI du thème (plus de ligne Population)
+    expect(popup?.contenu).not.toContain('>Population<')
     expect(popup?.options.focusAfterOpen).toBe(true)
+  })
+
+  it('une couche story (source histoire) ouvre une popup valeur seule — aucun rang inventé', async () => {
+    const { carte } = await monter({ theme: 'demographie', couche: coucheTauxSoldeNaturel })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('5,98')
+    expect(popup?.contenu).toContain('Voir la fiche')
+    expect(popup?.contenu).not.toContain('popup-carte-rang')
+  })
+
+  it('la popup reflète la ligne du niveau affiché — un EPCI cliqué montre la valeur ET le rang de l’EPCI', async () => {
+    const { wrapper, carte } = await monter({
+      masques: masquesDeuxNiveaux,
+      theme: 'demographie',
+      couche: coucheDensite,
+    })
+    await wrapper.setProps({ niveau: 'epcis' })
+
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '200000001' } },
+    ] as never
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('133,33')
+    expect(popup?.contenu).toContain('P0 du département')
+    expect(popup?.contenu).toContain('Voir la fiche')
   })
 
   it('keeps the popup honest when the territory has no payload rows', async () => {
@@ -271,6 +326,73 @@ describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => 
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('99999')
     expect(popup?.contenu).not.toContain('Voir la fiche')
+  })
+})
+
+describe('MapExplorer — le re-join au changement de niveau (ADR-0019, #281)', () => {
+  it('garde la couche active et la re-joint aux lignes du nouveau niveau — couleurs recalculées', async () => {
+    const { wrapper, carte } = await monter({
+      masques: masquesDeuxEpcis,
+      theme: 'demographie',
+      couche: coucheDensite,
+    })
+
+    // au niveau communes, les seuils viennent des valeurs communales [200, 50]
+    const peintureCommunes = carte?.peintures['masques-communes-remplissage']['fill-color'] as unknown[]
+    const stepCommunes = peintureCommunes[2] as unknown[]
+    expect(stepCommunes.slice(3)).toEqual([200, expect.any(String)])
+
+    await wrapper.setProps({ niveau: 'epcis' })
+
+    // même couche, re-jointe aux lignes EPCI : la source porte les valeurs EPCI
+    const donnees = carte?.sourcesSetData['masques-epcis']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null } }[]
+    }
+    const epci = donnees.features.find((f) => f.properties.territoire === '200000001')
+    expect(epci?.properties.valeur).toBe(133.33333333333334)
+    // et les seuils/couleurs se recalculent des valeurs du niveau (150 EPCI ≠ 200 communes)
+    const peintureEpcis = carte?.peintures['masques-epcis-remplissage']['fill-color'] as unknown[]
+    const stepEpcis = peintureEpcis[2] as unknown[]
+    expect(stepEpcis.slice(3)).toEqual([150, expect.any(String)])
+    expect(peintureEpcis).not.toEqual(peintureCommunes)
+  })
+
+  it('une couche sans lignes au niveau affiché rend le remplissage neutre — jamais des valeurs inventées', async () => {
+    const coucheHabitat: Couche = {
+      source: 'indicateur',
+      clef: 'part_residences_secondaires',
+      detail: null,
+      libelle: 'Part de résidences secondaires',
+      parDefaut: false,
+    }
+    const payloadHabitat: Payload = {
+      ...payload,
+      indicateurs: indicateursHabitatFixture,
+    }
+    const { wrapper, carte } = await monter({
+      masques: masquesDeuxNiveaux,
+      payload: payloadHabitat,
+      theme: 'habitat',
+      couche: coucheHabitat,
+    })
+
+    await wrapper.setProps({ niveau: 'epcis' })
+
+    // la couche n'a aucune ligne EPCI (le fixture habitat ne porte que 22001 + 53) :
+    // la jointure laisse la valeur à null — l'honnête, jamais un chiffre inventé
+    const donnees = carte?.sourcesSetData['masques-epcis']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null; valeur_formatee: string | null } }[]
+    }
+    const epci = donnees.features.find((f) => f.properties.territoire === '200000001')
+    expect(epci?.properties.valeur).toBeNull()
+    expect(epci?.properties.valeur_formatee).toBeNull()
+    // l'échelle s'effondre (aucune valeur) et le garde-fou neutre couvre tout le niveau
+    const peinture = carte?.peintures['masques-epcis-remplissage']['fill-color'] as unknown[]
+    expect(peinture[0]).toBe('case')
+    const step = peinture[2] as unknown[]
+    expect(step[0]).toBe('step')
+    expect(step.length).toBe(3)
+    expect(peinture).toContain(COULEUR_NEUTRE)
   })
 })
 
