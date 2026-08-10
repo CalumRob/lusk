@@ -1,4 +1,4 @@
-﻿import { mount } from '@vue/test-utils'
+﻿import { mount, RouterLinkStub } from '@vue/test-utils'
 
 import { describe, expect, it } from 'vitest'
 
@@ -51,6 +51,7 @@ const payloadEchelle: Payload = {
 function monter(territoire: string, payload: Payload = payloadDemographie): ReturnType<typeof mount> {
   return mount(ApercuOnglet, {
     props: { payload, territoire },
+    global: { stubs: { RouterLink: RouterLinkStub } },
   })
 }
 
@@ -196,7 +197,7 @@ describe("ApercuOnglet — l'élément Programmes & financements (les données r
     const voix = wrapper.findAll('.programme-voix').map((v) => v.text())
     expect(voix[0]).toBe('Compte 1 contrat signé')
     expect(voix[4]).toBe('Compte 1 commune en périmètre ORT')
-    expect(wrapper.find('.subvention-total').text()).toContain('2\u202F000\u202F000 €')
+    expect(wrapper.find('.subvention-total').text()).toContain('2,00 M€')
   })
 
   it('un EPCI TRANSVERSAL compte dans les DEUX départements — le même CRTE nommé dans 22 et 29', () => {
@@ -209,12 +210,104 @@ describe("ApercuOnglet — l'élément Programmes & financements (les données r
     expect(dep29.find('.programme-noms').text()).toContain('EPCI Z')
   })
 
-  it('rend la ventilation LARGE telle quelle — la ligne « autres » du garde-fou précalculé par le pipeline', () => {
+  it('affiche le top-5 des axes triés par montant décroissant puis le reste derrière la révélation (issue #305)', async () => {
     const wrapper = monter('29003', payloadEchelle)
 
-    const libelles = wrapper.findAll('.subvention-axe-libelle').map((l) => l.text())
-    expect(libelles).toContain('« autres »')
-    expect(wrapper.find('.subvention-total').text()).toContain('162\u202F000 €')
+    // le top-5 d'abord, trié par montant décroissant (le fixture est non trié)
+    const axes = wrapper.findAll('.subvention-axe-libelle').map((l) => l.text())
+    expect(axes).toEqual([
+      'Développement économique',
+      'Agriculture',
+      'Culture',
+      'Sport',
+      'Environnement',
+    ])
+    expect(wrapper.findAll('.subvention-axe')).toHaveLength(5)
+
+    // la révélation du reste — accessible, jamais une liste tronquée
+    const bouton = wrapper.find('.subvention-reveler')
+    expect(bouton.exists()).toBe(true)
+    expect(bouton.attributes('aria-expanded')).toBe('false')
+    expect(bouton.text()).toBe('Voir les 2 autres domaines')
+
+    await bouton.trigger('click')
+
+    expect(wrapper.find('.subvention-reveler').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('.subvention-reveler').text()).toBe('Masquer')
+    expect(wrapper.findAll('.subvention-axe').map((a) => a.text())).toEqual([
+      '50\u202F000 €Développement économique',
+      '40\u202F000 €Agriculture',
+      '30\u202F000 €Culture',
+      '20\u202F000 €Sport',
+      '10\u202F000 €Environnement',
+      '6\u202F000 €Enseignement',
+      '6\u202F000 €Tourisme',
+    ])
+  })
+
+  it('n’offre AUCUNE révélation quand la ventilation tient dans le top-5', () => {
+    const wrapper = monter('22001')
+
+    expect(wrapper.findAll('.subvention-axe')).toHaveLength(2)
+    expect(wrapper.find('.subvention-reveler').exists()).toBe(false)
+  })
+
+  it('lit la part de contexte d’une commune — son total dans celui de SON EPCI, une décimale (issue #305)', () => {
+    const wrapper = monter('29003', payloadEchelle)
+
+    expect(wrapper.find('.subvention-contexte').text()).toBe('94,2 % du total de l\u0027EPCI')
+  })
+
+  it('lit la part de contexte d’un EPCI et d’un département dans le total de la RÉGION — jamais sur la région', () => {
+    const epci = monter('200000001')
+    expect(epci.find('.subvention-contexte').text()).toBe('2,3 % du total de la région')
+
+    const departement = monter('22')
+    expect(departement.find('.subvention-contexte').text()).toBe('15 % du total de la région')
+
+    const region = monter('53')
+    expect(region.find('.subvention-contexte').exists()).toBe(false)
+  })
+
+  it('garde la part de contexte silencieuse — une commune dont l’EPCI n’a pas de total agrégé', () => {
+    // 29001 a une ligne de subvention mais SON EPCI (Y) n’a pas de total agrégé
+    const wrapper = monter('29001', payloadEchelle)
+
+    expect(wrapper.find('.subvention-total').exists()).toBe(true)
+    expect(wrapper.find('.subvention-contexte').exists()).toBe(false)
+  })
+
+  it('lit la provenance d’une fiche agrégée — le lien vers les communes filtrées (issue #305)', () => {
+    const epci = monter('200000001')
+    const departement = monter('22')
+    const region = monter('53')
+
+    const lienEpci = epci.findComponent(RouterLinkStub)
+    expect(lienEpci.props('to')).toEqual({ name: 'communes', query: { epci: '200000001' } })
+    expect(lienEpci.text()).toBe("communes de l'EPCI")
+
+    const lienDepartement = departement.findComponent(RouterLinkStub)
+    expect(lienDepartement.props('to')).toEqual({ name: 'communes', query: { departement: '22' } })
+    expect(lienDepartement.text()).toBe('communes du département')
+
+    const lienRegion = region.findComponent(RouterLinkStub)
+    expect(lienRegion.props('to')).toEqual({ name: 'communes' })
+    expect(lienRegion.text()).toBe('communes de Bretagne')
+  })
+
+  it('garde la phrase complète de la provenance — « Somme des subventions attribuées aux … »', () => {
+    const wrapper = monter('200000001')
+
+    expect(wrapper.find('.subvention-provenance').text()).toBe(
+      'Somme des subventions attribuées aux communes de l\u0027EPCI',
+    )
+  })
+
+  it('n’affiche AUCUNE provenance sur une fiche communale', () => {
+    const wrapper = monter('29003', payloadEchelle)
+
+    expect(wrapper.find('.subvention-provenance').exists()).toBe(false)
+    expect(wrapper.findAllComponents(RouterLinkStub)).toHaveLength(0)
   })
 
   it('chaque badge et la figure de subventions portent leur estampille vintage', () => {

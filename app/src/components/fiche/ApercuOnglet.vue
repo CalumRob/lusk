@@ -26,7 +26,7 @@
  * rows renders the honest empty state — never « under construction »
  * (principles.md §1).
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ExternalLink } from 'lucide-vue-next'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -36,9 +36,11 @@ import {
   formaterValeurApercu,
   libelleApercu,
   libelleBadge,
+  libellePartContexte,
+  libelleProvenance,
   phraseVoix,
 } from '@/fiche/apercu'
-import { apercuPourTerritoire, programmesPourTerritoire } from '@/payload/selectors'
+import { apercuPourTerritoire, formaterNombreFR, programmesPourTerritoire } from '@/payload/selectors'
 import type { Payload } from '@/payload/types'
 
 const props = defineProps<{
@@ -51,6 +53,37 @@ const element = computed(() => programmesPourTerritoire(props.payload, props.ter
 const elementVide = computed(
   () => element.value.badges.length === 0 && element.value.subventions === null,
 )
+
+/** Le top-5 + la révélation (issue #305) : le sélecteur renvoie TOUS les axes
+ * triés, ce composant plie l'affichage — les cinq premiers toujours listés,
+ * le reste derrière un bouton accessible (aria-expanded). */
+const axes = computed(() => element.value.subventions?.axes ?? [])
+const axesTete = computed(() => axes.value.slice(0, 5))
+const axesReste = computed(() => axes.value.slice(5))
+const revele = ref(false)
+// un changement de fiche (la route réutilise l'instance sur un param-only
+// nav) referme la révélation — l'état ne fuit jamais vers le territoire suivant
+watch(() => props.territoire, () => {
+  revele.value = false
+})
+
+const partContexte = computed(() => element.value.subventions?.partContexte ?? null)
+const partContexteTexte = computed(() =>
+  partContexte.value === null ? null : `${formaterNombreFR(partContexte.value.part * 100, 1)} %`,
+)
+
+const provenance = computed(() => element.value.subventions?.provenance ?? null)
+// le RouterLink est gardé par `v-if="provenance"` — la route de repli ne se
+// rend jamais, elle ne sert qu'à tenir le type (to n'accepte pas null)
+const lienProvenance = computed(() => {
+  const p = provenance.value
+  if (p === null) return { name: 'communes' }
+  return p.niveau === 'epci'
+    ? { name: 'communes', query: { epci: p.code } }
+    : p.niveau === 'departement'
+      ? { name: 'communes', query: { departement: p.code } }
+      : { name: 'communes' }
+})
 </script>
 
 <template>
@@ -94,12 +127,38 @@ const elementVide = computed(
             {{ formaterMontant(element.subventions.total) }}
             <span class="subvention-annee">en {{ element.subventions.annee }}</span>
           </p>
-          <ul v-if="element.subventions.axes" class="subvention-axes">
-            <li v-for="axe in element.subventions.axes" :key="axe.libelle" class="subvention-axe">
-              <span class="subvention-axe-montant">{{ formaterMontant(axe.montant) }}</span>
-              <span class="subvention-axe-libelle">{{ axe.libelle }}</span>
-            </li>
-          </ul>
+          <template v-if="element.subventions.axes">
+            <ul class="subvention-axes">
+              <li v-for="axe in axesTete" :key="axe.libelle" class="subvention-axe">
+                <span class="subvention-axe-montant">{{ formaterMontant(axe.montant) }}</span>
+                <span class="subvention-axe-libelle">{{ axe.libelle }}</span>
+              </li>
+            </ul>
+            <button
+              v-if="axesReste.length > 0"
+              type="button"
+              class="subvention-reveler"
+              :aria-expanded="revele"
+              @click="revele = !revele"
+            >
+              {{ revele ? 'Masquer' : `Voir les ${axesReste.length} autres domaines` }}
+            </button>
+            <ul v-if="revele" class="subvention-axes subvention-axes--reste">
+              <li v-for="axe in axesReste" :key="axe.libelle" class="subvention-axe">
+                <span class="subvention-axe-montant">{{ formaterMontant(axe.montant) }}</span>
+                <span class="subvention-axe-libelle">{{ axe.libelle }}</span>
+              </li>
+            </ul>
+          </template>
+          <p v-if="partContexte" class="subvention-contexte">
+            {{ partContexteTexte }} {{ libellePartContexte(partContexte.parent) }}
+          </p>
+          <p v-if="provenance" class="subvention-provenance">
+            Somme des subventions attribuées aux
+            <RouterLink :to="lienProvenance" class="subvention-provenance-lien">
+              {{ libelleProvenance(provenance.niveau) }}
+            </RouterLink>
+          </p>
           <p class="subvention-vintage">{{ element.subventions.vintage }}</p>
         </div>
       </template>
@@ -245,7 +304,9 @@ const elementVide = computed(
 }
 
 /* The subvention figure — the annual total (headline) + the by-policy-area
-   split on commune fiches (the pipeline's precomputed top-N + « autres »). */
+   split on commune fiches (the pipeline's full split, folded here: top-5
+   always listed, the rest behind the reveal, issue #305) + the part de
+   contexte + the provenance. */
 .programme-subventions {
   display: flex;
   flex-direction: column;
@@ -292,6 +353,38 @@ const elementVide = computed(
 .subvention-axe-libelle {
   text-align: right;
   color: var(--text-secondary);
+}
+
+.subvention-reveler {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: var(--text-body-sm);
+  font-weight: 600;
+  color: var(--brand-600);
+  cursor: pointer;
+}
+
+.subvention-reveler:hover {
+  text-decoration: underline;
+}
+
+.subvention-axes--reste {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-2);
+}
+
+.subvention-contexte,
+.subvention-provenance {
+  margin: 0;
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.subvention-provenance-lien {
+  color: var(--brand-600);
+  font-weight: 600;
 }
 
 .programmes-lien {

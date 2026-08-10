@@ -331,11 +331,14 @@ export interface MembreProgramme {
 }
 
 /**
- * One subvention aggregate row (ADR-0013, issue #176) — precomputed by the
- * pipeline, never derived in the app: commune rows carry the annual
- * by-policy-area split (programme_libl + montant), EPCI / département / région
- * rows the single annual total (programme_libl null). Every row wears the SCDL
- * weekly vintage stamp.
+ * One subvention aggregate row (ADR-0013, issue #176, contrat révisé #305) —
+ * precomputed by the pipeline: commune rows carry the annual FULL per-policy-
+ * area split (programme_libl + montant — every domaine, never a « autres »
+ * line), EPCI / département / région rows the single annual total
+ * (programme_libl null). The app derives the display from these rows (the
+ * descending sort, the top-5 fold, the part de contexte and the provenance —
+ * the seam « the app renders »). Every row wears the SCDL weekly vintage
+ * stamp.
  */
 export interface SubventionProgramme {
   territoire: string

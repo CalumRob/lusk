@@ -811,15 +811,18 @@ const vintageSubventions = {
 }
 
 /**
- * Les agrégats de subventions (ADR-0013, #176) : les lignes communales portent
- * la ventilation par domaine (programme_libl + montant), les lignes EPCI /
- * département / région le total annuel unique (programme_libl null). L'année
- * de référence 2025 (la plus récente complète). Triées par type puis
- * territoire (le tri R).
+ * Les agrégats de subventions (ADR-0013, #176, contrat révisé #305) : les
+ * lignes communales portent la ventilation COMPLÈTE par domaine (programme_libl
+ * + montant — le pipeline publie chaque domaine, plus jamais de ligne
+ * « autres »), les lignes EPCI / département / région le total annuel unique
+ * (programme_libl null). L'année de référence 2025 (la plus récente complète).
+ * Triées par type puis territoire (le tri R) — mais les AXES d'une commune
+ * sont DÉLIBÉRÉMENT dans l'ordre du payload R (non triés) : le tri décroissant
+ * est l'affaire de l'app (issue #305), le fixture doit pouvoir le débusquer.
  */
 export const subventionsProgrammesFixture: SubventionProgramme[] = [
-  { territoire: '22001', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 30000, ...vintageSubventions },
   { territoire: '22001', type: 'commune', annee: 2025, programme_libl: 'Agriculture', montant: 15000, ...vintageSubventions },
+  { territoire: '22001', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 30000, ...vintageSubventions },
   { territoire: '200000001', type: 'epci', annee: 2025, programme_libl: null, montant: 45000, ...vintageSubventions },
   { territoire: '22', type: 'departement', annee: 2025, programme_libl: null, montant: 300000, ...vintageSubventions },
   { territoire: '53', type: 'region', annee: 2025, programme_libl: null, montant: 2000000, ...vintageSubventions },
@@ -851,10 +854,16 @@ export const programmesVideFixture: ProgrammesPayload = {
  * d'adhésion étendent le fixture : l'EPCI Z signe un CRTE (le contrat compte
  * dans 22 ET 29), ses deux communes non labellisées portent une convention ORT
  * signée (lignes commune + EPCI Z). La ventilation des subventions de la
- * commune 29003 est LARGE (7 domaines) — la forme que le pipeline publie après
- * le garde-fou top-6 + « autres » (subventions.R, SEUIL_AXES_SUBVENTIONS_COMMUNE) :
- * six domaines nommés + la ligne d'effondrement « autres ». Rien d'inventé —
- * les valeurs suivent les conventions verrouillées côté R (ADR-0013, #176).
+ * commune 29003 est LARGE (7 domaines — la forme du contrat révisé #305 : la
+ * ventilation COMPLÈTE par domaine, jamais de ligne « autres »), DÉLIBÉRÉMENT
+ * non triée (l'app trie par montant décroissant, le fixture doit pouvoir le
+ * débusquer), avec l'égalité 6 000 € (Enseignement / Tourisme) qui exerce le
+ * départage par libellé. La commune 22003 porte sa propre ligne (Insertion) —
+ * le total agrégé de l'EPCI Z (172 000) = la somme des deux communes, et la
+ * part de contexte de 29003 n'est pas dégénérée. La commune 29001 porte une
+ * ligne sans total agrégé pour SON EPCI (Y) — la part de contexte silencieuse.
+ * Rien d'inventé — les valeurs suivent les conventions verrouillées côté R
+ * (ADR-0013, #176).
  */
 
 /** Le référentiel de l'échelle : le fixture partagé + l'EPCI Z transversal et ses deux communes. */
@@ -884,19 +893,24 @@ export const membresLadderFixture: MembreProgramme[] = [
 
 /**
  * Les agrégats de subventions de l'échelle : le fixture partagé + la ventilation
- * LARGE de la commune 29003 (7 lignes — la forme publiée après le garde-fou
- * top-6 + « autres » du pipeline) et le total unique de l'EPCI Z.
+ * LARGE COMPLÈTE de la commune 29003 (7 domaines, non triée — le tri est
+ * l'affaire de l'app, #305), la ligne propre de la commune 22003, la ligne
+ * sans total agrégé de la commune 29001 (la part de contexte silencieuse) et
+ * le total unique de l'EPCI Z (172 000 = 162 000 + 10 000, la somme de ses
+ * communes).
  */
 export const subventionsLadderFixture: SubventionProgramme[] = [
   ...subventionsProgrammesFixture,
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 50000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Agriculture', montant: 40000, ...vintageSubventions },
   { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Culture', montant: 30000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Sport', montant: 20000, ...vintageSubventions },
   { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Environnement', montant: 10000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Tourisme', montant: 5000, ...vintageSubventions },
-  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: '« autres »', montant: 7000, ...vintageSubventions },
-  { territoire: '200000003', type: 'epci', annee: 2025, programme_libl: null, montant: 162000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Développement économique', montant: 50000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Tourisme', montant: 6000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Agriculture', montant: 40000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Sport', montant: 20000, ...vintageSubventions },
+  { territoire: '29003', type: 'commune', annee: 2025, programme_libl: 'Enseignement', montant: 6000, ...vintageSubventions },
+  { territoire: '22003', type: 'commune', annee: 2025, programme_libl: 'Insertion', montant: 10000, ...vintageSubventions },
+  { territoire: '29001', type: 'commune', annee: 2025, programme_libl: 'Environnement', montant: 25000, ...vintageSubventions },
+  { territoire: '200000003', type: 'epci', annee: 2025, programme_libl: null, montant: 172000, ...vintageSubventions },
 ]
 
 /** Le payload programmes de l'échelle — l'objet { membres, subventions } complet. */
