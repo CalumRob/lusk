@@ -500,6 +500,89 @@ describe('MapExplorer — le re-join au changement de niveau (ADR-0019, #281)', 
   })
 })
 
+describe('MapExplorer — le zoom de recherche (#283)', () => {
+  const communeA1 = { territoire: '22001', type: 'commune' as const, nom: 'Commune A1', departement: '22', epci: '200000001' }
+  const epciX = { territoire: '200000001', type: 'epci' as const, nom: 'EPCI X', departement: '22', epci: null }
+
+  it('zooms on the searched territory (fitBounds) and opens the layer-aware popup at its center', async () => {
+    const { wrapper, carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+
+    await wrapper.setProps({ territoireCible: communeA1, requeteZoom: 1 })
+    await flushPromises()
+
+    expect(carte?.appelsFitBounds).toHaveLength(1)
+    expect(carte?.appelsFitBounds[0].bornes).toEqual([
+      [0, 0],
+      [1, 0],
+    ])
+    expect(carte?.appelsFitBounds[0].options).toEqual({ padding: 80, maxZoom: 12 })
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.position).toEqual({ lng: 0.5, lat: 0 })
+    expect(popup?.contenu).toContain('Commune A1')
+    expect(popup?.contenu).toContain('Densité de population')
+    expect(popup?.contenu).toContain('200')
+    expect(popup?.contenu).toContain("P50 de l'EPCI")
+    expect(popup?.contenu).toContain('Voir la fiche')
+  })
+
+  it('zooms on the searched territory at the ACTIVE level — le niveau basculé arrive avec la demande', async () => {
+    const { wrapper, carte } = await monter({
+      masques: masquesDeuxNiveaux,
+      theme: 'demographie',
+      couche: coucheDensite,
+    })
+
+    await wrapper.setProps({ niveau: 'epcis', territoireCible: epciX, requeteZoom: 1 })
+    await flushPromises()
+
+    expect(carte?.appelsFitBounds).toHaveLength(1)
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('EPCI X')
+    expect(popup?.contenu).toContain('133,33')
+    expect(popup?.contenu).toContain('P0 du département')
+    expect(popup?.contenu).toContain('Voir la fiche')
+  })
+
+  it('re-sélectionner le même territoire re-zoome — la clé de demande croît', async () => {
+    const { wrapper, carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+
+    await wrapper.setProps({ territoireCible: communeA1, requeteZoom: 1 })
+    await wrapper.setProps({ territoireCible: communeA1, requeteZoom: 2 })
+    await flushPromises()
+
+    expect(carte?.appelsFitBounds).toHaveLength(2)
+  })
+
+  it('un territoire sans géométrie au niveau affiché → ni zoom ni popup inventé', async () => {
+    const { wrapper, carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+    const inconnue = { territoire: '99999', type: 'commune' as const, nom: 'Inconnue', departement: null, epci: null }
+
+    await wrapper.setProps({ territoireCible: inconnue, requeteZoom: 1 })
+    await flushPromises()
+
+    expect(carte?.appelsFitBounds).toHaveLength(0)
+    expect(maplibreMock.instancesPopups).toHaveLength(0)
+  })
+
+  it("la région n'a pas de niveau de masque → ni zoom ni popup", async () => {
+    const { wrapper, carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+    const region = { territoire: '53', type: 'region' as const, nom: 'Bretagne', departement: null, epci: null }
+
+    await wrapper.setProps({ territoireCible: region, requeteZoom: 1 })
+    await flushPromises()
+
+    expect(carte?.appelsFitBounds).toHaveLength(0)
+    expect(maplibreMock.instancesPopups).toHaveLength(0)
+  })
+
+  it('sans territoireCible (état initial), aucune demande de zoom', async () => {
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
+
+    expect(carte?.appelsFitBounds).toHaveLength(0)
+    expect(maplibreMock.instancesPopups).toHaveLength(0)
+  })
+})
+
 describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
   it('shows a lightweight tooltip with the territory name and its value on mousemove', async () => {
     const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })

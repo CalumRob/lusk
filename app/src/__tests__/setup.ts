@@ -99,6 +99,7 @@ const maplibreMock = vi.hoisted(() => {
     peintures: Record<string, Record<string, unknown>> = {}
     misesEnPage: Record<string, Record<string, unknown>> = {}
     controlesAjoutes: unknown[] = []
+    appelsFitBounds: { bornes: unknown; options: unknown }[] = []
     enlevee = false
     constructor(options: Record<string, unknown>) {
       this.options = options
@@ -146,6 +147,9 @@ const maplibreMock = vi.hoisted(() => {
     }
     getZoom() {
       return 8
+    }
+    fitBounds(bornes: unknown, options: unknown) {
+      this.appelsFitBounds.push({ bornes, options })
     }
     remove() {
       this.enlevee = true
