@@ -223,15 +223,13 @@ describe('payload contract — the committed payload parses and renders', () => 
       expect(Math.sign(ratio - 1)).toBe(Math.sign(delta))
     }
 
-    // la découverte #243 : les communes à M2 = 0 (l'état initial sans AUCUNE
-    // terre artificialisée, ~8 % du référentiel) n'ont pas de trajectoire —
-    // le payload régénéré le publie null, jamais un rapport infini inventé.
+    // la découverte #243 corrigée : le payload régénéré lit l'ÉTAT du produit
+    // millésimé (le DIFF est sorti) — plus AUCUNE commune à M2 = 0 (le bug
+    // flux-et-état : les 102 communes « sans renaturation » publiaient un
+    // zéro d'état inventé). La garde du pipeline « toute commune a un état
+    // > 0 » (amendement #243) verrouille la propriété côté compute.
     const m2zero = milieux.filter((h) => h.artif_m2_par_habitant === 0)
-    expect(m2zero.length).toBeGreaterThan(50)
-    for (const h of m2zero) {
-      expect(h.trajectoire_artif_par_habitant).toBeNull()
-      expect(h.classification).toBeNull()
-    }
+    expect(m2zero.length).toBe(0)
   })
 
   it('formats the committed ranks as French chips', async () => {
@@ -262,9 +260,13 @@ describe('payload contract — the committed payload parses and renders', () => 
     // codes COG 2022 du jeu vers le COG 2025 du squelette) + les 6 sources
     // programmes du run 2026-08-07 (#175/#176/#178 : acv, pvd, crte,
     // territoires_industrie, ort, subventions_scdl) + la source consoenaf du
-    // run milieux 2026-08-07 (#177) + les QUATRE sources OCS-GE du run milieux
-    // 2026-08-08 (le pivot #225, #234 : ocsge_artificialisation_22/29/35/56)
-    expect(payload.vintages).toHaveLength(55)
+    // run milieux 2026-08-07 (#177) + les HUIT sources OCS-GE du run milieux
+    // 2026-08-09 (l'amendement #243, ADR-0017 : le produit millésimé
+    // « surfaces artificialisées », 2 millésimes × 4 départements — le DIFF
+    // est sorti du manifeste) + les TROIS patchs correctifs M2 du run
+    // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
+    // l'amendement, appliquée dans #243)
+    expect(payload.vintages).toHaveLength(62)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:
@@ -274,13 +276,16 @@ describe('payload contract — the committed payload parses and renders', () => 
       date_reference: '2025-01-01',
       date_publication: '2026-07-24',
     })
-    const ocsge22 = payload.vintages?.find((v) => v.id === 'ocsge_artificialisation_22')
+    const ocsge22 = payload.vintages?.find((v) => v.id === 'ocsge_artificialisation_22_2025')
     expect(ocsge22).toMatchObject({
       version: '2025',
       licence: 'lov2',
       date_reference: '2025-01-01',
       date_publication: '2026-07-03',
     })
+    // le vintage du produit millésimé — jamais le différentiel (le bug #243)
+    expect(ocsge22?.source).toContain('surfaces artificialisées')
+    expect(ocsge22?.source).not.toContain('différentiel')
     const serieHistorique = payload.vintages?.find((v) => v.id === 'serie_historique')
     expect(serieHistorique).toMatchObject({
       source: 'INSEE — Série historique du recensement',

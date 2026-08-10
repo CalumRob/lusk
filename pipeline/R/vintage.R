@@ -30,12 +30,20 @@ vintages_depuis_manifest <- function(manifest) {
 # bind_rows avec les vintages du thème — les sources du run sont les plus
 # fraîches et gagnent sur leur id — puis dédupliquer par `id`. Une source ne
 # disparaît jamais de la table partagée parce qu'un autre thème a tourné.
-fusionner_vintages <- function(vintages, sortie = "public/data") {
+# Issue #243 : `retires` — les ids que le thème ne déclare PLUS (sa source a
+# été remplacée dans son manifeste, ex. les quatre différentielles OCS-GE
+# sorties par l'amendement) sont RETIRÉS de la table partagée : une source
+# remplacée ne doit pas rester estampillée « fraîche » à côté de son
+# remplaçante. Déclaré par le thème (retire_vintages du descripteur), jamais
+# inféré — le thème sait quelles sources il a retirées.
+fusionner_vintages <- function(vintages, sortie = "public/data",
+                               retires = character(0)) {
   chemin <- file.path(sortie, "vintages.parquet")
   if (!file.exists(chemin)) {
     return(vintages)
   }
   existantes <- nanoparquet::read_parquet(chemin)
+  existantes <- existantes[!existantes$id %in% retires, ]
   dplyr::bind_rows(vintages, existantes) %>%
     dplyr::distinct(id, .keep_all = TRUE)
 }

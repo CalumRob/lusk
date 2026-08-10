@@ -109,16 +109,16 @@ describe('MethodologieView — la section « les sources »', () => {
     expect(ligneSerie.text()).toContain('30 juin 2026')
   })
 
-  it('liste les 48 sources commises (l\u2019union est le contrat)', async () => {
+  it('liste les 56 sources commises (l\u2019union est le contrat)', async () => {
     const { wrapper } = await monter(async () => payloadAvecVintages)
 
     // Le comptage est borné à la table de la section #sources - la page porte
     // aussi la table des sources de l'élément Programmes & financements (6
     // lignes, issue #180) : les deux registres sont documentés séparément.
-    // 49 depuis l'issue #273 : la table de passage COG (cog_passage, le run
-    // d'intégration 2026-08-09) s'ajoute aux 48 sources — le jeu Geovelo
-    // (#233) et les 47 des cinq thèmes (l'union est le contrat).
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(49)
+    // 56 depuis l'issue #243 : les HUIT archives OCS-GE millésimées remplacent
+    // les quatre différentielles (49 + 8 − 4) + les TROIS patchs correctifs M2 —
+    // l'union est le contrat.
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(56)
   })
 
   it('rend la source CONSOENAF avec son URL, ses dates, sa licence et l\u2019anomalie d\u2019unité (issue #177)', async () => {
@@ -194,12 +194,13 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La page ne casse jamais : 49 lignes dans la table des sources, fraîcheur
-    // en tirets (le jeu Geovelo des aménagements cyclables #233 et la table de
-    // passage COG #273 s'ajoutent depuis les runs d'intégration ; la table des
-    // sources de l'élément Programmes & financements, 6 lignes statiques,
-    // reste rendue - elle ne dépend pas des vintages, issue #180).
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(49)
+    // La page ne casse jamais : 56 lignes dans la table des sources, fraîcheur
+    // en tirets (les HUIT archives OCS-GE millésimées #243 remplacent les
+    // quatre différentielles depuis la régénération réelle, + les TROIS patchs
+    // correctifs M2 ; la table des sources de l'élément Programmes &
+    // financements, 6 lignes statiques, reste rendue - elle ne dépend pas des
+    // vintages, issue #180).
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(56)
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

@@ -618,16 +618,17 @@ const vintageConsoenaf = {
 
 /**
  * Le vintage OCS-GE d'artificialisation — le tampon de SA source (manifest
- * #234, spec #225) : les QUATRE différentiels officiels « OCS GE
- * Artificialisation » v2.0 (IGN, Nouvelle Génération) de la Géoplateforme,
- * un par département breton. Le fixture exerce les couches de SES deux
- * départements (22 : 2021→2025 ; 29 : 2021→2024 — les paires de la spec), la
- * région portant la citation combinée de ses deux départements (le span
- * multi-dépt, la discipline du mélange).
+ * #234, amendé #243) : les HUIT archives millésimées « surfaces artificialisées »
+ * du produit OCS GE Artificialisation v2.0 (IGN, Nouvelle Génération) de la
+ * Géoplateforme (le DIFF est sorti — la couche différentielle n'est pas un
+ * état). Le fixture exerce les couches de SES deux départements (22 : 2021/2025 ;
+ * 29 : 2021/2024 — les paires de la spec), la région portant la citation
+ * combinée de ses deux départements (le span multi-dépt, la discipline du
+ * mélange).
  */
 const vintageOcsge22 = {
   vintage_source:
-    "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2025 — Côtes-d'Armor (22)",
+    "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Côtes-d'Armor (22), millésime 2025",
   vintage_version: '2025',
   vintage_date_reference: '2025-01-01',
   vintage_date_publication: '2026-07-03',
@@ -635,7 +636,7 @@ const vintageOcsge22 = {
 
 const vintageOcsge29 = {
   vintage_source:
-    'IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2024 — Finistère (29)',
+    'IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Finistère (29), millésime 2024',
   vintage_version: '2024',
   vintage_date_reference: '2024-01-01',
   vintage_date_publication: '2026-06-12',
@@ -643,7 +644,7 @@ const vintageOcsge29 = {
 
 const vintageOcsgeRegion = {
   vintage_source:
-    "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiels 22 (2021-2025) · 29 (2021-2024)",
+    "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — 22 (2021 · 2025) · 29 (2021 · 2024)",
   vintage_version: '2025 · 2024',
   vintage_date_reference: '2024-01-01',
   vintage_date_publication: '2026-07-03',

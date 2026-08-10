@@ -139,13 +139,15 @@ test_that("conso_fenetre : les décompositions présentes dans le fixture ne DOU
 })
 
 # Les quatre lectures re-keyées sur le fixture OCS-GE --------------------------
-# Le fixture territorial OCS-GE (helper-milieux.R, issue #237) : sept communes,
-# l'EPCI Z transfrontalier 35+56, quatre départements et la région. Les états
-# par commune (en m², la fenêtre dérivée de la donnée) :
-#   22001 : 0 -> 1200 (22, 2021-2025)    35001 : 0 -> 400 (35, 2020-2023)
-#   22002 : 0 -> 800  (22, 2021-2025)    56001 : 400 -> 0 (56, 2022-2024 —
-#   29001 : 0 -> 1200 (29, 2021-2024)            la désartificialisation)
-#   29002 : 0 -> 800  (29, 2021-2024)    29003 : NA (sans donnée)
+# Le fixture territorial OCS-GE (helper-milieux.R, issue #237, amendé par
+# #243) : sept communes, l'EPCI Z transfrontalier 35+56, quatre départements
+# et la région. Les états par commune (en m², la fenêtre dérivée de la donnée
+# — des STOCKS, jamais des flux) :
+#   22001 : 400 -> 1200 (22, 2021/2025)   35001 : 400 -> 400 (35, 2020/2023)
+#   22002 : 400 -> 800  (22, 2021/2025)   56001 : 800 -> 600 (56, 2022/2024 —
+#   29001 : 800 -> 1200 (29, 2021/2024)           la renaturation MESURÉE,
+#   29002 : 800 -> 800  (29, 2021/2024)           M3 < M2, jamais un 0)
+#   29003 : 500 -> 700  (29, 2021/2024)
 
 test_that("les quatre lectures re-keyées : une ligne par territoire, le signe pair (Δpopulation × trajectoire)", {
   p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
@@ -156,18 +158,19 @@ test_that("les quatre lectures re-keyées : une ligne par territoire, le signe p
   expect_true(all(p$histoires$theme == "milieux"))
   expect_true(all(p$histoires$periode_pop == "2017-2023"))  # la fenêtre dérivée
 
-  # 22001 : +200 habitants, M2=400 m² (désartif) -> M3=1200 m² (artif +
-  # croisement) : trajectoire 2,75 > 1 -> s'étale (la terre grandit plus vite
-  # que la population)
+  # 22001 : +200 habitants, M2=400 m² -> M3=1200 m² : trajectoire 2,75 > 1 ->
+  # s'étale (la terre grandit plus vite que la population)
   expect_equal(h("22001")$delta_population, 200)
   expect_equal(h("22001")$artif_m2_par_habitant, 400 / 2200)
   expect_equal(h("22001")$artif_m3_par_habitant, 1200 / 2400)
   expect_equal(h("22001")$trajectoire_artif_par_habitant, 2.75)
   expect_equal(h("22001")$classification, "grandir-en-setalant")
-  # 56001 : +200 habitants, la terre DIMINUE (0,04 ha -> 0) -> la trajectoire
-  # par habitant tombe sous 1 : grandir EN SE DENSIFIANT (le cas mixte)
+  # 56001 : +200 habitants, la terre DIMINUE (800 m² -> 600 m², les deux
+  # états > 0 — la renaturation MESURÉE) : la trajectoire par habitant tombe
+  # sous 1 : grandir EN SE DENSIFIANT (le cas mixte)
   expect_equal(h("56001")$delta_population, 200)
-  expect_equal(h("56001")$trajectoire_artif_par_habitant, 0)
+  expect_equal(h("56001")$trajectoire_artif_par_habitant,
+               (600 / 3100) / (800 / 2900), tolerance = 1e-3)
   expect_equal(h("56001")$classification, "grandir-en-se-densifiant")
   # 35001 : +400 habitants, M2=400 -> M3=400 : trajectoire 0,923 < 1 ->
   # se densifie (la terre grandit moins vite que la population)
@@ -178,39 +181,50 @@ test_that("les quatre lectures re-keyées : une ligne par territoire, le signe p
   expect_equal(h("29001")$delta_population, -150)
   expect_equal(h("29001")$trajectoire_artif_par_habitant, 1.58, tolerance = 1e-2)
   expect_equal(h("29001")$classification, "sen-aller-et-consommer-quand-meme")
-  # 29003 : état NA (fenêtre incomplète) -> lecture NA, jamais une lecture
-  # inventée
+  # 29003 : Δpopulation nul (zéro compte négatif), trajectoire 1,4 > 1 ->
+  # consomme quand même — la lecture existe (l'état n'est plus NA, #243)
   expect_equal(h("29003")$delta_population, 0)
-  expect_true(is.na(h("29003")$classification))
+  expect_equal(h("29003")$trajectoire_artif_par_habitant, 1.4)
+  expect_equal(h("29003")$classification, "sen-aller-et-consommer-quand-meme")
 })
 
 test_that("les agrégats : la somme naïve des états, NA propagé, le span pour le transfrontalier", {
   p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
-  # EPCI X = 22001 + 22002 : les états somment — M2=400 (le désartif de
-  # 22001) + M3=2000 (1200 + 800) : trajectoire 4,58 > 1, +300 habitants ->
-  # s'étale (l'agrégat se lit parce que SON M2 est non nul, même si 22002
-  # seul ne se lit pas)
+  # EPCI X = 22001 + 22002 : les états somment — M2=800, M3=2000 (1200 + 800) :
+  # trajectoire 2,30 > 1, +300 habitants -> s'étale
   expect_equal(h("200000001")$artif_m3, (1200 + 800) / 10000)
+  expect_equal(h("200000001")$artif_m2, (400 + 400) / 10000)
   expect_equal(h("200000001")$delta_population, 300)
-  expect_equal(h("200000001")$trajectoire_artif_par_habitant, 4.58, tolerance = 1e-2)
+  expect_equal(h("200000001")$trajectoire_artif_par_habitant,
+               (2000 / 3700) / (800 / 3400), tolerance = 1e-3)
   expect_equal(h("200000001")$classification, "grandir-en-setalant")
   expect_equal(h("22")$classification, "grandir-en-setalant")
-  # EPCI Y / département 29 / région : le membre sans donnée (29003) rend le
-  # niveau NA — un total incomplet n'est jamais publié comme complet
-  expect_true(is.na(h("200000002")$artif_m3))
-  expect_true(is.na(h("200000002")$classification))
-  expect_true(is.na(h("29")$classification))
-  expect_true(is.na(h("53")$classification))
-  # EPCI Z (transfrontalier 35+56) : les états se somment signés — la
-  # désartificialisation du 56 (état initial porté, état final nul) pèse dans
-  # l'agrégat ; +600 habitants, trajectoire 0,46 < 1 -> se densifie
-  expect_equal(h("200000003")$artif_m2, 800 / 10000)
-  expect_equal(h("200000003")$artif_m3, 400 / 10000)
+  # EPCI Y = 29001 + 29002 + 29003 : les états somment (M2=2100, M3=2700) —
+  # toutes les communes portent leurs états depuis #243 ; -160 habitants,
+  # trajectoire 1,33 > 1 -> consomme quand même
+  expect_equal(h("200000002")$artif_m3, (1200 + 800 + 700) / 10000)
+  expect_equal(h("200000002")$delta_population, -160)
+  expect_equal(h("200000002")$trajectoire_artif_par_habitant,
+               (2700 / 4360) / (2100 / 4520), tolerance = 1e-3)
+  expect_equal(h("200000002")$classification, "sen-aller-et-consommer-quand-meme")
+  expect_equal(h("29")$classification, "sen-aller-et-consommer-quand-meme")
+  # EPCI Z (transfrontalier 35+56) : les états se somment — la renaturation du
+  # 56 (l'état final 600 < l'état initial 800) pèse dans l'agrégat ; +600
+  # habitants, trajectoire 0,77 < 1 -> se densifie
+  expect_equal(h("200000003")$artif_m2, (400 + 800) / 10000)
+  expect_equal(h("200000003")$artif_m3, (400 + 600) / 10000)
   expect_equal(h("200000003")$delta_population, 600)
-  expect_equal(h("200000003")$trajectoire_artif_par_habitant, 0.46, tolerance = 1e-2)
+  expect_equal(h("200000003")$trajectoire_artif_par_habitant,
+               (1000 / 8300) / (1200 / 7700), tolerance = 1e-3)
   expect_equal(h("200000003")$classification, "grandir-en-se-densifiant")
+  # la région : les sept communes, +740 habitants, trajectoire 1,33 > 1 ->
+  # s'étale
+  expect_equal(h("53")$delta_population, 740)
+  expect_equal(h("53")$trajectoire_artif_par_habitant,
+               (5700 / 16360) / (4100 / 15620), tolerance = 1e-3)
+  expect_equal(h("53")$classification, "grandir-en-setalant")
 })
 
 # Les deux fenêtres nommées (les deux horloges, ADR-0017) ----------------------
@@ -232,8 +246,9 @@ test_that("periode_pop et periode_artif : les deux horloges dérivent chacune de
   expect_equal(h("200000003")$periode_artif, "2020-2023 (35) · 2022-2024 (56)")
   expect_equal(h("53")$periode_artif,
                "2021-2025 (22) · 2021-2024 (29) · 2020-2023 (35) · 2022-2024 (56)")
-  # une fenêtre d'états absente (29003) reste NA — jamais un span inventé
-  expect_true(is.na(h("29003")$periode_artif))
+  # 29003 porte SES états depuis l'amendement #243 : SA fenêtre (29 : 2021/2024),
+  # jamais NA
+  expect_equal(h("29003")$periode_artif, "2021-2024")
 })
 
 test_that("les deux horloges : des millésimes RP différents font glisser periode_pop, jamais la fenêtre des états", {
@@ -295,7 +310,7 @@ test_that("les états : la conversion m² -> ha et l'intensité d'état en m²/h
   h <- function(code) p$histoires[p$histoires$territoire == code, ]
 
   # 22001 : 1200 m² d'état final -> 0,12 ha (la conversion ÷ 10 000, la même
-  # discipline documentée que CONSOENAF), état initial 400 m² (le désartif)
+  # discipline documentée que CONSOENAF), état initial 400 m²
   expect_equal(h("22001")$artif_m3, 1200 / 10000)
   expect_equal(h("22001")$artif_m2, 400 / 10000)
   # l'intensité d'état : le ha × 10 000 = des m², divisés par la population du
@@ -303,11 +318,13 @@ test_that("les états : la conversion m² -> ha et l'intensité d'état en m²/h
   # (2400) pour l'état final
   expect_equal(h("22001")$artif_m2_par_habitant, 400 / 2200)
   expect_equal(h("22001")$artif_m3_par_habitant, 1200 / 2400)
-  # 56001 : l'état initial porté (400 m² = 0,04 ha), l'état final nul
-  expect_equal(h("56001")$artif_m2, 400 / 10000)
-  expect_equal(h("56001")$artif_m3, 0)
-  expect_equal(h("56001")$artif_m2_par_habitant, 400 / 2900)
-  expect_equal(h("56001")$artif_m3_par_habitant, 0)
+  # 56001 : la renaturation MESURÉE — l'état initial 800 m² (0,08 ha), l'état
+  # final 600 m² (0,06 ha) : les DEUX états strictement positifs (un stock
+  # n'est jamais 0 — le bug flux-et-état est mort avec le DIFF, #243)
+  expect_equal(h("56001")$artif_m2, 800 / 10000)
+  expect_equal(h("56001")$artif_m3, 600 / 10000)
+  expect_equal(h("56001")$artif_m2_par_habitant, 800 / 2900)
+  expect_equal(h("56001")$artif_m3_par_habitant, 600 / 3100)
 })
 
 test_that("le bracket de population : RP 2017 pour l'état initial, RP 2023 pour l'état final — jamais interpolé", {

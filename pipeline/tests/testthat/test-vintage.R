@@ -73,6 +73,38 @@ test_that("fusionner_vintages : l'union des tables — la dédupe par id est un 
   expect_equal(nrow(dplyr::filter(fusionnees2, id == "epci")), 1L)
 })
 
+test_that("fusionner_vintages : les ids RETIRÉS du manifeste du thème disparaissent de la table partagée (l'amendement #243 a sorti le DIFF)", {
+  cible <- tempfile("vintages-retires-")
+  dir.create(cible, recursive = TRUE)
+  on.exit(unlink(cible, recursive = TRUE))
+
+  # la table partagée sur disque porte encore les QUATRE ids différentiels de
+  # l'ancien manifeste Milieux (le run #253 les avait publiés) — plus une
+  # source d'un autre thème qui ne doit PAS tomber
+  ancienne <- dplyr::bind_rows(
+    vintages_demographie(),
+    tibble::tibble(
+      id = c("ocsge_artificialisation_22", "ocsge_artificialisation_29",
+             "ocsge_artificialisation_35", "ocsge_artificialisation_56"),
+      source = "IGN — OCS GE Artificialisation v2.0 (différentiel)",
+      version = "2025", licence = "lov2",
+      date_reference = "2025-01-01", date_publication = "2026-07-03"
+    )
+  )
+  nanoparquet::write_parquet(ancienne, file.path(cible, "vintages.parquet"))
+
+  # le run Milieux amendé déclare les ids retirés : les différentielles
+  # quittent la table partagée, les sources des autres thèmes restent
+  fusionnees <- fusionner_vintages(vintages_milieux(), sortie = cible,
+                                   retires = theme_milieux()$retire_vintages)
+  expect_false(any(fusionnees$id %in%
+                     c("ocsge_artificialisation_22", "ocsge_artificialisation_29",
+                       "ocsge_artificialisation_35", "ocsge_artificialisation_56")))
+  expect_true(all(MANIFEST_DEMOGRAPHIE$id %in% fusionnees$id))
+  expect_true(all(MANIFEST_MILIEUX$id %in% fusionnees$id))
+  expect_equal(anyDuplicated(fusionnees$id), 0L)
+})
+
 test_that("l'estampille vient de la source de référence, pas du dénominateur", {
   # des vintages différenciés par source : si l'estampille suivait un tampon de
   # thème (ou le dénominateur partagé), elle serait uniforme — ici chaque
