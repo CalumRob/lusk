@@ -289,3 +289,132 @@ describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
     expect(maplibreMock.instancesPopups.at(-1)?.enlevee).toBe(true)
   })
 })
+
+describe('MapExplorer — le tooltip se pose SOUS le popup ouvert (ADR-0019, #279)', () => {
+  it('ancre le tooltip au popup ouvert au lieu de suivre le curseur dans son empreinte', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    // ouvre un popup au clic…
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    const popup = maplibreMock.instancesPopups.at(-1)
+
+    // …puis survole un territoire (le curseur peut passer au-dessus du popup)
+    carte?.fire('mousemove', { point: { x: 50, y: 60 }, lngLat: { lng: -4, lat: 47 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)
+    expect(tooltip).not.toBe(popup)
+    // le tooltip reste ancré au point du popup — pas sous le curseur
+    expect(tooltip?.position).toEqual(popup?.position)
+    // le survol renseigne toujours le territoire sous le curseur
+    expect(tooltip?.contenu).toContain('Commune A1')
+    // et il s'étend vers le bas : ancre en haut + décalage positif en pixels
+    expect(tooltip?.options.anchor).toBe('top')
+    const decalage = tooltip?.options.offset as [number, number]
+    expect(decalage[0]).toBe(0)
+    expect(decalage[1]).toBeGreaterThan(0)
+  })
+
+  it('sans popup ouvert, le tooltip suit le curseur sans ancre ni décalage imposés', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('mousemove', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)
+    expect(tooltip?.options.anchor).toBeUndefined()
+    expect(tooltip?.options.offset).toBeUndefined()
+  })
+
+  it('revient sous le curseur quand le popup se ferme au clic sur le vide', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    carte?.fire('mousemove', { point: { x: 50, y: 60 }, lngLat: { lng: -4, lat: 47 } })
+    const tooltipSousPopup = maplibreMock.instancesPopups.at(-1)
+
+    // le popup se ferme (clic sur le vide)…
+    carteFake.queryRenderedFeatures = () => [] as never
+    carte?.fire('click', { point: { x: 99, y: 99 }, lngLat: { lng: -9, lat: 44 } })
+    expect(maplibreMock.instancesPopups.at(-2)?.enlevee).toBe(true)
+
+    // …le prochain survol retrouve un tooltip suiveur de curseur (recréé)
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+    carte?.fire('mousemove', { point: { x: 20, y: 20 }, lngLat: { lng: -3, lat: 49 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)
+    expect(tooltip).not.toBe(tooltipSousPopup)
+    expect(tooltip?.position).toEqual({ lng: -3, lat: 49 })
+    expect(tooltip?.options.anchor).toBeUndefined()
+  })
+
+  it('revient sous le curseur quand le popup se ferme par l’événement close (bouton × / closeOnClick)', async () => {
+    const { carte } = await monter({ theme: 'demographie' })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [
+      { properties: { territoire: '22001' } },
+    ] as never
+
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+    carte?.fire('mousemove', { point: { x: 50, y: 60 }, lngLat: { lng: -4, lat: 47 } })
+
+    const popup = maplibreMock.instancesPopups[0]
+    ;(popup as unknown as { fire: (e: string) => void }).fire('close')
+
+    carte?.fire('mousemove', { point: { x: 20, y: 20 }, lngLat: { lng: -3, lat: 49 } })
+
+    const tooltip = maplibreMock.instancesPopups.at(-1)
+    expect(tooltip?.position).toEqual({ lng: -3, lat: 49 })
+    expect(tooltip?.options.anchor).toBeUndefined()
+  })
+})
+
+describe('MapExplorer — les noms EPCI passent à la ligne dans le tooltip (ADR-0019, #279)', () => {
+  const source = readFileSync(
+    join(process.cwd(), 'src', 'components', 'carte', 'MapExplorer.vue'),
+    'utf-8',
+  )
+
+  function regle(selecteur: string): string {
+    const reg = new RegExp(`${selecteur}\\s*\\{([\\s\\S]*?)\\}`)
+    const match = source.match(reg)
+    if (!match) throw new Error(`règle introuvable : ${selecteur}`)
+    return match[1]
+  }
+
+  it('laisse le nom du territoire passer à la ligne (white-space: normal) au lieu de déborder', () => {
+    expect(regle('\\.tooltip-carte-nom')).toContain('white-space: normal')
+  })
+
+  it('permet la coupure des très longs mots dans la boîte (overflow-wrap: anywhere)', () => {
+    expect(regle('\\.tooltip-carte-nom')).toContain('overflow-wrap: anywhere')
+  })
+
+  it('garde la valeur sur une seule ligne — seul le nom long se replie', () => {
+    expect(regle('\\.tooltip-carte-valeur')).toContain('white-space: nowrap')
+  })
+
+  it('ne force plus le nowrap sur le conteneur du tooltip', () => {
+    expect(regle('\\.tooltip-carte')).not.toContain('white-space: nowrap')
+  })
+})

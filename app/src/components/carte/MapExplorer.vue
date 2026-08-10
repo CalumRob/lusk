@@ -21,7 +21,9 @@
  * Hover (audit #208 item 57): a lightweight tooltip follows the cursor —
  * the territory name + the selected theme's indicator value (contenuTooltip)
  * — while the click keeps the full popup. The tooltip is never focusable
- * (survol ≠ clic) and is removed on mouseleave / over empty space.
+ * (survol ≠ clic) and is removed on mouseleave / over empty space. When a
+ * click-popup is open, the tooltip anchors to the popup and renders BELOW it
+ * (ADR-0019) instead of following the cursor into its footprint.
  */
 import maplibregl from 'maplibre-gl'
 import type {
@@ -69,9 +71,13 @@ const mapContainer = ref<HTMLElement | null>(null)
 let carte: CarteMaple | null = null
 let popup: Popup | null = null
 let tooltip: Popup | null = null
+/** Le tooltip courant est-il ancré sous le popup ouvert (ADR-0019) ? */
+let tooltipSousPopup = false
 let observeurTaille: ResizeObserver | null = null
 let derive: ReturnType<typeof setTimeout> | null = null
 
+/** Marge (px) entre le bas du popup et le tooltip quand le popup est ouvert. */
+const DECALAGE_SOUS_POPUP = 12
 const ID_SOURCE = (niveau: NiveauMasque) => `masques-${niveau}`
 const ID_REMPLISSAGE = (niveau: NiveauMasque) => `masques-${niveau}-remplissage`
 const ID_CONTOUR = (niveau: NiveauMasque) => `masques-${niveau}-contour`
@@ -208,7 +214,7 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): voi
   </div>`
 
   popup?.remove()
-  popup = new maplibregl.Popup({
+  const nouveauPopup = new maplibregl.Popup({
     closeButton: true,
     closeOnClick: true,
     focusAfterOpen: true,
@@ -218,6 +224,14 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): voi
     .setLngLat(lngLat)
     .setHTML(contenu)
     .addTo(carte as CarteMaple)
+  popup = nouveauPopup
+  // La fermeture par le bouton × ou closeOnClick passe par l'événement 'close'
+  // de MapLibre, hors de surClic — on oublie l'instance pour que le tooltip
+  // revienne sous le curseur (ADR-0019). Garde d'identité : seul le popup
+  // courant peut se refermer sur lui-même.
+  nouveauPopup.on('close', () => {
+    if (popup === nouveauPopup) popup = null
+  })
 }
 
 function surClic(e: maplibregl.MapLayerMouseEvent): void {
@@ -226,6 +240,7 @@ function surClic(e: maplibregl.MapLayerMouseEvent): void {
   const features = carte.queryRenderedFeatures(e.point, { layers: [remplissage] })
   if (features.length === 0) {
     popup?.remove()
+    popup = null
     return
   }
   ouvrirPopup(features[0] as MapGeoJSONFeature, e.lngLat)
@@ -234,6 +249,23 @@ function surClic(e: maplibregl.MapLayerMouseEvent): void {
 function fermerTooltip(): void {
   tooltip?.remove()
   tooltip = null
+  tooltipSousPopup = false
+}
+
+/** Combien de la hauteur du popup descend sous son point d'ancrage, selon
+ *  l'ancre choisie par MapLibre (la classe maplibregl-popup-anchor-*). Sert à
+ *  poser le tooltip sous la BASE du popup, pas sous son point d'ancrage —
+ *  sinon chevauchement près des bords de la carte où le popup se retourne. */
+function hauteurSousAncre(popup: Popup): number {
+  const classes = popup.getElement().classList
+  const facteur = classes.contains('maplibregl-popup-anchor-top')
+    ? 1
+    : classes.contains('maplibregl-popup-anchor-left') ||
+        classes.contains('maplibregl-popup-anchor-right') ||
+        classes.contains('maplibregl-popup-anchor-center')
+      ? 0.5
+      : 0
+  return popup.getElement().offsetHeight * facteur
 }
 
 function afficherTooltip(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
@@ -243,18 +275,31 @@ function afficherTooltip(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat):
     <span class="tooltip-carte-nom">${contenu.nom}</span>
     ${contenu.valeur ? `<span class="tooltip-carte-valeur">${contenu.valeur}</span>` : ''}
   </div>`
-  if (tooltip) {
-    tooltip.setLngLat(lngLat).setHTML(html)
+  // ADR-0019 : un popup ouvert ancre le tooltip à son propre point, décalé
+  // vers le bas — le tooltip ne suit plus le curseur dans l'empreinte du
+  // popup (fin du chevauchement).
+  const popupOuvert = popup
+  const sousPopup = popupOuvert !== null
+  const position = popupOuvert ? popupOuvert.getLngLat() : lngLat
+  const decalage = DECALAGE_SOUS_POPUP + (popupOuvert ? hauteurSousAncre(popupOuvert) : 0)
+  if (tooltip && tooltipSousPopup === sousPopup) {
+    tooltip.setLngLat(position).setHTML(html)
     return
   }
+  // Le mode (sous popup / suiveur de curseur) a changé — on recrée le tooltip
+  // avec les options qui correspondent (l'ancre et le décalage ne se règlent
+  // qu'à la construction).
+  fermerTooltip()
+  tooltipSousPopup = sousPopup
   tooltip = new maplibregl.Popup({
     closeButton: false,
     closeOnClick: false,
     focusAfterOpen: false,
     className: 'tooltip-carte-fenetre',
     maxWidth: '280px',
+    ...(sousPopup ? { anchor: 'top', offset: [0, decalage] } : {}),
   })
-    .setLngLat(lngLat)
+    .setLngLat(position)
     .setHTML(html)
     .addTo(carte as CarteMaple)
 }
@@ -438,18 +483,27 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  white-space: nowrap;
+  /* ADR-0019 : le nowrap du conteneur faisait déborder les longs noms (EPCI)
+     hors de la boîte — le nom passe à la ligne, la valeur garde une ligne. */
+  min-width: 0;
 }
 
 .tooltip-carte-nom {
   font: var(--text-body-sm);
   font-weight: 600;
   color: var(--text-primary);
+  /* retour à la ligne : « Communauté de communes Presqu'île de Crozon-Aulne
+     maritime » se replie dans la boîte (max-width 280px du tooltip) au lieu
+     de saigner dehors ; overflow-wrap coupe les très longs mots. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .tooltip-carte-valeur {
   font: var(--text-body-sm);
   font-variant-numeric: var(--text-numeric-variant);
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 </style>
