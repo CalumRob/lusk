@@ -16,9 +16,11 @@
  * layer its histoire scalar; a theme whose default is null (Économie) keeps
  * neutral masks.
  *
- * Popups: name + 2–3 KPI figures (kpisPourPopup) + « Voir la fiche » → the
- * territory's fiche. A11y: the popup's link is focusable (focusAfterOpen),
- * the map region is labelled, the NavigationControl stays keyboard-reachable.
+ * Popups (ADR-0019): name + the ACTIVE layer's value + its rank-in-context
+ * (kpisPourPopup — an indicateur layer carries the rank, a story scalar its
+ * value alone) + « Voir la fiche » → the territory's fiche. A11y: the popup's
+ * link is focusable (focusAfterOpen), the map region is labelled, the
+ * NavigationControl stays keyboard-reachable.
  *
  * Hover (audit #208 item 57): a lightweight tooltip follows the cursor —
  * the territory name + the selected theme's indicator value (contenuTooltip)
@@ -246,7 +248,9 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): voi
     .map(
       (k) =>
         `<div class="popup-carte-kpi"><span class="popup-carte-libelle">${k.libelle}</span>` +
-        `<span class="popup-carte-valeur">${k.valeur} <span class="popup-carte-unite">${k.unite}</span></span></div>`,
+        `<span class="popup-carte-valeur">${k.valeur} <span class="popup-carte-unite">${k.unite}</span></span>` +
+        (k.rang ? `<span class="popup-carte-rang">${k.rang}</span>` : '') +
+        `</div>`,
     )
     .join('')
 
@@ -506,6 +510,19 @@ onBeforeUnmount(() => {
 .popup-carte-unite {
   font-weight: 400;
   color: var(--text-tertiary);
+}
+
+/* The rank-in-context chip of the active layer (ADR-0019) — the same caption
+   chip as the fiche's .puce-rang, neutral-tinted in the popup (MapLibre
+   renders outside the theme block's CSS vars). */
+.popup-carte-rang {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--surface-tertiary);
+  color: var(--text-secondary);
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
 }
 
 .popup-carte-lien {
