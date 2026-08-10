@@ -163,9 +163,17 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
    * discovery), while a theme PRESENT without its histoires file is contract
    * drift — the typed validation error, loud.
    */
+  // Le nom générique Fichier (union) ne satisfait pas les surcharges typées
+  // du loader — on appelle la signature d'implémentation, dont le contrat est
+  // le même (le garde exigerReference valide l'argument de référence).
+  const chargerFichierElargi = chargerFichier as (
+    nom: Fichier,
+    territoires?: Territoire[],
+  ) => Promise<unknown>
+
   function construire(nom: Fichier): Promise<unknown> {
     if (SANS_REFERENCE.has(nom)) {
-      return chargerInjecte ? chargerInjecte(nom) : chargerFichier(nom)
+      return chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom)
     }
     const territoires = etats.get('territoires')
     if (!territoires) {
@@ -178,7 +186,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
       )
     }
     const fetchant = (reference: unknown) =>
-      chargerInjecte ? chargerInjecte(nom) : chargerFichier(nom, reference as Territoire[])
+      chargerInjecte ? chargerInjecte(nom) : chargerFichierElargi(nom, reference as Territoire[])
 
     if (nom.startsWith('histoires_')) {
       const theme = themeDe(nom)
