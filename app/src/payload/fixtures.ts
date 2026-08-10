@@ -25,6 +25,7 @@ import type {
   SubventionProgramme,
   Territoire,
   Theme,
+  ThemeMetadata,
   Vintage,
 } from './types'
 
@@ -924,12 +925,12 @@ export const programmesLadderFixture: ProgrammesPayload = {
 
 
 /**
- * The per-file charger built from a full fixture payload � the T2 test seam
+ * The per-file charger built from a full fixture payload � the T2 test seam
  * (issue #298) : `PAYLOAD_CHARGER_KEY` becomes per-file, so component specs
  * drive the progressive store by injecting a charger that maps each file name
  * to its fixture section. A theme absent from the payload returns null (the
- * � 404 = table absente � contract, ADR-0013), so a fixture carrying only
- * demographie renders exactly one theme � the payload-driven tab bar
+ * � 404 = table absente � contract, ADR-0013), so a fixture carrying only
+ * demographie renders exactly one theme � the payload-driven tab bar
  * (ADR-0007) stays honest.
  */
 export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unknown> {
@@ -956,4 +957,272 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         return lignes.length > 0 ? lignes : null
     }
   }
+}
+
+/**
+ * Les fixtures VALIDES du contrat theme_<theme>.json (issue #309) — le miroir
+ * TypeScript des fixtures R (pipeline/tests/testthat/fixtures/theme-metadata/).
+ * Un sous-groupe par histoire résolue (la bijection du contrat) : Démographie,
+ * Habitat, Milieux et Mobilité ont une story unique → un sous-groupe ;
+ * Économie a deux stories → deux sous-groupes (l'ordre des sous-groupes est
+ * l'ordre de la fiche). Les clés d'indicateurs, les story_keys et les sources
+ * de référence reprennent les registres réels des thèmes construits.
+ * Programmes n'a PAS de fixture ici : c'est un contrat de publication séparé,
+ * jamais un thème.
+ */
+export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
+  demographie: {
+    theme: 'demographie',
+    label: 'Démographie',
+    subgroups: [
+      {
+        key: 'etat-et-dynamique',
+        label: 'État et dynamique de la population',
+        framing: 'La population de la commune : sa taille, sa densité, son évolution depuis 1968 et la structure de ses ménages.',
+        indicators: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
+        figure: { family: 'composition', indicator: 'structure_age' },
+        reading: {
+          story_key: 'trajectoire-demographique',
+          params: ['periode', 'taux_solde_naturel', 'taux_solde_migratoire', 'classification'],
+          template: [
+            { type: 'text', content: 'Entre ' },
+            { type: 'param', key: 'periode' },
+            { type: 'text', content: ', la population de ' },
+            { type: 'territoire' },
+            { type: 'text', content: ' ' },
+            { type: 'strong', children: [{ type: 'param', key: 'classification' }] },
+            { type: 'text', content: ' : ' },
+            { type: 'param', key: 'taux_solde_naturel' },
+            { type: 'text', content: ' par an (naturel), ' },
+            { type: 'param', key: 'taux_solde_migratoire' },
+            { type: 'text', content: ' (migratoire). ' },
+            {
+              type: 'link',
+              href: '/methodologie#demographie',
+              children: [{ type: 'text', content: 'Sources et méthodes' }],
+            },
+          ],
+        },
+      },
+    ],
+    indicator_keys: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
+    story_keys: ['trajectoire-demographique'],
+    sources: {
+      densite: 'serie_historique',
+      structure_age: 'age_detail',
+      evolution_1968: 'serie_historique',
+      taille_menages: 'menages',
+    },
+  },
+  habitat: {
+    theme: 'habitat',
+    label: 'Habitat',
+    subgroups: [
+      {
+        key: 'etat-du-parc',
+        label: 'L\u2019état du parc',
+        framing: 'Le parc de logements de la commune : sa composition, son statut, son prix et son efficacité énergétique.',
+        indicators: ['mix_logements', 'statut_anciennete_taille', 'prix_m2', 'part_passoires', 'distribution_dpe'],
+        figure: { family: 'composition', indicator: 'distribution_dpe' },
+        reading: {
+          story_key: 'etat-energetique-du-parc',
+          params: ['classification', 'part_passoires', 'part_abc', 'n_dpe'],
+          template: [
+            { type: 'text', content: 'Le parc de ' },
+            { type: 'territoire' },
+            { type: 'text', content: ' est ' },
+            { type: 'strong', children: [{ type: 'param', key: 'classification' }] },
+            { type: 'text', content: ' : ' },
+            { type: 'param', key: 'part_passoires' },
+            { type: 'text', content: ' de passoires thermiques. ' },
+            {
+              type: 'link',
+              href: '/methodologie#habitat',
+              children: [{ type: 'text', content: 'Sources et méthodes' }],
+            },
+          ],
+        },
+      },
+    ],
+    indicator_keys: ['mix_logements', 'statut_anciennete_taille', 'prix_m2', 'part_passoires', 'distribution_dpe'],
+    story_keys: ['etat-energetique-du-parc'],
+    sources: {
+      mix_logements: 'logements',
+      statut_anciennete_taille: 'logements',
+      prix_m2: 'dvf_2025_dep22',
+      part_passoires: 'dpe_22',
+      distribution_dpe: 'dpe_22',
+    },
+  },
+  economie: {
+    theme: 'economie',
+    label: 'Économie/Emploi',
+    subgroups: [
+      {
+        key: 'sante-et-taille',
+        label: 'Santé et taille du tissu productif',
+        framing: 'La santé du tissu productif local : l\u2019emploi salarié au lieu de travail et le chômage au sens du recensement.',
+        indicators: ['effectifs_salaries', 'chomage'],
+        figure: { family: 'scalar', indicator: 'effectifs_salaries' },
+        reading: {
+          story_key: 'ce-que-la-commune-abrite',
+          params: ['rang', 'activity_label', 'lq', 'n'],
+          template: [
+            { type: 'text', content: 'La commune se spécialise dans ' },
+            { type: 'strong', children: [{ type: 'param', key: 'activity_label' }] },
+            { type: 'text', content: ' (rang ' },
+            { type: 'param', key: 'rang' },
+            { type: 'text', content: ' du top 5). ' },
+            {
+              type: 'link',
+              href: '/methodologie#economie',
+              children: [{ type: 'text', content: 'Sources et méthodes' }],
+            },
+          ],
+        },
+      },
+      {
+        key: 'structure-verte',
+        label: 'La structure verte',
+        framing: 'La place des établissements verts dans le tissu productif.',
+        indicators: ['eco_activites'],
+        figure: { family: 'profile', indicator: 'eco_activites' },
+        reading: {
+          story_key: 'ce-que-la-bretagne-abrite',
+          params: ['activity_label', 'part_parc', 'n'],
+          template: [
+            { type: 'text', content: 'La Bretagne abrite surtout ' },
+            { type: 'param', key: 'activity_label' },
+            { type: 'text', content: ' (' },
+            { type: 'param', key: 'part_parc' },
+            { type: 'text', content: ' du parc). ' },
+            {
+              type: 'link',
+              href: '/methodologie#economie',
+              children: [{ type: 'text', content: 'Méthodes' }],
+            },
+          ],
+        },
+      },
+    ],
+    indicator_keys: ['effectifs_salaries', 'chomage', 'eco_activites'],
+    story_keys: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+    sources: {
+      effectifs_salaries: 'flores_a88',
+      chomage: 'rp_chomage',
+      eco_activites: 'sirene_snapshot',
+    },
+  },
+  milieux: {
+    theme: 'milieux',
+    label: 'Milieux',
+    subgroups: [
+      {
+        key: 'artificialisation',
+        label: 'L\u2019artificialisation',
+        framing: 'La consommation de la terre par l\u2019urbanisation : l\u2019état artificialisé et le flux annuel.',
+        indicators: ['artif_par_habitant', 'conso_enaf_annuel'],
+        figure: { family: 'trajectory', indicator: 'artif_par_habitant' },
+        reading: {
+          story_key: 'se-densifier-setaler-ou-sen-aller',
+          params: ['periode_pop', 'periode_artif', 'delta_population', 'trajectoire_artif_par_habitant', 'classification'],
+          template: [
+            { type: 'text', content: 'Entre ' },
+            { type: 'param', key: 'periode_pop' },
+            { type: 'text', content: ' et ' },
+            { type: 'param', key: 'periode_artif' },
+            { type: 'text', content: ', ' },
+            { type: 'territoire' },
+            { type: 'text', content: ' ' },
+            { type: 'strong', children: [{ type: 'param', key: 'classification' }] },
+            { type: 'text', content: ' (trajectoire ' },
+            { type: 'param', key: 'trajectoire_artif_par_habitant' },
+            { type: 'text', content: ' par habitant). ' },
+            {
+              type: 'link',
+              href: '/methodologie#milieux',
+              children: [{ type: 'text', content: 'Sources et méthodes' }],
+            },
+          ],
+        },
+      },
+    ],
+    indicator_keys: ['artif_par_habitant', 'conso_enaf_annuel'],
+    story_keys: ['se-densifier-setaler-ou-sen-aller'],
+    sources: {
+      artif_par_habitant: 'ocsge_artificialisation_22_2025',
+      conso_enaf_annuel: 'consoenaf',
+    },
+  },
+  mobilite: {
+    theme: 'mobilite',
+    label: 'Mobilité',
+    subgroups: [
+      {
+        key: 'acces-aux-services',
+        label: 'L\u2019accès aux services',
+        framing: 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l\u2019offre de transport qui le permet.',
+        indicators: [
+          'nb_buildings',
+          'voitures_menage',
+          'reseaux',
+          'offre_tc',
+          'bornes_recharge',
+          'places_stationnement_velo_1000',
+          'offre_cyclable',
+          'iso_alimentation',
+          'iso_sante',
+          'iso_administration',
+          'iso_ecole',
+          'iso_banque',
+        ],
+        figure: { family: 'scalar', indicator: 'offre_cyclable' },
+        reading: {
+          story_key: 'vingt-minutes-sans-voiture',
+          params: ['div_loss_t', 'pct_iso_full_t', 'classification_saillance'],
+          template: [
+            { type: 'text', content: 'Sans voiture, ' },
+            { type: 'param', key: 'div_loss_t' },
+            { type: 'text', content: ' types de services disparaissent de l\u2019accès quotidien de ' },
+            { type: 'territoire' },
+            { type: 'text', content: '. ' },
+            {
+              type: 'link',
+              href: '/methodologie#mobilite',
+              children: [{ type: 'text', content: 'Sources et méthodes' }],
+            },
+          ],
+        },
+      },
+    ],
+    indicator_keys: [
+      'nb_buildings',
+      'voitures_menage',
+      'reseaux',
+      'offre_tc',
+      'bornes_recharge',
+      'places_stationnement_velo_1000',
+      'offre_cyclable',
+      'iso_alimentation',
+      'iso_sante',
+      'iso_administration',
+      'iso_ecole',
+      'iso_banque',
+    ],
+    story_keys: ['vingt-minutes-sans-voiture'],
+    sources: {
+      nb_buildings: 'mobilite_snapshot',
+      voitures_menage: 'rp_logement_princ',
+      reseaux: 'amenagements_cyclables',
+      offre_tc: 'korrigo',
+      bornes_recharge: 'bornes-recharges',
+      places_stationnement_velo_1000: 'stationnement-velo',
+      offre_cyclable: 'osm_reseaux',
+      iso_alimentation: 'mobilite_snapshot',
+      iso_sante: 'mobilite_snapshot',
+      iso_administration: 'mobilite_snapshot',
+      iso_ecole: 'mobilite_snapshot',
+      iso_banque: 'mobilite_snapshot',
+    },
+  },
 }
