@@ -1,21 +1,24 @@
 <script setup lang="ts">
 /**
  * MapLegend — the map's legend (ui-elements.md §Map shell, layouts.md §3):
- * the theme's choropleth buckets (colour swatch + numeric range — color is
- * never the sole carrier, DESIGN.md §8) plus the no-data row, or — in Aperçu
- * (no theme) — the active mask level's simple note. Collapsible.
+ * the ACTIVE LAYER's choropleth buckets (ADR-0019 — the legend follows the
+ * layer the view passed down: its own libelle, unit, scale and breaks —
+ * colour swatch + numeric range, colour is never the sole carrier, DESIGN.md
+ * §8) plus the no-data row, or — in Aperçu (no layer) — the active mask
+ * level's simple note. Collapsible.
  */
 import { ChevronDown } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
-import type { ConfigCouche } from '@/carte/configCouche'
+import type { Couche } from '@/carte/coucheModel'
 import type { NiveauMasque } from '@/geo/types'
 import { NOMS_NIVEAUX } from '@/geo/types'
 
 const props = defineProps<{
   niveau: NiveauMasque
-  config: ConfigCouche | null
+  /** The active layer — null in Aperçu (the legend notes the masks only). */
+  couche: Couche | null
   couleurs: string[]
   seuils: number[]
   /** Une rampe divergente (ADR-0019) : les bornes positives portent leur signe
@@ -64,14 +67,14 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
 </script>
 
 <template>
-  <section class="carte-legendes" :aria-label="config ? `Légende — ${config.libelle}` : 'Légende de la carte'">
+  <section class="carte-legendes" :aria-label="couche ? `Légende — ${couche.libelle}` : 'Légende de la carte'">
     <button type="button" class="carte-legendes-entete" :aria-expanded="!repliee" @click="repliee = !repliee">
-      <h2 class="carte-legendes-titre">{{ config ? config.libelle : NOMS_NIVEAUX[niveau] }}</h2>
+      <h2 class="carte-legendes-titre">{{ couche ? couche.libelle : NOMS_NIVEAUX[niveau] }}</h2>
       <AppIcon :icone="ChevronDown" :taille="16" class="carte-legendes-chevron" :class="{ 'est-replie': repliee }" />
     </button>
 
     <div v-show="!repliee" class="carte-legendes-corps">
-      <template v-if="config && bornes.length > 0">
+      <template v-if="couche && bornes.length > 0">
         <ul class="carte-legendes-gammes">
           <li
             v-for="(borne, index) in bornes"

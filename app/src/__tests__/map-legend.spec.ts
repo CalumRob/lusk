@@ -4,24 +4,29 @@ import { describe, expect, it } from 'vitest'
 
 import MapLegend from '../components/carte/MapLegend.vue'
 import { COULEUR_CONTOUR, COULEUR_NEUTRE, COULEUR_NEUTRE_ZERO } from '../carte/couleurs'
+import type { Couche } from '../carte/coucheModel'
 
 /**
- * MapLegend (ui-elements.md §Map shell): the theme's choropleth buckets —
- * swatch + numeric range (color is never the sole carrier, DESIGN.md §8) —
- * with the no-data row, or the active level's note in Aperçu. Collapsible.
+ * MapLegend (ui-elements.md §Map shell): the ACTIVE LAYER's choropleth
+ * buckets (ADR-0019 — the legend follows the layer: its own libelle, unit,
+ * scale and breaks) — swatch + numeric range (color is never the sole
+ * carrier, DESIGN.md §8) — with the no-data row, or the active level's note
+ * in Aperçu. Collapsible.
  */
 
-const configDemographie = {
-  theme: 'demographie' as const,
-  indicateur: 'densite',
+const coucheDensite: Couche = {
+  source: 'indicateur',
+  clef: 'densite',
+  detail: null,
   libelle: 'Densité de population',
+  parDefaut: false,
 }
 
 function montage(overrides: Record<string, unknown> = {}) {
   return mount(MapLegend, {
     props: {
       niveau: 'communes',
-      config: configDemographie,
+      couche: coucheDensite,
       couleurs: ['#c1c1e9', '#a3a3df', '#8e85c4', '#6f67a8'],
       seuils: [20, 40, 60],
       estDivergente: false,
@@ -35,8 +40,8 @@ function montage(overrides: Record<string, unknown> = {}) {
   })
 }
 
-describe('MapLegend — the theme bucket legend', () => {
-  it('titles the legend with the indicator label', () => {
+describe('MapLegend — the active layer bucket legend', () => {
+  it('titles the legend with the layer label', () => {
     const wrapper = montage()
 
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
@@ -76,7 +81,13 @@ describe('MapLegend — the theme bucket legend', () => {
 
   it('formats % units as whole numbers (fraction × 100)', () => {
     const wrapper = montage({
-      config: { theme: 'habitat' as const, indicateur: 'part_passoires', libelle: 'Part de passoires thermiques' },
+      couche: {
+        source: 'indicateur' as const,
+        clef: 'part_passoires',
+        detail: null,
+        libelle: 'Part de passoires thermiques',
+        parDefaut: false,
+      },
       couleurs: ['#f0ddd2', '#d9ae94', '#c98f6e'],
       seuils: [0.2, 0.4],
       unite: '%',
@@ -128,9 +139,9 @@ describe('MapLegend — la rampe divergente (ADR-0019)', () => {
   })
 })
 
-describe('MapLegend — in Aperçu (no theme)', () => {
+describe('MapLegend — in Aperçu (no theme, no layer)', () => {
   it('notes the active mask level without an indicator layer', () => {
-    const wrapper = montage({ config: null, couleurs: [], seuils: [] })
+    const wrapper = montage({ couche: null, couleurs: [], seuils: [] })
 
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Communes')
     expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
