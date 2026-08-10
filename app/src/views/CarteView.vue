@@ -4,11 +4,15 @@
  * (reused — payload-driven, ?theme= in the URL, Aperçu default), then a
  * full-bleed MapExplorer + a 360px MapSidebar (mobile → bottom sheet).
  *
- * The theme tab drives the map's indicator layer and the legend (configCouche
- * — the seam's pure logic); Aperçu = territory masks only. States follow the
- * shell's pattern: skeleton while the payload/geometry load, a typed error
- * with Retry, and the honest « Fonds de carte indisponible. » when no mask
- * file is published yet (the pipeline ticket must publish the geometry).
+ * ADR-0019: the theme tab drives the map's LAYER SET (couchesDuTheme — the
+ * layer model derives from the payload, never a carte-side spec). ?theme=
+ * selects the theme's DEFAULT layer (coucheParDefaut — its first story
+ * scalar); the sidebar's layer clicks switch the active couche (in-memory
+ * state — the fine-grained layer URL encoding is a later ticket). Aperçu =
+ * territory masks only (the neutral state). States follow the shell's
+ * pattern: skeleton while the payload/geometry load, a typed error with
+ * Retry, and the honest « Fonds de carte indisponible. » when no mask file
+ * is published yet (the pipeline ticket must publish the geometry).
  */
 import { AlertCircle, MapPinOff } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
@@ -25,8 +29,9 @@ import {
   echelleChoroplethe,
   rampeDivergente,
 } from '@/carte/couleurs'
-import { configCoucheTheme } from '@/carte/configCouche'
-import { indicateurParTerritoire } from '@/carte/fusion'
+import { couchesDuTheme } from '@/carte/coucheModel'
+import type { Couche, CouchesTheme } from '@/carte/coucheModel'
+import { indicateurParTerritoire, valeurHistoireParTerritoire } from '@/carte/fusion'
 import { echelleValeurs } from '@/carte/seuils'
 import { idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -106,17 +111,39 @@ const geometrieAbsente = computed(
 )
 
 /** The legend data — the same pure logic that paints the map. */
-const config = computed(() => (selection.value ? configCoucheTheme(selection.value) : null))
-const legende = computed(() => {
-  const cfg = config.value
-  const m = masques.value?.[niveau.value]
-  if (!cfg || !selection.value || !payload.value || !m) return null
+const couchesTheme = computed<CouchesTheme | null>(() =>
+  selection.value && payload.value ? couchesDuTheme(payload.value, selection.value) : null,
+)
 
-  const parTerritoire = indicateurParTerritoire(
-    payload.value.indicateurs,
-    selection.value,
-    cfg.indicateur,
-  )
+/** The ACTIVE layer — in-memory state; reset to the theme's default on theme change (ADR-0019). */
+const coucheActive = ref<Couche | null>(null)
+watch(
+  couchesTheme,
+  (ct) => {
+    coucheActive.value = ct?.coucheParDefaut ?? null
+  },
+  { immediate: true },
+)
+
+function choisirCouche(couche: Couche): void {
+  coucheActive.value = couche
+}
+
+/** The layer's joined values per territoire — the indicator rows (clef +
+ *  detail) or the histoire scalar, per the couche's source. */
+function valeursDeLaCouche(couche: Couche): ReadonlyMap<string, { value: number | null; unit: string }> {
+  const theme = selection.value as Theme
+  return couche.source === 'indicateur'
+    ? indicateurParTerritoire(payload.value!.indicateurs, theme, couche.clef, couche.detail)
+    : valeurHistoireParTerritoire(payload.value!, theme, couche.clef)
+}
+
+const legende = computed(() => {
+  const couche = coucheActive.value
+  const m = masques.value?.[niveau.value]
+  if (!couche || !selection.value || !payload.value || !m) return null
+
+  const parTerritoire = valeursDeLaCouche(couche)
   const valeurs: number[] = []
   for (const ligne of parTerritoire.values()) {
     if (ligne.value !== null) valeurs.push(ligne.value)
@@ -129,14 +156,14 @@ const legende = computed(() => {
           ANCRAGES_THEMES[selection.value],
           Math.max(2, echelle.seuils.length + 1),
         )
-  const premier = parTerritoire.values().next().value
+  const premiere = parTerritoire.values().next().value
   return {
-    config: cfg,
+    couche,
     couleurs,
     seuils: echelle.seuils,
     estDivergente: echelle.type === 'divergente',
-    unite: premier?.unit ?? '',
-    estPourcentage: premier?.unit === '%',
+    unite: premiere?.unit ?? '',
+    estPourcentage: premiere?.unit === '%',
   }
 })
 
@@ -185,13 +212,15 @@ const classesFond = computed(() =>
             :masques="masques!"
             :payload="payload"
             :theme="selection"
+            :couche="coucheActive"
             :niveau="niveau"
           />
           <MapSidebar
             :territoires="payload.territoires"
             :niveau="niveau"
             :niveaux-disponibles="niveauxDisponibles"
-            :config="legende?.config ?? null"
+            :entrees="couchesTheme?.entrees ?? []"
+            :couche-active="coucheActive"
             :couleurs="legende?.couleurs ?? []"
             :seuils="legende?.seuils ?? []"
             :est-divergente="legende?.estDivergente ?? false"
@@ -200,6 +229,7 @@ const classesFond = computed(() =>
             :couleur-vide="COULEUR_NEUTRE"
             :couleur-contour="COULEUR_CONTOUR"
             @niveau-change="(n: NiveauMasque) => (niveauDemande = n)"
+            @couche-change="choisirCouche"
           />
         </template>
       </div>

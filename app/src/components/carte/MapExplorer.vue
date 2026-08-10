@@ -10,9 +10,11 @@
  * joined from the fiche payload.
  *
  * The view owns the theme + level state; this component renders the map and
- * reacts to them. Aperçu (theme null) = territory masks only. A theme with a
- * choropleth contract (configCoucheTheme) paints the active level's fill; a
- * theme without one (Mobilité/Économie) keeps neutral masks.
+ * reacts to them. Aperçu (theme null, no layer) = territory masks only. The
+ * ACTIVE LAYER (the couche the view passes down — ADR-0019) paints the active
+ * level's fill: an indicateur layer reads its clef + detail rows, a story
+ * layer its histoire scalar; a theme whose default is null (Économie) keeps
+ * neutral masks.
  *
  * Popups: name + 2–3 KPI figures (kpisPourPopup) + « Voir la fiche » → the
  * territory's fiche. A11y: the popup's link is focusable (focusAfterOpen),
@@ -45,11 +47,12 @@ import {
   echelleChoroplethe,
   rampeDivergente,
 } from '@/carte/couleurs'
-import { configCoucheTheme } from '@/carte/configCouche'
+import type { Couche } from '@/carte/coucheModel'
 import {
   collectionAvecValeurs,
   expressionCouleurs,
   indicateurParTerritoire,
+  valeurHistoireParTerritoire,
 } from '@/carte/fusion'
 import type { CollectionAvecValeurs } from '@/carte/fusion'
 import { kpisPourPopup, contenuTooltip } from '@/carte/popup'
@@ -62,6 +65,8 @@ const props = defineProps<{
   masques: Masques
   payload: Payload
   theme: Theme | null
+  /** The active layer — null in Aperçu or for a theme whose default is absent (Économie). */
+  couche: Couche | null
   niveau: NiveauMasque
 }>()
 
@@ -89,25 +94,25 @@ function masqueDe(niveau: NiveauMasque): CollectionMasque | null {
   return props.masques[niveau] ?? null
 }
 
-/** The active level's fill — joined to the theme's indicator rows. */
+/** The active level's fill — joined to the active layer's rows (indicateur
+ *  clef + detail, or the histoire scalar — ADR-0019). */
 function collectionActive(niveau: NiveauMasque): CollectionAvecValeurs | CollectionMasque | null {
   const collection = masqueDe(niveau)
   if (!collection) return null
-  const config = props.theme ? configCoucheTheme(props.theme) : null
-  if (!config) return collection
-  const parTerritoire = indicateurParTerritoire(
-    props.payload.indicateurs,
-    props.theme as Theme,
-    config.indicateur,
-  )
+  const { theme, couche } = props
+  if (!couche || !theme) return collection
+  const parTerritoire =
+    couche.source === 'indicateur'
+      ? indicateurParTerritoire(props.payload.indicateurs, theme, couche.clef, couche.detail)
+      : valeurHistoireParTerritoire(props.payload, theme, couche.clef)
   return collectionAvecValeurs(collection, parTerritoire)
 }
 
 type PaintRemplissage = FillLayerSpecification['paint']
 
 function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
-  const config = props.theme ? configCoucheTheme(props.theme) : null
-  if (!config) return null
+  const { theme, couche } = props
+  if (!couche || !theme) return null
   const collection = collectionActive(niveau)
   if (!collection) return null
   const valeurs: number[] = []
@@ -118,8 +123,8 @@ function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
   const echelle = echelleValeurs(valeurs)
   const couleurs =
     echelle.type === 'divergente'
-      ? rampeDivergente(ANCRAGES_THEMES[config.theme], echelle.seuils)
-      : echelleChoroplethe(ANCRAGES_THEMES[config.theme], Math.max(2, echelle.seuils.length + 1))
+      ? rampeDivergente(ANCRAGES_THEMES[theme], echelle.seuils)
+      : echelleChoroplethe(ANCRAGES_THEMES[theme], Math.max(2, echelle.seuils.length + 1))
   return { 'fill-color': expressionCouleurs(echelle.seuils, couleurs) }
 }
 
@@ -191,7 +196,7 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): voi
   const nom = nomTerritoire(territoire)
   const fiche = trouverTerritoire(props.payload, territoire)
 
-  const kpis = kpisPourPopup(props.payload, territoire, props.theme)
+  const kpis = kpisPourPopup(props.payload, territoire, props.theme, props.couche)
   const lignesKpis = kpis
     .map(
       (k) =>
@@ -270,7 +275,7 @@ function hauteurSousAncre(popup: Popup): number {
 
 function afficherTooltip(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
   const territoire = String(feature.properties.territoire)
-  const contenu = contenuTooltip(props.payload, territoire, props.theme)
+  const contenu = contenuTooltip(props.payload, territoire, props.theme, props.couche)
   const html = `<div class="tooltip-carte">
     <span class="tooltip-carte-nom">${contenu.nom}</span>
     ${contenu.valeur ? `<span class="tooltip-carte-valeur">${contenu.valeur}</span>` : ''}
@@ -349,7 +354,7 @@ function initialiserCarte(): void {
 }
 
 watch(
-  () => [props.niveau, props.theme, props.masques, props.payload] as const,
+  () => [props.niveau, props.theme, props.couche, props.masques, props.payload] as const,
   () => {
     if (!carte || !carte.isStyleLoaded()) return
     fermerTooltip()

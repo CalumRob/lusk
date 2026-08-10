@@ -1,15 +1,17 @@
 /**
- * The indicator-join onto the territory masks — the map's KPI plumbing
- * (ADR-0008: « features carry the territoire code so the map joins the fiche
- * payload's KPIs »). Pure functions: rows in, features + paint expression out.
- * The join is by territoire code; a territory without a row keeps a null
- * value (rendered in the neutral no-data color, never invented).
+ * The indicator/story-scalar joins onto the territory masks — the map's KPI
+ * plumbing (ADR-0008: « features carry the territoire code so the map joins
+ * the fiche payload's KPIs »; ADR-0019: every number a fiche renders is a
+ * layer — the story scalars join like the indicator rows). Pure functions:
+ * rows in, features + paint expression out. The join is by territoire code; a
+ * territory without a row keeps a null value (rendered in the neutral no-data
+ * color, never invented).
  */
 
 import type { ExpressionSpecification } from 'maplibre-gl'
 
 import type { CollectionMasque, FeatureTerritoire } from '../geo/types'
-import type { Indicateur, Theme } from '../payload/types'
+import type { Indicateur, Payload, Theme } from '../payload/types'
 import { formaterValeur } from '../payload/selectors'
 import { COULEUR_NEUTRE } from './couleurs'
 
@@ -29,19 +31,29 @@ export interface CollectionAvecValeurs {
   features: FeatureAvecValeur[]
 }
 
+/** A joined value per territoire — the minimal shape the fill, the legend and
+ *  the popup read. The story scalars carry no unit (the histoires table
+ *  publishes none) : `unit` is '' there — the legend shows the number alone,
+ *  never an invented unit. */
+export interface ValeurLigne {
+  value: number | null
+  unit: string
+}
+
 /**
  * The rows that feed one choropleth: the theme's indicator with `detail ===
- * null` (one value per territory — the multi-detail keys like structure_age
- * are fiche figures, never a map fill). Returns territoire → row.
+ * null` (one value per territory) — or, when `detail` is given (a grouped
+ * multi-detail layer, ADR-0019), that detail's rows. Returns territoire → row.
  */
 export function indicateurParTerritoire(
   lignes: readonly Indicateur[],
   theme: Theme,
   indicateur: string,
+  detail: string | null = null,
 ): Map<string, Indicateur> {
   const parTerritoire = new Map<string, Indicateur>()
   for (const ligne of lignes) {
-    if (ligne.theme === theme && ligne.key === indicateur && ligne.detail === null) {
+    if (ligne.theme === theme && ligne.key === indicateur && ligne.detail === detail) {
       parTerritoire.set(ligne.territoire, ligne)
     }
   }
@@ -49,13 +61,38 @@ export function indicateurParTerritoire(
 }
 
 /**
+ * The story-scalar join (ADR-0019): the theme's Story row per territoire, read
+ * at the scalar field `champ` — the layer's one value per territory (a story
+ * scalar IS a number per territoire). The histoires table carries no unit
+ * column, so the joined lines are unit-less (`unit: ''`, the honest number).
+ */
+export function valeurHistoireParTerritoire(
+  payload: Payload,
+  theme: Theme,
+  champ: string,
+): Map<string, ValeurLigne> {
+  const parTerritoire = new Map<string, ValeurLigne>()
+  for (const histoire of payload.histoires) {
+    if (histoire.theme !== theme) continue
+    const valeur = (histoire as unknown as Record<string, unknown>)[champ]
+    parTerritoire.set(histoire.territoire, {
+      value: typeof valeur === 'number' ? valeur : null,
+      unit: '',
+    })
+  }
+  return parTerritoire
+}
+
+/**
  * The collection with the joined values baked into each feature's properties
- * (`valeur` for the paint, `valeur_formatee` for the popup/legend). The
+ * (`valeur` for the paint, `valeur_formatee` for the popup/legend). Accepts
+ * either join — the indicator rows (Map<string, Indicateur>) or the story
+ * scalars (Map<string, ValeurLigne>) — the same shape either way. The
  * geometry itself is untouched — a new FeatureCollection, never a mutation.
  */
 export function collectionAvecValeurs(
   collection: CollectionMasque,
-  parTerritoire: ReadonlyMap<string, Indicateur>,
+  parTerritoire: ReadonlyMap<string, ValeurLigne>,
 ): CollectionAvecValeurs {
   return {
     type: 'FeatureCollection',

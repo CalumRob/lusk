@@ -9,7 +9,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import MapExplorer from '../components/carte/MapExplorer.vue'
 import { COULEUR_NEUTRE, LARGEUR_CONTOUR } from '../carte/couleurs'
+import type { Couche } from '../carte/coucheModel'
 import {
+  histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
   vintagesFixture,
@@ -23,10 +25,11 @@ import type { Masques } from '../geo/types'
  * MapExplorer (ADR-0008 + layouts.md §3) — the ported shell, PMTiles swapped
  * for plain GeoJSON sources: Etalab positron vector basemap (ADR-0018, local
  * vendored style without labels, OSM attribution from the TileJSON), one
- * GeoJSON source + fill/line layers per present mask level, the theme's
- * choropleth driving the active fill (Aperçu = neutral masks), and click
- * popups (name + KPIs + « Voir la fiche »). The specs assert the map contract
- * against the structural maplibre fake (setup.ts).
+ * GeoJSON source + fill/line layers per present mask level, the ACTIVE LAYER
+ * (the couche the view passes down — ADR-0019) driving the active fill
+ * (Aperçu = neutral masks), and click popups (name + KPIs + « Voir la
+ * fiche »). The specs assert the map contract against the structural maplibre
+ * fake (setup.ts).
  */
 
 function feature(territoire: string, nom: string) {
@@ -54,11 +57,29 @@ const masquesDeuxNiveaux: Masques = {
 const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
-  histoires: [],
+  histoires: histoiresDemographieFixture,
   apercu: [],
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,
+}
+
+/** The Démographie densité layer — the previous config's equivalent, as a Couche. */
+const coucheDensite: Couche = {
+  source: 'indicateur',
+  clef: 'densite',
+  detail: null,
+  libelle: 'Densité de population',
+  parDefaut: false,
+}
+
+/** The Démographie default layer — the first story scalar (ADR-0019 α rule). */
+const coucheTauxSoldeNaturel: Couche = {
+  source: 'histoire',
+  clef: 'taux_solde_naturel',
+  detail: null,
+  libelle: 'taux_solde_naturel',
+  parDefaut: true,
 }
 
 async function monter(overrides: Record<string, unknown> = {}) {
@@ -70,6 +91,7 @@ async function monter(overrides: Record<string, unknown> = {}) {
       masques: masquesCommunes,
       payload,
       theme: null,
+      couche: null,
       niveau: 'communes',
       ...overrides,
     },
@@ -163,17 +185,17 @@ describe('MapExplorer — the GeoJSON mask layers', () => {
   })
 })
 
-describe('MapExplorer — the theme-driven indicator layer', () => {
-  it('paints the neutral mask fill in Aperçu (no theme)', async () => {
+describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
+  it('paints the neutral mask fill in Aperçu (no theme, no layer)', async () => {
     const { carte } = await monter()
 
     expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
 
-  it('paints the theme choropleth and joins the indicator onto the source data', async () => {
+  it('paints the layer choropleth and joins the indicator onto the source data', async () => {
     const { wrapper, carte } = await monter()
 
-    await wrapper.setProps({ theme: 'demographie' })
+    await wrapper.setProps({ theme: 'demographie', couche: coucheDensite })
 
     const peinture = carte?.peintures['masques-communes-remplissage']['fill-color'] as unknown[]
     expect(peinture[0]).toBe('case')
@@ -189,10 +211,26 @@ describe('MapExplorer — the theme-driven indicator layer', () => {
     expect(d?.properties.valeur).toBe(50)
   })
 
-  it('keeps neutral masks for a theme without a choropleth contract', async () => {
+  it('joins a story-scalar layer (source histoire) onto the source data', async () => {
     const { wrapper, carte } = await monter()
 
-    await wrapper.setProps({ theme: 'mobilite' })
+    await wrapper.setProps({ theme: 'demographie', couche: coucheTauxSoldeNaturel })
+
+    const peinture = carte?.peintures['masques-communes-remplissage']['fill-color'] as unknown[]
+    expect(peinture[0]).toBe('case')
+    const donnees = carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null } }[]
+    }
+    const a1 = donnees.features.find((f) => f.properties.territoire === '22001')
+    expect(a1?.properties.valeur).toBe(5.982905982905983)
+    const d = donnees.features.find((f) => f.properties.territoire === '22002')
+    expect(d?.properties.valeur).toBe(-8.080808080808081)
+  })
+
+  it('keeps neutral masks when no layer is active (a theme without a default — Économie)', async () => {
+    const { wrapper, carte } = await monter()
+
+    await wrapper.setProps({ theme: 'economie', couche: null })
 
     expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
@@ -200,7 +238,7 @@ describe('MapExplorer — the theme-driven indicator layer', () => {
 
 describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => {
   it('opens a popup with the territory name, its KPIs and the fiche link', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -238,7 +276,7 @@ describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => 
 
 describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
   it('shows a lightweight tooltip with the territory name and its value on mousemove', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -257,7 +295,7 @@ describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
   })
 
   it('follows the cursor: the tooltip moves with the mousemove', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -273,7 +311,7 @@ describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
   })
 
   it('removes the tooltip when the cursor leaves a territory', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -292,7 +330,7 @@ describe('MapExplorer — the hover tooltip (audit #208 item 57)', () => {
 
 describe('MapExplorer — le tooltip se pose SOUS le popup ouvert (ADR-0019, #279)', () => {
   it('ancre le tooltip au popup ouvert au lieu de suivre le curseur dans son empreinte', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -321,7 +359,7 @@ describe('MapExplorer — le tooltip se pose SOUS le popup ouvert (ADR-0019, #27
   })
 
   it('sans popup ouvert, le tooltip suit le curseur sans ancre ni décalage imposés', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -337,7 +375,7 @@ describe('MapExplorer — le tooltip se pose SOUS le popup ouvert (ADR-0019, #27
   })
 
   it('revient sous le curseur quand le popup se ferme au clic sur le vide', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }
@@ -367,7 +405,7 @@ describe('MapExplorer — le tooltip se pose SOUS le popup ouvert (ADR-0019, #27
   })
 
   it('revient sous le curseur quand le popup se ferme par l’événement close (bouton × / closeOnClick)', async () => {
-    const { carte } = await monter({ theme: 'demographie' })
+    const { carte } = await monter({ theme: 'demographie', couche: coucheDensite })
     const carteFake = carte as unknown as {
       queryRenderedFeatures: () => { properties: { territoire: string } }[]
     }

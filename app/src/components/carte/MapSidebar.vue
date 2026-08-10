@@ -3,18 +3,20 @@
  * MapSidebar — the map's side panel (layouts.md §3): 360px, collapsible;
  * mobile → bottom sheet (transform-only, the `.bottom-sheet` recipe). Holds
  * the search (GlobalSearchBar — territoires prop), the mask-level controls
- * (synced with the map — a level without geometry is disabled, honest) and
- * the legend. The theme state lives in the view (ThemeTabs + ?theme=); this
- * panel only emits the chosen mask level.
+ * (synced with the map — a level without geometry is disabled, honest) and —
+ * ADR-0019 — the LAYER SELECTOR: the active theme's full layer set
+ * (couchesDuTheme's entrees, story scalar first, the multi-detail keys and
+ * story-pool siblings as expandable groups). Clicking a layer emits
+ * `couche-change`; the view owns the theme + level state.
  */
-import { Layers, SlidersHorizontal, X } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { ChevronDown, Layers, SlidersHorizontal, X } from 'lucide-vue-next'
+import { computed, ref, watch } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import MapLegend from '@/components/carte/MapLegend.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
-import type { ConfigCouche } from '@/carte/configCouche'
+import type { Couche, EntreeCouches } from '@/carte/coucheModel'
 import type { NiveauMasque } from '@/geo/types'
 import { NOMS_NIVEAUX } from '@/geo/types'
 import type { Territoire } from '@/payload/types'
@@ -23,7 +25,10 @@ const props = defineProps<{
   territoires: Territoire[]
   niveau: NiveauMasque
   niveauxDisponibles: NiveauMasque[]
-  config: ConfigCouche | null
+  /** The active theme's layer entries, in fiche order (couchesDuTheme). */
+  entrees: EntreeCouches[]
+  /** The active layer — null in Aperçu or for a theme whose default is absent. */
+  coucheActive: Couche | null
   couleurs: string[]
   seuils: number[]
   estDivergente: boolean
@@ -36,12 +41,44 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'niveau-change', niveau: NiveauMasque): void
+  (e: 'couche-change', couche: Couche): void
 }>()
 
 const estMobile = useMediaQuery('(max-width: 768px)')
 const ouverte = ref(!estMobile.value)
 
 const fermee = computed(() => !ouverte.value)
+
+/** The collapsed group indexes — the groups are open by default (the whole
+ *  layer set is visible; the chevron folds a group). Reset when the theme
+ *  changes (a new entrees array). */
+const groupesReplies = ref<number[]>([])
+watch(
+  () => props.entrees,
+  () => {
+    groupesReplies.value = []
+  },
+)
+
+function groupeReplie(index: number): boolean {
+  return groupesReplies.value.includes(index)
+}
+
+function basculerGroupe(index: number): void {
+  const position = groupesReplies.value.indexOf(index)
+  if (position === -1) groupesReplies.value.push(index)
+  else groupesReplies.value.splice(position, 1)
+}
+
+function estActive(couche: Couche): boolean {
+  const active = props.coucheActive
+  return (
+    active !== null &&
+    active.source === couche.source &&
+    active.clef === couche.clef &&
+    active.detail === couche.detail
+  )
+}
 
 function ouvrir(): void {
   ouverte.value = true
@@ -53,6 +90,11 @@ function fermer(): void {
 
 function choisirNiveau(niveau: NiveauMasque): void {
   emit('niveau-change', niveau)
+  if (estMobile.value) fermer()
+}
+
+function choisirCouche(couche: Couche): void {
+  emit('couche-change', couche)
   if (estMobile.value) fermer()
 }
 </script>
@@ -129,9 +171,59 @@ function choisirNiveau(niveau: NiveauMasque): void {
         </p>
       </section>
 
+      <section class="carte-sidebar-section" aria-labelledby="carte-couches-titre">
+        <h3 id="carte-couches-titre" class="carte-sidebar-section-titre">Couches</h3>
+        <div v-if="entrees.length > 0" class="carte-sidebar-couches">
+          <template v-for="(entree, index) in entrees" :key="index">
+            <button
+              v-if="entree.type === 'couche'"
+              type="button"
+              class="carte-sidebar-couche"
+              :class="{ 'est-actif': estActive(entree.couche) }"
+              :aria-pressed="estActive(entree.couche) ? 'true' : 'false'"
+              @click="choisirCouche(entree.couche)"
+            >
+              {{ entree.couche.libelle }}
+            </button>
+            <div v-else class="carte-sidebar-groupe">
+              <button
+                type="button"
+                class="carte-sidebar-groupe-titre"
+                :aria-expanded="!groupeReplie(index) ? 'true' : 'false'"
+                @click="basculerGroupe(index)"
+              >
+                <span>{{ entree.groupe.libelle }}</span>
+                <AppIcon
+                  :icone="ChevronDown"
+                  :taille="14"
+                  class="carte-sidebar-groupe-chevron"
+                  :class="{ 'est-replie': groupeReplie(index) }"
+                />
+              </button>
+              <div v-show="!groupeReplie(index)" class="carte-sidebar-groupe-couches">
+                <button
+                  v-for="couche in entree.groupe.couches"
+                  :key="`${couche.source}-${couche.clef}-${couche.detail ?? ''}`"
+                  type="button"
+                  class="carte-sidebar-couche carte-sidebar-couche--groupee"
+                  :class="{ 'est-actif': estActive(couche) }"
+                  :aria-pressed="estActive(couche) ? 'true' : 'false'"
+                  @click="choisirCouche(couche)"
+                >
+                  {{ couche.libelle }}
+                </button>
+              </div>
+            </div>
+          </template>
+        </div>
+        <p v-else class="carte-sidebar-couches-vide">
+          Aucune couche d'indicateurs — les masques seuls.
+        </p>
+      </section>
+
       <MapLegend
         :niveau="niveau"
-        :config="config"
+        :couche="coucheActive"
         :couleurs="couleurs"
         :seuils="seuils"
         :est-divergente="estDivergente"
@@ -250,6 +342,85 @@ function choisirNiveau(niveau: NiveauMasque): void {
   margin: 0;
   font: var(--text-caption);
   color: var(--text-tertiary);
+}
+
+/* ADR-0019 — the layer selector: the pill recipe of the mask levels, applied
+   to the theme's layers; the grouped layers indent under their expandable
+   group header. */
+.carte-sidebar-couches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.carte-sidebar-couche {
+  min-height: 36px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--surface-primary);
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.carte-sidebar-couche:hover {
+  border-color: var(--brand-500);
+}
+
+.carte-sidebar-couche.est-actif {
+  background: var(--brand-50);
+  border-color: var(--brand-500);
+  color: var(--brand-900);
+  font-weight: 600;
+}
+
+.carte-sidebar-couche--groupee {
+  margin-left: var(--space-4);
+  padding-left: var(--space-3);
+}
+
+.carte-sidebar-groupe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.carte-sidebar-groupe-titre {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--text-body-sm);
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.carte-sidebar-groupe-titre:hover {
+  background: var(--surface-tertiary);
+}
+
+.carte-sidebar-groupe-chevron {
+  color: var(--text-tertiary);
+  transition: transform 200ms ease-in-out;
+}
+
+.carte-sidebar-groupe-chevron.est-replie {
+  transform: rotate(-90deg);
+}
+
+.carte-sidebar-couches-vide {
+  margin: 0;
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
 }
 
 .carte-sidebar-rouvrir {
