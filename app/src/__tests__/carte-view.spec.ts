@@ -15,8 +15,11 @@ import {
   apercuFixture,
   chargerAvec,
   histoiresDemographieFixture,
+  histoiresHabitatFixture,
   indicateursDemographieFixture,
+  indicateursHabitatFixture,
   membresProgrammesFixture,
+  programmesLadderFixture,
   subventionsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
@@ -24,6 +27,7 @@ import {
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Histoire, HistoireDemographie, Payload } from '../payload/types'
+import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 
 /**
@@ -550,6 +554,193 @@ describe('CarteView — la recherche zoome sur l’entité (ADR-0019, #283)', ()
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('Commune A1')
     expect(popup?.contenu).toContain('Voir la fiche')
+  })
+})
+
+describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de la carte)', () => {
+  /** Le payload avec l’habitat en plus — la paire d’arrière-plan en échec
+   *  devient observable (son onglet aurait rendu sinon). */
+  const payloadDeuxThemes: Payload = {
+    ...payload,
+    indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
+    histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
+  }
+
+  it('rend la carte neutre dès que territoires + run-report se règlent, toutes les paires de thèmes encore pendantes', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      return chargerAvec(payload)(fichier)
+    }
+    const { wrapper } = await monter({ chargerPayload: charger })
+
+    // Le wait-set de la carte est réglé → pas de squelette, la carte vit.
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
+    // Aucun onglet de thème (les paires pendent) — le premier onglet seul.
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets).toEqual(['Programmes & financements'])
+    // L'état neutre honnête : masques seuls, aucune couche d'indicateurs.
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
+  })
+
+  it('le changement de niveau fonctionne dans l’état neutre (communes/epcis/departements)', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      return chargerAvec(payload)(fichier)
+    }
+    const { wrapper } = await monter({
+      chargerPayload: charger,
+      chargerGeometrie: async () => masquesTroisNiveaux,
+    })
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    expect(boutons.map((b) => b.text())).toEqual(['Communes', 'EPCI', 'Départements'])
+    await boutons[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'MapSidebar' }).props('niveau')).toBe('epcis')
+    expect(wrapper.findComponent({ name: 'MapExplorer' }).props('niveau')).toBe('epcis')
+  })
+
+  it('la popup de l’état neutre donne le nom et le lien « Voir la fiche »', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      return chargerAvec(payload)(fichier)
+    }
+    await monter({ chargerPayload: charger })
+
+    const carte = maplibreMock.instancesCarteMaple.at(-1)
+    carte?.fire('load')
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [{ properties: { territoire: '22001' } }] as never
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('Commune A1')
+    expect(popup?.contenu).toContain('Voir la fiche')
+  })
+
+  it('la liste de couches se remplit progressivement — une couche n’est rendue que quand SA paire atterrit, l’URL ?theme= conservée', async () => {
+    let resoudreIndicateurs: (v: unknown) => void = () => {}
+    let resoudreHistoires: (v: unknown) => void = () => {}
+    const indicateursEnAttente = new Promise<unknown>((resoudre) => {
+      resoudreIndicateurs = resoudre
+    })
+    const histoiresEnAttente = new Promise<unknown>((resoudre) => {
+      resoudreHistoires = resoudre
+    })
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'indicateurs_demographie') return indicateursEnAttente
+      if (fichier === 'histoires_demographie') return histoiresEnAttente
+      return chargerAvec(payload)(fichier)
+    }
+    const { router, wrapper } = await monter({
+      chemin: '/carte?theme=demographie',
+      chargerPayload: charger,
+    })
+
+    // Le thème demandé pend encore → l'état neutre honnête, l'URL CONSERVÉE
+    // (la normalisation ne réécrit pas un thème valide en vol).
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+
+    // La paire atterrit → la couche par défaut du thème (le premier scalaire
+    // de Story) rend, sans rechargement de la page.
+    resoudreIndicateurs(indicateursDemographieFixture)
+    resoudreHistoires(histoiresDemographieFixture)
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('taux_solde_naturel')
+  })
+
+  it('le groupe de couches « Programmes & financements » apparaît quand programmes atterrit (arrière-plan)', async () => {
+    let resoudreProgrammes: (v: unknown) => void = () => {}
+    const programmesEnAttente = new Promise<unknown>((resoudre) => {
+      resoudreProgrammes = resoudre
+    })
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'programmes') return programmesEnAttente
+      return chargerAvec(payload)(fichier)
+    }
+    const { wrapper } = await monter({
+      chemin: '/carte?onglet=programmes',
+      chargerPayload: charger,
+    })
+
+    // programmes pend → l'état vide honnête, la carte vivante.
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-legendes-masques').exists()).toBe(true)
+
+    resoudreProgrammes(programmesLadderFixture)
+    await flushPromises()
+
+    // Le groupe apparaît — les subventions par défaut, les adhésions du niveau.
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(4)
+  })
+
+  it('une paire de thème d’arrière-plan en échec → ses couches absentes, la carte vivante, aucune erreur de page', async () => {
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'indicateurs_habitat' || fichier === 'histoires_habitat') {
+        throw new PayloadError('fetch', `${fichier}.json`, 'réseau')
+      }
+      return chargerAvec(payloadDeuxThemes)(fichier)
+    }
+    const { wrapper } = await monter({ chargerPayload: charger })
+
+    // Aucune erreur de page — la carte vit, l'onglet habitat simplement absent
+    // (l'absence honnête, jamais une erreur).
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets).toEqual(['Programmes & financements', 'Démographie'])
+  })
+
+  it('garde l’URL ?theme= demandée quand le wait-set échoue — Retry la remet debout sans normalisation prématurée', async () => {
+    let territoiresEchoue = true
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'territoires' && territoiresEchoue) {
+        territoiresEchoue = false
+        throw new PayloadError('fetch', 'territoires.json', 'réseau')
+      }
+      return chargerAvec(payload)(fichier)
+    }
+    const { router, wrapper } = await monter({
+      chemin: '/carte?theme=demographie',
+      chargerPayload: charger,
+    })
+
+    // Le wait-set a échoué → l'erreur typée + Retry, l'URL demandée conservée
+    // (un échec n'est pas une absence — Retry a son mot à dire).
+    expect(wrapper.find('.carte-etat--erreur').text()).toContain(
+      'Impossible de charger les données de la carte.',
+    )
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+
+    await wrapper.find('.carte-etat-bouton').trigger('click')
+    await flushPromises()
+
+    // Retry ne refetch que l'échoué → la carte remonte, le thème demandé rend.
+    expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+  })
+
+  it('un thème non canonique demandé est nettoyé de l’URL (la normalisation d’avant, toujours en vie)', async () => {
+    const { router, wrapper } = await monter({ chemin: '/carte?theme=bidule' })
+
+    await flushPromises()
+    expect(router.currentRoute.value.query.theme).toBeUndefined()
+    expect(wrapper.find('.carte--theme-apercu').exists()).toBe(true)
   })
 })
 
