@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import CarteView from '../views/CarteView.vue'
 import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
+import { echelleValeurs } from '../carte/seuils'
 import { maplibreMock } from './setup'
 import type { ChargerGeometrie } from '../geo/useGeometrie'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
@@ -21,7 +22,7 @@ import {
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerPayload } from '../payload/usePayload'
-import type { Payload } from '../payload/types'
+import type { Histoire, HistoireDemographie, Payload } from '../payload/types'
 import { routes } from '../router'
 
 /**
@@ -58,6 +59,30 @@ const masquesTroisNiveaux: Masques = {
   },
   epcis: { type: 'FeatureCollection', features: [feature('200000001', 'EPCI X')] },
   departements: { type: 'FeatureCollection', features: [feature('22', 'Département 22')] },
+}
+
+/** Les trois niveaux COMPLETS — les 4 communes, les 2 EPCIs et les 2
+ *  départements du fixture : la couche par défaut de la Démographie
+ *  (taux_solde_naturel) porte assez de valeurs à chaque niveau pour que les
+ *  échelles commune / EPCI / toutes-lignes DIFFÈRENT (le test #294). */
+const masquesNiveauxComplets: Masques = {
+  communes: {
+    type: 'FeatureCollection',
+    features: [
+      feature('22001', 'Commune A1'),
+      feature('22002', 'Commune D'),
+      feature('29001', 'Commune B'),
+      feature('29002', 'Commune C'),
+    ],
+  },
+  epcis: {
+    type: 'FeatureCollection',
+    features: [feature('200000001', 'EPCI X'), feature('200000002', 'EPCI Y')],
+  },
+  departements: {
+    type: 'FeatureCollection',
+    features: [feature('22', 'Département 22'), feature('29', 'Département 29')],
+  },
 }
 
 const payload: Payload = {
@@ -383,6 +408,21 @@ describe('CarteView — l’onglet « Programmes & financements » (ADR-0019 #28
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
   })
 
+  it('la légende des subventions reste niveau-scopée au passage à l’EPCI (#294) — les valeurs EPCI seules', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes')
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    await boutons[1].trigger('click')
+    await flushPromises()
+
+    const valeursEpci = subventionsProgrammesFixture
+      .filter((s) => s.type === 'epci')
+      .map((s) => s.montant)
+    expect(wrapper.findComponent({ name: 'MapLegend' }).props('seuils')).toEqual(
+      echelleValeurs(valeursEpci).seuils,
+    )
+  })
+
   it('ORT se re-joint au changement de niveau (ADR-0019) — ?programme=ORT reste actif de la commune à l’EPCI', async () => {
     const { wrapper } = await monterProgrammes('/carte?onglet=programmes&programme=ORT')
 
@@ -427,6 +467,36 @@ describe('CarteView — l’onglet « Programmes & financements » (ADR-0019 #28
     const second = await monterProgrammes('/carte?onglet=programmes&programme=ACV')
     expect(second.wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ACV')
     expect(second.wrapper.find('.carte-legendes-titre').text()).toBe('ACV')
+  })
+})
+
+describe('CarteView — la légende suit l’échelle du niveau actif (ADR-0019, #294)', () => {
+  it('au niveau EPCI, les seuils de la légende viennent des valeurs EPCI — pas de toutes les lignes mélangées', async () => {
+    const { wrapper } = await monter({
+      chemin: '/carte?theme=demographie',
+      chargerGeometrie: async () => masquesNiveauxComplets,
+    })
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+
+    const estDemographie = (h: Histoire): h is HistoireDemographie => h.theme === 'demographie'
+    const valeursDuNiveau = (type: string) =>
+      histoiresDemographieFixture
+        .filter((h): h is HistoireDemographie => h.type === type && estDemographie(h))
+        .map((h) => h.taux_solde_naturel)
+    const toutesLignes = histoiresDemographieFixture.filter(estDemographie).map((h) => h.taux_solde_naturel)
+
+    expect(wrapper.findComponent({ name: 'MapLegend' }).props('seuils')).toEqual(
+      echelleValeurs(valeursDuNiveau('commune')).seuils,
+    )
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    await boutons[1].trigger('click')
+    await flushPromises()
+
+    const legende = wrapper.findComponent({ name: 'MapLegend' })
+    expect(legende.props('seuils')).toEqual(echelleValeurs(valeursDuNiveau('epci')).seuils)
+    expect(legende.props('seuils')).not.toEqual(echelleValeurs(toutesLignes).seuils)
   })
 })
 

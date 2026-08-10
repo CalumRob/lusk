@@ -39,7 +39,7 @@ import {
 } from '@/carte/couleurs'
 import { couchesDuTheme } from '@/carte/coucheModel'
 import type { Couche, CoucheCarte, CouchesTheme, EntreeCouches } from '@/carte/coucheModel'
-import { indicateurParTerritoire, subventionsParTerritoire, valeurHistoireParTerritoire } from '@/carte/fusion'
+import { indicateurParTerritoire, collectionAvecValeurs, subventionsParTerritoire, valeurHistoireParTerritoire } from '@/carte/fusion'
 import {
   coucheParDefautProgrammes,
   couchesProgrammes,
@@ -298,10 +298,17 @@ const legende = computed(() => {
   const couche = coucheActive.value
   if (!couche || !selection.value) return null
 
+  // #294 — l'échelle de la légende lit le MÊME jeu de lignes que le
+  // remplissage : la collection du niveau actif jointe aux lignes de la couche
+  // (la re-jointure d'ADR-0019, #281), jamais toutes les lignes du payload
+  // (tous niveaux mélangés — la légende désaccordée de la carte). Fonctions
+  // pures déterministes : mêmes entrées, mêmes bornes, plus aucune dérive.
   const parTerritoire = valeursDeLaCouche(couche)
+  const jointe = collectionAvecValeurs(m, parTerritoire)
   const valeurs: number[] = []
-  for (const ligne of parTerritoire.values()) {
-    if (ligne.value !== null) valeurs.push(ligne.value)
+  for (const feature of jointe.features) {
+    const valeur = (feature.properties as { valeur?: number | null }).valeur
+    if (typeof valeur === 'number') valeurs.push(valeur)
   }
   const echelle = echelleValeurs(valeurs)
   const couleurs =
