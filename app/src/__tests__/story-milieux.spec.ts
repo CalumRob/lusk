@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { storyMilieux } from '../fiche/storyMilieux'
+import type { HistoireMilieux } from '../payload/types'
 
 /**
  * The Story copy of the Milieux theme (issue #174, ADR-0014, re-keyed by spec
@@ -14,10 +15,31 @@ import { storyMilieux } from '../fiche/storyMilieux'
  * The « comment lire » quotes both forces on their own clocks (the population
  * window and the OCS-GE state window), states the bracketing population rule
  * once, and names the per-département millésimes when the aggregate mixes
- * them. The intensity is the figure's job (#65) — it stays OUT of the prose.
- * Pure, isolated, deterministic; the mapping shape is locked, the wording
- * stays factual.
+ * them. The mapper consumes the SCALAIRES_STORY declaration (ADR-0019) — the
+ * artif scalars' field names are the declaration's, never hardcoded. Pure,
+ * isolated, deterministic; the mapping shape is locked, the wording stays
+ * factual.
  */
+
+/** Une ligne Milieux valide du contrat (validate.ts) — les états et la trajectoire restent nullables (#243). */
+function uneHistoire(overrides: Partial<HistoireMilieux> = {}): HistoireMilieux {
+  return {
+    territoire: '22001',
+    type: 'commune',
+    theme: 'milieux',
+    story_key: 'se-densifier-setaler-ou-sen-aller',
+    periode_pop: '2017-2023',
+    periode_artif: '2021-2025',
+    delta_population: 0,
+    artif_m2: 0,
+    artif_m3: 0,
+    artif_m2_par_habitant: 0,
+    artif_m3_par_habitant: 0,
+    trajectoire_artif_par_habitant: 1,
+    classification: 'grandir-en-setalant',
+    ...overrides,
+  }
+}
 
 const LECTURES = [
   'grandir-en-se-densifiant',
@@ -29,7 +51,15 @@ const LECTURES = [
 describe('storyMilieux — the copy keyed by the sign classification', () => {
   it('returns the setalant reading: one-liner + both forces on their own clocks in comment-lire', () => {
     const story = storyMilieux(
-      'grandir-en-setalant', 200, 2250, 2550, 1.13, '2017-2023', '2021-2025',
+      uneHistoire({
+        classification: 'grandir-en-setalant',
+        delta_population: 200,
+        artif_m2_par_habitant: 2250,
+        artif_m3_par_habitant: 2550,
+        trajectoire_artif_par_habitant: 1.13,
+        periode_pop: '2017-2023',
+        periode_artif: '2021-2025',
+      }),
     )
 
     expect(story).toMatchObject({
@@ -50,7 +80,12 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('states the bracketing population rule once — le recensement le plus proche de chaque état', () => {
     const story = storyMilieux(
-      'grandir-en-setalant', 200, 2250, 2550, 1.13, '2017-2023', '2021-2025',
+      uneHistoire({
+        delta_population: 200,
+        artif_m2_par_habitant: 2250,
+        artif_m3_par_habitant: 2550,
+        trajectoire_artif_par_habitant: 1.13,
+      }),
     )
 
     expect(story?.commentLire).toContain('2017 pour l’état initial')
@@ -59,7 +94,13 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('derives the bracketing rule from the population window — jamais codée en dur', () => {
     const story = storyMilieux(
-      'grandir-en-setalant', 200, 2250, 2550, 1.13, '2019-2025', '2021-2025',
+      uneHistoire({
+        periode_pop: '2019-2025',
+        delta_population: 200,
+        artif_m2_par_habitant: 2250,
+        artif_m3_par_habitant: 2550,
+        trajectoire_artif_par_habitant: 1.13,
+      }),
     )
 
     expect(story?.commentLire).toContain('2019 pour l’état initial')
@@ -68,7 +109,15 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('drafts a one-liner and a comment-lire for each of the four readings', () => {
     for (const lecture of LECTURES) {
-      const story = storyMilieux(lecture, 100, 900, 855, 0.95, '2017-2023', '2021-2025')
+      const story = storyMilieux(
+        uneHistoire({
+          classification: lecture,
+          delta_population: 100,
+          artif_m2_par_habitant: 900,
+          artif_m3_par_habitant: 855,
+          trajectoire_artif_par_habitant: 0.95,
+        }),
+      )
 
       expect(story, `lecture « ${lecture} » sans copie`).not.toBeNull()
       expect(story?.uneLigne.length).toBeGreaterThan(0)
@@ -79,7 +128,15 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
   it('gives each reading its own one-liner (four distinct sentences)', () => {
     const uneLignes = new Set(
       LECTURES.map((lecture) =>
-        storyMilieux(lecture, 100, 900, 855, 0.95, '2017-2023', '2021-2025')?.uneLigne,
+        storyMilieux(
+          uneHistoire({
+            classification: lecture,
+            delta_population: 100,
+            artif_m2_par_habitant: 900,
+            artif_m3_par_habitant: 855,
+            trajectoire_artif_par_habitant: 0.95,
+          }),
+        )?.uneLigne,
       ),
     )
 
@@ -88,7 +145,13 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('the densifiant one-liner is the pivot’s — la population grandit plus vite que la terre', () => {
     const story = storyMilieux(
-      'grandir-en-se-densifiant', 100, 900, 855, 0.95, '2017-2023', '2021-2025',
+      uneHistoire({
+        classification: 'grandir-en-se-densifiant',
+        delta_population: 100,
+        artif_m2_par_habitant: 900,
+        artif_m3_par_habitant: 855,
+        trajectoire_artif_par_habitant: 0.95,
+      }),
     )
 
     expect(story?.uneLigne).toBe('La population grandit plus vite que la terre artificialisée.')
@@ -99,7 +162,14 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('the renaturation reading states the measured decrease plainly — jamais une aspiration', () => {
     const story = storyMilieux(
-      'les-departs-laissent-la-place-a-la-renaturation', -160, 420, 410, 0.98, '2017-2023', '2021-2024',
+      uneHistoire({
+        classification: 'les-departs-laissent-la-place-a-la-renaturation',
+        delta_population: -160,
+        artif_m2_par_habitant: 420,
+        artif_m3_par_habitant: 410,
+        trajectoire_artif_par_habitant: 0.98,
+        periode_artif: '2021-2024',
+      }),
     )
 
     expect(story?.uneLigne).toBe('Les départs laissent la place à la renaturation.')
@@ -113,7 +183,14 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('quotes the per-capita state for a shrinking territory — définie pour tout territoire (US 7)', () => {
     const story = storyMilieux(
-      'sen-aller-et-consommer-quand-meme', -150, 500, 530, 1.06, '2017-2023', '2021-2024',
+      uneHistoire({
+        classification: 'sen-aller-et-consommer-quand-meme',
+        delta_population: -150,
+        artif_m2_par_habitant: 500,
+        artif_m3_par_habitant: 530,
+        trajectoire_artif_par_habitant: 1.06,
+        periode_artif: '2021-2024',
+      }),
     )
 
     expect(story?.commentLire).toContain('500 à 530 m²')
@@ -121,7 +198,13 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('names the per-département millésimes when the aggregate mixes them (cross-dépt rider)', () => {
     const story = storyMilieux(
-      'grandir-en-setalant', 140, 750, 830, 1.11, '2017-2023', '2021-2025 (22) · 2021-2024 (29)',
+      uneHistoire({
+        delta_population: 140,
+        artif_m2_par_habitant: 750,
+        artif_m3_par_habitant: 830,
+        trajectoire_artif_par_habitant: 1.11,
+        periode_artif: '2021-2025 (22) · 2021-2024 (29)',
+      }),
     )
 
     expect(story?.commentLire).toContain('2021-2025 (22) · 2021-2024 (29)')
@@ -132,7 +215,12 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
 
   it('carries NO intensity in the prose — la figure porte l’intensité, pas le prose (#65)', () => {
     const story = storyMilieux(
-      'grandir-en-setalant', 200, 2250, 2550, 1.13, '2017-2023', '2021-2025',
+      uneHistoire({
+        delta_population: 200,
+        artif_m2_par_habitant: 2250,
+        artif_m3_par_habitant: 2550,
+        trajectoire_artif_par_habitant: 1.13,
+      }),
     )
 
     expect(story).not.toHaveProperty('intensite')
@@ -140,8 +228,18 @@ describe('storyMilieux — the copy keyed by the sign classification', () => {
   })
 
   it('returns null for an unknown classification — never invents a one-liner', () => {
-    expect(storyMilieux('super', 100, 900, 855, 0.95, '2017-2023', '2021-2025')).toBeNull()
-    expect(storyMilieux('', 100, 900, 855, 0.95, '2017-2023', '2021-2025')).toBeNull()
-    expect(storyMilieux(null, 100, 900, 855, 0.95, '2017-2023', '2021-2025')).toBeNull()
+    expect(storyMilieux(uneHistoire({ classification: 'super' }))).toBeNull()
+    expect(storyMilieux(uneHistoire({ classification: '' }))).toBeNull()
+    expect(storyMilieux(uneHistoire({ classification: null }))).toBeNull()
+  })
+
+  it('returns null for the incomplete-window cases of the contract #243 — never an invented reading', () => {
+    // trajectoire manquante (M2 = 0 — le ratio est indéfini)
+    expect(storyMilieux(uneHistoire({ trajectoire_artif_par_habitant: null }))).toBeNull()
+    // état manquant (le trou NA)
+    expect(storyMilieux(uneHistoire({ artif_m2_par_habitant: null }))).toBeNull()
+    expect(storyMilieux(uneHistoire({ artif_m3_par_habitant: null }))).toBeNull()
+    // fenêtre des états manquante (aucune donnée OCS-GE)
+    expect(storyMilieux(uneHistoire({ periode_artif: null }))).toBeNull()
   })
 })

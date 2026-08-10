@@ -24,6 +24,8 @@
 import type { HistoireMobilite, HistoireMobiliteVingtMinutes } from '@/payload/types'
 import { formaterDateFrancaise, formaterNombreFR, formaterVintage } from '@/payload/selectors'
 
+import { SCALAIRES_STORY } from './storyScalaires'
+
 /** The precomputed building-level distribution of div_loss_t (ADR-0012). */
 export interface DistributionMobilite {
   /** Les 10 densités de la signature (une par bin de décile). */
@@ -80,6 +82,7 @@ function distributionDe(histoire: HistoireMobiliteVingtMinutes): DistributionMob
 export function storyMobilite(lignes: HistoireMobilite[]): StoryMobilite | null {
   if (lignes.length === 0) return null
 
+  const [champLossT, champLossB, champDelta] = SCALAIRES_STORY.mobilite
   const velo = lignes.find((l) => l.story_key === 'ce-que-le-velo-preserve')
   const defaut = lignes.find((l) => l.story_key === 'vingt-minutes-sans-voiture')
   const choisie = velo ?? defaut ?? lignes[0]
@@ -90,16 +93,16 @@ export function storyMobilite(lignes: HistoireMobilite[]): StoryMobilite | null 
     return {
       storyKey: choisie.story_key,
       titre: TITRE_VELO,
-      uneLigne: `Le vélo préserve déjà ${formaterTypes(choisie.delta)}.`,
+      uneLigne: `Le vélo préserve déjà ${formaterTypes(choisie[champDelta])}.`,
       commentLire:
         `Sans voiture, à pied ou en transports en commun à 20 minutes, ` +
-        `${formaterTypes(choisie.div_loss_t)} sortent de l’accès quotidien ; à vélo, ` +
-        `seulement ${formaterTypes(choisie.div_loss_b)}. Le vélo lit l’accès déjà réalisé — ` +
+        `${formaterTypes(choisie[champLossT])} sortent de l’accès quotidien ; à vélo, ` +
+        `seulement ${formaterTypes(choisie[champLossB])}. Le vélo lit l’accès déjà réalisé — ` +
         `ce que le réseau actuel permet, jamais des infrastructures hypothétiques. ` +
         `Analyse calculée le ${date}.`,
-      divLossT: choisie.div_loss_t,
-      divLossB: choisie.div_loss_b,
-      delta: choisie.delta,
+      divLossT: choisie[champLossT],
+      divLossB: choisie[champLossB],
+      delta: choisie[champDelta],
       vintage: formaterVintage(choisie),
       distribution: null,
     }
@@ -108,15 +111,15 @@ export function storyMobilite(lignes: HistoireMobilite[]): StoryMobilite | null 
   return {
     storyKey: 'vingt-minutes-sans-voiture',
     titre: TITRE_VINGT_MINUTES,
-    uneLigne: `Sans voiture, ${formaterTypes(choisie.div_loss_t)} disparaissent.`,
+    uneLigne: `Sans voiture, ${formaterTypes(choisie[champLossT])} disparaissent.`,
     commentLire:
-      `À pied ou en transports en commun à 20 minutes, ${formaterTypes(choisie.div_loss_t)} ` +
+      `À pied ou en transports en commun à 20 minutes, ${formaterTypes(choisie[champLossT])} ` +
       `(alimentation, santé, administration, école, banque) sortent de l’accès quotidien du ` +
       `territoire. La lecture est la médiane de la distribution bâtiment par bâtiment. ` +
       `Analyse calculée le ${date}.`,
-    divLossT: choisie.div_loss_t,
-    divLossB: choisie.div_loss_b,
-    delta: choisie.delta,
+    divLossT: choisie[champLossT],
+    divLossB: choisie[champLossB],
+    delta: choisie[champDelta],
     vintage: formaterVintage(choisie),
     distribution: distributionDe(choisie),
   }

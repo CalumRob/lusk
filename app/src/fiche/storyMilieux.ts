@@ -27,6 +27,9 @@
  */
 
 import { formaterNombreFR } from '@/payload/selectors'
+import type { HistoireMilieux } from '@/payload/types'
+
+import { SCALAIRES_STORY } from './storyScalaires'
 
 export type LectureMilieux =
   | 'grandir-en-se-densifiant'
@@ -76,23 +79,34 @@ const RIDER: Record<LectureMilieux, (ratio: string) => string> = {
 
 /**
  * The Story of a Milieux territoire — the copy keyed by the pipeline's
- * classification. Null for an unknown/absent classification — the block
- * never invents a reading. The two forces are quoted on their own clocks:
- * the population window (`periodePop`) and the OCS-GE state window
- * (`periodeArtif` — a plain M2-M3 pair for a single-département territory, a
- * per-département span for the cross-département aggregates).
+ * classification. Null for an unknown/absent classification and for the
+ * incomplete-window cases of the contract #243 (a missing trajectory, state or
+ * state window — the block never invents a reading, never a ratio « — »). The
+ * artif scalars' field names come from the SCALAIRES_STORY declaration
+ * (ADR-0019 — the fiche and the carte read the same list); Δpopulation and
+ * the two windows are read from the row directly. The two forces are quoted
+ * on their own clocks: the population window (`periode_pop`) and the OCS-GE
+ * state window (`periode_artif` — a plain M2-M3 pair for a single-département
+ * territory, a per-département span for the cross-département aggregates).
  */
-export function storyMilieux(
-  classification: string | null,
-  deltaPopulation: number,
-  artifM2ParHabitant: number,
-  artifM3ParHabitant: number,
-  trajectoire: number,
-  periodePop: string,
-  periodeArtif: string,
-): StoryMilieux | null {
+export function storyMilieux(histoire: HistoireMilieux): StoryMilieux | null {
+  const { classification } = histoire
   if (classification === null || !(classification in UNE_LIGNE)) return null
   const lecture = classification as LectureMilieux
+
+  const deltaPopulation = histoire.delta_population
+  const [champM2, champM3, champTrajectoire] = SCALAIRES_STORY.milieux
+  const artifM2ParHabitant = histoire[champM2]
+  const artifM3ParHabitant = histoire[champM3]
+  const trajectoire = histoire[champTrajectoire]
+  const periodePop = histoire.periode_pop
+  const periodeArtif = histoire.periode_artif
+
+  // le contrat #243 : une lecture porte TOUJOURS sa seconde force, ses états
+  // ET sa fenêtre — sans eux, pas de story (jamais un ratio « — » inventé)
+  if (artifM2ParHabitant === null || artifM3ParHabitant === null) return null
+  if (trajectoire === null) return null
+  if (periodeArtif === null) return null
 
   const population =
     `${formaterNombreFR(deltaPopulation, 0)} habitant${Math.abs(deltaPopulation) > 1 ? 's' : ''}`
