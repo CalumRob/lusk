@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import AppFooter from '../components/AppFooter.vue'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -35,7 +36,7 @@ const payload: Payload = {
   programmes: null,
 }
 
-async function monter(charger: () => Promise<Payload>) {
+async function monter(charger: (fichier: import('../payload/loader').Fichier) => Promise<unknown>) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   const wrapper = mount(AppFooter, {
     global: {
@@ -48,7 +49,7 @@ async function monter(charger: () => Promise<Payload>) {
 
 describe('AppFooter — la ligne d’attribution', () => {
   it('renders the serif attribution line linking to calumrobertson.fr', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const attribution = wrapper.find('.pied-attribution')
     expect(attribution.exists()).toBe(true)
@@ -58,7 +59,7 @@ describe('AppFooter — la ligne d’attribution', () => {
   })
 
   it('links to Méthodes, À propos and calumrobertson.fr', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const liens = wrapper.findAll('a').map((l) => l.attributes('href'))
     expect(liens).toContain('/methodologie')
@@ -68,21 +69,18 @@ describe('AppFooter — la ligne d’attribution', () => {
 })
 
 describe('AppFooter — la ligne de fraîcheur', () => {
-  it('shows a skeleton while the payload loads', async () => {
-    let attendre: (v: Payload) => void = () => {}
-    const promesse = new Promise<Payload>((resoudre) => {
-      attendre = resoudre
-    })
-    const wrapper = await monter(() => promesse)
+  it('shows the honest static-rhythm claim while run-report hasn\u2019t landed (the payload grows)', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const wrapper = await monter(() => enAttente)
 
-    expect(wrapper.find('.squelette').exists()).toBe(true)
-
-    attendre(payload)
-    await promesse
+    // Le payload n'est jamais null : la fraîcheur tombe sur la promesse
+    // statique honnête (T3) — jamais une fausse date, jamais un squelette mort.
+    expect(wrapper.find('.squelette').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Données actualisées chaque semaine')
   })
 
   it('renders the freshness line computed from the payload (ligneFraicheur)', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 

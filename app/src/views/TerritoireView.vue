@@ -88,9 +88,12 @@ function choisirOnglet(slug: SlugOnglet): void {
 }
 
 watch(
-  () => [route.query.theme, payload.value] as const,
-  ([theme, pl]) => {
-    if (!pl) return
+  () => [route.query.theme, payload.value, chargement.value] as const,
+  ([theme, pl, busy]) => {
+    // Le payload grandit : la normalisation attend que le wait-set soit
+    // réglé (no-arg = le full set) — un thème absent pendant le chargement
+    // n'est pas encore une normalisation à faire.
+    if (!pl || busy) return
     if (typeof theme === 'string' && !(themesPresent(pl) as string[]).includes(theme)) {
       router.replace({ query: {} })
     }

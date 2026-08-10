@@ -7,11 +7,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { ChargerPayload } from '../payload/usePayload'
+import type { ChargerFichier } from '../payload/usePayload'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Payload, Vintage } from '../payload/types'
 import { routes } from '../router'
@@ -47,7 +48,7 @@ const payloadSansVintages: Payload = {
   programmes: null,
 }
 
-async function monter(charger: ChargerPayload, options: Record<string, unknown> = {}) {
+async function monter(charger: ChargerFichier, options: Record<string, unknown> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/methodologie')
   await router.isReady()
@@ -64,13 +65,13 @@ async function monter(charger: ChargerPayload, options: Record<string, unknown> 
 
 describe('MethodologieView — l\u2019intro factuelle', () => {
   it('renders the page title « Sources & Méthodes »', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     expect(wrapper.find('h1').text()).toBe('Sources & Méthodes')
   })
 
   it('énonce ce qu\u2019est Lusk, le pipeline et la reproductibilité — jamais une bannière de construction', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const texte = wrapper.text()
     expect(texte).toContain('observatoire ouvert des territoires bretons')
@@ -81,7 +82,7 @@ describe('MethodologieView — l\u2019intro factuelle', () => {
   })
 
   it('porte le lien vers le dépôt GitHub (github.com/CalumRob/lusk)', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const lien = wrapper.find('a.lien-depot')
     expect(lien.attributes('href')).toBe('https://github.com/CalumRob/lusk')
@@ -91,13 +92,13 @@ describe('MethodologieView — l\u2019intro factuelle', () => {
 
 describe('MethodologieView — la section « les sources »', () => {
   it('porte l\u2019ancre #sources sur la section', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     expect(wrapper.find('section#sources').exists()).toBe(true)
   })
 
   it('liste chaque source du registre avec ses faits éditoriaux et sa fraîcheur en direct', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const ligneSerie = wrapper.find('tr#source-serie-historique')
     expect(ligneSerie.exists()).toBe(true)
@@ -110,7 +111,7 @@ describe('MethodologieView — la section « les sources »', () => {
   })
 
   it('liste les 56 sources commises (l\u2019union est le contrat)', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     // Le comptage est borné à la table de la section #sources - la page porte
     // aussi la table des sources de l'élément Programmes & financements (6
@@ -122,7 +123,7 @@ describe('MethodologieView — la section « les sources »', () => {
   })
 
   it('rend la source CONSOENAF avec son URL, ses dates, sa licence et l\u2019anomalie d\u2019unité (issue #177)', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const ligne = wrapper.find('tr#source-consoenaf')
     expect(ligne.exists()).toBe(true)
@@ -142,7 +143,7 @@ describe('MethodologieView — la section « les sources »', () => {
   })
 
   it('rend la source mobilite_snapshot avec la licence ODbL, jamais le code brut (issue #151)', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const ligne = wrapper.find('tr#source-mobilite-snapshot')
     expect(ligne.exists()).toBe(true)
@@ -153,7 +154,7 @@ describe('MethodologieView — la section « les sources »', () => {
   })
 
   it('rend l\u2019attribution ODbL pour les trois sources concernées (OSM · Korrigo · stationnement vélo, ADR-0001)', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     for (const id of ['osm-reseaux', 'korrigo', 'stationnement-velo']) {
       const ligne = wrapper.find(`tr#source-${id}`)
@@ -164,14 +165,14 @@ describe('MethodologieView — la section « les sources »', () => {
   })
 
   it('porte une ancre par source, dérivée de son id', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     expect(wrapper.find('tr#source-dvf-2021-dep22').exists()).toBe(true)
     expect(wrapper.find('tr#source-logements').exists()).toBe(true)
   })
 
   it('chaque source rend un lien vers son jeu de données', async () => {
-    const { wrapper } = await monter(async () => payloadAvecVintages)
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const lienSerie = wrapper.find('tr#source-serie-historique a.lien-source')
     expect(lienSerie.attributes('href')).toBe(
@@ -185,7 +186,7 @@ describe('MethodologieView — la section « les sources »', () => {
 
 describe('MethodologieView — la dégradation gracieuse', () => {
   it('vintages.json absent : les faits éditoriaux restent, la fraîcheur rend l\u2019état vide honnête', async () => {
-    const { wrapper } = await monter(async () => payloadSansVintages)
+    const { wrapper } = await monter(chargerAvec(payloadSansVintages))
 
     const ligneSerie = wrapper.find('tr#source-serie-historique')
     expect(ligneSerie.exists()).toBe(true)
@@ -206,7 +207,7 @@ describe('MethodologieView — la dégradation gracieuse', () => {
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {
     // vintages commis sans la ligne flores_a38 → la source reste, fraîcheur nulle
     const vintages = vintagesCommites().filter((v) => v.id !== 'flores_a38')
-    const { wrapper } = await monter(async () => ({ ...payloadAvecVintages, vintages }))
+    const { wrapper } = await monter(chargerAvec({ ...payloadAvecVintages, vintages }))
 
     const ligneFlores = wrapper.find('tr#source-flores-a38')
     expect(ligneFlores.exists()).toBe(true)

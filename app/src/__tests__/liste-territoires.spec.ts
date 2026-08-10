@@ -8,6 +8,7 @@ import ListeTerritoires from '../components/ListeTerritoires.vue'
 import type { ConfigListe } from '../listes/listes'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -15,7 +16,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import type { ChargerPayload } from '../payload/usePayload'
+import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { routes } from '../router'
 
@@ -52,11 +53,7 @@ const payloadDemographie: Payload = {
   programmes: null,
 }
 
-function chargerAvec(payload: Payload): ChargerPayload {
-  return async () => payload
-}
-
-async function monter(chemin: string, charger: ChargerPayload, config = configCommunes) {
+async function monter(chemin: string, charger: ChargerFichier, config = configCommunes) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(chemin)
   await router.isReady()
@@ -85,10 +82,11 @@ describe('ListeTerritoires — chargement, erreur, vide', () => {
 
   it('shows the typed error state with a Retry button, never the raw error string', async () => {
     let appels = 0
-    const charger: ChargerPayload = async () => {
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier !== 'territoires') return chargerAvec(payloadDemographie)(fichier)
       appels += 1
       if (appels === 1) throw new Error('Impossible de charger /data/territoires.json')
-      return payloadDemographie
+      return chargerAvec(payloadDemographie)(fichier)
     }
     const { wrapper } = await monter('/communes', charger)
 
