@@ -19,6 +19,7 @@ import {
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
+import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 
 /**
@@ -269,5 +270,215 @@ describe('TerritoireView — le filigrane de la fiche', () => {
     const { wrapper } = await monter('/territoire/commune/99999', chargerAvec(payloadDemographie))
 
     expect(wrapper.find('.filigrane-fiche').exists()).toBe(false)
+  })
+})
+
+describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’URL, PRD #296 / #302)', () => {
+  it('rend le header (fil d’ariane, H1, puce-type, contexte) depuis territoires seul, avant la fin du wait-set', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (
+        fichier === 'apercu' ||
+        fichier === 'programmes' ||
+        fichier === 'vintages' ||
+        fichier.startsWith('indicateurs_') ||
+        fichier.startsWith('histoires_')
+      ) {
+        return enAttente
+      }
+      return chargerAvec(payloadDemographie)(fichier)
+    }
+    const { wrapper } = await monter('/territoire/commune/29002', charger)
+
+    // L'identité vit de la référence seule — pas d'attente sur le wait-set.
+    expect(wrapper.find('.fiche-chargement').exists()).toBe(false)
+    expect(wrapper.find('.fiche-titre h1').text()).toBe('Commune C')
+    expect(wrapper.find('.puce-type').text()).toBe('Commune')
+    expect(wrapper.find('.contexte-switcher').exists()).toBe(true)
+    expect(wrapper.find('.fil-ariane').text()).toContain('Les communes')
+    // Le corps, lui, reste honnête : le squelette tant que le wait-set pend.
+    expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(true)
+    expect(wrapper.find('[role="tabpanel"]').exists()).toBe(false)
+  })
+
+  it('sans ?theme= rend l’onglet Aperçu dès que territoires + apercu + programmes + vintages sont réglés, les paires de thèmes encore pendantes', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      return chargerAvec(payloadDemographie)(fichier)
+    }
+    const { wrapper } = await monter('/territoire/commune/29002', charger)
+
+    // Le wait-set de l'Aperçu est réglé → l'onglet Aperçu rend, sans squelette.
+    expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(false)
+    const panneau = wrapper.find('[role="tabpanel"]')
+    expect(panneau.attributes('id')).toBe('panneau-apercu')
+    expect(panneau.text()).toContain('Population')
+    expect(panneau.text()).toContain('Programmes & financements')
+    // Les thèmes pendent encore → aucun onglet de thème (le tab bar honnête).
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets).toEqual(['Aperçu'])
+  })
+
+  it('avec ?theme=habitat rend le bloc habitat dès que sa paire est réglée, les autres thèmes encore pendants', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (
+        fichier !== 'territoires' &&
+        fichier !== 'run-report' &&
+        fichier !== 'indicateurs_habitat' &&
+        fichier !== 'histoires_habitat'
+      ) {
+        return enAttente
+      }
+      return chargerAvec(payloadAvecHabitat)(fichier)
+    }
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', charger)
+
+    // Le wait-set du thème demandé est réglé → son bloc rend, les autres pendent.
+    expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(false)
+    const panneau = wrapper.find('[role="tabpanel"]')
+    expect(panneau.attributes('id')).toBe('panneau-habitat')
+    expect(panneau.text()).toContain('Habitat')
+    expect(panneau.text()).toContain('part_residences_secondaires')
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets).toEqual(['Aperçu', 'Habitat'])
+    expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
+  })
+
+  it('fait apparaître les onglets de thème progressivement, chacun dès que SA paire atterrit — jamais avant ses données', async () => {
+    let resoudreIndicateursDemo: (v: unknown) => void = () => {}
+    let resoudreHistoiresDemo: (v: unknown) => void = () => {}
+    let resoudreIndicateursHabitat: (v: unknown) => void = () => {}
+    let resoudreHistoiresHabitat: (v: unknown) => void = () => {}
+    const indicateursDemo = new Promise<unknown>((resoudre) => {
+      resoudreIndicateursDemo = resoudre
+    })
+    const histoiresDemo = new Promise<unknown>((resoudre) => {
+      resoudreHistoiresDemo = resoudre
+    })
+    const indicateursHabitat = new Promise<unknown>((resoudre) => {
+      resoudreIndicateursHabitat = resoudre
+    })
+    const histoiresHabitat = new Promise<unknown>((resoudre) => {
+      resoudreHistoiresHabitat = resoudre
+    })
+    const charger: ChargerFichier = async (fichier) => {
+      switch (fichier) {
+        case 'indicateurs_demographie':
+          return indicateursDemo
+        case 'histoires_demographie':
+          return histoiresDemo
+        case 'indicateurs_habitat':
+          return indicateursHabitat
+        case 'histoires_habitat':
+          return histoiresHabitat
+        default:
+          return chargerAvec(payloadAvecHabitat)(fichier)
+      }
+    }
+    const { wrapper } = await monter('/territoire/commune/22001', charger)
+
+    // Aucun thème encore → l'Aperçu seul.
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual(['Aperçu'])
+
+    // La paire démographie atterrit → son onglet apparaît, seul.
+    resoudreIndicateursDemo(indicateursDemographieFixture)
+    resoudreHistoiresDemo(histoiresDemographieFixture)
+    await flushPromises()
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual([
+      'Aperçu',
+      'Démographie',
+    ])
+
+    // La paire habitat atterrit → son onglet s'ajoute (l'ordre canonique).
+    resoudreIndicateursHabitat(indicateursHabitatFixture)
+    resoudreHistoiresHabitat(histoiresHabitatFixture)
+    await flushPromises()
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual([
+      'Aperçu',
+      'Démographie',
+      'Habitat',
+    ])
+  })
+
+  it('une paire de thème d’arrière-plan en échec laisse la fiche vivante — son onglet simplement absent, jamais une erreur de page', async () => {
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'indicateurs_habitat' || fichier === 'histoires_habitat') {
+        throw new PayloadError('fetch', `${fichier}.json`, 'réseau')
+      }
+      return chargerAvec(payloadDemographie)(fichier)
+    }
+    const { wrapper } = await monter('/territoire/commune/29002', charger)
+
+    // La fiche vit : l'Aperçu rend, l'échec d'arrière-plan ne remonte pas.
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Impossible de charger les données')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Population')
+    // L'onglet habitat n'existe tout simplement pas (l'absence honnête).
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets).toEqual(['Aperçu', 'Démographie'])
+  })
+
+  it('un échec dans le wait-set (la paire du thème demandé) montre l’erreur typée avec Retry, et Retry remet la fiche debout', async () => {
+    let habitatEchoue = true
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'indicateurs_habitat' && habitatEchoue) {
+        habitatEchoue = false
+        throw new PayloadError('fetch', 'indicateurs_habitat.json', 'réseau')
+      }
+      return chargerAvec(payloadAvecHabitat)(fichier)
+    }
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', charger)
+
+    // Le wait-set du thème demandé a échoué → l'erreur typée + Retry.
+    expect(wrapper.find('.etat-erreur').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Impossible de charger les données')
+    expect(wrapper.text()).not.toContain('indicateurs_habitat.json')
+
+    await wrapper.find('.bouton-reessayer').trigger('click')
+    await flushPromises()
+
+    // Retry ne refetch que l'échoué → le bloc habitat demandé rend.
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-habitat')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('part_residences_secondaires')
+  })
+
+  it('garde l’URL ?theme= demandée quand son wait-set échoue — Retry peut la remettre debout sans normalisation prématurée', async () => {
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'indicateurs_habitat') {
+        throw new PayloadError('fetch', 'indicateurs_habitat.json', 'réseau')
+      }
+      return chargerAvec(payloadAvecHabitat)(fichier)
+    }
+    const { router } = await monter('/territoire/commune/22001?theme=habitat', charger)
+
+    // L'échec n'est pas une absence : l'URL n'est pas réécrite.
+    expect(router.currentRoute.value.query.theme).toBe('habitat')
+  })
+
+  it('élimine le squelette du corps quand le wait-set se règle, même si des thèmes d’arrière-plan pendent encore (l’Aperçu d’abord)', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      return chargerAvec(payloadDemographie)(fichier)
+    }
+    const { wrapper } = await monter('/territoire/commune/29002', charger)
+
+    expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(false)
+    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-apercu')
+    expect(wrapper.find('.squelette').exists()).toBe(false)
+  })
+
+  it('un thème non canonique demandé retombe sur le set de l’Aperçu et l’URL est nettoyée (la normalisation d’avant, toujours en vie)', async () => {
+    const { router, wrapper } = await monter(
+      '/territoire/commune/29002?theme=bidule',
+      chargerAvec(payloadDemographie),
+    )
+
+    await flushPromises()
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
+    expect(router.currentRoute.value.query.theme).toBeUndefined()
   })
 })

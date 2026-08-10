@@ -27,14 +27,37 @@ import ThemeTabs from '@/components/ThemeTabs.vue'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
+import type { Fichier } from '@/payload/loader'
 import { themesPresent, trouverTerritoire } from '@/payload/selectors'
+import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Payload, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
 const route = useRoute()
 const router = useRouter()
 
-const { payload, erreur, chargement, recharger } = usePayload()
+/**
+ * Le wait-set de la fiche, dérivé de l'URL au montage (PRD #296 — la table par
+ * route, ticket #302) : ?theme=X → territoires + run-report + la paire du
+ * thème demandé (indicateurs_X + histoires_X — les thèmes hermétiques,
+ * ADR-0020) ; sans ?theme → territoires + run-report + apercu + programmes +
+ * vintages (l'Aperçu par défaut). Le magasin récupère TOUS les fichiers en
+ * parallèle dès le premier chargement — ce tableau n'est que la porte de
+ * rendu du premier affichage, jamais un déclencheur de fetch. Un thème non
+ * canonique ne peut jamais rendre (themesPresent n'en sait rien) : il retombe
+ * sur le set de l'Aperçu, et la normalisation d'URL nettoiera le paramètre.
+ */
+function attendreDeUrl(theme: unknown): Fichier[] {
+  if (typeof theme === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(theme)) {
+    const demande = theme as Theme
+    return ['territoires', 'run-report', `indicateurs_${demande}`, `histoires_${demande}`]
+  }
+  return ['territoires', 'run-report', 'apercu', 'programmes', 'vintages']
+}
+
+const { payload, erreur, chargement, recharger } = usePayload({
+  attendre: attendreDeUrl(route.query.theme),
+})
 
 const territoire = computed(() =>
   payload.value ? trouverTerritoire(payload.value, String(route.params.id)) : null,
@@ -42,6 +65,18 @@ const territoire = computed(() =>
 
 const typeValide = computed(
   () => territoire.value !== null && String(route.params.type) === territoire.value.type,
+)
+
+/**
+ * L'identité de la fiche (fil d'ariane, H1, puce-type, contexte) est lisible
+ * dès que la table de référence s'est réglée — avant le wait-set (AC #302) :
+ * le header vit de territoires seul. L'échec du wait-set compte comme
+ * « prêt » pour laisser la place à l'état d'erreur typé, jamais un squelette
+ * éternel (territoires se règle toujours avant ses dépendants, l'ordre du
+ * loader).
+ */
+const identitePret = computed(
+  () => (payload.value?.territoires.length ?? 0) > 0 || erreur.value !== null,
 )
 
 const nomTerritoire = computed(() => territoire.value?.nom ?? '')
@@ -88,12 +123,13 @@ function choisirOnglet(slug: SlugOnglet): void {
 }
 
 watch(
-  () => [route.query.theme, payload.value, chargement.value] as const,
-  ([theme, pl, busy]) => {
-    // Le payload grandit : la normalisation attend que le wait-set soit
-    // réglé (no-arg = le full set) — un thème absent pendant le chargement
-    // n'est pas encore une normalisation à faire.
-    if (!pl || busy) return
+  () => [route.query.theme, payload.value, chargement.value, erreur.value] as const,
+  ([theme, pl, busy, enErreur]) => {
+    // Le payload grandit : la normalisation attend que le wait-set soit réglé
+    // (dérivé de l'URL — le thème demandé compris) et que la fiche ne soit pas
+    // en erreur — un échec du wait-set ne prouve pas l'absence du thème, il
+    // ne faut pas réécrire l'URL avant que Retry ait pu refaire ses preuves.
+    if (!pl || busy || enErreur) return
     if (typeof theme === 'string' && !(themesPresent(pl) as string[]).includes(theme)) {
       router.replace({ query: {} })
     }
@@ -107,7 +143,7 @@ watch(
     <div class="fiche-en-tete-surface">
       <div class="fiche-en-tete">
       <div
-        v-if="chargement"
+        v-if="!identitePret"
         class="fiche-chargement"
         role="status"
         aria-label="Chargement de la fiche"
@@ -160,31 +196,48 @@ watch(
       />
     </div>
 
-    <template v-if="typeValide">
+    <template v-if="typeValide && !erreur">
       <div class="fiche-corps">
+        <!-- Le contenu attend SON wait-set (la porte de rendu, PRD #296) : le
+             header vit de la référence seule (AC #302), mais la vue ne prétend
+             jamais avoir ses données avant qu'elles ne soient réglées — le
+             squelette honnête du corps pendant que le wait-set pend. -->
+        <div
+          v-if="chargement"
+          class="fiche-chargement-contenu"
+          role="status"
+          aria-label="Chargement du contenu de la fiche"
+        >
+          <div class="squelette squelette--ligne" />
+          <div class="squelette squelette--ligne" />
+          <div class="squelette squelette--ligne" />
+          <div class="squelette squelette--ligne" />
+        </div>
         <!-- Le filigrane (DESIGN.md §7) : dessinable n'importe où dans la zone
              d'onglet (entre le sous-en-tête et le pied de page), re-tiré à
              chaque changement d'onglet (remount via :key), figé pour la durée
              du montage. -->
-        <FiligraneFiche :key="selection ?? 'apercu'" :theme="selection" />
-        <div
-          class="fiche-contenu"
-          role="tabpanel"
-          :id="idPanneau(selection)"
-          :aria-labelledby="idOnglet(selection)"
-        >
-          <ApercuOnglet
-            v-if="payload && selection === null"
-            :payload="payload"
-            :territoire="String(route.params.id)"
-          />
-          <OngletTheme
-            v-else-if="ongletTheme"
-            :theme="ongletTheme.theme"
-            :payload="ongletTheme.payload"
-            :territoire="String(route.params.id)"
-          />
-        </div>
+        <template v-else>
+          <FiligraneFiche :key="selection ?? 'apercu'" :theme="selection" />
+          <div
+            class="fiche-contenu"
+            role="tabpanel"
+            :id="idPanneau(selection)"
+            :aria-labelledby="idOnglet(selection)"
+          >
+            <ApercuOnglet
+              v-if="payload && selection === null"
+              :payload="payload"
+              :territoire="String(route.params.id)"
+            />
+            <OngletTheme
+              v-else-if="ongletTheme"
+              :theme="ongletTheme.theme"
+              :payload="ongletTheme.payload"
+              :territoire="String(route.params.id)"
+            />
+          </div>
+        </template>
       </div>
     </template>
   </section>
@@ -292,6 +345,15 @@ watch(
   flex-direction: column;
   gap: var(--space-4);
   padding: var(--space-8) 0;
+}
+
+.fiche-chargement-contenu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+  padding: var(--space-8) var(--grid-margin-mobile) var(--space-12);
 }
 
 .squelette--fil {
