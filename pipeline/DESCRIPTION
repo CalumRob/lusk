@@ -19,6 +19,7 @@ Imports:
     osmextract,
     readr,
     readxl,
+    rlang,
     sf,
     tibble,
     tidyr

@@ -315,6 +315,9 @@ test_that("construire_donnees_ocsge : les huit archives du manifeste, chaque dé
   # la table est persistée sous data/processed/milieux/ (idempotent)
   expect_true(file.exists(sortie))
   relue <- readr::read_rds(sortie)
+  # le tampon du point de contrôle (issue #325) vit dans le fichier, pas dans
+  # la donnée : retiré avant la comparaison — la persistance est byte-identique
+  attr(relue, "empreinte") <- NULL
   expect_identical(relue, agg)
 })
 

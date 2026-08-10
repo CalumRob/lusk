@@ -175,6 +175,80 @@ normaliser_consoenaf <- function(table_conso) {
     filter_bretagne()
 }
 
+# Le point de contrôle du thème (issue #325) -----------------------------------
+# La couche construire DÉCLARÉE à l'empreinte du point de contrôle : chaque
+# fonction dont un changement de corps peut changer la table construite. La
+# liste est la fermeture transitive des builders enveloppés (la garde de la
+# liste, test-checkpoint.R, la vérifie avec codetools::findGlobals — une
+# fonction oubliée casse le test, jamais la donnée) PLUS les helpers de
+# manifeste (le fichier épinglé — le nom des archives OCS-GE / patchs,
+# construit par ces fonctions au chargement — fait partie de la donnée
+# construite). La couche COMPUTE n'y entre JAMAIS (le cas #306) : un
+# changement compute seul garde le point de contrôle valide.
+FONCTIONS_CONSTRIRE_MILIEUX <- c(
+  # les deux corps de production enveloppés (l'enveloppe est de la machinerie :
+  # son câblage change l'empreinte lui-même)
+  "construire_donnees_milieux_interne", "construire_donnees_ocsge_interne",
+  # le raccord OCS-GE et l'ingestion CONSOENAF (lecteur -> reshape)
+  "construire_ocsge_milieux", "rattacher_ocsge_communes",
+  "lire_consoenaf", "normaliser_consoenaf", "conso_annuelles_fenetre",
+  "conso_en_m2",
+  # la série historique et l'identité partagée
+  "lire_serie_historique_pop", "lire_csv_long",
+  "lire_epci", "normaliser_epci_manquants",
+  # l'ingestion OCS-GE : lecteur -> normalisation -> agrégation, le patch
+  # correctif M2 (#243) et le seam d'extraction
+  "lire_ocsge_artificialisation", "normaliser_ocsge_artificialisation",
+  "agreger_artificialisation_communes",
+  "lire_patch_correctif", "appliquer_patch_correctif", "statut_artif_matrice",
+  "extraire_gpkg_ocsge", "chemin_gpkg_extrait", "decouper_id_ocsge",
+  "archives_ocsge_presentes",
+  # le référentiel géométrique partagé et le passage COG
+  "lire_communes_limites", "passage_cog", "construire_mappe_cog_bretagne",
+  "lire_table_passage", "construire_passage_cog",
+  # le filtre Bretagne partagé
+  "filter_bretagne",
+  # les helpers de manifeste
+  "ligne_ocsge_etat", "ligne_ocsge_patch"
+)
+
+# entrees_construire_milieux ---------------------------------------------------
+# Les ENTRÉES du point de contrôle du thème : TOUS les fichiers du cache que
+# la couche construire lit (la base CONSOENAF, les fragments partagés, le
+# référentiel géométrique, la table de passage COG, les huit archives d'état
+# OCS-GE, les trois patchs correctifs et les fichiers extraits réellement lus
+# — le GPKG du seam manuel inclus : sa ré-extraction change l'empreinte, un
+# GPKG neuf n'est jamais servi comme frais). Un fichier absent est marqué
+# « ABSENT » (empreinte_entrees) : l'empreinte couvre toute la durée de vie du
+# cache. Les chemins dérivent du manifeste quand le builder le fait (jamais
+# deux noms qui dériveraient l'un de l'autre).
+entrees_construire_milieux <- function(cache) {
+  c(
+    # la base CONSOENAF et les fragments partagés du cache (les mêmes noms que
+    # le builder lit — dérivés du manifeste, jamais re-écrits en dur)
+    file.path(cache, MANIFEST_MILIEUX$fichier[
+      MANIFEST_MILIEUX$id == "consoenaf"]),
+    file.path(cache, MANIFEST_MILIEUX$fichier[
+      MANIFEST_MILIEUX$id == "epci"]),
+    file.path(cache, MANIFEST_MILIEUX$fichier[
+      MANIFEST_MILIEUX$id == "serie_historique"]),
+    # le référentiel géométrique partagé et la table de passage COG (les noms
+    # que construire_ocsge_milieux lit — le partage avec Mobilité / le
+    # fragment cog_passage)
+    file.path(cache, "communes_limites.geojson"),
+    file.path(cache, "table_passage_annuelle_2025.zip"),
+    # les huit archives d'état OCS-GE et les trois patchs correctifs M2
+    file.path(cache, MANIFEST_MILIEUX_OCSGE$fichier),
+    file.path(cache, MANIFEST_MILIEUX_PATCH$fichier),
+    # les fichiers extraits réellement lus (la série et la base EPCI extraites,
+    # les GPKG du seam manuel — le motif exact du builder)
+    file.path(cache, "extracted", NOM_FICHIER_SERIE_HISTORIQUE),
+    file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"),
+    list.files(file.path(cache, "extracted", "ocsge"),
+               pattern = "[.]gpkg$", full.names = TRUE)
+  )
+}
+
 # construire_donnees_milieux ---------------------------------------------------
 # L'acte « trouver la donnée » du thème : lit le CSV CONSOENAF dans le cache,
 # le reshape (m² -> ha + Bretagne), JOINT l'identité sur la base des EPCI
@@ -195,9 +269,12 @@ normaliser_consoenaf <- function(table_conso) {
 # Archives absentes -> la table de base inchangée (le chemin rétro-compatible).
 # Persiste la table des communes sous data/processed/milieux/ (idempotent,
 # comme les builders des sources) et la retourne — la forme que
-# construire_territoires_milieux consomme.
-construire_donnees_milieux <- function(cache = "data/raw",
-                                       sortie = "data/processed/milieux/consoenaf_communes.rds") {
+# construire_territoires_milieux consomme. Le corps de PRODUCTION de la donnée
+# (issue #325) : l'enveloppe construire_donnees_milieux (le point de contrôle
+# validé) l'appelle sous ce nom — la garde de la liste l'empreinte, pas
+# l'enveloppe.
+construire_donnees_milieux_interne <- function(cache = "data/raw",
+                                               sortie = "data/processed/milieux/consoenaf_communes.rds") {
   extrait <- file.path(cache, "extracted")
   if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
 
@@ -280,6 +357,24 @@ construire_donnees_milieux <- function(cache = "data/raw",
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(communes, sortie)
   communes
+}
+
+# construire_donnees_milieux ---------------------------------------------------
+# L'ENVELOPPE à point de contrôle (issue #325) : le même contrat public que
+# l'interne, mais le passage lourd (la boucle des huit archives OCS-GE, ~1,7
+# Go) est SAUTÉ quand l'intermédiaire consoenaf_communes.rds porte l'empreinte
+# courante — entrées (chemin|taille|mtime) ET code de la couche construire
+# (FONCTIONS_CONSTRIRE_MILIEUX) inchangés. L'empreinte couvre le code
+# producteur et les fichiers, JAMAIS la couche compute (le cas #306) : un
+# changement compute seul garde le point de contrôle valide.
+construire_donnees_milieux <- function(cache = "data/raw",
+                                       sortie = "data/processed/milieux/consoenaf_communes.rds") {
+  construire_avec_point_de_controle(
+    sortie = sortie,
+    entrees = entrees_construire_milieux(cache),
+    fonctions = FONCTIONS_CONSTRIRE_MILIEUX,
+    construire = function() construire_donnees_milieux_interne(cache, sortie)
+  )
 }
 
 # L'ingestion OCS-GE (issue #234, amendée par #243) -----------------------------
@@ -754,9 +849,11 @@ decouper_id_ocsge <- function(ids) {
 # le contrat une-ligne-par-commune (le bug réel découvert par #243). Le filtre
 # est l'alignement archive → communes de SON département
 # (code_insee_du_departement, la colonne du référentiel Admin Express).
-construire_donnees_ocsge <- function(cache = "data/raw",
-                                     communes,
-                                     sortie = "data/processed/milieux/ocsge_communes.rds") {
+# Le corps de PRODUCTION de la donnée (issue #325) : l'enveloppe
+# construire_donnees_ocsge (le point de contrôle validé) l'appelle sous ce nom.
+construire_donnees_ocsge_interne <- function(cache = "data/raw",
+                                             communes,
+                                             sortie = "data/processed/milieux/ocsge_communes.rds") {
   extrait <- file.path(cache, "extracted", "ocsge")
   if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
   if (!"code_insee_du_departement" %in% names(communes)) {
@@ -840,6 +937,27 @@ construire_donnees_ocsge <- function(cache = "data/raw",
   if (!dir.exists(dirname(sortie))) dir.create(dirname(sortie), recursive = TRUE)
   readr::write_rds(communes_artif, sortie)
   communes_artif
+}
+
+# construire_donnees_ocsge -----------------------------------------------------
+# L'ENVELOPPE à point de contrôle (issue #325) : la boucle GPKG est SAUTÉE
+# quand l'intermédiaire ocsge_communes.rds porte l'empreinte courante. Le
+# point de contrôle INTERNE : quand l'enveloppe du thème reconstruit (la
+# sortie principale a disparu ou est périmée) mais que la table OCS-GE est
+# restée fraîche, la boucle des huit archives n'est pas re-traitée — la
+# régénération chirurgicale. Les entrées couvrent aussi les fichiers dont
+# dérive la couche des communes passée en argument (le référentiel géométrique
+# et la base CONSOENAF) : un changement de la géométrie d'intersection force
+# la reconstruction.
+construire_donnees_ocsge <- function(cache = "data/raw",
+                                     communes,
+                                     sortie = "data/processed/milieux/ocsge_communes.rds") {
+  construire_avec_point_de_controle(
+    sortie = sortie,
+    entrees = entrees_construire_milieux(cache),
+    fonctions = FONCTIONS_CONSTRIRE_MILIEUX,
+    construire = function() construire_donnees_ocsge_interne(cache, communes, sortie)
+  )
 }
 
 # archives_ocsge_presentes ------------------------------------------------------
