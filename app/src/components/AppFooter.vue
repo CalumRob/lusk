@@ -5,17 +5,22 @@
  * once per session by usePayload — shared with the fiche view), links to
  * Méthodes, À propos and calumrobertson.fr.
  *
- * The freshness line degrades honestly: a skeleton while the payload loads;
- * the static-rhythm claim on error (never a pretend freshness). The line
- * links to the vintage table section of /methodologie (site-map.md
- * §Cross-links).
+ * The wait-set of the shell (T3, #299) — territoires + run-report — gates
+ * nothing visible here (the footer never renders a skeleton), but it scopes
+ * `erreur` to the shell's own files: a background failure elsewhere can never
+ * mask the real freshness line. The freshness line degrades honestly: the
+ * static-rhythm claim while run-report hasn't landed and on error (never a
+ * pretend freshness). The line links to the vintage table section of
+ * /methodologie (site-map.md §Cross-links).
  */
 import { computed } from 'vue'
 
 import { ligneFraicheur } from '@/payload/selectors'
 import { usePayload } from '@/payload/usePayload'
 
-const { payload, erreur } = usePayload()
+// La coquille ne bloque que sur la référence + le rapport de run (T3, #299) :
+// la fraîcheur apparaît avec run-report, jamais en attente du full payload.
+const { payload, erreur } = usePayload({ attendre: ['territoires', 'run-report'] })
 
 const ligneFraicheurAffichée = computed(() => {
   if (erreur.value) return 'Données actualisées chaque semaine'

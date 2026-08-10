@@ -1,4 +1,4 @@
-﻿import { mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -16,6 +16,7 @@ import {
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
+import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 
 /**
@@ -95,5 +96,58 @@ describe('AppFooter — la ligne de fraîcheur', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('Données actualisées chaque semaine')
+  })
+})
+
+describe('AppFooter — le wait-set de la coquille (T3, #299)', () => {
+  it('rend la ligne de fraîcheur réelle dès que run-report atterrit — le reste du payload peut pendre', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const wrapper = await monter(async (fichier) => {
+      if (fichier === 'territoires') return territoiresFixture
+      if (fichier === 'run-report') return runReportFraisFixture
+      return enAttente
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Données actualisées le 3 août 2026')
+    expect(wrapper.find('.squelette').exists()).toBe(false)
+  })
+
+  it('garde le repli honnête du rythme statique tant que run-report n’a pas atterri — même si territoires est là', async () => {
+    const enAttente = new Promise<unknown>(() => {})
+    const wrapper = await monter(async (fichier) => {
+      if (fichier === 'territoires') return territoiresFixture
+      return enAttente
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Données actualisées chaque semaine')
+    expect(wrapper.find('.squelette').exists()).toBe(false)
+  })
+
+  it('un échec d’arrière-plan ne masque jamais la vraie fraîcheur — l’erreur reste scopée au wait-set', async () => {
+    const wrapper = await monter(async (fichier) => {
+      if (fichier === 'indicateurs_habitat') {
+        throw new PayloadError('fetch', 'indicateurs_habitat.json', 'panne réseau')
+      }
+      return chargerAvec(payload)(fichier)
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Données actualisées le 3 août 2026')
+    expect(wrapper.text()).not.toContain('Données actualisées chaque semaine')
+  })
+
+  it('un échec de wait-set (run-report) → le repli honnête, jamais une fausse fraîcheur', async () => {
+    const wrapper = await monter(async (fichier) => {
+      if (fichier === 'run-report') {
+        throw new PayloadError('fetch', 'run-report.json', 'panne réseau')
+      }
+      return chargerAvec(payload)(fichier)
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Données actualisées chaque semaine')
+    expect(wrapper.find('.squelette').exists()).toBe(false)
   })
 })

@@ -1,4 +1,4 @@
-﻿import { mount } from '@vue/test-utils'
+﻿import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -14,8 +14,9 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
+import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 
 /**
@@ -439,5 +440,90 @@ describe('AppHeader — la recherche globale (F3, #53 + #61)', () => {
 
     expect(wrapper.find('.tiroir').classes()).not.toContain('tiroir--ouvert')
     expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
+  })
+})
+
+describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
+  /** Un chargeur qui ne résout QUE le wait-set de la coquille — tout le reste pend. */
+  const chargerCoquilleSeule: ChargerFichier = (fichier) => {
+    if (fichier === 'territoires') return Promise.resolve(territoiresFixture)
+    if (fichier === 'run-report') return Promise.resolve(runReportFraisFixture)
+    return new Promise<unknown>(() => {})
+  }
+
+  it('rend la recherche vivante quand seuls territoires + run-report ont atterri — le reste coule en arrière-plan', async () => {
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const input = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await input.trigger('focus')
+    await input.setValue('epci')
+    await new Promise((r) => setTimeout(r, 300))
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options.length).toBeGreaterThan(0)
+    expect(options[0].text()).toContain('EPCI')
+    // Le wait-set est réglé → ni spinner de chargement ni erreur, même si le reste pend.
+    expect(wrapper.find('.recherche-superposee .global-search__spinner').exists()).toBe(false)
+    expect(wrapper.find('.recherche-superposee .global-search__etat--erreur').exists()).toBe(false)
+  })
+
+  it('un échec d’arrière-plan (indicateurs_habitat) ne fait jamais passer la recherche en erreur — seul le wait-set compte', async () => {
+    const chargerEchecArrierePlan: ChargerFichier = async (fichier) => {
+      if (fichier === 'indicateurs_habitat') {
+        throw new PayloadError('fetch', 'indicateurs_habitat.json', 'panne réseau')
+      }
+      return charger(fichier)
+    }
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerEchecArrierePlan },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const input = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await input.trigger('focus')
+    await wrapper.vm.$nextTick()
+
+    // Requête vide + focus : une erreur de payload ouvrirait le panneau en
+    // erreur — l'échec d'arrière-plan ne doit pas y arriver.
+    expect(wrapper.find('.recherche-superposee .global-search__etat--erreur').exists()).toBe(false)
+
+    // Et la recherche fonctionne malgré l'échec d'arrière-plan.
+    await input.setValue('epci')
+    await new Promise((r) => setTimeout(r, 300))
+    expect(wrapper.findAll('[role="option"]').length).toBeGreaterThan(0)
+  })
+
+  it('un échec de wait-set (territoires) → l’erreur typée dans la recherche, jamais de résultats', async () => {
+    const chargerEchecTerritoires: ChargerFichier = async (fichier) => {
+      if (fichier === 'territoires') {
+        throw new PayloadError('fetch', 'territoires.json', 'panne réseau')
+      }
+      return charger(fichier)
+    }
+    const { wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerEchecTerritoires },
+    })
+    await flushPromises()
+
+    await wrapper.find('.bouton-recherche').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const input = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await input.trigger('focus')
+    await wrapper.vm.$nextTick()
+
+    const erreur = wrapper.find('.recherche-superposee .global-search__etat--erreur')
+    expect(erreur.exists()).toBe(true)
+    expect(erreur.text()).toContain('Impossible de charger les territoires.')
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
   })
 })
