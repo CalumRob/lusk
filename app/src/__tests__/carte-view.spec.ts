@@ -430,6 +430,58 @@ describe('CarteView — l’onglet « Programmes & financements » (ADR-0019 #28
   })
 })
 
+describe('CarteView — la recherche zoome sur l’entité (ADR-0019, #283)', () => {
+  it('la recherche de la sidebar est sans navigation et son sélect remonte jusqu’à la carte', async () => {
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
+
+    const sidebar = wrapper.findComponent({ name: 'MapSidebar' })
+    const recherche = sidebar.findComponent({ name: 'GlobalSearchBar' })
+    expect(recherche.props('sansNavigation')).toBe(true)
+
+    const epciX = territoiresFixture.find((t) => t.territoire === '200000001')
+    recherche.vm.$emit('select', epciX)
+    await flushPromises()
+
+    const explorateur = wrapper.findComponent({ name: 'MapExplorer' })
+    expect(explorateur.props('territoireCible')).toEqual(epciX)
+    expect(explorateur.props('requeteZoom')).toBe(1)
+  })
+
+  it('bascule le niveau sur celui de l’entité cherchée (un EPCI cherché depuis les communes)', async () => {
+    const { wrapper } = await monter({
+      chemin: '/carte?theme=demographie',
+      chargerGeometrie: async () => masquesTroisNiveaux,
+    })
+
+    const sidebar = wrapper.findComponent({ name: 'MapSidebar' })
+    expect(sidebar.props('niveau')).toBe('communes')
+
+    const epciX = territoiresFixture.find((t) => t.territoire === '200000001')
+    sidebar.findComponent({ name: 'GlobalSearchBar' }).vm.$emit('select', epciX)
+    await flushPromises()
+
+    expect(sidebar.props('niveau')).toBe('epcis')
+    expect(wrapper.findComponent({ name: 'MapExplorer' }).props('territoireCible')).toEqual(epciX)
+  })
+
+  it('une entité au niveau affiché ne change pas de niveau et la carte ouvre son popup', async () => {
+    const { wrapper } = await monter({
+      chemin: '/carte?theme=demographie',
+      chargerGeometrie: async () => masquesTroisNiveaux,
+    })
+
+    const sidebar = wrapper.findComponent({ name: 'MapSidebar' })
+    const communeA1 = territoiresFixture.find((t) => t.territoire === '22001')
+    sidebar.findComponent({ name: 'GlobalSearchBar' }).vm.$emit('select', communeA1)
+    await flushPromises()
+
+    expect(sidebar.props('niveau')).toBe('communes')
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('Commune A1')
+    expect(popup?.contenu).toContain('Voir la fiche')
+  })
+})
+
 afterEach(() => {
   maplibreMock.instancesCarteMaple.length = 0
   maplibreMock.instancesPopups.length = 0

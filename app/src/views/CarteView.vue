@@ -53,7 +53,7 @@ import type { NiveauMasque } from '@/geo/types'
 import { useGeometrie } from '@/geo/useGeometrie'
 import { themesPresent } from '@/payload/selectors'
 import { SIGLES_PROGRAMMES } from '@/payload/types'
-import type { SigleProgramme, Theme } from '@/payload/types'
+import type { SigleProgramme, Territoire, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
 const route = useRoute()
@@ -166,6 +166,30 @@ const niveau = computed<NiveauMasque>(() => {
     ? niveauDemande.value
     : niveauxDisponibles.value[0]
 })
+
+/** La recherche (#283) : le territoire sélectionné + une clé croissante —
+ *  re-sélectionner le MÊME territoire re-zoome (la clé, pas l'identité). */
+const demandeRecherche = ref<{ territoire: Territoire; requete: number } | null>(null)
+let compteurRecherche = 0
+
+/** Le niveau de masque d'un type de territoire — la région n'en a pas. */
+function niveauDuType(type: Territoire['type']): NiveauMasque | null {
+  if (type === 'commune') return 'communes'
+  if (type === 'epci') return 'epcis'
+  if (type === 'departement') return 'departements'
+  return null
+}
+
+/** La recherche de la sidebar (#283) : bascule d'abord le niveau sur celui de
+ *  l'entité cherchée (« whichever level matches »), puis demande à la carte de
+ *  zoomer dessus et d'ouvrir son popup par couche. */
+function rechercherTerritoire(t: Territoire): void {
+  const niveauCible = niveauDuType(t.type)
+  if (niveauCible && niveauCible !== niveau.value) {
+    niveauDemande.value = niveauCible
+  }
+  demandeRecherche.value = { territoire: t, requete: ++compteurRecherche }
+}
 
 const geometrieAbsente = computed(
   () =>
@@ -351,6 +375,8 @@ const classesFond = computed(() =>
             :theme="selection"
             :couche="coucheActiveCarte"
             :niveau="niveau"
+            :territoire-cible="demandeRecherche?.territoire ?? null"
+            :requete-zoom="demandeRecherche?.requete ?? 0"
           />
           <MapSidebar
             :territoires="payload.territoires"
@@ -368,6 +394,7 @@ const classesFond = computed(() =>
             :couleur-membre="COULEUR_MEMBRE"
             @niveau-change="(n: NiveauMasque) => (niveauDemande = n)"
             @couche-change="choisirCouche"
+            @recherche-territoire="rechercherTerritoire"
           />
         </template>
       </div>

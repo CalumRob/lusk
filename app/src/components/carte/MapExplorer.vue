@@ -65,19 +65,30 @@ import {
 import type { CollectionAvecMembres, CollectionAvecValeurs } from '@/carte/fusion'
 import { kpisPourPopup, contenuTooltip } from '@/carte/popup'
 import { echelleValeurs } from '@/carte/seuils'
-import type { CollectionMasque, Masques, NiveauMasque } from '@/geo/types'
+import type { CollectionMasque, GeometrieMasque, Masques, NiveauMasque } from '@/geo/types'
 import { trouverTerritoire } from '@/payload/selectors'
-import type { Payload, Theme } from '@/payload/types'
+import type { Payload, Territoire, Theme } from '@/payload/types'
 
-const props = defineProps<{
-  masques: Masques
-  payload: Payload
-  theme: Theme | null
-  /** The active layer — a theme layer (null in Aperçu / Économie) or a
-   *  programmes layer (membre / subvention, #282). */
-  couche: CoucheCarte | null
-  niveau: NiveauMasque
-}>()
+const props = withDefaults(
+  defineProps<{
+    masques: Masques
+    payload: Payload
+    theme: Theme | null
+    /** The active layer — a theme layer (null in Aperçu / Économie) or a
+     *  programmes layer (membre / subvention, #282). */
+    couche: CoucheCarte | null
+    niveau: NiveauMasque
+    /** Le territoire demandé par la recherche sidebar (#283) — la carte zoome
+     *  dessus (fitBounds sa géométrie au niveau actif) et ouvre le popup par
+     *  couche. null = aucune demande. */
+    territoireCible?: Territoire | null
+    /** Une clé de demande croissante (#283) : re-sélectionner le MÊME
+     *  territoire re-zoome (le watcher ne peut pas compter sur l'identité du
+     *  Territoire — le même objet référence revient de la table). */
+    requeteZoom?: number
+  }>(),
+  { territoireCible: null, requeteZoom: 0 },
+)
 
 const router = useRouter()
 
@@ -235,6 +246,52 @@ function couchePourPopup(): Couche | null {
   const { couche } = props
   if (couche && (couche.source === 'indicateur' || couche.source === 'histoire')) return couche
   return null
+}
+
+type Bornes = [[number, number], [number, number]]
+
+/** La boîte englobante d'une géométrie de masque (Polygon ou MultiPolygon) —
+ *  le zoom de recherche (#283) cadre l'entité cherchée. */
+function bornesDeGeometrie(geometrie: GeometrieMasque): Bornes | null {
+  let lngMin = Infinity
+  let latMin = Infinity
+  let lngMax = -Infinity
+  let latMax = -Infinity
+  const anneaux: number[][][] =
+    geometrie.type === 'Polygon'
+      ? (geometrie.coordinates as number[][][])
+      : (geometrie.coordinates as number[][][][]).flat()
+  for (const anneau of anneaux) {
+    for (const [lng, lat] of anneau) {
+      lngMin = Math.min(lngMin, lng)
+      latMin = Math.min(latMin, lat)
+      lngMax = Math.max(lngMax, lng)
+      latMax = Math.max(latMax, lat)
+    }
+  }
+  if (!Number.isFinite(lngMin)) return null
+  return [
+    [lngMin, latMin],
+    [lngMax, latMax],
+  ]
+}
+
+/** Le zoom de recherche (#283) : trouve la géométrie du territoire au niveau
+ *  ACTIF (le niveau a déjà été basculé par la vue si besoin), cadre dessus
+ *  (fitBounds) puis ouvre le popup par couche à son centre. Un territoire sans
+ *  géométrie au niveau affiché — une région, un niveau absent — ne déclenche
+ *  ni zoom ni popup inventé. */
+function zoomerSurTerritoire(cible: Territoire): void {
+  if (!carte) return
+  const collection = masqueDe(props.niveau)
+  const feature = collection?.features.find((f) => f.properties.territoire === cible.territoire)
+  if (!feature) return
+  const bornes = bornesDeGeometrie(feature.geometry)
+  if (!bornes) return
+  carte.fitBounds(bornes, { padding: 80, maxZoom: 12 })
+  const [[lngMin, latMin], [lngMax, latMax]] = bornes
+  const centre = new maplibregl.LngLat((lngMin + lngMax) / 2, (latMin + latMax) / 2)
+  ouvrirPopup(feature as unknown as MapGeoJSONFeature, centre)
 }
 
 function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
@@ -395,6 +452,8 @@ function initialiserCarte(): void {
     if (carte) carte.on('click', surClic)
     if (carte) carte.on('mousemove', surSurvol)
     if (carte) carte.on('mouseleave', fermerTooltip)
+    // une recherche intervenue avant le chargement du style n'est pas perdue
+    if (props.territoireCible) zoomerSurTerritoire(props.territoireCible)
   })
 
   carte.on('error', (e) => {
@@ -411,6 +470,14 @@ watch(
     appliquerNiveau()
   },
   { deep: true },
+)
+
+watch(
+  () => [props.territoireCible, props.requeteZoom] as const,
+  ([cible]) => {
+    if (!cible || !carte) return
+    zoomerSurTerritoire(cible)
+  },
 )
 
 onMounted(() => {

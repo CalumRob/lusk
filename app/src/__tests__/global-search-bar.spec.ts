@@ -275,6 +275,69 @@ describe('GlobalSearchBar — keyboard navigation and opening', () => {
   })
 })
 
+describe('GlobalSearchBar — le mode sans navigation (la carte zoome, #283)', () => {
+  it('renders the results as buttons — never RouterLinks — in sans-navigation mode', async () => {
+    const { wrapper } = monterRecherche(territoiresFixture, { sansNavigation: true })
+    await taper(wrapper, 'epci')
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options.length).toBeGreaterThan(0)
+    for (const option of options) {
+      expect(option.element.tagName).toBe('BUTTON')
+    }
+    expect(options[0].find('.global-search__action').text()).toBe('Sur la carte')
+  })
+
+  it('emits select WITHOUT navigating on Enter in sans-navigation mode', async () => {
+    const { wrapper, router } = monterRecherche(territoiresFixture, { sansNavigation: true })
+    const input = wrapper.find(INPUT)
+    await taper(wrapper, 'epci')
+
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    const select = wrapper.emitted('select')
+    expect(select).toBeTruthy()
+    expect(select?.[0][0]).toMatchObject({ territoire: '200000001', type: 'epci', nom: 'EPCI X' })
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('clicking a result row emits select without navigating in sans-navigation mode', async () => {
+    const { wrapper, router } = monterRecherche(territoiresFixture, { sansNavigation: true })
+    await taper(wrapper, 'epci')
+
+    await wrapper.findAll('[role="option"]')[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('select')?.[0][0]).toMatchObject({ territoire: '200000002', nom: 'EPCI Y' })
+    expect(router.currentRoute.value.fullPath).toBe('/')
+  })
+
+  it('keeps the keyboard contract (ArrowDown active option, Enter emits) in sans-navigation mode', async () => {
+    const { wrapper } = monterRecherche(territoiresFixture, { sansNavigation: true })
+    const input = wrapper.find(INPUT)
+    await taper(wrapper, 'epci')
+
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    await input.trigger('keydown', { key: 'ArrowDown' })
+    await nextTick()
+    expect(input.attributes('aria-activedescendant')).toBe('gsb-option-1')
+
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('select')?.[0][0]).toMatchObject({ territoire: '200000002' })
+  })
+
+  it('the default mode keeps the RouterLink rows — the header and landing instances still navigate', async () => {
+    const { wrapper } = monterRecherche()
+    await taper(wrapper, 'epci')
+
+    const options = wrapper.findAll('[role="option"]')
+    expect(options.length).toBeGreaterThan(0)
+    expect(options[0].element.tagName).toBe('A')
+    expect(options[0].find('.global-search__action').text()).toBe('Voir la page')
+  })
+})
+
 describe('AccueilView — la recherche du héros (D3 landing)', () => {
   it('renders the single untitled search in the landing hero — no tabs row', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })

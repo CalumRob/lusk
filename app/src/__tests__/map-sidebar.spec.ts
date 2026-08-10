@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 
 import MapSidebar from '../components/carte/MapSidebar.vue'
 import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
@@ -144,6 +145,24 @@ describe("MapSidebar — le panneau d'options de la carte", () => {
 
     const legende = wrapper.findComponent({ name: 'MapLegend' })
     expect(legende.props('couche')).toEqual(coucheDensite)
+  })
+})
+
+describe('MapSidebar — la recherche de la carte (#283)', () => {
+  it('passe la recherche en mode sans navigation — les résultats ne naviguent pas vers la fiche', () => {
+    const wrapper = montage()
+
+    expect(wrapper.findComponent({ name: 'GlobalSearchBar' }).props('sansNavigation')).toBe(true)
+  })
+
+  it('remonte le territoire sélectionné — recherche-territoire, la carte zoome dessus', async () => {
+    const wrapper = montage()
+    const epciX = territoiresFixture.find((t) => t.territoire === '200000001')
+
+    wrapper.findComponent({ name: 'GlobalSearchBar' }).vm.$emit('select', epciX)
+    await nextTick()
+
+    expect(wrapper.emitted('recherche-territoire')).toEqual([[epciX]])
   })
 })
 
