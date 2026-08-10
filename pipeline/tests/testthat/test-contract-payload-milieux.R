@@ -60,6 +60,7 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
     "territoire", "type", "theme", "story_key",
     "periode_pop", "periode_artif",
     "delta_population",
+    "taux_variation_population",
     "artif_m2", "artif_m3",
     "artif_m2_par_habitant", "artif_m3_par_habitant",
     "trajectoire_artif_par_habitant",

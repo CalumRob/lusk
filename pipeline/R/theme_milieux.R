@@ -1499,8 +1499,15 @@ scalaires_milieux <- list(
 # lecture NA — jamais une lecture inventée. L'INVARIANT (ADR-0017) :
 # sign(ratio − 1) = sign(delta) où delta = artif_m3_par_habitant −
 # artif_m2_par_habitant — le dénominateur du ratio (le M2 par habitant) est
-# toujours positif : la classification et le futur graphe (x = Δpopulation,
-# y = delta) ne peuvent jamais se contredire.
+# toujours positif : la classification et le graphe quadrant (x = le taux
+# annuel pour mille #306, y = delta) ne peuvent jamais se contredire.
+# La force POPULATION du quadrant est un TAUX annuel pour mille habitants
+# (taux_variation_population, ‰/an — l'amendement #306 d'ADR-0017) : la
+# convention INSEE de Démographie (delta / durée / population moyenne x 1000,
+# population moyenne = (pop_debut + pop_fin) / 2), jamais la variation brute,
+# jamais un absolu annualisé (le « ×100 hab/an » de #264, amendé). Le delta
+# brut RESTE publié (le prose le cite) ; la classification lit le signe seul
+# du delta — identique pour le compte et pour le taux, rien ne bouge en aval.
 # Les DEUX fenêtres, nommées séparément (les deux horloges, jamais
 # confondues) : periode_pop, la paire RP de la série historique (« 2017-2023 »,
 # jamais codée en dur) ; periode_artif, la fenêtre des états OCS-GE du
@@ -1517,7 +1524,23 @@ compute_histoires_milieux <- function(territoires) {
       delta_population = pop_fin - pop_debut,
       # la fenêtre de population : la paire de millésimes RP de la série
       # historique — jamais codée en dur (les deux horloges, ADR-0017)
-      periode_pop = paste0(millesime_debut, "-", millesime_fin)
+      periode_pop = paste0(millesime_debut, "-", millesime_fin),
+      # le taux annuel pour mille de la Story (#306, amendement d'ADR-0017) :
+      # la force population du quadrant est un TAUX (‰/an), le registre
+      # Démographie — jamais la variation brute, jamais un absolu annualisé
+      # (le « ×100 hab/an » de #264, amendé par #306). La formule est la
+      # convention INSEE de compute_histoires_demographie : taux = delta /
+      # durée / population moyenne x 1000, avec population moyenne = le
+      # bracket (pop_debut + pop_fin) / 2. La durée dérive des DEUX
+      # millésimes de la série (jamais codée en dur) ; une population moyenne
+      # nulle (les deux bornes à 0 — le 0 réel des villages détruits) rend le
+      # taux NA — jamais une division par zéro, jamais un taux inventé.
+      population_moyenne = (pop_debut + pop_fin) / 2,
+      taux_variation_population = dplyr::if_else(
+        population_moyenne == 0, NA_real_,
+        delta_population / (millesime_fin - millesime_debut) /
+          population_moyenne * 1000
+      )
     )
 
   if (!"artif_m2" %in% names(base)) {
@@ -1530,6 +1553,7 @@ compute_histoires_milieux <- function(territoires) {
         periode_pop = periode_pop,
         periode_artif = NA_character_,
         delta_population = delta_population,
+        taux_variation_population = taux_variation_population,
         artif_m2 = NA_real_,
         artif_m3 = NA_real_,
         artif_m2_par_habitant = NA_real_,
@@ -1596,6 +1620,7 @@ compute_histoires_milieux <- function(territoires) {
       periode_pop = periode_pop,
       periode_artif = periode_artif,
       delta_population = delta_population,
+      taux_variation_population = taux_variation_population,
       artif_m2 = artif_m2,
       artif_m3 = artif_m3,
       artif_m2_par_habitant = artif_m2_par_habitant,

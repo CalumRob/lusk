@@ -6,7 +6,9 @@
 #   - le Δpopulation = pop_fin - pop_debut — les populations de la SÉRIE
 #     HISTORIQUE du recensement aux deux millésimes de la fenêtre (RP 2017 /
 #     RP 2023 — la règle de source d'ADR-0014, jamais les populations
-#     embarquées de CONSOENAF) ;
+#     embarquées de CONSOENAF) — publié brut (le prose le cite) ET, depuis
+#     #306, en taux annuel pour mille (taux_variation_population, ‰/an — le
+#     registre Démographie : delta / durée / population moyenne x 1000) ;
 #   - la trajectoire par habitant = le ratio M3/M2 des états OCS-GE par
 #     habitant (artif_m3_par_habitant / artif_m2_par_habitant) — la seconde
 #     force de la lecture (ADR-0017). L'intensité d'état (m²/habitant) à
@@ -468,6 +470,76 @@ test_that("le classifieur pur : une force NA rend la lecture NA, jamais une lect
   expect_true(is.na(h2$classification))
 })
 
+# Le taux annuel pour mille de la Story (issue #306) ---------------------------
+# La force population du quadrant est désormais un TAUX annuel pour mille
+# habitants (‰/an) — le registre Démographie (ADR-0011), jamais la variation
+# brute, jamais un absolu annualisé (le « ×100 hab/an » de #264, amendé par
+# #306). La formule est la convention INSEE de compute_histoires_demographie :
+#   taux = delta_population / (millesime_fin - millesime_debut) /
+#          ((pop_debut + pop_fin) / 2) x 1000
+# — la durée dérive des deux millésimes de la série (les deux horloges, jamais
+# codée en dur), la population moyenne est le bracket INSEE (pop_debut +
+# pop_fin) / 2. Le delta brut RESTE publié (le prose le cite). La
+# classification est inchangée : elle lit le signe seul de delta_population —
+# identique pour le compte et pour le taux.
+
+test_that("le taux annuel pour mille : delta annualisé, normalisé par la population moyenne (INSEE, #306)", {
+  p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
+  h <- function(code) p$histoires[p$histoires$territoire == code, ]
+
+  # la formule du registre Démographie, exprimée telle quelle sur le fixture :
+  # 22001 +200 hab entre 2017 et 2023 (durée 6), population moyenne (2200+2400)/2
+  expect_equal(h("22001")$taux_variation_population,
+               200 / (2023 - 2017) / ((2200 + 2400) / 2) * 1000)
+  # 29001 se vide (-150) -> taux négatif
+  expect_equal(h("29001")$taux_variation_population,
+               -150 / (2023 - 2017) / ((3100 + 2950) / 2) * 1000)
+  # 29003 plat (delta 0) -> taux nul, jamais une division par zéro
+  expect_equal(h("29003")$taux_variation_population, 0)
+  # le delta brut reste publié (le prose le cite — jamais remplacé par le taux)
+  expect_equal(h("22001")$delta_population, 200)
+  # le signe du taux suit le signe du delta — la lecture ne change pas
+  expect_equal(sign(h("22001")$taux_variation_population),
+               sign(h("22001")$delta_population))
+  expect_equal(sign(h("29001")$taux_variation_population),
+               sign(h("29001")$delta_population))
+})
+
+test_that("le taux annuel : une population moyenne nulle rend le taux NA — jamais une division par zéro (#306)", {
+  territoires <- tibble::tibble(
+    code = c("a", "b", "c"),
+    type = "commune",
+    pop_debut = c(0, 1000, 1000),
+    pop_fin = c(0, NA_real_, 1500),
+    millesime_debut = 2017, millesime_fin = 2023,
+    artif_m2 = c(10000, 10000, 10000),
+    artif_m3 = c(12000, 12000, 12000),
+    periode_artif = "2021-2025"
+  )
+  h <- compute_histoires_milieux(territoires)
+  # population moyenne nulle (les deux bornes à 0 — le 0 réel des villages
+  # détruits) : le taux est NA, jamais un rapport inventé sur un 0
+  expect_true(is.na(h$taux_variation_population[h$territoire == "a"]))
+  # population absente de la série -> taux NA, jamais un taux inventé
+  expect_true(is.na(h$taux_variation_population[h$territoire == "b"]))
+  # la référence saine : +500 hab, durée 6, population moyenne 1250
+  expect_equal(h$taux_variation_population[h$territoire == "c"],
+               500 / 6 / ((1000 + 1500) / 2) * 1000)
+})
+
+test_that("la durée du taux dérive des millésimes de la série — jamais codée en dur (les deux horloges, #306)", {
+  # une fenêtre 2019-2023 (durée 4) : le taux annualise sur SA durée, jamais 6
+  territoires <- tibble::tibble(
+    code = "a", type = "commune",
+    pop_debut = 1000, pop_fin = 1100,
+    millesime_debut = 2019, millesime_fin = 2023,
+    artif_m2 = 10000, artif_m3 = 12000,
+    periode_artif = "2021-2025"
+  )
+  h <- compute_histoires_milieux(territoires)
+  expect_equal(h$taux_variation_population, 100 / 4 / ((1000 + 1100) / 2) * 1000)
+})
+
 # Déterminisme et forme du contrat ---------------------------------------------
 
 test_that("déterminisme : même territoire + mêmes données -> même lecture, toujours", {
@@ -482,6 +554,7 @@ test_that("le schéma de la table est le contrat de l'issue #238 (le pivot OCS-G
     "territoire", "type", "theme", "story_key",
     "periode_pop", "periode_artif",
     "delta_population",
+    "taux_variation_population",
     "artif_m2", "artif_m3",
     "artif_m2_par_habitant", "artif_m3_par_habitant",
     "trajectoire_artif_par_habitant",
@@ -505,13 +578,18 @@ test_that("chemin rétro-compatible : sans archives OCS-GE, le nouveau schéma e
   p <- compute_payload(communes_fixture_milieux(), theme = theme_milieux())
 
   # le schéma du pivot est présent (le contrat de FORME), sans états OCS-GE
-  expect_true(all(c("periode_pop", "periode_artif", "artif_m2", "artif_m3",
+  expect_true(all(c("periode_pop", "periode_artif", "delta_population",
+                    "taux_variation_population",
+                    "artif_m2", "artif_m3",
                     "artif_m2_par_habitant", "artif_m3_par_habitant",
                     "trajectoire_artif_par_habitant", "classification") %in%
                     names(p$histoires)))
   expect_false("conso_fenetre" %in% names(p$histoires))
   # la fenêtre de population dérive toujours de la série (2017-2023 au fixture)
   expect_true(all(p$histoires$periode_pop == "2017-2023"))
+  # le taux dérive des populations, présentes même sans archives OCS-GE — il
+  # est publié sur le chemin rétro-compatible, jamais une case vide
+  expect_true(all(!is.na(p$histoires$taux_variation_population)))
   # sans états OCS-GE, aucune lecture : tout NA, jamais une lecture inventée
   expect_true(all(is.na(p$histoires$classification)))
   expect_true(all(is.na(p$histoires$artif_m2)))
