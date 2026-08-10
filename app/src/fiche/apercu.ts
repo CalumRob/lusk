@@ -159,6 +159,16 @@ export function libellePartContexte(parent: 'epci' | 'region'): string {
   return parent === 'epci' ? "du total de l'EPCI" : 'du total de la région'
 }
 
+/**
+ * La part de contexte (issue #305) — une part [0,1] en « X,YY % » (DEUX
+ * décimales, jamais tronquées — « 0,94186 » → « 94,19 % », « 1 » →
+ * « 100,00 % »), la même discipline que le formateur M€.
+ */
+export function formaterPartContexte(part: number): string {
+  const [entiers, decimales] = (part * 100).toFixed(2).split('.')
+  return `${entiers.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202F')},${decimales} %`
+}
+
 /** Le texte du lien de provenance (issue #305) — « communes de l'EPCI » / « communes du département » / « communes de Bretagne ». */
 export function libelleProvenance(niveau: 'epci' | 'departement' | 'region'): string {
   if (niveau === 'epci') return "communes de l'EPCI"

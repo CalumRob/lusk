@@ -252,18 +252,18 @@ describe("ApercuOnglet — l'élément Programmes & financements (les données r
     expect(wrapper.find('.subvention-reveler').exists()).toBe(false)
   })
 
-  it('lit la part de contexte d’une commune — son total dans celui de SON EPCI, une décimale (issue #305)', () => {
+  it('lit la part de contexte d’une commune — son total dans celui de SON EPCI, « X,YY % » (issue #305)', () => {
     const wrapper = monter('29003', payloadEchelle)
 
-    expect(wrapper.find('.subvention-contexte').text()).toBe('94,2 % du total de l\u0027EPCI')
+    expect(wrapper.find('.subvention-contexte').text()).toBe('94,19 % du total de l\u0027EPCI')
   })
 
   it('lit la part de contexte d’un EPCI et d’un département dans le total de la RÉGION — jamais sur la région', () => {
     const epci = monter('200000001')
-    expect(epci.find('.subvention-contexte').text()).toBe('2,3 % du total de la région')
+    expect(epci.find('.subvention-contexte').text()).toBe('2,25 % du total de la région')
 
     const departement = monter('22')
-    expect(departement.find('.subvention-contexte').text()).toBe('15 % du total de la région')
+    expect(departement.find('.subvention-contexte').text()).toBe('15,00 % du total de la région')
 
     const region = monter('53')
     expect(region.find('.subvention-contexte').exists()).toBe(false)

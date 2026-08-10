@@ -33,6 +33,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
+  formaterPartContexte,
   formaterValeurApercu,
   libelleApercu,
   libelleBadge,
@@ -40,7 +41,7 @@ import {
   libelleProvenance,
   phraseVoix,
 } from '@/fiche/apercu'
-import { apercuPourTerritoire, formaterNombreFR, programmesPourTerritoire } from '@/payload/selectors'
+import { apercuPourTerritoire, programmesPourTerritoire } from '@/payload/selectors'
 import type { Payload } from '@/payload/types'
 
 const props = defineProps<{
@@ -69,7 +70,7 @@ watch(() => props.territoire, () => {
 
 const partContexte = computed(() => element.value.subventions?.partContexte ?? null)
 const partContexteTexte = computed(() =>
-  partContexte.value === null ? null : `${formaterNombreFR(partContexte.value.part * 100, 1)} %`,
+  partContexte.value === null ? null : formaterPartContexte(partContexte.value.part),
 )
 
 const provenance = computed(() => element.value.subventions?.provenance ?? null)

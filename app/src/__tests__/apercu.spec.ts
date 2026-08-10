@@ -4,6 +4,7 @@ import {
   LIEN_SUBVENTIONS,
   NOMS_PROGRAMMES,
   formaterMontant,
+  formaterPartContexte,
   formaterValeurApercu,
   libelleApercu,
   libelleBadge,
@@ -213,5 +214,14 @@ describe('formaterMontant — les figures de subventions en euros', () => {
   it('arrondit le million au centime près', () => {
     expect(formaterMontant(1999999)).toBe('2,00 M€')
     expect(formaterMontant(1234567)).toBe('1,23 M€')
+  })
+})
+
+describe('formaterPartContexte — la part de contexte de la fiche (issue #305)', () => {
+  it('formate une part en « X,YY % » — DEUX décimales, jamais tronquées', () => {
+    expect(formaterPartContexte(162000 / 172000)).toBe('94,19 %')
+    expect(formaterPartContexte(45000 / 2000000)).toBe('2,25 %')
+    expect(formaterPartContexte(300000 / 2000000)).toBe('15,00 %')
+    expect(formaterPartContexte(45000 / 45000)).toBe('100,00 %')
   })
 })
