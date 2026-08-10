@@ -21,8 +21,9 @@
 #     « montant total de la subvention attribuée ») — jamais un montant par
 #     versement ;
 #   - niveau COMMUNE : le total annuel ventilé par domaine (`programme_libl`),
-#     avec le garde-fou top-N + « autres » au-delà du seuil (~6 domaines — la
-#     médiane des communes-années est à 2 domaines) ;
+#     la ventilation COMPLÈTE publiée telle quelle (issue #305 — le pli
+#     d'affichage top-5 + révélation, l'ordre décroissant, le format M€ et la
+#     part de contexte sont l'affaire de l'app, jamais du pipeline) ;
 #   - niveaux EPCI / département / région : un total annuel UNIQUE (une
 #     ventilation par domaine y est illisible — médiane 13 domaines par
 #     EPCI-année), agrégé depuis les montants attribués des communes membres
@@ -46,21 +47,6 @@
 # EXCLUE de tout agrégat — jamais montrée, jamais additionnée comme zéro (le
 # PRD #162, l'ADR-0013).
 MARQUEUR_MANQUANT_SUBVENTIONS <- "Non disponible"
-
-# SEUIL_AXES_SUBVENTIONS_COMMUNE ------------------------------------------------
-# Le garde-fou de lisibilité de la ventilation communale (PRD #162, user story
-# 5) : au-delà de ce nombre de domaines (`programme_libl`), la commune-année
-# s'effondre en top-N + « autres ». La médiane des communes-années est à 2
-# domaines ; le seuil est verrouillé à 6 — une commune-année à ≤ 6 domaines
-# est publiée telle quelle, au-delà seuls les 6 premiers restent nommés.
-SEUIL_AXES_SUBVENTIONS_COMMUNE <- 6L
-
-# LIBELLE_AUTRES_SUBVENTIONS ----------------------------------------------------
-# Le libellé de la ligne d'effondrement de la ventilation communale — le
-# « autres » du garde-fou top-N + « autres » de l'ADR-0013, la somme des
-# domaines restés sous le seuil (jamais une valeur inventée : la somme des
-# montants attribués des domaines non nommés).
-LIBELLE_AUTRES_SUBVENTIONS <- "« autres »"
 
 # LIBELLE_AXE_NON_RENSEIGNE -----------------------------------------------------
 # Une convention dont le domaine (`programme_libl`) est vide devient « Non
@@ -273,52 +259,24 @@ annee_reference_subventions <- function(annees) {
 
 # calculer_subventions_communes --------------------------------------------------
 # La ventilation communale : le total annuel de l'année de référence, par
-# domaine (`programme_libl`), avec le garde-fou top-N + « autres »
-# (SEUIL_AXES_SUBVENTIONS_COMMUNE). Une commune-année à ≤ 6 domaines est
-# publiée telle quelle ; au-delà, les 6 domaines aux montants les plus élevés
-# (égalités départagées par le libellé — déterministe) restent nommés et le
-# reste s'effondre dans UNE ligne « autres » (la somme des montants restés —
-# jamais un zéro, jamais une valeur inventée). Les lignes d'une commune
-# somment toujours au total annuel de la commune (la ventilation est exacte).
+# domaine (`programme_libl`), la ventilation COMPLÈTE publiée telle quelle
+# (issue #305). Chaque ligne (commune × domaine) porte la somme des montants
+# attribués de l'année — aucune sélection top-N, aucune ligne « autres » : le
+# pli d'affichage (top-5 + révélation, l'ordre décroissant, le format M€) est
+# l'affaire de l'app, jamais du pipeline. Les lignes d'une commune somment
+# toujours au total annuel de la commune (la ventilation est exacte). L'ordre
+# de publication est ALPHABÉTIQUE (commune, puis domaine) — stable et
+# déterministe ; ce n'est pas l'ordre d'affichage, que l'app décide.
 calculer_subventions_communes <- function(conventions) {
   # `annee_ref` — JAMAIS `annee` : la table porte une colonne `annee` et le
   # masquage de données de dplyr résoudrait le symbole nu à la COLONNE (le
   # filtre deviendrait toujours vrai). Le suffixe `_ref` lève l'ambiguïté.
   annee_ref <- annee_reference_subventions(conventions$annee)
-  par_domaine <- conventions %>%
+  conventions %>%
     dplyr::filter(.data$annee == !!annee_ref) %>%
     dplyr::group_by(.data$commune, .data$programme_libl) %>%
     dplyr::summarise(montant = sum(.data$montant), .groups = "drop") %>%
-    dplyr::mutate(annee = !!annee_ref)
-
-  # les lignes nommées : toutes les lignes sous le seuil, le top-N (par
-  # montant décroissant, libellé pour départager) au-dessus
-  lignes <- par_domaine %>%
-    dplyr::arrange(.data$commune, dplyr::desc(.data$montant),
-                   .data$programme_libl) %>%
-    dplyr::group_by(.data$commune) %>%
-    dplyr::mutate(n_domaines = dplyr::n()) %>%
-    dplyr::filter(.data$n_domaines <= SEUIL_AXES_SUBVENTIONS_COMMUNE |
-                    dplyr::row_number() <= SEUIL_AXES_SUBVENTIONS_COMMUNE) %>%
-    dplyr::select(-"n_domaines") %>%
-    dplyr::ungroup()
-
-  # la ligne « autres » : le reste des communes au-dessus du seuil
-  autres <- par_domaine %>%
-    dplyr::group_by(.data$commune) %>%
-    dplyr::mutate(n_domaines = dplyr::n()) %>%
-    dplyr::filter(.data$n_domaines > SEUIL_AXES_SUBVENTIONS_COMMUNE) %>%
-    dplyr::ungroup() %>%
-    dplyr::anti_join(lignes, by = c("commune", "programme_libl")) %>%
-    dplyr::group_by(.data$commune) %>%
-    dplyr::summarise(
-      annee = dplyr::first(.data$annee),
-      programme_libl = LIBELLE_AUTRES_SUBVENTIONS,
-      montant = sum(.data$montant),
-      .groups = "drop"
-    )
-
-  dplyr::bind_rows(lignes, autres) %>%
+    dplyr::mutate(annee = !!annee_ref) %>%
     dplyr::arrange(.data$commune, .data$programme_libl) %>%
     dplyr::select("commune", "annee", "programme_libl", "montant")
 }
@@ -401,8 +359,9 @@ estampiller_subventions <- function(table, vintages) {
 
 # construire_analytiques_subventions --------------------------------------------
 # LE seam de calcul du module : la table d'agrégats complète du payload
-# `programmes` (ADR-0013) — les lignes COMMUNALES (la ventilation par domaine,
-# top-N + « autres ») + les lignes des niveaux EPCI / département / région
+# `programmes` (ADR-0013) — les lignes COMMUNALES (la ventilation INTÉGRALE
+# par domaine — issue #305, le pli d'affichage est l'affaire de l'app) + les
+# lignes des niveaux EPCI / département / région
 # (le total annuel unique), toutes estampillées du vintage hebdomadaire. La
 # forme du contrat : territoire | type | annee | programme_libl | montant |
 # les quatre colonnes d'estampille. `conventions` est la table normalisée

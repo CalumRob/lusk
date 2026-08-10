@@ -1,74 +1,34 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-10T10:58:36Z",
+  "timestamp": "2026-08-10T14:06:14Z",
   "statuts": [
     {
-      "id": "epci",
+      "id": "acv",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "consoenaf",
+      "id": "pvd",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "serie_historique",
+      "id": "crte",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_22_2021",
+      "id": "territoires_industrie",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_22_2025",
+      "id": "ort",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_29_2021",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_29_2024",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_35_2020",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_35_2023",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_56_2022",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_56_2024",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_patch_correctif_22",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_patch_correctif_29",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_patch_correctif_56",
+      "id": "subventions_scdl",
       "mode": "cron",
       "status": "frais"
     }
