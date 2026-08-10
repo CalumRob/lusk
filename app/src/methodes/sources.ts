@@ -115,6 +115,31 @@ function sourcesOcsGe(): Record<string, SourceEditoriale> {
 }
 
 /**
+ * Les 3 patchs correctifs OCS-GE (22/29/56 — le 35 n'a pas de patch,
+ * amendement #243 d'ADR-0017) : l'outil de traçabilité officiel des anomalies
+ * du millésime M2, appliqué « au niveau matrice sur les polygones qui
+ * inversent le statut » (approximation documentée dans Méthodes). Le même
+ * produit OCS GE Géoplateforme que les archives d'état — mêmes faits
+ * éditoriaux, nom dédié.
+ */
+const PATCHS_OCSGE: Record<string, { nom: string; millesime: number }> = {
+  '22': { nom: 'Côtes-d\u2019Armor', millesime: 2021 },
+  '29': { nom: 'Finistère', millesime: 2021 },
+  '56': { nom: 'Morbihan', millesime: 2022 },
+}
+
+function sourcesOcsGePatches(): Record<string, SourceEditoriale> {
+  const sources: Record<string, SourceEditoriale> = {}
+  for (const [dep, { nom, millesime }] of Object.entries(PATCHS_OCSGE)) {
+    sources[`ocsge_patch_correctif_${dep}`] = {
+      ...SOURCE_OCSGE,
+      nom: `IGN — OCS GE « patch correctif » (Nouvelle Génération) — ${nom} (${dep}), millésime corrigé ${millesime}`,
+    }
+  }
+  return sources
+}
+
+/**
  * Le registre complet — une entrée par source, indexée par l'id exact de la
  * table vintages. Ordre du registre = ordre d'affichage de la table (les
  * thèmes groupés : démographie, habitat, économie).
@@ -285,4 +310,8 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // artificialisé (OCS GE Artificialisation v2.0, Licence Ouverte 2.0), la
   // référence officielle ZAN — le différentiel M2→M3 de chaque département.
   ...sourcesOcsGe(),
+  // Les TROIS patchs correctifs M2 (22/29/56, amendement #243) : des sources à
+  // part entière de la table vintages — l'entrée de registre par id, même forme
+  // que les archives d'état.
+  ...sourcesOcsGePatches(),
 }
