@@ -1,90 +1,61 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-09T15:22:28Z",
+  "timestamp": "2026-08-10T00:30:09Z",
   "statuts": [
     {
-      "id": "mobilite_snapshot",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "rp_logement_princ",
+      "id": "epci",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "osm_reseaux",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "amenagements_cyclables",
+      "id": "consoenaf",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "communes_limites",
+      "id": "serie_historique",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "korrigo",
+      "id": "ocsge_artificialisation_22_2021",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "batiments_residentiels",
-      "mode": "manuel",
-      "status": "frais"
-    },
-    {
-      "id": "bornes-recharges",
+      "id": "ocsge_artificialisation_22_2025",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "stationnement-velo",
+      "id": "ocsge_artificialisation_29_2021",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "cog_passage",
+      "id": "ocsge_artificialisation_29_2024",
       "mode": "cron",
       "status": "frais"
-    }
-  ],
-  "couverture": [
-    {
-      "departement": "22",
-      "lignes_actuel": 3651,
-      "km_actuel": 798.99909668954933,
-      "lignes_precedent": 3651,
-      "km_precedent": 798.99909668954933,
-      "regression": false
     },
     {
-      "departement": "29",
-      "lignes_actuel": 7408,
-      "km_actuel": 1297.963829307557,
-      "lignes_precedent": 7408,
-      "km_precedent": 1297.963829307557,
-      "regression": false
+      "id": "ocsge_artificialisation_35_2020",
+      "mode": "cron",
+      "status": "frais"
     },
     {
-      "departement": "35",
-      "lignes_actuel": 9699,
-      "km_actuel": 1420.8862050937166,
-      "lignes_precedent": 9699,
-      "km_precedent": 1420.8862050937166,
-      "regression": false
+      "id": "ocsge_artificialisation_35_2023",
+      "mode": "cron",
+      "status": "frais"
     },
     {
-      "departement": "56",
-      "lignes_actuel": 7039,
-      "km_actuel": 1395.3838890008069,
-      "lignes_precedent": 7039,
-      "km_precedent": 1395.3838890008069,
-      "regression": false
+      "id": "ocsge_artificialisation_56_2022",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_artificialisation_56_2024",
+      "mode": "cron",
+      "status": "frais"
     }
   ]
 }

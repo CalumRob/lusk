@@ -309,6 +309,21 @@ construire_donnees_milieux <- function(cache = "data/raw",
 # `archive`, ni un binaire 7-Zip) : le seam d'extraction
 # (extraire_gpkg_ocsge) est l'étape DOCUMENTÉE avant le lecteur, testée sur le
 # format zip que R sait écrire.
+#
+# PATCH CORRECTIF M2 (22/29/56 — amendement #243) : mesuré le 2026-08-09 sur
+# les trois patchs Géoplateforme « PATCHCORRECTIF » du millésime M2 (D022
+# 2021, D029 2021, D056 2022 — la couche PATCH_CORR_*, les colonnes cs_corr /
+# us_corr « RAS » = pas de correction) : ~20 % des polygones du patch
+# inversent le statut artif (22 : 2 001/10 187 = 19,6 %, 29 : 1 674/8 797 =
+# 19,0 %, 56 : 2 002/8 029 = 24,9 % — 97 % confirmés par la matrice majoritaire
+# de la couche d'état elle-même ; ~16 % / 29 % / 49 % de la surface du patch).
+# C'est MATÉRIEL (l'hypothèse « ~0 » de l'amendement ne tient pas) — la bascule
+# « au niveau matrice sur ces polygones » (le correctif cs/us -> artif, en
+# approximation documentée) est un SUIVI déclaré, pas un blocage du pivot :
+# l'impact au niveau communal est borné (~1-2 % de la surface artificialisée M2
+# des trois départements — la plupart des anomalies sont bien intra-classe ;
+# le 35 n'a pas de patch). Le présent run lit les états TELS QUE publiés par
+# l'IGN (jamais re-dérivés).
 
 # COUCHE_OCSGE_ARTIFICIALISATION ----------------------------------------------
 # Le MOTIF du nom de la couche dans le GPKG Géoplateforme du produit

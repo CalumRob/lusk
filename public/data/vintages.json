@@ -1,5 +1,93 @@
 [
   {
+    "id": "epci",
+    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": null
+  },
+  {
+    "id": "consoenaf",
+    "source": "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-07-24"
+  },
+  {
+    "id": "serie_historique",
+    "source": "INSEE — Série historique du recensement",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "ocsge_artificialisation_22_2021",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Côtes-d'Armor (22), millésime 2021",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-01-01",
+    "date_publication": "2025-09-12"
+  },
+  {
+    "id": "ocsge_artificialisation_22_2025",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Côtes-d'Armor (22), millésime 2025",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-07-03"
+  },
+  {
+    "id": "ocsge_artificialisation_29_2021",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Finistère (29), millésime 2021",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-01-01",
+    "date_publication": "2025-03-07"
+  },
+  {
+    "id": "ocsge_artificialisation_29_2024",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Finistère (29), millésime 2024",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-01-01",
+    "date_publication": "2026-06-12"
+  },
+  {
+    "id": "ocsge_artificialisation_35_2020",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Ille-et-Vilaine (35), millésime 2020",
+    "version": "2020",
+    "licence": "lov2",
+    "date_reference": "2020-01-01",
+    "date_publication": "2026-03-03"
+  },
+  {
+    "id": "ocsge_artificialisation_35_2023",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Ille-et-Vilaine (35), millésime 2023",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-03-04"
+  },
+  {
+    "id": "ocsge_artificialisation_56_2022",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Morbihan (56), millésime 2022",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-01-01",
+    "date_publication": "2025-03-07"
+  },
+  {
+    "id": "ocsge_artificialisation_56_2024",
+    "source": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Morbihan (56), millésime 2024",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-01-01",
+    "date_publication": "2026-06-10"
+  },
+  {
     "id": "mobilite_snapshot",
     "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
     "version": "2026-02",
@@ -80,14 +168,6 @@
     "date_publication": "2026-05-06"
   },
   {
-    "id": "serie_historique",
-    "source": "INSEE — Série historique du recensement",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-06-30"
-  },
-  {
     "id": "menages",
     "source": "INSEE — Ménages (dossier complet)",
     "version": "2023",
@@ -102,54 +182,6 @@
     "licence": "lov2",
     "date_reference": "2023-01-01",
     "date_publication": "2026-06-30"
-  },
-  {
-    "id": "epci",
-    "source": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": null
-  },
-  {
-    "id": "consoenaf",
-    "source": "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers)",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": "2026-07-24"
-  },
-  {
-    "id": "ocsge_artificialisation_22",
-    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2025 — Côtes-d'Armor (22)",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": "2026-07-03"
-  },
-  {
-    "id": "ocsge_artificialisation_29",
-    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2021-2024 — Finistère (29)",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-01-01",
-    "date_publication": "2026-06-12"
-  },
-  {
-    "id": "ocsge_artificialisation_35",
-    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2020-2023 — Ille-et-Vilaine (35)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-03-03"
-  },
-  {
-    "id": "ocsge_artificialisation_56",
-    "source": "IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération) — différentiel 2022-2024 — Morbihan (56)",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-01-01",
-    "date_publication": "2026-06-08"
   },
   {
     "id": "acv",
