@@ -127,14 +127,25 @@ squelette_territoires <- function(communes, poids = "population") {
 }
 
 # compute_ranks ---------------------------------------------------------------
-# Les rangs-en-contexte : le percentile d'une valeur au sein de son groupe de
-# comparaison. Règle documentée (Méthodes) : part strictement inférieure +
-# moitié des ex æquo (autres que soi), sur le total du groupe — symétrique
-# pour les égalités ; un groupe à un seul membre donne 0. Point 2 : les
-# valeurs NA (commune sans population_1968, etc.) sont exclues du dénominateur
-# du groupe — elles n'empoisonnent pas les rangs des autres — et le territoire
-# NA lui-même n'a pas de rang (NA).
-percentile_par_groupe <- function(valeurs, groupes) {
+# Les rangs-en-contexte : la position ORDINALE directionnelle d'une valeur au
+# sein de son groupe de comparaison (ADR-0015, ADR-0021) — « Xᵉ / Y dans
+# l'EPCI » (1er/41 · 4e/8), la taille du groupe toujours portée. 1 = meilleur :
+# chaque indicateur déclare sa direction (low-is-good — iso_*, part de
+# passoires, chômage — la plus petite valeur est la meilleure ; high-is-good
+# par défaut, la plus grande). Ex æquo : rang partagé, rang suivant sauté
+# (1, 1, 3 — competition ranking). Point 2 : les valeurs NA (commune sans
+# population_1968, etc.) sont exclues du dénominateur du groupe — elles
+# n'empoisonnent pas les rangs des autres — et le territoire NA lui-même n'a
+# pas de rang (NA).
+rang_ordinal_par_groupe <- function(valeurs, groupes, direction = "high") {
+  direction <- match.arg(direction, c("high", "low"))
+  meilleures <- function(i, membres) {
+    if (direction == "low") {
+      sum(membres & valeurs < valeurs[i])
+    } else {
+      sum(membres & valeurs > valeurs[i])
+    }
+  }
   vapply(seq_along(valeurs), function(i) {
     g <- groupes[i]
     if (is.na(g)) return(NA_real_)
@@ -143,30 +154,50 @@ percentile_par_groupe <- function(valeurs, groupes) {
     n <- sum(membres)
     if (n == 0) return(NA_real_)
     if (is.na(valeurs[i])) return(NA_real_)
-    ex_aequo_autres <- sum(membres & valeurs == valeurs[i]) - 1
-    (sum(membres & valeurs < valeurs[i]) + 0.5 * ex_aequo_autres) / n
+    # 1 = meilleur : 1 + le nombre de valeurs STRICTEMENT meilleures — les
+    # ex æquo partagent le rang, le rang suivant saute (1, 1, 3)
+    meilleures(i, membres) + 1
   }, numeric(1))
 }
 
-# Le groupe de comparaison dépend du type de territoire (communes vs EPCIs
-# ne se comparent jamais entre eux) :
-#   commune      -> EPCI (ses communes), département (ses communes), région
-#   EPCI         -> département (ses EPCIs), région (toutes EPCIs)
-#   département  -> région (les départements)
-#   région       -> aucun rang
+# taille_groupe ---------------------------------------------------------------
+# La taille du groupe de comparaison (le dénominateur des rangs — les membres
+# non-NA), portée dans le payload pour que l'app affiche TOUJOURS « Xᵉ / Y »
+# (ADR-0015 : la taille du groupe ne se cache jamais). NA quand le territoire
+# n'a pas de groupe à ce niveau ou pas de valeur (pas de rang, pas de taille).
+taille_groupe <- function(valeurs, groupes) {
+  vapply(seq_along(valeurs), function(i) {
+    g <- groupes[i]
+    if (is.na(g)) return(NA_real_)
+    if (is.na(valeurs[i])) return(NA_real_)
+    n <- sum(!is.na(groupes) & groupes == g & !is.na(valeurs))
+    if (n == 0) return(NA_real_)
+    n
+  }, numeric(1))
+}
+
+# Le groupe de comparaison du produit (ADR-0021) — UN SEUL groupe par type de
+# territoire, le plus pertinent pour la lecture :
+#   commune avec EPCI  -> les communes de SON EPCI (le groupe de proximité —
+#                         là où vivent les leviers de politique publique)
+#   commune sans EPCI  -> les communes de la région (le repli honnête)
+#   EPCI               -> TOUS les EPCIs bretons (le groupe régional stable)
+#   département        -> les départements (le groupe régional)
+#   région             -> aucun rang
+# Plus AUCUN groupe au niveau département (ADR-0021 : les EPCIs se comparent
+# régionalement, les communes dans leur EPCI ou la région) — la colonne
+# rang_dep reste dans le contrat, vide.
 groupes_comparaison <- function(territoires) {
   groupe_epci <- rep(NA_character_, nrow(territoires))
   est_commune <- territoires$type == "commune"
-  groupe_epci[est_commune] <- territoires$epci[est_commune]
+  avec_epci <- est_commune & !is.na(territoires$epci)
+  groupe_epci[avec_epci] <- territoires$epci[avec_epci]
 
   groupe_dep <- rep(NA_character_, nrow(territoires))
-  est_epci <- territoires$type == "epci"
-  groupe_dep[est_commune] <- paste0("commune|", territoires$departement[est_commune])
-  groupe_dep[est_epci] <- paste0("epci|", territoires$departement[est_epci])
 
   groupe_reg <- rep(NA_character_, nrow(territoires))
-  groupe_reg[est_commune] <- "communes"
-  groupe_reg[est_epci] <- "epcis"
+  groupe_reg[est_commune & !avec_epci] <- "communes"
+  groupe_reg[territoires$type == "epci"] <- "epcis"
   groupe_reg[territoires$type == "departement"] <- "departements"
 
   list(epci = groupe_epci, dep = groupe_dep, reg = groupe_reg)
@@ -176,7 +207,11 @@ groupes_comparaison <- function(territoires) {
 # sauf pour les indicateurs multi-valeurs du thème, qui déclarent leur scalaire
 # (issue #13 — `scalaires` : une liste nommée de fonctions, fournie par le
 # module du thème ; ex. structure_age classée par la part des moins de 20 ans).
-compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
+# `directions` : la déclaration par clé de la désirabilité (ADR-0015) — une
+# liste nommée clé -> "low" (la plus petite valeur est la meilleure : iso_*,
+# part de passoires, chômage) ; une clé non déclarée est high-is-good.
+compute_ranks <- function(territoires, indicateurs, scalaires = list(),
+                          directions = list()) {
   groupes <- groupes_comparaison(territoires)
 
   lapply(names(indicateurs), function(cle) {
@@ -186,12 +221,16 @@ compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
     } else {
       tab$value
     }
+    direction <- if (!is.null(directions[[cle]])) directions[[cle]] else "high"
     tibble::tibble(
       code = unique(tab$code),
       key = cle,
-      rang_epci = percentile_par_groupe(scalaire, groupes$epci),
-      rang_dep = percentile_par_groupe(scalaire, groupes$dep),
-      rang_reg = percentile_par_groupe(scalaire, groupes$reg)
+      rang_epci = rang_ordinal_par_groupe(scalaire, groupes$epci, direction),
+      rang_epci_n = taille_groupe(scalaire, groupes$epci),
+      rang_dep = rang_ordinal_par_groupe(scalaire, groupes$dep, direction),
+      rang_dep_n = taille_groupe(scalaire, groupes$dep),
+      rang_reg = rang_ordinal_par_groupe(scalaire, groupes$reg, direction),
+      rang_reg_n = taille_groupe(scalaire, groupes$reg)
     )
   }) %>% stats::setNames(names(indicateurs))
 }
@@ -290,6 +329,7 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
     dplyr::select(dplyr::any_of(c(
       "territoire", "type", "theme", "key", "detail", "value", "unit",
       "rang_epci", "rang_dep", "rang_reg",
+      "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
       "vintage_date_reference", "vintage_date_publication",
       "source_reference",
@@ -402,10 +442,35 @@ validate_payload <- function(payload,
          paste(mal, collapse = ", "), ".", call. = FALSE)
   }
 
-  # 3. les rangs vivent dans [0, 1] (NA = groupe de comparaison absent)
-  rangs <- unlist(ind[c("rang_epci", "rang_dep", "rang_reg")])
-  if (any(!is.na(rangs) & (rangs < 0 | rangs > 1))) {
-    stop("Payload invalide : un rang sort de [0, 1].", call. = FALSE)
+  # 3. les rangs sont des ORDINAUX directionnels (ADR-0015) : un entier >= 1
+  # (1 = meilleur), jamais une fraction ni un percentile — et chaque rang porte
+  # la taille de SON groupe (rang_*_n), les deux présents ou absents ensemble
+  # (NA = pas de groupe de comparaison à ce niveau). Un rang ne dépasse jamais
+  # la taille de son groupe (competition ranking : 1 + les strictement
+  # meilleurs <= n).
+  rangs <- ind[c("rang_epci", "rang_dep", "rang_reg")]
+  tailles <- ind[c("rang_epci_n", "rang_dep_n", "rang_reg_n")]
+  for (colonne in names(rangs)) {
+    position <- rangs[[colonne]]
+    taille <- tailles[[paste0(colonne, "_n")]]
+    non_na <- !is.na(position)
+    if (any(non_na & (position < 1 | position != floor(position)))) {
+      stop("Payload invalide : un rang sort de l'ordinal (entier >= 1, ",
+           "1 = meilleur) — jamais une fraction — colonne ", colonne, ".",
+           call. = FALSE)
+    }
+    if (any(!is.na(taille) & (taille < 1 | taille != floor(taille)))) {
+      stop("Payload invalide : une taille de groupe sort de l'entier >= 1 — ",
+           "colonne ", colonne, "_n.", call. = FALSE)
+    }
+    if (any(non_na & (is.na(taille) | position > taille))) {
+      stop("Payload invalide : un rang dépasse la taille de son groupe — ",
+           "colonne ", colonne, ".", call. = FALSE)
+    }
+    if (any(is.na(position) & !is.na(taille))) {
+      stop("Payload invalide : une taille de groupe sans rang — ",
+           "colonne ", colonne, "_n.", call. = FALSE)
+    }
   }
 
   # 4. les estampilles égalent le vintage de la source de référence (issue
@@ -579,7 +644,8 @@ compute_payload <- function(data, theme = theme_demographie(),
                             vintages = NULL) {
   territoires <- theme$construire_territoires(data)
   indicateurs <- theme$construire_indicateurs(territoires)
-  rangs <- compute_ranks(territoires, indicateurs, scalaires = theme$scalaires)
+  rangs <- compute_ranks(territoires, indicateurs, scalaires = theme$scalaires,
+                         directions = theme$directions)
 
   if (is.null(vintages)) vintages <- theme$vintages()
 

@@ -2,27 +2,31 @@
 # Les rangs-en-contexte des indicateurs analytiques du thème Économie/Emploi
 # (plan economie-analytical-phase, todo 6 / T6) : pour chaque indicateur publié
 # (LQ T1, LQ d'emploi T2, score vert T3, chômage T5), les rangs
-# rang_epci / rang_dep / rang_reg en fractions dans [0, 1].
+# rang_epci / rang_dep / rang_reg en ORDINAUX directionnels « Xᵉ / Y »
+# (ADR-0015) — 1 = meilleur, la taille du groupe portée à côté du rang.
 #
 # La MACHINERIE PARTAGÉE des rangs (compute.R) est RÉUTILISÉE telle quelle —
 # jamais re-forkée :
 #   - `groupes_comparaison()` construit les groupes de comparaison (une commune
-#     se compare aux communes de son EPCI, de son département, de la région) ;
-#   - `percentile_par_groupe()` calcule le percentile de chaque valeur dans son
-#     groupe (part strictement inférieure + moitié des ex æquo ; les valeurs NA
-#     exclues du dénominateur — point 2).
+#     se compare aux communes de son EPCI — ou aux communes de la région sans
+#     EPCI ; une EPCI à tous les EPCIs bretons ; ADR-0021) ;
+#   - `rang_ordinal_par_groupe()` calcule la position de chaque valeur dans son
+#     groupe (1 = meilleur, direction-aware — le chômage est low-is-good, la LQ
+#     et la part verte high-is-good ; les valeurs NA exclues du dénominateur —
+#     point 2) ;
+#   - `taille_groupe()` porte la taille du groupe (le « / Y » du rendu).
 # Les règles NA du contrat (CONTEXT.md « Rang ») sont donc celles de la
 # machinerie partagée, vérifiées par les tests : la région ne se classe nulle
-# part ; une EPCI ne se classe que dans son département (de pluralité) et la
-# région ; une valeur NA n'a pas de rang et n'empoisonne pas son groupe.
+# part ; une EPCI ne se classe que dans la région ; une valeur NA n'a pas de
+# rang et n'empoisonne pas son groupe.
 #
 # Deux formes de tables analytiques :
 #   - une valeur par commune (score vert, chômage) : la commune est classée
-#     dans son EPCI / département / région ;
+#     dans son EPCI / la région ;
 #   - une valeur par cellule commune × activité (LQ, LQ d'emploi) : la cellule
 #     est classée dans (activité × groupe de comparaison) — une LQ de
 #     l'agriculture ne se compare qu'aux LQ de l'agriculture, jamais à une LQ
-#     du commerce. `percentile_par_groupe` étant quadratique sur le nombre de
+#     du commerce. `rang_ordinal_par_groupe` étant quadratique sur le nombre de
 #     valeurs, l'application se fait activité par activité : le groupe d'une
 #     cellule ne contenant que sa propre activité, les deux calculs sont
 #     identiques, le second est seul faisable sur les 135 784 cellules réelles.
@@ -40,14 +44,18 @@
 # dortoir) ne sont pas des indicateurs.
 
 # attacher_rangs_analytiques ---------------------------------------------------
-# Le cœur : attache rang_epci / rang_dep / rang_reg à une table analytique
-# communale. `valeur` nomme la colonne classée ; `par_activite` nomme (si la
-# table est commune × activité) la colonne d'activité — la cellule est alors
-# classée dans (activité × groupe). La base des EPCI (la forme de lire_epci :
-# CODGEO / LIBGEO / EPCI / LIBEPCI / DEP / REG) fournit l'EPCI et le département
-# de chaque commune. Déterministe : même entrée → mêmes rangs, pour toujours.
+# Le cœur : attache rang_epci / rang_dep / rang_reg (et leurs tailles) à une
+# table analytique communale. `valeur` nomme la colonne classée ;
+# `par_activite` nomme (si la table est commune × activité) la colonne
+# d'activité — la cellule est alors classée dans (activité × groupe) ;
+# `direction` nomme la désirabilité de la colonne classée (ADR-0015 — "low"
+# pour le chômage : la plus petite valeur est la meilleure). La base des EPCI
+# (la forme de lire_epci : CODGEO / LIBGEO / EPCI / LIBEPCI / DEP / REG)
+# fournit l'EPCI et le département de chaque commune. Déterministe : même
+# entrée → mêmes rangs, pour toujours.
 attacher_rangs_analytiques <- function(table, base_epci, valeur,
-                                       par_activite = NULL) {
+                                       par_activite = NULL,
+                                       direction = "high") {
   requises <- c("commune", valeur, par_activite)
   manquantes <- setdiff(requises, names(table))
   if (length(manquantes) > 0) {
@@ -65,8 +73,7 @@ attacher_rangs_analytiques <- function(table, base_epci, valeur,
   # une commune ABSENTE de la base (aucune ligne → DEP NA après la jointure)
   # est une ERREUR (jamais un rang NA silencieux). Une commune PRÉSENTE mais
   # sans EPCI (les îles — fix « Sans objet », issue #131 : EPCI = NA dans la
-  # base) est LÉGITIME : son rang_epci est NA, elle garde ses rangs de
-  # département et de région.
+  # base) est LÉGITIME : son rang_epci est NA, elle garde son rang de région.
   absentes <- unique(contexte$commune[is.na(contexte$DEP)])
   if (length(absentes) > 0) {
     stop("Rangs économie — commune absente de la base des EPCI (jamais un rang ",
@@ -81,33 +88,49 @@ attacher_rangs_analytiques <- function(table, base_epci, valeur,
     departement = contexte$DEP
   ))
 
-  # le percentile partagé, appliqué activité par activité pour les tables
+  # l'ordinal partagé, appliqué activité par activité pour les tables
   # commune × activité (le groupe d'une cellule ne contient que sa propre
   # activité : le calcul est identique, seul le coût change)
   classer <- function(groupe) {
     if (is.null(par_activite)) {
-      return(percentile_par_groupe(contexte[[valeur]], groupe))
+      return(rang_ordinal_par_groupe(contexte[[valeur]], groupe, direction))
     }
     activites <- contexte[[par_activite]]
     rangs <- numeric(nrow(contexte))
     for (a in unique(activites)) {
       idx <- which(activites == a)
-      rangs[idx] <- percentile_par_groupe(contexte[[valeur]][idx], groupe[idx])
+      rangs[idx] <- rang_ordinal_par_groupe(contexte[[valeur]][idx],
+                                            groupe[idx], direction)
     }
     rangs
+  }
+  taille <- function(groupe) {
+    if (is.null(par_activite)) {
+      return(taille_groupe(contexte[[valeur]], groupe))
+    }
+    activites <- contexte[[par_activite]]
+    tailles <- numeric(nrow(contexte))
+    for (a in unique(activites)) {
+      idx <- which(activites == a)
+      tailles[idx] <- taille_groupe(contexte[[valeur]][idx], groupe[idx])
+    }
+    tailles
   }
 
   table %>%
     dplyr::mutate(
       rang_epci = classer(groupes$epci),
+      rang_epci_n = taille(groupes$epci),
       rang_dep = classer(groupes$dep),
-      rang_reg = classer(groupes$reg)
+      rang_dep_n = taille(groupes$dep),
+      rang_reg = classer(groupes$reg),
+      rang_reg_n = taille(groupes$reg)
     )
 }
 
 # attacher_rangs_lq -------------------------------------------------------------
 # LQ continue (T1) : une cellule (commune × activité) classée dans
-# (activité × EPCI / département / région).
+# (activité × EPCI / région). High-is-good : la spécialisation, une LQ > 1.
 attacher_rangs_lq <- function(lq, base_epci) {
   attacher_rangs_analytiques(lq, base_epci, valeur = "lq",
                              par_activite = "activity_code")
@@ -122,19 +145,22 @@ attacher_rangs_lq_emploi <- function(lq_emploi, base_epci) {
 }
 
 # attacher_rangs_eco_activites --------------------------------------------------
-# Score vert (T3) : une part par commune, classée dans son EPCI / département /
-# région. La commune supprimée (part NA, plancher gate D) n'a pas de rang et
-# n'empoisonne pas son groupe (point 2).
+# Score vert (T3) : une part par commune, classée dans son EPCI / la région.
+# La commune supprimée (part NA, plancher gate D) n'a pas de rang et
+# n'empoisonne pas son groupe (point 2). High-is-good : plus d'éco-activités,
+# mieux.
 attacher_rangs_eco_activites <- function(eco, base_epci) {
   attacher_rangs_analytiques(eco, base_epci, valeur = "part_economie_verte")
 }
 
 # attacher_rangs_chomage --------------------------------------------------------
-# Chômage (T5) : un taux par commune, classé dans son EPCI / département /
-# région. La commune sans taux calculable (NA) n'a pas de rang et n'empoisonne
-# pas son groupe.
+# Chômage (T5) : un taux par commune, classé dans son EPCI / la région.
+# LOW-is-good (ADR-0015 — le chômage est nommé parmi les clés low) : la plus
+# petite valeur est la meilleure (1er). La commune sans taux calculable (NA)
+# n'a pas de rang et n'empoisonne pas son groupe.
 attacher_rangs_chomage <- function(chomage, base_epci) {
-  attacher_rangs_analytiques(chomage, base_epci, valeur = "taux_chomage")
+  attacher_rangs_analytiques(chomage, base_epci, valeur = "taux_chomage",
+                             direction = "low")
 }
 
 # construire_rangs_analytiques_economie -----------------------------------------

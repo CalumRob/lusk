@@ -624,6 +624,17 @@ theme_habitat <- function() {
     construire_indicateurs = construire_indicateurs_habitat,
     construire_apercu = construire_apercu_habitat,
     scalaires = scalaires_habitat,
+    # la désirabilité par clé (ADR-0015) : low-is-good — la part de passoires
+    # (l'indicateur de précarité énergétique), la distribution DPE (classée par
+    # la part F/G, le même fait) et le mix (classé par la part de secondaires —
+    # la tension logement, CONTEXT.md). Le prix (médiane poolée) et le
+    # statut/ancienneté/taille (part de locataires) restent high-is-good
+    # (défaut de la machinerie).
+    directions = list(
+      part_passoires = "low",
+      distribution_dpe = "low",
+      mix_logements = "low"
+    ),
     compute_histoires = compute_histoires_habitat,
     validations = validations_habitat
   )

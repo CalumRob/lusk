@@ -2,17 +2,19 @@
 # Les rangs-en-contexte des indicateurs analytiques du thème Économie/Emploi
 # (plan economie-analytical-phase, todo 6 / T6) : pour chaque indicateur publié
 # (LQ T1, LQ d'emploi T2, score vert T3, chômage T5), les rangs
-# rang_epci / rang_dep / rang_reg en fractions dans [0, 1] — via la MACHINERIE
-# PARTAGÉE des rangs (compute.R : groupes_comparaison + percentile_par_groupe,
-# jamais re-forkée).
+# rang_epci / rang_dep / rang_reg en ORDINAUX directionnels « Xᵉ / Y »
+# (ADR-0015) — 1 = meilleur, la taille du groupe portée à côté — via la
+# MACHINERIE PARTAGÉE des rangs (compute.R : groupes_comparaison +
+# rang_ordinal_par_groupe + taille_groupe, jamais re-forkée).
 #
-# Les règles du contrat (CONTEXT.md « Rang ») :
-#   - la valeur d'un territoire est classée dans SON groupe de comparaison
-#     (commune → EPCI / département / région) ; part strictement inférieure +
-#     moitié des ex æquo, les NA exclus du dénominateur (point 2) ;
+# Les règles du contrat (CONTEXT.md « Rang », ADR-0021) :
+#   - la valeur d'une commune est classée dans SON groupe de comparaison : les
+#     communes de son EPCI quand elle en a un, les communes de la région sinon
+#     (les îles) ; 1 = meilleur, direction-aware (le chômage est low-is-good,
+#     la LQ et le score vert high-is-good) ; les NA exclus du dénominateur
+#     (point 2) ;
 #   - NA = pas de groupe de comparaison à ce niveau : la région ne se classe
-#     nulle part, une EPCI trans-départementale ne se classe que dans son
-#     département (de pluralité) et la région ;
+#     nulle part, une EPCI ne se classe que parmi les EPCIs (rang_reg) ;
 #   - une valeur NA (commune sous le plancher) n'a pas de rang et n'empoisonne
 #     pas son groupe.
 #
@@ -24,15 +26,16 @@
 # Les trois îles bretonnes SANS EPCI (fix #131 : la référence n'a plus l'EPCI
 # fantôme « Sans objet » — la base INSEE les code « ZZZZZZZZZ ») : leurs
 # cellules portent rang_epci = NA (aucun groupe de comparaison à ce niveau),
-# jamais un rang inventé — elles gardent leurs rangs département/région.
+# jamais un rang inventé — elles se classent parmi les communes de la région
+# (le repli honnête, ADR-0021).
 ILES_BRETAGNE <- c("22016", "29083", "29155")
 
 # La base des EPCI du fixture ------------------------------------------------
 # La forme de lire_epci (CODGEO / LIBGEO / EPCI / LIBEPCI / DEP / REG) : les 4
 # communes du fixture Démographie (2 EPCIs, 2 départements) + une EPCI
 # TRANS-DÉPARTEMENTALE (200000004 « EPCI W » : 35002 dans le 35, 56001 dans le
-# 56) — le cas NA du contrat (une EPCI trans-départementale ne se classe que
-# dans son département et sa région).
+# 56) — le cas NA du contrat (une EPCI trans-départementale se classe parmi
+# les EPCIs, jamais dans un département).
 epci_rangs_mini <- tibble::tribble(
   ~CODGEO, ~LIBGEO, ~EPCI, ~LIBEPCI, ~DEP, ~REG,
   "22001", "Commune A1", "200000001", "EPCI X", "22", "53",
@@ -46,21 +49,18 @@ epci_rangs_mini <- tibble::tribble(
 
 # Le fixture LQ (commune × activité × lq), calculé à la main ------------------
 # Communes du fixture Démographie + 35001 seule dans son EPCI. Les valeurs sont
-# choisies pour que chaque rang se calcule à la main :
+# choisies pour que chaque rang se calcule à la main (high-is-good — une LQ
+# plus grande est une spécialisation plus forte) :
 #   EPCI X (22001, 22002) · EPCI Y (29001, 29002) · EPCI Z (35001 seule)
 #   activité « A » : 22001 = 1.0 · 22002 = 0.5 · 29001 = 2.0 · 29002 = 1.5 ·
 #                    35001 = 0.75
 #   activité « B » : 22001 = 0.5 · 22002 = 1.5 · 29001 = 1.0 · 29002 = 2.0 ·
 #                    35001 = 1.25
 # rangs de la cellule (commune × activité) dans (activité × groupe) :
-#   activité A, rang_epci : 22001 (1.0 > 0.5) = 0.5 · 22002 = 0 · 29001
-#     (2.0 > 1.5) = 0.5 · 29002 = 0 · 35001 (seule) = 0
-#   activité A, rang_reg (n = 5) : 22001 (1.0) → 2 dessous {0.5, 0.75} = 0.4 ·
-#     22002 (0.5) → 0 · 29001 (2.0) → 4/5 = 0.8 · 29002 (1.5) → 3/5 = 0.6 ·
-#     35001 (0.75) → 1/5 = 0.2
-#   activité B, rang_reg (n = 5) : 22001 (0.5) → 0 · 22002 (1.5) → 3/5 = 0.6 ·
-#     29001 (1.0) → 1/5 = 0.2 · 29002 (2.0) → 4/5 = 0.8 · 35001 (1.25) → 2/5 =
-#     0.4
+#   activité A, rang_epci : 22001 (1.0 > 0.5) = 1er/2 · 22002 = 2e/2 · 29001
+#     (2.0 > 1.5) = 1er/2 · 29002 = 2e/2 · 35001 (seule) = 1er/1
+#   activité B, rang_epci : 22002 (1.5 > 0.5) = 1er/2 · 22001 = 2e/2 · 29002
+#     (2.0 > 1.0) = 1er/2 · 29001 = 2e/2 · 35001 = 1er/1
 fixture_lq_rangs <- function() {
   tibble::tribble(
     ~commune, ~activity_code, ~activity_label, ~lq,
@@ -80,12 +80,11 @@ fixture_lq_rangs <- function() {
 # Le fixture score vert (commune × 1 part), calculé à la main ------------------
 # 35001 a une part NA (commune sous le plancher gate D → supprimée) : son rang
 # est NA et elle n'empoisonne pas son groupe. Les autres valeurs sont choisies
-# pour des rangs exacts :
+# pour des rangs exacts (high-is-good — plus d'éco-activités, mieux) :
 #   EPCI X {22001 = 0.8, 22002 = 0.5} · EPCI Y {29001 = 0.7, 29002 = 0.2} ·
 #   EPCI Z {35001 = NA}
-#   rang_epci : 22001 = 0.5 · 22002 = 0 · 29001 = 0.5 · 29002 = 0 · 35001 = NA
-#   rang_reg (n = 4 non-NA : {0.8, 0.5, 0.7, 0.2}) : 22001 = 3/4 = 0.75 ·
-#     22002 = 1/4 = 0.25 · 29001 = 2/4 = 0.5 · 29002 = 0 · 35001 = NA
+#   rang_epci : 22001 = 1er/2 · 22002 = 2e/2 · 29001 = 1er/2 · 29002 = 2e/2 ·
+#     35001 = NA
 fixture_vert_rangs <- function() {
   tibble::tribble(
     ~commune, ~departement, ~n_etablissements, ~n_eco, ~part_economie_verte,
@@ -99,11 +98,11 @@ fixture_vert_rangs <- function() {
 
 # Le fixture chômage (commune × 1 taux), calculé à la main ---------------------
 # 35001 a un taux NA (population active non positive → non calculable) : rang
-# NA, groupe non empoisonné. Les autres valeurs :
+# NA, groupe non empoisonné. LOW-is-good (ADR-0015 — le chômage est nommé
+# parmi les clés low) : la PLUS PETITE valeur est la meilleure.
 #   EPCI X {22001 = 0.2, 22002 = 0.1} · EPCI Y {29001 = 0.3, 29002 = 0.4}
-#   rang_epci : 22001 = 0.5 · 22002 = 0 · 29001 = 0 · 29002 = 0.5 · 35001 = NA
-#   rang_reg (n = 4 non-NA : {0.2, 0.1, 0.3, 0.4}) : 22001 = 1/4 = 0.25 ·
-#     22002 = 0 · 29001 = 2/4 = 0.5 · 29002 = 3/4 = 0.75 · 35001 = NA
+#   rang_epci : 22002 (0.1) = 1er/2 · 22001 (0.2) = 2e/2 · 29001 (0.3) = 1er/2
+#     · 29002 (0.4) = 2e/2 · 35001 = NA
 fixture_chomage_rangs <- function() {
   tibble::tribble(
     ~commune, ~departement, ~chomeurs, ~actifs_occupes, ~population_active,
@@ -128,37 +127,38 @@ chemin_epci_reel <- function() {
 
 # 1. LQ (T1) : une cellule est classée dans (activité × groupe) ---------------
 
-test_that("LQ : les rangs de la cellule (activité × EPCI / département / région)", {
+test_that("LQ : les rangs de la cellule (activité × EPCI)", {
   r <- attacher_rangs_lq(fixture_lq_rangs(), epci_rangs_mini)
 
-  # les colonnes de rang sont attachées à la table (jamais une table séparée)
+  # les colonnes de rang (et leurs tailles) sont attachées à la table
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(r)))
+  expect_true(all(c("rang_epci_n", "rang_dep_n", "rang_reg_n") %in% names(r)))
   expect_equal(nrow(r), 10)
 
   cellule <- function(commune, activite, col) {
     r[[col]][r$commune == commune & r$activity_code == activite]
   }
 
-  # activité A — rang_epci (dans l'EPCI, même activité)
-  expect_equal(cellule("22001", "A", "rang_epci"), 0.5)
-  expect_equal(cellule("22002", "A", "rang_epci"), 0)
-  expect_equal(cellule("29001", "A", "rang_epci"), 0.5)
-  expect_equal(cellule("29002", "A", "rang_epci"), 0)
-  expect_equal(cellule("35001", "A", "rang_epci"), 0) # seule dans son EPCI
+  # activité A — rang_epci (dans l'EPCI, même activité), high-is-good
+  expect_equal(cellule("22001", "A", "rang_epci"), 1)
+  expect_equal(cellule("22001", "A", "rang_epci_n"), 2)
+  expect_equal(cellule("22002", "A", "rang_epci"), 2)
+  expect_equal(cellule("29001", "A", "rang_epci"), 1)
+  expect_equal(cellule("29002", "A", "rang_epci"), 2)
+  expect_equal(cellule("35001", "A", "rang_epci"), 1) # seule dans son EPCI
+  expect_equal(cellule("35001", "A", "rang_epci_n"), 1)
 
-  # activité A — rang_reg (n = 5)
-  expect_equal(cellule("22001", "A", "rang_reg"), 0.4)
-  expect_equal(cellule("22002", "A", "rang_reg"), 0)
-  expect_equal(cellule("29001", "A", "rang_reg"), 0.8)
-  expect_equal(cellule("29002", "A", "rang_reg"), 0.6)
-  expect_equal(cellule("35001", "A", "rang_reg"), 0.2)
+  # activité B — rang_epci
+  expect_equal(cellule("22001", "B", "rang_epci"), 2)
+  expect_equal(cellule("22002", "B", "rang_epci"), 1)
+  expect_equal(cellule("29001", "B", "rang_epci"), 2)
+  expect_equal(cellule("29002", "B", "rang_epci"), 1)
+  expect_equal(cellule("35001", "B", "rang_epci"), 1)
 
-  # activité B — rang_reg (n = 5)
-  expect_equal(cellule("22001", "B", "rang_reg"), 0)
-  expect_equal(cellule("22002", "B", "rang_reg"), 0.6)
-  expect_equal(cellule("29001", "B", "rang_reg"), 0.2)
-  expect_equal(cellule("29002", "B", "rang_reg"), 0.8)
-  expect_equal(cellule("35001", "B", "rang_reg"), 0.4)
+  # une commune avec EPCI ne se classe PLUS dans la région (ADR-0021) : la
+  # comparaison régionale n'existe que pour les communes sans EPCI
+  expect_true(is.na(cellule("22001", "A", "rang_reg")))
+  expect_true(is.na(cellule("29002", "B", "rang_dep")))
 })
 
 test_that("LQ : le rang d'une cellule ignore les autres activités de sa commune", {
@@ -167,14 +167,17 @@ test_that("LQ : le rang d'une cellule ignore les autres activités de sa commune
   # 29002 a une LQ de 2.0 dans l'activité B et de 1.5 dans l'activité A : si
   # l'activité était ignorée, la cellule B (2.0) serait classée contre les
   # valeurs de toutes les activités ; dans (activité × groupe), la cellule A de
-  # 29002 (1.5) n'est pas comptée parmi les « dessous » de la cellule B
-  # (2.0) — le rang_reg de 29002×B reste 4/5 = 0.8, jamais 5/5 = 1.
+  # 29002 (1.5) n'est pas comptée parmi les « inférieures » de la cellule B
+  # (2.0) — 29002×B reste 1er/2, jamais 1er/3.
   expect_equal(
-    r$rang_reg[r$commune == "29002" & r$activity_code == "B"], 0.8
+    r$rang_epci[r$commune == "29002" & r$activity_code == "B"], 1
+  )
+  expect_equal(
+    r$rang_epci_n[r$commune == "29002" & r$activity_code == "B"], 2
   )
   # miroir : 22001×A (1.0) n'est pas classée contre 22001×B (0.5)
   expect_equal(
-    r$rang_reg[r$commune == "22001" & r$activity_code == "A"], 0.4
+    r$rang_epci[r$commune == "22001" & r$activity_code == "A"], 1
   )
 })
 
@@ -201,17 +204,11 @@ test_that("score vert : les rangs de la part, la commune supprimée n'a pas de r
 
   rang <- function(commune, col) r[[col]][r$commune == commune]
 
-  # rang_epci : dans l'EPCI, parmi les communes à part définie
-  expect_equal(rang("22001", "rang_epci"), 0.5)
-  expect_equal(rang("22002", "rang_epci"), 0)
-  expect_equal(rang("29001", "rang_epci"), 0.5)
-  expect_equal(rang("29002", "rang_epci"), 0)
-
-  # rang_reg (n = 4 non-NA)
-  expect_equal(rang("22001", "rang_reg"), 0.75)
-  expect_equal(rang("22002", "rang_reg"), 0.25)
-  expect_equal(rang("29001", "rang_reg"), 0.5)
-  expect_equal(rang("29002", "rang_reg"), 0)
+  # rang_epci : dans l'EPCI, parmi les communes à part définie (high-is-good)
+  expect_equal(rang("22001", "rang_epci"), 1)
+  expect_equal(rang("22002", "rang_epci"), 2)
+  expect_equal(rang("29001", "rang_epci"), 1)
+  expect_equal(rang("29002", "rang_epci"), 2)
 
   # la commune supprimée (part NA) n'a pas de rang — et les autres gardent les
   # leurs (le dénominateur exclut les NA, point 2)
@@ -222,7 +219,7 @@ test_that("score vert : les rangs de la part, la commune supprimée n'a pas de r
 
 # 4. Chômage (T5) : une valeur par commune ------------------------------------
 
-test_that("chômage : les rangs du taux, la commune sans taux n'a pas de rang", {
+test_that("chômage : les rangs du taux (low-is-good), la commune sans taux n'a pas de rang", {
   r <- attacher_rangs_chomage(fixture_chomage_rangs(), epci_rangs_mini)
 
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(r)))
@@ -230,15 +227,13 @@ test_that("chômage : les rangs du taux, la commune sans taux n'a pas de rang", 
 
   rang <- function(commune, col) r[[col]][r$commune == commune]
 
-  expect_equal(rang("22001", "rang_epci"), 0.5)
-  expect_equal(rang("22002", "rang_epci"), 0)
-  expect_equal(rang("29001", "rang_epci"), 0)
-  expect_equal(rang("29002", "rang_epci"), 0.5)
-
-  expect_equal(rang("22001", "rang_reg"), 0.25)
-  expect_equal(rang("22002", "rang_reg"), 0)
-  expect_equal(rang("29001", "rang_reg"), 0.5)
-  expect_equal(rang("29002", "rang_reg"), 0.75)
+  # LOW-is-good : la PLUS PETITE valeur est la meilleure (1re) — l'inversion
+  # par rapport au percentile direction-borgne est LE fait d'ADR-0015
+  expect_equal(rang("22002", "rang_epci"), 1)
+  expect_equal(rang("22002", "rang_epci_n"), 2)
+  expect_equal(rang("22001", "rang_epci"), 2)
+  expect_equal(rang("29001", "rang_epci"), 1)
+  expect_equal(rang("29002", "rang_epci"), 2)
 
   expect_true(is.na(rang("35001", "rang_epci")))
   expect_true(is.na(rang("35001", "rang_dep")))
@@ -287,26 +282,29 @@ test_that("la machinerie partagée : une EPCI trans-départementale et la régio
   expect_true(is.na(reg$rang_epci) & is.na(reg$rang_dep) & is.na(reg$rang_reg))
 
   # une EPCI ne se classe pas « dans son EPCI » ; l'EPCI W trans-départementale
-  # se classe dans SON département (de pluralité : 56) et la région
+  # se classe parmi TOUS les EPCIs bretons (rang_reg — ADR-0021, plus jamais
+  # dans son département)
   w <- rang("200000004")
   expect_true(is.na(w$rang_epci))
-  expect_false(is.na(w$rang_dep))
+  expect_true(is.na(w$rang_dep))
   expect_false(is.na(w$rang_reg))
 
-  # une EPCI mono-départementale : pareil (jamais de rang_epci)
+  # une EPCI mono-départementale : pareil (jamais de rang_epci, jamais de rang
+  # départemental)
   x <- rang("200000001")
   expect_true(is.na(x$rang_epci))
-  expect_false(is.na(x$rang_dep))
+  expect_true(is.na(x$rang_dep))
   expect_false(is.na(x$rang_reg))
 
-  # un département ne se classe que dans la région
+  # un département ne se classe que parmi les départements (rang_reg)
   dep56 <- rang("56")
   expect_true(is.na(dep56$rang_epci) & is.na(dep56$rang_dep))
   expect_false(is.na(dep56$rang_reg))
 
-  # les communes gardent leurs trois rangs
+  # une commune ne se classe que dans son EPCI (rang_dep/rang_reg NA)
   c1 <- rang("22001")
-  expect_false(any(is.na(c1[c("rang_epci", "rang_dep", "rang_reg")])))
+  expect_false(is.na(c1$rang_epci))
+  expect_true(is.na(c1$rang_dep) & is.na(c1$rang_reg))
 })
 
 # 6. Les gardes du contrat -----------------------------------------------------
@@ -321,12 +319,12 @@ test_that("une commune absente de la base des EPCI échoue bruyamment (jamais un
   )
 })
 
-test_that("une commune sans EPCI (île, PRÉSENTE dans la base) n'est pas une erreur : rang_epci NA, dép/région gardés (fix #131)", {
+test_that("une commune sans EPCI (île, PRÉSENTE dans la base) n'est pas une erreur : rang_epci NA, repli régional (fix #131, ADR-0021)", {
   # le fix « Sans objet » (issue #131) : la base des EPCI porte les trois îles
   # avec EPCI = NA (le « ZZZZZZZZZ » normalisé à la lecture) — la commune est
   # PRÉSENTE dans la base, elle n'appartient simplement à aucun EPCI. Son
-  # rang_epci est NA (pas de groupe à ce niveau), JAMAIS une erreur ; elle
-  # garde ses rangs département (ses communes) et région.
+  # rang_epci est NA (pas de groupe à ce niveau), JAMAIS une erreur ; elle se
+  # classe parmi les communes de la région (le repli honnête — rang_reg).
   base_avec_ile <- dplyr::bind_rows(
     epci_rangs_mini,
     tibble::tibble(CODGEO = "22016", LIBGEO = "Île-de-Bréhat",
@@ -341,15 +339,20 @@ test_that("une commune sans EPCI (île, PRÉSENTE dans la base) n'est pas une er
 
   r <- attacher_rangs_lq(lq, base_avec_ile)
   ile <- r[r$commune == "22016", ]
-  # aucun rang_epci (pas d'EPCI) ; les rangs département et région existent
+  # aucun rang_epci (pas d'EPCI) ; la cellule de l'île se classe parmi les
+  # communes de la région (rang_reg — le repli d'ADR-0021)
   expect_true(is.na(ile$rang_epci))
-  expect_false(is.na(ile$rang_dep))
+  expect_true(is.na(ile$rang_dep))
   expect_false(is.na(ile$rang_reg))
   # la cellule de l'île n'empoisonne pas le groupe de ses pairs : 22001×A
-  # garde son rang_reg 0,4 (n = 5 sans l'île... n = 6 avec, les valeurs
-  # changent — mais le rang reste un percentile valide dans [0,1])
-  expect_true(all(r$rang_reg[r$activity_code == "A"] >= 0 &
-                    r$rang_reg[r$activity_code == "A"] <= 1))
+  # garde son rang_epci 1er/2 (le groupe EPCI exclut l'île, qui n'en est pas
+  # membre)
+  expect_equal(
+    r$rang_epci[r$commune == "22001" & r$activity_code == "A"], 1
+  )
+  # les rangs portés sont des ordinaux (entiers >= 1) ou NA
+  rangs <- unlist(r[c("rang_epci", "rang_dep", "rang_reg")])
+  expect_true(all(is.na(rangs) | (rangs >= 1 & rangs == floor(rangs))))
 })
 
 test_that("déterminisme (ADR-0002) : même entrée → mêmes rangs, à l'identique", {
@@ -363,14 +366,16 @@ test_that("déterminisme (ADR-0002) : même entrée → mêmes rangs, à l'ident
   )
 })
 
-test_that("les rangs vivent dans [0, 1] sur les fixtures", {
+test_that("les rangs sont des ordinaux directionnels (entiers >= 1) ou NA sur les fixtures", {
   for (r in list(
     attacher_rangs_lq(fixture_lq_rangs(), epci_rangs_mini),
     attacher_rangs_eco_activites(fixture_vert_rangs(), epci_rangs_mini),
     attacher_rangs_chomage(fixture_chomage_rangs(), epci_rangs_mini)
   )) {
     rangs <- unlist(r[c("rang_epci", "rang_dep", "rang_reg")])
-    expect_true(all(is.na(rangs) | (rangs >= 0 & rangs <= 1)))
+    expect_true(all(is.na(rangs) | (rangs >= 1 & rangs == floor(rangs))))
+    tailles <- unlist(r[c("rang_epci_n", "rang_dep_n", "rang_reg_n")])
+    expect_true(all(is.na(tailles) | (tailles >= 1 & tailles == floor(tailles))))
   }
 })
 
@@ -413,7 +418,7 @@ test_that("construire_rangs_analytiques_economie attache et persiste les quatre 
 
 # 8. Le chemin de joie RÉEL ------------------------------------------------------
 
-test_that("données réelles : les rangs LQ sur les 1202 communes, dans [0, 1]", {
+test_that("données réelles : les rangs LQ sur les 1202 communes, ordinaux", {
   chemin <- chemin_reel_rangs("sirene_snapshot.rds")
   skip_sans_donnees_reelles(file.exists(chemin),
               "la vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
@@ -429,15 +434,19 @@ test_that("données réelles : les rangs LQ sur les 1202 communes, dans [0, 1]",
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(r)))
   # 1202 communes couvertes (0 suppression au plancher gate D)
   expect_equal(dplyr::n_distinct(r$commune), 1202)
-  # les rangs vivent dans [0, 1]. La SEULE exception : les trois îles sans EPCI
-  # (22016/29083/29155 — fix #131 : plus d'EPCI fantôme « Sans objet ») portent
+  # les rangs sont des ordinaux (entiers >= 1, 1 = meilleur) ou NA. La SEULE
+  # exception : les trois îles sans EPCI (22016/29083/29155 — fix #131) portent
   # rang_epci = NA (aucun groupe de comparaison à ce niveau), jamais un rang
-  # inventé — elles gardent leurs rangs département/région.
-  for (col in c("rang_dep", "rang_reg")) {
-    expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
+  # inventé — elles se classent parmi les communes de la région (le repli
+  # ADR-0021, rang_reg).
+  for (col in c("rang_reg")) {
+    expect_true(all(is.na(r[[col]]) | (r[[col]] >= 1 & r[[col]] == floor(r[[col]]))))
   }
-  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
-                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_true(all(is.na(r$rang_dep)))
+  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
+                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
+                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
+                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
   expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
   # déterministe
   expect_identical(r, attacher_rangs_lq(lq, base_epci))
@@ -454,15 +463,17 @@ test_that("données réelles : les rangs de la LQ d'emploi A88 sur les 1196 comm
 
   r <- attacher_rangs_lq_emploi(lq_emploi, base_epci)
 
-  # 1196 communes (1202 − 6 supprimées au plancher gate D), rangs dans [0, 1].
+  # 1196 communes (1202 − 6 supprimées au plancher gate D), rangs ordinaux.
   # Les îles sans EPCI (fix #131) retenues au plancher portent rang_epci = NA.
   expect_equal(dplyr::n_distinct(r$commune), 1196)
   expect_equal(nrow(r), nrow(lq_emploi))
-  for (col in c("rang_dep", "rang_reg")) {
-    expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
-  }
-  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
-                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_true(all(is.na(r$rang_dep)))
+  expect_true(all(is.na(r$rang_reg) |
+                    (r$rang_reg >= 1 & r$rang_reg == floor(r$rang_reg))))
+  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
+                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
+                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
+                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
   expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })
 
@@ -477,14 +488,16 @@ test_that("données réelles : les rangs du score vert sur les 1202 communes", {
 
   r <- attacher_rangs_eco_activites(eco, base_epci)
 
-  # 1202 communes, 0 suppression (min 10 établissements), rangs dans [0, 1].
+  # 1202 communes, 0 suppression (min 10 établissements), rangs ordinaux.
   # Les îles sans EPCI (fix #131) portent rang_epci = NA, jamais inventé.
   expect_equal(nrow(r), 1202)
-  for (col in c("rang_dep", "rang_reg")) {
-    expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
-  }
-  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
-                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_true(all(is.na(r$rang_dep)))
+  expect_true(all(is.na(r$rang_reg) |
+                    (r$rang_reg >= 1 & r$rang_reg == floor(r$rang_reg))))
+  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
+                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
+                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
+                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
   expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })
 
@@ -502,14 +515,17 @@ test_that("données réelles : les rangs du chômage sur les 1202 communes", {
 
   r <- attacher_rangs_chomage(chomage, base_epci)
 
-  # 1202 communes, une ligne par commune, rangs dans [0, 1]. Les îles sans
-  # EPCI (fix #131) portent rang_epci = NA, jamais inventé.
+  # 1202 communes, une ligne par commune, rangs ordinaux (le chômage est
+  # low-is-good : la plus petite valeur est 1re). Les îles sans EPCI (fix
+  # #131) portent rang_epci = NA, jamais inventé.
   expect_equal(nrow(r), 1202)
   expect_equal(anyDuplicated(r$commune), 0L)
-  for (col in c("rang_dep", "rang_reg")) {
-    expect_true(all(r[[col]] >= 0 & r[[col]] <= 1))
-  }
-  expect_true(all(r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 0 &
-                    r$rang_epci[!r$commune %in% ILES_BRETAGNE] <= 1))
+  expect_true(all(is.na(r$rang_dep)))
+  expect_true(all(is.na(r$rang_reg) |
+                    (r$rang_reg >= 1 & r$rang_reg == floor(r$rang_reg))))
+  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
+                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
+                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
+                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
   expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })

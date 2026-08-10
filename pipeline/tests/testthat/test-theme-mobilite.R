@@ -984,23 +984,26 @@ test_that("construire_rangs_isolation : les rangs-en-contexte via la machinerie 
 
   rangs <- construire_rangs_isolation(isolation, territoires)
 
-  # la forme : une ligne par (territoire × clé) avec les trois rangs
+  # la forme : une ligne par (territoire × clé) avec les trois rangs et leurs
+  # tailles
   expect_equal(nrow(rangs), 9 * 5)
-  expect_named(rangs, c("code", "key", "rang_epci", "rang_dep", "rang_reg"))
+  expect_named(rangs, c("code", "key", "rang_epci", "rang_epci_n",
+                        "rang_dep", "rang_dep_n",
+                        "rang_reg", "rang_reg_n"))
   lire <- function(code, key) rangs[rangs$code == code & rangs$key == key, ]
 
-  # iso_alimentation dans l'EPCI 200000001 (n = 2) : 22001 (0.1) n'a rien en
-  # dessous → 0 ; 22002 (0.4) a 22001 en dessous → 1/2 = 0.5 (le percentile
-  # partagé : part strictement inférieure + moitié des ex æquo, sur le TOTAL
-  # du groupe — la règle documentée de compute.R)
-  expect_equal(lire("22001", "iso_alimentation")$rang_epci, 0)
-  expect_equal(lire("22002", "iso_alimentation")$rang_epci, 0.5)
-  # rang régional des communes (n = 4 : 0.1, 0.4, 0.5, 0.2) : 22002 (0.4) a
-  # {0.1, 0.2} en dessous → 2/4 ; 29001 (0.5) a 3/4 en dessous
-  expect_equal(lire("22002", "iso_alimentation")$rang_reg, 0.5)
-  expect_equal(lire("29001", "iso_alimentation")$rang_reg, 0.75)
-  # les agrégats : un EPCI ne se classe que dans son département et la région ;
-  # la région ne se classe nulle part (NA)
+  # iso_alimentation dans l'EPCI 200000001 (n = 2) : 22001 (0.1) est la PLUS
+  # PETITE part -> 1re (low-is-good — moins de bâtiments sans accès, mieux) ;
+  # 22002 (0.4) -> 2e. La taille du groupe est portée (le « / Y » du rendu).
+  expect_equal(lire("22001", "iso_alimentation")$rang_epci, 1)
+  expect_equal(lire("22001", "iso_alimentation")$rang_epci_n, 2)
+  expect_equal(lire("22002", "iso_alimentation")$rang_epci, 2)
+  # une commune ne se classe que dans son EPCI (ADR-0021) : plus AUCUN rang
+  # régional pour les communes avec EPCI
+  expect_true(is.na(lire("22002", "iso_alimentation")$rang_reg))
+  expect_true(is.na(lire("29001", "iso_alimentation")$rang_reg))
+  # les agrégats : un EPCI ne se classe que dans la région ; la région ne se
+  # classe nulle part (NA)
   expect_equal(lire("200000001", "iso_alimentation")$rang_epci, NA_real_)
   expect_equal(lire("22", "iso_alimentation")$rang_epci, NA_real_)
   expect_equal(lire("53", "iso_alimentation")$rang_reg, NA_real_)
@@ -2207,12 +2210,24 @@ fixture_indicateurs_mobilite <- function() {
   ) %>%
     dplyr::mutate(value = 0.1 + 0.05 * match(code, codes))
 
-  # les rangs MOCKÉS : la forme longue (code, key, rang_epci/dep/reg) de
-  # isolation_rangs.rds — des fractions dans [0, 1]
+  # les rangs MOCKÉS : la forme longue (code, key, rang_epci/dep/reg et leurs
+  # tailles) de isolation_rangs.rds — des ORDINAUX directionnels (ADR-0015) :
+  # 1 = meilleur, la taille du groupe portée à côté ; une commune ne se classe
+  # que dans son EPCI (ADR-0021 — rang_dep/rang_reg NA), un EPCI ou un
+  # département dans la région, la région nulle part
   isolation_rangs <- isolation_territoires %>%
     dplyr::transmute(
       code = code, key = key,
-      rang_epci = 0.25, rang_dep = 0.5, rang_reg = 0.75
+      rang_epci = dplyr::if_else(code %in% c("22001", "22002", "29001", "29002"),
+                                 1, NA_real_),
+      rang_epci_n = dplyr::if_else(code %in% c("22001", "22002", "29001", "29002"),
+                                   2, NA_real_),
+      rang_dep = NA_real_,
+      rang_dep_n = NA_real_,
+      rang_reg = dplyr::if_else(code %in% c("200000001", "200000002", "22", "29"),
+                                1, NA_real_),
+      rang_reg_n = dplyr::if_else(code %in% c("200000001", "200000002", "22", "29"),
+                                  2, NA_real_)
     )
 
   # l'étage demande/réseaux (issue #139) et le sous-bloc (issue #140) : les
@@ -2308,10 +2323,12 @@ test_that("construire_indicateurs_mobilite : les douze clés, avec les 5 parts d
   rang <- function(code, key, col) {
     ind[[col]][ind$territoire == code & ind$key == key]
   }
-  expect_equal(rang("22001", "iso_alimentation", "rang_epci"), 0.25)
-  expect_equal(rang("22001", "iso_alimentation", "rang_dep"), 0.5)
-  expect_equal(rang("22001", "iso_alimentation", "rang_reg"), 0.75)
-  expect_equal(rang("53", "iso_banque", "rang_reg"), 0.75)
+  expect_equal(rang("22001", "iso_alimentation", "rang_epci"), 1)
+  expect_equal(rang("22001", "iso_alimentation", "rang_epci_n"), 2)
+  # une commune ne se classe que dans son EPCI (ADR-0021)
+  expect_true(is.na(rang("22001", "iso_alimentation", "rang_dep")))
+  expect_true(is.na(rang("22001", "iso_alimentation", "rang_reg")))
+  expect_true(is.na(rang("53", "iso_banque", "rang_reg")))
 
   # la figure « L'offre cyclable » (issue #231) : les valeurs MOCKÉES de
   # l'artefact offre_territoires, la multiplicité 5 et les RANGS PAR DÉTAIL

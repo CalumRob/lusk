@@ -563,6 +563,10 @@ theme_demographie <- function() {
     construire_indicateurs = construire_indicateurs_demographie,
     construire_apercu = construire_apercu_demographie,
     scalaires = scalaires_demographie,
+    # la désirabilité par clé (ADR-0015) : les quatre indicateurs Démographie
+    # sont high-is-good (la densité, la jeunesse, la croissance, la taille des
+    # ménages) — aucune clé "low" à déclarer, le défaut de la machinerie tient.
+    directions = list(),
     compute_histoires = compute_histoires_demographie,
     validations = validations_demographie
   )
