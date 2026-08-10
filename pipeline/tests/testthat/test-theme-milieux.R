@@ -100,7 +100,7 @@ test_that("construire_territoires_milieux : le squelette partagé — communes +
   )
 })
 
-test_that("vintages_milieux : la projection générique depuis le manifeste (les onze sources, OCS-GE compris, #234 amendé #243)", {
+test_that("vintages_milieux : la projection générique depuis le manifeste (les quatorze sources, OCS-GE compris, #234 amendé #243)", {
   v <- vintages_milieux()
 
   expect_equal(nrow(v), nrow(MANIFEST_MILIEUX))
@@ -112,7 +112,10 @@ test_that("vintages_milieux : la projection générique depuis le manifeste (les
                           "ocsge_artificialisation_35_2020",
                           "ocsge_artificialisation_35_2023",
                           "ocsge_artificialisation_56_2022",
-                          "ocsge_artificialisation_56_2024"))
+                          "ocsge_artificialisation_56_2024",
+                          "ocsge_patch_correctif_22",
+                          "ocsge_patch_correctif_29",
+                          "ocsge_patch_correctif_56"))
   conso <- v[v$id == "consoenaf", ]
   expect_equal(conso$version, "2025")
   expect_equal(conso$date_reference, "2025-01-01")
