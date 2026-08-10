@@ -271,22 +271,24 @@ function groupesMilieuxFigures() {
   return groupes.value.filter((g) => CLEFS_FIGURES_MILIEUX.includes(g.key))
 }
 
-// The Milieux story's sources, exhaustive (spec #225) : la série historique
-// (la population de la lecture — la règle de source d'ADR-0014) et les
-// vintages OCS-GE d'artificialisation (les états — la seconde force). Citées
-// depuis la table vintages — jamais inventées. TODO #243 : les ids
-// ocsge_artificialisation_* n'entrent dans la table qu'avec la régénération
-// réelle — la ligne cite ce que la table fournit aujourd'hui (la série
-// historique seule), et ré-assert les vintages OCS-GE dès qu'ils y sont.
+// The Milieux story's sources, exhaustive (spec #225, amendé #243) : la série
+// historique (la population de la lecture — la règle de source d'ADR-0014) et
+// les vintages OCS-GE d'état (les HUIT archives millésimées « surfaces
+// artificialisées » — la seconde force, le DIFF est sorti). Citées depuis la
+// table vintages — jamais inventées.
 const sourceHistoireMilieux = computed(() => {
   const vintages = props.payload.vintages
   if (!vintages) return null
   const ids = new Set([
     'serie_historique',
-    'ocsge_artificialisation_22',
-    'ocsge_artificialisation_29',
-    'ocsge_artificialisation_35',
-    'ocsge_artificialisation_56',
+    'ocsge_artificialisation_22_2021',
+    'ocsge_artificialisation_22_2025',
+    'ocsge_artificialisation_29_2021',
+    'ocsge_artificialisation_29_2024',
+    'ocsge_artificialisation_35_2020',
+    'ocsge_artificialisation_35_2023',
+    'ocsge_artificialisation_56_2022',
+    'ocsge_artificialisation_56_2024',
   ])
   const citees = vintages.filter((v) => ids.has(v.id))
   if (citees.length === 0) return null

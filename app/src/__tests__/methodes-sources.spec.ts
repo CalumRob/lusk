@@ -56,8 +56,8 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     expect(registreSeul).toEqual([])
   })
 
-  it('déclare 49 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 4 OCS-GE + le jeu Geovelo + la table de passage COG)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(49)
+  it('déclare 53 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + le jeu Geovelo + la table de passage COG)', () => {
+    expect(Object.keys(SOURCES_METHODES).length).toBe(53)
   })
 
   it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {

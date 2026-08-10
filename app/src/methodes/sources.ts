@@ -80,20 +80,35 @@ function sourcesDpe(): Record<string, SourceEditoriale> {
   return sources
 }
 
-/** Les 4 lignes vintages OCS-GE partagent les mêmes faits éditoriaux — générées comme les DVF/DPE. */
+/** Les 8 lignes vintages OCS-GE (2 millésimes × 4 départements) partagent les mêmes faits éditoriaux — générées comme les DVF/DPE. */
 const SOURCE_OCSGE: Omit<SourceEditoriale, 'nom'> = {
   editeur: 'IGN',
   url: 'https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION',
   themes: ['milieux'],
 }
 
-/** Les 4 lignes vintages OCS-GE (une par département breton) — l'état artificialisé du pivot #225. */
+/** Les millésimes d'état du produit « surfaces artificialisées » par département (ADR-0017, la paire M2/M3). */
+const MILLESIMES_OCSGE: Record<string, number[]> = {
+  '22': [2021, 2025],
+  '29': [2021, 2024],
+  '35': [2020, 2023],
+  '56': [2022, 2024],
+}
+
+/**
+ * Les 8 lignes vintages OCS-GE (une par département × millésime) — l'état
+ * artificialisé du pivot #225, amendé par #243 : le produit millésimé
+ * « surfaces artificialisées » (le DIFF est sorti, la couche différentielle
+ * n'est pas un état).
+ */
 function sourcesOcsGe(): Record<string, SourceEditoriale> {
   const sources: Record<string, SourceEditoriale> = {}
   for (const dep of DEPARTEMENTS_BRETAGNE) {
-    sources[`ocsge_artificialisation_${dep}`] = {
-      ...SOURCE_OCSGE,
-      nom: 'IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération)',
+    for (const millesime of MILLESIMES_OCSGE[dep]) {
+      sources[`ocsge_artificialisation_${dep}_${millesime}`] = {
+        ...SOURCE_OCSGE,
+        nom: `IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — millésime ${millesime}`,
+      }
     }
   }
   return sources

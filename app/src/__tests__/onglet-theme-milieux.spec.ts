@@ -180,10 +180,10 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
   it('renders the exhaustive source line — la série historique + les vintages OCS-GE présents', async () => {
     const wrapper = await monter('22001')
 
-    // le fixture ne porte pas encore les vintages OCS-GE (ocsge_artificialisation_*)
-    // — ils n'entrent dans la table qu'avec la régénération #243. La ligne cite
-    // ce que la table fournit (la série historique), JAMAIS la consommation :
-    // la lecture ne cite plus CONSOENAF (spec #225).
+    // le FIXTURE synthétique ne porte pas les vintages OCS-GE (les huit
+    // archives millésimées entrent dans la table réelle avec la régénération
+    // #243) — la ligne cite ce que la table fournit (la série historique),
+    // JAMAIS la consommation : la lecture ne cite plus CONSOENAF (spec #225).
     const source = wrapper.find('.angle-story-source').text()
     expect(source).toContain('INSEE — Série historique du recensement')
     expect(source).not.toContain('CONSOENAF')

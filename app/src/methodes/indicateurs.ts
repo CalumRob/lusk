@@ -549,8 +549,9 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         definition:
           'La surface artificialisée par habitant, aux deux millésimes OCS-GE de la fenêtre du territoire (M2 puis M3), en mètres carrés par habitant — un ÉTAT, jamais un flux : la part de terre artificialisée rapportée à la population, à chaque date. Le dénominateur est la population du recensement qui BORNE l\u2019état (RP 2017 pour l\u2019état initial, RP 2023 pour l\u2019état final — jamais interpolée) ; le numérateur est l\u2019état artificialisé de l\u2019IGN (OCS GE Artificialisation v2.0, la référence officielle ZAN). Défini pour TOUT territoire — une commune qui se vide comme une commune qui grandit : l\u2019intensité par habitant ne connaît pas le trou des habitants ajoutés. Le classement se lit tel quel : déjà par habitant, aucune normalisation de surface. Les deux lignes (M2, M3) partagent le rang de l\u2019état final.',
         unite: 'm²/hab',
-        source: 'IGN — OCS GE Artificialisation v2.0 (Nouvelle Génération)',
-        sourceId: 'ocsge_artificialisation_22',
+        source:
+          'IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — millésime 2025',
+        sourceId: 'ocsge_artificialisation_22_2025',
       },
       conso_enaf_annuel: {
         label: 'Consommation d\u2019ENAF \u2014 série annuelle',
