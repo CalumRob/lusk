@@ -33,7 +33,9 @@ import type { Territoire } from '@/payload/types'
 
 const route = useRoute()
 
-const { payload, erreur, chargement } = usePayload()
+// La coquille ne bloque que sur la référence + le rapport de run (T3, #299) :
+// la recherche est vivante dès que territoires atterrit, le reste coule en fond.
+const { payload, erreur, chargement } = usePayload({ attendre: ['territoires', 'run-report'] })
 
 const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
 
