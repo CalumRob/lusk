@@ -77,10 +77,13 @@ function estActive(couche: CoucheCarte): boolean {
   const active = props.coucheActive
   if (active === null || couche.source !== active.source) return false
   if (couche.source === 'membre') {
-    return couche.sigle === active.sigle && couche.niveau === active.niveau
+    return active.source === 'membre' && couche.sigle === active.sigle && couche.niveau === active.niveau
   }
-  if (couche.source === 'subvention') return true
-  return active.clef === couche.clef && active.detail === couche.detail
+  if (couche.source === 'subvention') return active.source === 'subvention'
+  if (active.source === 'indicateur' || active.source === 'histoire') {
+    return active.clef === couche.clef && active.detail === couche.detail
+  }
+  return false
 }
 
 function ouvrir(): void {

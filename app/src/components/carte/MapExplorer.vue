@@ -60,7 +60,7 @@ import {
   subventionsParTerritoire,
   valeurHistoireParTerritoire,
 } from '@/carte/fusion'
-import type { CollectionAvecValeurs } from '@/carte/fusion'
+import type { CollectionAvecMembres, CollectionAvecValeurs } from '@/carte/fusion'
 import { kpisPourPopup, contenuTooltip } from '@/carte/popup'
 import { echelleValeurs } from '@/carte/seuils'
 import type { CollectionMasque, Masques, NiveauMasque } from '@/geo/types'

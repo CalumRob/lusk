@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { couchesDuTheme } from '../carte/coucheModel'
+import type { EntreeCouches } from '../carte/coucheModel'
 import {
   histoiresDemographieFixture,
   histoiresEconomieFixture,
@@ -46,6 +47,17 @@ function payloadAvec(indicateurs: Indicateur[], histoires: Payload['histoires'])
 function detailsDu(groupe: unknown): string[] {
   const g = groupe as { type: 'groupe'; groupe: { couches: { clef: string; detail: string | null }[] } }
   return g.groupe.couches.map((c) => c.detail ?? c.clef)
+}
+
+/** La clef d'une entrée « couche » — ces specs ne testent que le modèle de
+ *  thème (couchesDuTheme), jamais les couches programmes (#282). */
+function clefDe(entree: EntreeCouches): string {
+  if (entree.type !== 'couche') throw new Error('entrée couche attendue')
+  const couche = entree.couche
+  if (couche.source === 'membre' || couche.source === 'subvention') {
+    throw new Error('couche programmes inattendue')
+  }
+  return couche.clef
 }
 
 describe('couchesDuTheme — Démographie (fixture)', () => {
@@ -112,7 +124,7 @@ describe('couchesDuTheme — Mobilité (fixture)', () => {
     const couches = couchesDuTheme(payload, 'mobilite')
 
     const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [e.couche.clef] : detailsDu(e),
+      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
     )
     expect(clefs).not.toContain('dens_1')
     expect(clefs).not.toContain('dec_1')
@@ -124,7 +136,7 @@ describe('couchesDuTheme — Mobilité (fixture)', () => {
     const couches = couchesDuTheme(payload, 'mobilite')
 
     const apresStory = couches.entrees.slice(2).map((e) =>
-      e.type === 'couche' ? e.couche.clef : `groupe:${detailsDu(e).join('|')}`,
+      e.type === 'couche' ? clefDe(e) : `groupe:${detailsDu(e).join('|')}`,
     )
     expect(apresStory).toEqual([
       'nb_buildings',
@@ -173,7 +185,7 @@ describe('couchesDuTheme — Milieux (fixture)', () => {
     const couches = couchesDuTheme(payload, 'milieux')
 
     const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [e.couche.clef] : detailsDu(e),
+      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
     )
     expect(clefs).not.toContain('conso_enaf_annuel')
     expect(clefs).not.toContain('2011')
@@ -200,7 +212,7 @@ describe('couchesDuTheme — Économie (fixture)', () => {
   it('lists the three block figures in the contract order', () => {
     const couches = couchesDuTheme(payload, 'economie')
 
-    expect(couches.entrees.map((e) => (e.type === 'couche' ? e.couche.clef : ''))).toEqual([
+    expect(couches.entrees.map((e) => (e.type === 'couche' ? clefDe(e) : ''))).toEqual([
       'effectifs_salaries',
       'chomage',
       'eco_activites',
@@ -244,7 +256,7 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
     expect(couches.coucheParDefaut?.parDefaut).toBe(true)
     // une seule couche part_passoires dans la liste
     const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [e.couche.clef] : detailsDu(e),
+      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
     )
     expect(clefs.filter((c) => c === 'part_passoires')).toHaveLength(1)
   })
@@ -253,7 +265,7 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
     const couches = couchesDuTheme(payload, 'habitat')
 
     const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [e.couche.clef] : detailsDu(e),
+      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
     )
     expect(clefs).not.toContain('prix_m2')
     expect(clefs).not.toContain('2021')

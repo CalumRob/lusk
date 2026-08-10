@@ -1,18 +1,24 @@
 <script setup lang="ts">
 /**
  * La carte interactive (/carte) — layouts.md §3: the ThemeTabs subheader
- * (reused — payload-driven, ?theme= in the URL, Aperçu default), then a
- * full-bleed MapExplorer + a 360px MapSidebar (mobile → bottom sheet).
+ * (reused — payload-driven, ?theme= in the URL, « Programmes & financements »
+ * as the first tab per ADR-0019, #282), then a full-bleed MapExplorer + a
+ * 360px MapSidebar (mobile → bottom sheet).
  *
  * ADR-0019: the theme tab drives the map's LAYER SET (couchesDuTheme — the
  * layer model derives from the payload, never a carte-side spec). ?theme=
  * selects the theme's DEFAULT layer (coucheParDefaut — its first story
  * scalar); the sidebar's layer clicks switch the active couche (in-memory
- * state — the fine-grained layer URL encoding is a later ticket). Aperçu =
- * territory masks only (the neutral state). States follow the shell's
- * pattern: skeleton while the payload/geometry load, a typed error with
- * Retry, and the honest « Fonds de carte indisponible. » when no mask file
- * is published yet (the pipeline ticket must publish the geometry).
+ * state). The first tab is the « Programmes & financements » layer group
+ * (#282): ?onglet=programmes (+ &programme=<sigle>) drives the membership
+ * categorical highlights (level-native — ACV/PVD/ORT à la commune, CRTE/
+ * Territoires d'industrie/ORT à l'EPCI, aucune au département) and the
+ * subventions choropleth (total € à chaque niveau, échelle par la règle de
+ * trois). ?onglet= et ?theme= sont MUTUELLEMENT EXCLUSIFS (l'un efface
+ * l'autre) ; les deux absents = l'état neutre (masques seuls). L'URL est
+ * l'état : elle survit au rechargement. States follow the shell's pattern:
+ * skeleton while the payload/geometry load, a typed error with Retry, and
+ * the honest « Fonds de carte indisponible. » when no mask file is published.
  */
 import { AlertCircle, MapPinOff } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
@@ -23,15 +29,22 @@ import MapExplorer from '@/components/carte/MapExplorer.vue'
 import MapSidebar from '@/components/carte/MapSidebar.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import {
+  ANCRAGE_PROGRAMMES,
   ANCRAGES_THEMES,
   COULEUR_CONTOUR,
+  COULEUR_MEMBRE,
   COULEUR_NEUTRE,
   echelleChoroplethe,
   rampeDivergente,
 } from '@/carte/couleurs'
 import { couchesDuTheme } from '@/carte/coucheModel'
-import type { Couche, CouchesTheme } from '@/carte/coucheModel'
-import { indicateurParTerritoire, valeurHistoireParTerritoire } from '@/carte/fusion'
+import type { Couche, CoucheCarte, CouchesTheme, EntreeCouches } from '@/carte/coucheModel'
+import { indicateurParTerritoire, subventionsParTerritoire, valeurHistoireParTerritoire } from '@/carte/fusion'
+import {
+  coucheParDefautProgrammes,
+  couchesProgrammes,
+} from '@/carte/programmesCouches'
+import type { CoucheProgramme } from '@/carte/programmesCouches'
 import { echelleValeurs } from '@/carte/seuils'
 import { idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -39,7 +52,8 @@ import { NIVEAUX_MASQUE } from '@/geo/types'
 import type { NiveauMasque } from '@/geo/types'
 import { useGeometrie } from '@/geo/useGeometrie'
 import { themesPresent } from '@/payload/selectors'
-import type { Theme } from '@/payload/types'
+import { SIGLES_PROGRAMMES } from '@/payload/types'
+import type { SigleProgramme, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
 const route = useRoute()
@@ -60,7 +74,22 @@ const {
 
 const themes = computed(() => (payload.value ? themesPresent(payload.value) : []))
 
+/** L'onglet programmes — ?onglet=programmes dans l'URL (ADR-0019 #282). */
+const ongletProgrammes = computed(() => route.query.onglet === 'programmes')
+
+/** Le sigle d'adhésion demandé — ?programme=<sigle>, valable seulement dans
+ *  l'onglet programmes (un sigle hors onglet n'est pas un état). */
+const programmeSelectionne = computed<SigleProgramme | null>(() => {
+  if (!ongletProgrammes.value) return null
+  const demande = route.query.programme
+  if (typeof demande === 'string' && (SIGLES_PROGRAMMES as readonly string[]).includes(demande)) {
+    return demande as SigleProgramme
+  }
+  return null
+})
+
 const selection = computed<Theme | null>(() => {
+  if (ongletProgrammes.value) return null
   const demande = route.query.theme
   if (
     payload.value &&
@@ -72,15 +101,51 @@ const selection = computed<Theme | null>(() => {
   return null
 })
 
+/** Le slug du panneau actif — le premier onglet renommé sur la carte. */
+const slugPanneau = computed<SlugOnglet>(() =>
+  ongletProgrammes.value ? 'programmes' : selection.value,
+)
+
+/** Le slug passé à ThemeTabs — le premier onglet est le défaut (sélectionné
+ *  quand aucun thème ne l'est), comme l'était Aperçu. */
+const selectionOnglet = computed<Theme | null | 'programmes'>(() =>
+  selection.value ?? 'programmes',
+)
+
 function choisirOnglet(slug: SlugOnglet): void {
+  if (slug === 'programmes') {
+    router.replace({ query: { onglet: 'programmes' } })
+    return
+  }
   router.replace({ query: slug ? { theme: slug } : {} })
 }
 
+// Normalisation de l'URL (ADR-0019) : ?onglet=programmes et ?theme= sont
+// mutuellement exclusifs — l'onglet l'emporte, un thème inconnu ou un sigle
+// inconnu retombe sur l'état neutre ({}), jamais un état partiel.
 watch(
-  () => [route.query.theme, payload.value] as const,
-  ([theme, pl]) => {
+  () => [route.query.theme, route.query.onglet, route.query.programme, payload.value] as const,
+  ([theme, onglet, programme, pl]) => {
     if (!pl) return
-    if (typeof theme === 'string' && !(themesPresent(pl) as string[]).includes(theme)) {
+    const themesValides = themesPresent(pl) as string[]
+    const themeValide = typeof theme === 'string' && themesValides.includes(theme)
+    const ongletValide = onglet === 'programmes'
+    const programmeValide =
+      typeof programme === 'string' && (SIGLES_PROGRAMMES as readonly string[]).includes(programme)
+
+    if (ongletValide) {
+      if (theme !== undefined || (programme !== undefined && !programmeValide)) {
+        router.replace({
+          query: { onglet: 'programmes', ...(programmeValide ? { programme } : {}) },
+        })
+      }
+      return
+    }
+    if (themeValide) {
+      if (onglet !== undefined) router.replace({ query: { theme } })
+      return
+    }
+    if (theme !== undefined || onglet !== undefined || programme !== undefined) {
       router.replace({ query: {} })
     }
   },
@@ -125,8 +190,54 @@ watch(
   { immediate: true },
 )
 
-function choisirCouche(couche: Couche): void {
-  coucheActive.value = couche
+/** Le jeu de couches de l'onglet programmes au niveau courant (level-native —
+ *  l'adhésion n'existe qu'à son ancrage, les subventions à chaque niveau). */
+const couchesProgrammesDuNiveau = computed<CoucheProgramme[]>(() =>
+  payload.value && ongletProgrammes.value
+    ? couchesProgrammes(payload.value, niveau.value)
+    : [],
+)
+
+/** La couche active de l'onglet programmes — le sigle demandé (s'il a des
+ *  lignes au niveau courant — la re-jointure d'ADR-0019), sinon la couche
+ *  par défaut (les subventions). */
+const coucheProgrammesActive = computed<CoucheProgramme | null>(() => {
+  if (!payload.value || !ongletProgrammes.value) return null
+  const demandee = programmeSelectionne.value
+  if (demandee) {
+    const membre = couchesProgrammesDuNiveau.value.find(
+      (c) => c.source === 'membre' && c.sigle === demandee,
+    )
+    if (membre) return membre
+  }
+  return coucheParDefautProgrammes(payload.value, niveau.value)
+})
+
+/** La couche passée à la carte — l'onglet programmes ou le thème. */
+const coucheActiveCarte = computed<CoucheCarte | null>(() =>
+  ongletProgrammes.value ? coucheProgrammesActive.value : coucheActive.value,
+)
+
+/** Les entrées de la sidebar — les couches programmes ou le jeu de couches du thème. */
+const entreesSidebar = computed<EntreeCouches[]>(() =>
+  ongletProgrammes.value
+    ? couchesProgrammesDuNiveau.value.map((couche) => ({ type: 'couche' as const, couche }))
+    : couchesTheme.value?.entrees ?? [],
+)
+
+function choisirCouche(couche: CoucheCarte): void {
+  if (ongletProgrammes.value) {
+    // l'état des couches programmes est l'URL — partageable, il survit au rechargement
+    if (couche.source === 'membre') {
+      router.replace({ query: { onglet: 'programmes', programme: couche.sigle } })
+    } else if (couche.source === 'subvention') {
+      router.replace({ query: { onglet: 'programmes' } })
+    }
+    return
+  }
+  if (couche.source === 'indicateur' || couche.source === 'histoire') {
+    coucheActive.value = couche
+  }
 }
 
 /** The layer's joined values per territoire — the indicator rows (clef +
@@ -139,9 +250,29 @@ function valeursDeLaCouche(couche: Couche): ReadonlyMap<string, { value: number 
 }
 
 const legende = computed(() => {
-  const couche = coucheActive.value
   const m = masques.value?.[niveau.value]
-  if (!couche || !selection.value || !payload.value || !m) return null
+  if (!payload.value || !m) return null
+
+  // #282 — l'onglet programmes : la légende catégorielle in/out d'une couche
+  // d'adhésion, la choroplèthe € (règle de trois) de la couche subventions.
+  if (ongletProgrammes.value) {
+    const couche = coucheProgrammesActive.value
+    if (!couche) return null
+    if (couche.source === 'membre') {
+      return { couche, couleurs: [], seuils: [], estDivergente: false, unite: '', estPourcentage: false }
+    }
+    const parTerritoire = subventionsParTerritoire(payload.value, niveau.value)
+    const valeurs: number[] = []
+    for (const ligne of parTerritoire.values()) {
+      if (ligne.value !== null) valeurs.push(ligne.value)
+    }
+    const echelle = echelleValeurs(valeurs)
+    const couleurs = echelleChoroplethe(ANCRAGE_PROGRAMMES, Math.max(2, echelle.seuils.length + 1))
+    return { couche, couleurs, seuils: echelle.seuils, estDivergente: false, unite: '€', estPourcentage: false }
+  }
+
+  const couche = coucheActive.value
+  if (!couche || !selection.value) return null
 
   const parTerritoire = valeursDeLaCouche(couche)
   const valeurs: number[] = []
@@ -175,12 +306,18 @@ const classesFond = computed(() =>
 <template>
   <section class="carte" :class="classesFond" :aria-busy="chargementPayload || chargementGeometrie ? 'true' : 'false'">
     <template v-if="payload">
-      <ThemeTabs :themes="themes" :selected="selection" @select="choisirOnglet" />
+      <ThemeTabs
+        :themes="themes"
+        :selected="selectionOnglet"
+        libelle-premier="Programmes &amp; financements"
+        premier-slug="programmes"
+        @select="choisirOnglet"
+      />
       <div
         class="carte-corps"
         role="tabpanel"
-        :id="idPanneau(selection)"
-        :aria-labelledby="idOnglet(selection)"
+        :id="idPanneau(slugPanneau)"
+        :aria-labelledby="idOnglet(slugPanneau)"
       >
         <div
           v-if="chargementGeometrie"
@@ -212,15 +349,15 @@ const classesFond = computed(() =>
             :masques="masques!"
             :payload="payload"
             :theme="selection"
-            :couche="coucheActive"
+            :couche="coucheActiveCarte"
             :niveau="niveau"
           />
           <MapSidebar
             :territoires="payload.territoires"
             :niveau="niveau"
             :niveaux-disponibles="niveauxDisponibles"
-            :entrees="couchesTheme?.entrees ?? []"
-            :couche-active="coucheActive"
+            :entrees="entreesSidebar"
+            :couche-active="coucheActiveCarte"
             :couleurs="legende?.couleurs ?? []"
             :seuils="legende?.seuils ?? []"
             :est-divergente="legende?.estDivergente ?? false"
@@ -228,6 +365,7 @@ const classesFond = computed(() =>
             :est-pourcentage="legende?.estPourcentage ?? false"
             :couleur-vide="COULEUR_NEUTRE"
             :couleur-contour="COULEUR_CONTOUR"
+            :couleur-membre="COULEUR_MEMBRE"
             @niveau-change="(n: NiveauMasque) => (niveauDemande = n)"
             @couche-change="choisirCouche"
           />
