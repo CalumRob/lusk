@@ -81,6 +81,9 @@ const classesFond = computed(() =>
 )
 
 function choisirOnglet(slug: SlugOnglet): void {
+  // 'programmes' n'existe que sur la carte (le premier onglet renommé, #282) —
+  // la fiche n'émet jamais ce slug, la garde garde la jointure de type.
+  if (slug === 'programmes') return
   router.replace({ query: slug ? { theme: slug } : {} })
 }
 
