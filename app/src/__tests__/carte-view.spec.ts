@@ -26,7 +26,9 @@ import { routes } from '../router'
  * La carte interactive (/carte — layouts.md §3): the ThemeTabs subheader
  * (reused, ?theme= in the URL), the full-bleed MapExplorer + MapSidebar, and
  * the shell's states — skeleton, typed error with Retry, and the honest
- * « Fonds de carte indisponible. » when no mask file is published.
+ * « Fonds de carte indisponible. » when no mask file is published. ADR-0019:
+ * ?theme= selects the theme's DEFAULT (story) layer — coucheParDefaut — and
+ * the sidebar's layer clicks switch the map + legend (in-memory state).
  */
 
 function feature(territoire: string, nom: string) {
@@ -145,7 +147,7 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(wrapper.find('.carte-legendes-masques').text()).toContain('Communes')
   })
 
-  it('selecting a theme writes ?theme= and drives the legend', async () => {
+  it('selecting a theme writes ?theme= and drives the legend with its default (story) layer', async () => {
     const { router, wrapper } = await monter()
 
     const demographie = wrapper.findAll('[role="tab"]').find((o) => o.text().includes('Démographie'))
@@ -153,14 +155,46 @@ describe('CarteView — la carte avec fond publié', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    // la couche par défaut du thème — le premier scalaire de Story (ADR-0019 α)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
     expect(wrapper.find('.carte--theme-demographie').exists()).toBe(true)
   })
 
   it('an absent ?theme= in the URL selects the theme when it is in the payload', async () => {
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
 
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+  })
+
+  it('the sidebar lists the theme’s layers — the default story layer active', async () => {
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
+
+    const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
+    expect(couches[0]).toBe('taux_solde_naturel')
+    expect(couches).toContain('Densité de population')
+    expect(couches).toContain('Moins de 15 ans')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('taux_solde_naturel')
+  })
+
+  it('clicking a layer in the sidebar switches the map + legend (in-memory state)', async () => {
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
+
+    const densite = wrapper
+      .findAll('.carte-sidebar-couche')
+      .find((b) => b.text().includes('Densité'))
+    await densite?.trigger('click')
+    await flushPromises()
+
     expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Densité de population')
+  })
+
+  it('first load (no ?theme=) is the neutral state — no layer, masks only', async () => {
+    const { wrapper } = await monter()
+
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
+    expect(wrapper.findComponent({ name: 'MapLegend' }).props('couche')).toBeNull()
   })
 
   it('an unknown ?theme= falls back to Aperçu', async () => {
