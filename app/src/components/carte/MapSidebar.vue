@@ -45,6 +45,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'niveau-change', niveau: NiveauMasque): void
   (e: 'couche-change', couche: CoucheCarte): void
+  /** La recherche a sélectionné un territoire — la carte zoome dessus et
+   *  ouvre son popup (ADR-0019, #283) au lieu de naviguer vers la fiche. */
+  (e: 'recherche-territoire', territoire: Territoire): void
 }>()
 
 const estMobile = useMediaQuery('(max-width: 768px)')
@@ -103,6 +106,14 @@ function choisirCouche(couche: CoucheCarte): void {
   emit('couche-change', couche)
   if (estMobile.value) fermer()
 }
+
+/** La recherche (#283) : remonte le territoire sélectionné — la vue zoome la
+ *  carte dessus. Même règle que les niveaux/couches : la feuille mobile se
+ *  ferme, le panneau bureau reste pour continuer à interagir. */
+function selectionnerTerritoire(territoire: Territoire): void {
+  emit('recherche-territoire', territoire)
+  if (estMobile.value) fermer()
+}
 </script>
 
 <template>
@@ -149,8 +160,9 @@ function choisirCouche(couche: CoucheCarte): void {
         :territoires="territoires"
         :chargement="false"
         :erreur="null"
+        sans-navigation
         class="carte-sidebar-recherche"
-        @select="fermer"
+        @select="selectionnerTerritoire"
       />
 
       <section class="carte-sidebar-section" aria-labelledby="carte-niveaux-titre">

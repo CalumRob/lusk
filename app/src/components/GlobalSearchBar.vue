@@ -14,6 +14,9 @@
  * Props: territoires (the reference table, from the host's loaded payload),
  * chargement + erreur (optional host-driven payload states). Emits: select
  * with the opened Territoire — the host hook (C1: close the mobile drawer).
+ * sansNavigation (#283): the carte's search — the results are rows (buttons,
+ * not RouterLinks) and selecting emits select WITHOUT navigating to the
+ * fiche; the host (CarteView) zooms the map on the territory instead.
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -27,8 +30,11 @@ const props = withDefaults(
     territoires: Territoire[]
     chargement?: boolean
     erreur?: string | null
+    /** Mode sans navigation (#283) : les résultats émettent select sans
+     *  router.push — la carte zoome sur l'entité au lieu d'ouvrir la fiche. */
+    sansNavigation?: boolean
   }>(),
-  { chargement: false, erreur: null },
+  { chargement: false, erreur: null, sansNavigation: false },
 )
 
 const emit = defineEmits<{
@@ -133,7 +139,9 @@ function surSelection(t: Territoire) {
 function activer(t: Territoire) {
   emit('select', t)
   reinitialiser()
-  void router.push({ name: 'territoire', params: { type: t.type, id: t.territoire } })
+  if (!props.sansNavigation) {
+    void router.push({ name: 'territoire', params: { type: t.type, id: t.territoire } })
+  }
 }
 
 function reinitialiser() {
@@ -205,21 +213,29 @@ function surFocusout(e: FocusEvent) {
         role="listbox"
         aria-label="Résultats"
       >
-        <RouterLink
+        <component
+          :is="props.sansNavigation ? 'button' : 'router-link'"
           v-for="(resultat, i) in resultats"
           :id="`gsb-option-${i}`"
           :key="resultat.territoire"
           role="option"
-          :aria-selected="actif === i"
+          :aria-selected="actif === i ? 'true' : 'false'"
           class="global-search__option"
           :class="{ 'is-actif': actif === i }"
-          :to="{ name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }"
+          :type="props.sansNavigation ? 'button' : undefined"
+          :to="
+            props.sansNavigation
+              ? undefined
+              : { name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }
+          "
           @click="surSelection(resultat)"
         >
           <span class="global-search__nom">{{ resultat.nom }}</span>
           <span class="global-search__chip">{{ libelleType(resultat.type) }}</span>
-          <span class="global-search__action">Voir la page</span>
-        </RouterLink>
+          <span class="global-search__action">
+            {{ props.sansNavigation ? 'Sur la carte' : 'Voir la page' }}
+          </span>
+        </component>
       </div>
       <p v-else-if="props.erreur" class="global-search__etat global-search__etat--erreur">
         <CircleAlert aria-hidden="true" />
@@ -361,6 +377,17 @@ function surFocusout(e: FocusEvent) {
   color: var(--text-primary);
   text-decoration: none;
   transition: background-color 120ms ease-out;
+}
+
+/* Le mode sans navigation (#283) : les résultats sont des boutons — la carte
+   zoome sur l'entité au lieu d'ouvrir la fiche. Même look que la ligne lien. */
+button.global-search__option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: var(--text-body);
+  text-align: start;
+  cursor: pointer;
 }
 
 .global-search__option:hover,
