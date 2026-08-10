@@ -13,15 +13,18 @@
  * the loader's fetch seam; nothing here touches the fetch layer.
  */
 
+import type { Fichier } from './loader'
 import type {
   ApercuRow,
   Histoire,
   Indicateur,
   MembreProgramme,
+  Payload,
   ProgrammesPayload,
   RunReport,
   SubventionProgramme,
   Territoire,
+  Theme,
   Vintage,
 } from './types'
 
@@ -919,3 +922,38 @@ export const programmesLadderFixture: ProgrammesPayload = {
   subventions: subventionsLadderFixture,
 }
 
+
+/**
+ * The per-file charger built from a full fixture payload — the T2 test seam
+ * (issue #298) : `PAYLOAD_CHARGER_KEY` becomes per-file, so component specs
+ * drive the progressive store by injecting a charger that maps each file name
+ * to its fixture section. A theme absent from the payload returns null (the
+ * « 404 = table absente » contract, ADR-0013), so a fixture carrying only
+ * demographie renders exactly one theme — the payload-driven tab bar
+ * (ADR-0007) stays honest.
+ */
+export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unknown> {
+  return async (fichier: Fichier) => {
+    switch (fichier) {
+      case 'territoires':
+        return payload.territoires
+      case 'run-report':
+        return payload.runReport
+      case 'vintages':
+        return payload.vintages
+      case 'apercu':
+        return payload.apercu
+      case 'programmes':
+        return payload.programmes
+      default:
+        if (fichier.startsWith('indicateurs_')) {
+          const theme = fichier.slice('indicateurs_'.length) as Theme
+          const lignes = payload.indicateurs.filter((l) => l.theme === theme)
+          return lignes.length > 0 ? lignes : null
+        }
+        const theme = fichier.slice('histoires_'.length) as Theme
+        const lignes = payload.histoires.filter((l) => l.theme === theme)
+        return lignes.length > 0 ? lignes : null
+    }
+  }
+}

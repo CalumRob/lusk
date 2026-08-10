@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import AppHeader from '../components/AppHeader.vue'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -14,7 +15,6 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import type { ChargerPayload } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { routes } from '../router'
 
@@ -39,7 +39,7 @@ const payload: Payload = {
   programmes: null,
 }
 
-const charger: ChargerPayload = async () => payload
+const charger = chargerAvec(payload)
 
 let montee: ReturnType<typeof mount> | null = null
 

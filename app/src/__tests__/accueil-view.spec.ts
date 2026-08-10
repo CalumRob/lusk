@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import AccueilView from '../views/AccueilView.vue'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -12,7 +13,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import type { ChargerPayload } from '../payload/usePayload'
+import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { routes } from '../router'
 
@@ -33,7 +34,7 @@ const payload: Payload = {
   programmes: null,
 }
 
-async function monter(charger: ChargerPayload, options: Record<string, unknown> = {}) {
+async function monter(charger: ChargerFichier, options: Record<string, unknown> = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/')
   await router.isReady()
@@ -50,7 +51,7 @@ async function monter(charger: ChargerPayload, options: Record<string, unknown> 
 
 describe('Accueil — le héros', () => {
   it('porte la signature discrète du mock landing sur le héros', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const marque = wrapper.find('.accueil-hero .lusk-marque')
     expect(marque.exists()).toBe(true)
@@ -58,7 +59,7 @@ describe('Accueil — le héros', () => {
   })
 
   it('dispose le lock-up dans la colonne de droite du héros (frère du contenu, jamais au-dessus du titre)', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const interieur = wrapper.find('.accueil-hero-interieur')
     const contenu = wrapper.find('.accueil-hero-contenu')
@@ -73,7 +74,7 @@ describe('Accueil — le héros', () => {
   })
 
   it('place le mot de la signature au-dessus de sa légende', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const marque = wrapper.find('.accueil-hero-marque')
     const mot = wrapper.find('.lusk-marque__mot')
@@ -86,13 +87,13 @@ describe('Accueil — le héros', () => {
   })
 
   it('porte la légende du mot sous la marque — prononciation puis breton · élan, mouvement', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     expect(wrapper.find('.accueil-marque-caption').text()).toBe("/'lysk/ · breton · élan, mouvement")
   })
 
   it('porte le titre « Intelligence territoriale en Bretagne » — voix produit, jamais la première personne', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const accroche = wrapper.find('.accueil-accroche').text()
     expect(accroche).toBe('Intelligence territoriale en Bretagne')
@@ -101,7 +102,7 @@ describe('Accueil — le héros', () => {
   })
 
   it('le sous-titre énonce la promesse ET le périmètre (Bretagne, données publiques)', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const sousTitre = wrapper.find('.accueil-sous-titre').text()
     expect(sousTitre).toContain('intelligence territoriale')
@@ -110,7 +111,7 @@ describe('Accueil — le héros', () => {
   })
 
   it('propose la recherche globale branchée sur les territoires', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const input = wrapper.find('input[role="combobox"]')
     expect(input.exists()).toBe(true)
@@ -118,7 +119,7 @@ describe('Accueil — le héros', () => {
   })
 
   it('propose le lien vers la carte interactive', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const lien = wrapper.find('a.accueil-carte')
     expect(lien.exists()).toBe(true)
@@ -129,16 +130,17 @@ describe('Accueil — le héros', () => {
 
 describe('Accueil — la ligne de fraîcheur', () => {
   it('affiche la fraîcheur calculée depuis le payload (ligneFraicheur)', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     expect(wrapper.text()).toContain('Données actualisées le 3 août 2026')
   })
 
-  it('affiche un squelette pendant le chargement', async () => {
-    const enAttente = new Promise<Payload>(() => {})
+  it('affiche la promesse honnête statique tant que run-report n\u2019est pas posé', async () => {
+    const enAttente = new Promise<unknown>(() => {})
     const { wrapper } = await monter(() => enAttente)
 
-    expect(wrapper.find('.squelette').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Données actualisées chaque semaine')
+    expect(wrapper.find('.accueil-fraicheur').exists()).toBe(true)
   })
 
   it('retombe sur la promesse honnête statique en cas d’erreur', async () => {
@@ -152,7 +154,7 @@ describe('Accueil — la ligne de fraîcheur', () => {
 
 describe('Accueil — le carrousel est retiré (#204)', () => {
   it('ne rend plus la « Sélection aléatoire » — ni carrousel, ni tirage au hasard', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     expect(wrapper.find('.accueil-exemples').exists()).toBe(false)
     expect(wrapper.find('.carrousel-carte').exists()).toBe(false)
@@ -160,7 +162,7 @@ describe('Accueil — le carrousel est retiré (#204)', () => {
   })
 
   it('garde le héros en bande pleine largeur, distincte de la zone de contenu', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const hero = wrapper.find('.accueil-hero')
     const interieur = wrapper.find('.accueil-interieur')
@@ -177,7 +179,7 @@ describe('Accueil — le carrousel est retiré (#204)', () => {
 
 describe('Accueil — l’outro', () => {
   it('propose le lien Sources & Méthodes', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     const lien = wrapper.find('a.accueil-methodes')
     expect(lien.exists()).toBe(true)
@@ -185,7 +187,7 @@ describe('Accueil — l’outro', () => {
   })
 
   it('porte le teaser de la thèse en serif', async () => {
-    const { wrapper } = await monter(async () => payload)
+    const { wrapper } = await monter(chargerAvec(payload))
 
     expect(wrapper.find('.accueil-teaser').exists()).toBe(true)
   })
@@ -194,10 +196,10 @@ describe('Accueil — l’outro', () => {
 describe('Accueil — chargement et erreur globaux', () => {
   it('affiche l’erreur typée avec le bouton Réessayer', async () => {
     let appels = 0
-    const charger: ChargerPayload = async () => {
+    const charger: ChargerFichier = async (fichier) => {
       appels += 1
       if (appels === 1) throw new Error('Impossible de charger /data/territoires.json')
-      return payload
+      return chargerAvec(payload)(fichier)
     }
     const { wrapper } = await monter(charger)
 

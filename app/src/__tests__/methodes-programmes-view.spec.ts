@@ -15,11 +15,12 @@ import {
 import { ancreSource } from '../methodes/sources'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { ChargerPayload } from '../payload/usePayload'
+import type { ChargerFichier } from '../payload/usePayload'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Payload, Vintage } from '../payload/types'
 import { routes } from '../router'
@@ -51,7 +52,7 @@ const payload: Payload = {
   programmes: null,
 }
 
-async function monter(charger: ChargerPayload) {
+async function monter(charger: ChargerFichier) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push('/methodologie')
   await router.isReady()
@@ -67,7 +68,7 @@ async function monter(charger: ChargerPayload) {
 
 describe('MethodologieView — la section « Programmes & financements »', () => {
   it('rend la section à son ancre #programmes, après celle des indicateurs', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const programmes = wrapper.find('section#programmes')
     expect(programmes.exists()).toBe(true)
@@ -79,19 +80,19 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('porte le titre « Programmes & financements »', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     expect(wrapper.find('section#programmes h2').text()).toBe('Programmes & financements')
   })
 
   it('porte la ligne « adhésion et montants attribués, jamais les résultats »', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     expect(wrapper.find('section#programmes').text()).toContain(LIGNE_JAMAIS_RESULTATS)
   })
 
   it('documente les trois sortes de couverture, avec leurs sigles', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const texte = wrapper.find('section#programmes').text()
     for (const couverture of COUVERTURES_PROGRAMMES) {
@@ -101,13 +102,13 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('documente la règle du badge ORT', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     expect(wrapper.find('section#programmes').text()).toContain(REGLE_BADGE_ORT)
   })
 
   it('affiche le vocabulaire des badges (sigle — nom complet)', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const texte = wrapper.find('section#programmes').text()
     for (const [sigle, nom] of Object.entries(VOCABULAIRE_PROGRAMMES)) {
@@ -117,7 +118,7 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('liste chaque source du registre avec ses faits (URL, format, licence, fraîcheur)', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     for (const [id, source] of Object.entries(SOURCES_PROGRAMMES)) {
       const ligne = wrapper.find(`tr#${ancreSource(id)}`)
@@ -132,7 +133,7 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('chaque source rend un lien vers son jeu de données', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     for (const [id, source] of Object.entries(SOURCES_PROGRAMMES)) {
       const lien = wrapper.find(`tr#${ancreSource(id)} a.lien-source`)
@@ -142,7 +143,7 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('l\u2019ORT rend sa fraîcheur PAR LIGNE, jamais la métadonnée de page périmée', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const ligne = wrapper.find('tr#source-ort')
     expect(ligne.text()).toMatch(/par ligne|actualisation/i)
@@ -152,14 +153,14 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('la subvention rend sa fraîcheur hebdomadaire', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     const ligne = wrapper.find('tr#source-subventions-scdl')
     expect(ligne.text()).toMatch(/semaine|hebdomadaire/i)
   })
 
   it('ne rend aucune bannière de construction', async () => {
-    const wrapper = await monter(async () => payload)
+    const wrapper = await monter(chargerAvec(payload))
 
     expect(wrapper.text()).not.toMatch(/à venir|en construction|bientôt|under construction/i)
   })

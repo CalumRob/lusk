@@ -124,9 +124,12 @@ function choisirOnglet(slug: SlugOnglet): void {
 // mutuellement exclusifs — l'onglet l'emporte, un thème inconnu ou un sigle
 // inconnu retombe sur l'état neutre ({}), jamais un état partiel.
 watch(
-  () => [route.query.theme, route.query.onglet, route.query.programme, payload.value] as const,
-  ([theme, onglet, programme, pl]) => {
-    if (!pl) return
+  () => [route.query.theme, route.query.onglet, route.query.programme, payload.value, chargementPayload.value] as const,
+  ([theme, onglet, programme, pl, busy]) => {
+    // Le payload grandit : la normalisation attend que le wait-set soit
+    // réglé — un thème absent pendant le chargement n'est pas encore une
+    // normalisation à faire (jamais une réécriture d'URL sur du vide).
+    if (!pl || busy) return
     const themesValides = themesPresent(pl) as string[]
     const themeValide = typeof theme === 'string' && themesValides.includes(theme)
     const ongletValide = onglet === 'programmes'
@@ -336,7 +339,18 @@ const classesFond = computed(() =>
 
 <template>
   <section class="carte" :class="classesFond" :aria-busy="chargementPayload || chargementGeometrie ? 'true' : 'false'">
-    <template v-if="payload">
+    <div v-if="chargementPayload" class="carte-etat carte-etat--plein" role="status" aria-label="Chargement de la carte">
+      <div class="squelette carte-squelette--ligne" />
+      <div class="squelette carte-squelette--ligne" />
+    </div>
+
+    <div v-else-if="erreurPayload" class="carte-etat carte-etat--plein carte-etat--erreur">
+      <AppIcon :icone="AlertCircle" :taille="28" class="carte-etat-icone" />
+      <p class="carte-etat-texte">Impossible de charger les données de la carte.</p>
+      <button type="button" class="carte-etat-bouton" @click="rechargerPayload">Réessayer</button>
+    </div>
+
+    <template v-else>
       <ThemeTabs
         :themes="themes"
         :selected="selectionOnglet"
@@ -406,17 +420,6 @@ const classesFond = computed(() =>
         </template>
       </div>
     </template>
-
-    <div v-else-if="chargementPayload" class="carte-etat carte-etat--plein" role="status" aria-label="Chargement de la carte">
-      <div class="squelette carte-squelette--ligne" />
-      <div class="squelette carte-squelette--ligne" />
-    </div>
-
-    <div v-else-if="erreurPayload" class="carte-etat carte-etat--plein carte-etat--erreur">
-      <AppIcon :icone="AlertCircle" :taille="28" class="carte-etat-icone" />
-      <p class="carte-etat-texte">Impossible de charger les données de la carte.</p>
-      <button type="button" class="carte-etat-bouton" @click="rechargerPayload">Réessayer</button>
-    </div>
   </section>
 </template>
 

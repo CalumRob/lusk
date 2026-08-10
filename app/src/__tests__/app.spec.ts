@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import App from '../App.vue'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -40,7 +41,7 @@ async function mountApp(path: string) {
   const wrapper = mount(App, {
     global: {
       plugins: [router],
-      provide: { [PAYLOAD_CHARGER_KEY]: async () => payloadFixture },
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payloadFixture) },
     },
   })
   await flushPromises()

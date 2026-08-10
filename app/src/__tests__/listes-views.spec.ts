@@ -9,6 +9,7 @@ import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import {
   apercuAvecNAFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   runReportFraisFixture,
@@ -16,7 +17,6 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import type { ChargerPayload } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { routes } from '../router'
 
@@ -35,10 +35,6 @@ const payloadDemographie: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
-}
-
-function chargerAvec(payload: Payload): ChargerPayload {
-  return async () => payload
 }
 
 async function monter(chemin: string, composant: unknown) {

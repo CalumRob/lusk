@@ -13,6 +13,7 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import type { Masques } from '../geo/types'
 import {
   apercuFixture,
+  chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   membresProgrammesFixture,
@@ -21,7 +22,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import type { ChargerPayload } from '../payload/usePayload'
+import type { ChargerFichier } from '../payload/usePayload'
 import type { Histoire, HistoireDemographie, Payload } from '../payload/types'
 import { routes } from '../router'
 
@@ -118,12 +119,12 @@ const payloadProgrammes: Payload = {
   },
 }
 
-function chargerPayloadAvec(p: Payload): ChargerPayload {
-  return async () => p
+function chargerPayloadAvec(p: Payload): ChargerFichier {
+  return chargerAvec(p)
 }
 
 async function monter(overrides: {
-  chargerPayload?: ChargerPayload
+  chargerPayload?: ChargerFichier
   chargerGeometrie?: ChargerGeometrie
   chemin?: string
 } = {}) {
@@ -163,8 +164,8 @@ async function monterProgrammes(chemin: string) {
 }
 
 describe('CarteView — les états (chargement / erreur / fond indisponible)', () => {
-  it('shows a skeleton while the payload loads', async () => {
-    const enAttente = new Promise<Payload>(() => {})
+  it('shows a skeleton while the payload loads (chargement-gated)', async () => {
+    const enAttente = new Promise<unknown>(() => {})
     const { wrapper } = await monter({ chargerPayload: () => enAttente })
 
     expect(wrapper.find('[role="status"]').exists()).toBe(true)
@@ -173,10 +174,10 @@ describe('CarteView — les états (chargement / erreur / fond indisponible)', (
 
   it('shows the typed error state with a Retry button for the payload', async () => {
     let appels = 0
-    const charger: ChargerPayload = async () => {
+    const charger: ChargerFichier = async (fichier) => {
       appels += 1
       if (appels === 1) throw new Error('Impossible de charger /data/territoires.json')
-      return payload
+      return chargerAvec(payload)(fichier)
     }
     const { wrapper } = await monter({ chargerPayload: charger })
 
