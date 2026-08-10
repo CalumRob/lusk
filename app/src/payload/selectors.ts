@@ -551,14 +551,16 @@ export function formaterNombreFR(x: number, decimalesMax: number): string {
 }
 
 /**
- * The indicator's display value, French. A "%" unit means the payload value
- * is a fraction in [0,1] (0.3 → "30"). Null → null (non calculable pour ce
- * territoire — the figure shows an honest "—", never a made-up number).
+ * The display value, French. A "%" unit means the payload value is a fraction
+ * in [0,1] (0.3 → "30"). Null → null (non calculable pour ce territoire — the
+ * figure shows an honest "—", never a made-up number). Accepts any value line
+ * (an Indicateur row or the map's joined ValeurLigne) — the shape it reads is
+ * `{ value, unit }`.
  */
-export function formaterValeur(indicateur: Indicateur): string | null {
-  if (indicateur.value === null) return null
-  const estPourcent = indicateur.unit === '%'
-  const brut = estPourcent ? indicateur.value * 100 : indicateur.value
+export function formaterValeur(ligne: { value: number | null; unit: string }): string | null {
+  if (ligne.value === null) return null
+  const estPourcent = ligne.unit === '%'
+  const brut = estPourcent ? ligne.value * 100 : ligne.value
   return formaterNombreFR(brut, estPourcent ? 0 : 2)
 }
 

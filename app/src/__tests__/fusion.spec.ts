@@ -4,15 +4,17 @@ import {
   collectionAvecValeurs,
   expressionCouleurs,
   indicateurParTerritoire,
+  valeurHistoireParTerritoire,
 } from '../carte/fusion'
 import { COULEUR_NEUTRE } from '../carte/couleurs'
 import type { CollectionMasque } from '../geo/types'
 import {
+  histoiresDemographieFixture,
   indicateursDemographieFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Payload } from '../payload/types'
+import type { HistoireMilieux, Payload } from '../payload/types'
 
 /**
  * The indicator-join onto the masks (ADR-0008): the map reads the territoire
@@ -44,7 +46,7 @@ const collection: CollectionMasque = {
 const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
-  histoires: [],
+  histoires: histoiresDemographieFixture,
   apercu: [],
   runReport: null,
   vintages: vintagesFixture,
@@ -63,6 +65,67 @@ describe('indicateurParTerritoire — the rows that feed a choropleth', () => {
   it('ignores the multi-detail keys (structure_age is a fiche figure, not a fill)', () => {
     const parTerritoire = indicateurParTerritoire(payload.indicateurs, 'demographie', 'structure_age')
     expect(parTerritoire.size).toBe(0)
+  })
+
+  it('reads one detail of a multi-detail key when the layer names it (ADR-0019 grouped layers)', () => {
+    const parTerritoire = indicateurParTerritoire(
+      payload.indicateurs,
+      'demographie',
+      'structure_age',
+      '<15',
+    )
+
+    expect(parTerritoire.get('22001')?.value).toBe(0.3)
+    expect(parTerritoire.get('22001')?.detail).toBe('<15')
+    expect(parTerritoire.size).toBe(1)
+  })
+})
+
+describe('valeurHistoireParTerritoire — the story-scalar join (ADR-0019)', () => {
+  it('reads the theme’s story scalar per territoire — one value per territory', () => {
+    const parTerritoire = valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel')
+
+    expect(parTerritoire.get('22001')).toEqual({ value: 5.982905982905983, unit: '' })
+    expect(parTerritoire.get('22002')?.value).toBe(-8.080808080808081)
+    expect(parTerritoire.has('99999')).toBe(false)
+  })
+
+  it('carries no unit — the histoires table publishes none (the legend shows the number alone, honest)', () => {
+    const parTerritoire = valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel')
+
+    expect(parTerritoire.get('22001')?.unit).toBe('')
+  })
+
+  it('maps a null scalar (the honest NA hole, e.g. an absent OCS-GE state) to a null value', () => {
+    const histoire: HistoireMilieux = {
+      territoire: '22001',
+      type: 'commune',
+      theme: 'milieux',
+      story_key: 'se-densifier-setaler-ou-sen-aller',
+      periode_pop: '2017-2023',
+      periode_artif: null,
+      delta_population: 0,
+      artif_m2: null,
+      artif_m3: null,
+      artif_m2_par_habitant: null,
+      artif_m3_par_habitant: null,
+      trajectoire_artif_par_habitant: null,
+      classification: null,
+    }
+    const payloadSansEtat: Payload = { ...payload, histoires: [histoire] }
+    const parTerritoire = valeurHistoireParTerritoire(
+      payloadSansEtat,
+      'milieux',
+      'trajectoire_artif_par_habitant',
+    )
+
+    expect(parTerritoire.get('22001')).toEqual({ value: null, unit: '' })
+  })
+
+  it('maps an unknown scalar field to a null value — never an invented number', () => {
+    const parTerritoire = valeurHistoireParTerritoire(payload, 'demographie', 'champ_inconnu')
+
+    expect(parTerritoire.get('22001')?.value).toBeNull()
   })
 })
 
@@ -95,6 +158,33 @@ describe('collectionAvecValeurs — the join onto the features', () => {
     expect(jointes).not.toBe(collection)
     expect(jointes.features[0]).not.toBe(collection.features[0])
     expect('valeur' in collection.features[0].properties).toBe(false)
+  })
+
+  it('joins a multi-detail layer by clef + detail (the grouped-layer read)', () => {
+    const parTerritoire = indicateurParTerritoire(
+      payload.indicateurs,
+      'demographie',
+      'structure_age',
+      '<15',
+    )
+    const jointes = collectionAvecValeurs(collection, parTerritoire)
+
+    const a1 = jointes.features.find((f) => f.properties.territoire === '22001')
+    expect(a1?.properties.valeur).toBe(0.3)
+    expect(a1?.properties.valeur_formatee).toBe('30') // unit % → fraction × 100
+  })
+
+  it('joins the story scalars onto the features — the same join shape as the indicator rows', () => {
+    const parTerritoire = valeurHistoireParTerritoire(payload, 'demographie', 'taux_solde_naturel')
+    const jointes = collectionAvecValeurs(collection, parTerritoire)
+
+    const a1 = jointes.features.find((f) => f.properties.territoire === '22001')
+    expect(a1?.properties.valeur).toBe(5.982905982905983)
+    expect(a1?.properties.valeur_formatee).toBe('5,98')
+
+    const sansDonnees = jointes.features.find((f) => f.properties.territoire === '99999')
+    expect(sansDonnees?.properties.valeur).toBeNull()
+    expect(sansDonnees?.properties.valeur_formatee).toBeNull()
   })
 })
 
