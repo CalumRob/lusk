@@ -43,6 +43,7 @@ import {
   COULEUR_NEUTRE,
   LARGEUR_CONTOUR,
   echelleChoroplethe,
+  rampeDivergente,
 } from '@/carte/couleurs'
 import { configCoucheTheme } from '@/carte/configCouche'
 import {
@@ -52,7 +53,7 @@ import {
 } from '@/carte/fusion'
 import type { CollectionAvecValeurs } from '@/carte/fusion'
 import { kpisPourPopup, contenuTooltip } from '@/carte/popup'
-import { seuilsIndicateur } from '@/carte/seuils'
+import { echelleValeurs } from '@/carte/seuils'
 import type { CollectionMasque, Masques, NiveauMasque } from '@/geo/types'
 import { trouverTerritoire } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
@@ -75,11 +76,8 @@ let tooltipSousPopup = false
 let observeurTaille: ResizeObserver | null = null
 let derive: ReturnType<typeof setTimeout> | null = null
 
-const NOMBRE_CLASSES = 5
-
 /** Marge (px) entre le bas du popup et le tooltip quand le popup est ouvert. */
 const DECALAGE_SOUS_POPUP = 12
-
 const ID_SOURCE = (niveau: NiveauMasque) => `masques-${niveau}`
 const ID_REMPLISSAGE = (niveau: NiveauMasque) => `masques-${niveau}-remplissage`
 const ID_CONTOUR = (niveau: NiveauMasque) => `masques-${niveau}-contour`
@@ -117,12 +115,12 @@ function peintureRemplissage(niveau: NiveauMasque): PaintRemplissage | null {
     const v = (feature.properties as { valeur?: number | null }).valeur
     if (typeof v === 'number') valeurs.push(v)
   }
-  const seuils = seuilsIndicateur(config.indicateur, valeurs, NOMBRE_CLASSES)
-  const couleurs = echelleChoroplethe(
-    ANCRAGES_THEMES[config.theme],
-    Math.max(2, seuils.length + 1),
-  )
-  return { 'fill-color': expressionCouleurs(seuils, couleurs) }
+  const echelle = echelleValeurs(valeurs)
+  const couleurs =
+    echelle.type === 'divergente'
+      ? rampeDivergente(ANCRAGES_THEMES[config.theme], echelle.seuils)
+      : echelleChoroplethe(ANCRAGES_THEMES[config.theme], Math.max(2, echelle.seuils.length + 1))
+  return { 'fill-color': expressionCouleurs(echelle.seuils, couleurs) }
 }
 
 function ajouterCouches(): void {

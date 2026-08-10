@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import MapLegend from '../components/carte/MapLegend.vue'
-import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
+import { COULEUR_CONTOUR, COULEUR_NEUTRE, COULEUR_NEUTRE_ZERO } from '../carte/couleurs'
 
 /**
  * MapLegend (ui-elements.md §Map shell): the theme's choropleth buckets —
@@ -24,6 +24,7 @@ function montage(overrides: Record<string, unknown> = {}) {
       config: configDemographie,
       couleurs: ['#c1c1e9', '#a3a3df', '#8e85c4', '#6f67a8'],
       seuils: [20, 40, 60],
+      estDivergente: false,
       unite: 'hab/km²',
       estPourcentage: false,
       // the map's neutral rendering, threaded from couleurs.ts (issue #68)
@@ -97,6 +98,33 @@ describe('MapLegend — the theme bucket legend', () => {
     expect(wrapper.find('.carte-legendes-chevron').classes()).toContain('est-replie')
     await wrapper.find('.carte-legendes-entete').trigger('click')
     expect(wrapper.find('.carte-legendes-entete').attributes('aria-expanded')).toBe('true')
+  })
+})
+
+describe('MapLegend — la rampe divergente (ADR-0019)', () => {
+  it('porte le signe explicite sur les bornes positives — la couleur n’est jamais le seul porteur', () => {
+    const wrapper = montage({
+      estDivergente: true,
+      couleurs: ['#6b3745', '#f3ecee', COULEUR_NEUTRE_ZERO, '#eff1f7', '#595a7d'],
+      seuils: [-20, -5, 5, 15],
+      unite: '‰/an',
+    })
+
+    const gammes = wrapper.findAll('.carte-legendes-gamme')
+    expect(gammes[0].text()).toContain('≤ -20')
+    expect(gammes[1].text()).toContain('-20 – -5')
+    expect(gammes[2].text()).toContain('-5 – +5')
+    expect(gammes[3].text()).toContain('+5 – +15')
+    expect(gammes[4].text()).toContain('+15 et +')
+    expect(gammes[3].text()).toContain('‰/an')
+  })
+
+  it('sans la rampe divergente, les bornes positives ne portent pas de « + »', () => {
+    const wrapper = montage({ seuils: [-20, -5, 5, 15] })
+
+    const gammes = wrapper.findAll('.carte-legendes-gamme')
+    expect(gammes[3].text()).toContain('5 – 15')
+    expect(gammes[3].text()).not.toContain('+5')
   })
 })
 

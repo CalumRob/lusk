@@ -18,10 +18,16 @@ import AppIcon from '@/components/AppIcon.vue'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
 import MapSidebar from '@/components/carte/MapSidebar.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
-import { ANCRAGES_THEMES, COULEUR_CONTOUR, COULEUR_NEUTRE, echelleChoroplethe } from '@/carte/couleurs'
+import {
+  ANCRAGES_THEMES,
+  COULEUR_CONTOUR,
+  COULEUR_NEUTRE,
+  echelleChoroplethe,
+  rampeDivergente,
+} from '@/carte/couleurs'
 import { configCoucheTheme } from '@/carte/configCouche'
 import { indicateurParTerritoire } from '@/carte/fusion'
-import { seuilsIndicateur } from '@/carte/seuils'
+import { echelleValeurs } from '@/carte/seuils'
 import { idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { NIVEAUX_MASQUE } from '@/geo/types'
@@ -46,8 +52,6 @@ const {
   chargement: chargementGeometrie,
   recharger: rechargerGeometrie,
 } = useGeometrie()
-
-const NOMBRE_CLASSES = 5
 
 const themes = computed(() => (payload.value ? themesPresent(payload.value) : []))
 
@@ -117,16 +121,20 @@ const legende = computed(() => {
   for (const ligne of parTerritoire.values()) {
     if (ligne.value !== null) valeurs.push(ligne.value)
   }
-  const seuils = seuilsIndicateur(cfg.indicateur, valeurs, NOMBRE_CLASSES)
-  const couleurs = echelleChoroplethe(
-    ANCRAGES_THEMES[selection.value],
-    Math.max(2, seuils.length + 1),
-  )
+  const echelle = echelleValeurs(valeurs)
+  const couleurs =
+    echelle.type === 'divergente'
+      ? rampeDivergente(ANCRAGES_THEMES[selection.value], echelle.seuils)
+      : echelleChoroplethe(
+          ANCRAGES_THEMES[selection.value],
+          Math.max(2, echelle.seuils.length + 1),
+        )
   const premier = parTerritoire.values().next().value
   return {
     config: cfg,
     couleurs,
-    seuils,
+    seuils: echelle.seuils,
+    estDivergente: echelle.type === 'divergente',
     unite: premier?.unit ?? '',
     estPourcentage: premier?.unit === '%',
   }
@@ -186,6 +194,7 @@ const classesFond = computed(() =>
             :config="legende?.config ?? null"
             :couleurs="legende?.couleurs ?? []"
             :seuils="legende?.seuils ?? []"
+            :est-divergente="legende?.estDivergente ?? false"
             :unite="legende?.unite ?? ''"
             :est-pourcentage="legende?.estPourcentage ?? false"
             :couleur-vide="COULEUR_NEUTRE"

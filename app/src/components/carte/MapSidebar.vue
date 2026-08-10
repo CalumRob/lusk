@@ -26,6 +26,7 @@ const props = defineProps<{
   config: ConfigCouche | null
   couleurs: string[]
   seuils: number[]
+  estDivergente: boolean
   unite: string
   estPourcentage: boolean
   /** The map's neutral fill + outline — forwarded to the legend (issue #68). */
@@ -133,6 +134,7 @@ function choisirNiveau(niveau: NiveauMasque): void {
         :config="config"
         :couleurs="couleurs"
         :seuils="seuils"
+        :est-divergente="estDivergente"
         :unite="unite"
         :est-pourcentage="estPourcentage"
         :couleur-vide="couleurVide"

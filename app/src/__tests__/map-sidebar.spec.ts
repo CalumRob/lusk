@@ -26,6 +26,7 @@ function montage(overrides: Record<string, unknown> = {}) {
       config: null,
       couleurs: [],
       seuils: [],
+      estDivergente: false,
       unite: '',
       estPourcentage: false,
       // the map's neutral rendering, threaded through to the legend (issue #68)
