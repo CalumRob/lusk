@@ -12,7 +12,7 @@ import type { ExpressionSpecification } from 'maplibre-gl'
 
 import type { CollectionMasque, FeatureTerritoire } from '../geo/types'
 import type { Indicateur, Payload, Theme } from '../payload/types'
-import { formaterNombreFR, formaterValeur } from '../payload/selectors'
+import { formaterValeur } from '../payload/selectors'
 import { COULEUR_NEUTRE } from './couleurs'
 
 /** The MapLibre paint expression for a choropleth fill (step + null guard). */

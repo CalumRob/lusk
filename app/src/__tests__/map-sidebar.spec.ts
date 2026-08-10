@@ -184,7 +184,7 @@ describe('MapSidebar — le sélecteur de couches (ADR-0019)', () => {
       .findAll('.carte-sidebar-couche')
       .find((b) => b.text().includes('Moins de 15 ans'))
     await tranche?.trigger('click')
-    expect(wrapper.emitted('couche-change')[1]).toEqual([coucheMoin15])
+    expect(wrapper.emitted('couche-change')?.at(1)).toEqual([coucheMoin15])
   })
 
   it('collapses a group on its header click and re-expands it', async () => {
