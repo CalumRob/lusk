@@ -5,15 +5,20 @@
  * absent row) is skipped, never invented: a territory with no data gets a
  * popup with fewer rows, and the figure shows an honest « — ».
  *
- * The hover tooltip (audit #208 item 57) reads the same payload seam:
- * `contenuTooltip` returns the territory name + the selected theme's
- * indicator value — what the cursor sits on, before the click opens the full
- * popup.
+ * The rows resolve from the ACTIVE layer (ADR-0019 — the couche the view
+ * passed down): an indicateur layer reads its clef + detail rows, a story
+ * layer its histoire scalar. The popup keeps its KPI-wall behaviour — the
+ * rank-in-context re-join is ticket #281.
+ *
+ * The hover tooltip (audit #208 item 57) reads the same seam:
+ * `contenuTooltip` returns the territory name + the active layer's value —
+ * what the cursor sits on, before the click opens the full popup.
  */
 
 import type { ApercuRow, Payload, Theme } from '../payload/types'
 import { apercuPourTerritoire, formaterValeur, trouverTerritoire } from '../payload/selectors'
-import { configCoucheTheme } from './configCouche'
+import type { Couche } from './coucheModel'
+import { indicateurParTerritoire, valeurHistoireParTerritoire } from './fusion'
 
 export interface KpiPopup {
   libelle: string
@@ -50,33 +55,56 @@ function kpiApercu(ligne: ApercuRow): KpiPopup {
   }
 }
 
+/** The active layer's row for a territory — the valeur + unit the KPI wall
+ *  and the tooltip read. Resolved by the couche's source (indicateur rows by
+ *  clef + detail, the histoire scalar otherwise); null when the payload has no
+ *  row — the KPI is skipped, never invented. */
+function ligneDeLaCouche(
+  payload: Payload,
+  territoire: string,
+  theme: Theme,
+  couche: Couche,
+): { valeur: number | null; unite: string; valeurFormatee: string | null } | null {
+  if (couche.source === 'indicateur') {
+    const ligne = indicateurParTerritoire(
+      payload.indicateurs,
+      theme,
+      couche.clef,
+      couche.detail,
+    ).get(territoire)
+    if (!ligne) return null
+    return { valeur: ligne.value, unite: ligne.unit, valeurFormatee: formaterValeur(ligne) }
+  }
+  const ligne = valeurHistoireParTerritoire(payload, theme, couche.clef).get(territoire)
+  if (!ligne) return null
+  return { valeur: ligne.value, unite: ligne.unit, valeurFormatee: formaterValeur(ligne) }
+}
+
 /**
- * The popup's 2–3 KPI rows for a territory: the selected theme's indicator
- * first (when a theme drives the map), then the Aperçu basics, capped at 3.
+ * The popup's 2–3 KPI rows for a territory: the active layer's value first
+ * (when a layer drives the map), then the Aperçu basics, capped at 3.
  * Rows the payload cannot compute are skipped — never « 0 » or a made-up
  * number.
  */
-export function kpisPourPopup(payload: Payload, territoire: string, theme: Theme | null): KpiPopup[] {
+export function kpisPourPopup(
+  payload: Payload,
+  territoire: string,
+  theme: Theme | null,
+  couche: Couche | null,
+): KpiPopup[] {
   const kpis: KpiPopup[] = []
   const clesApercuUtilisees = new Set<string>()
 
-  const config = theme ? configCoucheTheme(theme) : null
-  if (config) {
-    const ligne = payload.indicateurs.find(
-      (l) =>
-        l.territoire === territoire &&
-        l.theme === theme &&
-        l.key === config.indicateur &&
-        l.detail === null,
-    )
+  if (couche && theme) {
+    const ligne = ligneDeLaCouche(payload, territoire, theme, couche)
     if (ligne) {
       kpis.push({
-        libelle: config.libelle,
-        valeur: formaterValeur(ligne) ?? '—',
-        unite: ligne.unit,
+        libelle: couche.libelle,
+        valeur: ligne.valeurFormatee ?? '—',
+        unite: ligne.unite,
       })
       // l'indicateur de thème a son jumeau Aperçu (ex. densité) — pas de doublon.
-      clesApercuUtilisees.add(config.indicateur)
+      clesApercuUtilisees.add(couche.clef)
     }
   }
 
@@ -91,26 +119,23 @@ export function kpisPourPopup(payload: Payload, territoire: string, theme: Theme
   return kpis
 }
 
-/** The hover tooltip's content — the territory name + the selected theme's
- *  indicator value (audit #208 item 57). `theme` null (Aperçu) or a missing
- *  value → `valeur` null (the tooltip shows the name only, honest). */
+/** The hover tooltip's content — the territory name + the active layer's
+ *  value (audit #208 item 57). No layer (Aperçu) or a missing value →
+ *  `valeur` null (the tooltip shows the name only, honest). */
 export interface ContenuTooltip {
   nom: string
   valeur: string | null
 }
 
-export function contenuTooltip(payload: Payload, territoire: string, theme: Theme | null): ContenuTooltip {
-  const config = theme ? configCoucheTheme(theme) : null
+export function contenuTooltip(
+  payload: Payload,
+  territoire: string,
+  theme: Theme | null,
+  couche: Couche | null,
+): ContenuTooltip {
   let valeur: string | null = null
-  if (config) {
-    const ligne = payload.indicateurs.find(
-      (l) =>
-        l.territoire === territoire &&
-        l.theme === theme &&
-        l.key === config.indicateur &&
-        l.detail === null,
-    )
-    valeur = ligne ? formaterValeur(ligne) : null
+  if (couche && theme) {
+    valeur = ligneDeLaCouche(payload, territoire, theme, couche)?.valeurFormatee ?? null
   }
   return {
     nom: trouverTerritoire(payload, territoire)?.nom ?? territoire,
