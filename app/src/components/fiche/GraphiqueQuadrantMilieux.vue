@@ -2,7 +2,8 @@
 /**
  * GraphiqueQuadrantMilieux — the Milieux story chart (issue #241, ADR-0011 +
  * ADR-0017, "Se densifier, s'étaler, ou s'en aller"): the quadrant of the two
- * signed forces — x = Δpopulation, y = Δ(m²/hab) =
+ * signed forces — x = le taux annuel de variation de la population (‰/an,
+ * #306 — le registre Démographie, jamais la variation brute), y = Δ(m²/hab) =
  * artif_m3_par_habitant − artif_m2_par_habitant — with the axes crossing at
  * 0 (markLine) and, beneath the point, the context cloud of the territory's
  * comparison group at the same scale (nuageMilieux). Every cloud point is
@@ -28,12 +29,14 @@ import { formaterNombreFR } from '@/payload/selectors'
 import type { PointNuageMilieux } from '@/payload/selectors'
 
 const props = defineProps<{
-  /** x — Δpopulation (signé), la première force de la lecture. */
-  deltaPopulation: number
+  /** x — le taux annuel de variation de la population (‰/an, #306), la première force de la lecture. */
+  tauxVariationPopulation: number
   /** y — Δ(m²/hab) = artif_m3_par_habitant − artif_m2_par_habitant (signé). */
   deltaM2ParHabitant: number
   classification: string
   nom: string
+  /** La fenêtre de population de la Story (« 2017-2023 ») — le libellé de l'axe, jamais codé en dur. */
+  periodePop: string
   /** La fenêtre des états OCS-GE du territoire — le span multi-dépt porté tel quel. */
   periodeArtif: string
   nuage: PointNuageMilieux[]
@@ -76,6 +79,15 @@ function formaterDelta(x: number): string {
 }
 
 /**
+ * The Démographie rate convention (GraphiqueSoldes — signed, 2 decimals,
+ * comma) for the annualized per-mille register: "+14,49", "-8,26", "0,00".
+ */
+function formaterTaux(x: number): string {
+  const signe = x > 0 ? '+' : ''
+  return `${signe}${x.toFixed(2).replace('.', ',')}`
+}
+
+/**
  * The OCS-GE state window of a cross-département territory carries per-dépt
  * dates — "2021-2025 (22) · 2021-2024 (29)" — versus the plain pair of a
  * single-département territory ("2021-2025"). The parens detect the span.
@@ -86,7 +98,7 @@ function estFenetreMultiDepartement(periode: string): boolean {
 
 const libelleAccesible = computed(
   () =>
-    `${props.nom} — population ${formaterDelta(props.deltaPopulation)} hab., ` +
+    `${props.nom} — variation de population ${formaterTaux(props.tauxVariationPopulation)} ‰/an, ` +
     `m²/hab ${formaterDelta(props.deltaM2ParHabitant)} m² (${props.classification}) · ` +
     `OCS-GE ${props.periodeArtif}`,
 )
@@ -94,7 +106,7 @@ const libelleAccesible = computed(
 /** Tooltip body for one plot point — the main dot or a cloud point. */
 function infobulle(
   nom: string,
-  deltaPopulation: number,
+  tauxVariationPopulation: number,
   deltaM2ParHabitant: number,
   periodeArtif: string | null,
 ): string {
@@ -103,7 +115,7 @@ function infobulle(
       ? `<br/>OCS-GE : ${periodeArtif}`
       : ''
   return (
-    `${nom}<br/>Population : ${formaterDelta(deltaPopulation)} hab.<br/>` +
+    `${nom}<br/>Variation de population : ${formaterTaux(tauxVariationPopulation)} ‰/an<br/>` +
     `m²/hab : ${formaterDelta(deltaM2ParHabitant)} m²${rider}`
   )
 }
@@ -121,7 +133,7 @@ function optionGraphique(): echarts.EChartsCoreOption {
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-  const point = [props.deltaPopulation, props.deltaM2ParHabitant] as [number, number]
+  const point = [props.tauxVariationPopulation, props.deltaM2ParHabitant] as [number, number]
 
   return {
     animation: !mouvementReduit,
@@ -158,7 +170,7 @@ function optionGraphique(): echarts.EChartsCoreOption {
     },
     xAxis: {
       type: 'value',
-      name: 'Δ population (hab.)',
+      name: `Variation de population ${props.periodePop} (‰/an)`,
       nameLocation: 'middle',
       nameGap: 28,
       nameTextStyle: { fontSize: 11, color: couleurTexte },
@@ -198,7 +210,7 @@ function optionGraphique(): echarts.EChartsCoreOption {
         // its OCS-GE window so the tooltip names it, states the millésime
         // mixing and a click opens its own fiche.
         data: props.nuage.map((p) => ({
-          value: [p.deltaPopulation, p.deltaM2ParHabitant] as [number, number],
+          value: [p.tauxVariationPopulation, p.deltaM2ParHabitant] as [number, number],
           nom: p.nom,
           territoire: p.territoire,
           type: p.type,

@@ -792,6 +792,31 @@ function lireHistoireMilieux(
   const delta_population = ligne['delta_population']
   exiger(estNombre(delta_population), fichier, ligneIndexee, '« delta_population » doit être un nombre')
 
+  // Le taux annuel de variation (‰/an, issue #306) — la force population du
+  // quadrant, annualisée et normalisée par la population moyenne du bracket
+  // INSEE (la même convention que Démographie). Null quand la population
+  // moyenne est nulle (le 0 réel des villages détruits — jamais une division
+  // par zéro, jamais un taux inventé) ; défini sinon, avec le MÊME signe que
+  // le delta brut (la classification lit le signe seul du delta — identique
+  // pour le compte et pour le taux, rien ne bouge en aval).
+  const taux_variation_population = ligne['taux_variation_population']
+  const tauxDefini = estNombre(taux_variation_population)
+  if (tauxDefini) {
+    exiger(
+      Math.sign(taux_variation_population as number) === Math.sign(delta_population as number),
+      fichier,
+      ligneIndexee,
+      `« taux_variation_population » (${taux_variation_population}) et « delta_population » (${delta_population}) se contredisent — le taux et le compte partagent le signe`,
+    )
+  } else {
+    exiger(
+      taux_variation_population === null,
+      fichier,
+      ligneIndexee,
+      '« taux_variation_population » doit être un nombre (le taux ‰/an) ou null (population moyenne nulle — jamais un taux inventé)',
+    )
+  }
+
   // Les états OCS-GE (ha à chaque millésime) + la surface par habitant
   // (m²/hab) — SOIT les quatre présents (nombres non négatifs), SOIT les
   // quatre absents (null — le trou NA honnête d'un territoire dont la donnée
@@ -914,6 +939,7 @@ function lireHistoireMilieux(
     periode_pop,
     periode_artif: periode_artif as string | null,
     delta_population: delta_population as number,
+    taux_variation_population: taux_variation_population as number | null,
     artif_m2: artif_m2 as number,
     artif_m3: artif_m3 as number,
     artif_m2_par_habitant: artif_m2_par_habitant as number,

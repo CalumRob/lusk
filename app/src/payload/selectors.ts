@@ -371,8 +371,12 @@ export interface PointNuageMilieux {
   nom: string
   /** La fenêtre des états OCS-GE du pair — le span multi-dépt porté tel quel (le rider du millésime). */
   periodeArtif: string | null
-  /** x — Δpopulation (signé), la première force de la lecture. */
-  deltaPopulation: number
+  /**
+   * x — le taux annuel de variation de la population (‰/an, issue #306), la
+   * première force de la lecture — le registre Démographie, jamais la
+   * variation brute : les communes de toute taille sont comparables.
+   */
+  tauxVariationPopulation: number
   /** y — Δ(m²/hab) = artif_m3_par_habitant − artif_m2_par_habitant (signé), la trajectoire par habitant. */
   deltaM2ParHabitant: number
 }
@@ -380,12 +384,14 @@ export interface PointNuageMilieux {
 /**
  * The Milieux story chart's context cloud (issue #241) — the SAME comparison
  * scope as the Démographie nuage (codesComparaison, ADR-0011) but reading
- * each peer's Milieux Story row (ADR-0017): x = Δpopulation, y = Δ(m²/hab) =
- * artif_m3_par_habitant − artif_m2_par_habitant. Every point carries its
- * OCS-GE state window, so a cross-département peer's millésime span
- * (periode_artif with per-dépt dates) is stated, never hidden. The nuage is
- * derivable app-side from the peers' lines, never a downloaded list — the
- * same pattern as nuageComparaison / nuageMobilite.
+ * each peer's Milieux Story row (ADR-0017): x = le taux annuel de variation
+ * de la population (‰/an, #306 — la même échelle que le point focal, jamais
+ * un mélange brut/taux), y = Δ(m²/hab) = artif_m3_par_habitant −
+ * artif_m2_par_habitant. Every point carries its OCS-GE state window, so a
+ * cross-département peer's millésime span (periode_artif with per-dépt dates)
+ * is stated, never hidden. The nuage is derivable app-side from the peers'
+ * lines, never a downloaded list — the same pattern as nuageComparaison /
+ * nuageMobilite.
  */
 export function nuageMilieux(payload: Payload, territoire: string): PointNuageMilieux[] | null {
   const ref = trouverTerritoire(payload, territoire)
@@ -396,9 +402,13 @@ export function nuageMilieux(payload: Payload, territoire: string): PointNuageMi
   for (const code of codes) {
     const histoire = payload.histoires.find((h) => h.theme === 'milieux' && h.territoire === code)
     if (histoire?.theme !== 'milieux') continue
-    // un pair aux états absents (le trou NA honnête) n'a pas de point à
-    // tracer — le delta Δ(m²/hab) n'existe pas, le nuage ne l'invente pas
+    // un pair aux états absents (le trou NA honnête) ou au taux absent (la
+    // population moyenne nulle — jamais une division par zéro) n'a pas de
+    // point à tracer — le nuage ne l'invente pas
     if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
+      continue
+    }
+    if (histoire.taux_variation_population === null) {
       continue
     }
     const t = trouverTerritoire(payload, code)
@@ -408,7 +418,7 @@ export function nuageMilieux(payload: Payload, territoire: string): PointNuageMi
       type: t.type,
       nom: t.nom,
       periodeArtif: histoire.periode_artif,
-      deltaPopulation: histoire.delta_population,
+      tauxVariationPopulation: histoire.taux_variation_population,
       deltaM2ParHabitant:
         histoire.artif_m3_par_habitant - histoire.artif_m2_par_habitant,
     })
