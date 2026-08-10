@@ -55,6 +55,7 @@ const maplibreMock = vi.hoisted(() => {
     position: unknown = null
     enlevee = false
     options: Record<string, unknown>
+    ecouteurs: Record<string, Ecouteur[]> = {}
     constructor(options: Record<string, unknown> = {}) {
       this.options = options
     }
@@ -71,6 +72,21 @@ const maplibreMock = vi.hoisted(() => {
     }
     remove() {
       this.enlevee = true
+    }
+    getLngLat() {
+      return this.position
+    }
+    getElement() {
+      // Le DOM du popup n'existe pas en happy-dom : ancre « bottom » par défaut
+      // (le popup s'étend vers le haut), hauteur nulle — le tooltip sous-popup
+      // utilise alors la marge fixe, comme sans mesure du DOM.
+      return { offsetHeight: 0, classList: { contains: () => false } }
+    }
+    on(evenement: string, ecouteur: Ecouteur) {
+      ;(this.ecouteurs[evenement] ??= []).push(ecouteur)
+    }
+    fire(evenement: string, ...args: unknown[]) {
+      for (const ecouteur of this.ecouteurs[evenement] ?? []) ecouteur(...args)
     }
   }
 
