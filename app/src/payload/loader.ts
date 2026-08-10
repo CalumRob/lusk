@@ -206,7 +206,11 @@ export async function chargerFichier(
   exigerReference(nom, territoires)
 
   const brut = await obtenir(nom, opts)
-  if (brut === null) return null
+  // Le contournement du validateur n'existe que pour les fichiers OPTIONNELS :
+  // un corps null sur un fichier mandataire (territoires) est une dérive du
+  // contrat, pas une absence — il doit tomber dans son validateur et lever
+  // l'erreur typée (relecture #297), jamais devenir un null silencieux.
+  if (brut === null && !FICHIERS_MANDATOIRES.has(nom)) return null
   return VALIDER_PAR_FICHIER.get(nom)!(brut, `${nom}.json`, territoires)
 }
 

@@ -99,6 +99,29 @@ describe('chargerFichier — the per-file seam', () => {
     ).rejects.toMatchObject({ kind: 'fetch', file: 'territoires.json' })
   })
 
+  it('raises a typed VALIDATION error on a null body for the MANDATORY file — jamais un null silencieux (relecture #297)', async () => {
+    // Un corps null sur territoires.json (HTTP 200) est une dérive du contrat,
+    // pas une absence : le fichier mandataire ne doit JAMAIS contourner son
+    // validateur — le type lie « null » serait un payload muet dans
+    // chargerPayload() (le territoire de référence perdu sans erreur).
+    const options = optionsPour({ 'territoires.json': null })
+    const erreur = await chargerFichier('territoires', options).catch((cause: unknown) => cause)
+    expect(erreur).toBeInstanceOf(PayloadError)
+    expect(erreur).toMatchObject({ kind: 'validation', file: 'territoires.json' })
+  })
+
+  it('treats a null body on an optional file as absent — l\u2019absence honnête, jamais une erreur (relecture #297)', async () => {
+    // Un corps null (HTTP 200) sur un fichier optionnel est le même contrat
+    // que le 404 : la table est simplement absente — les validateurs
+    // optionnels (validerRapportRun / validerApercu…) acceptent null et
+    // retournent null, le chemin ne change pas.
+    const options = optionsPour({ 'territoires.json': territoiresFixture, 'run-report.json': null, 'apercu.json': null })
+    const territoires = await territoiresValides({ 'territoires.json': territoiresFixture, 'run-report.json': null, 'apercu.json': null })
+
+    await expect(chargerFichier('run-report', options)).resolves.toBeNull()
+    await expect(chargerFichier('apercu', territoires, options)).resolves.toBeNull()
+  })
+
   it('raises a typed fetch error on network failure', async () => {
     const fetchImpl = async () => {
       throw new TypeError('Failed to fetch')
@@ -169,6 +192,25 @@ describe('chargerFichier — the per-file seam', () => {
 
     const erreur = await sansReference(
       'indicateurs_demographie',
+      optionsPour(fichiersDemographie),
+    ).catch((cause: unknown) => cause)
+    expect(erreur).toBeInstanceOf(PayloadError)
+    expect(erreur).toMatchObject({ kind: 'validation', file: 'indicateurs_demographie.json' })
+  })
+
+  it('refuses a theme file with null territoires — la référence nulle est une erreur typée, jamais un TypeError (relecture #297)', async () => {
+    // Même garde pour null que pour undefined : un appelant JS / any peut
+    // passer null (le type lie du loader, jamais un crash « null is not
+    // iterable » venu d'indexerReference).
+    const avecNull = chargerFichier as unknown as (
+      nom: 'indicateurs_demographie',
+      territoires: null,
+      options?: ChargerOptions,
+    ) => Promise<unknown>
+
+    const erreur = await avecNull(
+      'indicateurs_demographie',
+      null,
       optionsPour(fichiersDemographie),
     ).catch((cause: unknown) => cause)
     expect(erreur).toBeInstanceOf(PayloadError)
