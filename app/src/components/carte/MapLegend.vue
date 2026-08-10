@@ -11,14 +11,15 @@ import { ChevronDown } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
-import type { Couche } from '@/carte/coucheModel'
+import type { CoucheCarte } from '@/carte/coucheModel'
 import type { NiveauMasque } from '@/geo/types'
 import { NOMS_NIVEAUX } from '@/geo/types'
 
 const props = defineProps<{
   niveau: NiveauMasque
-  /** The active layer — null in Aperçu (the legend notes the masks only). */
-  couche: Couche | null
+  /** The active layer — null in Aperçu (the legend notes the masks only).
+   *  A programmes layer (membre / subvention, #282) renders its own legend. */
+  couche: CoucheCarte | null
   couleurs: string[]
   seuils: number[]
   /** Une rampe divergente (ADR-0019) : les bornes positives portent leur signe
@@ -30,6 +31,8 @@ const props = defineProps<{
   couleurVide: string
   /** The map's outline — keeps the lightened swatch legible (issue #68). */
   couleurContour: string
+  /** The membership highlight — the categorical in/out swatch (#282). */
+  couleurMembre: string
 }>()
 
 const repliee = ref(false)
@@ -74,7 +77,26 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
     </button>
 
     <div v-show="!repliee" class="carte-legendes-corps">
-      <template v-if="couche && bornes.length > 0">
+      <!-- #282 — une couche d'adhésion : la légende catégorielle in/out
+           (membre / hors programme), jamais des buckets numériques. -->
+      <template v-if="couche && couche.source === 'membre'">
+        <ul class="carte-legendes-gammes">
+          <li class="carte-legendes-gamme">
+            <span class="carte-legendes-swatch" :style="{ backgroundColor: couleurMembre }" aria-hidden="true" />
+            <span class="carte-legendes-gamme-texte">Membre du programme</span>
+          </li>
+          <li class="carte-legendes-gamme">
+            <span
+              class="carte-legendes-swatch carte-legendes-swatch--vide"
+              :style="{ backgroundColor: couleurVide, borderColor: couleurContour }"
+              aria-hidden="true"
+            />
+            <span class="carte-legendes-gamme-texte">Hors programme</span>
+          </li>
+        </ul>
+      </template>
+
+      <template v-else-if="couche && bornes.length > 0">
         <ul class="carte-legendes-gammes">
           <li
             v-for="(borne, index) in bornes"

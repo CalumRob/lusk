@@ -14,6 +14,8 @@ import {
   apercuFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  membresProgrammesFixture,
+  subventionsProgrammesFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
@@ -47,6 +49,17 @@ const masquesCommunes: Masques = {
 
 const masquesAbsents: Masques = { communes: null, epcis: null, departements: null }
 
+/** Les trois niveaux de masque — pour exercer le level-native des couches
+ *  programmes (adhésion commune vs EPCI, aucune au département). */
+const masquesTroisNiveaux: Masques = {
+  communes: {
+    type: 'FeatureCollection',
+    features: [feature('22001', 'Commune A1'), feature('22002', 'Commune D')],
+  },
+  epcis: { type: 'FeatureCollection', features: [feature('200000001', 'EPCI X')] },
+  departements: { type: 'FeatureCollection', features: [feature('22', 'Département 22')] },
+}
+
 const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: indicateursDemographieFixture,
@@ -55,6 +68,29 @@ const payload: Payload = {
   runReport: null,
   vintages: vintagesFixture,
   programmes: null,
+}
+
+/** Le payload avec l'onglet programmes — les lignes partagées + une ligne de
+ *  subvention communale supplémentaire (22002) pour une légende lisible. */
+const payloadProgrammes: Payload = {
+  ...payload,
+  programmes: {
+    membres: membresProgrammesFixture,
+    subventions: [
+      ...subventionsProgrammesFixture,
+      {
+        territoire: '22002',
+        type: 'commune',
+        annee: 2025,
+        programme_libl: null,
+        montant: 12000,
+        vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
+        vintage_version: '2026-08-05',
+        vintage_date_reference: '2026-08-05',
+        vintage_date_publication: '2026-08-05',
+      },
+    ],
+  },
 }
 
 function chargerPayloadAvec(p: Payload): ChargerPayload {
@@ -75,6 +111,25 @@ async function monter(overrides: {
       provide: {
         [PAYLOAD_CHARGER_KEY]: overrides.chargerPayload ?? chargerPayloadAvec(payload),
         [GEOMETRIE_CHARGER_KEY]: overrides.chargerGeometrie ?? (async () => masquesCommunes),
+      },
+    },
+  })
+  await flushPromises()
+  return { router, wrapper }
+}
+
+/** Monte la carte sur le payload programmes, sur les trois niveaux de masque
+ *  (le level-native des couches d'adhésion s'exerce au changement de niveau). */
+async function monterProgrammes(chemin: string) {
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push(chemin)
+  await router.isReady()
+  const wrapper = mount(CarteView, {
+    global: {
+      plugins: [router],
+      provide: {
+        [PAYLOAD_CHARGER_KEY]: chargerPayloadAvec(payloadProgrammes),
+        [GEOMETRIE_CHARGER_KEY]: async () => masquesTroisNiveaux,
       },
     },
   })
@@ -136,7 +191,7 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'MapSidebar' }).exists()).toBe(true)
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets[0]).toBe('Aperçu')
+    expect(onglets[0]).toBe('Programmes & financements')
     expect(onglets).toContain('Démographie')
   })
 
@@ -217,6 +272,161 @@ describe('CarteView — la carte avec fond publié', () => {
     const legende = wrapper.findComponent({ name: 'MapLegend' })
     expect(legende.props('couleurVide')).toBe(COULEUR_NEUTRE)
     expect(legende.props('couleurContour')).toBe(COULEUR_CONTOUR)
+  })
+})
+
+describe('CarteView — l’onglet « Programmes & financements » (ADR-0019 #282)', () => {
+  it('le premier onglet de la carte lit « Programmes & financements » (l’Aperçu de la fiche reste intact)', async () => {
+    const { wrapper } = await monter()
+
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets[0]).toBe('Programmes & financements')
+    expect(onglets).toContain('Démographie')
+  })
+
+  it('?onglet=programmes active la couche subventions par défaut — légende € et couches programmes dans la sidebar', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes')
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    expect(wrapper.find('.carte-legendes-unite').text()).toContain('€')
+    const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
+    expect(couches).toEqual(['ACV', 'PVD', 'ORT', 'Subventions totales'])
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Subventions totales')
+  })
+
+  it('?onglet=programmes&programme=ACV rend la légende catégorielle d’adhésion et marque ACV active', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes&programme=ACV')
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('ACV')
+    expect(wrapper.find('.carte-legendes-gamme').text()).toContain('Membre du programme')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ACV')
+  })
+
+  it('cliquer le premier onglet écrit ?onglet=programmes (l’état de la carte, pas un Aperçu vide)', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte')
+
+    await wrapper.findAll('[role="tab"]')[0].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.onglet).toBe('programmes')
+    expect(router.currentRoute.value.query.theme).toBeUndefined()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+  })
+
+  it('sélectionner un thème efface ?onglet=programmes (l’exclusion mutuelle de l’ADR-0019)', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?onglet=programmes')
+
+    const demographie = wrapper.findAll('[role="tab"]').find((o) => o.text().includes('Démographie'))
+    await demographie?.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.theme).toBe('demographie')
+    expect(router.currentRoute.value.query.onglet).toBeUndefined()
+  })
+
+  it('?theme= ET ?onglet=programmes ensemble → l’onglet gagne, le thème est nettoyé', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?theme=demographie&onglet=programmes')
+
+    expect(router.currentRoute.value.query.onglet).toBe('programmes')
+    expect(router.currentRoute.value.query.theme).toBeUndefined()
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+  })
+
+  it('?onglet=programmes&programme=INCONNU → la couche par défaut et le sigle inconnu nettoyé', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?onglet=programmes&programme=INCONNU')
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    expect(router.currentRoute.value.query.programme).toBeUndefined()
+  })
+
+  it('?onglet=inconnu → l’état neutre (aucune couche, la note des masques)', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?onglet=inconnu')
+
+    expect(router.currentRoute.value.query.onglet).toBeUndefined()
+    expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
+  })
+
+  it('?programme=ACV sans ?onglet= → l’état neutre (un sigle hors onglet n’est pas un état)', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?programme=ACV')
+
+    expect(router.currentRoute.value.query.programme).toBeUndefined()
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+  })
+
+  it('?onglet=programmes sans payload programmes (404 = élément absent) → l’état vide honnête', async () => {
+    const { wrapper } = await monter({ chemin: '/carte?onglet=programmes' })
+
+    expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
+    expect(wrapper.find('.carte-legendes-masques').exists()).toBe(true)
+  })
+
+  it('au niveau EPCI, les couches d’adhésion EPCI (CRTE · Territoires d’industrie · ORT)', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes')
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    await boutons[1].trigger('click')
+    await flushPromises()
+
+    const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
+    expect(couches).toEqual(['CRTE', "Territoires d'industrie", 'ORT', 'Subventions totales'])
+  })
+
+  it('au niveau département, AUCUNE couche d’adhésion — l’absence honnête, les subventions seules', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes')
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    await boutons[2].trigger('click')
+    await flushPromises()
+
+    const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
+    expect(couches).toEqual(['Subventions totales'])
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+  })
+
+  it('ORT se re-joint au changement de niveau (ADR-0019) — ?programme=ORT reste actif de la commune à l’EPCI', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes&programme=ORT')
+
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ORT')
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    await boutons[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ORT')
+  })
+
+  it('?programme=ACV au passage vers l’EPCI retombe sur les subventions (aucune ligne ACV EPCI — jamais inventée)', async () => {
+    const { wrapper } = await monterProgrammes('/carte?onglet=programmes&programme=ACV')
+
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ACV')
+
+    const boutons = wrapper.findAll('[role="radio"]')
+    await boutons[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Subventions totales')
+  })
+
+  it('cliquer une couche d’adhésion dans la sidebar écrit ?onglet=programmes&programme=<sigle> (partageable)', async () => {
+    const { router, wrapper } = await monterProgrammes('/carte?onglet=programmes')
+
+    const pvd = wrapper.findAll('.carte-sidebar-couche').find((b) => b.text().trim() === 'PVD')
+    await pvd?.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'programmes', programme: 'PVD' })
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('PVD')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('PVD')
+  })
+
+  it('?onglet=programmes&programme=ACV survit au rechargement (l’état est l’URL)', async () => {
+    const premier = await monterProgrammes('/carte?onglet=programmes&programme=ACV')
+    expect(premier.wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ACV')
+    premier.wrapper.unmount()
+
+    const second = await monterProgrammes('/carte?onglet=programmes&programme=ACV')
+    expect(second.wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('ACV')
+    expect(second.wrapper.find('.carte-legendes-titre').text()).toBe('ACV')
   })
 })
 

@@ -28,15 +28,23 @@ import type { Theme } from '@/payload/types'
 
 const props = defineProps<{
   themes: Theme[]
-  selected: Theme | null
+  /** The selected tab — a theme, null for the fiche's Aperçu, or 'programmes'
+   *  for the carte's renamed first tab (ADR-0019, #282). */
+  selected: Theme | null | 'programmes'
+  /** The first tab's French label — defaults to « Aperçu » (fiche); the carte
+   *  overrides it to « Programmes & financements » (ADR-0019, #282). */
+  libellePremier?: string
+  /** The first tab's slug — null on the fiche (Aperçu emits null), 'programmes'
+   *  on the carte (its ?onglet= state, #282). */
+  premierSlug?: Theme | null | 'programmes'
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', slug: Theme | null): void
+  (e: 'select', slug: Theme | null | 'programmes'): void
 }>()
 
 const onglets = computed(() => [
-  { slug: null as Theme | null, nom: 'Aperçu', icone: ICONE_APERCU },
+  { slug: props.premierSlug ?? null, nom: props.libellePremier ?? 'Aperçu', icone: ICONE_APERCU },
   ...props.themes.map((theme) => ({
     slug: theme,
     nom: NOMS_THEMES[theme],
@@ -46,7 +54,12 @@ const onglets = computed(() => [
 
 const refsOnglets = ref<HTMLElement[]>([])
 
-/** The theme's derived ramp as CSS custom props — Aperçu falls back to brand. */
+function estTheme(slug: Theme | null | 'programmes'): slug is Theme {
+  return slug !== null && slug !== 'programmes'
+}
+
+/** The theme's derived ramp as CSS custom props — the first tab (Aperçu /
+ *  Programmes & financements) falls back to brand. */
 function styleTheme(theme: Theme): Record<`--${string}`, string> {
   return {
     '--couleur-strong': `var(--theme-${theme}-strong)`,
@@ -97,7 +110,7 @@ function surTouche(ev: KeyboardEvent): void {
       role="tab"
       class="onglet"
       :class="{ 'onglet--selectionne': onglet.slug === selected }"
-      :style="onglet.slug ? styleTheme(onglet.slug) : undefined"
+      :style="estTheme(onglet.slug) ? styleTheme(onglet.slug) : undefined"
       :aria-selected="onglet.slug === selected ? 'true' : 'false'"
       :aria-controls="idPanneau(onglet.slug)"
       :tabindex="onglet.slug === selected ? 0 : -1"

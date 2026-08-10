@@ -108,6 +108,103 @@ describe('ThemeTabs — the tab logic (URL state)', () => {
   })
 })
 
+describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', () => {
+  it('override le premier onglet pour la carte — « Programmes & financements » au lieu d’Aperçu', () => {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: ['demographie'],
+        selected: 'programmes',
+        libellePremier: 'Programmes & financements',
+        premierSlug: 'programmes',
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    expect(textesOnglets(wrapper)[0]).toBe('Programmes & financements')
+    expect(textesOnglets(wrapper)[1]).toBe('Démographie')
+  })
+
+  it('émet « programmes » quand le premier onglet renommé est cliqué (l’état ?onglet= de la carte)', async () => {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: ['demographie'],
+        selected: 'programmes',
+        libellePremier: 'Programmes & financements',
+        premierSlug: 'programmes',
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    await wrapper.findAll('[role="tab"]')[0].trigger('click')
+
+    expect(wrapper.emitted('select')).toEqual([['programmes']])
+  })
+
+  it('marque le premier onglet renommé sélectionné quand la carte le passe (aria-selected + roving tabindex)', () => {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: ['demographie'],
+        selected: 'programmes',
+        libellePremier: 'Programmes & financements',
+        premierSlug: 'programmes',
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    const premier = wrapper.findAll('[role="tab"]')[0]
+    expect(premier.attributes('aria-selected')).toBe('true')
+    expect(premier.attributes('tabindex')).toBe('0')
+    expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('false')
+    expect(wrapper.findAll('[role="tab"]')[1].attributes('tabindex')).toBe('-1')
+  })
+
+  it('garde le slug du premier onglet dans ses ids stables — onglet-programmes / panneau-programmes', () => {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: [],
+        selected: 'programmes',
+        libellePremier: 'Programmes & financements',
+        premierSlug: 'programmes',
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    const premier = wrapper.findAll('[role="tab"]')[0]
+    expect(premier.attributes('id')).toBe('onglet-programmes')
+    expect(premier.attributes('aria-controls')).toBe('panneau-programmes')
+  })
+
+  it('les thèmes restent sélectionnables quand le premier onglet est renommé (Home → programmes, flèches → thème)', async () => {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: ['demographie', 'habitat'],
+        selected: 'programmes',
+        libellePremier: 'Programmes & financements',
+        premierSlug: 'programmes',
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    await wrapper.findAll('[role="tab"]')[0].trigger('keydown', { key: 'ArrowRight' })
+    expect(wrapper.emitted('select')).toEqual([['demographie']])
+
+    await wrapper.findAll('[role="tab"]')[1].trigger('keydown', { key: 'Home' })
+    expect(wrapper.emitted('select')).toEqual([['demographie'], ['programmes']])
+  })
+
+  it('sans override, la fiche garde Aperçu qui émet null — le comportement hérité intact', () => {
+    const wrapper = montage(['demographie'])
+
+    expect(textesOnglets(wrapper)[0]).toBe('Aperçu')
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('id')).toBe('onglet-apercu')
+  })
+})
+
 describe('ThemeTabs — keyboard navigation', () => {
   it('moves selection and focus with ArrowRight', async () => {
     const wrapper = montage(['demographie', 'habitat'])

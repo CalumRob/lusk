@@ -11,7 +11,10 @@ import type { Couche } from '../carte/coucheModel'
  * buckets (ADR-0019 — the legend follows the layer: its own libelle, unit,
  * scale and breaks) — swatch + numeric range (color is never the sole
  * carrier, DESIGN.md §8) — with the no-data row, or the active level's note
- * in Aperçu. Collapsible.
+ * in Aperçu. Collapsible. Depuis #282, la légende rend aussi les couches de
+ * l'onglet « Programmes & financements » : la légende catégorielle in/out
+ * d'une couche d'adhésion (membre / hors programme) et la choroplèthe des
+ * subventions (total €).
  */
 
 const coucheDensite: Couche = {
@@ -35,6 +38,8 @@ function montage(overrides: Record<string, unknown> = {}) {
       // the map's neutral rendering, threaded from couleurs.ts (issue #68)
       couleurVide: COULEUR_NEUTRE,
       couleurContour: COULEUR_CONTOUR,
+      // the membership highlight, threaded from couleurs.ts (#282)
+      couleurMembre: '#2f4745',
       ...overrides,
     },
   })
@@ -136,6 +141,50 @@ describe('MapLegend — la rampe divergente (ADR-0019)', () => {
     const gammes = wrapper.findAll('.carte-legendes-gamme')
     expect(gammes[3].text()).toContain('5 – 15')
     expect(gammes[3].text()).not.toContain('+5')
+  })
+})
+
+describe('MapLegend — les couches de l’onglet programmes (#282)', () => {
+  it('rend la légende catégorielle in/out d’une couche d’adhésion — membre vs hors programme', () => {
+    const wrapper = montage({
+      couche: { source: 'membre', sigle: 'ACV', libelle: 'ACV', niveau: 'communes' },
+      couleurs: [],
+      seuils: [],
+      unite: '',
+    })
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('ACV')
+    const gammes = wrapper.findAll('.carte-legendes-gamme')
+    expect(gammes).toHaveLength(2)
+    expect(gammes[0].text()).toContain('Membre du programme')
+    expect(gammes[1].text()).toContain('Hors programme')
+    // le swatch membre porte la couleur d’highlight, le hors-programme le neutre
+    expect(gammes[0].find('.carte-legendes-swatch').attributes('style')).toContain('#2f4745')
+    expect(gammes[1].find('.carte-legendes-swatch--vide').attributes('style')).toContain(COULEUR_NEUTRE)
+  })
+
+  it('choroplèthe la couche subventions — les buckets numériques avec l’unité €', () => {
+    const wrapper = montage({
+      couche: { source: 'subvention', libelle: 'Subventions totales' },
+      couleurs: ['#f0f6f5', '#57726f', '#2f4745'],
+      seuils: [30000, 100000],
+      unite: '€',
+    })
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Subventions totales')
+    const gammes = wrapper.findAll('.carte-legendes-gamme')
+    expect(gammes).toHaveLength(3)
+    expect(gammes[0].text()).toContain('≤ 30 000')
+    expect(gammes[0].text()).toContain('€')
+    expect(gammes[1].text()).toContain('30 000 – 100 000')
+    expect(gammes[2].text()).toContain('100 000 et +')
+  })
+
+  it('garde la note des masques quand la couche d’adhésion est seule sans highlight (aucun bucket)', () => {
+    const wrapper = montage({ couche: null, couleurs: [], seuils: [] })
+
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Communes')
+    expect(wrapper.find('.carte-legendes-masques').exists()).toBe(true)
   })
 })
 

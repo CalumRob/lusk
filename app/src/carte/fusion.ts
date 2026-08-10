@@ -10,9 +10,10 @@
 
 import type { ExpressionSpecification } from 'maplibre-gl'
 
-import type { CollectionMasque, FeatureTerritoire } from '../geo/types'
-import type { Indicateur, Payload, Theme } from '../payload/types'
+import type { CollectionMasque, FeatureTerritoire, NiveauMasque } from '../geo/types'
+import type { Indicateur, Payload, SigleProgramme, Theme } from '../payload/types'
 import { formaterValeur } from '../payload/selectors'
+import { typeAdhesionDuNiveau, typeSubventionsDuNiveau } from './programmesCouches'
 import { COULEUR_NEUTRE } from './couleurs'
 
 /** The MapLibre paint expression for a choropleth fill (step + null guard). */
@@ -128,4 +129,85 @@ export function expressionCouleurs(seuils: readonly number[], couleurs: readonly
     step,
     COULEUR_NEUTRE,
   ] as unknown as ExpressionCouleurs
+}
+
+/** The membership join (ADR-0013, #282) — the programmes' anchor rows read at
+ *  the niveau's anchor type: `membre: true` for a covered territory, the
+ *  territory ABSENT from the map otherwise. A sigle not anchored at the level
+ *  (CRTE at commune) joins nothing — the honest empty highlight. */
+export function membresParTerritoire(
+  payload: Payload,
+  sigle: SigleProgramme,
+  niveau: NiveauMasque,
+): Map<string, boolean> {
+  const parTerritoire = new Map<string, boolean>()
+  const type = typeAdhesionDuNiveau(niveau)
+  if (!type) return parTerritoire
+  for (const membre of payload.programmes?.membres ?? []) {
+    if (membre.sigle === sigle && membre.type === type) parTerritoire.set(membre.territoire, true)
+  }
+  return parTerritoire
+}
+
+/** The subvention join (#282) — the total € per territory at the niveau's
+ *  aggregate type: the sum of the territory's `montant` rows (the commune's
+ *  by-area split or the EPCI/département annual total, ADR-0013). A territory
+ *  without rows keeps null (rendered in the neutral no-data color, never an
+ *  invented zero). */
+export function subventionsParTerritoire(
+  payload: Payload,
+  niveau: NiveauMasque,
+): Map<string, ValeurLigne> {
+  const parTerritoire = new Map<string, ValeurLigne>()
+  const type = typeSubventionsDuNiveau(niveau)
+  for (const subvention of payload.programmes?.subventions ?? []) {
+    if (subvention.type !== type) continue
+    const actuel = parTerritoire.get(subvention.territoire)?.value ?? 0
+    parTerritoire.set(subvention.territoire, {
+      value: actuel + subvention.montant,
+      unit: '€',
+    })
+  }
+  return parTerritoire
+}
+
+/** A feature enriched with the membership boolean (the categorical fill reads it). */
+export interface FeatureAvecMembre extends FeatureTerritoire {
+  properties: FeatureTerritoire['properties'] & {
+    membre: boolean
+  }
+}
+
+export interface CollectionAvecMembres {
+  type: 'FeatureCollection'
+  features: FeatureAvecMembre[]
+}
+
+/** The collection with the membership baked into each feature's properties —
+ *  `membre: true` for a covered territory, false otherwise (the in/out
+ *  categorical paint). The geometry itself is untouched. */
+export function collectionAvecMembres(
+  collection: CollectionMasque,
+  parTerritoire: ReadonlyMap<string, boolean>,
+): CollectionAvecMembres {
+  return {
+    type: 'FeatureCollection',
+    features: collection.features.map((feature) => ({
+      ...feature,
+      properties: {
+        ...feature.properties,
+        membre: parTerritoire.get(feature.properties.territoire) ?? false,
+      },
+    })),
+  }
+}
+
+/**
+ * The membership highlight expression (ADR-0019 #282) — CATEGORICAL, beside
+ * the value `expressionCouleurs`: a covered territory lights up in the
+ * highlight color, a non-member renders in the neutral fill. Two classes,
+ * never a ramp.
+ */
+export function expressionMembres(couleurMembre: string): ExpressionCouleurs {
+  return ['case', ['==', ['get', 'membre'], true], couleurMembre, COULEUR_NEUTRE] as unknown as ExpressionCouleurs
 }

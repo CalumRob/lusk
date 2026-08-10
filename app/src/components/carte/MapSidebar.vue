@@ -16,7 +16,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import MapLegend from '@/components/carte/MapLegend.vue'
 import { useMediaQuery } from '@/composables/useMediaQuery'
-import type { Couche, EntreeCouches } from '@/carte/coucheModel'
+import type { CoucheCarte, EntreeCouches } from '@/carte/coucheModel'
 import type { NiveauMasque } from '@/geo/types'
 import { NOMS_NIVEAUX } from '@/geo/types'
 import type { Territoire } from '@/payload/types'
@@ -25,10 +25,11 @@ const props = defineProps<{
   territoires: Territoire[]
   niveau: NiveauMasque
   niveauxDisponibles: NiveauMasque[]
-  /** The active theme's layer entries, in fiche order (couchesDuTheme). */
+  /** The active tab's layer entries — the theme's layer set (couchesDuTheme)
+   *  or the programmes layers (couchesProgrammes, #282). */
   entrees: EntreeCouches[]
-  /** The active layer — null in Aperçu or for a theme whose default is absent. */
-  coucheActive: Couche | null
+  /** The active layer — null in Aperçu / neutral state. */
+  coucheActive: CoucheCarte | null
   couleurs: string[]
   seuils: number[]
   estDivergente: boolean
@@ -37,11 +38,13 @@ const props = defineProps<{
   /** The map's neutral fill + outline — forwarded to the legend (issue #68). */
   couleurVide: string
   couleurContour: string
+  /** The membership highlight — forwarded to the legend (#282). */
+  couleurMembre: string
 }>()
 
 const emit = defineEmits<{
   (e: 'niveau-change', niveau: NiveauMasque): void
-  (e: 'couche-change', couche: Couche): void
+  (e: 'couche-change', couche: CoucheCarte): void
 }>()
 
 const estMobile = useMediaQuery('(max-width: 768px)')
@@ -70,14 +73,17 @@ function basculerGroupe(index: number): void {
   else groupesReplies.value.splice(position, 1)
 }
 
-function estActive(couche: Couche): boolean {
+function estActive(couche: CoucheCarte): boolean {
   const active = props.coucheActive
-  return (
-    active !== null &&
-    active.source === couche.source &&
-    active.clef === couche.clef &&
-    active.detail === couche.detail
-  )
+  if (active === null || couche.source !== active.source) return false
+  if (couche.source === 'membre') {
+    return active.source === 'membre' && couche.sigle === active.sigle && couche.niveau === active.niveau
+  }
+  if (couche.source === 'subvention') return active.source === 'subvention'
+  if (active.source === 'indicateur' || active.source === 'histoire') {
+    return active.clef === couche.clef && active.detail === couche.detail
+  }
+  return false
 }
 
 function ouvrir(): void {
@@ -93,7 +99,7 @@ function choisirNiveau(niveau: NiveauMasque): void {
   if (estMobile.value) fermer()
 }
 
-function choisirCouche(couche: Couche): void {
+function choisirCouche(couche: CoucheCarte): void {
   emit('couche-change', couche)
   if (estMobile.value) fermer()
 }
@@ -231,6 +237,7 @@ function choisirCouche(couche: Couche): void {
         :est-pourcentage="estPourcentage"
         :couleur-vide="couleurVide"
         :couleur-contour="couleurContour"
+        :couleur-membre="couleurMembre"
       />
     </div>
   </aside>

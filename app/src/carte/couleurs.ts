@@ -28,6 +28,11 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
   milieux: '#A99A5E', // olive/kaki — l'axe terre (ADR-0014), ancrage provisoire
 }
 
+/** The programmes tab's anchor (ADR-0019 #282) — the brand anchor
+ *  (tokens.css --brand-500) : the cross-theme tab runs on the general brand
+ *  ramp, like the fiche's Aperçu. */
+export const ANCRAGE_PROGRAMMES = '#57726F'
+
 /** The neutral fill: territory masks in Aperçu + no-data territories.
  *  Un vert-gris clair — lightened (issue #68) so it sits back against the
  *  light positron basemap (ADR-0018) while still reading at commune level. */
@@ -150,6 +155,11 @@ function melangerOklab(ancre: string, base: string, partAncre: number): string {
     }),
   )
 }
+
+/** The membership highlight (in/out categorical, #282) — the covered
+ *  territories light up in the programmes anchor's strong role, the same pole
+ *  the subventions ramp tops at. */
+export const COULEUR_MEMBRE = rolesRampesTheme(ANCRAGE_PROGRAMMES).strong
 
 /** The theme ramp's four roles (tokens.css §2, computed for the map — the
  *  exact recipes the CSS tokens declare: the fiche and the map now read the
