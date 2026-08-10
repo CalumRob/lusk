@@ -123,7 +123,7 @@ export function trouverTerritoire(payload: Payload, id: string): Territoire | nu
  * from the map keep their payload order (later themes extend the map when
  * their block lands).
  */
-const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
+export const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
   demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
   // Économie (issue #120) : « Taille » → « santé » → « verdure » — l'ordre du
   // contrat R (INDICATEURS_ECONOMIE), pas celui du JSON.
@@ -151,6 +151,19 @@ const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
   milieux: ['artif_par_habitant', 'conso_enaf_annuel'],
 }
 
+/** The shared key comparator — the fiche contract order (mapped keys first, then unmapped in payload order). */
+function comparerOrdreIndicateurs(ordre: readonly string[] | undefined): (a: string, b: string) => number {
+  return (a, b) => {
+    if (!ordre) return 0
+    const ia = ordre.indexOf(a)
+    const ib = ordre.indexOf(b)
+    if (ia === -1 && ib === -1) return 0
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  }
+}
+
 /** The standard indicator rows for a territoire + theme, in the contract's order. */
 export function indicateursPourTerritoire(
   payload: Payload,
@@ -160,16 +173,22 @@ export function indicateursPourTerritoire(
   const lignes = payload.indicateurs.filter(
     (ligne) => ligne.theme === theme && ligne.territoire === territoire,
   )
-  const ordre = ORDRE_INDICATEURS[theme]
-  if (!ordre) return lignes
-  return [...lignes].sort((a, b) => {
-    const ia = ordre.indexOf(a.key)
-    const ib = ordre.indexOf(b.key)
-    if (ia === -1 && ib === -1) return 0
-    if (ia === -1) return 1
-    if (ib === -1) return -1
-    return ia - ib
-  })
+  return [...lignes].sort((a, b) => comparerOrdreIndicateurs(ORDRE_INDICATEURS[theme])(a.key, b.key))
+}
+
+/**
+ * The theme's distinct indicator keys, in the fiche contract's order (the
+ * ORDRE_INDICATEURS map; payload order for a theme the map doesn't cover —
+ * habitat's order lives in its payload, like its labels). The carte's layer
+ * model reads THIS list — the layer order mirrors the fiche, never a
+ * carte-side order.
+ */
+export function clesIndicateursDuTheme(payload: Payload, theme: Theme): string[] {
+  const vues = new Set<string>()
+  for (const ligne of payload.indicateurs) {
+    if (ligne.theme === theme) vues.add(ligne.key)
+  }
+  return [...vues].sort(comparerOrdreIndicateurs(ORDRE_INDICATEURS[theme]))
 }
 
 /** One indicator figure of the block: a key and its rows (multi-detail keys group). */
