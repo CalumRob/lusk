@@ -33,6 +33,16 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
  *  light positron basemap (ADR-0018) while still reading at commune level. */
 export const COULEUR_NEUTRE = '#D8E6E2'
 
+/** The diverging ramp's shared counter-hue (ADR-0019): the negative pole of
+ *  every diverging ramp, whatever the theme — mirror of the --mode-car token
+ *  (tokens.css §2). */
+export const COULEUR_CORAL = '#A94562'
+
+/** The light neutral at zero of the diverging ramp (ADR-0019) — deliberately
+ *  distinct from COULEUR_NEUTRE: a territory at zero must not read as a
+ *  no-data territory. */
+export const COULEUR_NEUTRE_ZERO = '#F2F5F4'
+
 /** The outline of the territory masks (reads on both basemap and fills). */
 export const COULEUR_CONTOUR = '#4E6E68'
 
@@ -169,6 +179,20 @@ export function rolesRampesTheme(ancrage: string): RolesRampesTheme {
  */
 export function echelleChoroplethe(ancrage: string, nombreEtapes: number): string[] {
   if (nombreEtapes < 2) throw new RangeError('La rampe demande au moins 2 étapes')
+  return rampePole(ancrage, nombreEtapes)
+}
+
+/**
+ * One pole of the diverging ramp: `nombreEtapes` steps of the anchor's role
+ * path wash → soft → line → strong, lightest to darkest — the same sampling
+ * as `echelleChoroplethe`, generalised to any step count so a 3-bucket side
+ * still spans wash → strong (its pole keeps its darkest class).
+ */
+function rampePole(ancrage: string, nombreEtapes: number): string[] {
+  if (nombreEtapes <= 1) {
+    rolesRampesTheme(ancrage) // le garde-fou de dérive : l'ancre est validée même pour une étape unique
+    return [ancrage]
+  }
   const { wash, soft, line, strong } = rolesRampesTheme(ancrage)
   const chemin: string[] = [wash, soft, line, strong]
   const etapes: string[] = []
@@ -179,4 +203,23 @@ export function echelleChoroplethe(ancrage: string, nombreEtapes: number): strin
     etapes.push(melangerOklab(chemin[segment], chemin[segment + 1], 1 - fraction))
   }
   return etapes
+}
+
+/**
+ * The diverging ramp (ADR-0019): one colour per class over the diverging
+ * breaks — the shared coral counter-hue at the negative pole (darkest first,
+ * the most negative class), the light neutral at zero, the theme anchor at
+ * the positive pole (lightest first, the most positive class). `seuils` must
+ * straddle zero (both sides present) — otherwise the ramp has no two poles.
+ * Throws on an invalid hex or unbalanced breaks (a drift guard).
+ */
+export function rampeDivergente(ancrage: string, seuils: readonly number[]): string[] {
+  const nbNegatifs = seuils.filter((s) => s < 0).length
+  const nbPositifs = seuils.filter((s) => s > 0).length
+  if (nbNegatifs === 0 || nbPositifs === 0) {
+    throw new RangeError('Une rampe divergente demande des seuils de part et d’autre de zéro')
+  }
+  const poleNegatif = rampePole(COULEUR_CORAL, nbNegatifs).reverse() // foncé → clair
+  const polePositif = rampePole(ancrage, nbPositifs) // clair → foncé
+  return [...poleNegatif, COULEUR_NEUTRE_ZERO, ...polePositif]
 }

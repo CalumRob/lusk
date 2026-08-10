@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   ANCRAGES_THEMES,
+  COULEUR_CORAL,
   COULEUR_NEUTRE,
+  COULEUR_NEUTRE_ZERO,
   echelleChoroplethe,
   LARGEUR_CONTOUR,
+  rampeDivergente,
   rolesRampesTheme,
 } from '../carte/couleurs'
 
@@ -154,5 +157,79 @@ describe('echelleChoroplethe — the one-anchor ramp', () => {
   it('throws on an invalid hex — the drift guard', () => {
     expect(() => echelleChoroplethe('pas-une-couleur', 3)).toThrow(RangeError)
     expect(() => echelleChoroplethe('#8E85C4', 1)).toThrow(RangeError)
+  })
+})
+
+describe('COULEUR_CORAL — le contre-hue partagé de la rampe divergente (ADR-0019)', () => {
+  it('mirror du jeton --mode-car (tokens.css §2) — le pôle négatif de toutes les rampes divergentes', () => {
+    expect(COULEUR_CORAL).toBe('#A94562')
+  })
+})
+
+describe('COULEUR_NEUTRE_ZERO — le neutre clair à zéro (ADR-0019)', () => {
+  it('est distinct du neutre « non disponible » — un territoire à zéro ne lit pas comme une donnée absente', () => {
+    expect(COULEUR_NEUTRE_ZERO).not.toBe(COULEUR_NEUTRE)
+  })
+
+  it('est plus clair que le neutre « non disponible » — le zéro s’efface, la donnée manquante se voit', () => {
+    const luminance = (hex: string) => {
+      const r = Number.parseInt(hex.slice(1, 3), 16)
+      const g = Number.parseInt(hex.slice(3, 5), 16)
+      const b = Number.parseInt(hex.slice(5, 7), 16)
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    expect(luminance(COULEUR_NEUTRE_ZERO)).toBeGreaterThan(luminance(COULEUR_NEUTRE))
+  })
+})
+
+describe('rampeDivergente — la rampe à deux pôles (ADR-0019)', () => {
+  it('throwing quand les seuils n’enjambent pas zéro — une rampe divergente a deux pôles', () => {
+    expect(() => rampeDivergente('#8E85C4', [10, 20, 30])).toThrow(RangeError)
+    expect(() => rampeDivergente('#8E85C4', [-30, -20, -10])).toThrow(RangeError)
+  })
+
+  it('rend une couleur par bucket : pôle négatif coral + neutre à zéro + pôle positif thème', () => {
+    const rampe = rampeDivergente('#8E85C4', [-20, -5, 5, 15])
+    expect(rampe).toHaveLength(5) // 2 coral + 1 neutre + 2 thème
+    expect(rampe[2]).toBe(COULEUR_NEUTRE_ZERO) // le neutre clair est AU zéro
+  })
+
+  it('ancre le pôle négatif sur le coral partagé — foncé à clair, du fort au wash', () => {
+    const rampe = rampeDivergente('#8E85C4', [-20, -5, 5, 15])
+    // le plus négatif = le fort du coral (62 % vers #0C1B19), le plus proche de zéro = son wash
+    expect(rampe[0]).toBe('#6b3745') // coral strong
+    expect(rampe[1]).toBe('#f3ecee') // coral wash
+  })
+
+  it('ancre le pôle positif sur l’ancrage du thème — clair à foncé, du wash au fort', () => {
+    const rampe = rampeDivergente('#8E85C4', [-20, -5, 5, 15])
+    expect(rampe[3]).toBe('#eff1f7') // indigo wash
+    expect(rampe[4]).toBe('#595a7d') // indigo strong
+  })
+
+  it('suit le chemin des rôles par côté — les extrêmes de la rampe sont les rôles wash/strong', () => {
+    const rampe = rampeDivergente('#C98F6E', [-20, -10, -5, 5, 15])
+    expect(rampe).toHaveLength(6) // 3 coral + 1 neutre + 2 terracotta
+    expect(rampe[0]).toBe('#6b3745') // coral strong
+    expect(rampe[3]).toBe(COULEUR_NEUTRE_ZERO)
+    expect(rampe[4]).toBe('#f5f2ef') // terracotta wash
+    expect(rampe[5]).toBe('#7c604c') // terracotta strong
+  })
+
+  it('est monotone en clarté sur chaque côté : le négatif fonce vers le pôle, le positif s’éclaircit', () => {
+    const luminance = (hex: string) => {
+      const r = Number.parseInt(hex.slice(1, 3), 16)
+      const g = Number.parseInt(hex.slice(3, 5), 16)
+      const b = Number.parseInt(hex.slice(5, 7), 16)
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const rampe = rampeDivergente('#8E85C4', [-20, -10, -5, 5, 15])
+    expect(luminance(rampe[0])).toBeLessThan(luminance(rampe[1]))
+    expect(luminance(rampe[1])).toBeLessThan(luminance(rampe[2]))
+    expect(luminance(rampe[4])).toBeGreaterThan(luminance(rampe[5]))
+  })
+
+  it('throwing sur un ancrage invalide — le garde-fou de dérive', () => {
+    expect(() => rampeDivergente('pas-une-couleur', [-20, 5])).toThrow(RangeError)
   })
 })
