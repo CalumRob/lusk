@@ -184,14 +184,79 @@ MANIFEST_MILIEUX_OCSGE <- dplyr::bind_rows(
   ligne_ocsge_etat("56", "Morbihan", 2024, "2026-06-10")
 )
 
+# MANIFEST_MILIEUX_PATCH ---------------------------------------------------------
+# Le fragment PATCH CORRECTIF M2 (issue #243, amendement ADR-0017 — la décision
+# « appliquer où disponible, mesurer d'abord ») : les TROIS patchs Géoplateforme
+# « PATCHCORRECTIF » du millésime INITIAL des départements 22/29/56 (D022 2021,
+# D029 2021, D056 2022 — le 35 n'a pas de patch). Le patch recense les anomalies
+# détectées dans le millésime M2 (la couche `PATCH_CORR_{DXX}_{YYYY}` du GPKG,
+# les colonnes cs_corr / us_corr : la COUVERTURE/USAGE corrigée du polygone,
+# « RAS » = aucune correction) — l'outil de traçabilité officiel, jamais
+# re-dérivé. La MESURE (2026-08-09, documentée dans theme_milieux.R) : ~20 %
+# des polygones du patch INVERTISSENT le statut artif (22 : 19,6 %, 29 : 19,0 %,
+# 56 : 24,9 % ; ~16 % / 29 % / 49 % de la surface du patch) — matériel, la
+# bascule « au niveau matrice sur ces polygones » est appliquée (le correctif
+# cs/us -> artif, approximation documentée). Le patch est livré avec le
+# millésime SUIVANT (la publication est celle du M3 — la même date que
+# l'archive d'état la plus récente) ; sa référence est le 1er janvier du
+# millésime qu'il corrige. La ressource Géoplateforme est le produit OCS GE
+# brut (`OCSGE` — le motif `OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D0{XX}_{YYYY}
+# -01-01.7z`, vérifié 2026-08-10), jamais un téléchargement ad-hoc : les trois
+# sources sont PINNÉES dans le manifeste (Licence Ouverte 2.0, mode cron).
+ligne_ocsge_patch <- function(departement, nom_departement, millesime,
+                              date_publication) {
+  base <- paste0("OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D0", departement,
+                 "_", millesime, "-01-01")
+  tibble::tibble(
+    id = paste0("ocsge_patch_correctif_", departement),
+    source = paste0(
+      "IGN — OCS GE « patch correctif » (Nouvelle Génération) — ",
+      nom_departement, " (", departement, "), millésime corrigé ", millesime
+    ),
+    url = paste0("https://data.geopf.fr/telechargement/download/",
+                 "OCSGE/", base, "/", base, ".7z"),
+    fichier = paste0(base, ".7z"),
+    vintage = as.character(millesime),
+    date_reference = paste0(millesime, "-01-01"),
+    date_publication = date_publication,
+    licence = "lov2",
+    note = paste0(
+      "Le PATCH CORRECTIF OCS GE NG (IGN, Nouvelle Génération) du millésime ",
+      millesime, " du département ", departement, " — la couche `PATCH_CORR_D0",
+      departement, "_", millesime, "` du GPKG Géoplateforme (produit OCS GE, ",
+      "Licence Ouverte 2.0). Le patch recense les anomalies géométriques et ",
+      "sémantiques identifiées dans le millésime ", millesime,
+      " : chaque polygone porte la couverture/usage CORRIGÉE (cs_corr / ",
+      "us_corr, « RAS » = aucune correction). Mesuré 2026-08-09 (voir ",
+      "theme_milieux.R) : ~20 % des polygones du patch inversent le statut ",
+      "artif (22 : 19,6 % · 29 : 19,0 % · 56 : 24,9 % de la surface du patch) ",
+      "— la bascule « au niveau matrice sur ces polygones » (le correctif ",
+      "cs/us -> artif) est appliquée au millésime initial du département, en ",
+      "approximation DOCUMENTÉE (Méthodes). Le 35 n'a pas de patch. Référence : ",
+      "le 1er janvier du millésime corrigé (", millesime, "-01-01) ; ",
+      "publication : la livraison avec le millésime suivant (",
+      date_publication, ")."
+    ),
+    mode = "cron",
+    type = "fichier"
+  )
+}
+
+MANIFEST_MILIEUX_PATCH <- dplyr::bind_rows(
+  ligne_ocsge_patch("22", "Côtes-d'Armor", 2021, "2026-07-03"),
+  ligne_ocsge_patch("29", "Finistère", 2021, "2026-06-12"),
+  ligne_ocsge_patch("56", "Morbihan", 2022, "2026-06-10")
+)
+
 # MANIFEST_MILIEUX --------------------------------------------------------------
 # Le manifeste CONCATÉNÉ du thème : la source CONSOENAF + la base des EPCI
 # partagée (la même ligne que Démographie/Habitat — jamais re-déclarée avec un
 # autre id, le cache idempotent évite le re-téléchargement) + la série
 # historique du recensement (la même ligne que Démographie — la source
 # partagée de la population de l'Histoire, #174) + les HUIT archives d'état
-# OCS-GE « surfaces artificialisées » (issue #234, amendées par #243).
-# ONZE lignes, onze ids uniques. Validé par verifier_contrat_milieux.
+# OCS-GE « surfaces artificialisées » (issue #234, amendées par #243) + les
+# TROIS patchs correctifs M2 22/29/56 (issue #243 — l'amendement ADR-0017).
+# QUATORZE lignes, quatorze ids uniques. Validé par verifier_contrat_milieux.
 MANIFEST_MILIEUX <- dplyr::bind_rows(
   tibble::tribble(
     ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
@@ -205,18 +270,19 @@ MANIFEST_MILIEUX <- dplyr::bind_rows(
   ),
   MANIFEST_MILIEUX_CONSOENAF,
   MANIFEST_MILIEUX_SERIE_HISTORIQUE,
-  MANIFEST_MILIEUX_OCSGE
+  MANIFEST_MILIEUX_OCSGE,
+  MANIFEST_MILIEUX_PATCH
 )
 
 # verifier_contrat_milieux ------------------------------------------------------
 # La validation du contrat du manifeste Milieux (la discipline des fragments,
-# comme verifier_contrat_programmes) : ONZE sources, onze ids uniques et
-# exacts, chaque source sur SON contrat — le fichier épinglé, la licence
+# comme verifier_contrat_programmes) : QUATORZE sources, quatorze ids uniques
+# et exacts, chaque source sur SON contrat — le fichier épinglé, la licence
 # Ouverte, le mode cron, le type fichier, les dates bien formées (la
 # publication jamais antérieure à la référence pour toute source datée — les
-# huit OCS-GE comme CONSOENAF ; la publication de la base EPCI reste NA, la
-# convention partagée). Un manifeste corrompu échoue bruyamment en nommant le
-# champ fautif.
+# huit OCS-GE, les trois patchs correctifs comme CONSOENAF ; la publication de
+# la base EPCI reste NA, la convention partagée). Un manifeste corrompu échoue
+# bruyamment en nommant le champ fautif.
 verifier_contrat_milieux <- function(manifest) {
   manquer <- function(champ, detail) {
     stop(sprintf("Contrat Milieux manifeste violé — %s : %s.", champ,
@@ -226,17 +292,19 @@ verifier_contrat_milieux <- function(manifest) {
     manquer("forme", "le manifeste doit être un tibble")
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
-  if (nrow(manifest) != 11L) {
-    manquer("forme", paste0("le manifeste porte ONZE sources (la base EPCI ",
+  if (nrow(manifest) != 14L) {
+    manquer("forme", paste0("le manifeste porte QUATORZE sources (la base EPCI ",
                             "partagée + CONSOENAF + la série historique du ",
                             "recensement + les huit archives d'état OCS-GE ",
-                            "« surfaces artificialisées »), pas ", nrow(manifest)))
+                            "« surfaces artificialisées » + les trois patchs ",
+                            "correctifs M2 22/29/56), pas ", nrow(manifest)))
   }
   attendus <- c("epci", "consoenaf", "serie_historique",
                 paste0("ocsge_artificialisation_22_", c(2021, 2025)),
                 paste0("ocsge_artificialisation_29_", c(2021, 2024)),
                 paste0("ocsge_artificialisation_35_", c(2020, 2023)),
-                paste0("ocsge_artificialisation_56_", c(2022, 2024)))
+                paste0("ocsge_artificialisation_56_", c(2022, 2024)),
+                paste0("ocsge_patch_correctif_", c("22", "29", "56")))
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -244,7 +312,7 @@ verifier_contrat_milieux <- function(manifest) {
   # le contrat commun : fichier téléchargeable en cron (les jeux officiels
   # ouverts — jamais un portage à la main), Licence Ouverte 2.0
   if (any(manifest$mode != "cron")) {
-    manquer("mode", "mode attendu : 'cron' pour les onze sources")
+    manquer("mode", "mode attendu : 'cron' pour les quatorze sources")
   }
   if (any(manifest$type != "fichier")) {
     manquer("type", "type attendu : 'fichier'")
@@ -294,6 +362,25 @@ verifier_contrat_milieux <- function(manifest) {
         "artificialisées » — le millésime de la spec et la date de ",
         "publication de l'API Géoplateforme ; une dérive du nom est un ",
         "signal, pas un détail)"))
+    }
+  }
+  # les trois patchs correctifs M2 (issue #243) : le fichier Géoplateforme
+  # ÉPINGLÉ, motif OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D0{XX}_{YYYY}-01-01.7z
+  # — le millésime corrigé et la date de publication (la livraison avec le
+  # millésime suivant) sont PINNÉS : jamais un téléchargement ad-hoc, jamais un
+  # fichier déplacé silencieusement.
+  fichiers_patch <- c(
+    "22" = "OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D022_2021-01-01.7z",
+    "29" = "OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D029_2021-01-01.7z",
+    "56" = "OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D056_2022-01-01.7z"
+  )
+  for (dep in names(fichiers_patch)) {
+    id <- paste0("ocsge_patch_correctif_", dep)
+    if (fichiers[[id]] != fichiers_patch[[dep]]) {
+      manquer("fichier", paste0(
+        "le contrat épingle le fichier PATCH CORRECTIF ", dep, " : ",
+        fichiers_patch[[dep]], " (le patch du millésime initial — une dérive ",
+        "du nom est un signal, pas un détail)"))
     }
   }
 

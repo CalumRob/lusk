@@ -15,11 +15,11 @@
 # La discipline des fragments (issue #13) : une ligne par source, chaque source
 # garde SON vintage, SA référence et SA publication — aucun alignement de date.
 
-test_that("MANIFEST_MILIEUX : les ONZE sources, les 11 colonnes standard", {
+test_that("MANIFEST_MILIEUX : les QUATORZE sources, les 11 colonnes standard", {
   m <- MANIFEST_MILIEUX
 
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 11L)
+  expect_equal(nrow(m), 14L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id, c("epci", "consoenaf", "serie_historique",
                           "ocsge_artificialisation_22_2021",
@@ -29,18 +29,20 @@ test_that("MANIFEST_MILIEUX : les ONZE sources, les 11 colonnes standard", {
                           "ocsge_artificialisation_35_2020",
                           "ocsge_artificialisation_35_2023",
                           "ocsge_artificialisation_56_2022",
-                          "ocsge_artificialisation_56_2024"))
+                          "ocsge_artificialisation_56_2024",
+                          "ocsge_patch_correctif_22",
+                          "ocsge_patch_correctif_29",
+                          "ocsge_patch_correctif_56"))
 
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
                     "date_reference", "date_publication", "licence",
                     "note", "mode", "type") %in% names(m)))
 
-  # les onze sources sont des fichiers téléchargeables en cron (des jeux
+  # les quatorze sources sont des fichiers téléchargeables en cron (des jeux
   # officiels ouverts — jamais un portage à la main), Licence Ouverte 2.0
   expect_true(all(m$type == "fichier"))
   expect_true(all(m$mode == "cron"))
   expect_true(all(m$licence == "lov2"))
-
   # chaque source garde SON vintage : aucune colonne d'alignement de date
   expect_false(any(grepl("align", tolower(names(m)))))
 })
@@ -171,6 +173,54 @@ test_that("MANIFEST_MILIEUX : la note OCS-GE documente le produit millésimé, l
   expect_true(grepl("extraire_gpkg_ocsge", note))
 })
 
+test_that("MANIFEST_MILIEUX : les TROIS patchs correctifs M2 (22/29/56) — le millésime corrigé, la publication du M3, jamais un téléchargement ad-hoc", {
+  ids <- c("ocsge_patch_correctif_22", "ocsge_patch_correctif_29",
+           "ocsge_patch_correctif_56")
+  for (id in ids) {
+    ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
+    expect_equal(nrow(ligne), 1L, info = id)
+    expect_true(grepl("PATCHCORRECTIF", ligne$fichier), info = id)
+    expect_true(grepl("data.geopf.fr/telechargement/download/OCSGE/",
+                      ligne$url), info = id)
+    expect_equal(ligne$licence, "lov2", info = id)
+    expect_equal(ligne$mode, "cron", info = id)
+    expect_equal(ligne$type, "fichier", info = id)
+    expect_false(is.na(ligne$date_reference), info = id)
+    expect_false(is.na(ligne$date_publication), info = id)
+    # le vintage = le millésime CORRIGÉ (le millésime initial du département) ;
+    # la référence = le 1er janvier du millésime corrigé
+    expect_equal(ligne$date_reference, paste0(ligne$vintage, "-01-01"),
+                 info = id)
+  }
+
+  # le contrat épingle les TROIS fichiers Géoplateforme du patch — le motif
+  # OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D0{XX}_{YYYY}-01-01.7z
+  spec <- tibble::tribble(
+    ~dep, ~millesime, ~date_publication,
+    "22", "2021", "2026-07-03",
+    "29", "2021", "2026-06-12",
+    "56", "2022", "2026-06-10"
+  )
+  for (i in seq_len(nrow(spec))) {
+    dep <- spec$dep[i]
+    id <- paste0("ocsge_patch_correctif_", dep)
+    ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
+    motif <- paste0("OCS-GE_2-0_PATCHCORRECTIF_GPKG_LAMB93_D0", dep, "_",
+                    spec$millesime[i], "-01-01[.]7z$")
+    expect_true(grepl(motif, ligne$fichier), info = id)
+    expect_equal(ligne$vintage, spec$millesime[i], info = id)
+    expect_equal(ligne$date_publication, spec$date_publication[i], info = id)
+  }
+
+  # la note documente l'approximation (la bascule au niveau matrice) et le 35
+  # sans patch
+  note <- MANIFEST_MILIEUX$note[
+    MANIFEST_MILIEUX$id == "ocsge_patch_correctif_22"]
+  expect_true(grepl("inversent", note))
+  expect_true(grepl("approximation", note))
+  expect_true(grepl("35 n'a pas de patch", note))
+})
+
 test_that("verifier_contrat_milieux : le manifeste réel passe son contrat", {
   expect_true(verifier_contrat_milieux(MANIFEST_MILIEUX))
 })
@@ -180,8 +230,8 @@ test_that("verifier_contrat_milieux : un manifeste corrompu échoue bruyamment",
     expect_error(verifier_contrat_milieux(manif), motif)
   }
 
-  # une source manquante (le contrat exige les ONZE)
-  manquer(MANIFEST_MILIEUX[MANIFEST_MILIEUX$id != "consoenaf", ], "ONZE")
+  # une source manquante (le contrat exige les QUATORZE)
+  manquer(MANIFEST_MILIEUX[MANIFEST_MILIEUX$id != "consoenaf", ], "QUATORZE")
 
   # un id dupliqué
   duplique <- dplyr::bind_rows(MANIFEST_MILIEUX, MANIFEST_MILIEUX[1, ])

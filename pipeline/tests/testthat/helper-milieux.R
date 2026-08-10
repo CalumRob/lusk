@@ -279,3 +279,126 @@ communes_fixture_milieux_ocsge <- function(cache = NULL) {
   construire_donnees_milieux(cache = cache,
                              sortie = tempfile(fileext = ".rds"))
 }
+
+# Le fixture du PATCH CORRECTIF M2 (issue #243) --------------------------------
+# Le patch correctif recense les anomalies du millésime initial (la couche
+# `PATCH_CORR_{DXX}_{YYYY}`, les colonnes officielles id_ocs / code_cs /
+# code_us / millesime / source / ossature / id_origine / code_or / cs_corr /
+# us_corr / os_corr / decoup_geo — vérifiées à la livraison réelle 2026-08-10).
+# Le fixture couvre les TROIS départements patchés (22/29/56) sur le millésime
+# INITIAL, en référencant les polygones d'état du fixture territorial par
+# id_ocs (l'ordre de fixture_gpkg_ocsge_territoire — OCSGE0000001, ...) :
+#   - 22 2021 : le polygone artif de 22002 (id OCSGE0000002) reçoit une
+#     SUBDIVISION qui inverse le statut (CS2.2.2/US1.1 -> non artif, la
+#     bascule au niveau matrice) — 22002 M2 400 -> 300 ; les polygones de
+#     22001 (artif et non-artif) reçoivent des patchs SANS inversion (la
+#     valeur de l'archive fait foi) ;
+#   - 29 2021 : trois patchs SANS inversion (le chemin sans effet) ;
+#   - 56 2022 : la subdivision de 56001 (id OCSGE0000001) inverse le statut —
+#     56001 M2 800 -> 600.
+# Les valeurs par commune APRÈS correction (vérifiées à la main) :
+#   22001 : 400 (inchangé) · 22002 : 300 (corrigé) · 29001/29002/29003 :
+#   800/800/500 (inchangés) · 35001 : 400 (pas de patch) · 56001 : 600 (corrigé).
+polygones_patch_ocsge_territoire <- list(
+  "22" = list(
+    millesime = 2021,
+    patchs = tibble::tribble(
+      ~x0, ~y0, ~x1, ~y1, ~id_ocs, ~code_cs, ~code_us, ~cs_corr, ~us_corr,
+      # la subdivision inversée de 22002 (100 m² de l'artif 400)
+      120, 20, 130, 30, "OCSGE0000002", "CS1.1.1.1", "US5", "CS2.2.2", "US1.1",
+      # le polygone artif de 22001, sans inversion
+      20, 20, 40, 40, "OCSGE0000001", "CS1.1.1.1", "US5", "CS1.1.1.1", "US5",
+      # le polygone non-artif de 22001, sans inversion
+      60, 60, 80, 80, "OCSGE0000003", "CS1.1.1.1", "US5", "CS2.2.2", "US1.1"
+    )
+  ),
+  "29" = list(
+    millesime = 2021,
+    patchs = tibble::tribble(
+      ~x0, ~y0, ~x1, ~y1, ~id_ocs, ~code_cs, ~code_us, ~cs_corr, ~us_corr,
+      220, 20, 260, 40, "OCSGE0000001", "CS1.1.1.1", "US5", "CS1.1.1.1", "US5",
+      320, 20, 360, 40, "OCSGE0000002", "CS1.1.1.1", "US5", "CS1.1.1.1", "US5",
+      20, 120, 40, 145, "OCSGE0000003", "CS1.1.1.1", "US5", "CS1.1.1.1", "US5"
+    )
+  ),
+  "56" = list(
+    millesime = 2022,
+    patchs = tibble::tribble(
+      ~x0, ~y0, ~x1, ~y1, ~id_ocs, ~code_cs, ~code_us, ~cs_corr, ~us_corr,
+      # la subdivision inversée de 56001 (200 m² de l'artif 800)
+      220, 120, 230, 140, "OCSGE0000001", "CS1.1.1.1", "US5", "CS2.2.2", "US1.1"
+    )
+  )
+)
+
+# fixture_gpkg_patch : écrit le VRAI GeoPackage PATCH CORRECTIF du fixture (la
+# couche PATCH_CORR_D0{dep}_{millesime}, EPSG:2154, les colonnes officielles du
+# patch dans SA FORME RÉELLE — id_ocs / code_cs / code_us / millesime / source /
+# ossature / id_origine / code_or / cs_corr / us_corr / os_corr / decoup_geo)
+# avec SES polygones. Retourne le chemin écrit.
+fixture_gpkg_patch <- function(chemin, departement, millesime) {
+  spec <- polygones_patch_ocsge_territoire[[departement]]
+  lignes <- spec$patchs
+  geometries <- lapply(seq_len(nrow(lignes)), function(i) {
+    l <- lignes[i, ]
+    sf::st_polygon(list(polygone_rectangle(l$x0, l$y0, l$x1, l$y1)))
+  })
+  tbl <- tibble::tibble(
+    id_ocs = lignes$id_ocs,
+    code_cs = lignes$code_cs,
+    code_us = lignes$code_us,
+    millesime = as.character(millesime),
+    source = "calcul",
+    ossature = 0,
+    id_origine = "NC",
+    code_or = "NC",
+    cs_corr = lignes$cs_corr,
+    us_corr = lignes$us_corr,
+    os_corr = "RAS",
+    decoup_geo = 0
+  )
+  couche <- sf::st_sf(tbl, geometry = sf::st_sfc(geometries, crs = 2154))
+  if (file.exists(chemin)) unlink(chemin)
+  sf::st_write(couche, chemin,
+               layer = paste0("PATCH_CORR_D0", departement, "_", millesime),
+               quiet = TRUE)
+  invisible(chemin)
+}
+
+# ajouter_patchs_fixture : dépose dans un cache les TROIS archives patchs (le
+# .7z de signature valide au nom exact du manifeste + le GPKG déjà extrait par
+# l'étape manuelle documentée) — le même motif que les archives d'état.
+ajouter_patchs_fixture <- function(cache) {
+  extrait_ocsge <- file.path(cache, "extracted", "ocsge")
+  if (!dir.exists(extrait_ocsge)) dir.create(extrait_ocsge, recursive = TRUE)
+  for (dep in names(polygones_patch_ocsge_territoire)) {
+    spec <- polygones_patch_ocsge_territoire[[dep]]
+    id <- paste0("ocsge_patch_correctif_", dep)
+    ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
+    writeBin(mini_7z(), file.path(cache, ligne$fichier))
+    fixture_gpkg_patch(
+      file.path(extrait_ocsge, sub("[.]7z$", ".gpkg", ligne$fichier)),
+      dep, spec$millesime
+    )
+  }
+  invisible(cache)
+}
+
+# cache_ocsge_milieux_patche : le cache du fixture territorial AVEC les trois
+# patchs correctifs M2 (22/29/56) — le chemin complet du run réel (les états +
+# leur correction), pour les tests du patch (issue #243).
+cache_ocsge_milieux_patche <- function() {
+  cache <- cache_ocsge_milieux()
+  ajouter_patchs_fixture(cache)
+  cache
+}
+
+# communes_fixture_milieux_ocsge_patchee : les communes du thème sur le cache
+# patché — les états d'artificialisation CORRIGÉS par le patch M2.
+communes_fixture_milieux_ocsge_patchee <- function() {
+  cache <- cache_ocsge_milieux_patche()
+  local_mocked_bindings(lire_epci = function(chemin) base_epci_milieux_ocsge,
+                        .package = "lusk")
+  construire_donnees_milieux(cache = cache,
+                             sortie = tempfile(fileext = ".rds"))
+}

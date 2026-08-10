@@ -315,15 +315,17 @@ construire_donnees_milieux <- function(cache = "data/raw",
 # 2021, D029 2021, D056 2022 — la couche PATCH_CORR_*, les colonnes cs_corr /
 # us_corr « RAS » = pas de correction) : ~20 % des polygones du patch
 # inversent le statut artif (22 : 2 001/10 187 = 19,6 %, 29 : 1 674/8 797 =
-# 19,0 %, 56 : 2 002/8 029 = 24,9 % — 97 % confirmés par la matrice majoritaire
-# de la couche d'état elle-même ; ~16 % / 29 % / 49 % de la surface du patch).
-# C'est MATÉRIEL (l'hypothèse « ~0 » de l'amendement ne tient pas) — la bascule
-# « au niveau matrice sur ces polygones » (le correctif cs/us -> artif, en
-# approximation documentée) est un SUIVI déclaré, pas un blocage du pivot :
-# l'impact au niveau communal est borné (~1-2 % de la surface artificialisée M2
-# des trois départements — la plupart des anomalies sont bien intra-classe ;
-# le 35 n'a pas de patch). Le présent run lit les états TELS QUE publiés par
-# l'IGN (jamais re-dérivés).
+# 19,0 %, 56 : 2 002/8 029 = 24,9 % ; ~16 % / 29 % / 49 % de la surface du
+# patch). C'est MATÉRIEL (l'hypothèse « ~0 » de l'amendement ne tient pas) —
+# la bascule « au niveau matrice sur ces polygones » (le correctif cs/us ->
+# artif) est APPLIQUÉE par le présent run (appliquer_patch_correctif — la
+# matrice officielle transcrite, statut_artif_matrice), en approximation
+# DOCUMENTÉE (Méthodes) : l'impact au niveau communal est borné (~0,3-2 % de
+# la surface artificialisée M2 des trois départements — la plupart des
+# anomalies sont bien intra-classe ; le 35 n'a pas de patch). Les trois
+# sources du patch sont PINNÉES dans le manifeste (jamais un téléchargement
+# ad-hoc). La MESURE reproduite à l'identique par la transcription : 2001 /
+# 10187 (22), 1674 / 8797 (29), 2002 / 8029 (56).
 
 # COUCHE_OCSGE_ARTIFICIALISATION ----------------------------------------------
 # Le MOTIF du nom de la couche dans le GPKG Géoplateforme du produit
@@ -346,6 +348,163 @@ IDS_OCSGE_ARTIFICIALISATION <- c(
   "ocsge_artificialisation_35_2020", "ocsge_artificialisation_35_2023",
   "ocsge_artificialisation_56_2022", "ocsge_artificialisation_56_2024"
 )
+
+# COUCHE_OCSGE_PATCH_CORRECTIF -------------------------------------------------
+# Le MOTIF du nom de la couche dans le GPKG Géoplateforme du patch correctif —
+# « PATCH_CORR_{DXX}_{YYYY} » (le département et le millésime corrigé).
+# Confirmé à la livraison réelle (2026-08-10) : la couche du GPKG patch porte
+# le motif. Le nom dérive de LA DONNÉE : le lecteur DISCOUVRE la couche par ce
+# motif parmi les couches disponibles, et échoue bruyamment en les listant si
+# le motif ne correspond à rien.
+COUCHE_OCSGE_PATCH_CORRECTIF <- "^PATCH_CORR_"
+
+# IDS_OCSGE_PATCH_CORRECTIF ----------------------------------------------------
+# Les ids des TROIS patchs correctifs M2 dans le manifeste du thème (issue
+# #243, amendement ADR-0017) : les patchs du millésime INITIAL des
+# départements 22/29/56 (le 35 n'a pas de patch). L'ordre de construction.
+IDS_OCSGE_PATCH_CORRECTIF <- c(
+  "ocsge_patch_correctif_22", "ocsge_patch_correctif_29",
+  "ocsge_patch_correctif_56"
+)
+
+# lire_patch_correctif ----------------------------------------------------------
+# Le LECTEUR (pur) du PATCH CORRECTIF (issue #243) : le GPKG Géoplateforme ->
+# les polygones du patch, TELS QUELS (les colonnes officielles — on ne
+# re-dérive rien). La couche est lue sous COUCHE_OCSGE_PATCH_CORRECTIF ; une
+# couche absente échoue bruyamment en nommant les couches disponibles (une
+# dérive du produit doit être visible, pas silencieuse).
+lire_patch_correctif <- function(chemin,
+                                 couche = COUCHE_OCSGE_PATCH_CORRECTIF) {
+  if (!file.exists(chemin)) {
+    stop("Le GPKG PATCH CORRECTIF est absent : ", chemin, call. = FALSE)
+  }
+  disponibles <- sf::st_layers(chemin)$name
+  candidates <- disponibles[grepl(couche, disponibles)]
+  if (length(candidates) != 1L) {
+    stop("Le GPKG ", basename(chemin), " doit porter EXACTEMENT une couche du ",
+         "motif « ", couche, " » (le patch correctif Géoplateforme — trouvées : ",
+         length(candidates), ") — couches disponibles : ",
+         paste(disponibles, collapse = ", "), ".", call. = FALSE)
+  }
+  sf::st_read(chemin, layer = candidates, quiet = TRUE)
+}
+
+# statut_artif_matrice -----------------------------------------------------------
+# La MATRICE de croisement couverture × usage de la méthode officielle
+# d'artificialisation (transcrite du Méthodo_artif.pdf / la fiche du Ministère
+# — la source primaire de l'attribut `artif` des couches d'état, jamais
+# re-dérivée d'une superposition brute OCCUPATION_SOL). Le statut « brut » d'un
+# couple (cs, us) :
+#   - une couverture de la classe « surface anthropisée » (CS1.*) est
+#     artificialisée, SAUF les « zones à matériaux minéraux » (CS1.1.2.1) à
+#     usage « activités d'extraction » (US1.3 — les carrières) ;
+#   - une couverture de « végétation non ligneuse » (CS2.2.1 herbacées /
+#     CS2.2.2 autres non ligneuses) est artificialisée sous un usage du bâti,
+#     des réseaux ou des transitions (US2 résidentiel · US235 mixte · US3
+#     production secondaire · US5 tertiaire · US4.* transports · US6.1/US6.2
+#     transitions/abandonnées — les verts urbains attachés au bâti comptent) ;
+#   - tout le reste est non artificialisé.
+# C'est LA règle qui décide du statut CORRIGÉ d'un polygone du patch correctif
+# (la bascule « au niveau matrice », issue #243). La transcription est validée
+# contre la mesure documentée (2026-08-09) : 22 : 2001/10187 = 19,6 % de
+# polygones inversés · 29 : 1674/8797 = 19,0 % · 56 : 2002/8029 = 24,9 % — les
+# chiffres de l'amendement, reproduits à l'identique.
+statut_artif_matrice <- function(cs, us) {
+  cs <- as.character(cs)
+  us <- as.character(us)
+  ifelse(
+    grepl("^CS1", cs) & !(cs == "CS1.1.2.1" & us == "US1.3"), "artif",
+    ifelse(
+      cs %in% c("CS2.2.1", "CS2.2.2") &
+        (grepl("^US4", us) |
+           us %in% c("US2", "US235", "US3", "US5", "US6.1", "US6.2")),
+      "artif", "non artif"
+    )
+  )
+}
+
+# appliquer_patch_correctif ------------------------------------------------------
+# L'APPLICATION du patch correctif M2 (issue #243, amendement ADR-0017 — la
+# décision « appliquer où disponible, mesurer d'abord ») : le patch recense les
+# anomalies du millésime initial ; la MESURE (2026-08-09) a montré que ~20 %
+# des polygones du patch INVERTISSENT le statut artif (22 : 19,6 % · 29 :
+# 19,0 % · 56 : 24,9 % ; ~16 % / 29 % / 49 % de la surface du patch) — la
+# bascule « au niveau matrice sur ces polygones » est appliquée, en
+# approximation DOCUMENTÉE (Méthodes). Pour chaque polygone du patch :
+#   - le couple CORRIGÉ : cs_corr/us_corr (« RAS » = la valeur d'origine du
+#     polygone parent — une correction partielle laisse l'autre composante
+#     intacte) ;
+#   - le statut CORRIGÉ : la matrice officielle (statut_artif_matrice) ;
+#   - l'INVERSION : le statut corrigé diffère du statut de l'archive (le statut
+#     du polygone PARENT de la couche d'état, référencé par id_ocs = id) ;
+#   - la correction au niveau matrice : sur la surface du polygone du patch,
+#     la valeur artificialisée corrigée (sa surface géométrique si le statut
+#     corrigé est « artif », 0 sinon) REMPLACE la part de la mesure officielle
+#     du parent (aire × surface_du_patch / surface_du_parent — la répartition
+#     au prorata de la géométrie). Sans inversion, la valeur de l'archive fait
+#     foi (aucun changement).
+# Retourne le DELTA (m²) par polygone de la couche d'état, dans SON ordre (le
+# delta total des polygones du patch référençant le même parent) — la valeur
+# artificialisée du parent corrigé = sa mesure officielle + le delta. La
+# géométrie EST la source de la surface des subdivisions (le patch ne porte
+# pas de mesure officielle `aire` — l'approximation documentée). Un polygone
+# du patch qui ne référence AUCUN polygone de l'état échoue fort (une dérive
+# de couche, jamais silencieuse).
+appliquer_patch_correctif <- function(etat, patch) {
+  if (!inherits(etat, "sf") || !inherits(patch, "sf")) {
+    stop("etat et patch doivent être des objets sf.", call. = FALSE)
+  }
+  if (!"id" %in% names(etat) || !"id_ocs" %in% names(patch)) {
+    stop("La couche d'état doit porter `id` et le patch `id_ocs` (le lien ",
+         "polygone du patch -> polygone parent de l'état).", call. = FALSE)
+  }
+  patch <- sf::st_make_valid(patch)
+  etat <- sf::st_make_valid(etat)
+  parea <- as.numeric(sf::st_area(patch))
+  earea <- as.numeric(sf::st_area(etat))
+  parent <- data.frame(
+    id = as.character(etat$id),
+    artif = as.character(etat$artif),
+    aire = as.numeric(etat$aire),
+    earea = earea,
+    stringsAsFactors = FALSE
+  )
+  # le couple CORRIGÉ : « RAS » -> la valeur d'origine (une correction
+  # partielle laisse l'autre composante intacte)
+  cs_res <- ifelse(as.character(patch$cs_corr) == "RAS" |
+                     is.na(patch$cs_corr),
+                   as.character(patch$code_cs), as.character(patch$cs_corr))
+  us_res <- ifelse(as.character(patch$us_corr) == "RAS" |
+                     is.na(patch$us_corr),
+                   as.character(patch$code_us), as.character(patch$us_corr))
+  p <- data.frame(
+    id = as.character(patch$id_ocs),
+    corr = statut_artif_matrice(cs_res, us_res),
+    parea = parea,
+    stringsAsFactors = FALSE
+  )
+  m <- merge(p, parent, by = "id", all.x = TRUE)
+  if (any(is.na(m$artif))) {
+    stop("Le patch correctif référence ", sum(is.na(m$artif)),
+         " polygone(s) de la couche d'état introuvable(s) (id_ocs -> id) — ",
+         "la couche a dérivé.", call. = FALSE)
+  }
+  # la part de l'archive sur la surface du patch : la mesure officielle du
+  # parent répartie au prorata de la surface géométrique du patch
+  m$archive_share <- ifelse(m$artif == "artif", m$aire * m$parea / m$earea, 0)
+  # la bascule au niveau matrice : sur les polygones qui INVERTISSENT le
+  # statut, la valeur corrigée remplace la part de l'archive
+  m$inversion <- m$artif != m$corr
+  m$corr_value <- ifelse(m$inversion,
+                         ifelse(m$corr == "artif", m$parea, 0),
+                         m$archive_share)
+  m$delta <- m$corr_value - m$archive_share
+  deltas <- stats::aggregate(delta ~ id, data = m, sum)
+  idx <- match(as.character(etat$id), deltas$id)
+  # un polygone d'état NON référencé par le patch garde delta 0 (jamais NA —
+  # la somme de l'état ne doit pas être empoisonnée)
+  ifelse(is.na(idx), 0, deltas$delta[idx])
+}
 
 # lire_ocsge_artificialisation --------------------------------------------------
 # Le LECTEUR (pur) : le GPKG Géoplateforme -> les polygones longs de la couche
@@ -544,6 +703,22 @@ extraire_gpkg_ocsge <- function(archive, extrait) {
   stop("Format d'archive OCS-GE inconnu : .", ext, call. = FALSE)
 }
 
+# decouper_id_ocsge -------------------------------------------------------------
+# Le (département, millésime) d'un id du manifeste OCS-GE (le format des
+# archives d'état `ocsge_artificialisation_{dep}_{millesime}`) — le parse
+# UNIQUE des ids, le même pour la boucle de construction et le bloc des bornes
+# (issue #243, point 3 de la revue) : jamais deux regex divergentes qui
+# dériveraient l'une de l'autre. Un id hors format échoue fort (la regex ne
+# matche pas -> NA -> le contrat du builder l'attrape).
+decouper_id_ocsge <- function(ids) {
+  tibble::tibble(
+    id = ids,
+    departement = sub("^ocsge_artificialisation_([0-9]{2})_.*$", "\\1", ids),
+    millesime = as.integer(sub("^ocsge_artificialisation_[0-9]{2}_([0-9]{4})$",
+                               "\\1", ids))
+  )
+}
+
 # construire_donnees_ocsge ------------------------------------------------------
 # L'acte « trouver la donnée » OCS-GE du thème (le pendant de
 # construire_donnees_milieux pour les états d'artificialisation, #234, amendé
@@ -593,24 +768,39 @@ construire_donnees_ocsge <- function(cache = "data/raw",
     ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == id, ]
     archive <- file.path(cache, ligne$fichier)
     gpkg <- extraire_gpkg_ocsge(archive, extrait)
-    etat <- normaliser_ocsge_artificialisation(
-      lire_ocsge_artificialisation(gpkg)
-    )
-    # le millésime dérive de la DONNÉE (la colonne millesime de la couche) et
+    parts <- decouper_id_ocsge(id)
+    etat_brut <- lire_ocsge_artificialisation(gpkg)
+    etat <- normaliser_ocsge_artificialisation(etat_brut)
+    # le millésime dérive de LA DONNÉE (la colonne millesime de la couche) et
     # doit CONCORDER avec le millésime épinglé à l'id du manifeste : un fichier
     # déplacé (une archive d'un autre millésime au mauvais nom) est une dérive
     # visible, jamais une NA silencieuse
-    millesime_attendu <- as.integer(sub("^ocsge_artificialisation_[0-9]{2}_",
-                                        "", id))
-    if (!all(unique(etat$millesime) == millesime_attendu)) {
+    if (!all(unique(etat$millesime) == parts$millesime)) {
       stop("L'archive ", basename(archive), " porte le millésime ",
            paste(unique(etat$millesime), collapse = ", "),
-           " mais le manifeste épingle ", millesime_attendu,
+           " mais le manifeste épingle ", parts$millesime,
            " — la couche a dérivé.", call. = FALSE)
     }
-    dep <- sub("^ocsge_artificialisation_([0-9]{2})_.*", "\\1", id)
+    # le PATCH CORRECTIF du millésime initial (issue #243, amendement ADR-0017)
+    # : appliqué à l'archive d'état du millésime qu'il corrige (le vintage du
+    # patch épinglé au manifeste) quand l'archive du patch est dans le cache.
+    # Le 35 n'a pas de patch ; le M3 (le millésime suivant) non plus. La
+    # bascule « au niveau matrice sur les polygones qui inversent le statut »
+    # est l'approximation DOCUMENTÉE (Méthodes + le commentaire d'ingestion) ;
+    # un patch absent laisse l'état TEL QUE publié par l'IGN (jamais re-dérivé).
+    patch_id <- paste0("ocsge_patch_correctif_", parts$departement)
+    patch_ligne <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id == patch_id, ]
+    if (nrow(patch_ligne) == 1L &&
+        parts$millesime == as.integer(patch_ligne$vintage) &&
+        file.exists(file.path(cache, patch_ligne$fichier))) {
+      patch_gpkg <- extraire_gpkg_ocsge(
+        file.path(cache, patch_ligne$fichier), extrait)
+      correction <- appliquer_patch_correctif(
+        etat_brut, lire_patch_correctif(patch_gpkg))
+      etat$artif <- etat$artif + correction
+    }
     communes_dep <- communes[
-      as.character(communes$code_insee_du_departement) == dep, ]
+      as.character(communes$code_insee_du_departement) == parts$departement, ]
     agreger_artificialisation_communes(etat, communes_dep)
   })
   long <- dplyr::bind_rows(par_archive)
@@ -618,13 +808,11 @@ construire_donnees_ocsge <- function(cache = "data/raw",
   # les bornes M2/M3 par département, dérivées des ids du manifeste (jamais
   # codées en dur) : M2 = le millésime le plus ancien du département, M3 = le
   # plus récent. La même table sert au pivot (artif_m2/artif_m3) et aux
-  # millésimes portés par commune (millesime_ocsge_debut/fin).
-  bornes <- MANIFEST_MILIEUX[MANIFEST_MILIEUX$id %in% IDS_OCSGE_ARTIFICIALISATION, ] %>%
-    dplyr::mutate(
-      departement = sub("^ocsge_artificialisation_([0-9]{2})_.*$", "\\1", id),
-      millesime = as.integer(sub("^ocsge_artificialisation_[0-9]{2}_([0-9]{4})$",
-                                 "\\1", id))
-    ) %>%
+  # millésimes portés par commune (millesime_ocsge_debut/fin). Le parse des
+  # ids est le MÊME que la boucle (decouper_id_ocsge — jamais deux regex).
+  bornes <- decouper_id_ocsge(
+    MANIFEST_MILIEUX$id[MANIFEST_MILIEUX$id %in% IDS_OCSGE_ARTIFICIALISATION]
+  ) %>%
     dplyr::group_by(departement) %>%
     dplyr::mutate(borne = dplyr::if_else(
       millesime == min(millesime), "m2", "m3")) %>%

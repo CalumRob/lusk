@@ -128,9 +128,9 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   expect_equal(hist$territoire, payload$histoires$territoire)
   expect_equal(hist$classification, payload$histoires$classification)
 
-  # vintages.parquet : une ligne par source du manifeste Milieux (les onze,
-  # OCS-GE compris — #234 amendé #243), et les ids RETIRÉS du manifeste (les
-  # quatre différentielles, #243) ont quitté la table partagée
+  # vintages.parquet : une ligne par source du manifeste Milieux (les quatorze,
+  # OCS-GE et patchs correctifs compris — #234 amendé #243), et les ids RETIRÉS
+  # du manifeste (les quatre différentielles, #243) ont quitté la table partagée
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_MILIEUX))
   expect_setequal(vint$id, c("epci", "consoenaf", "serie_historique",
@@ -141,7 +141,10 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
                              "ocsge_artificialisation_35_2020",
                              "ocsge_artificialisation_35_2023",
                              "ocsge_artificialisation_56_2022",
-                             "ocsge_artificialisation_56_2024"))
+                             "ocsge_artificialisation_56_2024",
+                             "ocsge_patch_correctif_22",
+                             "ocsge_patch_correctif_29",
+                             "ocsge_patch_correctif_56"))
   expect_false(any(grepl("ocsge_artificialisation_(22|29|35|56)$", vint$id)))
 
   # le rapport de run : mode full, une ligne par source
@@ -175,7 +178,7 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   expect_equal(nrow(ref), 10)
 })
 
-test_that("le téléchargement Milieux est idempotent : une seule fois, le cache fait foi (les sept sources, OCS-GE compris)", {
+test_that("le téléchargement Milieux est idempotent : une seule fois, le cache fait foi (les quatorze sources, OCS-GE et patchs compris)", {
   cache <- tempfile("cache-dl-")
   dir.create(cache)
   on.exit(unlink(cache, recursive = TRUE))
@@ -195,11 +198,13 @@ test_that("le téléchargement Milieux est idempotent : une seule fois, le cache
     .package = "lusk"
   )
 
-  # premier appel : les SEPT sources du manifeste sont téléchargées
+  # premier appel : les sources du manifeste sont téléchargées (les quatorze —
+  # CONSOENAF + EPCI + série historique + les huit archives d'état OCS-GE + les
+  # trois patchs correctifs M2)
   premier <- download_sources(MANIFEST_MILIEUX, cache)
   attendus <- c("epci_au_01-01-2025.zip", "conso-com.csv",
                 "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip",
-                MANIFEST_MILIEUX_OCSGE$fichier)
+                MANIFEST_MILIEUX_OCSGE$fichier, MANIFEST_MILIEUX_PATCH$fichier)
   expect_setequal(telecharge, attendus)
   expect_equal(premier$status, rep("frais", nrow(MANIFEST_MILIEUX)))
 
@@ -210,6 +215,6 @@ test_that("le téléchargement Milieux est idempotent : une seule fois, le cache
   # la source CONSOENAF n'a donc été téléchargée qu'UNE fois
   expect_equal(sum(telecharge == "conso-com.csv"), 1L)
   # les OCS-GE aussi : chaque .7z intact est laissé intact — les HUIT archives
-  # d'état du produit millésimé (#243)
-  expect_equal(sum(grepl("[.]7z$", telecharge)), 8L)
+  # d'état du produit millésimé + les TROIS patchs correctifs (#243)
+  expect_equal(sum(grepl("[.]7z$", telecharge)), 11L)
 })
