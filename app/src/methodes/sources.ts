@@ -304,11 +304,12 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     url: 'https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025',
     themes: ['milieux'],
   },
-  // Les QUATRE sources OCS-GE (le pivot #225, ADR-0017) : une entrée par
-  // id vintage — la même forme générée que les DVF/DPE (sourcesDvf/
+  // Les HUIT sources OCS-GE d'état (le pivot #225, ADR-0017 amendé #243) : une
+  // entrée par id vintage — la même forme générée que les DVF/DPE (sourcesDvf/
   // sourcesDpe, une donnée déclinée en lignes par département). L'état
   // artificialisé (OCS GE Artificialisation v2.0, Licence Ouverte 2.0), la
-  // référence officielle ZAN — le différentiel M2→M3 de chaque département.
+  // référence officielle ZAN — les huit archives millésimées du produit
+  // « surfaces artificialisées » (le DIFF est sorti).
   ...sourcesOcsGe(),
   // Les TROIS patchs correctifs M2 (22/29/56, amendement #243) : des sources à
   // part entière de la table vintages — l'entrée de registre par id, même forme

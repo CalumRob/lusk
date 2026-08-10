@@ -186,11 +186,12 @@ normaliser_consoenaf <- function(table_conso) {
 # d'ADR-0014, jamais les populations embarquées de CONSOENAF) et calcule la
 # consommation de la FENÊTRE (les annuels re-sommés sur les deux millésimes
 # dérivés de la série — la règle des deux horloges, jamais codée en dur).
-# Depuis l'issue #237 (spec #225), quand les QUATRE archives OCS-GE du
-# manifeste sont présentes dans le cache, la table porte EN PLUS les états
-# d'artificialisation par commune (artif_m2 / artif_m3 / flux_net + les
-# millésimes OCS-GE) — le raccord construire_ocsge_milieux (le référentiel
-# géométrique partagé communes_limites.geojson, la même source que Mobilité).
+# Depuis l'issue #237 (spec #225), amendé par #243 : quand les HUIT archives
+# d'état OCS-GE du manifeste sont présentes dans le cache, la table porte EN
+# PLUS les états d'artificialisation par commune (artif_m2 / artif_m3 + les
+# millésimes OCS-GE — flux_net a quitté la table avec les différentielles) —
+# le raccord construire_ocsge_milieux (le référentiel géométrique partagé
+# communes_limites.geojson, la même source que Mobilité).
 # Archives absentes -> la table de base inchangée (le chemin rétro-compatible).
 # Persiste la table des communes sous data/processed/milieux/ (idempotent,
 # comme les builders des sources) et la retourne — la forme que
@@ -264,14 +265,14 @@ construire_donnees_milieux <- function(cache = "data/raw",
       millesime_fin = millesime_fin
     )
 
-  # les états OCS-GE (issue #237, spec #225) : quand les QUATRE archives du
-  # manifeste sont présentes dans le cache, la table des communes porte les
-  # états d'artificialisation par commune (artif_m2 / artif_m3 / flux_net en
-  # m² — l'unité native de l'ingestion, la conversion en hectares se fait au
-  # payload #238 — et les millésimes OCS-GE renommés millesime_ocsge_debut/fin,
-  # la collision de noms avec la population résolue dans
-  # rattacher_ocsge_communes). Archives absentes -> la table de base inchangée
-  # (le chemin rétro-compatible).
+  # les états OCS-GE (issue #237, spec #225, amendé par #243) : quand les HUIT
+  # archives d'état du manifeste sont présentes dans le cache, la table des
+  # communes porte les états d'artificialisation par commune (artif_m2 /
+  # artif_m3 en m² — l'unité native de l'ingestion, la conversion en hectares
+  # se fait au payload #238 — et les millésimes OCS-GE renommés
+  # millesime_ocsge_debut/fin, la collision de noms avec la population résolue
+  # dans rattacher_ocsge_communes). Archives absentes -> la table de base
+  # inchangée (le chemin rétro-compatible).
   if (archives_ocsge_presentes(cache)) {
     communes <- construire_ocsge_milieux(cache, communes, sortie)
   }
@@ -645,9 +646,9 @@ agreger_artificialisation_communes <- function(etat, communes) {
 # même « stem » que l'archive (le nom de la sous-ressource Géoplateforme),
 # cherché en récursif sur le CHEMIN COMPLET — la livraison réelle dépose le
 # GPKG dans un DOSSIER nommé d'après le stem (le dossier porte le contrat, pas
-# le nom du fichier : « OCS-GE-ARTIFICIALISATION_2-0_DIFF-.../zan_evol_*.gpkg »,
-# vérifié à la première livraison 2026-08-08). Retourne le chemin, ou NA si
-# aucun GPKG ne correspond.
+# le nom du fichier : « OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0{XX}_{YYYY}
+# -01-01/artif_{YYYY}_{XX}.gpkg », vérifié à la première livraison 2026-08-08).
+# Retourne le chemin, ou NA si aucun GPKG ne correspond.
 chemin_gpkg_extrait <- function(extrait, archive) {
   stem <- tools::file_path_sans_ext(basename(archive))
   candidats <- list.files(extrait, pattern = "[.]gpkg$",
@@ -842,12 +843,13 @@ construire_donnees_ocsge <- function(cache = "data/raw",
 }
 
 # archives_ocsge_presentes ------------------------------------------------------
-# La GARDE du raccord OCS-GE dans le builder du thème (issue #237, spec #225) :
-# les QUATRE archives du manifeste (les .7z Géoplateforme) sont présentes dans
-# le cache. C'est le test qui décide si la table des communes porte les états
-# d'artificialisation : un cache sans les archives (le chemin rétro-compatible)
-# laisse la table de base inchangée — jamais un échec, jamais des colonnes
-# vides inventées.
+# La GARDE du raccord OCS-GE dans le builder du thème (issue #237, spec #225,
+# amendé par #243) : les HUIT archives d'état du manifeste (les .7z
+# Géoplateforme du produit millésimé « surfaces artificialisées ») sont
+# présentes dans le cache. C'est le test qui décide si la table des communes
+# porte les états d'artificialisation : un cache sans les archives (le chemin
+# rétro-compatible) laisse la table de base inchangée — jamais un échec,
+# jamais des colonnes vides inventées.
 archives_ocsge_presentes <- function(cache) {
   all(file.exists(file.path(cache, MANIFEST_MILIEUX_OCSGE$fichier)))
 }

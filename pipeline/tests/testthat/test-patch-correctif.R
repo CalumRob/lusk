@@ -1,7 +1,7 @@
 # test-patch-correctif -----------------------------------------------------------
 # Le PATCH CORRECTIF M2 (issue #243, amendement ADR-0017 — la décision
 # « appliquer où disponible, mesurer d'abord ») : la matrice officielle
-# transcrrite (statut_artif_matrice), le lecteur du GPKG patch (lire_patch_correctif)
+# transcrite (statut_artif_matrice), le lecteur du GPKG patch (lire_patch_correctif)
 # et l'application de la correction (appliquer_patch_correctif — la bascule « au
 # niveau matrice sur les polygones qui inversent le statut artif », approximation
 # documentée). La transcription de la matrice est validée contre la mesure
