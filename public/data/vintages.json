@@ -88,6 +88,30 @@
     "date_publication": "2026-06-10"
   },
   {
+    "id": "ocsge_patch_correctif_22",
+    "source": "IGN — OCS GE « patch correctif » (Nouvelle Génération) — Côtes-d'Armor (22), millésime corrigé 2021",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-01-01",
+    "date_publication": "2026-07-03"
+  },
+  {
+    "id": "ocsge_patch_correctif_29",
+    "source": "IGN — OCS GE « patch correctif » (Nouvelle Génération) — Finistère (29), millésime corrigé 2021",
+    "version": "2021",
+    "licence": "lov2",
+    "date_reference": "2021-01-01",
+    "date_publication": "2026-06-12"
+  },
+  {
+    "id": "ocsge_patch_correctif_56",
+    "source": "IGN — OCS GE « patch correctif » (Nouvelle Génération) — Morbihan (56), millésime corrigé 2022",
+    "version": "2022",
+    "licence": "lov2",
+    "date_reference": "2022-01-01",
+    "date_publication": "2026-06-10"
+  },
+  {
     "id": "mobilite_snapshot",
     "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
     "version": "2026-02",

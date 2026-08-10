@@ -1,6 +1,6 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-10T00:30:09Z",
+  "timestamp": "2026-08-10T10:58:36Z",
   "statuts": [
     {
       "id": "epci",
@@ -54,6 +54,21 @@
     },
     {
       "id": "ocsge_artificialisation_56_2024",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_patch_correctif_22",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_patch_correctif_29",
+      "mode": "cron",
+      "status": "frais"
+    },
+    {
+      "id": "ocsge_patch_correctif_56",
       "mode": "cron",
       "status": "frais"
     }
