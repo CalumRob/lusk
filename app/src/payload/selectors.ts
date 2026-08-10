@@ -859,8 +859,16 @@ function partContextePour(
       ? ref.epci
       : payload.territoires.find((t) => t.type === 'region')?.territoire ?? null
   if (idParent === null) return null
+  const typeParent = parent === 'epci' ? 'epci' : 'region'
+  // La ligne du parent DOIT être une ligne d'agrégat (type du niveau +
+  // programme_libl null) — jamais une ligne communale qui partagerait son
+  // identifiant (la garde de contrat, la même que validate.ts)
   const ligne = payload.programmes?.subventions.find(
-    (s) => s.territoire === idParent && s.annee === annee,
+    (s) =>
+      s.territoire === idParent &&
+      s.type === typeParent &&
+      s.programme_libl === null &&
+      s.annee === annee,
   )
   if (!ligne || ligne.montant <= 0) return null
   return { part: total / ligne.montant, parent }
@@ -920,13 +928,17 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
 
   let subventionsFiche: SubventionsFiche | null = null
   if (subventions.length > 0) {
-    const annee = subventions[0].annee
-    const total = subventions.reduce((somme, s) => somme + s.montant, 0)
+    // L'année de référence : la plus récente présente — le total et la part
+    // de contexte ne mélangent JAMAIS deux millésimes (un payload dérivé qui
+    // porterait plusieurs années lirait la seule année de référence)
+    const annee = Math.max(...subventions.map((s) => s.annee))
+    const subventionsAnnee = subventions.filter((s) => s.annee === annee)
+    const total = subventionsAnnee.reduce((somme, s) => somme + s.montant, 0)
     // la ventilation COMPLÈTE du pipeline, triée ici par montant décroissant
     // (le libellé en départage) — le top-5 + la révélation sont l'affaire du
     // composant, le sélecteur reste pur (issue #305)
     const axes = ref.type === 'commune'
-      ? subventions
+      ? subventionsAnnee
           .map((s) => ({ libelle: s.programme_libl ?? '', montant: s.montant }))
           .sort((a, b) => b.montant - a.montant || a.libelle.localeCompare(b.libelle, 'fr'))
       : null
@@ -934,7 +946,7 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
       annee,
       axes,
       total,
-      vintage: formaterVintage(subventions[0]),
+      vintage: formaterVintage(subventionsAnnee[0]),
       partContexte: partContextePour(payload, ref, annee, total),
       provenance: provenancePour(ref),
     }

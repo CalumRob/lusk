@@ -310,6 +310,76 @@ describe('programmesPourTerritoire — les subventions', () => {
 
     expect(rendu.subventions?.provenance).toBeNull()
   })
+
+  it('totale UNIQUEMENT l’année de référence — un payload à plusieurs années ne mélange jamais les millésimes (#305, revue)', () => {
+    // 22001 porte ses lignes 2025 + une ligne 2024 (une dérive que le payload
+    // réel ne publie pas, mais le sélecteur ne doit pas en dépendre) — le
+    // total et la part de contexte lisent la SEULE année de référence
+    const multiAnnees: Payload = {
+      ...payloadDemographie,
+      programmes: {
+        membres: programmesFixture.membres,
+        subventions: [
+          ...programmesFixture.subventions,
+          {
+            territoire: '22001',
+            type: 'commune',
+            annee: 2024,
+            programme_libl: 'Enseignement',
+            montant: 9000,
+            vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
+            vintage_version: 'subventions_attribuees_scdl0',
+            vintage_date_reference: '2024-12-31',
+            vintage_date_publication: '2025-01-06',
+          },
+        ],
+      },
+    }
+
+    const rendu = programmesPourTerritoire(multiAnnees, '22001')
+
+    expect(rendu.subventions?.annee).toBe(2025)
+    expect(rendu.subventions?.total).toBe(45000)
+    expect(rendu.subventions?.axes).toEqual([
+      { libelle: 'Développement économique', montant: 30000 },
+      { libelle: 'Agriculture', montant: 15000 },
+    ])
+    // la part de contexte du même millésime : 45 000 / 45 000 (l'EPCI X 2025)
+    expect(rendu.subventions?.partContexte?.part).toBeCloseTo(1, 4)
+  })
+
+  it('lit la part de contexte sur la ligne d’AGRÉGAT du parent — jamais une ligne communale qui partagerait son identifiant', () => {
+    // Le contrat : le parent est une ligne agrégat (type epci + programme_libl
+    // null). Une ligne communale dont le `territoire` collerait à l'identifiant
+    // du parent ne doit JAMAIS servir de dénominateur.
+    const parentCommunal: Payload = {
+      ...payloadDemographie,
+      programmes: {
+        membres: programmesFixture.membres,
+        subventions: [
+          {
+            territoire: '200000001', // le SIREN de l'EPCI X
+            type: 'commune', // DÉRIVE : une ligne communale sous l'id du parent
+            annee: 2025,
+            programme_libl: 'Agriculture',
+            montant: 999999,
+            vintage_source: 'Région Bretagne — subventions attribuées (SCDL)',
+            vintage_version: 'subventions_attribuees_scdl0',
+            vintage_date_reference: '2025-12-31',
+            vintage_date_publication: '2026-01-05',
+          },
+          ...programmesFixture.subventions,
+        ],
+      },
+    }
+
+    const rendu = programmesPourTerritoire(parentCommunal, '22001')
+
+    // la part reste la commune dans SON EPCI agrégat (45 000 €), jamais le
+    // montant fantôme de la ligne communale dérivée (999 999 €)
+    expect(rendu.subventions?.partContexte?.part).toBeCloseTo(1, 4)
+    expect(rendu.subventions?.partContexte?.part).not.toBeCloseTo(45000 / 999999, 4)
+  })
 })
 
 describe('programmesPourTerritoire — les estampilles vintage et l’état vide', () => {
