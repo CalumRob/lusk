@@ -7,6 +7,12 @@
  * directory to the fiches — no KPI columns, no computation (decision
  * 2026-08-03).
  *
+ * The reference-only wait-set (issue #301, PRD #296 « la page d'abord ») :
+ * these are pure reference directories — names, codes, EPCI/département
+ * columns — so the page blocks on territories alone and never waits on theme
+ * data, apercu, programmes or the run report (which keep loading in the
+ * background, one fetch per session, and simply never gate this render).
+ *
  * The département chips and the EPCI filter live in the URL query
  * (?departement=, ?epci= — shareable, back-button friendly, like ?theme= on
  * the fiche); the name search is local state (typing must not pollute the
@@ -43,7 +49,8 @@ const props = defineProps<{ config: ConfigListe }>()
 const route = useRoute()
 const router = useRouter()
 
-const { payload, erreur, chargement, recharger } = usePayload()
+// Le wait-set minimal : la page n'attend que la table de référence (#301).
+const { payload, erreur, chargement, recharger } = usePayload({ attendre: ['territoires'] })
 
 /** The name search — local state, deliberately not in the URL. */
 const requete = ref('')

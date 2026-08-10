@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import ListeTerritoires from '../components/ListeTerritoires.vue'
 import type { ConfigListe } from '../listes/listes'
+import type { Fichier } from '../payload/loader'
 import {
   apercuAvecNAFixture,
   chargerAvec,
@@ -81,11 +82,15 @@ describe('ListeTerritoires — chargement, erreur, vide', () => {
   })
 
   it('shows the typed error state with a Retry button, never the raw error string', async () => {
-    let appels = 0
+    const demandes: Fichier[] = []
+    let territoiresEchoue = true
     const charger: ChargerFichier = async (fichier) => {
+      demandes.push(fichier)
       if (fichier !== 'territoires') return chargerAvec(payloadDemographie)(fichier)
-      appels += 1
-      if (appels === 1) throw new Error('Impossible de charger /data/territoires.json')
+      if (territoiresEchoue) {
+        territoiresEchoue = false
+        throw new Error('Impossible de charger /data/territoires.json')
+      }
       return chargerAvec(payloadDemographie)(fichier)
     }
     const { wrapper } = await monter('/communes', charger)
@@ -99,7 +104,13 @@ describe('ListeTerritoires — chargement, erreur, vide', () => {
 
     expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     expect(wrapper.find('tbody tr').exists()).toBe(true)
-    expect(appels).toBe(2)
+    // Le retry ne refetch que le fichier échoué — jamais le reste du set.
+    expect(demandes.filter((f) => f === 'territoires')).toHaveLength(2)
+    const autres = new Map<string, number>()
+    for (const f of demandes) {
+      if (f !== 'territoires') autres.set(f, (autres.get(f) ?? 0) + 1)
+    }
+    for (const compte of autres.values()) expect(compte).toBe(1)
   })
 
   it('shows the honest empty state with a hint when a filter/search empties the list', async () => {
@@ -111,6 +122,39 @@ describe('ListeTerritoires — chargement, erreur, vide', () => {
     expect(wrapper.text()).toContain('Aucune commune.')
     expect(wrapper.text()).toContain('Élargissez votre recherche ou retirez les filtres.')
     expect(wrapper.find('tbody').exists()).toBe(false)
+  })
+})
+
+describe('ListeTerritoires — la page d’abord (le wait-set de référence)', () => {
+  it('renders fully from territoires alone — les autres fichiers ne résolvent jamais', async () => {
+    const jamais = new Promise<unknown>(() => {})
+    const charger: ChargerFichier = async (fichier) =>
+      fichier === 'territoires' ? chargerAvec(payloadDemographie)(fichier) : jamais
+    const { wrapper } = await monter('/communes', charger)
+
+    // Aucun squelette, aucune erreur — la page est vivante de la table seule.
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(nomsLignes(wrapper)).toEqual(['Commune A1', 'Commune B', 'Commune C', 'Commune D'])
+    expect(wrapper.find('tbody tr .cellule-epci').text()).toBe('EPCI X')
+
+    // Les puces et les options du filtre EPCI dérivent de la table seule.
+    expect(wrapper.findAll('.puce').map((p) => p.text())).toEqual(['22', '29'])
+    expect(wrapper.findAll('.filtre-epci-select option').map((o) => o.text())).toEqual([
+      'Tous les EPCI',
+      'EPCI X',
+      'EPCI Y',
+    ])
+
+    // Le filtre département et la recherche fonctionnent sans le reste du payload.
+    await wrapper.findAll('.puce')[1].trigger('click')
+    await flushPromises()
+    expect(nomsLignes(wrapper)).toEqual(['Commune B', 'Commune C'])
+
+    await wrapper.findAll('.puce')[1].trigger('click')
+    await flushPromises()
+    await wrapper.find('input[type="search"]').setValue('commune a')
+    expect(nomsLignes(wrapper)).toEqual(['Commune A1'])
   })
 })
 

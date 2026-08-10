@@ -17,6 +17,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { routes } from '../router'
 
@@ -37,14 +38,23 @@ const payloadDemographie: Payload = {
   programmes: null,
 }
 
-async function monter(chemin: string, composant: unknown) {
+/** The page d'abord proof charger: ONLY territoires resolves, rien d'autre. */
+const jamais = new Promise<unknown>(() => {})
+const territoiresSeuls: ChargerFichier = async (fichier) =>
+  fichier === 'territoires' ? chargerAvec(payloadDemographie)(fichier) : jamais
+
+async function monter(
+  chemin: string,
+  composant: unknown,
+  charger: ChargerFichier = chargerAvec(payloadDemographie),
+) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(chemin)
   await router.isReady()
   const wrapper = mount(composant as never, {
     global: {
       plugins: [router],
-      provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payloadDemographie) },
+      provide: { [PAYLOAD_CHARGER_KEY]: charger },
     },
   })
   await flushPromises()
@@ -67,6 +77,15 @@ describe('CommunesView — /communes', () => {
     expect(wrapper.find('.filtre-epci-select').exists()).toBe(true)
     expect(wrapper.findAll('tbody tr')).toHaveLength(4)
   })
+
+  it('renders from territoires alone — aucun squelette, aucune erreur, les autres fichiers pendent', async () => {
+    const { wrapper } = await monter('/communes', CommunesView, territoiresSeuls)
+
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('h1').text()).toBe('Les communes')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(4)
+  })
 })
 
 describe('EpcisView — /epcis', () => {
@@ -83,6 +102,15 @@ describe('EpcisView — /epcis', () => {
       '/territoire/epci/200000001',
     )
   })
+
+  it('renders from territoires alone — aucun squelette, aucune erreur, les autres fichiers pendent', async () => {
+    const { wrapper } = await monter('/epcis', EpcisView, territoiresSeuls)
+
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('h1').text()).toBe('Les EPCI')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+  })
 })
 
 describe('DepartementsView — /departements', () => {
@@ -98,5 +126,14 @@ describe('DepartementsView — /departements', () => {
     expect(lignes[0].find('.cellule-nom a').attributes('href')).toBe(
       '/territoire/departement/22',
     )
+  })
+
+  it('renders from territoires alone — aucun squelette, aucune erreur, les autres fichiers pendent', async () => {
+    const { wrapper } = await monter('/departements', DepartementsView, territoiresSeuls)
+
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
+    expect(wrapper.find('h1').text()).toBe('Les départements')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
   })
 })
