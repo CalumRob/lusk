@@ -10,14 +10,17 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Payload } from '../payload/types'
+import type { Histoire, Payload } from '../payload/types'
 
 /**
- * The popup's KPI rows (ui-elements.md §Map shell): name + 2–3 KPIs joined by
- * territoire code. A KPI the payload cannot compute is skipped — never a
+ * The popup's KPI rows (ui-elements.md §Map shell): name + the ACTIVE layer's
+ * value + its rank-in-context (ADR-0019 — the popup answers "how does this
+ * territory sit on THIS variable", never the theme's KPI wall), then « Voir
+ * la fiche ». Ranks live on the indicateurs table only (CONTEXT.md §Rang) :
+ * a story-scalar layer (source 'histoire') shows the value without an
+ * invented rank. Without a layer (the neutral first load) the Aperçu basics
+ * fill the popup. A KPI the payload cannot compute is skipped — never a
  * made-up number. Pure logic; the popup builder renders what this returns.
- * The rows resolve from the ACTIVE layer (ADR-0019 — the couche the view
- * passed down), never a carte-side config.
  */
 
 /** The Démographie densité layer — the previous config's equivalent, as a Couche. */
@@ -74,55 +77,94 @@ describe('formaterValeurApercu — French display of an Aperçu row', () => {
   })
 })
 
-describe('kpisPourPopup — the 2–3 KPI rows of a popup', () => {
-  it('leads with the active layer, then the Aperçu basics, capped at 3', () => {
+describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
+  it('leads with the active layer — its value and its rank-in-context, no KPI wall', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheDensite)
 
-    expect(kpis).toHaveLength(3)
+    expect(kpis).toHaveLength(1)
     expect(kpis[0]).toEqual({
       libelle: 'Densité de population',
       valeur: '200',
       unite: 'hab/km²',
+      rang: "P50 de l'EPCI",
     })
-    expect(kpis[1].libelle).toBe('Population')
-    expect(kpis[2].libelle).toBe('Part des 65 ans et plus')
   })
 
-  it('leads with a story-scalar layer (source histoire) — its value, no unit invented', () => {
+  it('a story-scalar layer shows its value without an invented rank', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTauxSoldeNaturel)
 
-    expect(kpis).toHaveLength(3)
+    expect(kpis).toHaveLength(1)
     expect(kpis[0]).toEqual({
       libelle: 'taux_solde_naturel',
       valeur: '5,98',
       unite: '',
+      rang: null,
     })
-    expect(kpis[1].libelle).toBe('Population')
-    expect(kpis[2].libelle).toBe('Densité')
   })
 
-  it('reads a grouped detail layer by clef + detail (ADR-0019)', () => {
+  it('reads a grouped detail layer by clef + detail with its own rank (ADR-0019)', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTrancheMoin15)
 
-    expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%' })
+    expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: "P40 de l'EPCI" })
   })
 
-  it('never duplicates the density (theme twin of the Aperçu densité)', () => {
+  it('an EPCI row shows the next comparison group when it has no EPCI rank (rang_epci null)', () => {
     const payload = payloadAvecApercu()
-    const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheDensite)
+    const kpis = kpisPourPopup(payload, '200000001', 'demographie', coucheDensite)
 
-    const densites = kpis.filter((k) => k.libelle.includes('Densité'))
-    expect(densites).toHaveLength(1)
+    expect(kpis[0]?.rang).toBe('P0 du département')
   })
 
-  it('without a layer, shows the Aperçu basics (population, densité, part 65+)', () => {
+  it('a layer row with no rank column at all (la région) shows the value without a rank', () => {
+    const payload = payloadAvecApercu()
+    const kpis = kpisPourPopup(payload, '53', 'demographie', coucheDensite)
+
+    expect(kpis[0]?.valeur).toBe('144,83')
+    expect(kpis[0]?.rang).toBeNull()
+  })
+
+  it('a layer row whose value is null shows the honest « — », never a made-up number', () => {
+    const payload = payloadAvecApercu()
+    const coucheTrajectoireArtif: Couche = {
+      source: 'histoire',
+      clef: 'trajectoire_artif_par_habitant',
+      detail: null,
+      libelle: 'trajectoire_artif_par_habitant',
+      parDefaut: true,
+    }
+    // le trou NA honnête du Milieux (ADR-0017) : états absents → scalaire null
+    const histoireSansEtat: Histoire = {
+      territoire: '22001',
+      type: 'commune',
+      theme: 'milieux',
+      story_key: 'se-densifier-setaler-ou-sen-aller',
+      periode_pop: '2017-2023',
+      periode_artif: null,
+      delta_population: 0,
+      artif_m2: null,
+      artif_m3: null,
+      artif_m2_par_habitant: null,
+      artif_m3_par_habitant: null,
+      trajectoire_artif_par_habitant: null,
+      classification: null,
+    }
+    const payloadTrou: Payload = { ...payload, histoires: [histoireSansEtat] }
+    const kpis = kpisPourPopup(payloadTrou, '22001', 'milieux', coucheTrajectoireArtif)
+
+    expect(kpis).toHaveLength(1)
+    expect(kpis[0]?.valeur).toBe('—')
+    expect(kpis[0]?.rang).toBeNull()
+  })
+
+  it('without a layer, shows the Aperçu basics without ranks (the neutral-state popup)', () => {
     const payload = payloadAvecApercu()
     const kpis = kpisPourPopup(payload, '29001', null, null)
 
     expect(kpis.map((k) => k.libelle)).toEqual(['Population', 'Densité', 'Part des 65 ans et plus'])
+    expect(kpis.every((k) => k.rang === null)).toBe(true)
   })
 
   it('skips an NA Aperçu row (value null = non calculable)', () => {
