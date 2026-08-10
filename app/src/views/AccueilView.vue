@@ -13,9 +13,12 @@
  * two zones never blur together. The carousel was removed (#204): the landing
  * is hero → outro, with no random draw.
  *
- * States (ui-elements.md): skeleton while the payload loads; typed
- * PayloadError with a Retry button; honest static-rhythm freshness fallback.
- * The search bar needs the reference table.
+ * States (ui-elements.md): the wait-set gate (#300) — the hero renders as
+ * soon as territoires + run-report have settled (the search usable after one
+ * round-trip); the theme tables, apercu, programmes and vintages stream in the
+ * background and never gate the first paint. Typed PayloadError with a Retry
+ * button when the wait-set fails; honest static-rhythm freshness fallback
+ * until the run report lands.
  */
 import { AlertCircle, ArrowRight, Map } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -27,13 +30,15 @@ import { ligneFraicheur } from '@/payload/selectors'
 import type { Territoire } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
-const { payload, erreur, chargement, recharger } = usePayload()
+const { payload, erreur, chargement, recharger } = usePayload({
+  attendre: ['territoires', 'run-report'],
+})
 
-const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
+const territoires = computed<Territoire[]>(() => payload.value.territoires)
 
 const fraicheur = computed(() => {
   if (erreur.value) return 'Données actualisées chaque semaine'
-  return payload.value ? ligneFraicheur(payload.value) : null
+  return ligneFraicheur(payload.value)
 })
 
 const messagesErreur = computed(() =>

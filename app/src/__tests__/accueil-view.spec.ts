@@ -1,5 +1,6 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import AccueilView from '../views/AccueilView.vue'
@@ -14,7 +15,7 @@ import {
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
-import type { Payload } from '../payload/types'
+import type { Payload, RunReport } from '../payload/types'
 import { routes } from '../router'
 
 /**
@@ -48,6 +49,16 @@ async function monter(charger: ChargerFichier, options: Record<string, unknown> 
   await flushPromises()
   return { router, wrapper }
 }
+
+/** Une promesse qui ne se résout jamais — les fichiers encore en vol d'un test progressif (#300). */
+const enAttente = new Promise<unknown>(() => {})
+
+/** Résout EXACTEMENT le wait-set de l'accueil (territoires + run-report) ;
+ *  tous les autres fichiers restent en vol — la preuve « la page d'abord ». */
+const chargerSeulementAttente: ChargerFichier = (fichier) =>
+  fichier === 'territoires' || fichier === 'run-report'
+    ? chargerAvec(payload)(fichier)
+    : enAttente
 
 describe('Accueil — le héros', () => {
   it('porte la signature discrète du mock landing sur le héros', async () => {
@@ -206,5 +217,107 @@ describe('Accueil — chargement et erreur globaux', () => {
     expect(wrapper.text()).toContain('Impossible de charger les données.')
     const bouton = wrapper.find('.bouton-reessayer')
     expect(bouton.text()).toContain('Réessayer')
+  })
+})
+
+describe('Accueil — chargement prioritaire (#300)', () => {
+  it('rend la recherche utilisable dès le wait-set posé — territoires + run-report seulement, le reste en vol', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push('/')
+      await router.isReady()
+      const wrapper = mount(AccueilView, {
+        global: {
+          plugins: [router],
+          provide: { [PAYLOAD_CHARGER_KEY]: chargerSeulementAttente },
+        },
+      })
+      // Sous les faux timers, flushPromises (setTimeout 0) ne se déclenche
+      // jamais — on draine les microtâches du magasin à la main.
+      await Promise.resolve()
+      await nextTick()
+
+      const accueil = wrapper.find('.accueil')
+      expect(accueil.attributes('aria-busy')).toBe('false')
+      expect(wrapper.find('.global-search__spinner').exists()).toBe(false)
+
+      const input = wrapper.find('input[role="combobox"]')
+      expect(input.exists()).toBe(true)
+      await input.trigger('focus')
+      await input.setValue('epci')
+      await nextTick()
+      vi.advanceTimersByTime(300)
+      await nextTick()
+
+      const options = wrapper.findAll('[role="option"]')
+      expect(options).toHaveLength(2)
+      expect(options.map((o) => o.text()).some((t) => t.includes('EPCI X'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rend le héros dès le wait-set posé — les fichiers de fond encore en vol, sans squelette de page', async () => {
+    const { wrapper } = await monter(chargerSeulementAttente)
+
+    expect(wrapper.find('.accueil').attributes('aria-busy')).toBe('false')
+    expect(wrapper.find('.accueil-accroche').text()).toBe('Intelligence territoriale en Bretagne')
+    expect(wrapper.find('.accueil-sous-titre').exists()).toBe(true)
+    expect(wrapper.find('.accueil-hero .lusk-marque').exists()).toBe(true)
+    expect(wrapper.find('.accueil-erreur').exists()).toBe(false)
+  })
+
+  it('affiche la promesse statique tant que run-report n’a pas atterri, puis la ligne réelle', async () => {
+    let resoudreRapport: (valeur: RunReport | null) => void = () => {}
+    const rapport = new Promise<RunReport | null>((resoudre) => {
+      resoudreRapport = resoudre
+    })
+    const charger: ChargerFichier = (fichier) =>
+      fichier === 'run-report' ? rapport : chargerAvec(payload)(fichier)
+
+    const { wrapper } = await monter(charger)
+
+    expect(wrapper.text()).toContain('Données actualisées chaque semaine')
+
+    resoudreRapport(runReportFraisFixture)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Données actualisées le 3 août 2026')
+  })
+
+  it('montre l’erreur typée + Réessayer quand run-report échoue (échec du wait-set), puis récupère', async () => {
+    let premierAppel = true
+    const charger: ChargerFichier = async (fichier) => {
+      if (fichier === 'run-report' && premierAppel) {
+        premierAppel = false
+        throw new Error('panne run-report')
+      }
+      return chargerAvec(payload)(fichier)
+    }
+    const { wrapper } = await monter(charger)
+
+    expect(wrapper.text()).toContain('Impossible de charger les données.')
+    expect(wrapper.find('.bouton-reessayer').exists()).toBe(true)
+
+    await wrapper.find('.bouton-reessayer').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Impossible de charger les données.')
+    expect(wrapper.text()).toContain('Données actualisées le 3 août 2026')
+  })
+
+  it('laisse la page vivante quand un fichier de fond échoue (indicateurs_habitat) — ni erreur, ni squelette', async () => {
+    const charger: ChargerFichier = (fichier) => {
+      if (fichier === 'indicateurs_habitat') return Promise.reject(new Error('panne habitat'))
+      return chargerSeulementAttente(fichier)
+    }
+    const { wrapper } = await monter(charger)
+
+    expect(wrapper.text()).not.toContain('Impossible de charger les données.')
+    expect(wrapper.find('.accueil-erreur').exists()).toBe(false)
+    expect(wrapper.find('.accueil-hero').exists()).toBe(true)
+    expect(wrapper.find('input[role="combobox"]').exists()).toBe(true)
+    expect(wrapper.find('.accueil').attributes('aria-busy')).toBe('false')
   })
 })
