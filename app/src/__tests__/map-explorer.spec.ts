@@ -320,6 +320,24 @@ describe('MapExplorer — les couches de l’onglet « Programmes & financements
 
     expect(carte?.peintures['masques-communes-remplissage']['fill-color']).toBe(COULEUR_NEUTRE)
   })
+
+  it('ouvre le popup sans planter sur une couche programmes — le popup rejoint le thème seulement (#281)', async () => {
+    const { wrapper, carte } = await monter({ payload: payloadProgrammes })
+
+    await wrapper.setProps({
+      couche: { source: 'membre', sigle: 'ACV', libelle: 'ACV', niveau: 'communes' },
+    })
+    const carteFake = carte as unknown as {
+      queryRenderedFeatures: () => { properties: { territoire: string } }[]
+    }
+    carteFake.queryRenderedFeatures = () => [{ properties: { territoire: '22001' } }] as never
+
+    carte?.fire('click', { point: { x: 10, y: 10 }, lngLat: { lng: -2, lat: 48 } })
+
+    const popup = maplibreMock.instancesPopups.at(-1)
+    expect(popup?.contenu).toContain('Commune A1')
+    expect(popup?.contenu).toContain('Voir la fiche')
+  })
 })
 
 describe('MapExplorer — the popup (name + KPIs + « Voir la fiche »)', () => {

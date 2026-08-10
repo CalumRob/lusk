@@ -7,13 +7,19 @@ import {
   membresParTerritoire,
   subventionsParTerritoire,
 } from '../carte/fusion'
+import { echelleValeurs } from '../carte/seuils'
 import {
   coucheParDefautProgrammes,
   couchesProgrammes,
   siglesMembresDuNiveau,
   typeAdhesionDuNiveau,
 } from '../carte/programmesCouches'
-import { programmesFixture, programmesVideFixture, territoiresFixture } from '../payload/fixtures'
+import {
+  programmesFixture,
+  programmesVideFixture,
+  subventionsProgrammesFixture,
+  territoiresFixture,
+} from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
 /**
@@ -201,6 +207,14 @@ describe('subventionsParTerritoire — la jointure du total €', () => {
 
   it('rend la carte vide quand le payload programmes est absent', () => {
     expect(subventionsParTerritoire({ ...payload, programmes: null }, 'communes').size).toBe(0)
+  })
+})
+
+describe('subventionsParTerritoire — la règle de trois de l’échelle (ADR-0019 #282)', () => {
+  it('les totaux € sont à queue lourde → l’échelle les espace en log, jamais en linéaire', () => {
+    const valeurs = subventionsProgrammesFixture.map((ligne) => ligne.montant)
+
+    expect(echelleValeurs(valeurs).type).toBe('log')
   })
 })
 
