@@ -777,6 +777,83 @@ construire_periode_artif <- function(departements, millesime_debut,
   paste0(paires, " (", combos$departement, ")", collapse = " · ")
 }
 
+# construire_couples_ocsge ------------------------------------------------------
+# Les couples (département -> millésimes) DISTINCTS d'un territoire en chaîne
+# MACHINE (le pendant de construire_periode_artif pour la table des
+# territoires, #243) : « 22:2021:2025|56:2022:2024 », triée par code de
+# département. C'est le format que la table des territoires porte (jamais une
+# chaîne d'affichage re-parsée) pour que les constructeurs d'indicateurs
+# puissent reconstruire les couples d'un territoire — l'ESTAMPILLE des
+# territoires multi-fenêtres (l'EPCI transfrontalier, la région) se construit
+# depuis SES couples, jamais un couple unique inventé.
+construire_couples_ocsge <- function(departements, millesime_debut,
+                                     millesime_fin) {
+  combos <- unique(data.frame(
+    departement = as.character(departements),
+    millesime_debut = as.integer(millesime_debut),
+    millesime_fin = as.integer(millesime_fin),
+    stringsAsFactors = FALSE
+  ))
+  combos <- combos[!is.na(combos$millesime_debut) & !is.na(combos$millesime_fin),
+                   , drop = FALSE]
+  if (nrow(combos) == 0) return(NA_character_)
+  combos <- combos[order(combos$departement), , drop = FALSE]
+  paste0(combos$departement, ":", combos$millesime_debut, ":",
+         combos$millesime_fin, collapse = "|")
+}
+
+# couples_ocsge_vers_table ------------------------------------------------------
+# La table des couples (département, m2, m3) depuis la chaîne machine portée
+# par la table des territoires (le format construit par construire_couples_ocsge
+# — « 22:2021:2025|56:2022:2024 », jamais une chaîne d'affichage). Une chaîne
+# NA -> la table vide (le territoire sans donnée OCS-GE).
+couples_ocsge_vers_table <- function(chaine) {
+  if (is.na(chaine)) {
+    return(tibble::tibble(departement = character(),
+                          m2 = integer(), m3 = integer()))
+  }
+  morceaux <- strsplit(chaine, "|", fixed = TRUE)[[1]]
+  do.call(rbind, lapply(morceaux, function(m) {
+    parts <- strsplit(m, ":", fixed = TRUE)[[1]]
+    tibble::tibble(departement = parts[1],
+                   m2 = as.integer(parts[2]),
+                   m3 = as.integer(parts[3]))
+  }))
+}
+
+# estampille_span ---------------------------------------------------------------
+# L'estampille CONSTRUITE par le thème pour un territoire multi-fenêtres (l'EPCI
+# transfrontalier, la région — #243) : ses faits de vintage sont le SPAN de ses
+# couples, jamais une archive unique (le span dit le mélange, il ne l'aplatit
+# pas). Les quatre faits sont construits depuis le manifeste — rien d'inventé :
+#   - vintage_source  : le produit OCS-GE « surfaces artificialisées » (le
+#     préfixe commun des huit archives, extrait de la source du manifeste) ;
+#   - vintage_version : la fenêtre span du territoire (la MÊME convention que
+#     periode_artif : « 2020-2023 (35) · 2022-2024 (56) ») ;
+#   - vintage_date_reference : la plus ANCIENNE référence d'état du span (le
+#     premier état de la fenêtre) ;
+#   - vintage_date_publication : la plus RÉCENTE publication du span.
+estampille_span <- function(couples, manifest = MANIFEST_MILIEUX) {
+  ids <- c(paste0("ocsge_artificialisation_", couples$departement, "_",
+                  couples$m2),
+           paste0("ocsge_artificialisation_", couples$departement, "_",
+                  couples$m3))
+  lignes <- manifest[manifest$id %in% ids, ]
+  span <- construire_periode_artif(couples$departement, couples$m2, couples$m3)
+  # le PRODUIT : le préfixe commun des huit archives, extrait de la source du
+  # manifeste (« IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle
+  # Génération) » — la partie avant la précision départementale « — {Nom}
+  # ({dep}), millésime {mill} »)
+  produit <- sub(" — [^—]*\\([0-9]{2}\\), millésime [0-9]{4}$", "",
+                 lignes$source[1])
+  tibble::tibble(
+    vintage_source = produit,
+    vintage_version = span,
+    vintage_date_reference = min(lignes$date_reference),
+    vintage_date_publication = max(lignes$date_publication)
+  )
+}
+
 # agreger_territoires_milieux : la part du thème — les colonnes de consommation
 # (le motif conso_en_m2 — la même source de vérité que le reshape) et la
 # surface communale (surfcom2025, en m² — une mesure du référentiel, jamais
@@ -869,6 +946,7 @@ agreger_territoires_milieux <- function(communes, squelette) {
       dplyr::group_by(code) %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        couples_ocsge = construire_couples_ocsge(departement, m2, m3),
         millesime_ocsge_debut = dplyr::if_else(
           dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
         millesime_ocsge_fin = dplyr::if_else(
@@ -880,6 +958,7 @@ agreger_territoires_milieux <- function(communes, squelette) {
       dplyr::group_by(code = epci) %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        couples_ocsge = construire_couples_ocsge(departement, m2, m3),
         millesime_ocsge_debut = dplyr::if_else(
           dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
         millesime_ocsge_fin = dplyr::if_else(
@@ -890,6 +969,7 @@ agreger_territoires_milieux <- function(communes, squelette) {
       dplyr::group_by(code = departement) %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        couples_ocsge = construire_couples_ocsge(departement, m2, m3),
         millesime_ocsge_debut = dplyr::if_else(
           dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
         millesime_ocsge_fin = dplyr::if_else(
@@ -899,6 +979,7 @@ agreger_territoires_milieux <- function(communes, squelette) {
     periode_region <- combos %>%
       dplyr::summarise(
         periode_artif = construire_periode_artif(departement, m2, m3),
+        couples_ocsge = construire_couples_ocsge(departement, m2, m3),
         millesime_ocsge_debut = dplyr::if_else(
           dplyr::n_distinct(m2, m3) == 1L, dplyr::first(m2), NA_integer_),
         millesime_ocsge_fin = dplyr::if_else(
@@ -1031,9 +1112,23 @@ detail_etats_artif <- function(territoires) {
 # une fenêtre unique, « M2 »/« M3 » pour le span — detail_etats_artif), value
 # = l'intensité d'état calculée par la source de vérité partagée
 # (intensite_artif_par_habitant — le MÊME calcul que l'Histoire, jamais une
-# seconde formule). Chemin rétro-compatible (cache sans archives OCS-GE,
-# #237) : la table ne porte pas les états — les DEUX lignes restent publiées,
-# toutes NA (le contrat de multiplicité tient, jamais une valeur inventée).
+# seconde formule). DEPUIS #243, chaque ligne porte SA source de référence :
+#   - un territoire mono-couple : l'archive du département × le millésime de
+#     LA LIGNE (Rennes 2020 -> ocsge_artificialisation_35_2020, 2023 ->
+#     35_2023) — jamais l'archive uniforme du passé qui faisait dire à Rennes
+#     « Côtes-d'Armor (22), millésime 2025 » ;
+#   - un territoire multi-fenêtres (l'EPCI transfrontalier, la région) : le
+#     SPAN de ses fenêtres (la MÊME convention que periode_artif : « 2020-2023
+#     (35) · 2022-2024 (56) ») — jamais un couple unique inventé — et son
+#     estampille CONSTRUITE par le thème depuis ses couples (estampille_span —
+#     le produit, la fenêtre span, la référence la plus ancienne, la
+#     publication la plus récente ; les lignes mono-couple portent NA et sont
+#     estampillées par la machinerie partagée depuis la table des vintages).
+# La colonne source_reference reste dans le payload pour les lignes qui en
+# portent une (la garde d'estampille lit les refs par ligne du payload).
+# Chemin rétro-compatible (cache sans archives OCS-GE, #237) : la table ne
+# porte pas les états — les DEUX lignes restent publiées, toutes NA (le
+# contrat de multiplicité tient, jamais une valeur inventée).
 indicator_artif_par_habitant <- function(territoires) {
   if (!"artif_m2" %in% names(territoires)) {
     return(tibble::tibble(
@@ -1049,13 +1144,52 @@ indicator_artif_par_habitant <- function(territoires) {
     territoires$artif_m3, territoires$pop_fin
   )
   details <- detail_etats_artif(territoires)
+
+  # la source de référence PAR LIGNE (issue #243) : l'archive du département
+  # × le millésime de la ligne pour une fenêtre unique (millesime_ocsge_debut
+  # / _fin non NA), le SPAN pour un territoire multi-fenêtres (periode_artif —
+  # la ref par ligne d'un span est le span lui-même, jamais une archive).
+  mono <- !is.na(territoires$millesime_ocsge_debut)
+  ref_debut <- ifelse(mono,
+                      paste0("ocsge_artificialisation_", territoires$departement,
+                             "_", territoires$millesime_ocsge_debut),
+                      territoires$periode_artif)
+  ref_fin <- ifelse(mono,
+                    paste0("ocsge_artificialisation_", territoires$departement,
+                           "_", territoires$millesime_ocsge_fin),
+                    territoires$periode_artif)
+
+  # l'estampille des lignes-span : construite par le thème depuis les couples
+  # du territoire (estampille_span — le produit, la fenêtre span, les dates du
+  # manifeste) ; les lignes mono-couple portent NA (la machinerie partagée
+  # estampille depuis la table des vintages — jamais une seconde formule).
+  span <- !is.na(territoires$periode_artif) & !mono
+  v_source <- rep(NA_character_, nrow(territoires))
+  v_version <- rep(NA_character_, nrow(territoires))
+  v_reference <- rep(NA_character_, nrow(territoires))
+  v_publication <- rep(NA_character_, nrow(territoires))
+  if (any(span)) {
+    for (i in which(span)) {
+      est <- estampille_span(couples_ocsge_vers_table(territoires$couples_ocsge[i]))
+      v_source[i] <- est$vintage_source
+      v_version[i] <- est$vintage_version
+      v_reference[i] <- est$vintage_date_reference
+      v_publication[i] <- est$vintage_date_publication
+    }
+  }
+
   tibble::tibble(
     code = rep(territoires$code, each = 2L),
     key = "artif_par_habitant",
     detail = as.vector(rbind(details$m2, details$m3)),
     value = as.vector(rbind(intensite$artif_m2_par_habitant,
                             intensite$artif_m3_par_habitant)),
-    unit = "m²/hab"
+    unit = "m²/hab",
+    source_reference = as.vector(rbind(ref_debut, ref_fin)),
+    vintage_source = rep(v_source, each = 2L),
+    vintage_version = rep(v_version, each = 2L),
+    vintage_date_reference = rep(v_reference, each = 2L),
+    vintage_date_publication = rep(v_publication, each = 2L)
   )
 }
 
@@ -1374,6 +1508,51 @@ validations_milieux <- list(
            "un désalignement COG : ",
            paste(utils::head(communes$territoire[defectueuses], 5),
                  collapse = ", "), ".", call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # les sources de référence PAR LIGNE de l'état (issue #243) : chaque ligne
+  # d'état porte SA source de référence, et elle est soit un id du manifeste
+  # (le couple département × millésime de la ligne — vérifié contre la table
+  # des vintages par la garde générique), soit un SPAN de fenêtres (l'EPCI
+  # transfrontalier, la région — pas d'id, des faits de vintage CONSTRUITS par
+  # le thème). La construction du span est vérifiée ICI, jamais par la garde
+  # générique : le span EST le version de l'estampille (la même chaîne que la
+  # ref), le produit est le produit OCS-GE, la référence et la publication
+  # sont des dates présentes — une dérive de la construction échoue fort.
+  function(payload) {
+    etat <- payload$indicateurs[
+      payload$indicateurs$key == "artif_par_habitant", ]
+    if (!"source_reference" %in% names(etat)) {
+      return(invisible(payload))  # chemin rétro-compatible (sans refs par ligne)
+    }
+    if (any(is.na(etat$source_reference))) {
+      stop("Payload invalide : une ligne d'état sans source de référence ",
+           "par ligne.", call. = FALSE)
+    }
+    v <- vintages_milieux()
+    span <- !etat$source_reference %in% v$id
+    if (any(span)) {
+      if (any(etat$vintage_version[span] != etat$source_reference[span])) {
+        stop("Payload invalide : une estampille span ne porte pas sa fenêtre ",
+             "(le version d'un territoire multi-dépt est SON span — jamais un ",
+             "couple unique).", call. = FALSE)
+      }
+      if (any(!grepl("^IGN — OCS GE « surfaces artificialisées »",
+                     etat$vintage_source[span]))) {
+        stop("Payload invalide : une estampille span ne cite pas le produit ",
+             "OCS-GE.", call. = FALSE)
+      }
+      if (any(is.na(etat$vintage_date_reference[span]) |
+              is.na(etat$vintage_date_publication[span]) |
+              !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                     etat$vintage_date_reference[span]) |
+              !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                     etat$vintage_date_publication[span]))) {
+        stop("Payload invalide : une estampille span sans ses deux dates ",
+             "(la référence la plus ancienne, la publication la plus récente).",
+             call. = FALSE)
+      }
     }
     invisible(payload)
   }

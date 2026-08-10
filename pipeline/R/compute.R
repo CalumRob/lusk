@@ -207,6 +207,16 @@ compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
 # (déclarée dans la table INDICATEURS_<theme> du thème) — jamais d'un tampon de
 # thème (issue #9). La jointure se fait sur l'id du manifeste
 # (source_reference -> vintages$id), jamais par un sous-ensemble implicite.
+# DEPUIS #243, une LIGNE qui porte sa PROPRE source_reference (les états
+# OCS-GE — le couple département × millésime du territoire, ou le span
+# multi-dépt pour l'EPCI transfrontalier/la région) est estampillée depuis SON
+# id ; les autres lignes (sans ref par ligne) depuis la source déclarée de
+# leur clé (le comportement historique, les autres thèmes inchangés). Une ref
+# par ligne qui n'est PAS un id du manifeste (le span) est un fait de vintage
+# CONSTRUIT par le thème : son estampille (portée par la ligne) survit, jamais
+# écrasée par une NA. La colonne source_reference reste dans le payload pour
+# les lignes qui en portent une (la garde d'estampille lit les refs par ligne
+# du payload).
 # Issue #13 : `theme` est le nom du thème (colonne du payload) et
 # `indicateurs_table` SA table déclarative — tout vient du descripteur.
 # Issue #17 : la colonne nullable `n` (le nombre d'observations des indicateurs
@@ -215,7 +225,7 @@ compute_ranks <- function(territoires, indicateurs, scalaires = list()) {
 # garde exactement son contrat, Habitat la publie.
 assembler_indicateurs <- function(territoires, indicateurs, rangs,
                                   theme, indicateurs_table, vintages) {
-  tampons <- indicateurs_table %>%
+  tampons_par_cle <- indicateurs_table %>%
     dplyr::select(key, source_reference) %>%
     dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
     dplyr::select(key,
@@ -224,19 +234,65 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
                   vintage_date_reference = date_reference,
                   vintage_date_publication = date_publication)
 
-  lapply(names(indicateurs), function(cle) {
+  lignes <- lapply(names(indicateurs), function(cle) {
     dplyr::left_join(indicateurs[[cle]], rangs[[cle]], by = c("code", "key"))
   }) %>%
     dplyr::bind_rows() %>%
     dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
     dplyr::rename(territoire = code) %>%
-    dplyr::mutate(theme = theme) %>%
-    dplyr::left_join(tampons, by = "key") %>%
+    dplyr::mutate(theme = theme)
+
+  if ("source_reference" %in% names(lignes)) {
+    # issue #243 : la source de référence EFFECTIVE de chaque ligne — la sienne
+    # quand elle en porte une (les états OCS-GE), la source déclarée de sa clé
+    # sinon (la série annuelle, les autres thèmes)
+    ref_par_cle <- stats::setNames(indicateurs_table$source_reference,
+                                   indicateurs_table$key)
+    ref_effective <- dplyr::coalesce(lignes$source_reference,
+                                     ref_par_cle[lignes$key])
+    tampons <- tibble::tibble(source_reference = ref_effective) %>%
+      dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+      dplyr::select(
+        vintage_source_v = source,
+        vintage_version_v = version,
+        vintage_date_reference_v = date_reference,
+        vintage_date_publication_v = date_publication
+      )
+    lignes <- dplyr::bind_cols(lignes, tampons)
+    # l'estampille finale : la table des vintages gagne pour une ref par ligne
+    # qui est un id du manifeste (le couple département × millésime) ; la
+    # construction du thème survit pour une ref-span (pas d'id — des faits de
+    # vintage construits par le thème, jamais un couple unique inventé)
+    if ("vintage_source" %in% names(lignes)) {
+      lignes$vintage_source <- dplyr::coalesce(lignes$vintage_source_v,
+                                               lignes$vintage_source)
+      lignes$vintage_version <- dplyr::coalesce(lignes$vintage_version_v,
+                                                lignes$vintage_version)
+      lignes$vintage_date_reference <- dplyr::coalesce(
+        lignes$vintage_date_reference_v, lignes$vintage_date_reference)
+      lignes$vintage_date_publication <- dplyr::coalesce(
+        lignes$vintage_date_publication_v, lignes$vintage_date_publication)
+    } else {
+      lignes$vintage_source <- lignes$vintage_source_v
+      lignes$vintage_version <- lignes$vintage_version_v
+      lignes$vintage_date_reference <- lignes$vintage_date_reference_v
+      lignes$vintage_date_publication <- lignes$vintage_date_publication_v
+    }
+    lignes$vintage_source_v <- NULL
+    lignes$vintage_version_v <- NULL
+    lignes$vintage_date_reference_v <- NULL
+    lignes$vintage_date_publication_v <- NULL
+  } else {
+    lignes <- dplyr::left_join(lignes, tampons_par_cle, by = "key")
+  }
+
+  lignes %>%
     dplyr::select(dplyr::any_of(c(
       "territoire", "type", "theme", "key", "detail", "value", "unit",
       "rang_epci", "rang_dep", "rang_reg",
       "vintage_source", "vintage_version",
       "vintage_date_reference", "vintage_date_publication",
+      "source_reference",
       "n"
     )))
 }
@@ -352,10 +408,17 @@ validate_payload <- function(payload,
     stop("Payload invalide : un rang sort de [0, 1].", call. = FALSE)
   }
 
-  # 4. les estampilles égalent le vintage de la source de référence déclarée
-  # (issue #9). Une source de référence absente de la table des vintages est
-  # une erreur en soi ; une estampille qui ne vient pas de sa source de
-  # référence est une fraude à la fraîcheur — les deux échouent fort.
+  # 4. les estampilles égalent le vintage de la source de référence (issue
+  # #9). Une source de référence DÉCLARÉE (la table INDICATEURS_<theme>)
+  # absente de la table des vintages est une erreur en soi ; une estampille
+  # qui ne vient pas de sa source de référence est une fraude à la fraîcheur —
+  # les deux échouent fort. DEPUIS #243, une LIGNE qui porte sa propre
+  # source_reference (les états OCS-GE — le couple département × millésime du
+  # territoire) est vérifiée contre SON id ; les autres contre la source
+  # déclarée de leur clé. Une ref-span (une chaîne qui n'est pas un id du
+  # manifeste — l'EPCI transfrontalier, la région) est un fait de vintage
+  # CONSTRUIT par le thème : la validation propre au thème la garde (sa forme,
+  # ses dates), jamais une vérification générique contre un id inexistant.
   refs <- unique(indicateurs$source_reference)
   sans_vintage <- setdiff(refs, vintages$id)
   if (length(sans_vintage) > 0) {
@@ -363,26 +426,34 @@ validate_payload <- function(payload,
          paste(sans_vintage, collapse = ", "), ".", call. = FALSE)
   }
 
-  attendus <- indicateurs %>%
-    dplyr::select(key, source_reference) %>%
-    dplyr::left_join(vintages, by = c("source_reference" = "id"))
+  ref_par_cle <- stats::setNames(indicateurs$source_reference,
+                                 indicateurs$key)
+  ref_ligne <- if ("source_reference" %in% names(ind)) {
+    ind$source_reference
+  } else {
+    rep(NA_character_, nrow(ind))
+  }
+  ref_effective <- dplyr::coalesce(ref_ligne, ref_par_cle[ind$key])
+  # les lignes VÉRIFIABLES : leur ref effective est un id de la table des
+  # vintages (une ref-span n'a pas d'id — la construction du thème la garde)
+  verifiable <- ref_effective %in% vintages$id
 
-  joint <- ind %>%
-    dplyr::transmute(
-      key = key,
-      vintage_source = vintage_source,
-      vintage_version = vintage_version,
-      vintage_date_reference = vintage_date_reference,
-      vintage_date_publication = vintage_date_publication
-    ) %>%
-    dplyr::left_join(attendus, by = "key")
+  attendus <- tibble::tibble(source_reference = ref_effective) %>%
+    dplyr::left_join(vintages, by = c("source_reference" = "id")) %>%
+    dplyr::select(source, version, date_reference, date_publication)
+
+  joint <- dplyr::bind_cols(
+    ind[c("vintage_source", "vintage_version",
+          "vintage_date_reference", "vintage_date_publication")],
+    attendus
+  )
 
   # deux NA comptent pour égaux (un vintage sans date de publication reste
   # un vintage valide) — mais jamais NA face à une valeur déclarée
   egal_na <- function(a, b) {
     (is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) & a == b)
   }
-  mauvaise_estampille <- !(
+  mauvaise_estampille <- verifiable & !(
     egal_na(joint$vintage_source, joint$source) &
       egal_na(joint$vintage_version, joint$version) &
       egal_na(joint$vintage_date_reference, joint$date_reference) &

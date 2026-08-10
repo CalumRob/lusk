@@ -49,7 +49,8 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
     "territoire", "type", "theme", "key", "detail", "value", "unit",
     "rang_epci", "rang_dep", "rang_reg",
     "vintage_source", "vintage_version",
-    "vintage_date_reference", "vintage_date_publication"
+    "vintage_date_reference", "vintage_date_publication",
+    "source_reference"
   ))
   # histoires : la forme du contrat de l'Histoire pivotée (#238, ADR-0017) —
   # une ligne par territoire, les deux fenêtres (periode_pop / periode_artif),
@@ -186,29 +187,101 @@ test_that("la fenêtre et la trajectoire ZAN sont mortes avec les flux CONSOENAF
   expect_false(any(INDICATEURS_MILIEUX$key == "trajectoire_zan"))
 })
 
-test_that("chaque indicateur est estampillé depuis sa source de référence (OCS-GE pour l'état, CONSOENAF pour la série)", {
+test_that("chaque indicateur est estampillé depuis sa source de référence PAR LIGNE (le couple département × millésime, jamais une archive uniforme)", {
   payload <- compute_payload(communes_fixture_milieux_ocsge(),
                              theme = theme_milieux())
 
   v <- vintages_milieux()
-  ocsge22 <- v[v$id == "ocsge_artificialisation_22_2025", ]
   conso <- v[v$id == "consoenaf", ]
-  # l'état par habitant est estampillé du vintage OCS-GE de SA source de
-  # référence — le composant signature de l'indicateur (l'état artificialisé,
-  # jamais le dénominateur partagé de population, la règle ADR-0009) :
-  # ocsge_artificialisation_22_2025, la première des huit archives du manifeste
-  # (une clé ne porte qu'UNE source de référence ; les huit archives
-  # partagent le même produit — la source de référence est déclarée, jamais
-  # inférée)
+  # DEPUIS #243, l'état par habitant est estampillé PAR LIGNE : la source de
+  # référence d'une ligne est l'archive du département × le millésime de LA
+  # LIGNE (Rennes 2020 -> ocsge_artificialisation_35_2020, 2023 -> 35_2023 —
+  # jamais l'archive uniforme du passé qui faisait dire à Rennes
+  # « Côtes-d'Armor (22), millésime 2025 »). Le composant signature reste
+  # l'état artificialisé (jamais le dénominateur partagé de population, la
+  # règle ADR-0009).
   etat <- payload$indicateurs[payload$indicateurs$key == "artif_par_habitant", ]
-  expect_true(all(etat$vintage_source == ocsge22$source))
-  expect_true(all(etat$vintage_version == ocsge22$version))
-  expect_true(all(etat$vintage_date_reference == ocsge22$date_reference))
-  expect_true(all(etat$vintage_date_publication == ocsge22$date_publication))
-  # la série annuelle garde SA source de référence CONSOENAF
+  ligne_estampillee <- function(code, detail) {
+    ligne <- etat[etat$territoire == code & etat$detail == detail, ]
+    expect_equal(nrow(ligne), 1L, info = paste(code, detail))
+    v_id <- ligne$source_reference
+    attendu <- v[v$id == v_id, ]
+    expect_equal(ligne$vintage_source, attendu$source, info = paste(code, detail))
+    expect_equal(ligne$vintage_version, attendu$version, info = paste(code, detail))
+    expect_equal(ligne$vintage_date_reference, attendu$date_reference,
+                 info = paste(code, detail))
+    expect_equal(ligne$vintage_date_publication, attendu$date_publication,
+                 info = paste(code, detail))
+  }
+  # 35001 (Ille-et-Vilaine) : la ligne 2020 estampillée 35_2020, la ligne 2023
+  # estampillée 35_2023 — le couple du territoire, jamais une archive uniforme
+  ligne_estampillee("35001", "2020")
+  ligne_estampillee("35001", "2023")
+  expect_equal(etat$source_reference[etat$territoire == "35001"],
+               c("ocsge_artificialisation_35_2020", "ocsge_artificialisation_35_2023"))
+  # 22001 (Côtes-d'Armor) : 2021 -> 22_2021, 2025 -> 22_2025
+  ligne_estampillee("22001", "2021")
+  ligne_estampillee("22001", "2025")
+  expect_equal(etat$source_reference[etat$territoire == "22001"],
+               c("ocsge_artificialisation_22_2021", "ocsge_artificialisation_22_2025"))
+  # 29001 (Finistère) : 2021 -> 29_2021, 2024 -> 29_2024
+  ligne_estampillee("29001", "2021")
+  ligne_estampillee("29001", "2024")
+  # 56001 (Morbihan) : 2022 -> 56_2022, 2024 -> 56_2024
+  ligne_estampillee("56001", "2022")
+  ligne_estampillee("56001", "2024")
+  # l'EPCI mono-département (X, 22) et le département 22 portent le même couple
+  ligne_estampillee("200000001", "2021")
+  ligne_estampillee("200000001", "2025")
+  ligne_estampillee("22", "2021")
+  ligne_estampillee("22", "2025")
+
+  # la série annuelle garde SA source de référence CONSOENAF (pas de ref par
+  # ligne — la clé fait foi)
   annuel <- payload$indicateurs[payload$indicateurs$key == "conso_enaf_annuel", ]
   expect_true(all(annuel$vintage_source == conso$source))
   expect_true(all(annuel$vintage_version == conso$version))
+  expect_true(all(is.na(annuel$source_reference)))
+})
+
+test_that("les territoires multi-départements (EPCI transfrontalier, région) portent une estampille SPAN — jamais un couple unique inventé", {
+  payload <- compute_payload(communes_fixture_milieux_ocsge(),
+                             theme = theme_milieux())
+  etat <- payload$indicateurs[payload$indicateurs$key == "artif_par_habitant", ]
+
+  # l'EPCI Z (200000003) traverse 35 (2020-2023) et 56 (2022-2024) : SA source
+  # de référence est le span de SES deux fenêtres — le MÊME convention que
+  # periode_artif (le mélange est DIT, jamais aplati, jamais une archive
+  # unique)
+  z <- etat[etat$territoire == "200000003", ]
+  expect_equal(z$source_reference,
+               rep("2020-2023 (35) · 2022-2024 (56)", 2))
+  expect_equal(z$vintage_version, rep("2020-2023 (35) · 2022-2024 (56)", 2))
+  expect_true(all(grepl("^IGN — OCS GE « surfaces artificialisées »", z$vintage_source)))
+  expect_true(all(z$vintage_date_reference == "2020-01-01"))
+  expect_true(all(z$vintage_date_publication == "2026-06-10"))
+
+  # la région (53) : les QUATRE fenêtres, triées par code de département —
+  # jamais un couple unique
+  region <- etat[etat$territoire == "53", ]
+  expect_equal(region$source_reference,
+               rep("2021-2025 (22) · 2021-2024 (29) · 2020-2023 (35) · 2022-2024 (56)", 2))
+  expect_equal(region$vintage_version,
+               rep("2021-2025 (22) · 2021-2024 (29) · 2020-2023 (35) · 2022-2024 (56)", 2))
+  expect_true(all(grepl("^IGN — OCS GE « surfaces artificialisées »", region$vintage_source)))
+  # la référence du span = la plus ancienne des références d'état (35 : 2020),
+  # la publication = la plus récente des publications (22 : 2026-07-03)
+  expect_true(all(region$vintage_date_reference == "2020-01-01"))
+  expect_true(all(region$vintage_date_publication == "2026-07-03"))
+  # AUCUNE ligne d'état ne porte une archive uniforme : chaque ref par ligne
+  # est soit un couple (département × millésime de la ligne) soit un span
+  refs <- etat$source_reference
+  couples <- paste0("ocsge_artificialisation_", c("22", "29", "35", "56"),
+                    "_", c("2021", "2021", "2020", "2022"))
+  expect_true(all(grepl("·", refs[!refs %in% c(couples,
+                                               paste0("ocsge_artificialisation_", c("22", "29", "35", "56"),
+                                                      "_", c("2025", "2024", "2023", "2024")))])))
+  expect_true(all(!is.na(refs)))
 })
 
 test_that("le payload Milieux passe la validation générique (forme, territoires, vintages)", {
