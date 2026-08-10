@@ -90,8 +90,9 @@ donnees_programmes_pub <- function() {
 # subventions retourne : commune | annee | programme_libl | montant — le seam
 # d'ingestion SCDL est testé dans test-subventions.R, ici on lui substitue le
 # résultat). Les règles du contrat : l'année complète la plus récente (2025 —
-# 2026 est partielle, 2024 est révolue), 22002 porte HUIT domaines (le cas du
-# garde-fou top-6 + « autres »), l'île 29155 n'existe pas dans ce référentiel.
+# 2026 est partielle, 2024 est révolue), 22002 porte HUIT domaines (la
+# ventilation COMPLÈTE est publiée — le pli d'affichage top-5 + révélation est
+# l'affaire de l'app, issue #305), l'île 29155 n'existe pas dans ce référentiel.
 conventions_subventions_pub <- function() {
   tibble::tribble(
     ~commune, ~annee, ~programme_libl, ~montant,

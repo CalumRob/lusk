@@ -17,7 +17,9 @@
 #   - `montant` est le total DÉCIDÉ par convention, jamais un montant par
 #     versement ;
 #   - niveau commune : le total annuel ventilé par domaine (`programme_libl`),
-#     avec le garde-fou top-N + « autres » au-delà du seuil (~6 domaines) ;
+#     la ventilation COMPLÈTE publiée telle quelle — le pli d'affichage
+#     (top-5 + révélation, ordre décroissant, format M€) est l'affaire de
+#     l'app, jamais du pipeline (issue #305) ;
 #   - niveaux EPCI / département / région : un total annuel UNIQUE, agrégé
 #     depuis les montants attribués des communes membres (jamais une moyenne
 #     de parts) — une convention ancrée sur une commune SANS EPCI compte quand
@@ -32,14 +34,16 @@
 # 29155), les années 2024 (complète mais PAS la référence), 2025 (l'année
 # complète la plus récente) et 2026 (partielle, exclue), le marqueur
 # « Non disponible » et un domaine manquant. 22002 porte HUIT domaines en
-# 2025 — le cas du garde-fou top-6 + « autres ».
+# 2025 — le cas au-delà de tout pli raisonnable : la ventilation publiée est
+# INTÉGRALE (le pli top-5 + révélation est l'affaire de l'app, issue #305).
 fixture_conventions_scdl <- function() {
   tibble::tribble(
     ~dateconvention, ~montant, ~dossier_commune_insee, ~programme_libl,
     # 2025 — l'année complète de référence : 22001 (2 domaines, le cas médian)
     "2025-03-10", "10000", "22001", "Développement économique",
     "2025-06-20", "5000", "22001", "Emploi",
-    # 22002 : HUIT domaines — le garde-fou top-6 + « autres » (450 + 70)
+    # 22002 : HUIT domaines — la ventilation COMPLÈTE est publiée (le total
+    # 520 reste la somme des HUIT lignes, plus aucune ligne « autres »)
     "2025-01-15", "100", "22002", "Domaine 1",
     "2025-01-16", "90", "22002", "Domaine 2",
     "2025-01-17", "80", "22002", "Domaine 3",
@@ -281,28 +285,26 @@ test_that("calculer_subventions_communes : le total annuel par domaine, année d
   expect_false("29001" %in% communes$commune)
 })
 
-test_that("calculer_subventions_communes : le garde-fou top-N + « autres »", {
+test_that("calculer_subventions_communes : la ventilation COMPLÈTE par domaine — aucun « autres », la somme égale le total annuel", {
   norm <- normaliser_subventions_scdl(fixture_conventions_scdl())
   communes <- calculer_subventions_communes(norm)
 
-  # 22001 (2 domaines, le cas médian — ≤ au seuil) : AUCUNE ligne « autres »
-  expect_false(any(communes$programme_libl == LIBELLE_AUTRES_SUBVENTIONS &
-                     communes$commune == "22001"))
+  # AUCUNE ligne « autres » nulle part — le pli d'affichage (top-5 +
+  # révélation, ordre décroissant) est l'affaire de l'app, jamais du pipeline
+  expect_false(any(grepl("autres", communes$programme_libl)))
+
+  # 22001 (2 domaines, le cas médian) : ses deux lignes, telles quelles
   expect_equal(nrow(communes[communes$commune == "22001", ]), 2L)
 
-  # 22002 (8 domaines > au seuil) : les 6 premiers domaines + UNE ligne
-  # « autres » pour le reste — le garde-fou de lisibilité
+  # 22002 (8 domaines) : TOUS les domaines publiés — une ligne par domaine,
+  # aucune sélection top-N, aucun effondrement dans un « autres »
   g22002 <- communes[communes$commune == "22002", ]
-  expect_equal(nrow(g22002), SEUIL_AXES_SUBVENTIONS_COMMUNE + 1L)
-  attendus <- c(paste0("Domaine ", 1:6), LIBELLE_AUTRES_SUBVENTIONS)
-  expect_setequal(g22002$programme_libl, attendus)
-  # les 6 premiers : les domaines aux montants les plus élevés (100..50)
+  expect_equal(nrow(g22002), 8L)
+  expect_setequal(g22002$programme_libl, paste0("Domaine ", 1:8))
+  # chaque domaine garde SON montant (rien n'est fondu dans un « autres »)
   expect_equal(g22002$montant[g22002$programme_libl == "Domaine 1"], 100)
-  expect_equal(g22002$montant[g22002$programme_libl == "Domaine 6"], 50)
-  # « autres » = la somme du reste (40 + 30) — jamais un zéro, jamais perdu
-  expect_equal(g22002$montant[g22002$programme_libl == LIBELLE_AUTRES_SUBVENTIONS],
-               70)
-  # les 7 lignes de 22002 somment au total annuel de la commune (520)
+  expect_equal(g22002$montant[g22002$programme_libl == "Domaine 8"], 30)
+  # les 8 lignes de 22002 somment au total annuel de la commune (520)
   expect_equal(sum(g22002$montant), 520)
 })
 
@@ -349,9 +351,10 @@ test_that("construire_analytiques_subventions : la table d'agrégats complète, 
                     names(analytiques)))
   expect_setequal(unique(analytiques$annee), 2025L)
 
-  # communes : 22001 (2) + 22002 (7) + 29002 (2) + 29155 (1) = 12 lignes ;
-  # EPCI/départements/région : 5 lignes — aucune ligne « Non disponible »
-  expect_equal(nrow(analytiques[analytiques$type == "commune", ]), 12L)
+  # communes : 22001 (2) + 22002 (8) + 29002 (2) + 29155 (1) = 13 lignes —
+  # la ventilation INTÉGRALE par domaine, sans « autres » ; EPCI/départements/
+  # région : 5 lignes — aucune ligne « Non disponible »
+  expect_equal(nrow(analytiques[analytiques$type == "commune", ]), 13L)
   expect_equal(nrow(analytiques[analytiques$type != "commune", ]), 5L)
   expect_false("Non disponible" %in% analytiques$territoire)
 
