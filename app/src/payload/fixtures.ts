@@ -116,15 +116,15 @@ export const indicateursDemographieFixture: Indicateur[] = [
  * × 1000, population moyenne = (pop_prec + pop) / 2).
  */
 export const histoiresDemographieFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
-  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
-  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
-  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
-  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
-  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
-  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
-  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
-  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
+  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
+  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
+  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
+  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
+  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
 ]
 
 /**
@@ -313,6 +313,8 @@ export const histoiresHabitatFixture: Histoire[] = [
     type: 'commune',
     theme: 'habitat',
     story_key: 'etat-energetique-du-parc',
+    groupe: 'etat-du-parc',
+    salience_reason: 'defaut',
     classification: 'parc-performant',
     part_passoires: 0.13333333333333333,
     part_abc: 0.5,
@@ -323,6 +325,8 @@ export const histoiresHabitatFixture: Histoire[] = [
     type: 'region',
     theme: 'habitat',
     story_key: 'etat-energetique-du-parc',
+    groupe: 'etat-du-parc',
+    salience_reason: 'defaut',
     classification: 'parc-intermediaire',
     part_passoires: 0.08704730274243572,
     part_abc: 0.4590208416431279,
@@ -392,37 +396,55 @@ export const indicateursEconomieFixture: Indicateur[] = [
 ]
 
 /**
- * The two Économie Stories (issue #120) — MULTI-LIGNES, top-5 par
- * (territoire × story_key), triées par rang : « ce que la commune abrite » (la
- * spécialisation LQ, communes/EPCIs/départements) et « ce que la Bretagne
- * abrite » (la lecture de structure de la région, story_key dédié sur 53).
- * Labels et nombres réels du payload reshapé — jamais codés en dur.
+ * The two Économie Stories (issue #120, RÉSOLUES par #312) — UNE lecture par
+ * (territoire, groupe) : « ce que la commune abrite » (la spécialisation LQ,
+ * communes/EPCIs/départements — groupe sante-et-taille) et « ce que la
+ * Bretagne abrite » (la lecture de structure de la région, groupe
+ * structure-verte). Le top-5 est replié dans la ligne (top1_*..top5_* — le
+ * rang est l'index). Labels et nombres réels du payload reshapé — jamais codés
+ * en dur.
  */
 export const histoiresEconomieFixture: Histoire[] = [
-  // 22001 — top-5 de spécialisation (LQ)
-  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 1, activity_code: '01.47Z', activity_label: 'Élevage de volailles', lq: 23.6794426899885, n: 12, part_parc: null, ...vintageSirene },
-  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 2, activity_code: '46.23Z', activity_label: "Commerce de gros (commerce interentreprises) d'animaux vivants", lq: 22.98966541398957, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 3, activity_code: '36.00Z', activity_label: "Captage, traitement et distribution d'eau", lq: 19.31473748535927, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 4, activity_code: '77.29Z', activity_label: "Location et location-bail d'autres biens personnels et domestiques", lq: 11.125619665014225, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22001', type: 'commune', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 5, activity_code: '78.30Z', activity_label: 'Autre mise à disposition de ressources humaines', lq: 10.999995166326697, n: 3, part_parc: null, ...vintageSirene },
+  // 22001 — le top-5 de spécialisation (LQ) replié
+  {
+    territoire: '22001', type: 'commune', theme: 'economie', groupe: 'sante-et-taille', story_key: 'ce-que-la-commune-abrite', salience_reason: 'defaut',
+    top1_activity_code: '01.47Z', top1_activity_label: 'Élevage de volailles', top1_lq: 23.6794426899885, top1_n: 12, top1_part_parc: null,
+    top2_activity_code: '46.23Z', top2_activity_label: "Commerce de gros (commerce interentreprises) d'animaux vivants", top2_lq: 22.98966541398957, top2_n: 1, top2_part_parc: null,
+    top3_activity_code: '36.00Z', top3_activity_label: "Captage, traitement et distribution d'eau", top3_lq: 19.31473748535927, top3_n: 1, top3_part_parc: null,
+    top4_activity_code: '77.29Z', top4_activity_label: "Location et location-bail d'autres biens personnels et domestiques", top4_lq: 11.125619665014225, top4_n: 1, top4_part_parc: null,
+    top5_activity_code: '78.30Z', top5_activity_label: 'Autre mise à disposition de ressources humaines', top5_lq: 10.999995166326697, top5_n: 3, top5_part_parc: null,
+    ...vintageSirene,
+  },
   // l'EPCI (les lignes réelles de 200027027, remappées)
-  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 1, activity_code: '08.93Z', activity_label: 'Production de sel', lq: 35.69822429466346, n: 2, part_parc: null, ...vintageSirene },
-  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 2, activity_code: '15.11Z', activity_label: 'Apprêt et tannage des cuirs ; préparation et teinture des fourrures', lq: 21.418934576798076, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 3, activity_code: '11.02B', activity_label: 'Vinification', lq: 17.84911214733173, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 4, activity_code: '50.30Z', activity_label: 'Transports fluviaux de passagers', lq: 17.84911214733173, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '200000001', type: 'epci', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 5, activity_code: '25.92Z', activity_label: "Fabrication d'emballages métalliques légers", lq: 15.299238983427198, n: 1, part_parc: null, ...vintageSirene },
+  {
+    territoire: '200000001', type: 'epci', theme: 'economie', groupe: 'sante-et-taille', story_key: 'ce-que-la-commune-abrite', salience_reason: 'defaut',
+    top1_activity_code: '08.93Z', top1_activity_label: 'Production de sel', top1_lq: 35.69822429466346, top1_n: 2, top1_part_parc: null,
+    top2_activity_code: '15.11Z', top2_activity_label: 'Apprêt et tannage des cuirs ; préparation et teinture des fourrures', top2_lq: 21.418934576798076, top2_n: 1, top2_part_parc: null,
+    top3_activity_code: '11.02B', top3_activity_label: 'Vinification', top3_lq: 17.84911214733173, top3_n: 1, top3_part_parc: null,
+    top4_activity_code: '50.30Z', top4_activity_label: 'Transports fluviaux de passagers', top4_lq: 17.84911214733173, top4_n: 1, top4_part_parc: null,
+    top5_activity_code: '25.92Z', top5_activity_label: "Fabrication d'emballages métalliques légers", top5_lq: 15.299238983427198, top5_n: 1, top5_part_parc: null,
+    ...vintageSirene,
+  },
   // le département 22
-  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 1, activity_code: '01.22Z', activity_label: 'Culture de fruits tropicaux et subtropicaux', lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 2, activity_code: '07.10Z', activity_label: 'Extraction de minerais de fer', lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 3, activity_code: '08.91Z', activity_label: "Extraction des minéraux chimiques et d'engrais minéraux", lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 4, activity_code: '14.20Z', activity_label: "Fabrication d'articles en fourrure", lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
-  { territoire: '22', type: 'departement', theme: 'economie', story_key: 'ce-que-la-commune-abrite', rang: 5, activity_code: '25.94Z', activity_label: 'Fabrication de vis et de boulons', lq: 5.51753307681677, n: 1, part_parc: null, ...vintageSirene },
-  // la région 53 — la lecture de structure (story_key dédié, lq dégénérée)
-  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 1, activity_code: '68.20B', activity_label: "Location de terrains et d'autres biens immobiliers", lq: null, n: 124881, part_parc: 0.16462751477456836, ...vintageSirene },
-  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 2, activity_code: '68.20A', activity_label: 'Location de logements', lq: null, n: 71660, part_parc: 0.09446759482023341, ...vintageSirene },
-  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 3, activity_code: '94.99Z', activity_label: 'Autres organisations fonctionnant par adhésion volontaire', lq: null, n: 30531, part_parc: 0.04024825756986528, ...vintageSirene },
-  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 4, activity_code: '70.10Z', activity_label: 'Activités des sièges sociaux', lq: null, n: 16207, part_parc: 0.02136528480674746, ...vintageSirene },
-  { territoire: '53', type: 'region', theme: 'economie', story_key: 'ce-que-la-bretagne-abrite', rang: 5, activity_code: '47.99A', activity_label: 'Vente à domicile', lq: null, n: 13826, part_parc: 0.0182264717552965, ...vintageSirene },
+  {
+    territoire: '22', type: 'departement', theme: 'economie', groupe: 'sante-et-taille', story_key: 'ce-que-la-commune-abrite', salience_reason: 'defaut',
+    top1_activity_code: '01.22Z', top1_activity_label: 'Culture de fruits tropicaux et subtropicaux', top1_lq: 5.51753307681677, top1_n: 1, top1_part_parc: null,
+    top2_activity_code: '07.10Z', top2_activity_label: 'Extraction de minerais de fer', top2_lq: 5.51753307681677, top2_n: 1, top2_part_parc: null,
+    top3_activity_code: '08.91Z', top3_activity_label: "Extraction des minéraux chimiques et d'engrais minéraux", top3_lq: 5.51753307681677, top3_n: 1, top3_part_parc: null,
+    top4_activity_code: '14.20Z', top4_activity_label: "Fabrication d'articles en fourrure", top4_lq: 5.51753307681677, top4_n: 1, top4_part_parc: null,
+    top5_activity_code: '25.94Z', top5_activity_label: 'Fabrication de vis et de boulons', top5_lq: 5.51753307681677, top5_n: 1, top5_part_parc: null,
+    ...vintageSirene,
+  },
+  // la région 53 — la lecture de structure (story_key dédié, LQ dégénérée)
+  {
+    territoire: '53', type: 'region', theme: 'economie', groupe: 'structure-verte', story_key: 'ce-que-la-bretagne-abrite', salience_reason: 'defaut',
+    top1_activity_code: '68.20B', top1_activity_label: "Location de terrains et d'autres biens immobiliers", top1_lq: null, top1_n: 124881, top1_part_parc: 0.16462751477456836,
+    top2_activity_code: '68.20A', top2_activity_label: 'Location de logements', top2_lq: null, top2_n: 71660, top2_part_parc: 0.09446759482023341,
+    top3_activity_code: '94.99Z', top3_activity_label: 'Autres organisations fonctionnant par adhésion volontaire', top3_lq: null, top3_n: 30531, top3_part_parc: 0.04024825756986528,
+    top4_activity_code: '70.10Z', top4_activity_label: 'Activités des sièges sociaux', top4_lq: null, top4_n: 16207, top4_part_parc: 0.02136528480674746,
+    top5_activity_code: '47.99A', top5_activity_label: 'Vente à domicile', top5_lq: null, top5_n: 13826, top5_part_parc: 0.0182264717552965,
+    ...vintageSirene,
+  },
 ]
 
 /**
@@ -615,17 +637,18 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   ...indicateursOffreCyclableFixture,
 ]
 
-/** Les Stories Mobilité (issue #142) — le défaut « vingt-minutes-sans-voiture »
- * (div_loss_t + la signature de distribution) pour 22001 / 200000001 / 22 / 53,
- * et les deux lignes réelles de la commune saillante 22055 (remappées sur 22002)
- * pour exercer la sélection de saillance : le vélo remplace le défaut. */
+/** Les Stories Mobilité (issue #142, RÉSOLUES par #312) — UNE lecture par
+ * territoire : le défaut « vingt-minutes-sans-voiture » (div_loss_t + la
+ * signature de distribution) pour 22001 / 200000001 / 22 / 53, et — pour la
+ * commune saillante 22055 (remappée sur 22002, le delta réel) — la lecture
+ * RÉSOLUE « ce-que-le-velo-preserve » : la saillance a REMPLACÉ le défaut, le
+ * payload ne porte jamais le pool (ADR-0002). */
 export const histoiresMobiliteFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 38, div_loss_b: 38, delta: 0, pct_iso_full_t: 0.480000000000000, dens_min: 28, dens_max: 47, dens_1: 0.00591500000000000, dens_2: 0.0148690000000000, dens_3: 0.0315630000000000, dens_4: 0.0577150000000000, dens_5: 0.0988470000000000, dens_6: 0.0916830000000000, dens_7: 0.0441880000000000, dens_8: 0.0320730000000000, dens_9: 0.0456240000000000, dens_10: 0.0412520000000000, dec_1: 33.7000000000000, dec_2: 35, dec_3: 37, dec_4: 37, dec_5: 38, dec_6: 39, dec_7: 40, dec_8: 44, dec_9: 46, dec_10: 47, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 35, div_loss_b: 33, delta: 2, pct_iso_full_t: 0.140000000000000, dens_min: 4, dens_max: 52, dens_1: 0.00159400000000000, dens_2: 0.0135920000000000, dens_3: 0.0227140000000000, dens_4: 0.0121260000000000, dens_5: 0.0130840000000000, dens_6: 0.0150800000000000, dens_7: 0.0482170000000000, dens_8: 0.0293260000000000, dens_9: 0.0299690000000000, dens_10: 0.00200800000000000, dec_1: 13, dec_2: 17, dec_3: 27, dec_4: 33, dec_5: 35, dec_6: 37, dec_7: 39, dec_8: 43, dec_9: 47, dec_10: 52, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '22', type: 'departement', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 33, div_loss_b: 28, delta: 5, pct_iso_full_t: 0.110000000000000, dens_min: 0, dens_max: 53, dens_1: 0.000664000000000000, dens_2: 0.00899900000000000, dens_3: 0.0158810000000000, dens_4: 0.0145150000000000, dens_5: 0.0204750000000000, dens_6: 0.0219920000000000, dens_7: 0.0232280000000000, dens_8: 0.0283190000000000, dens_9: 0.0251220000000000, dens_10: 0.00512300000000000, dec_1: 11, dec_2: 17, dec_3: 23, dec_4: 28, dec_5: 33, dec_6: 37, dec_7: 41, dec_8: 44, dec_9: 48, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '53', type: 'region', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 29, div_loss_b: 22, delta: 7, pct_iso_full_t: 0.100000000000000, dens_min: 0, dens_max: 53, dens_1: 0.00314500000000000, dens_2: 0.0165130000000000, dens_3: 0.0167950000000000, dens_4: 0.0184880000000000, dens_5: 0.0190630000000000, dens_6: 0.0197990000000000, dens_7: 0.0230430000000000, dens_8: 0.0254610000000000, dens_9: 0.0214220000000000, dens_10: 0.00464500000000000, dec_1: 7, dec_2: 13, dec_3: 19, dec_4: 24, dec_5: 29, dec_6: 34, dec_7: 38, dec_8: 42, dec_9: 47, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: 0.0100000000000000, dens_min: 8, dens_max: 52, dens_1: 0.00825700000000000, dens_2: 0.0162830000000000, dens_3: 0.0379000000000000, dens_4: 0.0491120000000000, dens_5: 0.0331710000000000, dens_6: 0.0310610000000000, dens_7: 0.0107290000000000, dens_8: 0.00454000000000000, dens_9: 0.00879100000000000, dens_10: 0.00413000000000000, dec_1: 14, dec_2: 18, dec_3: 20, dec_4: 23, dec_5: 24, dec_6: 26, dec_7: 30, dec_8: 33, dec_9: 38, dec_10: 52, classification_saillance: 'saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', div_loss_t: 24, div_loss_b: 13, delta: 11, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
+  { territoire: '22001', type: 'commune', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 38, div_loss_b: 38, delta: 0, pct_iso_full_t: 0.480000000000000, dens_min: 28, dens_max: 47, dens_1: 0.00591500000000000, dens_2: 0.0148690000000000, dens_3: 0.0315630000000000, dens_4: 0.0577150000000000, dens_5: 0.0988470000000000, dens_6: 0.0916830000000000, dens_7: 0.0441880000000000, dens_8: 0.0320730000000000, dens_9: 0.0456240000000000, dens_10: 0.0412520000000000, dec_1: 33.7000000000000, dec_2: 35, dec_3: 37, dec_4: 37, dec_5: 38, dec_6: 39, dec_7: 40, dec_8: 44, dec_9: 46, dec_10: 47, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 35, div_loss_b: 33, delta: 2, pct_iso_full_t: 0.140000000000000, dens_min: 4, dens_max: 52, dens_1: 0.00159400000000000, dens_2: 0.0135920000000000, dens_3: 0.0227140000000000, dens_4: 0.0121260000000000, dens_5: 0.0130840000000000, dens_6: 0.0150800000000000, dens_7: 0.0482170000000000, dens_8: 0.0293260000000000, dens_9: 0.0299690000000000, dens_10: 0.00200800000000000, dec_1: 13, dec_2: 17, dec_3: 27, dec_4: 33, dec_5: 35, dec_6: 37, dec_7: 39, dec_8: 43, dec_9: 47, dec_10: 52, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
+  { territoire: '22', type: 'departement', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 33, div_loss_b: 28, delta: 5, pct_iso_full_t: 0.110000000000000, dens_min: 0, dens_max: 53, dens_1: 0.000664000000000000, dens_2: 0.00899900000000000, dens_3: 0.0158810000000000, dens_4: 0.0145150000000000, dens_5: 0.0204750000000000, dens_6: 0.0219920000000000, dens_7: 0.0232280000000000, dens_8: 0.0283190000000000, dens_9: 0.0251220000000000, dens_10: 0.00512300000000000, dec_1: 11, dec_2: 17, dec_3: 23, dec_4: 28, dec_5: 33, dec_6: 37, dec_7: 41, dec_8: 44, dec_9: 48, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
+  { territoire: '53', type: 'region', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 29, div_loss_b: 22, delta: 7, pct_iso_full_t: 0.100000000000000, dens_min: 0, dens_max: 53, dens_1: 0.00314500000000000, dens_2: 0.0165130000000000, dens_3: 0.0167950000000000, dens_4: 0.0184880000000000, dens_5: 0.0190630000000000, dens_6: 0.0197990000000000, dens_7: 0.0230430000000000, dens_8: 0.0254610000000000, dens_9: 0.0214220000000000, dens_10: 0.00464500000000000, dec_1: 7, dec_2: 13, dec_3: 19, dec_4: 24, dec_5: 29, dec_6: 34, dec_7: 38, dec_8: 42, dec_9: 47, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
+  { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', groupe: 'acces-aux-services', salience_reason: 'delta-velo-saillant', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: null, dens_min: null, dens_max: null, dens_1: null, dens_2: null, dens_3: null, dens_4: null, dens_5: null, dens_6: null, dens_7: null, dens_8: null, dens_9: null, dens_10: null, dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null, dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
 ]
 
 /** Le vintage CONSOENAF — le tampon de SA source de référence (manifest #171). */
@@ -746,15 +769,15 @@ export const indicateursMilieuxFixture: Indicateur[] = [
  * renaturation MESURÉE (artif_m3 < artif_m2, ratio < 1, delta < 0).
  */
 export const histoiresMilieuxFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 200, taux_variation_population: 14.4927536231884, artif_m2: 240, artif_m3: 300, artif_m2_par_habitant: 2250, artif_m3_par_habitant: 2550, trajectoire_artif_par_habitant: 1.1333333333333333, classification: 'grandir-en-setalant' },
-  { territoire: '22002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 100, taux_variation_population: 13.3333333333333, artif_m2: 120, artif_m3: 129, artif_m2_par_habitant: 900, artif_m3_par_habitant: 855, trajectoire_artif_par_habitant: 0.95, classification: 'grandir-en-se-densifiant' },
-  { territoire: '29001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -150, taux_variation_population: -8.26446280991736, artif_m2: 150, artif_m3: 155, artif_m2_par_habitant: 500, artif_m3_par_habitant: 530, trajectoire_artif_par_habitant: 1.06, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '29002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -10, taux_variation_population: -1.82149362477231, artif_m2: 100, artif_m3: 100.75, artif_m2_par_habitant: 400, artif_m3_par_habitant: 403, trajectoire_artif_par_habitant: 1.0075, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '200000001', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 300, taux_variation_population: 14.0845070422535, artif_m2: 360, artif_m3: 435, artif_m2_par_habitant: 1500, artif_m3_par_habitant: 1750, trajectoire_artif_par_habitant: 1.1666666666666667, classification: 'grandir-en-setalant' },
-  { territoire: '200000002', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -160, taux_variation_population: -6.00600600600601, artif_m2: 250, artif_m3: 246, artif_m2_par_habitant: 420, artif_m3_par_habitant: 410, trajectoire_artif_par_habitant: 0.9761904761904762, classification: 'les-departs-laissent-la-place-a-la-renaturation' },
-  { territoire: '22', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 300, taux_variation_population: 14.0845070422535, artif_m2: 360, artif_m3: 435, artif_m2_par_habitant: 1500, artif_m3_par_habitant: 1750, trajectoire_artif_par_habitant: 1.1666666666666667, classification: 'grandir-en-setalant' },
-  { territoire: '29', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -160, taux_variation_population: -6.00600600600601, artif_m2: 250, artif_m3: 252, artif_m2_par_habitant: 420, artif_m3_par_habitant: 425, trajectoire_artif_par_habitant: 1.011904761904762, classification: 'sen-aller-et-consommer-quand-meme' },
-  { territoire: '53', type: 'region', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', periode_pop: '2017-2023', periode_artif: '2021-2025 (22) · 2021-2024 (29)', delta_population: 140, taux_variation_population: 0.9, artif_m2: 610, artif_m3: 690, artif_m2_par_habitant: 750, artif_m3_par_habitant: 830, trajectoire_artif_par_habitant: 1.1066666666666667, classification: 'grandir-en-setalant' },
+  { territoire: '22001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 200, taux_variation_population: 14.4927536231884, artif_m2: 240, artif_m3: 300, artif_m2_par_habitant: 2250, artif_m3_par_habitant: 2550, trajectoire_artif_par_habitant: 1.1333333333333333, classification: 'grandir-en-setalant' },
+  { territoire: '22002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 100, taux_variation_population: 13.3333333333333, artif_m2: 120, artif_m3: 129, artif_m2_par_habitant: 900, artif_m3_par_habitant: 855, trajectoire_artif_par_habitant: 0.95, classification: 'grandir-en-se-densifiant' },
+  { territoire: '29001', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -150, taux_variation_population: -8.26446280991736, artif_m2: 150, artif_m3: 155, artif_m2_par_habitant: 500, artif_m3_par_habitant: 530, trajectoire_artif_par_habitant: 1.06, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '29002', type: 'commune', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -10, taux_variation_population: -1.82149362477231, artif_m2: 100, artif_m3: 100.75, artif_m2_par_habitant: 400, artif_m3_par_habitant: 403, trajectoire_artif_par_habitant: 1.0075, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '200000001', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 300, taux_variation_population: 14.0845070422535, artif_m2: 360, artif_m3: 435, artif_m2_par_habitant: 1500, artif_m3_par_habitant: 1750, trajectoire_artif_par_habitant: 1.1666666666666667, classification: 'grandir-en-setalant' },
+  { territoire: '200000002', type: 'epci', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -160, taux_variation_population: -6.00600600600601, artif_m2: 250, artif_m3: 246, artif_m2_par_habitant: 420, artif_m3_par_habitant: 410, trajectoire_artif_par_habitant: 0.9761904761904762, classification: 'les-departs-laissent-la-place-a-la-renaturation' },
+  { territoire: '22', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2025', delta_population: 300, taux_variation_population: 14.0845070422535, artif_m2: 360, artif_m3: 435, artif_m2_par_habitant: 1500, artif_m3_par_habitant: 1750, trajectoire_artif_par_habitant: 1.1666666666666667, classification: 'grandir-en-setalant' },
+  { territoire: '29', type: 'departement', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2024', delta_population: -160, taux_variation_population: -6.00600600600601, artif_m2: 250, artif_m3: 252, artif_m2_par_habitant: 420, artif_m3_par_habitant: 425, trajectoire_artif_par_habitant: 1.011904761904762, classification: 'sen-aller-et-consommer-quand-meme' },
+  { territoire: '53', type: 'region', theme: 'milieux', story_key: 'se-densifier-setaler-ou-sen-aller', groupe: 'artificialisation', salience_reason: 'defaut', periode_pop: '2017-2023', periode_artif: '2021-2025 (22) · 2021-2024 (29)', delta_population: 140, taux_variation_population: 0.9, artif_m2: 610, artif_m3: 690, artif_m2_par_habitant: 750, artif_m3_par_habitant: 830, trajectoire_artif_par_habitant: 1.1066666666666667, classification: 'grandir-en-setalant' },
 ]
 
 /**

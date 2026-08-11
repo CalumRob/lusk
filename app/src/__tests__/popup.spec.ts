@@ -141,6 +141,8 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       type: 'commune',
       theme: 'milieux',
       story_key: 'se-densifier-setaler-ou-sen-aller',
+      groupe: 'artificialisation',
+      salience_reason: 'defaut',
       periode_pop: '2017-2023',
       periode_artif: null,
       delta_population: 0,

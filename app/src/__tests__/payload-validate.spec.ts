@@ -293,18 +293,27 @@ describe('parsePayload — the shared vintages table', () => {
   })
 })
 
-describe('parsePayload — the Économie contract (issue #120, forme reshapée)', () => {
-  it('accepts the reshaped Économie documents — 3 indicators + the multi-line Stories', () => {
+describe('parsePayload — the Économie contract (issue #120, forme RÉSOLUE #312)', () => {
+  it('accepts the reshaped Économie documents — 3 indicators + the resolved Stories', () => {
     const payload = parsePayload(documentsEconomie())
 
     expect(payload.indicateurs).toHaveLength(indicateursEconomieFixture.length)
     expect(payload.histoires).toHaveLength(histoiresEconomieFixture.length)
-    // la forme multi-lignes : 5 lignes par (territoire × story_key), pas une
-    expect(payload.histoires.filter((h) => h.theme === 'economie' && h.territoire === '22001')).toHaveLength(5)
-    // la région porte la lecture de structure dédiée
+    // la forme résolue : UNE lecture par (territoire, groupe), le top-5 replié
+    expect(payload.histoires.filter((h) => h.theme === 'economie' && h.territoire === '22001')).toHaveLength(1)
+    expect(payload.histoires.filter((h) => h.theme === 'economie' && h.territoire === '22001')[0]).toMatchObject({
+      groupe: 'sante-et-taille',
+      story_key: 'ce-que-la-commune-abrite',
+      salience_reason: 'defaut',
+    })
+    // la région porte la lecture de structure dédiée (groupe structure-verte)
     const region = payload.histoires.filter((h) => h.territoire === '53')
-    expect(region).toHaveLength(5)
-    expect(region.every((h) => h.theme === 'economie' && h.story_key === 'ce-que-la-bretagne-abrite')).toBe(true)
+    expect(region).toHaveLength(1)
+    expect(region[0]).toMatchObject({
+      theme: 'economie',
+      groupe: 'structure-verte',
+      story_key: 'ce-que-la-bretagne-abrite',
+    })
   })
 
   it('rejects an Économie histoire with an unknown story_key (drift must be loud)', () => {
@@ -312,57 +321,52 @@ describe('parsePayload — the Économie contract (issue #120, forme reshapée)'
     ;(histoires[0] as { story_key: string }).story_key = 'le-matin-la-commune-se-vide'
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/Story Économie/)
+    expect(erreur.message).toMatch(/Story/)
   })
 
-  it('rejects an Économie histoire missing the multi-line story columns (the one-line-per-territoire revert)', () => {
-    // La forme d'avant la reshape : une ligne par territoire, sans les colonnes
-    // du top-5 (activity_code / rang / lq) — une dérive du contrat, jamais
+  it('rejects an Économie histoire missing the flat top-5 params (the multi-line revert)', () => {
+    // La forme d'avant la résolution : le top-5 comme lignes séparées, sans les
+    // paramètres plats (top1_*..top5_*) — une dérive du contrat, jamais
     // silencieuse.
     const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
     const ligneAncienne = histoires[0] as unknown as Record<string, unknown>
-    delete ligneAncienne.activity_code
-    delete ligneAncienne.activity_label
-    delete ligneAncienne.rang
+    delete ligneAncienne.top1_activity_code
+    delete ligneAncienne.top1_activity_label
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/activity_code|activity_label|rang/)
+    expect(erreur.message).toMatch(/top1_activity_code/)
   })
 
-  it('rejects a duplicate rang within a (territoire × story_key) group', () => {
+  it('rejects a duplicate reading (territoire × groupe) — le pool non résolu échoue fort (#312)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
-    ;(histoires[1] as { rang: number }).rang = 1
+    histoires.push(histoires[0] as typeof histoires[0])
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/rang/)
+    expect(erreur.message).toMatch(/plusieurs lectures/)
   })
 
-  it('rejects a 6th line for a group — the top-5 is the contract (rang 6 = drift)', () => {
-    // Le plafond de 5 lignes est porté par la contrainte rang ∈ 1..5 : une
-    // sixième ligne ne peut pas être un rang valide du top-5 — c'est une
-    // dérive du contrat (le pipeline aurait publié un top-6).
+  it('rejects a story_key living in the wrong groupe (a displaced reading)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
-    const ligne = { ...(histoires[0] as unknown as Record<string, unknown>), rang: 6 } as typeof histoires[0]
-    histoires.push(ligne)
+    ;(histoires[0] as { groupe: string }).groupe = 'structure-verte'
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/rang/)
+    expect(erreur.message).toMatch(/vit dans le groupe/)
   })
 
   it('rejects a ce-que-la-commune-abrite row without its LQ (the reading IS the specialisation)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
-    ;(histoires[0] as { lq: number | null }).lq = null
+    ;(histoires[0] as { top1_lq: number | null }).top1_lq = null
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/lq/)
+    expect(erreur.message).toMatch(/top1_lq/)
   })
 
   it('rejects a ce-que-la-bretagne-abrite row without its part du parc (the reading IS the structure)', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
-    ;(histoires[15] as { part_parc: number | null }).part_parc = null
+    ;(histoires[3] as { top1_part_parc: number | null }).top1_part_parc = null
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/part_parc/)
+    expect(erreur.message).toMatch(/top1_part_parc/)
   })
 
   it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {
@@ -383,19 +387,21 @@ describe('parsePayload — the Économie contract (issue #120, forme reshapée)'
   })
 })
 
-describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () => {
-  it('accepts the Mobilité documents — le défaut multi-lignes + la saillance vélo', () => {
+describe('parsePayload — the Mobilité contract (issue #142, RÉSOLU #312)', () => {
+  it('accepts the Mobilité documents — UNE lecture résolue par territoire', () => {
     const payload = parsePayload(documentsMobilite())
 
     expect(payload.indicateurs).toHaveLength(indicateursMobiliteFixture.length)
     const histoires = payload.histoires.filter((h) => h.theme === 'mobilite')
     expect(histoires).toHaveLength(histoiresMobiliteFixture.length)
-    // la saillante porte DEUX lignes — le défaut ET le vélo
+    // la saillante porte UNE lecture — le vélo a REMPLACÉ le défaut (issue
+    // #312 : le pool n'est jamais émis, ADR-0002)
     const saillante = histoires.filter((h) => h.territoire === '22002')
-    expect(saillante.map((h) => h.story_key)).toEqual([
-      'vingt-minutes-sans-voiture',
-      'ce-que-le-velo-preserve',
-    ])
+    expect(saillante.map((h) => h.story_key)).toEqual(['ce-que-le-velo-preserve'])
+    expect(saillante[0]).toMatchObject({
+      groupe: 'acces-aux-services',
+      salience_reason: 'delta-velo-saillant',
+    })
   })
 
   it('rejects a Mobilité histoire with an unknown story_key (drift must be loud)', () => {
@@ -403,7 +409,7 @@ describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () =>
     ;(histoires[0] as { story_key: string }).story_key = 'la-voiture-reine'
 
     const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/Story Mobilité/)
+    expect(erreur.message).toMatch(/inconnue du contrat/)
   })
 
   it('rejects a Mobilité histoire missing its required reading (div_loss_t absent — loud)', () => {
@@ -441,12 +447,12 @@ describe('parsePayload — the Mobilité contract (issue #142, ADR-0012)', () =>
     expect(erreur.message).toMatch(/classification_saillance/)
   })
 
-  it('rejects a duplicate (territoire × story_key) — jamais deux fois la même Story', () => {
+  it('rejects a duplicate lecture (territoire × groupe) — jamais deux lectures pour le même slot', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
     histoires.push({ ...histoires[0] })
 
     const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/plusieurs Story/)
+    expect(erreur.message).toMatch(/plusieurs lectures/)
   })
 
   it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {
@@ -506,7 +512,7 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed 
     ;(histoires[0] as { story_key: string }).story_key = 'la-fuite-vers-la-campagne'
 
     const erreur = attendErreurValidation(documentsMilieux({ histoires }))
-    expect(erreur.message).toMatch(/Story Milieux/)
+    expect(erreur.message).toMatch(/inconnue du contrat/)
   })
 
   it('rejects a Milieux histoire with an unknown classification', () => {
@@ -671,12 +677,12 @@ describe('parsePayload — the Milieux contract (issue #174, ADR-0014, re-keyed 
     expect(erreur.message).toMatch(/se contredisent/)
   })
 
-  it('rejects a duplicate Milieux histoire — une ligne par territoire, jamais deux', () => {
+  it('rejects a duplicate Milieux lecture — une lecture par (territoire, groupe), jamais deux', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMilieuxFixture)) as typeof histoiresMilieuxFixture
     histoires.push({ ...histoires[0] })
 
     const erreur = attendErreurValidation(documentsMilieux({ histoires }))
-    expect(erreur.message).toMatch(/plusieurs histoires/)
+    expect(erreur.message).toMatch(/plusieurs lectures/)
   })
 })
 

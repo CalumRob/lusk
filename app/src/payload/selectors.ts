@@ -248,40 +248,39 @@ export function histoirePourTerritoire(
 }
 
 /**
- * The Économie Story rows of a territoire (issue #120) — the top-5 grouped by
- * (territoire × story_key), sorted by rang (ascending): the specialisation
- * reading for communes/EPCIs/départements, the presence reading for the région
- * (53, story_key ce-que-la-bretagne-abrite). A territoire has exactly one Story
- * — the five lines are the reading, never a sample. Null for a territory
- * without an Économie Story (handled honestly, no invented reading).
+ * The Économie Story row of a territoire (issue #120, RÉSOLUE par #312) — the
+ * single resolved reading: « ce que la commune abrite » (the specialisation
+ * reading for communes/EPCIs/départements) or « ce que la Bretagne abrite »
+ * (the structure reading for the région, 53). The top-5 lives folded in the
+ * row's flat params (top1_*..top5_*). Null for a territory without an
+ * Économie Story (handled honestly, no invented reading).
  */
-export function histoiresEconomiePourTerritoire(
+export function histoireEconomiePourTerritoire(
   payload: Payload,
   territoire: string,
-): HistoireEconomie[] | null {
-  const lignes = payload.histoires
-    .filter(
-      (h): h is HistoireEconomie => h.theme === 'economie' && h.territoire === territoire,
-    )
-    .sort((a, b) => a.rang - b.rang || a.activity_code.localeCompare(b.activity_code))
-  return lignes.length > 0 ? lignes : null
+): HistoireEconomie | null {
+  const histoire = payload.histoires.find(
+    (h): h is HistoireEconomie => h.theme === 'economie' && h.territoire === territoire,
+  )
+  return histoire ?? null
 }
 
 /**
- * The Mobilité Story rows of a territoire (issue #142, ADR-0012) — AT MOST TWO:
- * the always-on default « vingt-minutes-sans-voiture » and, where the bike
- * delta is real (classification « saillant »), the salience candidate
- * « ce-que-le-velo-preserve ». Null for a territory without a Mobilité Story
- * (handled honestly, no invented reading).
+ * The Mobilité Story row of a territoire (issue #142, RÉSOLUE par #312,
+ * ADR-0012) — ONE resolved reading: the always-on default
+ * « vingt-minutes-sans-voiture », replaced ONLY where the bike delta is real
+ * (salience_reason « delta-velo-saillant ») by « ce-que-le-velo-preserve ».
+ * The candidate pool is never in the payload. Null for a territory without a
+ * Mobilité Story (handled honestly, no invented reading).
  */
-export function histoiresMobilitePourTerritoire(
+export function histoireMobilitePourTerritoire(
   payload: Payload,
   territoire: string,
-): HistoireMobilite[] | null {
-  const lignes = payload.histoires.filter(
+): HistoireMobilite | null {
+  const histoire = payload.histoires.find(
     (h): h is HistoireMobilite => h.theme === 'mobilite' && h.territoire === territoire,
   )
-  return lignes.length > 0 ? lignes : null
+  return histoire ?? null
 }
 
 /** One point of the Mobilité story chart's context cloud — a peer's div_loss_t (ADR-0011). */
@@ -296,9 +295,11 @@ export interface PointNuageMobilite {
 /**
  * The Mobilité story chart's context cloud (ADR-0011) — the SAME comparison
  * scope as the Démographie nuage (codesComparaison) but reading each peer's
- * default Story row (its div_loss_t — every territory carries its own). The
- * nuage is derivable app-side from the peers' lines, never a downloaded list
- * (theme_mobilite.R — le même pattern que la Story Démographie).
+ * RESOLVED Story row (its div_loss_t — every territory carries its own
+ * reading, default or vélo, issue #312 : the reading's matter survives the
+ * resolution). The nuage is derivable app-side from the peers' lines, never a
+ * downloaded list (theme_mobilite.R — le même pattern que la Story
+ * Démographie).
  */
 export function nuageMobilite(payload: Payload, territoire: string): PointNuageMobilite[] | null {
   const ref = trouverTerritoire(payload, territoire)
@@ -308,10 +309,7 @@ export function nuageMobilite(payload: Payload, territoire: string): PointNuageM
   const nuage: PointNuageMobilite[] = []
   for (const code of codes) {
     const histoire = payload.histoires.find(
-      (h) =>
-        h.theme === 'mobilite' &&
-        h.story_key === 'vingt-minutes-sans-voiture' &&
-        h.territoire === code,
+      (h) => h.theme === 'mobilite' && h.territoire === code,
     )
     if (histoire?.theme !== 'mobilite') continue
     const t = trouverTerritoire(payload, code)

@@ -37,9 +37,9 @@ import { storyMobilite } from '@/fiche/storyMobilite'
 import {
   descriptionNuage,
   estampilleSnapshot,
+  histoireEconomiePourTerritoire,
+  histoireMobilitePourTerritoire,
   histoirePourTerritoire,
-  histoiresEconomiePourTerritoire,
-  histoiresMobilitePourTerritoire,
   indicateursGroupeesPourTerritoire,
   nuageComparaison,
   nuageMilieux,
@@ -77,17 +77,19 @@ const story = computed(() => {
   return storyDemographie(histoire)
 })
 
-// The Économie Story (issue #121): the LQ is the Story — the block's top-5
-// specialisations (or the région's top-5 by presence), precomputed by the
-// pipeline. Multi-line: one Histoire row per rang; the mapper builds the copy.
-// Gated on the theme like the Démographie story — a territory carries BOTH
-// stories in the payload (Rennes has its trajectoire AND its top-5), and each
-// block must read its own.
+// The Économie Story (issue #121, RÉSOLUE par #312): the LQ is the Story —
+// the block's top-5 specialisations (or the région's top-5 by presence),
+// precomputed by the pipeline and folded into ONE resolved reading row (the
+// flat top1_*..top5_* params — the top-5 is never five rows in the payload).
+// The mapper builds the copy from the resolved row. Gated on the theme like
+// the Démographie story — a territory carries BOTH stories in the payload
+// (Rennes has its trajectoire AND its top-5), and each block must read its
+// own.
 const storyEconomieAngle = computed(() => {
   if (props.theme !== 'economie') return null
-  const lignes = histoiresEconomiePourTerritoire(props.payload, props.territoire)
-  if (!lignes) return null
-  return storyEconomie(lignes, nomTerritoire.value)
+  const histoire = histoireEconomiePourTerritoire(props.payload, props.territoire)
+  if (!histoire) return null
+  return storyEconomie(histoire, nomTerritoire.value)
 })
 
 const nuage = computed(() => nuageComparaison(props.payload, props.territoire) ?? [])
@@ -153,15 +155,13 @@ const estampille = computed(() =>
   props.theme === 'mobilite' ? estampilleSnapshot(props.payload) : null,
 )
 
-// The Mobilité Story (issue #142) : the salience rule of ADR-0002 — the vélo
-// reading replaces the default when the payload carries it (classification
-// « saillant »). A territory carries at most two mobilite rows; the mapper
-// picks the reading.
+// The Mobilité Story (issue #142, RÉSOLUE par #312) : the selection is the
+// PIPELINE's — the payload carries the one resolved reading (default, or vélo
+// where the salience fired) and the mapper renders it, it never picks.
 const storyMobiliteAngle = computed(() => {
   if (props.theme !== 'mobilite') return null
-  const lignes = histoiresMobilitePourTerritoire(props.payload, props.territoire)
-  if (!lignes) return null
-  return storyMobilite(lignes)
+  const histoire = histoireMobilitePourTerritoire(props.payload, props.territoire)
+  return storyMobilite(histoire)
 })
 
 // The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) — « Se

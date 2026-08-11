@@ -24,6 +24,8 @@ function uneHistoire(overrides: Partial<HistoireDemographie> = {}): HistoireDemo
     type: 'commune',
     theme: 'demographie',
     story_key: 'trajectoire-demographique',
+    groupe: 'etat-et-dynamique',
+    salience_reason: 'defaut',
     solde_naturel: 0,
     solde_migratoire: 0,
     taux_solde_naturel: 0,

@@ -8,7 +8,7 @@ import type { Payload } from '../payload/types'
 import {
   apercuPourTerritoire,
   formaterRang,
-  histoiresEconomiePourTerritoire,
+  histoireEconomiePourTerritoire,
   ligneFraicheur,
   themesPresent,
 } from '../payload/selectors'
@@ -344,27 +344,35 @@ describe('payload contract — the committed payload parses and renders', () => 
     }
   })
 
-  it('publishes the Économie Stories multi-lignes — top-5 per (territoire × story_key), les deux story_keys', async () => {
+  it('publishes the Économie Stories RÉSOLUES — une lecture par (territoire, groupe), le top-5 replié', async () => {
     const payload = obtenirPayload()
 
     const histoiresEconomie = payload.histoires.filter((h) => h.theme === 'economie')
-    // 1202 communes + 61 EPCIs + 4 départements = 1267 × 5 + les 5 de la région
-    expect(histoiresEconomie).toHaveLength(6340)
+    // 1202 communes + 61 EPCIs + 4 départements + la région = 1268 lectures
+    // (issue #312 : le top-5 est replié dans la ligne, jamais 5 lignes par
+    // territoire — l'identité (territoire × groupe) est unique)
+    expect(histoiresEconomie).toHaveLength(1268)
+    expect(
+      histoiresEconomie.every(
+        (h) => h.groupe === 'sante-et-taille' || h.groupe === 'structure-verte',
+      ),
+    ).toBe(true)
     const storyKeys = new Set(histoiresEconomie.map((h) => h.story_key))
     expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite']))
 
-    // la région porte la lecture de structure, le reste la spécialisation
+    // la région porte la lecture de structure (groupe structure-verte), le
+    // reste la spécialisation (groupe sante-et-taille)
     expect(
       histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite'),
-    ).toHaveLength(5)
+    ).toHaveLength(1)
     expect(histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite').every(
       (h) => h.territoire === '53',
     )).toBe(true)
 
-    // le sélecteur Story lit le top-5 réel d'une commune, trié par rang
-    const allineuc = histoiresEconomiePourTerritoire(payload, '22001')
-    expect(allineuc?.map((l) => l.rang)).toEqual([1, 2, 3, 4, 5])
-    expect(allineuc?.[0]?.activity_label).toBe('Élevage de volailles')
+    // le sélecteur Story lit le top-5 réel d'une commune, replié dans la ligne
+    const allineuc = histoireEconomiePourTerritoire(payload, '22001')
+    expect(allineuc?.top1_activity_label).toBe('Élevage de volailles')
+    expect(allineuc?.groupe).toBe('sante-et-taille')
   })
 
   it('exposes the Économie Story vintage on every line (issue #74 — the story cites its source)', async () => {
@@ -381,22 +389,25 @@ describe('payload contract — the committed payload parses and renders', () => 
     })
   })
 
-  it('parses the committed Mobilité Stories — 1 405 rows, les deux story_keys (issue #142)', async () => {
+  it('parses the committed Mobilité Stories RÉSOLUES — une lecture par territoire (issue #312)', async () => {
     const payload = obtenirPayload()
 
     const histoiresMobilite = payload.histoires.filter((h) => h.theme === 'mobilite')
-    // 1 266 territoires portent le défaut + les 139 saillants portent aussi le vélo
-    expect(histoiresMobilite).toHaveLength(1405)
+    // 1 266 territoires, UNE lecture résolue chacun — la saillance vélo (139)
+    // a remplacé le défaut là où elle tire, jamais le pool (ADR-0002)
+    expect(histoiresMobilite).toHaveLength(1266)
+    expect(histoiresMobilite.every((h) => h.groupe === 'acces-aux-services')).toBe(true)
     const storyKeys = new Set(histoiresMobilite.map((h) => h.story_key))
     expect(storyKeys).toEqual(
       new Set(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']),
     )
-    // chaque territoire porte le défaut, une ligne ; les saillants en portent deux
+    // chaque territoire porte UNE lecture — l'identité (territoire × groupe)
+    expect(new Set(histoiresMobilite.map((h) => h.territoire)).size).toBe(1266)
     const defauts = histoiresMobilite.filter((h) => h.story_key === 'vingt-minutes-sans-voiture')
-    expect(defauts).toHaveLength(1266)
-    expect(new Set(defauts.map((h) => h.territoire)).size).toBe(1266)
+    expect(defauts).toHaveLength(1266 - 139)
     const velo = histoiresMobilite.filter((h) => h.story_key === 'ce-que-le-velo-preserve')
     expect(velo).toHaveLength(139)
+    expect(velo.every((h) => h.salience_reason === 'delta-velo-saillant')).toBe(true)
     expect(velo.every((h) => h.classification_saillance === 'saillant')).toBe(true)
   })
 

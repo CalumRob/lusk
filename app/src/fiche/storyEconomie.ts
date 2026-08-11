@@ -1,13 +1,15 @@
 /**
- * The Économie Story (issue #121, forme reshapée — issue #120): the LQ is the
- * Story, never a block indicator. TWO readings, one per story_key:
+ * The Économie Story (issue #121, forme RÉSOLUE — issue #312): the LQ is the
+ * Story, never a block indicator. ONE resolved reading row per (territoire,
+ * groupe), discriminated by story_key:
  *
  * - « ce que la commune abrite » — the top-5 specialisations by LQ, precomputed
- *   by the pipeline (never recomputed here). Communes, EPCIs, départements.
- *   Each ligne: the activity label (always from the payload, never hard-coded),
- *   its LQ and its establishment count. One fixed title for every territory
- *   type (issue #153) — the matière rides in the precision label, rendered
- *   with the title.
+ *   by the pipeline (never recomputed here) and folded into the row's flat
+ *   params (top1_*..top5_* — the rank is the index, never a column).
+ *   Communes, EPCIs, départements. Each item: the activity label (always from
+ *   the payload, never hard-coded), its LQ and its establishment count. One
+ *   fixed title for every territory type (issue #153) — the matière rides in
+ *   the precision label, rendered with the title.
  * - « ce que la Bretagne abrite » — the région's top-5 by PRESENCE (its LQ is
  *   degenerate, all ≡ 1): n + part of the Breton parc. A structure list, not
  *   an LQ reading.
@@ -42,7 +44,7 @@ export interface StoryEconomie {
   uneLigne: string
   commentLire: string
   lignes: LigneSpecialisation[]
-  /** The story's own vintage stamp (issue #74) — the rows share one source. */
+  /** The story's own vintage stamp (issue #74) — the row wears its source. */
   vintage: string
 }
 
@@ -81,43 +83,58 @@ function formaterEtablissements(n: number): string {
   return `${formaterNombreFR(n, 0)} établissement${n > 1 ? 's' : ''}`
 }
 
+/**
+ * The top-5 of the resolved reading row — the flat params (top1_*..top5_*,
+ * issue #312) folded back into the display list. A territory with fewer than
+ * five activities carries only its real ones (no padding — the empty ranks
+ * stay null in the row and are skipped here).
+ */
+function top5De(histoire: HistoireEconomie): LigneSpecialisation[] {
+  const lignes: LigneSpecialisation[] = []
+  for (const prefixe of ['top1', 'top2', 'top3', 'top4', 'top5'] as const) {
+    const k = Number(prefixe.slice(3))
+    if (histoire[`${prefixe}_activity_code`] === null) continue
+    const label = histoire[`${prefixe}_activity_label`] ?? ''
+    const n = histoire[`${prefixe}_n`] ?? 0
+    const mesure =
+      histoire.story_key === 'ce-que-la-bretagne-abrite'
+        ? `${formaterEtablissements(n)} · ${formaterNombreFR((histoire[`${prefixe}_part_parc`] ?? 0) * 100, 1)} % du parc breton`
+        : `LQ ${formaterNombreFR(histoire[`${prefixe}_lq`] ?? 0, 1)} · ${formaterEtablissements(n)}`
+    lignes.push({ rang: k, label, mesure })
+  }
+  return lignes
+}
+
 export function storyEconomie(
-  lignes: HistoireEconomie[],
+  histoire: HistoireEconomie | null,
   nom: string,
 ): StoryEconomie | null {
+  if (!histoire) return null
+
+  const lignes = top5De(histoire)
   if (lignes.length === 0) return null
 
-  const premier = lignes[0]
-  const labels = lignes.map((l) => l.activity_label)
-  const nomPresence = premier.story_key === 'ce-que-la-bretagne-abrite' ? `La ${nom}` : nom
-
-  const lignesAffichables: LigneSpecialisation[] = lignes.map((l) => ({
-    rang: l.rang,
-    label: l.activity_label,
-    mesure:
-      l.story_key === 'ce-que-la-bretagne-abrite'
-        ? `${formaterEtablissements(l.n)} · ${formaterNombreFR(l.part_parc * 100, 1)} % du parc breton`
-        : `LQ ${formaterNombreFR(l.lq, 1)} · ${formaterEtablissements(l.n)}`,
-  }))
+  const labels = lignes.map((l) => l.label)
+  const nomPresence = histoire.story_key === 'ce-que-la-bretagne-abrite' ? `La ${nom}` : nom
 
   return {
-    storyKey: premier.story_key,
+    storyKey: histoire.story_key,
     titre:
-      premier.story_key === 'ce-que-la-bretagne-abrite'
+      histoire.story_key === 'ce-que-la-bretagne-abrite'
         ? TITRE_PRESENCE
         : TITRE_SPECIALISATION,
-    ...(premier.story_key === 'ce-que-la-bretagne-abrite'
+    ...(histoire.story_key === 'ce-que-la-bretagne-abrite'
       ? {}
       : { precision: PRECISION_SPECIALISATION }),
     uneLigne:
-      premier.story_key === 'ce-que-la-bretagne-abrite'
+      histoire.story_key === 'ce-que-la-bretagne-abrite'
         ? `${nomPresence} abrite surtout ${joindreTrois(labels)}.`
         : `${nom} se distingue par la spécialisation de ses établissements actifs.`,
     commentLire:
-      premier.story_key === 'ce-que-la-bretagne-abrite'
+      histoire.story_key === 'ce-que-la-bretagne-abrite'
         ? COMMENT_LIRE_PRESENCE
         : COMMENT_LIRE_SPECIALISATION,
-    lignes: lignesAffichables,
-    vintage: formaterVintage(premier),
+    lignes,
+    vintage: formaterVintage(histoire),
   }
 }
