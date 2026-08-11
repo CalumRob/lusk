@@ -34,13 +34,17 @@ export const ICONES_THEMES: Record<Theme, Component> = {
 /** The Aperçu tab's icon — the cross-theme default, on the brand ramp. */
 export const ICONE_APERCU: Component = LayoutDashboard
 
-/** A tab slug: a Theme, null for the fiche's Aperçu, or 'programmes' for the
- *  carte's renamed first tab (ADR-0019, #282 — ?onglet=programmes). */
-export type SlugOnglet = Theme | null | 'programmes'
+/** A tab slug: a Theme, null for the fiche's Aperçu, 'programmes' for the
+ *  carte's renamed first tab (ADR-0019, #282 — ?onglet=programmes), or the
+ *  Méthodes sections 'sources' / 'indicateurs' (issue #332 — ?onglet=).
+ *  The inner « Tous » tab of Méthodes stays null (absence of theme, like
+ *  Aperçu) — idOnglet(null) reads onglet-apercu there. */
+export type SlugOnglet = Theme | null | 'programmes' | 'sources' | 'indicateurs'
 
 /** Stable ids shared by the tab (aria-controls) and its panel (the view).
  *  'programmes' keeps its own slug — the carte's first tab ids read
- *  onglet-programmes / panneau-programmes (ADR-0019, #282). */
+ *  onglet-programmes / panneau-programmes (ADR-0019, #282); the Méthodes
+ *  sections read onglet-sources / onglet-indicateurs (#332). */
 export function idOnglet(slug: SlugOnglet): string {
   return `onglet-${slug ?? 'apercu'}`
 }

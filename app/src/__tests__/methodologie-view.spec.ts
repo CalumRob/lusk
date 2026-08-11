@@ -2,9 +2,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import { THEMES_CONSTRUITS } from '../methodes/indicateurs'
 import {
   apercuAvecNAFixture,
   chargerAvec,
@@ -20,10 +21,12 @@ import MethodologieView from '../views/MethodologieView.vue'
 
 /**
  * /methodologie — Sources & Méthodes (layouts.md §5, issue #128). L'intro
- * factuelle (ce qu'est Lusk, le pipeline, la reproductibilité) puis la table
- * des sources : une ligne par source du registre, faits de fraîcheur joints en
- * direct depuis vintages.json. Jamais de bannière de construction
- * (principles.md §1) — la page énonce ce qui est, jamais ce qui viendra.
+ * factuelle (ce qu'est Lusk, le pipeline, la reproductibilité) puis le shell
+ * à onglets (#332) : Sources | Indicateurs | Programmes — la table des
+ * sources dans son onglet (une ligne par source du registre, faits de
+ * fraîcheur joints en direct depuis vintages.json). Jamais de bannière de
+ * construction (principles.md §1) — la page énonce ce qui est, jamais ce qui
+ * viendra.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -48,15 +51,14 @@ const payloadSansVintages: Payload = {
   programmes: null,
 }
 
-async function monter(charger: ChargerFichier, options: Record<string, unknown> = {}) {
+async function monter(charger: ChargerFichier, options: { chemin?: string } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push('/methodologie')
+  await router.push(options.chemin ?? '/methodologie')
   await router.isReady()
   const wrapper = mount(MethodologieView, {
     global: {
       plugins: [router],
       provide: { [PAYLOAD_CHARGER_KEY]: charger },
-      ...options,
     },
   })
   await flushPromises()
@@ -245,5 +247,235 @@ describe('MethodologieView — la dégradation gracieuse', () => {
 
     expect(wrapper.text()).toContain('Impossible de charger les données des sources.')
     expect(wrapper.find('.bouton-reessayer').text()).toContain('Réessayer')
+  })
+})
+
+describe('MethodologieView — le shell à onglets (issue #332)', () => {
+  it('rend trois onglets — Sources | Indicateurs | Programmes — et atterrit sur Sources', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
+
+    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
+    expect(onglets).toEqual(['Sources', 'Indicateurs', 'Programmes'])
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
+    // une visite nue atterrit sur Sources : la table rend, les autres panneaux non
+    expect(wrapper.find('section#sources').exists()).toBe(true)
+    expect(wrapper.find('section#indicateurs').exists()).toBe(false)
+    expect(wrapper.find('section#programmes').exists()).toBe(false)
+  })
+
+  it('garde l\u2019intro au-dessus des onglets, comme bloc d\u2019orientation permanent', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
+
+    const intro = wrapper.find('.methodologie__intro')
+    const onglets = wrapper.find('[role="tablist"]')
+    expect(intro.exists()).toBe(true)
+    expect(intro.element.compareDocumentPosition(onglets.element)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  it('cliquer un onglet écrit ?onglet= en REPLACE et monte son panneau', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages))
+    const replace = vi.spyOn(router, 'replace')
+
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    await flushPromises()
+
+    expect(replace).toHaveBeenCalledWith({ query: { onglet: 'indicateurs' } })
+    expect(router.currentRoute.value.query.onglet).toBe('indicateurs')
+    expect(wrapper.find('section#indicateurs').exists()).toBe(true)
+    expect(wrapper.find('section#sources').exists()).toBe(false)
+  })
+
+  it('?onglet=indicateurs à l\u2019arrivée sélectionne l\u2019onglet et rend sa section', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs',
+    })
+
+    expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('section#indicateurs').exists()).toBe(true)
+    expect(wrapper.find('section#sources').exists()).toBe(false)
+  })
+
+  it('?onglet=programmes rend la section Programmes & financements', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=programmes',
+    })
+
+    expect(wrapper.findAll('[role="tab"]')[2].attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('section#programmes').exists()).toBe(true)
+    expect(wrapper.find('section#sources').exists()).toBe(false)
+  })
+
+  it('?onglet=sources sélectionne explicitement l\u2019onglet Sources (l\u2019état par défaut, jamais réécrit)', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'sources' })
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('section#sources').exists()).toBe(true)
+  })
+
+  it('cliquer Sources depuis un autre onglet revient à l\u2019URL nue (sa forme canonique)', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=programmes',
+    })
+
+    await wrapper.findAll('[role="tab"]')[0].trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(wrapper.find('section#sources').exists()).toBe(true)
+  })
+
+  it('les panneaux portent role=tabpanel reliés aux onglets (aria-controls ↔ id, idPanneau)', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs',
+    })
+
+    const onglet = wrapper.findAll('[role="tab"]')[1]
+    expect(onglet.attributes('aria-controls')).toBe('panneau-indicateurs')
+    const panneau = wrapper.find('#panneau-indicateurs')
+    expect(panneau.attributes('role')).toBe('tabpanel')
+    expect(panneau.attributes('aria-labelledby')).toBe('onglet-indicateurs')
+  })
+
+  it('les clics d\u2019onglets remplacent l\u2019URL — back/forward restaurent l\u2019état depuis l\u2019URL', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/methodologie') // l'entrée précédente
+    await router.push('/methodologie?onglet=indicateurs') // l'état partagé (entrée B)
+    await router.isReady()
+    const wrapper = mount(MethodologieView, {
+      global: {
+        plugins: [router],
+        provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payloadAvecVintages) },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
+
+    // un clic d'onglet REPLACE l'entrée B (jamais une nouvelle entrée par clic)
+    await wrapper.findAll('[role="tab"]')[2].trigger('click') // Programmes
+    await flushPromises()
+    expect(router.currentRoute.value.query.onglet).toBe('programmes')
+    expect(wrapper.find('section#programmes').exists()).toBe(true)
+
+    // un seul back saute le clic et revient à l'entrée précédente
+    await router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.query.onglet).toBeUndefined()
+    expect(wrapper.find('section#sources').exists()).toBe(true)
+
+    // forward restaure l'état des onglets (l'URL est l'état)
+    await router.forward()
+    await flushPromises()
+    expect(router.currentRoute.value.query.onglet).toBe('programmes')
+    expect(wrapper.find('section#programmes').exists()).toBe(true)
+  })
+})
+
+describe('MethodologieView — la normalisation de l\u2019URL (le pattern carte, #332)', () => {
+  it('?onglet=inconnu est normalisé — retombe sur l\u2019état par défaut (Sources)', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=bidule',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.onglet).toBeUndefined()
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('section#sources').exists()).toBe(true)
+  })
+
+  it('?theme=habitat sans ?onglet= est retiré (un thème hors section n\u2019est pas un état)', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?theme=habitat',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.theme).toBeUndefined()
+    expect(wrapper.find('section#sources').exists()).toBe(true)
+  })
+
+  it('?onglet=sources&theme=habitat : le thème est retiré (les sources n\u2019ont pas encore d\u2019onglets de thème, #335)', async () => {
+    const { router } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&theme=habitat',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'sources' })
+  })
+
+  it('?onglet=programmes&theme=habitat : le thème est retiré', async () => {
+    const { router } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=programmes&theme=habitat',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'programmes' })
+  })
+})
+
+describe('MethodologieView — le thème dans l\u2019onglet indicateurs (?theme=, #332)', () => {
+  it('sans ?theme=, l\u2019onglet indicateurs montre tous les thèmes construits (« Tous » par défaut)', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs',
+    })
+
+    for (const theme of THEMES_CONSTRUITS) {
+      expect(wrapper.find(`section#indicateurs article#${theme}`).exists()).toBe(true)
+    }
+    const tous = wrapper.findAll('[role="tab"]').find((o) => o.text().trim() === 'Tous')
+    expect(tous!.attributes('aria-selected')).toBe('true')
+  })
+
+  it('?onglet=indicateurs&theme=habitat sélectionne la section ET le thème à l\u2019intérieur', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs&theme=habitat',
+    })
+
+    expect(wrapper.find('section#indicateurs').exists()).toBe(true)
+    expect(wrapper.find('section#indicateurs article#habitat').exists()).toBe(true)
+    expect(wrapper.find('section#indicateurs article#demographie').exists()).toBe(false)
+    const habitat = wrapper.findAll('[role="tab"]').find((o) => o.text().trim() === 'Habitat')
+    expect(habitat!.attributes('aria-selected')).toBe('true')
+  })
+
+  it('cliquer un thème écrit ?onglet=indicateurs&theme=<slug> et filtre les blocs', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs',
+    })
+
+    const habitat = wrapper.findAll('[role="tab"]').find((o) => o.text().trim() === 'Habitat')
+    await habitat!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'indicateurs', theme: 'habitat' })
+    expect(wrapper.find('section#indicateurs article#habitat').exists()).toBe(true)
+    expect(wrapper.find('section#indicateurs article#demographie').exists()).toBe(false)
+  })
+
+  it('cliquer « Tous » retire ?theme= (l\u2019état par défaut du sélecteur)', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs&theme=habitat',
+    })
+
+    const tous = wrapper.findAll('[role="tab"]').find((o) => o.text().trim() === 'Tous')
+    await tous!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'indicateurs' })
+    expect(wrapper.find('section#indicateurs article#demographie').exists()).toBe(true)
+  })
+
+  it('?onglet=indicateurs&theme=inconnu : le thème est normalisé (retiré), la section reste', async () => {
+    const { router, wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=indicateurs&theme=bidule',
+    })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({ onglet: 'indicateurs' })
+    expect(wrapper.find('section#indicateurs').exists()).toBe(true)
   })
 })

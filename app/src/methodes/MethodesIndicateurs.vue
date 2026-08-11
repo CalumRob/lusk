@@ -9,11 +9,24 @@
  * lectures). Le registre (indicateurs.ts) est statique et typé — la section
  * ne dépend pas du payload. Pas de bannière de construction (principles.md
  * §1) : la page énonce ce qui est.
+ *
+ * Le shell à onglets (#332) peut restreindre la liste via la prop `themes` —
+ * le sélecteur de thème de l'onglet Indicateurs filtre les blocs (défaut :
+ * tous les construits, le « Tous » du sélecteur).
  */
+import { computed } from 'vue'
+
 import { NOMS_THEMES } from '@/fiche/onglets'
 import { ancreSource } from '@/methodes/sources'
 import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
+
+const props = defineProps<{
+  /** Les thèmes à documenter — le filtre du shell à onglets (défaut : tous). */
+  themes?: readonly ThemeConstruit[]
+}>()
+
+const themesAffiches = computed(() => props.themes ?? THEMES_CONSTRUITS)
 
 /** La rampe du thème en variables CSS — les trois tons du bloc (strong/wash/line). */
 function styleTheme(theme: ThemeConstruit): Record<string, string> {
@@ -41,7 +54,7 @@ function uniteAffichage(unite: string): string {
     </p>
 
     <article
-      v-for="theme in THEMES_CONSTRUITS"
+      v-for="theme in themesAffiches"
       :id="theme"
       :key="theme"
       class="bloc-theme"

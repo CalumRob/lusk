@@ -28,12 +28,13 @@ import MethodologieView from '../views/MethodologieView.vue'
 
 /**
  * /methodologie — la section « Programmes & financements » (issue #180,
- * layouts.md §5). La section documente l'élément du même nom de la fiche :
- * le vocabulaire des badges (sigle → nom), les trois sortes de couverture, la
- * règle du badge ORT, la ligne « jamais les résultats », et la table de ses
- * SIX sources (URL, format, licence, fraîcheur — les faits que le pipeline
- * ingère réellement, jamais inventés). Jamais de bannière de construction
- * (principles.md §1) : la page énonce ce qui est.
+ * layouts.md §5), dans l'onglet Programmes du shell à onglets (#332,
+ * ?onglet=programmes). La section documente l'élément du même nom de la
+ * fiche : le vocabulaire des badges (sigle → nom), les trois sortes de
+ * couverture, la règle du badge ORT, la ligne « jamais les résultats », et la
+ * table de ses SIX sources (URL, format, licence, fraîcheur — les faits que
+ * le pipeline ingère réellement, jamais inventés). Jamais de bannière de
+ * construction (principles.md §1) : la page énonce ce qui est.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -54,7 +55,7 @@ const payload: Payload = {
 
 async function monter(charger: ChargerFichier) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push('/methodologie')
+  await router.push('/methodologie?onglet=programmes')
   await router.isReady()
   const wrapper = mount(MethodologieView, {
     global: {
@@ -67,16 +68,10 @@ async function monter(charger: ChargerFichier) {
 }
 
 describe('MethodologieView — la section « Programmes & financements »', () => {
-  it('rend la section à son ancre #programmes, après celle des indicateurs', async () => {
+  it('rend la section à son ancre #programmes', async () => {
     const wrapper = await monter(chargerAvec(payload))
 
-    const programmes = wrapper.find('section#programmes')
-    expect(programmes.exists()).toBe(true)
-
-    const indicateurs = wrapper.find('section#indicateurs')
-    expect(indicateurs.element.compareDocumentPosition(programmes.element)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    )
+    expect(wrapper.find('section#programmes').exists()).toBe(true)
   })
 
   it('porte le titre « Programmes & financements »', async () => {

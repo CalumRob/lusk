@@ -21,6 +21,7 @@ import MethodologieView from '../views/MethodologieView.vue'
 
 /**
  * /methodologie — la section « les indicateurs » (issue #129, layouts.md §5) :
+ * dans l'onglet Indicateurs du shell à onglets (#332, ?onglet=indicateurs),
  * pour chaque thème construit, un bloc d'ancre (#demographie, #habitat,
  * #economie) qui porte la rampe du thème, les définitions des indicateurs
  * (label, définition, unité, source) puis les Stories. Jamais de bannière de
@@ -45,7 +46,7 @@ const payload: Payload = {
 
 async function monter(charger: ChargerFichier) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push('/methodologie')
+  await router.push('/methodologie?onglet=indicateurs')
   await router.isReady()
   const wrapper = mount(MethodologieView, {
     global: {
@@ -208,17 +209,5 @@ describe('MethodologieView — la section « les indicateurs »', () => {
 
     const texte = wrapper.text()
     expect(texte).not.toMatch(/à venir|en construction|bientôt|under construction/i)
-  })
-
-  it('la section des indicateurs vient après celle des sources', async () => {
-    const wrapper = await monter(chargerAvec(payload))
-
-    const sources = wrapper.find('section#sources')
-    const indicateurs = wrapper.find('section#indicateurs')
-    expect(sources.exists()).toBe(true)
-    expect(indicateurs.exists()).toBe(true)
-    expect(sources.element.compareDocumentPosition(indicateurs.element)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    )
   })
 })
