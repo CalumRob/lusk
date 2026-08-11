@@ -23,6 +23,8 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: null,
 }
 
 function montage(overrides: Record<string, unknown> = {}) {
@@ -92,6 +94,8 @@ describe('MapLegend — the active layer bucket legend', () => {
         detail: null,
         libelle: 'Part de passoires thermiques',
         parDefaut: false,
+        sousGroupe: 'etat-du-parc',
+        storyKey: 'etat-energetique-du-parc',
       },
       couleurs: ['#f0ddd2', '#d9ae94', '#c98f6e'],
       seuils: [0.2, 0.4],

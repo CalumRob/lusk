@@ -27,6 +27,8 @@ const coucheTauxSoldeNaturel: Couche = {
   detail: null,
   libelle: 'taux_solde_naturel',
   parDefaut: true,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: 'trajectoire-demographique',
 }
 
 const coucheTauxSoldeMigratoire: Couche = {
@@ -35,6 +37,8 @@ const coucheTauxSoldeMigratoire: Couche = {
   detail: null,
   libelle: 'taux_solde_migratoire',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: 'trajectoire-demographique',
 }
 
 const coucheDensite: Couche = {
@@ -43,6 +47,8 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: null,
 }
 
 const coucheMoin15: Couche = {
@@ -51,13 +57,16 @@ const coucheMoin15: Couche = {
   detail: '<15',
   libelle: 'Moins de 15 ans',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: null,
 }
 
 /** The Démographie layer set, as couchesDuTheme emits it: the story scalar,
- *  the story-pool group, the scalar figures, the multi-detail group. */
+ *  the story-pool group (under the subgroup label), the scalar figures, the
+ *  multi-detail group. */
 const entreesDemographie: EntreeCouches[] = [
   { type: 'couche', couche: coucheTauxSoldeNaturel },
-  { type: 'groupe', groupe: { libelle: 'La Story', couches: [coucheTauxSoldeMigratoire] } },
+  { type: 'groupe', groupe: { libelle: 'État et dynamique de la population', couches: [coucheTauxSoldeMigratoire] } },
   { type: 'couche', couche: coucheDensite },
   { type: 'groupe', groupe: { libelle: 'Structure par âge', couches: [coucheMoin15] } },
 ]
@@ -178,7 +187,7 @@ describe('MapSidebar — le sélecteur de couches (ADR-0019)', () => {
       'Moins de 15 ans',
     ])
     const groupes = wrapper.findAll('.carte-sidebar-groupe-titre').map((b) => b.text().trim())
-    expect(groupes).toEqual(['La Story', 'Structure par âge'])
+    expect(groupes).toEqual(['État et dynamique de la population', 'Structure par âge'])
     for (const groupe of wrapper.findAll('.carte-sidebar-groupe-titre')) {
       expect(groupe.attributes('aria-expanded')).toBe('true')
     }
