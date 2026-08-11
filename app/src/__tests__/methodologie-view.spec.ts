@@ -379,10 +379,11 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
     }
   })
 
-  it('tient les comptes exacts par thème — les jeux repliés, les millésimes OCS-GE visibles', async () => {
+  it('tient les comptes exacts par thème — les jeux repliés, les lignes OCS-GE visibles', async () => {
     // Démographie : 4 jeux uniques (une ligne chacun) ; Habitat : 3 (logements,
-    // DVF replié sur son en-tête, DPE replié) ; Milieux : 4 en-têtes (consoenaf,
-    // série historique, OCS-GE état, OCS-GE patch) + les 11 lignes vintage visibles
+    // DVF replié sur son en-tête, DPE replié) ; Milieux : 3 en-têtes (consoenaf,
+    // série historique, OCS-GE — états ET patchs sous le même jeu) + les 11
+    // lignes vintage visibles
     const demographie = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=sources&section=demographie',
     })
@@ -396,10 +397,10 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
     const milieux = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=sources&section=milieux',
     })
-    expect(milieux.wrapper.findAll('section#sources tbody tr').length).toBe(15)
+    expect(milieux.wrapper.findAll('section#sources tbody tr').length).toBe(14)
   })
 
-  it('l\u2019union des cinq onglets de thème = les 25 jeux + leurs lignes vintage (l\u2019union est le contrat)', async () => {
+  it('l\u2019union des cinq onglets de thème = les 24 jeux + leurs lignes vintage (l\u2019union est le contrat)', async () => {
     const ids: string[] = []
     for (const theme of THEMES_CANONIQUES) {
       const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
@@ -516,15 +517,19 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
     expect(habitat.wrapper.find('tr#source-dvf-2021-dep22').exists()).toBe(false)
     expect(habitat.wrapper.find('tr#source-logements').exists()).toBe(true)
 
-    // OCS-GE est déplié : les ancres vintage restent sur les lignes enfants
+    // OCS-GE est déplié : UN seul en-tête pour le jeu (états + patchs — la
+    // relecture #361), les ancres vintage restent sur les 11 lignes enfants
     const milieux = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=sources&section=milieux',
     })
     expect(milieux.wrapper.find('tr#source-ocsge-artificialisation').exists()).toBe(true)
     expect(milieux.wrapper.find('tr#source-ocsge-artificialisation-22-2021').exists()).toBe(true)
     expect(milieux.wrapper.find('tr#source-ocsge-artificialisation-35-2023').exists()).toBe(true)
-    expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif').exists()).toBe(true)
+    // le patch correctif est une ligne enfant du MÊME jeu — jamais un second en-tête
+    expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif').exists()).toBe(false)
     expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif-22').exists()).toBe(true)
+    expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif-29').exists()).toBe(true)
+    expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif-56').exists()).toBe(true)
   })
 
   it('l\u2019URL vit sur l\u2019en-tête du jeu seulement — jamais répétée par ligne vintage (ADR-0022)', async () => {

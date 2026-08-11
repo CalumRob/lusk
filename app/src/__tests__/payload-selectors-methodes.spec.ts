@@ -52,7 +52,7 @@ function vintagesDvf(): Vintage[] {
   )
 }
 
-/** Les lignes vintages OCS-GE d'état — des dates de publication DISTINCTES (les millésimes par département). */
+/** Les lignes vintages OCS-GE — des dates de publication DISTINCTES (les millésimes par département, un patch). */
 function vintagesOcsGe(): Vintage[] {
   return [
     {
@@ -71,18 +71,26 @@ function vintagesOcsGe(): Vintage[] {
       date_reference: '2025-01-01',
       date_publication: '2026-07-03',
     },
+    {
+      id: 'ocsge_patch_correctif_22',
+      source: 'IGN — OCS GE « patch correctif » (Nouvelle Génération)',
+      version: '2021',
+      licence: 'lov2',
+      date_reference: '2021-01-01',
+      date_publication: '2026-07-03',
+    },
   ]
 }
 
 describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () => {
-  it('groupe les 56 lignes du registre en 25 jeux de données, dans l\u2019ordre du registre', () => {
+  it('groupe les 56 lignes du registre en 24 jeux de données, dans l\u2019ordre du registre', () => {
     const { jeux } = sourcesMethodes(payloadAvec(vintagesFixture))
 
     const attendus = [
       ...new Set(Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id)),
     ]
     expect(jeux.map((j) => j.id)).toEqual(attendus)
-    expect(jeux.length).toBe(25)
+    expect(jeux.length).toBe(24)
   })
 
   it('porte les faits éditoriaux du jeu sur l\u2019en-tête (nom, éditeur, URL, thèmes)', () => {
@@ -150,19 +158,25 @@ describe('sourcesMethodes — le repli honnête (ADR-0022)', () => {
     expect(dvf?.licence).toBe('Licence Ouverte 2.0')
   })
 
-  it('garde les lignes OCS-GE visibles — les millésimes portent des faits de publication distincts', () => {
+  it('garde les lignes OCS-GE visibles — les millésimes (et les patchs) portent des faits distincts', () => {
     const { jeux } = sourcesMethodes(payloadAvec(vintagesOcsGe()))
 
+    // UN seul jeu OCS-GE — les 8 archives d'état ET les 3 patchs correctifs
+    // (la relecture #361 : le patch est une ligne du même jeu, jamais un second en-tête)
     const ocsge = jeux.find((j) => j.id === 'ocsge_artificialisation')
     expect(ocsge).toBeDefined()
+    expect(jeux.filter((j) => j.nom.startsWith('IGN — OCS GE')).map((j) => j.id)).toEqual([
+      'ocsge_artificialisation',
+    ])
     expect(ocsge?.replie).toBe(false)
     // l'en-tête du jeu déplié ne porte aucune fraîcheur — les lignes la portent
     expect(ocsge?.version).toBeNull()
     expect(ocsge?.datePublication).toBeNull()
     expect(ocsge?.licence).toBeNull()
-    // les 8 lignes du registre restent des lignes — celles sans vintage en direct
-    // dégradent gracieusement (fraîcheur nulle), jamais une date inventée
-    expect(ocsge?.vintages).toHaveLength(8)
+    // les 11 lignes du registre (8 états + 3 patchs) restent des lignes — celles
+    // sans vintage en direct dégradent gracieusement (fraîcheur nulle), jamais une
+    // date inventée
+    expect(ocsge?.vintages).toHaveLength(11)
     expect(ocsge?.vintages[0]).toMatchObject({
       id: 'ocsge_artificialisation_22_2021',
       libelle: 'Millésime 2021 · Côtes-d\u2019Armor (22)',
@@ -179,6 +193,12 @@ describe('sourcesMethodes — le repli honnête (ADR-0022)', () => {
       id: 'ocsge_artificialisation_56_2022',
       version: null,
       datePublication: null,
+    })
+    // le premier patch est la 9e ligne du jeu, avec son libellé dédié et sa fraîcheur
+    expect(ocsge?.vintages[8]).toMatchObject({
+      id: 'ocsge_patch_correctif_22',
+      libelle: 'Patch correctif — Côtes-d\u2019Armor (22), millésime corrigé 2021',
+      datePublication: '3 juillet 2026',
     })
   })
 })
@@ -217,7 +237,7 @@ describe('sourcesMethodes — vintages absents (404)', () => {
     const { jeux, vintagesAbsents } = sourcesMethodes(payloadAvec(null))
 
     expect(vintagesAbsents).toBe(true)
-    expect(jeux.length).toBe(25)
+    expect(jeux.length).toBe(24)
     for (const jeu of jeux) {
       expect(jeu.replie).toBe(true)
       expect(jeu.vintages[0].version).toBeNull()

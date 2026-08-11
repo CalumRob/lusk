@@ -151,7 +151,7 @@ function sourcesOcsGe(): Record<string, SourceEditoriale> {
  * du millésime M2, appliqué « au niveau matrice sur les polygones qui
  * inversent le statut » (approximation documentée dans Méthodes). Le même
  * produit OCS GE Géoplateforme que les archives d'état — mêmes faits
- * éditoriaux, son propre jeu (un nom dédié).
+ * éditoriaux (le même jeu, un seul en-tête), nom dédié, libellé propre.
  */
 const PATCHS_OCSGE: Record<string, { millesime: number }> = {
   '22': { millesime: 2021 },
@@ -163,8 +163,10 @@ function sourcesOcsGePatches(): Record<string, SourceEditoriale> {
   const sources: Record<string, SourceEditoriale> = {}
   for (const [dep, { millesime }] of Object.entries(PATCHS_OCSGE)) {
     sources[`ocsge_patch_correctif_${dep}`] = {
+      // Le MÊME jeu que les archives d'état (la relecture #361) : un seul
+      // en-tête OCS-GE — le patch reste une ligne distincte, jamais un second
+      // en-tête (les faits de fraîcheur diffèrent, la ligne reste visible).
       ...SOURCE_OCSGE,
-      dataset: 'ocsge_patch_correctif',
       nom: 'IGN — OCS GE « patch correctif » (Nouvelle Génération)',
       libelle: `Patch correctif — ${NOMS_DEPARTEMENTS[dep]} (${dep}), millésime corrigé ${millesime}`,
     }

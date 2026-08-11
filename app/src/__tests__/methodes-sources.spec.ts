@@ -46,11 +46,11 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     }
   })
 
-  it('déclare 25 jeux de données — les quatre familles générées et les sources uniques (ADR-0022)', () => {
+  it('déclare 24 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
     const idsJeux = new Set(
       Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
     )
-    expect(idsJeux.size).toBe(25)
+    expect(idsJeux.size).toBe(24)
   })
 
   it('les familles générées partagent le nom du jeu et portent un libellé vintage dédié (ADR-0022)', () => {
@@ -74,13 +74,17 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
       'Millésime 2023 · Ille-et-Vilaine (35)',
     )
 
-    // les patchs correctifs — leur propre jeu, un nom dédié
+    // les patchs correctifs — du MÊME jeu que les archives d'état (un seul
+    // en-tête OCS-GE, ADR-0022), leur nom dédié et leurs libellés propres
     const patchs = Object.entries(SOURCES_METHODES).filter(([id]) =>
       id.startsWith('ocsge_patch_correctif_'),
     )
     expect(patchs.length).toBe(3)
     expect(new Set(patchs.map(([, s]) => s.dataset))).toEqual(
-      new Set(['ocsge_patch_correctif']),
+      new Set(['ocsge_artificialisation']),
+    )
+    expect(SOURCES_METHODES['ocsge_patch_correctif_22'].nom).toBe(
+      'IGN — OCS GE « patch correctif » (Nouvelle Génération)',
     )
     expect(SOURCES_METHODES['ocsge_patch_correctif_22'].libelle).toBe(
       'Patch correctif — Côtes-d\u2019Armor (22), millésime corrigé 2021',
