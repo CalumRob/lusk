@@ -1,0 +1,131 @@
+{
+  "theme": "economie",
+  "label": "Économie/Emploi",
+  "subgroups": [
+    {
+      "key": "sante-et-taille",
+      "label": "Santé et taille du tissu productif",
+      "framing": "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement.",
+      "indicators": [
+        "effectifs_salaries",
+        "chomage"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "effectifs_salaries"
+      },
+      "reading": {
+        "story_key": "ce-que-la-commune-abrite",
+        "params": [
+          "rang",
+          "activity_label",
+          "lq",
+          "n"
+        ],
+        "template": [
+          {
+            "type": "text",
+            "content": "La commune se spécialise dans "
+          },
+          {
+            "type": "strong",
+            "children": [
+              {
+                "type": "param",
+                "key": "activity_label"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "content": " (rang "
+          },
+          {
+            "type": "param",
+            "key": "rang"
+          },
+          {
+            "type": "text",
+            "content": " du top 5). "
+          },
+          {
+            "type": "link",
+            "href": "/methodologie#economie",
+            "children": [
+              {
+                "type": "text",
+                "content": "Sources et méthodes"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "structure-verte",
+      "label": "La structure verte",
+      "framing": "La place des établissements verts dans le tissu productif.",
+      "indicators": [
+        "eco_activites"
+      ],
+      "figure": {
+        "family": "profile",
+        "indicator": "eco_activites"
+      },
+      "reading": {
+        "story_key": "ce-que-la-bretagne-abrite",
+        "params": [
+          "activity_label",
+          "part_parc",
+          "n"
+        ],
+        "template": [
+          {
+            "type": "text",
+            "content": "La Bretagne abrite surtout "
+          },
+          {
+            "type": "param",
+            "key": "activity_label"
+          },
+          {
+            "type": "text",
+            "content": " ("
+          },
+          {
+            "type": "param",
+            "key": "part_parc"
+          },
+          {
+            "type": "text",
+            "content": " du parc). "
+          },
+          {
+            "type": "link",
+            "href": "/methodologie#economie",
+            "children": [
+              {
+                "type": "text",
+                "content": "Méthodes"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "indicator_keys": [
+    "effectifs_salaries",
+    "chomage",
+    "eco_activites"
+  ],
+  "story_keys": [
+    "ce-que-la-commune-abrite",
+    "ce-que-la-bretagne-abrite"
+  ],
+  "sources": {
+    "effectifs_salaries": "flores_a88",
+    "chomage": "rp_chomage",
+    "eco_activites": "sirene_snapshot"
+  }
+}
