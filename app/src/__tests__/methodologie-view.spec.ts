@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { SOURCES_METHODES } from '../methodes/sources'
+import { ancreSource } from '../methodes/sources'
 import {
   apercuAvecNAFixture,
   chargerAvec,
@@ -13,6 +13,7 @@ import {
   indicateursDemographieFixture,
   territoiresFixture,
 } from '../payload/fixtures'
+import { sourcesMethodes } from '../payload/selectors'
 import type { ChargerFichier } from '../payload/usePayload'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Payload, Theme, Vintage } from '../payload/types'
@@ -25,10 +26,11 @@ import MethodologieView from '../views/MethodologieView.vue'
  * factuelle (ce qu'est Lusk, le pipeline, la reproductibilité) puis le shell
  * à deux niveaux (#332) : les onglets Sources | Méthodes, chacun avec sa
  * barre intérieure À propos | Programmes et subventions | les cinq thèmes.
- * Sources · <thème> filtre la table des sources à celles qui alimentent le
- * thème (l'union est le contrat, jamais un onglet « Tous »). Jamais de
- * bannière de construction (principles.md §1) — la page énonce ce qui est,
- * jamais ce qui viendra.
+ * Sources · <thème> filtre la table des sources — à la granularité jeu de
+ * données (ADR-0022) : un en-tête par jeu, ses lignes vintage imbriquées — à
+ * celles qui alimentent le thème (l'union est le contrat, jamais un onglet
+ * « Tous »). Jamais de bannière de construction (principles.md §1) — la page
+ * énonce ce qui est, jamais ce qui viendra.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -53,9 +55,25 @@ const payloadSansVintages: Payload = {
   programmes: null,
 }
 
-/** Les sources du registre qui alimentent un thème — le filtre attendu de la table. */
-function sourcesDuTheme(theme: Theme): number {
-  return Object.values(SOURCES_METHODES).filter((source) => source.themes.includes(theme)).length
+/** Le nombre de lignes rendues par l'onglet — les en-têtes de jeux + les lignes vintage des jeux dépliés. */
+function lignesDuTheme(theme: Theme): number {
+  const { jeux } = sourcesMethodes(payloadAvecVintages)
+  return jeux
+    .filter((jeu) => jeu.themes.includes(theme))
+    .reduce((total, jeu) => total + 1 + (jeu.replie ? 0 : jeu.vintages.length), 0)
+}
+
+/** Les ancres rendues par l'onglet — l'en-tête de chaque jeu + les lignes vintage des jeux dépliés. */
+function ancresDuTheme(theme: Theme): string[] {
+  const { jeux } = sourcesMethodes(payloadAvecVintages)
+  const ancres: string[] = []
+  for (const jeu of jeux.filter((j) => j.themes.includes(theme))) {
+    ancres.push(ancreSource(jeu.id))
+    if (!jeu.replie) {
+      for (const vintage of jeu.vintages) ancres.push(ancreSource(vintage.id))
+    }
+  }
+  return ancres
 }
 
 async function monter(charger: ChargerFichier, options: { chemin?: string } = {}) {
@@ -347,8 +365,8 @@ describe('MethodologieView — Sources · Programmes et subventions', () => {
   })
 })
 
-describe('MethodologieView — la table des sources par thème (Sources · <thème>)', () => {
-  it('chaque onglet de thème montre les sources qui l\u2019alimentent (le filtre du registre)', async () => {
+describe('MethodologieView — la table des sources par thème (Sources · <thème>, ADR-0022)', () => {
+  it('chaque onglet de thème montre les jeux de données qui l\u2019alimentent — en-têtes + lignes vintage', async () => {
     for (const theme of THEMES_CANONIQUES) {
       const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
         chemin: `/methodologie?onglet=sources&section=${theme}`,
@@ -357,11 +375,31 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
       expect(
         wrapper.findAll('section#sources tbody tr').length,
         `onglet Sources · ${theme}`,
-      ).toBe(sourcesDuTheme(theme))
+      ).toBe(lignesDuTheme(theme))
     }
   })
 
-  it('l\u2019union des cinq onglets de thème = les 56 sources du registre (l\u2019union est le contrat)', async () => {
+  it('tient les comptes exacts par thème — les jeux repliés, les millésimes OCS-GE visibles', async () => {
+    // Démographie : 4 jeux uniques (une ligne chacun) ; Habitat : 3 (logements,
+    // DVF replié sur son en-tête, DPE replié) ; Milieux : 4 en-têtes (consoenaf,
+    // série historique, OCS-GE état, OCS-GE patch) + les 11 lignes vintage visibles
+    const demographie = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=demographie',
+    })
+    expect(demographie.wrapper.findAll('section#sources tbody tr').length).toBe(4)
+
+    const habitat = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=habitat',
+    })
+    expect(habitat.wrapper.findAll('section#sources tbody tr').length).toBe(3)
+
+    const milieux = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=milieux',
+    })
+    expect(milieux.wrapper.findAll('section#sources tbody tr').length).toBe(15)
+  })
+
+  it('l\u2019union des cinq onglets de thème = les 25 jeux + leurs lignes vintage (l\u2019union est le contrat)', async () => {
     const ids: string[] = []
     for (const theme of THEMES_CANONIQUES) {
       const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
@@ -371,8 +409,12 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
     }
 
     // une source multi-thèmes apparaît sous CHACUN de ses thèmes — l'union, pas la somme
-    expect(ids.length).toBeGreaterThan(56)
-    expect(new Set(ids).size).toBe(56)
+    const attendus = new Set<string>()
+    for (const theme of THEMES_CANONIQUES) {
+      for (const ancre of ancresDuTheme(theme)) attendus.add(ancre)
+    }
+    expect(ids.length).toBeGreaterThan(attendus.size)
+    expect(new Set(ids)).toEqual(attendus)
   })
 
   it('une source multi-thèmes apparaît sous chacun de ses thèmes (serie_historique → Démographie ET Milieux)', async () => {
@@ -385,7 +427,7 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
     }
   })
 
-  it('liste chaque source avec ses faits éditoriaux et sa fraîcheur en direct', async () => {
+  it('liste chaque jeu avec ses faits éditoriaux et sa fraîcheur en direct', async () => {
     const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=sources&section=demographie',
     })
@@ -465,16 +507,47 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
     }
   })
 
-  it('porte une ancre par source, dérivée de son id', async () => {
-    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+  it('porte une ancre par jeu — DVF replié sur son en-tête, les lignes vintage sur les jeux dépliés (ADR-0022)', async () => {
+    const habitat = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=sources&section=habitat',
     })
+    // DVF est replié : l'en-tête porte l'ancre du jeu, les 20 ancres vintage ont disparu
+    expect(habitat.wrapper.find('tr#source-dvf').exists()).toBe(true)
+    expect(habitat.wrapper.find('tr#source-dvf-2021-dep22').exists()).toBe(false)
+    expect(habitat.wrapper.find('tr#source-logements').exists()).toBe(true)
 
-    expect(wrapper.find('tr#source-dvf-2021-dep22').exists()).toBe(true)
-    expect(wrapper.find('tr#source-logements').exists()).toBe(true)
+    // OCS-GE est déplié : les ancres vintage restent sur les lignes enfants
+    const milieux = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=milieux',
+    })
+    expect(milieux.wrapper.find('tr#source-ocsge-artificialisation').exists()).toBe(true)
+    expect(milieux.wrapper.find('tr#source-ocsge-artificialisation-22-2021').exists()).toBe(true)
+    expect(milieux.wrapper.find('tr#source-ocsge-artificialisation-35-2023').exists()).toBe(true)
+    expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif').exists()).toBe(true)
+    expect(milieux.wrapper.find('tr#source-ocsge-patch-correctif-22').exists()).toBe(true)
   })
 
-  it('chaque source rend un lien vers son jeu de données', async () => {
+  it('l\u2019URL vit sur l\u2019en-tête du jeu seulement — jamais répétée par ligne vintage (ADR-0022)', async () => {
+    const milieux = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=milieux',
+    })
+
+    // les 11 lignes vintage (8 états + 3 patchs) ne portent ni lien-source ni lien-donnees
+    const enfants = milieux.wrapper.findAll('tr.source-vintage')
+    expect(enfants.length).toBe(11)
+    for (const enfant of enfants) {
+      expect(enfant.find('a.lien-source').exists(), 'lien-source sur une ligne vintage').toBe(false)
+      expect(enfant.find('a.lien-donnees').exists(), 'lien-donnees sur une ligne vintage').toBe(false)
+    }
+    // l'en-tête du jeu porte les deux liens vers le jeu
+    const enTete = milieux.wrapper.find('tr#source-ocsge-artificialisation')
+    expect(enTete.find('a.lien-source').attributes('href')).toBe(
+      'https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION',
+    )
+    expect(enTete.find('a.lien-donnees').exists()).toBe(true)
+  })
+
+  it('chaque jeu rend un lien vers son jeu de données', async () => {
     const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=sources&section=demographie',
     })
@@ -502,8 +575,8 @@ describe('MethodologieView — la dégradation gracieuse', () => {
     const note = wrapper.find('.sources__note-fraicheur')
     expect(note.exists()).toBe(true)
     expect(wrapper.text()).toContain('actualisation des données')
-    // La table ne casse jamais : les sources du thème restent, fraîcheur en tirets
-    expect(wrapper.findAll('section#sources tbody tr').length).toBe(sourcesDuTheme('demographie'))
+    // La table ne casse jamais : les jeux du thème restent, fraîcheur en tirets
+    expect(wrapper.findAll('section#sources tbody tr').length).toBe(lignesDuTheme('demographie'))
   })
 
   it('une source sans ligne vintages en direct rend ses faits éditoriaux, jamais des dates inventées', async () => {

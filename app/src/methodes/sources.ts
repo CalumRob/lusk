@@ -1,10 +1,18 @@
 /**
  * Le registre Méthodes — les faits éditoriaux des sources (CONTEXT.md →
  * Méthodes, docs/themes/README.md §The Méthodes contract). Un registre typé :
- * par id de source → nom, éditeur, URL, thèmes utilisés. Les faits de
- * fraîcheur (version, licence, dates) ne vivent PAS ici — ils viennent en
- * direct de la table vintages (public/data/vintages.json, issue #124), jointe
- * au registre par id dans les selectors du payload (sourcesMethodes).
+ * par id de source → nom, libellé éditorial, éditeur, URL, thèmes utilisés.
+ * Les faits de fraîcheur (version, licence, dates) ne vivent PAS ici — ils
+ * viennent en direct de la table vintages (public/data/vintages.json, issue
+ * #124), jointe au registre par id dans les selectors du payload
+ * (sourcesMethodes).
+ *
+ * La granularité jeu de données (ADR-0022) : une entrée est une LIGNE vintage
+ * d'un jeu ; les familles générées (sourcesDvf/sourcesDpe/sourcesOcsGe/
+ * sourcesOcsGePatches) partagent une clé `dataset` (le même jeu data.gouv),
+ * et chaque ligne porte son `libelle` éditorial (le label de la ligne
+ * vintage : « Millésime 2021 · Côtes-d'Armor (22) »). Une entrée sans clé
+ * `dataset` est son propre jeu (une seule ligne vintage).
  *
  * Le contrat de parité : chaque id de la table vintages commise doit avoir une
  * entrée ici (l'union est le contrat) ; une entrée sans ligne vintages en
@@ -20,14 +28,20 @@ import type { Theme } from '@/payload/types'
 
 /** Les faits éditoriaux d'une source — la moitié « auteur » du registre. */
 export interface SourceEditoriale {
-  /** Le nom d'affichage de la source (dégradation : pas de ligne vintages en direct). */
+  /** Le nom d'affichage du jeu de données (l'en-tête de la table, ADR-0022). */
   nom: string
+  /** Le libellé éditorial de la ligne vintage — le label de la ligne enfant
+   *  (« Millésime 2021 · Côtes-d'Armor (22) »), jamais la fraîcheur. */
+  libelle: string
   /** L'éditeur / producteur de la donnée. */
   editeur: string
   /** L'URL publique du jeu de données — null seulement si introuvable (jamais inventée). */
   url: string | null
   /** Les thèmes dont la source alimente les indicateurs (demographie / habitat / economie). */
   themes: Theme[]
+  /** L'id du jeu de données auquel la ligne appartient (ADR-0022) — les
+   *  familles générées partagent la clé ; absente, la ligne est son propre jeu. */
+  dataset?: string
 }
 
 /**
@@ -43,48 +57,64 @@ export function ancreSource(id: string): string {
 const ANNEES_DVF = [2021, 2022, 2023, 2024, 2025] as const
 const DEPARTEMENTS_BRETAGNE = ['22', '29', '35', '56'] as const
 
+/** Les noms des quatre départements bretons — les libellés éditoriaux des lignes vintage (ADR-0022). */
+const NOMS_DEPARTEMENTS: Record<string, string> = {
+  '22': 'Côtes-d\u2019Armor',
+  '29': 'Finistère',
+  '35': 'Ille-et-Vilaine',
+  '56': 'Morbihan',
+}
+
 /** La source DVF est UNE donnée (un jeu data.gouv) déclinée en 20 lignes vintages (année × département). */
-const SOURCE_DVF: Omit<SourceEditoriale, 'nom'> = {
+const SOURCE_DVF: Omit<SourceEditoriale, 'nom' | 'libelle'> = {
   editeur: 'Étalab',
   url: 'https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees',
   themes: ['habitat'],
+  dataset: 'dvf',
 }
 
-/** Les 20 lignes vintages DVF partagent les mêmes faits éditoriaux — générées, jamais dupliquées. */
+/** Les 20 lignes vintages DVF partagent les faits éditoriaux du jeu — générées, jamais dupliquées. */
 function sourcesDvf(): Record<string, SourceEditoriale> {
   const sources: Record<string, SourceEditoriale> = {}
   for (const annee of ANNEES_DVF) {
     for (const dep of DEPARTEMENTS_BRETAGNE) {
-      sources[`dvf_${annee}_dep${dep}`] = { ...SOURCE_DVF, nom: 'Étalab — DVF géolocalisées' }
+      sources[`dvf_${annee}_dep${dep}`] = {
+        ...SOURCE_DVF,
+        nom: 'Étalab — DVF géolocalisées',
+        libelle: `Millésime ${annee} · ${NOMS_DEPARTEMENTS[dep]} (${dep})`,
+      }
     }
   }
   return sources
 }
 
 /** La source DPE est UNE donnée (data.ademe.fr, dpe03existant) déclinée en 4 lignes vintages (une par département breton). */
-const SOURCE_DPE: Omit<SourceEditoriale, 'nom'> = {
+const SOURCE_DPE: Omit<SourceEditoriale, 'nom' | 'libelle'> = {
   editeur: 'ADEME',
   url: 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant',
   themes: ['habitat'],
+  dataset: 'dpe',
 }
 
-/** Les 4 lignes vintages DPE partagent les mêmes faits éditoriaux — générées comme les DVF. */
+/** Les 4 lignes vintages DPE partagent les faits éditoriaux du jeu — générées comme les DVF. */
 function sourcesDpe(): Record<string, SourceEditoriale> {
   const sources: Record<string, SourceEditoriale> = {}
   for (const dep of DEPARTEMENTS_BRETAGNE) {
     sources[`dpe_${dep}`] = {
       ...SOURCE_DPE,
       nom: 'ADEME — Observatoire DPE, logements existants (dpe03existant)',
+      libelle: `${NOMS_DEPARTEMENTS[dep]} (${dep})`,
     }
   }
   return sources
 }
 
-/** Les 8 lignes vintages OCS-GE (2 millésimes × 4 départements) partagent les mêmes faits éditoriaux — générées comme les DVF/DPE. */
-const SOURCE_OCSGE: Omit<SourceEditoriale, 'nom'> = {
+/** Les 8 lignes vintages OCS-GE (2 millésimes × 4 départements) partagent les faits éditoriaux du jeu — générées comme les DVF/DPE. */
+const SOURCE_OCSGE: Omit<SourceEditoriale, 'nom' | 'libelle'> = {
   editeur: 'IGN',
   url: 'https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION',
   themes: ['milieux'],
+  dataset: 'ocsge_artificialisation',
 }
 
 /** Les millésimes d'état du produit « surfaces artificialisées » par département (ADR-0017, la paire M2/M3). */
@@ -107,7 +137,8 @@ function sourcesOcsGe(): Record<string, SourceEditoriale> {
     for (const millesime of MILLESIMES_OCSGE[dep]) {
       sources[`ocsge_artificialisation_${dep}_${millesime}`] = {
         ...SOURCE_OCSGE,
-        nom: `IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — millésime ${millesime}`,
+        nom: 'IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)',
+        libelle: `Millésime ${millesime} · ${NOMS_DEPARTEMENTS[dep]} (${dep})`,
       }
     }
   }
@@ -120,20 +151,22 @@ function sourcesOcsGe(): Record<string, SourceEditoriale> {
  * du millésime M2, appliqué « au niveau matrice sur les polygones qui
  * inversent le statut » (approximation documentée dans Méthodes). Le même
  * produit OCS GE Géoplateforme que les archives d'état — mêmes faits
- * éditoriaux, nom dédié.
+ * éditoriaux, son propre jeu (un nom dédié).
  */
-const PATCHS_OCSGE: Record<string, { nom: string; millesime: number }> = {
-  '22': { nom: 'Côtes-d\u2019Armor', millesime: 2021 },
-  '29': { nom: 'Finistère', millesime: 2021 },
-  '56': { nom: 'Morbihan', millesime: 2022 },
+const PATCHS_OCSGE: Record<string, { millesime: number }> = {
+  '22': { millesime: 2021 },
+  '29': { millesime: 2021 },
+  '56': { millesime: 2022 },
 }
 
 function sourcesOcsGePatches(): Record<string, SourceEditoriale> {
   const sources: Record<string, SourceEditoriale> = {}
-  for (const [dep, { nom, millesime }] of Object.entries(PATCHS_OCSGE)) {
+  for (const [dep, { millesime }] of Object.entries(PATCHS_OCSGE)) {
     sources[`ocsge_patch_correctif_${dep}`] = {
       ...SOURCE_OCSGE,
-      nom: `IGN — OCS GE « patch correctif » (Nouvelle Génération) — ${nom} (${dep}), millésime corrigé ${millesime}`,
+      dataset: 'ocsge_patch_correctif',
+      nom: 'IGN — OCS GE « patch correctif » (Nouvelle Génération)',
+      libelle: `Patch correctif — ${NOMS_DEPARTEMENTS[dep]} (${dep}), millésime corrigé ${millesime}`,
     }
   }
   return sources
@@ -148,24 +181,28 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // ---- Démographie (docs/themes/demographie.md) ----
   serie_historique: {
     nom: 'INSEE — Série historique du recensement',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://www.data.gouv.fr/datasets/serie-historique-du-recensement-de-la-population',
     themes: ['demographie', 'milieux'],
   },
   menages: {
     nom: 'INSEE — Ménages (dossier complet)',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://www.data.gouv.fr/datasets/menages-principaux-indicateurs-dossier-complet',
     themes: ['demographie'],
   },
   age_detail: {
     nom: 'INSEE — Population par sexe et âge (PRINC)',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://www.data.gouv.fr/datasets/evolution-et-structure-de-la-population-principaux-indicateurs-dossier-complet-1',
     themes: ['demographie'],
   },
   epci: {
     nom: 'INSEE — Base des EPCI à fiscalité propre au 01/01/2025',
+    libelle: 'Millésime 2025',
     editeur: 'INSEE',
     url: 'https://www.insee.fr/fr/information/2510634',
     themes: ['demographie'],
@@ -174,6 +211,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // ---- Habitat (docs/themes/habitat.md) ----
   logements: {
     nom: 'INSEE — Logements (dossier complet)',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://www.data.gouv.fr/datasets/logements-principaux-indicateurs-dossier-complet',
     themes: ['habitat'],
@@ -184,30 +222,35 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // ---- Économie/Emploi (docs/themes/economie-emploi.md) ----
   sirene_snapshot: {
     nom: 'data.bretagne.bzh — Base SIRENE — Région Bretagne (sirene-v3-consolidee)',
+    libelle: 'Snapshot 2026-04',
     editeur: 'INSEE',
     url: 'https://data.bretagne.bzh/explore/dataset/sirene-v3-consolidee/',
     themes: ['economie'],
   },
   flores_a38: {
     nom: 'INSEE — Flores : nombre d\u2019établissements et effectifs salariés par secteur d\u2019activité (A38)',
+    libelle: 'Millésime 2024',
     editeur: 'INSEE',
     url: 'https://www.insee.fr/fr/statistiques/8266010',
     themes: ['economie'],
   },
   flores_a88: {
     nom: 'INSEE — Flores : nombre d\u2019établissements et effectifs salariés par secteur d\u2019activité (A88)',
+    libelle: 'Millésime 2024',
     editeur: 'INSEE',
     url: 'https://www.insee.fr/fr/statistiques/8266010',
     themes: ['economie'],
   },
   rp_emploi: {
     nom: 'INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://www.data.gouv.fr/datasets/population-active-selon-la-pcs-et-lactivite-economique-donnees-detaillees-act4-et-act5/',
     themes: ['economie'],
   },
   rp_chomage: {
     nom: 'INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://www.insee.fr/fr/statistiques/9002680',
     themes: ['economie'],
@@ -220,18 +263,21 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // « L'offre de mobilité alternative » (issue #140).
   mobilite_snapshot: {
     nom: 'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+    libelle: 'Snapshot 2026-02',
     editeur: 'Lusk',
     url: null,
     themes: ['mobilite'],
   },
   rp_logement_princ: {
     nom: 'INSEE \u2014 Recensement de la population, exploitations principales (Logements) \u2014 tableau LOG T12 \u00ab \u00c9quipement automobile des m\u00e9nages \u00bb (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)',
+    libelle: 'Millésime 2023',
     editeur: 'INSEE',
     url: 'https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR',
     themes: ['mobilite'],
   },
   osm_reseaux: {
     nom: 'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+    libelle: 'Extrait 2026-08',
     editeur: 'OpenStreetMap',
     url: 'https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf',
     themes: ['mobilite'],
@@ -245,6 +291,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // documentées sur la fiche, le gap jamais dissimulé.
   amenagements_cyclables: {
     nom: 'Geovelo \u2014 Am\u00e9nagements cyclables France M\u00e9tropolitaine (sch\u00e9ma national v0.3.5, ODbL \u2014 \u00a9 OpenStreetMap contributors, ADR-0001)',
+    libelle: 'Snapshot 2026-08',
     editeur: 'Geovelo',
     url: 'https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/',
     themes: ['mobilite'],
@@ -256,36 +303,42 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // porté, pas une horloge de contenu.
   cog_passage: {
     nom: 'INSEE \u2014 Table de passage annuelle des communes (COG 2025)',
+    libelle: 'Millésime 2025',
     editeur: 'INSEE',
     url: 'https://www.insee.fr/fr/statistiques/fichier/7671867/table_passage_annuelle_2025.zip',
     themes: ['mobilite'],
   },
   communes_limites: {
     nom: 'IGN \u2014 Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)',
+    libelle: 'Millésime 2025',
     editeur: 'IGN',
     url: 'https://data.geopf.fr/wfs/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=ADMINEXPRESS-COG.LATEST:commune&count=3000&outputFormat=application/json&bbox=47.0,-5.5,49.0,-0.5,urn:ogc:def:crs:EPSG::4326',
     themes: ['mobilite'],
   },
   korrigo: {
     nom: 'Bretagne Mobilit\u00e9 \u2014 Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ r\u00e9seaux : BreizhGo TER/car/maritime + les r\u00e9seaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kic\u00e9o\u2026)',
+    libelle: 'Snapshot 2026-02',
     editeur: 'Bretagne Mobilit\u00e9',
     url: 'https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo',
     themes: ['mobilite'],
   },
   batiments_residentiels: {
     nom: 'BDNB (Base Nationale des B\u00e2timents) \u2014 couche des b\u00e2timents r\u00e9sidentiels de Bretagne, port\u00e9e pour l\u2019offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)',
+    libelle: 'Extrait 2025-07',
     editeur: 'CSTB (BDNB)',
     url: null,
     themes: ['mobilite'],
   },
   'bornes-recharges': {
     nom: 'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
+    libelle: 'Snapshot 2026-07',
     editeur: 'Etalab',
     url: 'https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B',
     themes: ['mobilite'],
   },
   'stationnement-velo': {
     nom: 'Ecolab \u2014 Nombre de places de stationnement v\u00e9lo pour 1 000 hab. (hub d\u2019indicateurs territoriaux de transition \u00e9cologique ; source OSM : Base Nationale du Stationnement Cyclable)',
+    libelle: 'Snapshot 2022-2025',
     editeur: 'Ecolab',
     url: 'https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv',
     themes: ['mobilite'],
@@ -300,6 +353,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // CONSOENAF).
   consoenaf: {
     nom: 'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
+    libelle: 'Millésime 2025',
     editeur: 'Cerema',
     url: 'https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025',
     themes: ['milieux'],

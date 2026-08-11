@@ -30,7 +30,7 @@ function regle(css: string, selecteur: string): string {
 
 const cssMethodologie = extraireStyleScoped('views/MethodologieView.vue')
 const cssAPropos = extraireStyleScoped('views/AProposView.vue')
-const cssSources = extraireStyleScoped('methodes/MethodesSources.vue')
+const cssSources = extraireStyleScoped('methodes/SourcesTable.vue')
 const baseCss = readFileSync(join(process.cwd(), 'src', 'styles', 'base.css'), 'utf-8')
 
 describe('#331 — l\u2019intro de /methodologie au corps standard (item 48)', () => {
