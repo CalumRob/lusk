@@ -99,8 +99,8 @@ describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-
     const wrapper = await monter('22001')
 
     const alimentation = wrapper.find('.figure-indicateur[data-clef="iso_alimentation"]')
-    // 0.8289… × 100 → P83 de l'EPCI
-    expect(alimentation.find('.puce-rang').text()).toBe("P83 de l'EPCI")
+    // 22001 : 27e/38 dans son EPCI (rang ordinal directionnel — ADR-0015)
+    expect(alimentation.find('.puce-rang').text()).toBe("27e/38 de l'EPCI")
     expect(wrapper.findAll('.grille-isolation .puce-rang')).toHaveLength(5)
   })
 
@@ -271,11 +271,11 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
       'OpenStreetMap — réseaux routier/cyclable/piéton',
     )
     // le rang PAR DÉTAIL, comme un label (jamais merge) — la commune 22001
-    // porte rang_epci 0,05 → P5 de l'EPCI
+    // porte ses rangs ordinaux dans son EPCI (protégé 20e/38, partagé 10e/38)
     expect(figure.findAll('.puce-rang')).toHaveLength(2)
     expect(figure.findAll('.puce-rang').map((p) => p.text())).toEqual([
-      "P5 de l'EPCI",
-      "P5 de l'EPCI",
+      "20e/38 de l'EPCI",
+      "10e/38 de l'EPCI",
     ])
   })
 

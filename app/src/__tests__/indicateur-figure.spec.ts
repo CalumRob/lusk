@@ -62,7 +62,7 @@ describe('IndicatorFigure — the single-value figure', () => {
   it('renders the rank-in-context chip when a rank exists', () => {
     const wrapper = monter({ clef: 'densite', lignes: [ligne('densite')] })
 
-    expect(wrapper.find('.puce-rang').text()).toBe("P50 de l'EPCI")
+    expect(wrapper.find('.puce-rang').text()).toBe("1er/2 de l'EPCI")
   })
 
   it('renders no chip when every rank is null (the région ranks nowhere)', () => {

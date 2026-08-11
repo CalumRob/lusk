@@ -84,24 +84,25 @@ describe('apercuPourTerritoire — the Aperçu tab assembly (ADR-0007)', () => {
   })
 })
 
-describe('formaterRang — the rank-in-context chip', () => {
-  it('formats a fraction as "P25 de l’EPCI" (fraction × 100)', () => {
-    expect(formaterRang(0.25, 'rang_epci')).toBe("P25 de l'EPCI")
-    expect(formaterRang(0.5, 'rang_epci')).toBe("P50 de l'EPCI")
+describe('formaterRang — the rank-in-context chip (ADR-0015)', () => {
+  it('formats the ordinal position with its group size ("1er/41 de l’EPCI")', () => {
+    expect(formaterRang(1, 41, 'rang_epci')).toBe("1er/41 de l'EPCI")
+    expect(formaterRang(4, 8, 'rang_epci')).toBe("4e/8 de l'EPCI")
+  })
+
+  it('uses French ordinals (1er only for 1, "e" otherwise)', () => {
+    expect(formaterRang(2, 2, 'rang_epci')).toBe("2e/2 de l'EPCI")
+    expect(formaterRang(21, 61, 'rang_reg')).toBe('21e/61 de la région')
   })
 
   it('uses the comparison-group label from the rank column', () => {
-    expect(formaterRang(0.25, 'rang_dep')).toBe('P25 du département')
-    expect(formaterRang(0.75, 'rang_reg')).toBe('P75 de la région')
+    expect(formaterRang(2, 4, 'rang_dep')).toBe('2e/4 du département')
+    expect(formaterRang(3, 61, 'rang_reg')).toBe('3e/61 de la région')
   })
 
   it('returns null for a null rank — no comparison group, no chip', () => {
-    expect(formaterRang(null, 'rang_epci')).toBeNull()
-    expect(formaterRang(null, 'rang_reg')).toBeNull()
-  })
-
-  it('rounds fractional percentiles', () => {
-    expect(formaterRang(0.375, 'rang_reg')).toBe('P38 de la région')
+    expect(formaterRang(null, null, 'rang_epci')).toBeNull()
+    expect(formaterRang(null, null, 'rang_reg')).toBeNull()
   })
 })
 

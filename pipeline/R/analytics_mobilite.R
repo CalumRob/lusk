@@ -404,15 +404,19 @@ construire_nuage_territoires <- function(div_territoires, base_epci) {
 # construire_rangs_isolation ---------------------------------------------------
 # Les rangs-en-contexte des 5 parts d'isolation, calculés avec la MACHINERIE
 # PARTAGÉE (compute_ranks, compute.R) — jamais re-forkée : la valeur d'un
-# territoire est classée dans SON groupe de comparaison (commune → EPCI /
-# département / région, EPCI → département / région, département → région), en
-# fractions dans [0, 1]. `territoires` est le squelette partagé du thème (la
-# forme de construire_territoires_mobilite). Le contrat POSITIONNEL de
-# compute_ranks est respecté : chaque table est ALIGNÉE sur le squelette
-# (left_join sur les codes, l'ordre du squelette) — un territoire sans donnée
-# porte NA, jamais une ligne manquante, et son rang reste NA (il n'empoisonne
-# pas son groupe, la règle du percentile partagé). Sortie longue (code × key ×
-# les trois rangs), triée par code puis clé — déterministe.
+# territoire est classée dans SON groupe de comparaison (commune → les
+# communes de son EPCI, ou les communes de la région sans EPCI ; EPCI → tous
+# les EPCIs bretons ; département → les départements — ADR-0021), en ORDINAL
+# directionnel « Xᵉ / Y » (ADR-0015), la taille du groupe portée à côté du
+# rang. `territoires` est le squelette partagé du thème (la forme de
+# construire_territoires_mobilite). Le contrat POSITIONNEL de compute_ranks est
+# respecté : chaque table est ALIGNÉE sur le squelette (left_join sur les
+# codes, l'ordre du squelette) — un territoire sans donnée porte NA, jamais
+# une ligne manquante, et son rang reste NA (il n'empoisonne pas son groupe).
+# Les cinq parts d'isolation sont low-is-good (ADR-0015 — le cadrage en
+# privation : moins de bâtiments sans accès, mieux) : la plus petite part est
+# la meilleure (1er). Sortie longue (code × key × les trois rangs et leurs
+# tailles), triée par code puis clé — déterministe.
 construire_rangs_isolation <- function(isolation_territoires, territoires) {
   tables <- lapply(names(CLES_ISOLATION_MOBILITE), function(key) {
     dplyr::left_join(
@@ -423,7 +427,11 @@ construire_rangs_isolation <- function(isolation_territoires, territoires) {
   })
   names(tables) <- names(CLES_ISOLATION_MOBILITE)
 
-  dplyr::bind_rows(compute_ranks(territoires, tables, scalaires = list())) %>%
+  directions <- stats::setNames(rep("low", length(CLES_ISOLATION_MOBILITE)),
+                                names(CLES_ISOLATION_MOBILITE))
+
+  dplyr::bind_rows(compute_ranks(territoires, tables, scalaires = list(),
+                                 directions = directions)) %>%
     dplyr::arrange(code, key)
 }
 

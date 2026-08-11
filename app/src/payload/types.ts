@@ -30,8 +30,11 @@ export type Theme = (typeof THEMES_CANONIQUES)[number]
 
 export type TerritoireType = 'commune' | 'epci' | 'departement' | 'region'
 
-/** The rank-in-context columns of the indicateurs table. */
+/** The rank-in-context columns of the indicateurs table (ADR-0015, ADR-0021). */
 export type ColonneRang = 'rang_epci' | 'rang_dep' | 'rang_reg'
+
+/** The group-size columns — the « / Y » of the ordinal chip, one per rank column. */
+export type ColonneTailleRang = 'rang_epci_n' | 'rang_dep_n' | 'rang_reg_n'
 
 /** Reference table — one row per territory, the real names (LIBGEO/LIBEPCI). */
 export interface Territoire {
@@ -65,9 +68,19 @@ export interface Indicateur extends VintageStamp {
   detail: string | null
   value: number | null
   unit: string
+  /**
+   * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
+   * ties share the rank and the next rank skips (1, 1, 3). null = no
+   * comparison group at that level. Each rank carries its group size in the
+   * matching `rang_*_n` column — the « / Y » of the chip, always shown.
+   */
   rang_epci: number | null
   rang_dep: number | null
   rang_reg: number | null
+  /** The group size of each rank column — the non-NA members of the group. */
+  rang_epci_n: number | null
+  rang_dep_n: number | null
+  rang_reg_n: number | null
 }
 
 /**

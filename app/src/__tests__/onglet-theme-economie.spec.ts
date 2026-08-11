@@ -78,7 +78,7 @@ describe('OngletTheme — the Économie block (3 indicateurs)', () => {
     const wrapper = await monter('22001')
 
     const effectifs = wrapper.find('.figure-indicateur[data-clef="effectifs_salaries"]')
-    expect(effectifs.find('.puce-rang').text()).toBe("P24 de l'EPCI")
+    expect(effectifs.find('.puce-rang').text()).toBe("29e/38 de l'EPCI")
   })
 })
 

@@ -162,12 +162,14 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
                                 payload$indicateurs$key == "chomage"],
     3 / 20
   )
-  # les rangs-en-contexte sont portés par les lignes (fractions [0,1])
+  # les rangs-en-contexte sont portés par les lignes (ordinal directionnel —
+  # entier >= 1, 1 = meilleur ; la taille du groupe à côté, ADR-0015)
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
-  expect_true(all(is.na(payload$indicateurs$rang_epci) |
-                    (payload$indicateurs$rang_epci >= 0 &
-                       payload$indicateurs$rang_epci <= 1)))
+  expect_true(all(c("rang_epci_n", "rang_dep_n", "rang_reg_n") %in%
+                    names(payload$indicateurs)))
+  rangs <- unlist(payload$indicateurs[c("rang_epci", "rang_dep", "rang_reg")])
+  expect_true(all(is.na(rangs) | (rangs >= 1 & rangs == floor(rangs))))
   # les estampilles T7 : chaque indicateur porte le vintage de SA source de
   # référence — effectifs sur Flores A88, chômage sur RP chômage, éco-activités
   # sur SIRENE (aucun alignement de dates)

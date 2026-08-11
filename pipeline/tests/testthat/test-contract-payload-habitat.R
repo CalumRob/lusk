@@ -37,6 +37,7 @@ test_that("la forme des quatre tables est le contrat (avec la colonne n)", {
   expect_named(p$indicateurs, c(
     "territoire", "type", "theme", "key", "detail", "value", "unit",
     "rang_epci", "rang_dep", "rang_reg",
+    "rang_epci_n", "rang_dep_n", "rang_reg_n",
     "vintage_source", "vintage_version",
     "vintage_date_reference", "vintage_date_publication",
     "n"

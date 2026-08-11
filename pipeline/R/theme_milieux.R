@@ -1799,6 +1799,15 @@ theme_milieux <- function() {
     construire_indicateurs = construire_indicateurs_milieux,
     construire_apercu = construire_apercu_milieux,
     scalaires = scalaires_milieux,
+    # la désirabilité par clé (ADR-0015) : low-is-good — l'intensité d'état
+    # (la surface artificialisée par habitant, classée par l'état final M3) et
+    # la part de surface consommée (le scalaire de la série annuelle) : moins
+    # de terre artificialisée et moins de consommation valent mieux pour le
+    # milieu (ADR-0014/0017).
+    directions = list(
+      artif_par_habitant = "low",
+      conso_enaf_annuel = "low"
+    ),
     compute_histoires = compute_histoires_milieux,
     validations = validations_milieux,
     # les ids RETIRÉS du manifeste par l'amendement #243 : les quatre

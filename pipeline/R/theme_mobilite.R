@@ -670,6 +670,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     dplyr::select(dplyr::any_of(c(
       "territoire", "type", "theme", "key", "detail", "value", "unit",
       "rang_epci", "rang_dep", "rang_reg",
+      "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
       "vintage_date_reference", "vintage_date_publication"
     )))
@@ -677,15 +678,16 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
 
 # construire_rangs_detail --------------------------------------------------------
 # Les rangs-en-contexte PAR DÉTAIL d'une table longue multi-mesures (les clés
-# voitures_menage / reseaux de l'étage demande/réseaux, issue #139) : chaque
-# mesure est classée dans SON groupe de comparaison (commune → EPCI /
-# département / région, EPCI → département / région, département → région, la
-# région nulle part) avec la MACHINERIE PARTAGÉE percentile_par_groupe
-# (compute.R) — la règle du percentile partagé (part strictement inférieure +
-# moitié des ex æquo, les NA exclus du dénominateur). `territoires` est le
-# squelette partagé du thème (la forme de construire_territoires_mobilite).
-# Sortie longue (code × key × detail × les trois rangs), triée par code puis
-# détail — déterministe.
+# voitures_menage / reseaux / offre_cyclable de l'étage demande/réseaux,
+# issue #139/#231) : chaque mesure est classée dans SON groupe de comparaison
+# (commune → les communes de son EPCI, ou les communes de la région sans EPCI ;
+# EPCI → tous les EPCIs bretons ; département → les départements — ADR-0021)
+# avec la MACHINERIE PARTAGÉE rang_ordinal_par_groupe (compute.R) — l'ordinal
+# directionnel « Xᵉ / Y » (ADR-0015, high-is-good par défaut : plus de mesure,
+# mieux — les réseaux, le stationnement, l'offre), les NA exclus du
+# dénominateur. `territoires` est le squelette partagé du thème (la forme de
+# construire_territoires_mobilite). Sortie longue (code × key × detail × les
+# trois rangs et leurs tailles), triée par code puis détail — déterministe.
 construire_rangs_detail <- function(table_long, territoires) {
   groupes <- groupes_comparaison(territoires)
   tab <- dplyr::left_join(
@@ -700,9 +702,12 @@ construire_rangs_detail <- function(table_long, territoires) {
       code = lignes$code,
       key = unique(lignes$key),
       detail = detail,
-      rang_epci = percentile_par_groupe(lignes$value, groupes$epci),
-      rang_dep = percentile_par_groupe(lignes$value, groupes$dep),
-      rang_reg = percentile_par_groupe(lignes$value, groupes$reg)
+      rang_epci = rang_ordinal_par_groupe(lignes$value, groupes$epci),
+      rang_epci_n = taille_groupe(lignes$value, groupes$epci),
+      rang_dep = rang_ordinal_par_groupe(lignes$value, groupes$dep),
+      rang_dep_n = taille_groupe(lignes$value, groupes$dep),
+      rang_reg = rang_ordinal_par_groupe(lignes$value, groupes$reg),
+      rang_reg_n = taille_groupe(lignes$value, groupes$reg)
     )
   })) %>%
     dplyr::arrange(code, detail)

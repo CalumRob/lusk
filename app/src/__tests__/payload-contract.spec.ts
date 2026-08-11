@@ -128,21 +128,37 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(cles.size).toBe(payload.indicateurs.length)
   })
 
-  it('keeps every rank in [0,1] or null', async () => {
+  it('keeps every rank an ordinal ≥ 1 with its group size, or null (ADR-0015)', async () => {
     const payload = obtenirPayload()
 
     // Un seul expect agrégé plutôt que ~100k expects par ligne : le payload
     // fait ~25 Mo (21k indicateurs × 3 rangs) — une assertion par valeur
     // dépassait le timeout 5000ms du test sous charge parallèle (le flake
     // #185), et le message d'échec liste les violations au lieu de s'arrêter
-    // à la première.
-    const horsBornes = payload.indicateurs
-      .flatMap((i) =>
-        [i.rang_epci, i.rang_dep, i.rang_reg].map((rang) => ({ i, rang })),
-      )
-      .filter(({ rang }) => rang !== null && (rang < 0 || rang > 1))
-      .map(({ i, rang }) => `${i.territoire}/${i.key}/${i.detail ?? ''}: ${rang}`)
-    expect(horsBornes).toEqual([])
+    // à la première. Le contrat ordinal : un rang est un entier ≥ 1 (1 =
+    // meilleur), jamais une fraction — et chaque rang porte la taille de SON
+    // groupe (le « / Y »), les deux présents ou absents ensemble.
+    const violations: string[] = []
+    for (const i of payload.indicateurs) {
+      for (const [colonne, taille] of [
+        ['rang_epci', i.rang_epci_n],
+        ['rang_dep', i.rang_dep_n],
+        ['rang_reg', i.rang_reg_n],
+      ] as const) {
+        const position = i[colonne]
+        const cle = `${i.territoire}/${i.key}/${i.detail ?? ''}`
+        if (position !== null && (position < 1 || !Number.isInteger(position))) {
+          violations.push(`${cle} ${colonne}: ${position}`)
+        }
+        if (position !== null && (taille === null || !Number.isInteger(taille) || position > taille)) {
+          violations.push(`${cle} ${colonne}/${colonne}_n: ${position}/${taille}`)
+        }
+        if (position === null && taille !== null) {
+          violations.push(`${cle} ${colonne}_n sans rang: ${taille}`)
+        }
+      }
+    }
+    expect(violations).toEqual([])
   })
 
   it('stamps each indicator with its two vintage dates (reference + publication)', async () => {
@@ -232,13 +248,15 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(m2zero.length).toBe(0)
   })
 
-  it('formats the committed ranks as French chips', async () => {
+  it('formats the committed ranks as French ordinal chips', async () => {
     const payload = obtenirPayload()
 
     const densite29001 = payload.indicateurs.find(
       (i) => i.territoire === '29001' && i.key === 'densite',
     )
-    expect(formaterRang(densite29001?.rang_epci ?? null, 'rang_epci')).toBe("P20 de l'EPCI")
+    expect(
+      formaterRang(densite29001?.rang_epci ?? null, densite29001?.rang_epci_n ?? null, 'rang_epci'),
+    ).toBe("8e/10 de l'EPCI")
   })
 
   it('renders the freshness line from the committed run-report', async () => {
