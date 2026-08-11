@@ -32,7 +32,7 @@ const BALAYAGE_INDICATEURS =
   /"theme": "([a-z]+)",\s*"key": "([^"]+)",[\s\S]*?"unit": "([^"]*)"/g
 
 const BALAYAGE_HISTOIRES =
-  /"theme": "([a-z]+)",\s*"story_key": "([^"]+)",[\s\S]*?"classification": ([^,\s]+)/g
+  /"theme": "([a-z]+)",\s*"groupe": "[^"]+",\s*"story_key": "([^"]+)",[\s\S]*?"classification": ([^,\s]+)/g
 
 interface FaitsIndicateurs {
   parTheme: Record<ThemeConstruit, Record<string, string>>
