@@ -176,6 +176,10 @@ _Avoid_: Commune dortoir (only the deep-dormitory half — misses pôle-emploi),
 The source identity + version + date shown with every indicator ("BPE 2024 · RP 2021"). What makes the "alive" claim honest.
 _Avoid_: Date de mise à jour (only part of it), last_updated
 
+**Jeu de données**:
+The dataset identity a source is (DVF, DPE, OCS-GE…) — distinct from its **lignes de vintage** (ADR-0022, 2026-08-11): one jeu de données carries one set of editorial facts (nom, éditeur, URL, thèmes), and may be split across several vintage rows that record its freshness per download artifact (per-département, per-millésime). On Méthodes the table renders **one row per jeu de données** with its vintage rows nested beneath; a vintage row is a freshness fact, never a separate dataset. A dataset whose vintages all share identical freshness is displayed as its single header alone; where the vintages carry distinct facts (OCS-GE's per-millésime states), the rows stay visible — collapsing them would lie about the data.
+_Avoid_: source (the whole concept, overloaded), ligne (the row, not the identity), dataset (English)
+
 **Alive**:
 The product promise: light themes refresh automatically on a schedule, the mobility rebuild runs semi-automated on a slow clock, and vintage is always visible. **The flagship is a snapshot, and says so** (decided 2026-08-06): the Mobilité analysis is a frozen computation on a slow clock — the fiche stamps it "Analyse calculée le [date] — se rafraîchit sur un rythme lent", distinct from the light themes' weekly vintage chips; it never mimics fresh-refresh language. The Méthodes page documents the slow clock as a first-class fact.
 _Avoid_: Live, temps réel (the product is not real-time)
