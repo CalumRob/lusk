@@ -261,7 +261,7 @@ describe('DESIGN.md §7 — Depth & surface', () => {
 
   it('declares the filigrane tokens — the fiche watermark (opacity + width range)', () => {
     expectToken('--filigrane-opacity', '0.08')
-    expectToken('--filigrane-largeur-min', 'min(24vw, 280px)')
+    expectToken('--filigrane-largeur-min', 'min(4vw, 280px)')
     expectToken('--filigrane-largeur-max', 'min(64vw, 680px)')
   })
 })

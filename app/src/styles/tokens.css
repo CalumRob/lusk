@@ -234,6 +234,6 @@
    * root, ear, eye) in the active theme's anchor. Size re-draws randomly per
    * tab switch, within the width thresholds below (aspect preserved). */
   --filigrane-opacity: 0.08;
-  --filigrane-largeur-min: min(24vw, 280px);
+  --filigrane-largeur-min: min(4vw, 280px);
   --filigrane-largeur-max: min(64vw, 680px);
 }

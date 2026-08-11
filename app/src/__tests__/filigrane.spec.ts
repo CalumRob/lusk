@@ -25,12 +25,12 @@ function aleaAvec(valeurs: number[]): () => number {
 
 describe('bornesLargeurFiligrane — the width thresholds (vw-capped)', () => {
   it('caps at the fixed px thresholds on a wide viewport', () => {
-    expect(bornesLargeurFiligrane(2000)).toEqual({ min: 280, max: 680 })
+    expect(bornesLargeurFiligrane(2000)).toEqual({ min: 80, max: 680 })
   })
 
   it('scales with the viewport below the caps', () => {
-    // 1024 px viewport: 24vw = 245.76 (< 280), 64vw = 655.36 (< 680)
-    expect(bornesLargeurFiligrane(1024)).toEqual({ min: 245.76, max: 655.36 })
+    // 1024 px viewport: 4vw = 40.96 (< 280), 64vw = 655.36 (< 680)
+    expect(bornesLargeurFiligrane(1024)).toEqual({ min: 40.96, max: 655.36 })
   })
 
   it('mirrors the --filigrane-largeur-* tokens in tokens.css (no drift)', () => {

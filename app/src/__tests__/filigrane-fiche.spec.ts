@@ -116,11 +116,11 @@ describe('FiligraneFiche — le tirage', () => {
     await flushPromises()
 
     const style = wrapper.attributes('style')
-    // viewport 1024 → bornes [245.76, 655.36] → alea 0.5 → largeur 450.56
-    expect(parseFloat(valeurStyle(style, 'left')!)).toBeCloseTo(274.72, 1)
-    expect(parseFloat(valeurStyle(style, 'width')!)).toBeCloseTo(450.56, 1)
+    // viewport 1024 → bornes [40.96, 655.36] → alea 0.5 → largeur 348.16
+    expect(parseFloat(valeurStyle(style, 'left')!)).toBeCloseTo(325.92, 1)
+    expect(parseFloat(valeurStyle(style, 'width')!)).toBeCloseTo(348.16, 1)
     expect(parseFloat(valeurStyle(style, 'top')!)).toBeCloseTo(
-      0.5 * (800 - 450.56 * RAPPORT_ERMINE),
+      0.5 * (800 - 348.16 * RAPPORT_ERMINE),
       1,
     )
   })
