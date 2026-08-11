@@ -277,7 +277,7 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
   })
 })
 
-describe('MapExplorer — les couches de l’onglet « Programmes & financements » (#282)', () => {
+describe('MapExplorer — les couches de l’onglet « Programmes et subventions » (#282)', () => {
   it('peint le highlight catégoriel d’une couche d’adhésion (in/out — jamais une rampe)', async () => {
     const { wrapper, carte } = await monter()
 

@@ -1,8 +1,8 @@
 /**
  * The Aperçu tab's display vocabulary (CONTEXT.md §Aperçu + ADR-0007) — the
  * French labels and number formatting that turn the pipeline's `apercu` rows
- * into the figures the tab renders, and the typed shape of the Programmes &
- * financements element (CONTEXT.md §Programmes & financements).
+ * into the figures the tab renders, and the typed shape of the Programmes et
+ * subventions element (CONTEXT.md §Programmes et subventions).
  *
  * This is the DISPLAY layer, not the payload layer: the selectors (payload/
  * selectors.ts) stay the single seam for raw payload → French strings, and
@@ -48,7 +48,7 @@ export function formaterValeurApercu(ligne: ApercuRow): string {
 
 /**
  * Un programme d'État ou régional couvrant le territoire (CONTEXT.md
- * §Programmes & financements) — l'adhésion affichée, jamais un résultat.
+ * §Programmes et subventions) — l'adhésion affichée, jamais un résultat.
  *
  * The payload seam does NOT expose a programmes table yet (C2 builds the
  * element's PRESENTATION first). This typed shape is the interface the future
@@ -71,7 +71,7 @@ export function libelleProgramme(programme: Programme): string {
 
 /**
  * La vocabulaire des badges (PRD #162 — le sigle → le nom français complet,
- * CONTEXT.md §Programmes & financements) : ACV — Action Cœur de Ville · PVD —
+ * CONTEXT.md §Programmes et subventions) : ACV — Action Cœur de Ville · PVD —
  * Petites Villes de Demain · CRTE — Contrat de Relance et de Transition
  * Écologique · Territoires d'industrie (sigle provisoire — le programme est
  * officiellement nommé sans acronyme) · ORT — Opération de revitalisation de

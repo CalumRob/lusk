@@ -12,7 +12,7 @@ import type { Couche } from '../carte/coucheModel'
  * scale and breaks) — swatch + numeric range (color is never the sole
  * carrier, DESIGN.md §8) — with the no-data row, or the active level's note
  * in Aperçu. Collapsible. Depuis #282, la légende rend aussi les couches de
- * l'onglet « Programmes & financements » : la légende catégorielle in/out
+ * l'onglet « Programmes et subventions » : la légende catégorielle in/out
  * d'une couche d'adhésion (membre / hors programme) et la choroplèthe des
  * subventions (total €).
  */

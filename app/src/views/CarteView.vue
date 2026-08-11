@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * La carte interactive (/carte) — layouts.md §3: the ThemeTabs subheader
- * (reused — payload-driven, ?theme= in the URL, « Programmes & financements »
+ * (reused — payload-driven, ?theme= in the URL, « Programmes et subventions »
  * as the first tab per ADR-0019, #282), then a full-bleed MapExplorer + a
  * 360px MapSidebar (mobile → bottom sheet).
  *
@@ -9,7 +9,7 @@
  * layer model derives from the payload, never a carte-side spec). ?theme=
  * selects the theme's DEFAULT layer (coucheParDefaut — its first story
  * scalar); the sidebar's layer clicks switch the active couche (in-memory
- * state). The first tab is the « Programmes & financements » layer group
+ * state). The first tab is the « Programmes et subventions » layer group
  * (#282): ?onglet=programmes (+ &programme=<sigle>) drives the membership
  * categorical highlights (level-native — ACV/PVD/ORT à la commune, CRTE/
  * Territoires d'industrie/ORT à l'EPCI, aucune au département) and the
@@ -25,7 +25,7 @@
  * useGeometrie). La carte neutre (masques + noms de référence) rend dès que
  * ce set se règle ; la liste de couches et les choroplèthes se remplissent
  * progressivement au fil de l'atterrissage des paires de thèmes (et du fichier
- * programmes pour l'onglet « Programmes & financements »). La normalisation
+ * programmes pour l'onglet « Programmes et subventions »). La normalisation
  * d'URL garde un thème canonique en vol — elle n'écrit jamais sur un état
  * encore en chargement.
  */
@@ -376,7 +376,7 @@ const classesFond = computed(() =>
       <ThemeTabs
         :themes="themes"
         :selected="selectionOnglet"
-        libelle-premier="Programmes &amp; financements"
+        libelle-premier="Programmes et subventions"
         premier-slug="programmes"
         @select="choisirOnglet"
       />

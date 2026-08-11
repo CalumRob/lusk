@@ -170,9 +170,9 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     const apercu = wrapper.findAll('[role="tab"]')[0]
     expect(apercu.attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-apercu')
-    // the Aperçu tab's real content: basic stats + Programmes & financements
+    // the Aperçu tab's real content: basic stats + Programmes et subventions
     expect(wrapper.find('[role="tabpanel"]').text()).toContain('Population')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Programmes & financements')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Programmes et subventions')
   })
 
   it('selects the theme from ?theme= and renders its block', async () => {
@@ -315,7 +315,7 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     const panneau = wrapper.find('[role="tabpanel"]')
     expect(panneau.attributes('id')).toBe('panneau-apercu')
     expect(panneau.text()).toContain('Population')
-    expect(panneau.text()).toContain('Programmes & financements')
+    expect(panneau.text()).toContain('Programmes et subventions')
     // Les thèmes pendent encore → aucun onglet de thème (le tab bar honnête).
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
     expect(onglets).toEqual(['Aperçu'])

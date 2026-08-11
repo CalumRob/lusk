@@ -221,7 +221,7 @@ describe('CarteView — la carte avec fond publié', () => {
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'MapSidebar' }).exists()).toBe(true)
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets[0]).toBe('Programmes & financements')
+    expect(onglets[0]).toBe('Programmes et subventions')
     expect(onglets).toContain('Démographie')
   })
 
@@ -305,12 +305,12 @@ describe('CarteView — la carte avec fond publié', () => {
   })
 })
 
-describe('CarteView — l’onglet « Programmes & financements » (ADR-0019 #282)', () => {
-  it('le premier onglet de la carte lit « Programmes & financements » (l’Aperçu de la fiche reste intact)', async () => {
+describe('CarteView — l’onglet « Programmes et subventions » (ADR-0019 #282)', () => {
+  it('le premier onglet de la carte lit « Programmes et subventions » (l’Aperçu de la fiche reste intact)', async () => {
     const { wrapper } = await monter()
 
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets[0]).toBe('Programmes & financements')
+    expect(onglets[0]).toBe('Programmes et subventions')
     expect(onglets).toContain('Démographie')
   })
 
@@ -579,7 +579,7 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
     // Aucun onglet de thème (les paires pendent) — le premier onglet seul.
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Programmes & financements'])
+    expect(onglets).toEqual(['Programmes et subventions'])
     // L'état neutre honnête : masques seuls, aucune couche d'indicateurs.
     expect(wrapper.findAll('.carte-sidebar-couche')).toHaveLength(0)
     expect(wrapper.find('.carte-legendes-masques').text()).toContain("sans couche d'indicateurs")
@@ -662,7 +662,7 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('taux_solde_naturel')
   })
 
-  it('le groupe de couches « Programmes & financements » apparaît quand programmes atterrit (arrière-plan)', async () => {
+  it('le groupe de couches « Programmes et subventions » apparaît quand programmes atterrit (arrière-plan)', async () => {
     let resoudreProgrammes: (v: unknown) => void = () => {}
     const programmesEnAttente = new Promise<unknown>((resoudre) => {
       resoudreProgrammes = resoudre
@@ -702,7 +702,7 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(true)
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Programmes & financements', 'Démographie'])
+    expect(onglets).toEqual(['Programmes et subventions', 'Démographie'])
   })
 
   it('garde l’URL ?theme= demandée quand le wait-set échoue — Retry la remet debout sans normalisation prématurée', async () => {
