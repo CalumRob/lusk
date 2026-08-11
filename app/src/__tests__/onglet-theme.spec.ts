@@ -8,6 +8,7 @@ import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -15,11 +16,13 @@ import {
 import type { Histoire, Payload } from '../payload/types'
 
 /**
- * OngletTheme — the ThemeBlock (ui-elements.md §ThemeBlock): overline (-strong)
- * → story angle first (serif one-liner keyed by the pipeline's rate-quadrant
- * classification + the quadrant chart, above the grid since issue #71) → the
- * 4 indicator figures in contract order → "comment lire" + Méthodes link.
- * Consumes the payload selectors — never raw JSON.
+ * OngletTheme — the shared subgroup block (issue #314, parent #308): the
+ * overline (the theme's published label) → ONE loop over the metadata
+ * subgroups — label + framing, the reading slot (the metadata template with
+ * the row's values, the reading's figure and its exhaustive source) and the
+ * indicator grid (the compact figure first, then the metadata key order).
+ * There is no per-theme branch left: Démographie exercises the shared
+ * anatomy with its « Trajectoire démographique » reading and its soldes chart.
  */
 
 const payloadDemographie: Payload = {
@@ -30,6 +33,7 @@ const payloadDemographie: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { demographie: metadonneesThemesFixtures.demographie },
 }
 
 async function monter(territoire: string, histoires: Histoire[] = histoiresDemographieFixture) {
@@ -45,30 +49,31 @@ async function monter(territoire: string, histoires: Histoire[] = histoiresDemog
   return wrapper
 }
 
-describe('OngletTheme — the standard block', () => {
-  it('renders the theme overline in the block', async () => {
+describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
+  it('renders the theme overline from the metadata label', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
   })
 
-  it('renders the 4 indicators in contract order (densite → structure_age → evolution → menages)', async () => {
+  it('renders the metadata subgroup — label and framing', async () => {
     const wrapper = await monter('22001')
 
-    const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
-    expect(figures).toEqual(['densite', 'structure_age', 'evolution_1968', 'taille_menages'])
+    const sousGroupe = wrapper.find('.sous-groupe[data-groupe="etat-et-dynamique"]')
+    expect(sousGroupe.exists()).toBe(true)
+    expect(wrapper.find('.sous-groupe-titre').text()).toBe(
+      'État et dynamique de la population',
+    )
+    expect(wrapper.find('.sous-groupe-cadrage').text()).toContain('sa densité')
   })
 
-  it('renders the story angle ABOVE the indicator grid (issue #71 — the fiche’s signature moment leads)', async () => {
+  it('renders the indicator grid in the metadata key order — the compact figure first (structure_age → densite → evolution → menages)', async () => {
     const wrapper = await monter('22001')
 
-    const story = wrapper.find('.angle-story')
-    const grille = wrapper.find('.grille-indicateurs')
-    expect(story.exists()).toBe(true)
-    expect(grille.exists()).toBe(true)
-    expect(story.element.compareDocumentPosition(grille.element)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    )
+    const figures = wrapper
+      .findAll('.grille-indicateurs .figure-indicateur')
+      .map((f) => f.attributes('data-clef'))
+    expect(figures).toEqual(['structure_age', 'densite', 'evolution_1968', 'taille_menages'])
   })
 
   it('renders each figure with its French label and its vintage stamp', async () => {
@@ -81,61 +86,46 @@ describe('OngletTheme — the standard block', () => {
   })
 })
 
-describe('OngletTheme — the story angle', () => {
-  it('renders the serif one-liner keyed by the territory’s classification, first in the card', async () => {
-    const wrapper = await monter('22001') // attire-renouvelle
+describe('OngletTheme — the reading slot (the metadata template + the row’s values)', () => {
+  it('renders the reading template with the resolved params — the payload-owned copy', async () => {
+    const wrapper = await monter('22001')
 
-    const uneLigne = wrapper.find('.angle-story-une-ligne')
-    expect(uneLigne.text()).toBe('Le territoire attire et se renouvelle.')
-    // the reading leads the card; the dated subtitle follows beneath it
-    const titre = wrapper.find('.angle-story-titre')
-    expect(titre.exists()).toBe(true)
-    expect(uneLigne.element.compareDocumentPosition(titre.element)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    )
+    const texte = wrapper.find('.lecture-texte')
+    expect(texte.exists()).toBe(true)
+    expect(texte.text()).toContain('Entre 2017-2023')
+    expect(texte.text()).toContain('la population de Commune A1')
+    expect(texte.text()).toContain('attire-renouvelle')
+    expect(texte.text()).toContain('5,98 par an (naturel)')
+    expect(texte.text()).toContain('2,56 (migratoire)')
   })
 
-  it('dates the subtitle from the published period and names the comparison (current + container)', async () => {
-    const wrapper = await monter('22001') // commune in EPCI X
+  it('renders the template link node as a RouterLink to the Méthodes anchor', async () => {
+    const wrapper = await monter('22001')
 
-    const titre = wrapper.find('.angle-story-titre').text()
-    expect(titre).toContain('Trajectoire démographique (2017-2023)')
-    // the current territory wears the courant color, the container the cloud's
-    expect(wrapper.find('.angle-story-courant').text()).toBe('Commune A1')
-    expect(titre).toContain('des communes de')
-    expect(wrapper.find('.angle-story-conteneur').text()).toBe('EPCI X')
-    const liens = wrapper.findAllComponents(RouterLinkStub)
-    const lien = liens.find(
-      (l) => (l.props('to') as { name?: string } | undefined)?.name === 'territoire',
-    )
-    expect(lien?.props('to')).toEqual({ name: 'territoire', params: { type: 'epci', id: '200000001' } })
+    const liens = wrapper
+      .findAllComponents(RouterLinkStub)
+      .map((l) => l.props('to'))
+    expect(liens).toContain('/methodologie#demographie')
   })
 
-  it('changes the one-liner with the reading (vide-meurt ≠ attire-renouvelle)', async () => {
-    const wrapper = await monter('29002') // vide-meurt
+  it('changes the reading with the territory — the same template, the row’s own values (vide-meurt)', async () => {
+    const wrapper = await monter('29002')
 
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'La population diminue sur ses deux composantes.',
-    )
+    expect(wrapper.find('.lecture-texte').text()).toContain('vide-meurt')
+    expect(wrapper.find('.lecture-texte').text()).toContain('-1,04 par an (naturel)')
   })
 
-  it('passes the two rates and the classification to the chart', async () => {
-    const wrapper = await monter('29001') // attire-renouvelle, +20 / +380
+  it('feeds the reading’s figure (the soldes chart) the two rates, the classification and the same-scale nuage', async () => {
+    const wrapper = await monter('22001') // attire-renouvelle, +5,98 / +2,56
 
     const graphique = wrapper.findComponent(GraphiqueSoldes)
     expect(graphique.exists()).toBe(true)
     expect(graphique.props()).toMatchObject({
-      tauxNaturel: 1.19047619047619,
-      tauxMigratoire: 22.61904761904762,
+      tauxNaturel: 5.982905982905983,
+      tauxMigratoire: 2.564102564102564,
       classification: 'attire-renouvelle',
-      nom: 'Commune B',
+      nom: 'Commune A1',
     })
-  })
-
-  it('feeds the chart the context cloud at the same scale: 22001 → its EPCI’s communes', async () => {
-    const wrapper = await monter('22001') // commune in EPCI X → X's communes
-
-    const graphique = wrapper.findComponent(GraphiqueSoldes)
     expect(graphique.props('nuage')).toHaveLength(2)
     expect(graphique.props('nuage')).toMatchObject([
       { nom: 'Commune A1', type: 'commune', territoire: '22001' },
@@ -143,39 +133,57 @@ describe('OngletTheme — the story angle', () => {
     ])
   })
 
-  it('renders the "comment lire" line quoting the rates, the exhaustive source, and the Méthodes link', async () => {
+  it('names the comparison under the chart — current territory + clickable container', async () => {
+    const wrapper = await monter('22001') // commune in EPCI X
+
+    const contexte = wrapper.find('.lecture-contexte')
+    expect(contexte.text()).toContain('Commune A1')
+    expect(contexte.text()).toContain('des communes de')
+    expect(contexte.find('.lecture-conteneur').text()).toBe('EPCI X')
+    const lien = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((l) => (l.props('to') as { name?: string } | undefined)?.name === 'territoire')
+    expect(lien?.props('to')).toEqual({ name: 'territoire', params: { type: 'epci', id: '200000001' } })
+  })
+
+  it('cites the exhaustive source from the vintages table', async () => {
     const wrapper = await monter('22001')
 
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('Comment lire')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('solde naturel')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('/an pour 1 000 hab.')
-    // the datasets used are named exhaustively (from the vintages table, never
-    // hardcoded): the série historique (rates) AND the base des EPCI (nuage)
-    expect(wrapper.find('.angle-story-source').text()).toContain('Source')
-    expect(wrapper.find('.angle-story-source').text()).toContain('Série historique')
-    expect(wrapper.find('.angle-story-source').text()).toContain('Base des EPCI')
-    expect(wrapper.find('.angle-story-methodes').text()).toBe('Méthodes')
-    const methodes = wrapper
-      .findAllComponents(RouterLinkStub)
-      .find((l) => l.props('to') === '/methodologie')
-    expect(methodes).toBeTruthy()
+    const source = wrapper.find('.lecture-source').text()
+    expect(source).toContain('Source')
+    expect(source).toContain('Série historique')
+    expect(source).toContain('Base des EPCI')
+  })
+})
+
+describe('OngletTheme — the compact figure and the grid', () => {
+  it('renders the compact figure first — the metadata family + indicator (composition/structure_age)', async () => {
+    const wrapper = await monter('22001')
+
+    const compacte = wrapper.find('.figure-compacte')
+    expect(compacte.exists()).toBe(true)
+    expect(compacte.attributes('data-famille')).toBe('composition')
+    expect(compacte.find('.figure-indicateur').attributes('data-clef')).toBe('structure_age')
+    // the compact figure renders once — never twice in the grid
+    expect(wrapper.findAll('.figure-indicateur[data-clef="structure_age"]')).toHaveLength(1)
+    expect(wrapper.findAll('.figure-indicateur')).toHaveLength(4)
   })
 })
 
 describe('OngletTheme — honest edge cases', () => {
-  it('renders the standard block but no story angle when the territory has no story', async () => {
+  it('renders the subgroup figures but no reading slot when the territory has no story', async () => {
     const wrapper = await monter('22001', [])
 
     expect(wrapper.findAll('.figure-indicateur')).toHaveLength(4)
-    expect(wrapper.find('.angle-story').exists()).toBe(false)
-    expect(wrapper.find('.angle-story-une-ligne').exists()).toBe(false)
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
+    expect(wrapper.find('.lecture-texte').exists()).toBe(false)
   })
 
-  it('renders the story angle for the région, with the whole region’s communes as cloud', async () => {
+  it('renders the reading for the région, with the whole region’s communes as cloud', async () => {
     const wrapper = await monter('53') // région → all communes in the cloud
 
     expect(wrapper.findAll('.figure-indicateur').length).toBeGreaterThan(0)
-    expect(wrapper.find('.angle-story').exists()).toBe(true)
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(true)
     const graphique = wrapper.findComponent(GraphiqueSoldes)
     expect(graphique.exists()).toBe(true)
     expect(graphique.props('nuage')).toHaveLength(4)

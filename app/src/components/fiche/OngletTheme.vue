@@ -1,18 +1,17 @@
 <script setup lang="ts">
 /**
- * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock): the
- * theme overline (-strong) → the one story angle (serif one-liner + one shape,
- * first in the block since issue #71) → the standard indicator figures
- * (contract order) → "comment lire" + Méthodes link. The block wears the
- * theme's ramp — Démographie wears indigo; the page
- * background -wash is the shell's (TerritoireView).
+ * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock). Since
+ * issue #314 (parent #308) the block is ONE shared subgroup loop driven by
+ * the loaded theme_<theme>.json metadata and the resolved histoires — there
+ * are no per-theme branches, no app-side subgroup labels, order, Story copy
+ * or reading selection left. Each subgroup renders its metadata place (label
+ * + framing), its reading slot (the metadata template with the row's values,
+ * the reading's compact figure and its source), its compact figure (famille +
+ * indicateur déclarés) and its indicator figures (the metadata key order,
+ * the existing IndicatorFigure grammar with ranks and vintages).
  *
- * The block consumes the payload selectors only — never raw JSON. The Story
- * copy is keyed per theme by the pipeline's readings: storyDemographie (the
- * rate-quadrant) and storyEconomie (issue #121 — the top-5 specialisations,
- * or the région's top-5 by presence). A territory without a story renders the
- * standard block and no invented one-liner. The Démographie story renders its
- * solde chart; the Économie story renders its specialisation list.
+ * The block consumes the payload selectors and the shared subgroup mapper —
+ * never raw JSON, never a theme branch.
  */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -22,6 +21,7 @@ import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieu
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureOffreCyclable from '@/components/fiche/FigureOffreCyclable.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
+import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import {
   NOMS_DETAILS_OFFRE_CYCLABLE,
   NOMS_DETAILS_RESEAUX,
@@ -29,24 +29,13 @@ import {
   NOMS_INDICATEURS,
   NOMS_TRANCHES_AGE,
 } from '@/fiche/indicateurs'
-import { NOMS_THEMES } from '@/fiche/onglets'
-import { storyDemographie } from '@/fiche/storyDemographie'
-import { storyEconomie } from '@/fiche/storyEconomie'
-import { storyMilieux } from '@/fiche/storyMilieux'
-import { storyMobilite } from '@/fiche/storyMobilite'
 import {
-  descriptionNuage,
-  estampilleSnapshot,
-  histoireEconomiePourTerritoire,
-  histoireMobilitePourTerritoire,
-  histoirePourTerritoire,
-  indicateursGroupeesPourTerritoire,
-  nuageComparaison,
-  nuageMilieux,
-  nuageMobilite,
-  trouverTerritoire,
-} from '@/payload/selectors'
-import type { GroupeIndicateur } from '@/payload/selectors'
+  figureLecturePour,
+  sourceLecture,
+  sousGroupesPourTerritoire,
+} from '@/fiche/sousGroupes'
+import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
+import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
 
 const props = defineProps<{
@@ -55,268 +44,72 @@ const props = defineProps<{
   territoire: string
 }>()
 
-const nomTheme = computed(() => NOMS_THEMES[props.theme])
+/** One subgroup plus its reading's figure and source — precomputed for the template. */
+interface SousGroupeRenduComplet extends SousGroupeRendu {
+  figureLecture: FigureLecture | null
+  source: string | null
+}
 
-const groupes = computed(() =>
-  indicateursGroupeesPourTerritoire(props.payload, props.theme, props.territoire),
+// The theme's published label rides in the metadata (theme_<theme>.json) — the
+// overline never falls back to an app-side dictionary.
+const nomTheme = computed(() => props.payload.themeMetadata?.[props.theme]?.label ?? props.theme)
+
+const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
+  sousGroupesPourTerritoire(props.payload, props.theme, props.territoire).map((groupe) => ({
+    ...groupe,
+    figureLecture: groupe.lecture
+      ? figureLecturePour(props.payload, props.territoire, groupe.lecture)
+      : null,
+    source: groupe.lecture ? sourceLecture(props.payload, groupe.lecture) : null,
+  })),
 )
-
-const histoire = computed(() =>
-  histoirePourTerritoire(props.payload, props.theme, props.territoire),
-)
-
-// The solde chart is the Démographie story's shape only; the block guards on
-// the theme before touching the theme-specific fields of the Histoire union.
-const histoireDemographie = computed(() =>
-  histoire.value?.theme === 'demographie' ? histoire.value : null,
-)
-
-const story = computed(() => {
-  const histoire = histoireDemographie.value
-  if (!histoire) return null
-  return storyDemographie(histoire)
-})
-
-// The Économie Story (issue #121, RÉSOLUE par #312): the LQ is the Story —
-// the block's top-5 specialisations (or the région's top-5 by presence),
-// precomputed by the pipeline and folded into ONE resolved reading row (the
-// flat top1_*..top5_* params — the top-5 is never five rows in the payload).
-// The mapper builds the copy from the resolved row. Gated on the theme like
-// the Démographie story — a territory carries BOTH stories in the payload
-// (Rennes has its trajectoire AND its top-5), and each block must read its
-// own.
-const storyEconomieAngle = computed(() => {
-  if (props.theme !== 'economie') return null
-  const histoire = histoireEconomiePourTerritoire(props.payload, props.territoire)
-  if (!histoire) return null
-  return storyEconomie(histoire, nomTerritoire.value)
-})
-
-const nuage = computed(() => nuageComparaison(props.payload, props.territoire) ?? [])
-
-// What the chart compares: the subtitle names the current territory and its
-// comparison group (same scale as the nuage), with the container (EPCI /
-// département / région) clickable to its own fiche.
-const descriptionNuageComputed = computed(() =>
-  descriptionNuage(props.payload, props.territoire),
-)
-
-// The story's data sources, exhaustive: the série historique (the rates the
-// reading crosses) and the base des EPCI (the nuage's comparison groups).
-// Cited from the payload's vintages table — never invented, never a theme
-// stamp. Absent table → no source line (honest, nothing to cite).
-const sourceHistoire = computed(() => {
-  const vintages = props.payload.vintages
-  if (!vintages) return null
-  const ids = new Set(['serie_historique', 'epci'])
-  const citees = vintages.filter((v) => ids.has(v.id))
-  if (citees.length === 0) return null
-  return citees.map((v) => `${v.source} · ${v.version}`).join(' · ')
-})
 
 const nomTerritoire = computed(
   () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
 )
 
-// The Mobilité block (issue #142, ADR-0012) : la « Taille » → la grille
-// d'isolation (les 5 parts) → l'étage demande/réseaux → le sous-bloc
-// « L'offre de mobilité alternative ». Les sections découpent l'ordre du
-// contrat (ORDRE_INDICATEURS.mobilite) — chaque groupe reste dans SA section.
-const CLEFS_SOUS_BLOC_MOBILITE = [
-  'offre_tc',
-  'bornes_recharge',
-  'places_stationnement_velo_1000',
-  // la figure « L'offre cyclable » (issue #232) — jamais supprimée : une
-  // commune à 0 km montre 0 (le zéro porté du payload, jamais une absence)
-  'offre_cyclable',
-]
+/** The flagship's snapshot stamp (ADR-0012) — the honest freshness claim. */
+const estampille = computed(() => estampilleSnapshot(props.payload))
 
-const CLEFS_GRILLE_MOBILITE = [
-  'iso_alimentation',
-  'iso_sante',
-  'iso_administration',
-  'iso_ecole',
-  'iso_banque',
-]
+/** The chart's context subtitle — the current territory vs its same-scale group (ADR-0011). */
+const descriptionNuageComputed = computed(() =>
+  descriptionNuage(props.payload, props.territoire),
+)
 
-function groupesMobilite(cles: readonly string[]) {
-  return groupes.value.filter((g) => cles.includes(g.key))
+/** The grid figures of a subgroup — the compact figure renders first, never twice. */
+function figuresGrille(groupe: SousGroupeRenduComplet) {
+  return groupe.figures.filter((figure) => figure.key !== groupe.figureCompacte?.clef)
 }
 
-const groupesMobiliteTaille = computed(() => groupesMobilite(['nb_buildings']))
-const groupesMobiliteGrille = computed(() => groupesMobilite(CLEFS_GRILLE_MOBILITE))
-const groupesMobiliteDemandeReseaux = computed(() =>
-  groupesMobilite(['voitures_menage', 'reseaux']),
-)
-const groupesMobiliteSousBloc = computed(() => groupesMobilite(CLEFS_SOUS_BLOC_MOBILITE))
-
-/** The snapshot stamp — the flagship's honest freshness claim (ADR-0012). */
-const estampille = computed(() =>
-  props.theme === 'mobilite' ? estampilleSnapshot(props.payload) : null,
-)
-
-// The Mobilité Story (issue #142, RÉSOLUE par #312) : the selection is the
-// PIPELINE's — the payload carries the one resolved reading (default, or vélo
-// where the salience fired) and the mapper renders it, it never picks.
-const storyMobiliteAngle = computed(() => {
-  if (props.theme !== 'mobilite') return null
-  const histoire = histoireMobilitePourTerritoire(props.payload, props.territoire)
-  return storyMobilite(histoire)
-})
-
-// The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) — « Se
-// densifier, s'étaler, ou s'en aller », the single Story of the fifth theme:
-// the reading by the signs of the two forces (Δpopulation × trajectoire de la
-// surface artificialisée par habitant), its precision riders (les deux
-// horloges — la fenêtre de population et la fenêtre des états OCS-GE —, la
-// règle de bracketing, le rider de mélange multi-départements). L'intensité
-// est la figure, pas le prose (#65).
-const histoireMilieux = computed(() =>
-  histoirePourTerritoire(props.payload, 'milieux', props.territoire),
-)
-
-const storyMilieuxAngle = computed(() => {
-  if (props.theme !== 'milieux') return null
-  const histoire = histoireMilieux.value
-  if (histoire?.theme !== 'milieux') return null
-  // le mapper garde les cas incomplets du contrat #243 (classification nulle,
-  // trajectoire/états/fenêtre manquants) — jamais une lecture inventée
-  return storyMilieux(histoire)
-})
-
-// The no-reading case (the pipeline's discovery #243) : M2 = 0 — a territory
-// with NO artificialized land at the initial state has an UNDEFINED M3/M2
-// trajectory, so the pipeline publishes trajectoire = null and classification
-// = null. The block renders an honest infobox instead of an invented reading
-// (102 real communes, ~8 % — issue #254). A territory WITHOUT its histoire
-// row stays silent (absent data ≠ M2 = 0 — never a fabricated explanation).
-const milieuxSansLecture = computed(() => {
-  if (props.theme !== 'milieux') return null
-  const histoire = histoireMilieux.value
-  if (histoire?.theme !== 'milieux') return null
-  if (histoire.classification !== null) return null
-  if (histoire.artif_m2_par_habitant !== 0) return null
-  return histoire
-})
-
-// The Milieux Story row, narrowed to the definite OCS-GE state fields — the
-// quadrant graph reads the two forces (le taux annuel de variation de la
-// population ‰/an #306, Δ m²/hab) and the classification. Seulement quand la
-// lecture existe : classification ET trajectoire définies (le contrat #243 —
-// une lecture porte toujours sa seconde force) — les états sont alors
-// forcément des nombres, jamais le trou NA. Le record étroit garde le
-// template typé (la soustraction du delta) sans ré-ouvrir le nullable. Le
-// taux population, lui, doit être défini (la population moyenne non nulle —
-// un taux absent rend le point intracable, jamais un x inventé).
-interface EtatsMilieux {
-  taux_variation_population: number
-  periode_pop: string
-  artif_m2_par_habitant: number
-  artif_m3_par_habitant: number
-  periode_artif: string
-  classification: string
-}
-
-const histoireMilieuxEtats = computed<EtatsMilieux | null>(() => {
-  const histoire = histoireMilieux.value
-  if (histoire?.theme !== 'milieux') return null
-  if (histoire.classification === null) return null
-  if (histoire.trajectoire_artif_par_habitant === null) return null
-  if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
-    return null
-  }
-  if (histoire.taux_variation_population === null) return null
-  // une lecture porte toujours sa fenêtre d'états (le contrat #243)
-  if (histoire.periode_artif === null) return null
-  return {
-    taux_variation_population: histoire.taux_variation_population,
-    periode_pop: histoire.periode_pop,
-    artif_m2_par_habitant: histoire.artif_m2_par_habitant,
-    artif_m3_par_habitant: histoire.artif_m3_par_habitant,
-    periode_artif: histoire.periode_artif,
-    classification: histoire.classification,
-  }
-})
-
-// The Milieux story chart's context cloud (ADR-0011, issue #241) — the
-// same-scale peers' taux annuel de population (‰/an, #306) × Δ(m²/hab), each
-// carrying its OCS-GE state window. The Démographie nuage pattern: computed
-// from the selector, fed to the quadrant graph.
-const nuageMilieuxComputed = computed(() =>
-  props.theme === 'milieux' ? nuageMilieux(props.payload, props.territoire) ?? [] : [],
-)
-
-// The Milieux block's figure set (spec #225, ADR-0017) : « Intensité état ·
-// Série annuelle » — artif_par_habitant (l'état par habitant, deux lignes
-// M2/M3) puis conso_enaf_annuel (la seule horloge annuelle). La fenêtre et la
-// trajectoire ZAN sont mortes avec les flux CONSOENAF : leurs figures ne
-// rendent plus (la story porte la trajectoire — #63).
-const CLEFS_FIGURES_MILIEUX = ['artif_par_habitant', 'conso_enaf_annuel']
-
-function groupesMilieuxFigures() {
-  return groupes.value.filter((g) => CLEFS_FIGURES_MILIEUX.includes(g.key))
-}
-
-// The Milieux story's sources, exhaustive (spec #225, amendé #243) : la série
-// historique (la population de la lecture — la règle de source d'ADR-0014) et
-// les vintages OCS-GE d'état (les HUIT archives millésimées « surfaces
-// artificialisées » — la seconde force, le DIFF est sorti). Citées depuis la
-// table vintages — jamais inventées.
-const sourceHistoireMilieux = computed(() => {
-  const vintages = props.payload.vintages
-  if (!vintages) return null
-  const ids = new Set([
-    'serie_historique',
-    'ocsge_artificialisation_22_2021',
-    'ocsge_artificialisation_22_2025',
-    'ocsge_artificialisation_29_2021',
-    'ocsge_artificialisation_29_2024',
-    'ocsge_artificialisation_35_2020',
-    'ocsge_artificialisation_35_2023',
-    'ocsge_artificialisation_56_2022',
-    'ocsge_artificialisation_56_2024',
-  ])
-  const citees = vintages.filter((v) => ids.has(v.id))
-  if (citees.length === 0) return null
-  return citees.map((v) => `${v.source} · ${v.version}`).join(' · ')
-})
-
-// The Mobilité story chart's context cloud (ADR-0011) — the peers' div_loss_t
-// at the same scale, clickable like the Démographie nuage.
-const nuageMobiliteComputed = computed(() =>
-  props.theme === 'mobilite' ? nuageMobilite(props.payload, props.territoire) ?? [] : [],
-)
-
+/** The detail labels of a multi-detail figure — the app's display vocabulary (never a Story resolution). */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
+  if (clef === 'structure_age') return NOMS_TRANCHES_AGE
   if (clef === 'reseaux') return NOMS_DETAILS_RESEAUX
   if (clef === 'voitures_menage') return NOMS_DETAILS_VOITURES_MENAGE
   if (clef === 'offre_cyclable') return NOMS_DETAILS_OFFRE_CYCLABLE
   return undefined
 }
 
-// La figure « L'offre cyclable » (issue #232) lit le dénominateur de SON
-// headline dans les lignes reseaux du MÊME territoire (reseaux.c_longueur —
-// la règle du « dans l'EPCI : X % » d'ADR-0015 : l'app regarde les lignes
-// existantes, jamais une seconde mesure publiée).
-const groupesReseaux = computed(() => groupesMobilite(['reseaux']))
-
-/** The Mobilité block's sections — the Taille, the isolation grid, the demand/network tier and the labelled sub-block. */
-interface SectionMobilite {
-  titre: string | null
-  isolation?: boolean
-  groupes: GroupeIndicateur[]
-}
-
-const sectionsMobilite = computed<SectionMobilite[]>(() => [
-  { titre: null, groupes: groupesMobiliteTaille.value },
-  { titre: null, isolation: true, groupes: groupesMobiliteGrille.value },
-  { titre: null, groupes: groupesMobiliteDemandeReseaux.value },
-  { titre: 'L’offre de mobilité alternative', groupes: groupesMobiliteSousBloc.value },
-])
-
 function libelleIndicateur(clef: string): string {
   return NOMS_INDICATEURS[props.theme]?.[clef] ?? clef
 }
+
+/** The wide figures of the grid (the multi-detail groups). */
+function figureLarge(clef: string): boolean {
+  return clef === 'structure_age' || clef === 'reseaux'
+}
+
+/** The signed figure (the population evolution since 1968). */
+function figureSigne(clef: string): boolean {
+  return clef === 'evolution_1968'
+}
+
+/** The rows reseaux of the SAME territory — the « dans l'EPCI : X % » denominator of L'offre cyclable. */
+const lignesReseaux = computed(
+  () =>
+    sousGroupes.value.flatMap((groupe) => groupe.figures).find((figure) => figure.key === 'reseaux')
+      ?.lignes ?? [],
+)
 </script>
 
 <template>
@@ -332,166 +125,47 @@ function libelleIndicateur(clef: string): string {
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
 
-    <!-- The story angle leads the theme block (issue #71) — the fiche's
-         signature moment sits ABOVE the standard indicator grid, per the
-         décision of 2026-08-07 (DESIGN.md §5 updated in step). The one-liner
-         still carries its own chart, comment-lire, source and Méthodes link. -->
-    <section
-      v-if="
-        storyMobiliteAngle ||
-        story ||
-        storyEconomieAngle ||
-        storyMilieuxAngle ||
-        milieuxSansLecture
-      "
-      class="angle-story"
-    >
-      <!-- The Milieux Story (issue #174, ADR-0014, re-keyed by spec #225) :
-           « Se densifier, s'étaler, ou s'en aller » — la lecture du territoire
-           contre sa terre, une des quatre lectures par les signes. L'angle
-           porte le GRAPHE QUADRANT (issue #241, ADR-0011) — le nuage des
-           pairs au même échelle (x = le taux annuel de variation de la
-           population ‰/an #306, y = Δ m²/hab) — au premier plan, la lecture
-           d'abord (issue #71). L'intensité (m² d'ENAF par habitant ajouté)
-           est morte du prose avec les flux CONSOENAF : la surface
-           artificialisée par habitant (l'état) vit dans le « comment lire »,
-           l'intensité est la figure (#65, #241). -->
-      <template v-if="storyMilieuxAngle">
-        <p class="angle-story-une-ligne">{{ storyMilieuxAngle.uneLigne }}</p>
-        <p class="angle-story-titre">{{ storyMilieuxAngle.titre }}</p>
-        <GraphiqueQuadrantMilieux
-          v-if="histoireMilieuxEtats"
-          :taux-variation-population="histoireMilieuxEtats.taux_variation_population"
-          :delta-m2-par-habitant="
-            histoireMilieuxEtats.artif_m3_par_habitant -
-            histoireMilieuxEtats.artif_m2_par_habitant
-          "
-          :classification="histoireMilieuxEtats.classification"
-          :nom="nomTerritoire"
-          :periode-pop="histoireMilieuxEtats.periode_pop"
-          :periode-artif="histoireMilieuxEtats.periode_artif"
-          :nuage="nuageMilieuxComputed"
-        />
-        <p class="angle-story-comment-lire">
-          <span class="angle-story-etiquette">Comment lire</span>
-          {{ storyMilieuxAngle.commentLire }}
-        </p>
-        <p v-if="sourceHistoireMilieux" class="angle-story-source">
-          <span class="angle-story-etiquette">Source</span>
-          {{ sourceHistoireMilieux }}
-        </p>
-        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
-      </template>
+    <!-- The shared subgroup loop (issue #314) — the metadata order, labels and
+         reading linkage drive the anatomy of all five themes, identically. A
+         subgroup with neither figures nor reading stays silent (the honest
+         absent-data state — never an empty shell). -->
+    <template v-for="groupe in sousGroupes" :key="groupe.key">
+      <section
+        v-if="groupe.figures.length > 0 || groupe.lecture || groupe.lectureIndisponible"
+        class="sous-groupe"
+        :data-groupe="groupe.key"
+      >
+        <h3 class="sous-groupe-titre">{{ groupe.label }}</h3>
+        <p class="sous-groupe-cadrage">{{ groupe.framing }}</p>
 
-      <!-- La lecture absente (la découverte #243 du pipeline) : M2 = 0 — le
-           territoire sans AUCUNE terre artificialisée à l'état initial, la
-           trajectoire M3/M2 indéfinie. L'angle affiche une infobox honnête —
-           jamais une lecture inventée sur un rapport sans sens — et les
-           figures de l'état restent sous le bloc. -->
-      <template v-else-if="milieuxSansLecture">
-        <p class="angle-story-une-ligne">
-          La lecture de l’artificialisation n’est pas disponible pour ce territoire.
-        </p>
-        <p class="angle-story-titre">Se densifier, s’étaler, ou s’en aller</p>
-        <p class="angle-story-infobox" role="note">
-          Ce territoire ne comptait aucune terre artificialisée à l’état initial (M2) :
-          sans surface au départ, la trajectoire de l’artificialisation ne se lit pas.
-          Aucune lecture n’est fabriquée sur un rapport sans sens.
-        </p>
-        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
-      </template>
+        <!-- The reading slot — the metadata template rendered with the
+             resolved row's values, the reading's compact figure and its
+             exhaustive source. -->
+        <div v-if="groupe.lecture" class="sous-groupe-lecture">
+          <p class="lecture-texte">
+            <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
+              <NoeudLecture
+                :noeud="noeud"
+                :parametres="groupe.lecture.parametres"
+                :nom-territoire="nomTerritoire"
+              />
+            </template>
+          </p>
 
-      <!-- The Mobilité Story (issue #142, ADR-0012) : the flagship's headline.
-           The default « Vingt minutes sans voiture » renders its distribution
-           chart (density signature, median marked) against the same-scale
-           cloud; the salience « Ce que le vélo préserve » replaces it where the
-           payload carries it (the delta reading, no distribution — honest). -->
-      <template v-if="storyMobiliteAngle">
-        <p class="angle-story-une-ligne">{{ storyMobiliteAngle.uneLigne }}</p>
-        <p class="angle-story-titre">
-          {{ storyMobiliteAngle.titre }}
-          <template v-if="descriptionNuageComputed">
-            {{ descriptionNuageComputed.prepositionCourant }}
-            <span class="angle-story-courant">{{ descriptionNuageComputed.nomCourant }}</span>
-            et {{ descriptionNuageComputed.groupe }}
-            <RouterLink
-              v-if="descriptionNuageComputed.conteneur"
-              class="angle-story-conteneur"
-              :to="{
-                name: 'territoire',
-                params: {
-                  type: descriptionNuageComputed.conteneur.type,
-                  id: descriptionNuageComputed.conteneur.code,
-                },
-              }"
-            >
-              {{ descriptionNuageComputed.conteneur.nom }}
-            </RouterLink>
-          </template>
-        </p>
-        <GraphiqueDistributionMobilite
-          v-if="storyMobiliteAngle.distribution"
-          :distribution="storyMobiliteAngle.distribution"
-          :mediane="storyMobiliteAngle.divLossT"
-          :nom="nomTerritoire"
-          :nuage="nuageMobiliteComputed"
-        />
-        <p class="angle-story-comment-lire">
-          <span class="angle-story-etiquette">Comment lire</span>
-          {{ storyMobiliteAngle.commentLire }}
-        </p>
-        <p class="angle-story-source">
-          <span class="angle-story-etiquette">Source</span>
-          {{ storyMobiliteAngle.vintage }}
-        </p>
-        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
-      </template>
-
-      <!-- The Économie Story (issue #121) : la LQ EST la Story — la liste des
-           top-5 spécialisations (ou, pour la région, la top-5 par présence),
-           jamais un indicateur du bloc. La lecture tient dans la liste ; le
-           vintage est celui des lignes elles-mêmes (issue #74). -->
-      <template v-if="storyEconomieAngle">
-        <p class="angle-story-une-ligne">{{ storyEconomieAngle.uneLigne }}</p>
-        <p class="angle-story-titre">{{ storyEconomieAngle.titre }}</p>
-        <p v-if="storyEconomieAngle.precision" class="angle-story-precision">
-          {{ storyEconomieAngle.precision }}
-        </p>
-        <ol class="liste-specialisations">
-          <li
-            v-for="ligne in storyEconomieAngle.lignes"
-            :key="ligne.rang"
-            class="specialisation"
-            :data-rang="ligne.rang"
+          <p
+            v-if="
+              descriptionNuageComputed &&
+              (groupe.figureLecture?.genre === 'soldes' ||
+                groupe.figureLecture?.genre === 'distribution')
+            "
+            class="lecture-contexte"
           >
-            <span class="specialisation-rang">{{ ligne.rang }}</span>
-            <span class="specialisation-label">{{ ligne.label }}</span>
-            <span class="specialisation-mesure">{{ ligne.mesure }}</span>
-          </li>
-        </ol>
-        <p class="angle-story-comment-lire">
-          <span class="angle-story-etiquette">Comment lire</span>
-          {{ storyEconomieAngle.commentLire }}
-        </p>
-        <p class="angle-story-source">
-          <span class="angle-story-etiquette">Source</span>
-          {{ storyEconomieAngle.vintage }}
-        </p>
-        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
-      </template>
-
-      <!-- The Démographie story (ADR-0011) : the quadrant reading + its chart. -->
-      <template v-else-if="story">
-        <p class="angle-story-une-ligne">{{ story.uneLigne }}</p>
-        <p class="angle-story-titre">
-          {{ story.titre }}
-          <template v-if="descriptionNuageComputed">
             {{ descriptionNuageComputed.prepositionCourant }}
-            <span class="angle-story-courant">{{ descriptionNuageComputed.nomCourant }}</span>
+            <span class="lecture-courant">{{ descriptionNuageComputed.nomCourant }}</span>
             et {{ descriptionNuageComputed.groupe }}
             <RouterLink
               v-if="descriptionNuageComputed.conteneur"
-              class="angle-story-conteneur"
+              class="lecture-conteneur"
               :to="{
                 name: 'territoire',
                 params: {
@@ -502,85 +176,91 @@ function libelleIndicateur(clef: string): string {
             >
               {{ descriptionNuageComputed.conteneur.nom }}
             </RouterLink>
-          </template>
-        </p>
-        <GraphiqueSoldes
-          v-if="histoireDemographie"
-          :taux-naturel="histoireDemographie.taux_solde_naturel"
-          :taux-migratoire="histoireDemographie.taux_solde_migratoire"
-          :classification="histoireDemographie.classification"
-          :nom="nomTerritoire"
-          :nuage="nuage"
-        />
-        <p class="angle-story-comment-lire">
-          <span class="angle-story-etiquette">Comment lire</span>
-          {{ story.commentLire }}
-        </p>
-        <p v-if="sourceHistoire" class="angle-story-source">
-          <span class="angle-story-etiquette">Source</span>
-          {{ sourceHistoire }}
-        </p>
-        <RouterLink class="angle-story-methodes" to="/methodologie">Méthodes</RouterLink>
-      </template>
-    </section>
+          </p>
 
-    <!-- The standard indicator grid sits BELOW the story angle (issue #71). -->
-    <template v-if="theme === 'mobilite'">
-      <template v-for="(section, i) in sectionsMobilite" :key="i">
-        <p v-if="section.titre" class="sous-bloc-mobilite-libelle">{{ section.titre }}</p>
-        <div
-          class="grille-indicateurs"
-          :class="{ 'grille-isolation': section.isolation }"
-        >
-          <template v-for="groupe in section.groupes" :key="groupe.key">
+          <GraphiqueSoldes
+            v-if="groupe.figureLecture?.genre === 'soldes'"
+            :taux-naturel="groupe.figureLecture.tauxNaturel"
+            :taux-migratoire="groupe.figureLecture.tauxMigratoire"
+            :classification="groupe.figureLecture.classification"
+            :nom="groupe.figureLecture.nom"
+            :nuage="groupe.figureLecture.nuage"
+          />
+          <GraphiqueDistributionMobilite
+            v-else-if="groupe.figureLecture?.genre === 'distribution'"
+            :distribution="groupe.figureLecture.distribution"
+            :mediane="groupe.figureLecture.mediane"
+            :nom="groupe.figureLecture.nom"
+            :nuage="groupe.figureLecture.nuage"
+          />
+          <GraphiqueQuadrantMilieux
+            v-else-if="groupe.figureLecture?.genre === 'quadrant'"
+            :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
+            :delta-m2-par-habitant="groupe.figureLecture.deltaM2ParHabitant"
+            :classification="groupe.figureLecture.classification"
+            :nom="groupe.figureLecture.nom"
+            :periode-pop="groupe.figureLecture.periodePop"
+            :periode-artif="groupe.figureLecture.periodeArtif"
+            :nuage="groupe.figureLecture.nuage"
+          />
+
+          <p v-if="groupe.source" class="lecture-source">
+            <span class="lecture-etiquette">Source</span>
+            {{ groupe.source }}
+          </p>
+        </div>
+
+        <!-- The honest absence (the pipeline's declared no-reading states: the
+             Milieux M2 = 0, Habitat under the suppression threshold) — never an
+             invented reading. A territory WITHOUT its row stays silent. -->
+        <div v-else-if="groupe.lectureIndisponible" class="sous-groupe-lecture">
+          <p class="lecture-absent" role="note">
+            La lecture de ce sous-groupe n’est pas disponible pour ce territoire.
+          </p>
+        </div>
+
+        <!-- The subgroup's figures: the compact figure first (the metadata's
+             famille + indicateur — the subgroup's matter), then the rest of
+             the indicator grid (metadata key order, ranks + vintages). -->
+        <div class="grille-indicateurs">
+          <div
+            v-if="groupe.figureCompacte"
+            class="figure-compacte"
+            :data-famille="groupe.figureCompacte.famille"
+          >
             <FigureOffreCyclable
-              v-if="groupe.key === 'offre_cyclable'"
-              :clef="groupe.key"
-              :lignes="groupe.lignes"
-              :reseaux="groupesReseaux[0]?.lignes ?? []"
-              :libelle="libelleIndicateur(groupe.key)"
-              :labels-detail="labelsDetailPour(groupe.key)"
+              v-if="groupe.figureCompacte.clef === 'offre_cyclable'"
+              :clef="groupe.figureCompacte.clef"
+              :lignes="groupe.figureCompacte.lignes"
+              :reseaux="lignesReseaux"
+              :libelle="libelleIndicateur(groupe.figureCompacte.clef)"
+              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
             />
             <IndicatorFigure
               v-else
-              :clef="groupe.key"
-              :lignes="groupe.lignes"
-              :libelle="libelleIndicateur(groupe.key)"
-              :labels-detail="labelsDetailPour(groupe.key)"
-              :large="groupe.key === 'reseaux'"
+              :clef="groupe.figureCompacte.clef"
+              :lignes="groupe.figureCompacte.lignes"
+              :libelle="libelleIndicateur(groupe.figureCompacte.clef)"
+              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
+              :large="figureLarge(groupe.figureCompacte.clef)"
+              :signe="figureSigne(groupe.figureCompacte.clef)"
             />
-          </template>
+          </div>
+          <IndicatorFigure
+            v-for="figure in figuresGrille(groupe)"
+            :key="figure.key"
+            :clef="figure.key"
+            :lignes="figure.lignes"
+            :libelle="libelleIndicateur(figure.key)"
+            :labels-detail="labelsDetailPour(figure.key)"
+            :large="figureLarge(figure.key)"
+            :signe="figureSigne(figure.key)"
+          />
         </div>
-      </template>
-      <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
+      </section>
     </template>
 
-    <!-- The Milieux figure set (spec #225, ADR-0017) : « Intensité état ·
-         Série annuelle » — les DEUX figures du contrat, jamais une fenêtre ni
-         une trajectoire ZAN résiduelles (mortes avec les flux CONSOENAF). -->
-    <div v-else-if="theme === 'milieux'" class="grille-indicateurs">
-      <IndicatorFigure
-        v-for="groupe in groupesMilieuxFigures()"
-        :key="groupe.key"
-        :clef="groupe.key"
-        :lignes="groupe.lignes"
-        :libelle="libelleIndicateur(groupe.key)"
-        :labels-detail="NOMS_TRANCHES_AGE"
-      />
-    </div>
-
-    <div v-else class="grille-indicateurs">
-      <IndicatorFigure
-        v-for="groupe in groupes"
-        :key="groupe.key"
-        :clef="groupe.key"
-        :lignes="groupe.lignes"
-        :libelle="libelleIndicateur(groupe.key)"
-        :labels-detail="NOMS_TRANCHES_AGE"
-        :signe="groupe.key === 'evolution_1968'"
-        :large="groupe.key === 'structure_age'"
-      />
-    </div>
+    <p v-if="estampille" class="estampille-snapshot">{{ estampille }}</p>
   </article>
 </template>
 
@@ -617,6 +297,126 @@ function libelleIndicateur(clef: string): string {
   color: var(--couleur-strong);
 }
 
+/* One subgroup — the shared anatomy of all five themes (issue #314). */
+.sous-groupe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.sous-groupe-titre {
+  margin: 0;
+  font: 600 1.1875rem/1.4 var(--font-serif);
+  color: var(--couleur-strong);
+}
+
+.sous-groupe-cadrage {
+  margin: 0;
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+/* The reading slot — the payload-owned reading, its figure and its source. */
+.sous-groupe-lecture {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--couleur-line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-primary);
+  box-shadow: var(--shadow-subtle);
+}
+
+.lecture-texte {
+  margin: 0;
+  font: var(--text-body-lg);
+  color: var(--text-primary);
+}
+
+.lecture-texte .noeud-gras {
+  color: var(--couleur-strong);
+}
+
+.lecture-texte .noeud-lien {
+  color: var(--couleur-strong);
+  font-weight: 600;
+  text-underline-offset: 3px;
+}
+
+/* The comparison subtitle — the current territory wears the strong color, the
+   container the cloud's (ADR-0011). */
+.lecture-contexte {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-1);
+  margin: 0;
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.lecture-courant {
+  color: var(--couleur-strong);
+}
+
+.lecture-conteneur {
+  color: var(--couleur-nuage);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lecture-conteneur:hover {
+  color: var(--couleur-strong);
+}
+
+/* The honest absence note — the reading the pipeline declared unreadable. */
+.lecture-absent {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--couleur-line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-tertiary);
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.lecture-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--text-tertiary);
+}
+
+.lecture-etiquette {
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
+  text-transform: uppercase;
+  color: var(--couleur-strong);
+}
+
+/* The compact figure of the subgroup — the metadata's famille + indicateur,
+   the subgroup's matter rendered first in the grid. */
+.figure-compacte {
+  grid-column: span 2;
+}
+
+@media (max-width: 1024px) {
+  .figure-compacte {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .figure-compacte {
+    grid-column: 1;
+  }
+}
+
 .grille-indicateurs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -635,35 +435,6 @@ function libelleIndicateur(clef: string): string {
   }
 }
 
-/* The Mobilité isolation grid (issue #142, ADR-0012) — the flagship's 5 parts
-   read as ONE grid: five columns on wide screens, the fiche contract's grid
-   below. The « sans accès » framing lives in the figure labels. */
-.grille-isolation {
-  grid-template-columns: repeat(5, 1fr);
-}
-
-@media (max-width: 1024px) {
-  .grille-isolation {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 640px) {
-  .grille-isolation {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* The sub-block's label (issue #142) — « L'offre de mobilité alternative »,
-   the one labelled tier of the Mobilité block. */
-.sous-bloc-mobilite-libelle {
-  margin: 0;
-  font: var(--text-overline);
-  letter-spacing: var(--text-overline-tracking);
-  text-transform: uppercase;
-  color: var(--couleur-strong);
-}
-
 /* The flagship's snapshot stamp (ADR-0012) — the honest freshness claim,
    visually distinct from the light themes' weekly vintage chips. */
 .estampille-snapshot {
@@ -675,161 +446,5 @@ function libelleIndicateur(clef: string): string {
   color: var(--couleur-strong);
   font: var(--text-body-sm);
   font-weight: 600;
-}
-
-.angle-story {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-8);
-  border: 1px solid var(--couleur-line);
-  border-radius: var(--radius-lg);
-  background: var(--surface-primary);
-  box-shadow: var(--shadow-subtle);
-}
-
-.angle-story-titre {
-  margin: 0;
-  font: 600 1.1875rem/1.4 var(--font-serif);
-  color: var(--couleur-strong);
-}
-
-/* The small label naming the matière, next to the Économie Story's title
-   (issues #153 + #156): « Spécialisation des établissements actifs ». The
-   title stays fabric-neutral; the precision carries the establishment
-   reading. The région's presence Story carries none — nothing renders. */
-.angle-story-precision {
-  margin: 0;
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  color: var(--text-secondary);
-}
-
-/* The subtitle names the two colors of the plot: the current territory wears
-   the highlighted dot's color, the comparison container the cloud's. */
-.angle-story-courant {
-  color: var(--couleur-strong);
-}
-
-.angle-story-conteneur {
-  color: var(--couleur-nuage);
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.angle-story-conteneur:hover {
-  color: var(--couleur-strong);
-}
-
-.angle-story-une-ligne {
-  margin: 0;
-  font: var(--text-display);
-  letter-spacing: var(--text-display-tracking);
-  color: var(--text-primary);
-}
-
-/* La lecture absente (découverte #243) : l'infobox honnête — l'état initial
-   nul, la trajectoire indéfinie, aucune lecture inventée. Une note encadrée
-   dans l'angle, discrète (jamais un appel à l'action). */
-.angle-story-infobox {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--couleur-line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-tertiary);
-  font: var(--text-body-sm);
-  color: var(--text-secondary);
-}
-
-/* The Économie Story's shape (issue #121) — the top-5 specialisations as a
-   list: rank, activity label, and the measure (LQ + n, or n + part du parc
-   for the région). The reading lives in the list, not in a chart. */
-.liste-specialisations {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.specialisation {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: var(--space-4);
-  align-items: baseline;
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.specialisation:last-child {
-  border-bottom: none;
-}
-
-.specialisation-rang {
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  color: var(--couleur-strong);
-  font-weight: 600;
-}
-
-.specialisation-label {
-  font: var(--text-body-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.specialisation-mesure {
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-@media (max-width: 640px) {
-  .specialisation {
-    grid-template-columns: auto 1fr;
-  }
-
-  .specialisation-mesure {
-    grid-column: 2;
-    white-space: normal;
-  }
-}
-
-.angle-story-comment-lire {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  font: var(--text-body-sm);
-  color: var(--text-secondary);
-}
-
-.angle-story-source {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin: 0;
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  color: var(--text-tertiary);
-}
-
-.angle-story-etiquette {
-  font: var(--text-overline);
-  letter-spacing: var(--text-overline-tracking);
-  text-transform: uppercase;
-  color: var(--couleur-strong);
-}
-
-.angle-story-methodes {
-  align-self: flex-start;
-  font: var(--text-body-sm);
-  font-weight: 600;
-  color: var(--couleur-strong);
-  text-underline-offset: 3px;
 }
 </style>

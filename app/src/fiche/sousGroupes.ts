@@ -62,6 +62,8 @@ export interface LectureSousGroupe {
   story_key: string
   /** The resolved row (the (territoire, groupe) join of the contract). */
   histoire: Histoire
+  /** The metadata reading template — the payload-owned copy the slot renders. */
+  template: NoeudTexteRiche[]
   /**
    * The template params the template actually REFERENCES, resolved to display
    * strings (formatted numbers, string keys verbatim). Only referenced params
@@ -232,7 +234,10 @@ function lecturePour(
   // La story RÉSOLUE de la ligne (la sélection du pipeline, #312) — le
   // sous-groupe déclare le lien canonique dans la métadonnée, la ligne porte
   // la sélection effective (la saillance vélo remplace le défaut, même groupe).
-  return { lecture: { story_key: histoire.story_key, histoire, parametres }, indisponible: false }
+  return {
+    lecture: { story_key: histoire.story_key, histoire, template, parametres },
+    indisponible: false,
+  }
 }
 
 /**

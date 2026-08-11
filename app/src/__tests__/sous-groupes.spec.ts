@@ -23,7 +23,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Histoire, Payload, Theme } from '../payload/types'
+import type { Histoire, Payload } from '../payload/types'
 
 /**
  * sousGroupesPourTerritoire (issue #314, parent #308) — le mapper partagé de
@@ -251,7 +251,7 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
       h.territoire === '22001'
         ? { ...h, classification: null, part_passoires: null }
         : h,
-    )
+    ) as Histoire[]
     const sousGroupes = sousGroupesDe(
       'habitat',
       '22001',
@@ -355,6 +355,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     const lecture: LectureSousGroupe = {
       story_key: 'histoire-inconnue',
       histoire: histoiresDemographieFixture[0],
+      template: [],
       parametres: {},
     }
     expect(
