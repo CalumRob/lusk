@@ -61,7 +61,18 @@ manifeste <- THEME_RUN$manifest
 attributs_nuls <- function(x) {
   if (is.call(x) || is.pairlist(x)) {
     attributes(x) <- NULL
-    for (i in seq_along(x)) x[[i]] <- attributs_nuls(x[[i]])
+    for (i in seq_along(x)) {
+      enfant <- attributs_nuls(x[[i]])
+      # Issue #351 : un enfant NULL (les formals vides d'une fonction anonyme
+      # `function() ...` — le seam `metadata` de #311, mais toute fonction
+      # anonyme du paquet passe par là) ne doit PAS être affecté : en R,
+      # `x[[i]] <- NULL` RETIRE l'élément de l'appel, l'arbre rétrécit et le
+      # seq_along(x) précalculé dépasse (subscript out of bounds). On garde le
+      # nœud tel quel — l'arbre de parse nu est préservé (un enfant NULL reste
+      # NULL, deparse produit la même forme).
+      if (is.null(enfant)) next
+      x[[i]] <- enfant
+    }
   }
   x
 }
@@ -109,8 +120,10 @@ symbole_ns <- function(piece, paquet = "lusk") {
 # grappe_theme ------------------------------------------------------------------
 # La grappe d'un thème — construite depuis le descripteur : download (mode
 # full/cron préservé, idempotent) -> fichiers du cache brut (fraîcheur par
-# contenu) -> construire -> vintages -> compute -> publish -> fusion des
-# vintages (upsert, issue #124) -> rapport de run (indépendant, toujours).
+# contenu) -> construire -> vintages -> compute -> publish -> métadonnées du
+# thème (theme_<theme>.json, le seam `metadata` de #311 — quand le descripteur
+# le déclare) -> fusion des vintages (upsert, issue #124) -> rapport de run
+# (indépendant, toujours).
 # Le seam de publication du thème (issue #97) est respecté par le dispatch :
 # un thème classique (Démographie, Habitat) n'expose pas `publier` — la
 # branche compute_payload + publish, à l'identique de run_pipeline.
@@ -128,9 +141,10 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
   vintages <- as.name(paste0("vintages_table_", nom))
   payload <- as.name(paste0("payload_", nom))
   publie <- as.name(paste0("publie_", nom))
+  metadata <- as.name(paste0("metadata_", nom))
   rapport <- as.name(paste0("rapport_", nom))
 
-  list(
+  grappe <- list(
     # download : idempotent (saute ce qui existe et est valide, retente et
     # s'arrête bruyamment sinon), le mode full/cron d'ADR-0004 est transmis
     # tel quel. Renvoie les statuts par source — le cœur du rapport de run.
@@ -172,7 +186,9 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
     ),
     # publish : la publication static du payload vers la cible du run (upsert,
     # ADR-0004). Un thème qui expose `publier` (issue #97) câblerait ici sa
-    # publication au lieu de la branche compute + publish.
+    # publication au lieu de la branche compute + publish. Les métadonnées du
+    # thème (theme_<theme>.json, issue #311) sont publiées par un target dédié
+    # inséré APRÈS celui-ci — le même seam `metadata` que run_pipeline.
     tar_target_raw(
       as.character(publie),
       bquote(publish(.(payload), .(sortie)))
@@ -224,6 +240,30 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
       cue = tar_cue(mode = "always")
     )
   )
+
+  # les métadonnées du thème (issue #311) : le seam metadata de run_pipeline —
+  # un thème qui déclare `metadata` (la fonction qui lit son fichier épinglé
+  # inst/extdata/theme-metadata/) publie SON theme_<theme>.json à côté des
+  # faits ; le dispatch est PAR TRAIT (jamais un nom de thème en dur) et un
+  # thème sans membre (Programmes, ADR-0013) n'écrit NI n'écrase rien.
+  # Publier les métadonnées ne recompute JAMAIS les tables de faits : le
+  # target n'écrit que theme_<theme>.json, validé contre les vintages du thème
+  # (publier_theme_metadata — la garde theme_attendu refuse la collision).
+  if ("metadata" %in% names(theme)) {
+    grappe <- append(grappe, list(
+      tar_target_raw(
+        as.character(metadata),
+        bquote({
+          theme_ <- .(theme_descripteur)
+          publier_theme_metadata(theme_$metadata(), .(sortie),
+                                 vintages = .(vintages),
+                                 theme_attendu = theme_$theme)
+        })
+      )
+    ), after = 6L)
+  }
+
+  grappe
 }
 
 # Le graphe du tracer bullet : la grappe du thème + la géométrie du fond de
