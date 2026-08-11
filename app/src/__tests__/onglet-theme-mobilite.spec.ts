@@ -8,6 +8,7 @@ import {
   apercuAvecNAFixture,
   histoiresMobiliteFixture,
   indicateursMobiliteFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -15,13 +16,13 @@ import {
 import type { Payload } from '../payload/types'
 
 /**
- * OngletTheme — the Mobilité block (issue #142, ADR-0012): the overline →
- * the « Taille » → the isolation grid (the 5 parts, « sans accès » framing,
- * rank-in-context) → the demand/network tier → the sub-block under its label
- * « L'offre de mobilité alternative » → the snapshot stamp (distinct from the
- * weekly chips) → the flagship Story (the default distribution chart, or the
- * vélo salience where the payload carries it). Consumes the payload selectors
- * — never raw JSON.
+ * OngletTheme — the Mobilité block through the SHARED subgroup anatomy
+ * (issue #314): the metadata subgroup « L'accès aux services » — the reading
+ * slot (the metadata template with the resolved div_loss, the flagship's
+ * distribution chart and the snapshot stamp), the compact figure (famille
+ * scalar → « L'offre cyclable ») and the 11 other indicator figures in the
+ * metadata key order, ranks and vintages intact. The vélo salience keeps its
+ * row-driven no-chart honesty. Consumes the payload selectors — never raw JSON.
  */
 
 const payloadMobilite: Payload = {
@@ -32,6 +33,7 @@ const payloadMobilite: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { mobilite: metadonneesThemesFixtures.mobilite },
 }
 
 async function monter(territoire: string, payload: Payload = payloadMobilite) {
@@ -43,46 +45,42 @@ async function monter(territoire: string, payload: Payload = payloadMobilite) {
   return wrapper
 }
 
-describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-bloc)', () => {
-  it('renders the theme overline and the 12 figures in block order', async () => {
+describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le sous-bloc)', () => {
+  it('renders the metadata subgroup and the 12 figures — compact figure first, then the key order', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
-    const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
+    expect(wrapper.find('.sous-groupe-titre').text()).toBe('L’accès aux services')
+    const figures = wrapper
+      .findAll('.grille-indicateurs .figure-indicateur')
+      .map((f) => f.attributes('data-clef'))
     expect(figures).toEqual([
+      'offre_cyclable',
       'nb_buildings',
-      'iso_alimentation',
-      'iso_sante',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
       'voitures_menage',
       'reseaux',
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',
-      'offre_cyclable',
-    ])
-  })
-
-  it('renders the isolation grid as its own grid — the 5 parts with the « sans accès » framing', async () => {
-    const wrapper = await monter('22001')
-
-    const grille = wrapper.findAll('.grille-isolation .figure-indicateur')
-    expect(grille.map((f) => f.attributes('data-clef'))).toEqual([
       'iso_alimentation',
       'iso_sante',
       'iso_administration',
       'iso_ecole',
       'iso_banque',
     ])
-    for (const figure of grille) {
-      expect(figure.text()).toContain('Part des bâtiments sans accès')
-      expect(figure.text()).toContain('à pied ou en transports en commun')
-    }
   })
 
-  it('labels say « à pied ou en transports en commun », NEVER « sans voiture »', async () => {
+  it('renders the compact figure as the metadata’s scalar family — L’offre cyclable leads the grid', async () => {
+    const wrapper = await monter('22001')
+
+    const compacte = wrapper.find('.figure-compacte')
+    expect(compacte.exists()).toBe(true)
+    expect(compacte.attributes('data-famille')).toBe('scalar')
+    expect(compacte.find('.figure-indicateur').attributes('data-clef')).toBe('offre_cyclable')
+    expect(wrapper.findAll('.figure-indicateur[data-clef="offre_cyclable"]')).toHaveLength(1)
+  })
+
+  it('labels say « à pied ou en transports en commun », NEVER « sans voiture » — the reading is the one exception', async () => {
     const wrapper = await monter('22001')
 
     const libelles = wrapper.findAll('.figure-indicateur-libelle').map((l) => l.text())
@@ -101,7 +99,17 @@ describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-
     const alimentation = wrapper.find('.figure-indicateur[data-clef="iso_alimentation"]')
     // 22001 : 27e/38 dans son EPCI (rang ordinal directionnel — ADR-0015)
     expect(alimentation.find('.puce-rang').text()).toBe("27e/38 de l'EPCI")
-    expect(wrapper.findAll('.grille-isolation .puce-rang')).toHaveLength(5)
+    const grille = wrapper
+      .findAll('.figure-indicateur')
+      .filter((f) =>
+        ['iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque'].includes(
+          f.attributes('data-clef') ?? '',
+        ),
+      )
+    expect(grille).toHaveLength(5)
+    for (const figure of grille) {
+      expect(figure.find('.puce-rang').exists()).toBe(true)
+    }
   })
 
   it('renders the multi-detail figures with their own detail labels (voitures ×2, reseaux ×6)', async () => {
@@ -118,21 +126,6 @@ describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-
     expect(reseaux.find('.barre-segmentee').exists()).toBe(false)
   })
 
-  it('groups the sub-block under its label « L’offre de mobilité alternative »', async () => {
-    const wrapper = await monter('22001')
-
-    const libelle = wrapper.find('.sous-bloc-mobilite-libelle')
-    expect(libelle.exists()).toBe(true)
-    expect(libelle.text()).toBe('L’offre de mobilité alternative')
-    const sousBloc = wrapper.findAll('.sous-bloc-mobilite-libelle ~ .grille-indicateurs .figure-indicateur')
-    expect(sousBloc.map((f) => f.attributes('data-clef'))).toEqual([
-      'offre_tc',
-      'bornes_recharge',
-      'places_stationnement_velo_1000',
-      'offre_cyclable',
-    ])
-  })
-
   it('stamps the block with the snapshot estampille — distinct from the weekly chips', async () => {
     const wrapper = await monter('22001')
 
@@ -146,32 +139,22 @@ describe('OngletTheme — the Mobilité block (la grille + l’étage + le sous-
   })
 })
 
-describe('OngletTheme — the Mobilité Story angle', () => {
-  it('renders the default story for a non-saillant commune: serif reading + titre + comment lire', async () => {
+describe('OngletTheme — the reading slot (the metadata template + the flagship figure)', () => {
+  it('renders the reading from the metadata template with the resolved div_loss', async () => {
     const wrapper = await monter('22001')
 
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Sans voiture, 38 types de services disparaissent.',
-    )
-    // the title carries the comparison subtitle (ADR-0011 — même-échelle)
-    const titre = wrapper.find('.angle-story-titre')
-    expect(titre.text()).toContain('Vingt minutes sans voiture')
-    expect(titre.text()).toContain('des communes de')
-    expect(wrapper.find('.angle-story-courant').text()).toBe('Commune A1')
-    expect(wrapper.find('.angle-story-conteneur').text()).toBe('EPCI X')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('Comment lire')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain(
-      'À pied ou en transports en commun à 20 minutes',
-    )
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain(
-      'Analyse calculée le 6 août 2026',
-    )
-    expect(wrapper.find('.angle-story-source').text()).toContain(
-      "Lusk — analyse d'accessibilité",
-    )
+    const texte = wrapper.find('.lecture-texte')
+    expect(texte.exists()).toBe(true)
+    expect(texte.text()).toContain('Sans voiture, 38 types de services disparaissent')
+    expect(texte.text()).toContain("de l’accès quotidien de Commune A1")
+    // the template's Méthodes link renders as a RouterLink
+    const liens = wrapper
+      .findAllComponents(RouterLinkStub)
+      .map((l) => l.props('to'))
+    expect(liens).toContain('/methodologie#mobilite')
   })
 
-  it('feeds the story chart the distribution (signature), the median and the same-scale cloud', async () => {
+  it('feeds the reading’s figure the distribution (signature), the median and the same-scale cloud', async () => {
     const wrapper = await monter('22001')
 
     const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
@@ -189,26 +172,31 @@ describe('OngletTheme — the Mobilité Story angle', () => {
     expect(aria).toContain('médiane 38')
   })
 
-  it('shows the vélo salience instead of the default where the payload carries it — and no distribution chart', async () => {
+  it('names the comparison under the chart — current territory + clickable container', async () => {
+    const wrapper = await monter('22001')
+
+    const contexte = wrapper.find('.lecture-contexte')
+    expect(contexte.text()).toContain('Commune A1')
+    expect(contexte.text()).toContain('des communes de')
+    expect(contexte.find('.lecture-conteneur').text()).toBe('EPCI X')
+  })
+
+  it('shows the vélo salience territory’s own row in the template — and no distribution chart', async () => {
     const wrapper = await monter('22002')
 
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Le vélo préserve déjà 11 types de services.',
+    // the same metadata template reads the row's own div_loss_t (the resolved
+    // vélo reading); the distribution is the default's matter — no chart
+    expect(wrapper.find('.lecture-texte').text()).toContain(
+      'Sans voiture, 24 types de services disparaissent',
     )
-    expect(wrapper.find('.angle-story-titre').text()).toContain('Ce que le vélo préserve')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain(
-      'à pied ou en transports en commun à 20 minutes',
-    )
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('accès déjà réalisé')
     expect(wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(false)
   })
 
-  it('renders the story angle for the région — the default Story serves the région fiche (ADR-0012)', async () => {
+  it('renders the reading for the région — the default Story serves the région fiche (ADR-0012)', async () => {
     const wrapper = await monter('53')
 
-    expect(wrapper.find('.angle-story-titre').text()).toContain('Vingt minutes sans voiture')
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Sans voiture, 29 types de services disparaissent.',
+    expect(wrapper.find('.lecture-texte').text()).toContain(
+      'Sans voiture, 29 types de services disparaissent',
     )
     const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
     expect(graphique.props('nuage').map((p: { territoire: string }) => p.territoire).sort()).toEqual([
@@ -217,14 +205,14 @@ describe('OngletTheme — the Mobilité Story angle', () => {
     ])
   })
 
-  it('links to Méthodes and keeps the whole block when the story renders', async () => {
+  it('cites the reading’s own vintage stamp as its source (issue #74)', async () => {
     const wrapper = await monter('22001')
 
-    const methodes = wrapper
-      .findAllComponents(RouterLinkStub)
-      .find((l) => l.props('to') === '/methodologie')
-    expect(methodes).toBeTruthy()
-    expect(wrapper.findAll('.figure-indicateur')).toHaveLength(12)
+    const source = wrapper.find('.lecture-source')
+    expect(source.exists()).toBe(true)
+    expect(source.text()).toContain('Source')
+    expect(source.text()).toContain('Lusk')
+    expect(source.text()).toContain('réf. 28 févr. 2026')
   })
 })
 
@@ -266,12 +254,9 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
     const wrapper = await monter('22001')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
-    // l'estampille de la source de référence osm_reseaux (l'horloge lente)
     expect(figure.find('.estampille-vintage').text()).toContain(
       'OpenStreetMap — réseaux routier/cyclable/piéton',
     )
-    // le rang PAR DÉTAIL, comme un label (jamais merge) — la commune 22001
-    // porte ses rangs ordinaux dans son EPCI (protégé 20e/38, partagé 10e/38)
     expect(figure.findAll('.puce-rang')).toHaveLength(2)
     expect(figure.findAll('.puce-rang').map((p) => p.text())).toEqual([
       "20e/38 de l'EPCI",
@@ -290,11 +275,11 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
 })
 
 describe('OngletTheme — the Mobilité block, honest edge cases', () => {
-  it('renders the block without a story angle when the territory has no Mobilité Story', async () => {
+  it('renders no subgroup content and no reading when the territory has neither figures nor Story', async () => {
     const wrapper = await monter('29002')
 
     expect(wrapper.findAll('.figure-indicateur')).toHaveLength(0)
-    expect(wrapper.find('.angle-story').exists()).toBe(false)
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
     expect(wrapper.find('.estampille-snapshot').exists()).toBe(true)
   })
 })

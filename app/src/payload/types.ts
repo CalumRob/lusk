@@ -9,15 +9,15 @@
  * loud type/validation error, never as silent wrong figures.
  *
  * Semantics locked by the contract:
- * - ranks are fractions in [0,1] (0.25, not 25); null = no comparison group
- *   at that level
+ * - ranks are direction-aware ordinals ≥ 1 (1 = best, ADR-0015), each with its
+ *   group-size column (« / Y »); null = no comparison group at that level
  * - value null = not computable for that territory
  * - keys of unbuilt themes are ABSENT from apercu (not null)
  * - two vintage dates per indicator: reference + publication
  * - territoires.epci is the SIREN for communes, null otherwise
  */
 
-/** The four themes, in canonical order (ADR-0007 — payload-driven tabs). */
+/** The five themes, in canonical order (ADR-0007 — payload-driven tabs). */
 export const THEMES_CANONIQUES = [
   'mobilite',
   'demographie',
@@ -429,6 +429,13 @@ export interface Payload {
   vintages: Vintage[] | null
   /** The programmes payload (programmes.json) — optional; null = element absent (404). */
   programmes: ProgrammesPayload | null
+  /**
+   * The per-theme metadata files (theme_<theme>.json, issue #309, wired by
+   * #313) — keyed by theme, present themes only. Optional at the type level:
+   * payloads assembled from merged documents (parsePayload) or pre-seam
+   * fixtures carry none; the loader and the store always produce the section.
+   */
+  themeMetadata?: Partial<Record<Theme, ThemeMetadata>>
 }
 
 /**

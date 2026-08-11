@@ -9,6 +9,7 @@ import {
   apercuAvecNAFixture,
   histoiresMilieuxFixture,
   indicateursMilieuxFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -16,14 +17,15 @@ import {
 import type { Payload, Theme } from '../payload/types'
 
 /**
- * OngletTheme — the Milieux block (issue #172 → #174, ADR-0014, re-keyed by
- * spec #225, câblé par #242) : l'overline → l'angle Story « Se densifier,
- * s'étaler, ou s'en aller » (la une-ligne par lecture, le GRAPHE QUADRANT au
- * premier plan — le nuage des pairs au même échelle, ADR-0011 + ADR-0017 —,
- * les riders de précision, la source) → les figures « Intensité état · Série
- * annuelle ». La fenêtre et la trajectoire ZAN sont mortes avec les flux
- * CONSOENAF : leurs figures ne rendent plus. L'intensité est la figure, pas
- * le prose (#65). Consumes the payload selectors — never raw JSON.
+ * OngletTheme — the Milieux block through the SHARED subgroup anatomy
+ * (issue #314) : le sous-groupe « L'artificialisation » — la lecture du
+ * template de métadonnée (les deux horloges nommées, la classification et la
+ * trajectoire), le GRAPHE QUADRANT au premier plan de la lecture (le nuage
+ * des pairs au même échelle, ADR-0011 + ADR-0017), la source exhaustive, la
+ * figure compacte « Intensité état » (famille trajectory) puis la série
+ * annuelle. La fenêtre et la trajectoire ZAN sont mortes avec les flux
+ * CONSOENAF : leurs figures ne rendent plus. Une lecture absente (M2 = 0, ou
+ * le trou NA) échoue honnêtement — jamais inventée.
  */
 
 const payloadMilieux: Payload = {
@@ -34,6 +36,7 @@ const payloadMilieux: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { milieux: metadonneesThemesFixtures.milieux },
 }
 
 async function monter(territoire: string, payload: Payload = payloadMilieux, theme: Theme = 'milieux') {
@@ -45,13 +48,17 @@ async function monter(territoire: string, payload: Payload = payloadMilieux, the
   return wrapper
 }
 
-describe('OngletTheme — the Milieux block (la Story + les deux figures Intensité état · Série annuelle)', () => {
-  it('renders the theme overline and the 2 figures in contract order', async () => {
+describe('OngletTheme — the Milieux subgroup (la lecture + les deux figures Intensité état · Série annuelle)', () => {
+  it('renders the theme overline and the 2 figures — the compact état first, then the annual series', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Milieux')
-    const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
+    expect(wrapper.find('.sous-groupe-titre').text()).toBe('L’artificialisation')
+    const figures = wrapper
+      .findAll('.grille-indicateurs .figure-indicateur')
+      .map((f) => f.attributes('data-clef'))
     expect(figures).toEqual(['artif_par_habitant', 'conso_enaf_annuel'])
+    expect(wrapper.find('.figure-compacte').attributes('data-famille')).toBe('trajectory')
   })
 
   it('labels the two figures in French public (the product terms)', async () => {
@@ -91,26 +98,28 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
     expect(annuel.text()).toContain('2011')
     expect(annuel.text()).toContain('2024')
   })
+})
 
-  it('renders the Story angle ABOVE the indicator grid (issue #71 — the reading leads)', async () => {
-    const wrapper = await monter('22001')
+describe('OngletTheme — the reading slot (le template + le graphe quadrant)', () => {
+  it('renders the reading from the metadata template — les deux horloges nommées, la classification, la trajectoire', async () => {
+    const wrapper = await monter('22001') // grandir-en-setalant
 
-    const story = wrapper.find('.angle-story')
-    const grille = wrapper.find('.grille-indicateurs')
-    expect(story.exists()).toBe(true)
-    expect(story.element.compareDocumentPosition(grille.element)).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    )
+    const texte = wrapper.find('.lecture-texte')
+    expect(texte.exists()).toBe(true)
+    expect(texte.text()).toContain('Entre 2017-2023 et 2021-2025')
+    expect(texte.text()).toContain('Commune A1')
+    expect(texte.text()).toContain('grandir-en-setalant')
+    expect(texte.text()).toContain('trajectoire 1,13 par habitant')
   })
 
-  it('mounts the quadrant graph inside the Story angle, above the grid', async () => {
+  it('mounts the quadrant graph inside the reading slot, above the grid', async () => {
     const wrapper = await monter('22001')
 
     const graphique = wrapper.findComponent(GraphiqueQuadrantMilieux)
     expect(graphique.exists()).toBe(true)
-    const story = wrapper.find('.angle-story')
-    expect(story.element.contains(graphique.element)).toBe(true)
-    expect(story.element.compareDocumentPosition(wrapper.find('.grille-indicateurs').element)).toBe(
+    const lecture = wrapper.find('.sous-groupe-lecture')
+    expect(lecture.element.contains(graphique.element)).toBe(true)
+    expect(lecture.element.compareDocumentPosition(wrapper.find('.grille-indicateurs').element)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     )
   })
@@ -135,66 +144,11 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
     ])
   })
 
-  it('renders the one-liner keyed by the territory’s classification (22001 s’étale)', async () => {
-    const wrapper = await monter('22001') // grandir-en-setalant
-
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Le territoire grandit en s’étalant.',
-    )
-    expect(wrapper.find('.angle-story-titre').text()).toBe(
-      'Se densifier, s’étaler, ou s’en aller',
-    )
-  })
-
-  it('renders the precision riders in « comment lire » (les deux horloges, la règle de bracketing)', async () => {
-    const wrapper = await monter('22001')
-
-    const commentLire = wrapper.find('.angle-story-comment-lire').text()
-    // les deux forces sur leurs propres horloges — jamais fusionnées
-    expect(commentLire).toContain('Entre 2017-2023')
-    expect(commentLire).toContain('entre 2021 et 2025')
-    expect(commentLire).toContain('millésimes OCS-GE')
-    // la règle de bracketing, énoncée une fois (le recensement le plus proche)
-    expect(commentLire).toContain('2017 pour l’état initial')
-    expect(commentLire).toContain('2023 pour l’état final')
-  })
-
-  it('renders NO intensity line in the prose — la figure porte l’intensité, pas le prose (#65)', async () => {
-    const wrapper = await monter('22001') // Δpop +200, état final 2550 m²/hab
-
-    expect(wrapper.find('.angle-story-precision').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('m² d’ENAF par habitant ajouté')
-    // l'état par habitant, lui, vit dans le « comment lire » — Y à Z m²
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('2 250 à 2 550 m²')
-  })
-
-  it('quotes the per-capita state for a shrinking territory — définie pour tout territoire (spec #225, US 7)', async () => {
-    // L'ancien « intensité supprimée » (m² d'ENAF par habitant AJOUTÉ, null
-    // sous Δpopulation non positif) meurt avec le re-key : l'état par habitant
-    // (m²/hab) existe pour CHAQUE territoire et atteint le « comment lire »
-    // (Y à Z m²) — la leçon de la spec #225.
-    const wrapper = await monter('29001') // Δpop −150, état final 530 m²/hab
-
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('500 à 530 m²')
-  })
-
-  it('renders the exhaustive source line — la série historique + les vintages OCS-GE présents', async () => {
-    const wrapper = await monter('22001')
-
-    // le FIXTURE synthétique ne porte pas les vintages OCS-GE (les huit
-    // archives millésimées entrent dans la table réelle avec la régénération
-    // #243) — la ligne cite ce que la table fournit (la série historique),
-    // JAMAIS la consommation : la lecture ne cite plus CONSOENAF (spec #225).
-    const source = wrapper.find('.angle-story-source').text()
-    expect(source).toContain('INSEE — Série historique du recensement')
-    expect(source).not.toContain('CONSOENAF')
-  })
-
   it('renders the sen-aller reading for a territory that consumes while emptying', async () => {
     const wrapper = await monter('29001') // sen-aller-et-consommer-quand-meme
 
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Le territoire se vide — et consomme quand même.',
+    expect(wrapper.find('.lecture-texte').text()).toContain(
+      'sen-aller-et-consommer-quand-meme (trajectoire 1,06 par habitant)',
     )
   })
 
@@ -214,29 +168,34 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
     )
     const wrapper = await monter('29002', { ...payloadMilieux, histoires })
 
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Les départs laissent la place à la renaturation.',
+    expect(wrapper.find('.lecture-texte').text()).toContain(
+      'les-departs-laissent-la-place-a-la-renaturation (trajectoire 0,95 par habitant)',
     )
-    const commentLire = wrapper.find('.angle-story-comment-lire').text()
-    expect(commentLire).toContain('400 à 380 m²')
-    expect(commentLire).toContain('l’état final est inférieur à l’état initial')
-    expect(commentLire).toContain('la désartificialisation est mesurée')
-    // le disclaimer de l'ancienne copie est mort avec les flux
-    expect(commentLire).not.toMatch(/potentielle, jamais mesurée/)
   })
 
-  it('renders no invented story for a territory with a null classification', async () => {
+  it('renders the exhaustive source line — la série historique, jamais CONSOENAF (spec #225)', async () => {
+    const wrapper = await monter('22001')
+
+    const source = wrapper.find('.lecture-source').text()
+    expect(source).toContain('INSEE — Série historique du recensement')
+    expect(source).not.toContain('CONSOENAF')
+  })
+})
+
+describe('OngletTheme — Milieux, honest edge cases', () => {
+  it('renders no reading slot for a territory without its row — the absent data stays silent', async () => {
     const histoires = histoiresMilieuxFixture.filter((h) => h.territoire !== '29001')
     const wrapper = await monter('29001', { ...payloadMilieux, histoires })
 
-    expect(wrapper.find('.angle-story').exists()).toBe(false)
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
+    expect(wrapper.find('.lecture-absent').exists()).toBe(false)
   })
 
-  it('renders the honest infobox for an M2 = 0 territory — la lecture absente, jamais inventée (fix #243)', async () => {
+  it('renders the honest absence note for an M2 = 0 territory — la lecture absente, jamais inventée (fix #243)', async () => {
     // La découverte #243 : un territoire sans AUCUNE terre artificialisée à
     // l'état initial (M2 = 0) a une trajectoire M3/M2 INDÉFINIE — le pipeline
-    // publie trajectoire null + classification null, l'angle affiche une
-    // infobox au lieu d'une lecture fabriquée sur un rapport sans sens.
+    // publie trajectoire null + classification null, le slot affiche une note
+    // honnête au lieu d'une lecture fabriquée sur un rapport sans sens.
     const histoires = (histoiresMilieuxFixture as HistoireMilieux[]).map((h) =>
       h.territoire === '22001'
         ? {
@@ -250,38 +209,28 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
     )
     const wrapper = await monter('22001', { ...payloadMilieux, histoires })
 
-    expect(wrapper.find('.angle-story').exists()).toBe(true)
-    const infobox = wrapper.find('.angle-story-infobox')
-    expect(infobox.exists()).toBe(true)
-    expect(infobox.attributes('role')).toBe('note')
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'La lecture de l’artificialisation n’est pas disponible pour ce territoire.',
-    )
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(true)
+    const note = wrapper.find('.lecture-absent')
+    expect(note.exists()).toBe(true)
+    expect(note.attributes('role')).toBe('note')
+    expect(note.text()).toContain('n’est pas disponible pour ce territoire')
     // pas de graphe quadrant, pas de lecture inventée
     expect(wrapper.findComponent(GraphiqueQuadrantMilieux).exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('s’étalant')
     // les figures de l'état restent sous le bloc
     const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
     expect(figures).toEqual(['artif_par_habitant', 'conso_enaf_annuel'])
   })
 
-  it('keeps the silent block for an ABSENT histoire — M2 = 0 n’est pas une donnée manquante', async () => {
-    // Un territoire SANS histoire (la donnée absente, le trou NA) reste
-    // silencieux : l'infobox n'est pas une explication fabriquée pour un
-    // cas qui n'est pas le M2 = 0 de la découverte #243.
-    const histoires = histoiresMilieuxFixture.filter((h) => h.territoire !== '22002')
-    const wrapper = await monter('22002', { ...payloadMilieux, histoires })
-
-    expect(wrapper.find('.angle-story').exists()).toBe(false)
-    expect(wrapper.find('.angle-story-infobox').exists()).toBe(false)
-  })
-
-  it('does NOT render the Milieux Story in another theme’s tab — the theme gate (issue #219)', async () => {
-    // le payload porte la Story Milieux — le gate doit la tenir hors de l'onglet Démographie (#219)
+  it('does NOT render the Milieux reading in another theme’s tab — the (territoire, groupe) gate (issue #219)', async () => {
+    // le payload porte la Story Milieux — le sous-groupe Démographie (sa propre
+    // métadonnée) ne lit que SES lignes : jamais la lecture Milieux dans l'onglet
     const wrapper = await monter('22001', payloadMilieux, 'demographie')
 
-    expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
-    expect(wrapper.find('.angle-story').exists()).toBe(false)
+    // sans métadonnée Démographie (le payload est Milieux seul), l'overline
+    // porte la clé honnête — le loader garantit la métadonnée d'un thème présent
+    expect(wrapper.find('.onglet-theme-overline').text()).toBe('demographie')
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
+    expect(wrapper.find('.lecture-texte').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Se densifier, s’étaler, ou s’en aller')
   })
 })

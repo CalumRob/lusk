@@ -40,7 +40,9 @@ const router = useRouter()
  * Le wait-set de la fiche, dérivé de l'URL au montage (PRD #296 — la table par
  * route, ticket #302) : ?theme=X → territoires + run-report + la paire du
  * thème demandé (indicateurs_X + histoires_X — les thèmes hermétiques,
- * ADR-0020) ; sans ?theme → territoires + run-report + apercu + programmes +
+ * ADR-0020) + la métadonnée du thème (theme_X — le bloc est piloté par le
+ * contrat theme_<theme>.json depuis #314, un thème présent la REQUIERT,
+ * #313) ; sans ?theme → territoires + run-report + apercu + programmes +
  * vintages (l'Aperçu par défaut). Le magasin récupère TOUS les fichiers en
  * parallèle dès le premier chargement — ce tableau n'est que la porte de
  * rendu du premier affichage, jamais un déclencheur de fetch. Un thème non
@@ -50,7 +52,13 @@ const router = useRouter()
 function attendreDeUrl(theme: unknown): Fichier[] {
   if (typeof theme === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(theme)) {
     const demande = theme as Theme
-    return ['territoires', 'run-report', `indicateurs_${demande}`, `histoires_${demande}`]
+    return [
+      'territoires',
+      'run-report',
+      `indicateurs_${demande}`,
+      `histoires_${demande}`,
+      `theme_${demande}`,
+    ]
   }
   return ['territoires', 'run-report', 'apercu', 'programmes', 'vintages']
 }

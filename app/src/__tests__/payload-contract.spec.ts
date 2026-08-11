@@ -50,6 +50,11 @@ function chargerPayloadCommite(): Promise<Payload> {
     'histoires_economie.json',
     'indicateurs_milieux.json',
     'histoires_milieux.json',
+    'theme_demographie.json',
+    'theme_habitat.json',
+    'theme_economie.json',
+    'theme_mobilite.json',
+    'theme_milieux.json',
     'run-report.json',
     'vintages.json',
     'programmes.json',
@@ -115,7 +120,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })
 
-  it('publishes one indicateur row per (territoire × key × detail), across all four themes', async () => {
+  it('publishes one indicateur row per (territoire × key × detail), across all five themes', async () => {
     const payload = obtenirPayload()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
@@ -124,6 +129,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(themes.has('demographie')).toBe(true)
     expect(themes.has('habitat')).toBe(true)
     expect(themes.has('economie')).toBe(true)
+    expect(themes.has('milieux')).toBe(true)
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
   })
@@ -198,6 +204,68 @@ describe('payload contract — the committed payload parses and renders', () => 
       'economie',
       'milieux',
     ])
+  })
+
+  it('loads the committed theme_<theme>.json metadata for all five built themes (#311, #313)', async () => {
+    const payload = obtenirPayload()
+
+    // Chaque thème construit (présent dans les faits) porte SA métadonnée
+    // validée — le fichier theme_<theme>.json committé, clé par thème.
+    for (const theme of ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const) {
+      expect(payload.themeMetadata?.[theme], `métadonnées « ${theme} » absentes`).toBeDefined()
+      expect(payload.themeMetadata?.[theme]?.theme).toBe(theme)
+    }
+  })
+
+  it('parité métadonnées ↔ payload committé : les registres déclarent exactement ce que les faits portent (bidirectionnel)', async () => {
+    const payload = obtenirPayload()
+    const violations: string[] = []
+
+    for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
+      const indicateurs = payload.indicateurs.filter((i) => i.theme === theme)
+      const histoires = payload.histoires.filter((h) => h.theme === theme)
+
+      // les clés d'indicateurs : le registre de la métadonnée == les clés des
+      // faits — un indicateur publié non déclaré, ou déclaré non publié, est
+      // une dérive du contrat (#316, la parité du parent #308)
+      const clesFaits = new Set(indicateurs.map((i) => i.key))
+      for (const cle of clesFaits) {
+        if (!meta.indicator_keys.includes(cle)) violations.push(`${theme}: indicateur « ${cle} » publié sans registre`)
+      }
+      for (const cle of meta.indicator_keys) {
+        if (!clesFaits.has(cle)) violations.push(`${theme}: indicateur « ${cle} » déclaré sans faits publiés`)
+      }
+
+      // les story_keys : le registre == les lectures résolues — une story
+      // résolue non déclarée (le pool Mobilité sans sa candidate) ou une
+      // story déclarée jamais émise est une dérive
+      const clesStories = new Set<string>(histoires.map((h) => h.story_key))
+      for (const cle of clesStories) {
+        if (!meta.story_keys.includes(cle)) violations.push(`${theme}: story « ${cle} » résolue sans registre`)
+      }
+      for (const cle of meta.story_keys) {
+        if (!clesStories.has(cle)) violations.push(`${theme}: story « ${cle} » déclarée sans lecture résolue`)
+      }
+
+      // le lien explicite (territoire, groupe) : chaque lecture résolue vit
+      // dans un sous-groupe DÉCLARÉ de la métadonnée — jamais un slot que la
+      // fiche ne rend pas
+      const clesGroupes = new Set(meta.subgroups.map((g) => g.key))
+      for (const h of histoires) {
+        if (!clesGroupes.has(h.groupe)) violations.push(`${theme}: lecture de ${h.territoire} dans le groupe « ${h.groupe} » inconnu des sous-groupes`)
+      }
+
+      // une lecture résolue par (territoire, groupe) — jamais le pool non
+      // résolu, jamais une lecture en double dans le même slot
+      const vus = new Set<string>()
+      for (const h of histoires) {
+        const identite = `${h.territoire}|${h.groupe}`
+        if (vus.has(identite)) violations.push(`${theme}: lecture en double pour ${identite}`)
+        vus.add(identite)
+      }
+    }
+
+    expect(violations).toEqual([])
   })
 
   it('parses the regenerated Milieux histoires — the pivot schema field-by-field (spec #225 → #243)', async () => {

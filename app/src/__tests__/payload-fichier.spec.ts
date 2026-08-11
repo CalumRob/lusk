@@ -4,6 +4,7 @@ import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  metadonneesThemesFixtures,
   programmesFixture,
   runReportFraisFixture,
   territoiresFixture,
@@ -11,7 +12,7 @@ import {
 } from '../payload/fixtures'
 import { chargerFichier, type ChargerOptions, type ReponseFetch } from '../payload/loader'
 import { PayloadError } from '../payload/validate'
-import type { Territoire } from '../payload/types'
+import type { Territoire, ThemeMetadata } from '../payload/types'
 
 /**
  * The per-file seam of the loader (issue #297 — the T1 prefactor of the
@@ -43,6 +44,7 @@ const fichiersDemographie = {
   'territoires.json': territoiresFixture,
   'indicateurs_demographie.json': indicateursDemographieFixture,
   'histoires_demographie.json': histoiresDemographieFixture,
+  'theme_demographie.json': metadonneesThemesFixtures.demographie,
   'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
@@ -91,6 +93,25 @@ describe('chargerFichier — the per-file seam', () => {
     await expect(chargerFichier('programmes', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('indicateurs_habitat', territoires, options)).resolves.toBeNull()
     await expect(chargerFichier('histoires_habitat', territoires, options)).resolves.toBeNull()
+    await expect(chargerFichier('theme_habitat', options)).resolves.toBeNull()
+  })
+
+  it('fetches and validates theme_<theme>.json — the typed ThemeMetadata section (#313)', async () => {
+    const meta = await chargerFichier('theme_demographie', optionsPour(fichiersDemographie))
+
+    expect(meta).toEqual(metadonneesThemesFixtures.demographie)
+  })
+
+  it('raises a typed validation error when theme metadata drifts from the contract', async () => {
+    const meta = JSON.parse(JSON.stringify(metadonneesThemesFixtures.demographie)) as ThemeMetadata
+    ;(meta as unknown as Record<string, unknown>).theme = 'programmes'
+
+    await expect(
+      chargerFichier(
+        'theme_demographie',
+        optionsPour({ ...fichiersDemographie, 'theme_demographie.json': meta }),
+      ),
+    ).rejects.toMatchObject({ kind: 'validation', file: 'theme_demographie.json' })
   })
 
   it('raises a typed fetch error on a missing mandatory file (territoires.json)', async () => {

@@ -1606,7 +1606,12 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   // 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
   //    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
   //    sous-groupe — rien d'orphelin, rien de partagé (l'identité
-  //    (territoire × groupe) unique du parent #308)
+  //    (territoire × groupe) unique du parent #308). Une story déclarée au
+  //    registre sans sous-groupe qui la lit est LÉGITIME quand le registre de
+  //    résolution la déclare candidate de saillance (ADR-0002) du groupe d'un
+  //    sous-groupe déclaré : le pool Mobilité partage SON slot — le candidat
+  //    « ce-que-le-velo-preserve » remplace le défaut dans le même groupe,
+  //    jamais une lecture en double, jamais un slot supplémentaire.
   const orphelinsInd = indicator_keys.filter((cle) => !indicateursGroupes.has(cle))
   exiger(
     orphelinsInd.length === 0,
@@ -1616,12 +1621,18 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   )
   const partagesInd = [...indicateursGroupes.entries()].filter(([, n]) => n > 1).map(([cle]) => cle)
   exiger(partagesInd.length === 0, fichier, 0, `indicateur(s) dans plusieurs sous-groupes : ${partagesInd.join(', ')}`)
-  const orphelinesHist = story_keys.filter((cle) => !histoiresGroupes.has(cle))
+  const nonLiees = story_keys.filter((cle) => !histoiresGroupes.has(cle))
+  const illegitimes = nonLiees.filter((cle) => {
+    const groupe = GROUPES_PAR_STORY[theme]?.[cle]
+    if (groupe === undefined) return true
+    if (RAISON_PAR_STORY[cle] === 'defaut') return true
+    return !clesGroupes.has(groupe)
+  })
   exiger(
-    orphelinesHist.length === 0,
+    illegitimes.length === 0,
     fichier,
     0,
-    `histoire(s) orpheline(s) — déclarée(s) au registre sans sous-groupe qui la lit : ${orphelinesHist.join(', ')}`,
+    `histoire(s) orpheline(s) — déclarée(s) au registre sans sous-groupe qui la lit, sans être candidate de saillance déclarée (ADR-0002) : ${illegitimes.join(', ')}`,
   )
   const partageesHist = [...histoiresGroupes.entries()].filter(([, n]) => n > 1).map(([cle]) => cle)
   exiger(partageesHist.length === 0, fichier, 0, `histoire(s) lue(s) par plusieurs sous-groupes : ${partageesHist.join(', ')}`)
