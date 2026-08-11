@@ -238,7 +238,7 @@ describe('payload contract — the committed payload parses and renders', () => 
       // les story_keys : le registre == les lectures résolues — une story
       // résolue non déclarée (le pool Mobilité sans sa candidate) ou une
       // story déclarée jamais émise est une dérive
-      const clesStories = new Set(histoires.map((h) => h.story_key))
+      const clesStories = new Set<string>(histoires.map((h) => h.story_key))
       for (const cle of clesStories) {
         if (!meta.story_keys.includes(cle)) violations.push(`${theme}: story « ${cle} » résolue sans registre`)
       }
