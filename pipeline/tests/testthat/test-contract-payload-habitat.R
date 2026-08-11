@@ -120,7 +120,7 @@ test_that("chaque indicateur est estampillé depuis sa source de référence", {
   for (cle in c("part_passoires", "distribution_dpe")) {
     expect_equal(
       unique(p$indicateurs$vintage_source[p$indicateurs$key == cle]),
-      "ADEME — Observatoire DPE, logements existants (dpe03existant)",
+      "ADEME — Observatoire DPE, logements existants",
       info = cle
     )
     expect_true(all(is.na(p$indicateurs$vintage_date_publication[

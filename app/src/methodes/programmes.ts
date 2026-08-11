@@ -116,7 +116,7 @@ export const SOURCES_PROGRAMMES: Record<string, SourceProgramme> = {
 
   // ---- Les subventions de la Région, l'export SCDL (subventions.R) ----
   subventions_scdl: {
-    nom: 'Région Bretagne — subventions attribuées (SCDL), subventions_attribuees_scdl0 (data.bretagne.bzh, rafraîchi chaque semaine)',
+    nom: 'Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh, rafraîchi chaque semaine',
     editeur: 'Région Bretagne',
     url: 'https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/subventions_attribuees_scdl0/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B',
     format: 'CSV',

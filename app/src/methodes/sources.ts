@@ -247,7 +247,7 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
 
   // ---- Économie/Emploi (docs/themes/economie-emploi.md) ----
   sirene_snapshot: {
-    nom: 'data.bretagne.bzh — Base SIRENE — Région Bretagne (sirene-v3-consolidee)',
+    nom: 'data.bretagne.bzh — Base SIRENE — Région Bretagne',
     libelle: 'Snapshot 2026-04',
     editeur: 'INSEE',
     url: 'https://data.bretagne.bzh/explore/dataset/sirene-v3-consolidee/',

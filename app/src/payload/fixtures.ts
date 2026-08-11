@@ -420,7 +420,7 @@ const vintageRpChomage = {
 
 /** SIRENE régional — the reference source of eco_activites AND the two Stories. */
 const vintageSirene = {
-  vintage_source: 'data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)',
+  vintage_source: 'data.bretagne.bzh — Base SIRENE — Région Bretagne',
   vintage_version: '2026-04',
   vintage_date_reference: '2026-03-31',
   vintage_date_publication: '2026-05-01',
@@ -917,7 +917,7 @@ export const membresProgrammesFixture: MembreProgramme[] = [
 /** Le vintage hebdomadaire SCDL — la source de référence des agrégats (#176). */
 const vintageSubventions = {
   vintage_source:
-    'Région Bretagne — subventions attribuées (SCDL), subventions_attribuees_scdl0 (data.bretagne.bzh, rafraîchi chaque semaine)',
+    'Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh, rafraîchi chaque semaine',
   vintage_version: '2026-08-05',
   vintage_date_reference: '2026-08-05',
   vintage_date_publication: '2026-08-05',

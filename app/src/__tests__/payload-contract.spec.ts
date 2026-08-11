@@ -492,7 +492,7 @@ describe('payload contract — the committed payload parses and renders', () => 
       (h) => h.theme === 'economie' && h.territoire === '22001',
     )
     expect(histoire).toMatchObject({
-      vintage_source: 'data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)',
+      vintage_source: 'data.bretagne.bzh — Base SIRENE — Région Bretagne',
       vintage_version: '2026-04',
       vintage_date_reference: '2026-03-31',
       vintage_date_publication: '2026-05-01',

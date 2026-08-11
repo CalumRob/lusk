@@ -104,7 +104,7 @@ MANIFEST_ECONOMIE_SIRENE <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "sirene_snapshot",
-  "data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)",
+  "data.bretagne.bzh — Base SIRENE — Région Bretagne",
   URL_SIRENE_REGIONAL,
   "sirene_snapshot_2026-04.csv",
   VINTAGE_SIRENE_SNAPSHOT,

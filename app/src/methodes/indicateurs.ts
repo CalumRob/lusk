@@ -346,7 +346,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         definition:
           'La part des établissements actifs du territoire relevant d’activités liées à l’environnement et à l’énergie — l’économie verte. Le périmètre s’appuie sur la liste européenne des activités éco-industrielles : ce n’est pas le périmètre officiel du SDES, qui ne publie pas de liste d’activités, mais l’approximation la plus proche, documentée comme telle.',
         unite: '%',
-        source: 'data.bretagne.bzh — Base SIRENE — Région Bretagne (sirene-v3-consolidee)',
+        source: 'data.bretagne.bzh — Base SIRENE — Région Bretagne',
         sourceId: 'sirene_snapshot',
       },
       chomage: {
