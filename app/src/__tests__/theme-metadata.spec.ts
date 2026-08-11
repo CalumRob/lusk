@@ -62,6 +62,21 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
       'structure-verte',
     ])
   })
+
+  it('accepte une story candidate de saillance déclarée au registre (le pool Mobilité, ADR-0002)', () => {
+    // Le registre story_keys du thème déclare AUSSI les candidates de saillance
+    // — pas seulement la story liée par le sous-groupe : le pool Mobilité
+    // résout « ce-que-le-velo-preserve » là où le delta tire (139 territoires
+    // du payload committé), le candidat partage le slot du défaut
+    // (acces-aux-services). Une story déclarée mais non liée est LÉGITIME
+    // quand le registre la déclare candidate du groupe d'un sous-groupe —
+    // jamais une lecture en double, jamais un slot supplémentaire.
+    const meta = copieBrute('mobilite')
+    meta.story_keys = ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']
+
+    const validee = validerThemeMetadata(meta, 'theme_mobilite.json')
+    expect(validee.story_keys).toEqual(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'])
+  })
 })
 
 describe('validerThemeMetadata — rejette la dérive, fort', () => {
