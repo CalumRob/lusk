@@ -108,7 +108,7 @@ describe('OngletTheme — the reading slot (le template + le graphe quadrant)', 
     expect(texte.exists()).toBe(true)
     expect(texte.text()).toContain('Entre 2017-2023 et 2021-2025')
     expect(texte.text()).toContain('Commune A1')
-    expect(texte.text()).toContain('grandir-en-setalant')
+    expect(texte.text()).toContain("grandit en s'étalant")
     expect(texte.text()).toContain('trajectoire 1,13 par habitant')
   })
 
@@ -148,7 +148,7 @@ describe('OngletTheme — the reading slot (le template + le graphe quadrant)', 
     const wrapper = await monter('29001') // sen-aller-et-consommer-quand-meme
 
     expect(wrapper.find('.lecture-texte').text()).toContain(
-      'sen-aller-et-consommer-quand-meme (trajectoire 1,06 par habitant)',
+      'se vide, et consomme quand même (trajectoire 1,06 par habitant)',
     )
   })
 
@@ -169,7 +169,7 @@ describe('OngletTheme — the reading slot (le template + le graphe quadrant)', 
     const wrapper = await monter('29002', { ...payloadMilieux, histoires })
 
     expect(wrapper.find('.lecture-texte').text()).toContain(
-      'les-departs-laissent-la-place-a-la-renaturation (trajectoire 0,95 par habitant)',
+      'se vide, laissant la place à la renaturation (trajectoire 0,95 par habitant)',
     )
   })
 

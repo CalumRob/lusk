@@ -101,7 +101,9 @@ describe('verifierPariteLibelles — la garde bidirectionnelle du loader', () =>
     const meta = JSON.parse(JSON.stringify(metadonneesThemesFixtures.demographie)) as typeof metadonneesThemesFixtures.demographie
     const payload = {
       ...payloadDemographie,
-      histoires: histoiresDemographieFixture.filter((h) => h.classification !== 'vide-meurt'),
+      histoires: histoiresDemographieFixture.filter(
+        (h) => (h as unknown as { classification: string | null }).classification !== 'vide-meurt',
+      ),
       themeMetadata: { demographie: meta },
     }
     expect(() => verifierPariteLibelles(payload)).not.toThrow()

@@ -94,7 +94,7 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
     expect(texte.exists()).toBe(true)
     expect(texte.text()).toContain('Entre 2017-2023')
     expect(texte.text()).toContain('la population de Commune A1')
-    expect(texte.text()).toContain('attire-renouvelle')
+    expect(texte.text()).toContain('attire et se renouvelle')
     expect(texte.text()).toContain('5,98 par an (naturel)')
     expect(texte.text()).toContain('2,56 (migratoire)')
   })
@@ -111,7 +111,7 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
   it('changes the reading with the territory — the same template, the row’s own values (vide-meurt)', async () => {
     const wrapper = await monter('29002')
 
-    expect(wrapper.find('.lecture-texte').text()).toContain('vide-meurt')
+    expect(wrapper.find('.lecture-texte').text()).toContain('se vide et se meurt')
     expect(wrapper.find('.lecture-texte').text()).toContain('-1,04 par an (naturel)')
   })
 

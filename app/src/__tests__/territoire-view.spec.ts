@@ -188,7 +188,7 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     expect(panneau.text()).toContain('Démographie')
     expect(panneau.text()).toContain('Densité de population')
     // the reading slot renders the metadata template with the row's values (29002 : vide-meurt)
-    expect(panneau.text()).toContain('la population de Commune C vide-meurt : -1,04 par an (naturel)')
+    expect(panneau.text()).toContain('la population de Commune C se vide et se meurt : -1,04 par an (naturel)')
   })
 
   it('writes ?theme= into the URL when a theme tab is chosen', async () => {
@@ -345,7 +345,7 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     // et la lecture résolue (jamais une liste d'indicateurs app-side)
     expect(panneau.text()).toContain('Habitat')
     expect(panneau.text()).toContain('L’état du parc')
-    expect(panneau.text()).toContain('parc-performant')
+    expect(panneau.text()).toContain('performant')
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
     expect(onglets).toEqual(['Aperçu', 'Habitat'])
     expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
@@ -448,7 +448,7 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-habitat')
     expect(wrapper.find('[role="tabpanel"]').text()).toContain('L’état du parc')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('parc-performant')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('performant')
   })
 
   it('garde l’URL ?theme= demandée quand son wait-set échoue — Retry peut la remettre debout sans normalisation prématurée', async () => {
