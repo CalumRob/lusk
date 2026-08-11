@@ -15,6 +15,7 @@
  * header (DESIGN.md §4 z-index).
  */
 import { computed, ref } from 'vue'
+import type { Component } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import {
@@ -24,27 +25,56 @@ import {
   idOnglet,
   idPanneau,
 } from '@/fiche/onglets'
+import type { SlugOnglet } from '@/fiche/onglets'
+import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Theme } from '@/payload/types'
 
-const props = defineProps<{
-  themes: Theme[]
-  /** The selected tab — a theme, null for the fiche's Aperçu, or 'programmes'
-   *  for the carte's renamed first tab (ADR-0019, #282). */
-  selected: Theme | null | 'programmes'
-  /** The first tab's French label — defaults to « Aperçu » (fiche); the carte
-   *  overrides it to « Programmes & financements » (ADR-0019, #282). */
-  libellePremier?: string
-  /** The first tab's slug — null on the fiche (Aperçu emits null), 'programmes'
-   *  on the carte (its ?onglet= state, #282). */
-  premierSlug?: Theme | null | 'programmes'
-}>()
+/** Un onglet supplémentaire entre le premier onglet et les thèmes — le shell
+ *  Méthodes (Sources | Indicateurs | Programmes, #332). */
+export interface OngletSupplementaire {
+  slug: SlugOnglet
+  nom: string
+  icone: Component
+}
+
+const props = withDefaults(
+  defineProps<{
+    themes: readonly Theme[]
+    /** The selected tab — a theme, null for the fiche's Aperçu, 'programmes'
+     *  for the carte's renamed first tab (ADR-0019, #282), or the Méthodes
+     *  sections 'sources' / 'indicateurs' (issue #332). */
+    selected: SlugOnglet
+    /** The first tab's French label — defaults to « Aperçu » (fiche); the carte
+     *  overrides it to « Programmes & financements » (ADR-0019, #282), Méthodes
+     *  to « Sources » (#332). */
+    libellePremier?: string
+    /** The first tab's slug — null on the fiche (Aperçu emits null), 'programmes'
+     *  on the carte (its ?onglet= state, #282), 'sources' on Méthodes (#332). */
+    premierSlug?: SlugOnglet
+    /** The first tab's icon — defaults to the Aperçu icon; the Méthodes shell
+     *  swaps it for the Sources database icon (#332). */
+    iconePremier?: Component
+    /** Extra tabs between the first tab and the themes — the Méthodes shell's
+     *  Indicateurs / Programmes sections (#332). */
+    ongletsSupplementaires?: OngletSupplementaire[]
+    /** The tablist's accessible name — defaults to « Thèmes de la fiche »
+     *  (fiche); the carte/Méthodes bars name their own tablist. */
+    ariaLabel?: string
+  }>(),
+  { ariaLabel: 'Thèmes de la fiche' },
+)
 
 const emit = defineEmits<{
-  (e: 'select', slug: Theme | null | 'programmes'): void
+  (e: 'select', slug: SlugOnglet): void
 }>()
 
 const onglets = computed(() => [
-  { slug: props.premierSlug ?? null, nom: props.libellePremier ?? 'Aperçu', icone: ICONE_APERCU },
+  {
+    slug: props.premierSlug ?? null,
+    nom: props.libellePremier ?? 'Aperçu',
+    icone: props.iconePremier ?? ICONE_APERCU,
+  },
+  ...(props.ongletsSupplementaires ?? []),
   ...props.themes.map((theme) => ({
     slug: theme,
     nom: NOMS_THEMES[theme],
@@ -54,8 +84,8 @@ const onglets = computed(() => [
 
 const refsOnglets = ref<HTMLElement[]>([])
 
-function estTheme(slug: Theme | null | 'programmes'): slug is Theme {
-  return slug !== null && slug !== 'programmes'
+function estTheme(slug: SlugOnglet): slug is Theme {
+  return slug !== null && (THEMES_CANONIQUES as readonly string[]).includes(slug)
 }
 
 /** The theme's derived ramp as CSS custom props — the first tab (Aperçu /
@@ -98,7 +128,7 @@ function surTouche(ev: KeyboardEvent): void {
   <div
     class="theme-tabs"
     role="tablist"
-    aria-label="Thèmes de la fiche"
+    :aria-label="props.ariaLabel"
     @keydown="surTouche"
   >
     <button

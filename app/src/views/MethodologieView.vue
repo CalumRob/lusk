@@ -25,32 +25,206 @@
       </p>
     </div>
 
-    <MethodesSources />
+    <ThemeTabs
+      class="methodologie__onglets"
+      :themes="[]"
+      :selected="onglet"
+      libelle-premier="Sources"
+      premier-slug="sources"
+      :icone-premier="Database"
+      :onglets-supplementaires="ongletsExterieurs"
+      aria-label="Onglets de la page Méthodes"
+      @select="choisirOnglet"
+    />
 
-    <MethodesIndicateurs />
+    <div
+      v-if="onglet === 'sources'"
+      id="panneau-sources"
+      class="methodologie__onglet"
+      role="tabpanel"
+      aria-labelledby="onglet-sources"
+    >
+      <ThemeTabs
+        class="methodologie__onglets-interieurs"
+        :themes="THEMES_CANONIQUES"
+        :selected="section"
+        libelle-premier="À propos"
+        premier-slug="apropos"
+        :onglets-supplementaires="ongletsInterieurs"
+        aria-label="Sections des sources"
+        @select="choisirSection"
+      />
 
-    <MethodesProgrammes />
+      <div
+        class="methodologie__panneau"
+        role="tabpanel"
+        :id="idPanneau(section)"
+        :aria-labelledby="idOnglet(section)"
+      >
+        <MethodesSourcesApropos v-if="section === 'apropos'" />
+        <MethodesProgrammesSources v-else-if="section === 'programmes'" />
+        <MethodesSources v-else :themes="[section]" />
+      </div>
+    </div>
+
+    <div
+      v-else
+      id="panneau-methodes"
+      class="methodologie__onglet"
+      role="tabpanel"
+      aria-labelledby="onglet-methodes"
+    >
+      <ThemeTabs
+        class="methodologie__onglets-interieurs"
+        :themes="THEMES_CANONIQUES"
+        :selected="section"
+        libelle-premier="À propos"
+        premier-slug="apropos"
+        :onglets-supplementaires="ongletsInterieurs"
+        aria-label="Sections des indicateurs"
+        @select="choisirSection"
+      />
+
+      <div
+        class="methodologie__panneau"
+        role="tabpanel"
+        :id="idPanneau(section)"
+        :aria-labelledby="idOnglet(section)"
+      >
+        <MethodesIndicateursApropos v-if="section === 'apropos'" />
+        <MethodesProgrammes v-else-if="section === 'programmes'" />
+        <MethodesIndicateurs v-else :themes="[section]" />
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
 /**
  * /methodologie — Sources & Méthodes (site-map.md, layouts.md §5, CONTEXT.md →
- * Méthodes, issue #128). L'intro factuelle (ce qu'est Lusk, le pipeline,
- * la reproductibilité) puis la section « les sources » (MethodesSources), la
- * section « les indicateurs » (MethodesIndicateurs, issue #129) et la section
- * « Programmes & financements » (MethodesProgrammes, issue #180) : les
- * indicateurs et les Stories de chaque thème construit, puis l'élément
- * Programmes & financements de la fiche — badges, couvertures, sources.
- * La page ride la colonne de contenu standard (base.css §.page,
- * --content-max-width) comme l'accueil, les fiches et les listes (issue
- * #331) — voix de rapport (Newsreader) pour les titres de section, Manrope
- * pour le corps. Pas de bannière de construction (principles.md §1) : la
- * page énonce ce qui est, jamais ce qui viendra.
+ * Méthodes, issue #128). L'intro factuelle (ce qu'est Lusk, le pipeline, la
+ * reproductibilité) reste le bloc d'orientation permanent au-dessus du shell
+ * à deux niveaux (#332) : les onglets Sources | Méthodes (le composant
+ * ThemeTabs du site, premier onglet « Sources » renommé + un onglet
+ * supplémentaire), chacun avec sa barre intérieure — À propos | Programmes et
+ * subventions | les cinq thèmes construits (la même grammaire d'onglets que
+ * la fiche, l'Aperçu remplacé par « Programmes et subventions »).
+ *
+ * Le contenu : Sources porte la table des sources du registre (filtrée par
+ * thème — une source multi-thèmes apparaît sous chacun de ses thèmes, jamais
+ * d'onglet « Tous »), la table des sources de l'élément Programmes et
+ * subventions, et la prose du registre ; Méthodes porte les blocs
+ * d'indicateurs par thème, l'éditorial de l'élément Programmes et
+ * subventions, et la prose du registre des indicateurs. La table des sources
+ * reste plate à ce stade — la granularité jeu de données est un ticket
+ * séparé (#333).
+ *
+ * L'état est l'URL, la convention du site (fiche ?theme=, carte ?onglet=/
+ * ?theme=) : ?onglet=sources|methodes sélectionne l'onglet,
+ * ?section=apropos|programmes|<theme> l'onglet intérieur (défauts : sources ·
+ * apropos). Les valeurs inconnues sont normalisées comme la carte (ADR-0019) :
+ * retirées, jamais un état cassé. Les clics d'onglet écrivent l'URL en
+ * replace (pas de spam d'historique) ; le hash reste réservé aux ancres de
+ * scroll dans l'onglet (#334). Pas de bannière de construction
+ * (principles.md §1) : la page énonce ce qui est, jamais ce qui viendra.
  */
+import { BookOpen, Database, Landmark } from 'lucide-vue-next'
+import { computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+import ThemeTabs from '@/components/ThemeTabs.vue'
+import type { OngletSupplementaire } from '@/components/ThemeTabs.vue'
+import { idOnglet, idPanneau } from '@/fiche/onglets'
+import type { SlugOnglet } from '@/fiche/onglets'
 import MethodesIndicateurs from '@/methodes/MethodesIndicateurs.vue'
+import MethodesIndicateursApropos from '@/methodes/MethodesIndicateursApropos.vue'
 import MethodesProgrammes from '@/methodes/MethodesProgrammes.vue'
+import MethodesProgrammesSources from '@/methodes/MethodesProgrammesSources.vue'
 import MethodesSources from '@/methodes/MethodesSources.vue'
+import MethodesSourcesApropos from '@/methodes/MethodesSourcesApropos.vue'
+import type { Theme } from '@/payload/types'
+import { THEMES_CANONIQUES } from '@/payload/types'
+
+const route = useRoute()
+const router = useRouter()
+
+/** Les deux onglets de la page — sources est le défaut (le premier onglet gagne, la convention de /carte). */
+type OngletMethodes = 'sources' | 'methodes'
+
+/** Les onglets intérieurs — À propos (défaut), Programmes et subventions, ou un thème construit. */
+type SectionInterieure = 'apropos' | 'programmes' | Theme
+
+/** Le second onglet de la barre extérieure — Méthodes (BookOpen, la documentation). */
+const ongletsExterieurs: OngletSupplementaire[] = [
+  { slug: 'methodes', nom: 'Méthodes', icone: BookOpen },
+]
+
+/** L'onglet supplémentaire de la barre intérieure — Programmes et subventions (Landmark). */
+const ongletsInterieurs: OngletSupplementaire[] = [
+  { slug: 'programmes', nom: 'Programmes et subventions', icone: Landmark },
+]
+
+/** L'onglet actif — ?onglet=sources|methodes, sinon sources. */
+const onglet = computed<OngletMethodes>(() => {
+  const demande = route.query.onglet
+  return demande === 'methodes' ? 'methodes' : 'sources'
+})
+
+/** L'onglet intérieur actif — ?section=apropos|programmes|<theme>, sinon apropos. */
+const section = computed<SectionInterieure>(() => {
+  const demande = route.query.section
+  if (demande === 'programmes') return 'programmes'
+  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
+    return demande as Theme
+  }
+  return 'apropos'
+})
+
+/** Un ?onglet= valide — sources ou methodes. */
+function ongletValide(v: unknown): v is OngletMethodes {
+  return v === 'sources' || v === 'methodes'
+}
+
+/** Une ?section= valide — apropos, programmes, ou un thème construit. */
+function sectionValide(v: unknown): v is SectionInterieure {
+  return (
+    v === 'apropos' ||
+    v === 'programmes' ||
+    (typeof v === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(v))
+  )
+}
+
+/** Changer d'onglet préserve l'onglet intérieur (les deux niveaux sont indépendants). */
+function choisirOnglet(slug: SlugOnglet): void {
+  if (ongletValide(slug)) {
+    router.replace({ query: { ...route.query, onglet: slug } })
+  }
+}
+
+function choisirSection(slug: SlugOnglet): void {
+  if (sectionValide(slug)) {
+    router.replace({ query: { ...route.query, section: slug } })
+  }
+}
+
+// Normalisation de l'URL (le pattern carte, ADR-0019) : un ?onglet= inconnu
+// retombe sur sources, une ?section= inconnue sur apropos — les valeurs
+// valides sont gardées, les invalides retirées, jamais un état cassé.
+watch(
+  () => [route.query.onglet, route.query.section] as const,
+  ([ongletDemande, sectionDemande]) => {
+    const ongletOK = ongletDemande === undefined || ongletValide(ongletDemande)
+    const sectionOK = sectionDemande === undefined || sectionValide(sectionDemande)
+    if (ongletOK && sectionOK) return
+    router.replace({
+      query: {
+        ...(ongletValide(ongletDemande) ? { onglet: ongletDemande } : {}),
+        ...(sectionValide(sectionDemande) ? { section: sectionDemande } : {}),
+      },
+    })
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
@@ -80,5 +254,25 @@ import MethodesSources from '@/methodes/MethodesSources.vue'
 
 .lien-depot:hover {
   color: var(--accent-hover);
+}
+
+/* La barre des onglets (ThemeTabs) colle sous le header ; la barre intérieure,
+   elle, reste dans le flux (jamais deux barres collantes). */
+.methodologie__onglets {
+  margin: 0 0 var(--space-8);
+}
+
+.methodologie__onglets-interieurs :deep(.theme-tabs) {
+  position: static;
+}
+
+.methodologie__onglets-interieurs {
+  margin: 0 0 var(--space-8);
+}
+
+.methodologie__onglet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
 }
 </style>

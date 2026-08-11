@@ -1,8 +1,10 @@
 import { mount } from '@vue/test-utils'
+import { BookOpen, Database, Landmark } from 'lucide-vue-next'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import ThemeTabs from '../components/ThemeTabs.vue'
+import type { SlugOnglet } from '../fiche/onglets'
 import type { Theme } from '../payload/types'
 
 /**
@@ -250,5 +252,123 @@ describe('ThemeTabs — keyboard navigation', () => {
 
     await wrapper.findAll('[role="tab"]')[2].trigger('keydown', { key: 'Home' })
     expect(wrapper.emitted('select')).toEqual([['habitat'], [null]])
+  })
+})
+
+describe('ThemeTabs — les onglets supplémentaires (le shell Méthodes, #332)', () => {
+  const ongletsMethodes = [
+    { slug: 'methodes' as const, nom: 'Méthodes', icone: BookOpen },
+    { slug: 'programmes' as const, nom: 'Programmes et subventions', icone: Landmark },
+  ]
+
+  function montageShell(selected: SlugOnglet = 'sources') {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: ['demographie'],
+        selected,
+        libellePremier: 'Sources',
+        premierSlug: 'sources',
+        iconePremier: Database,
+        ongletsSupplementaires: ongletsMethodes,
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+    return wrapper
+  }
+
+  it('rend le premier onglet renommé, puis les onglets supplémentaires, puis les thèmes', () => {
+    const wrapper = montageShell()
+
+    expect(textesOnglets(wrapper)).toEqual([
+      'Sources',
+      'Méthodes',
+      'Programmes et subventions',
+      'Démographie',
+    ])
+  })
+
+  it('marque un onglet supplémentaire sélectionné (aria-selected + roving tabindex)', () => {
+    const wrapper = montageShell('methodes')
+
+    const methodes = wrapper.findAll('[role="tab"]')[1]
+    expect(methodes.attributes('aria-selected')).toBe('true')
+    expect(methodes.attributes('tabindex')).toBe('0')
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('false')
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('tabindex')).toBe('-1')
+  })
+
+  it('donne à chaque onglet supplémentaire un id stable et un aria-controls', () => {
+    const wrapper = montageShell()
+
+    const methodes = wrapper.findAll('[role="tab"]')[1]
+    expect(methodes.attributes('id')).toBe('onglet-methodes')
+    expect(methodes.attributes('aria-controls')).toBe('panneau-methodes')
+    const programmes = wrapper.findAll('[role="tab"]')[2]
+    expect(programmes.attributes('id')).toBe('onglet-programmes')
+    expect(programmes.attributes('aria-controls')).toBe('panneau-programmes')
+  })
+
+  it('émet le slug d\u2019un onglet supplémentaire au clic (l\u2019état ?onglet= de Méthodes)', async () => {
+    const wrapper = montageShell()
+
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+
+    expect(wrapper.emitted('select')).toEqual([['methodes']])
+  })
+
+  it('la navigation clavier couvre les onglets supplémentaires (Home → premier, flèche → suivant)', async () => {
+    const wrapper = montageShell('methodes')
+
+    await wrapper.findAll('[role="tab"]')[1].trigger('keydown', { key: 'Home' })
+    expect(wrapper.emitted('select')).toEqual([['sources']])
+
+    // la sélection appartient au parent — re-montée sur le premier onglet, la
+    // flèche droite avance vers l'onglet supplémentaire suivant
+    const suivant = montageShell('sources')
+    await suivant.findAll('[role="tab"]')[0].trigger('keydown', { key: 'ArrowRight' })
+    expect(suivant.emitted('select')).toEqual([['methodes']])
+  })
+
+  it('sans onglets supplémentaires, le composant garde le comportement hérité (Aperçu + thèmes)', () => {
+    const wrapper = montage(['demographie'])
+
+    expect(textesOnglets(wrapper)).toEqual(['Aperçu', 'Démographie'])
+  })
+})
+
+describe('ThemeTabs — le label de la barre et l\u2019icône du premier onglet (Méthodes, #332)', () => {
+  it('porte un aria-label par défaut (« Thèmes de la fiche ») et le laisse remplacer', () => {
+    const defaut = montage(['demographie'])
+    expect(defaut.find('[role="tablist"]').attributes('aria-label')).toBe('Thèmes de la fiche')
+
+    const remplace = mount(ThemeTabs, {
+      props: {
+        themes: [],
+        selected: null,
+        ariaLabel: 'Sections de la page Méthodes',
+      },
+      attachTo: document.body,
+    })
+    montee = remplace
+    expect(remplace.find('[role="tablist"]').attributes('aria-label')).toBe(
+      'Sections de la page Méthodes',
+    )
+  })
+
+  it('rend une icône dans le premier onglet renommé (icone-premier)', () => {
+    const wrapper = mount(ThemeTabs, {
+      props: {
+        themes: [],
+        selected: 'sources',
+        libellePremier: 'Sources',
+        premierSlug: 'sources',
+        iconePremier: Database,
+      },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    expect(wrapper.findAll('[role="tab"]')[0].find('svg').exists()).toBe(true)
   })
 })
