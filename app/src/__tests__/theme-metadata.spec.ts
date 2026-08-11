@@ -192,6 +192,14 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
       meta.sources = Object.fromEntries(
         Object.entries(meta.sources).filter(([cle]) => meta.indicator_keys.includes(cle)),
       )
+      // les libellés suivent le registre resserré (la bijection #318)
+      meta.indicator_labels = Object.fromEntries(
+        Object.entries(meta.indicator_labels).filter(([cle]) => meta.indicator_keys.includes(cle)),
+      )
+      const params = new Set(meta.subgroups.flatMap((g) => g.reading.params))
+      meta.param_labels = Object.fromEntries(
+        Object.entries(meta.param_labels).filter(([cle]) => params.has(cle)),
+      )
     })
     expect(erreur.message).toMatch(/orpheline/i)
   })
@@ -201,5 +209,82 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
       delete meta.sources.densite
     })
     expect(erreur.message).toMatch(/source/i)
+  })
+
+  it('rejette indicator_labels hors de la bijection avec indicator_keys (#318)', () => {
+    // un indicateur du registre sans libellé
+    let erreur = attendErreur('demographie', (meta) => {
+      delete meta.indicator_labels.densite
+    })
+    expect(erreur.message).toMatch(/indicator_labels/i)
+
+    // un libellé pour une clé hors du registre (fantôme)
+    erreur = attendErreur('demographie', (meta) => {
+      meta.indicator_labels['fantome'] = 'Libellé fantôme'
+    })
+    expect(erreur.message).toMatch(/indicator_labels/i)
+
+    // une carte absente
+    erreur = attendErreur('demographie', (meta) => {
+      delete (meta as unknown as Record<string, unknown>).indicator_labels
+    })
+    expect(erreur.message).toMatch(/indicator_labels/i)
+  })
+
+  it('rejette detail_labels avec une clé hors registre ou un libellé vide (#318)', () => {
+    // une clé de détail hors du registre des indicateurs
+    let erreur = attendErreur('demographie', (meta) => {
+      meta.detail_labels['fantome'] = { x: 'y' }
+    })
+    expect(erreur.message).toMatch(/detail_labels/i)
+
+    // un libellé de détail vide
+    erreur = attendErreur('demographie', (meta) => {
+      meta.detail_labels.structure_age['15-24'] = ''
+    })
+    expect(erreur.message).toMatch(/detail_labels/i)
+
+    // une carte absente
+    erreur = attendErreur('demographie', (meta) => {
+      delete (meta as unknown as Record<string, unknown>).detail_labels
+    })
+    expect(erreur.message).toMatch(/detail_labels/i)
+  })
+
+  it('rejette param_labels hors de l\u2019union des reading.params (#318)', () => {
+    // un paramètre de lecture sans libellé
+    let erreur = attendErreur('demographie', (meta) => {
+      delete meta.param_labels.periode
+    })
+    expect(erreur.message).toMatch(/param_labels/i)
+
+    // un libellé pour un paramètre jamais déclaré (fantôme)
+    erreur = attendErreur('demographie', (meta) => {
+      meta.param_labels['fantome'] = 'Libellé fantôme'
+    })
+    expect(erreur.message).toMatch(/param_labels/i)
+
+    // une carte absente
+    erreur = attendErreur('demographie', (meta) => {
+      delete (meta as unknown as Record<string, unknown>).param_labels
+    })
+    expect(erreur.message).toMatch(/param_labels/i)
+  })
+
+  it('accepte les cartes de libellés des cinq thèmes — chaque clé a son libellé, chaque libellé sa clé', () => {
+    for (const theme of Object.keys(metadonneesThemesFixtures) as Theme[]) {
+      const meta = validerThemeMetadata(metadonneesThemesFixtures[theme], `theme_${theme}.json`)
+      // indicator_labels : la bijection exacte avec indicator_keys
+      expect(Object.keys(meta.indicator_labels).sort()).toEqual([...meta.indicator_keys].sort())
+      // detail_labels : clés ⊆ indicator_keys, libellés non vides
+      for (const [cle, carte] of Object.entries(meta.detail_labels)) {
+        expect(meta.indicator_keys).toContain(cle)
+        expect(Object.keys(carte).length).toBeGreaterThan(0)
+        for (const libelle of Object.values(carte)) expect(libelle.length).toBeGreaterThan(0)
+      }
+      // param_labels : la bijection exacte avec l'union des reading.params
+      const params = [...new Set(meta.subgroups.flatMap((g) => g.reading.params))]
+      expect(Object.keys(meta.param_labels).sort()).toEqual([...params].sort())
+    }
   })
 })

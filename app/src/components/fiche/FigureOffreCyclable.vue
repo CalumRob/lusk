@@ -54,7 +54,10 @@ const segments = computed<Segment[]>(() => {
   )
   const total = avecValeur.reduce((somme, l) => somme + (l.value ?? 0), 0)
   return avecValeur.map((l) => ({
-    libelle: props.labelsDetail?.[l.detail ?? ''] ?? l.detail ?? l.key,
+    // Le libellé vient de la métadonnée (labelsDetail) — jamais une clé brute :
+    // la parité au load garantit le libellé de chaque détail publié. Un libellé
+    // absent rend la place vide, jamais la clé.
+    libelle: props.labelsDetail?.[l.detail ?? ''] ?? '',
     texte: formaterValeur(l) ?? '—',
     largeur: total > 0 ? ((l.value ?? 0) / total) * 100 : 0,
   }))
@@ -90,7 +93,7 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
     <ul class="liste-tranches">
       <li v-if="protege" class="tranche">
         <span class="tranche-libelle">
-          {{ labelsDetail?.[protege.detail ?? ''] ?? protege.detail }}
+          {{ labelsDetail?.[protege.detail ?? ''] }}
         </span>
         <span class="tranche-valeur">{{ formaterValeur(protege) ?? '—' }}</span>
         <span class="tranche-unite">{{ protege.unit }}</span>
@@ -98,7 +101,7 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
       </li>
       <li v-if="partage" class="tranche">
         <span class="tranche-libelle">
-          {{ labelsDetail?.[partage.detail ?? ''] ?? partage.detail }}
+          {{ labelsDetail?.[partage.detail ?? ''] }}
         </span>
         <span class="tranche-valeur">{{ formaterValeur(partage) ?? '—' }}</span>
         <span class="tranche-unite">{{ partage.unit }}</span>

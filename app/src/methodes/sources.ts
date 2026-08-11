@@ -24,6 +24,7 @@
  * docs/research/*.md). Une URL introuvable resterait null — jamais inventée.
  */
 
+import { slugifierAncre } from '@/methodes/ancres'
 import type { Theme } from '@/payload/types'
 
 /** Les faits éditoriaux d'une source — la moitié « auteur » du registre. */
@@ -50,7 +51,7 @@ export interface SourceEditoriale {
  * ne jamais entrer en collision avec l'ancrage de section (#sources).
  */
 export function ancreSource(id: string): string {
-  return `source-${id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`
+  return slugifierAncre('source', id)
 }
 
 /** La fenêtre glissante des millésimes DVF — l'expansion du manifeste (manifest_habitat_dvf.R). */

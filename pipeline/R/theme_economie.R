@@ -176,7 +176,7 @@ construire_analytiques_economie <- function(donnees, base_epci, artefact,
 INDICATEURS_ECONOMIE <- tibble::tibble(
   key = c("effectifs_salaries", "chomage", "eco_activites"),
   libelle = c(
-    "Effectifs salariés au lieu de travail",
+    "Effectifs salariés (lieu de travail)",
     "Chômage (population active)",
     "Part des éco-activités"
   ),

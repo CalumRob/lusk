@@ -96,5 +96,45 @@
     "iso_administration": "mobilite_snapshot",
     "iso_ecole": "mobilite_snapshot",
     "iso_banque": "mobilite_snapshot"
+  },
+  "indicator_labels": {
+    "nb_buildings": "Bâtiments résidentiels analysés",
+    "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+    "iso_sante": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+    "iso_administration": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+    "iso_ecole": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+    "iso_banque": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+    "voitures_menage": "Voitures par ménage",
+    "reseaux": "Réseaux à pied / vélo / voiture",
+    "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
+    "bornes_recharge": "Bornes de recharge pour véhicules électriques",
+    "places_stationnement_velo_1000": "Places de stationnement vélo pour 1 000 hab.",
+    "offre_cyclable": "L’offre cyclable"
+  },
+  "detail_labels": {
+    "reseaux": {
+      "t_longueur": "Longueur — à pied ou en transports en commun",
+      "t_densite": "Densité — à pied ou en transports en commun",
+      "b_longueur": "Longueur — à vélo",
+      "b_densite": "Densité — à vélo",
+      "c_longueur": "Longueur — en voiture",
+      "c_densite": "Densité — en voiture"
+    },
+    "voitures_menage": {
+      "sans_voiture": "Ménages sans voiture",
+      "deux_plus": "Ménages avec 2 voitures ou plus"
+    },
+    "offre_cyclable": {
+      "protege_longueur": "Longueur protégée",
+      "protege_km_1000": "Protégé",
+      "partage_longueur": "Longueur partagée",
+      "partage_km_1000": "Partagé",
+      "total_longueur": "Longueur totale"
+    }
+  },
+  "param_labels": {
+    "div_loss_t": "Types de services perdus à pied ou en transports en commun",
+    "pct_iso_full_t": "Part des bâtiments perdant tout accès",
+    "classification_saillance": "Classification de saillance"
   }
 }

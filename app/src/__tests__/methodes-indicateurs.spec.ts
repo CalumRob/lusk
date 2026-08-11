@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { THEMES_CONSTRUITS, THEMES_METHODES } from '../methodes/indicateurs'
+import { THEMES_CONSTRUITS, THEMES_METHODES, ancreIndicateur } from '../methodes/indicateurs'
 import { SOURCES_METHODES } from '../methodes/sources'
 import type { ThemeConstruit } from '../methodes/indicateurs'
 
@@ -434,6 +434,27 @@ describe('registre Méthodes — la langue publique, jamais celle du pipeline', 
       for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
         // la clé brute n'apparaît jamais dans la définition — la définition est rédigée
         expect(indicateur.definition).not.toContain(clef)
+      }
+    }
+  })
+})
+
+describe('ancreIndicateur — l\u2019ancrage stable par indicateur (#334)', () => {
+  it('préfixe et slugifie la clé de payload en ancre de section (#indicateur-<clef>)', () => {
+    expect(ancreIndicateur('part_passoires')).toBe('indicateur-part-passoires')
+    expect(ancreIndicateur('evolution_1968')).toBe('indicateur-evolution-1968')
+    expect(ancreIndicateur('places_stationnement_velo_1000')).toBe(
+      'indicateur-places-stationnement-velo-1000',
+    )
+  })
+
+  it('couvre chaque clé du registre d\u2019un slug stable, sans jamais collisionner avec l\u2019ancre de section (#indicateurs)', () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      for (const clef of Object.keys(THEMES_METHODES[theme].indicateurs)) {
+        const ancre = ancreIndicateur(clef)
+        expect(ancre, `« ${theme}.${clef} »`).toMatch(/^indicateur-[a-z0-9-]+$/)
+        expect(ancre, `« ${theme}.${clef} »`).not.toBe('indicateurs')
+        expect(ancre, `« ${theme}.${clef} »`).not.toMatch(/--|-$/)
       }
     }
   })

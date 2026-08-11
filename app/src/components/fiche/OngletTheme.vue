@@ -22,13 +22,7 @@ import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureOffreCyclable from '@/components/fiche/FigureOffreCyclable.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
-import {
-  NOMS_DETAILS_OFFRE_CYCLABLE,
-  NOMS_DETAILS_RESEAUX,
-  NOMS_DETAILS_VOITURES_MENAGE,
-  NOMS_INDICATEURS,
-  NOMS_TRANCHES_AGE,
-} from '@/fiche/indicateurs'
+import { libelleIndicateur } from '@/fiche/libelles'
 import {
   figureLecturePour,
   sourceLecture,
@@ -53,6 +47,12 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
 // The theme's published label rides in the metadata (theme_<theme>.json) — the
 // overline never falls back to an app-side dictionary.
 const nomTheme = computed(() => props.payload.themeMetadata?.[props.theme]?.label ?? props.theme)
+
+// Les libellés payload-owned (issue #318) : la fiche lit indicator_labels /
+// detail_labels de la métadonnée du thème — jamais une clé brute. Un sous-groupe
+// rendu implique la métadonnée (sousGroupesPourTerritoire la lit) : les
+// lookups ne retombent jamais, ils échouent fort (le contrat, validé au load).
+const metadata = computed(() => props.payload.themeMetadata?.[props.theme] ?? null)
 
 const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
   sousGroupesPourTerritoire(props.payload, props.theme, props.territoire).map((groupe) => ({
@@ -81,17 +81,19 @@ function figuresGrille(groupe: SousGroupeRenduComplet) {
   return groupe.figures.filter((figure) => figure.key !== groupe.figureCompacte?.clef)
 }
 
-/** The detail labels of a multi-detail figure — the app's display vocabulary (never a Story resolution). */
+/** The detail labels of a multi-detail figure — the metadata's detail_labels
+ *  (issue #318), never an app-side map. A scalar key has no detail map —
+ *  IndicatorFigure only reads it for detail rows, which never exist there. */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
-  if (clef === 'structure_age') return NOMS_TRANCHES_AGE
-  if (clef === 'reseaux') return NOMS_DETAILS_RESEAUX
-  if (clef === 'voitures_menage') return NOMS_DETAILS_VOITURES_MENAGE
-  if (clef === 'offre_cyclable') return NOMS_DETAILS_OFFRE_CYCLABLE
-  return undefined
+  return metadata.value?.detail_labels[clef]
 }
 
-function libelleIndicateur(clef: string): string {
-  return NOMS_INDICATEURS[props.theme]?.[clef] ?? clef
+/** The indicator's French label — the metadata's indicator_labels (never a raw key). */
+function libelleIndicateurMetier(clef: string): string {
+  if (metadata.value === null) {
+    throw new Error(`Métadonnées « ${props.theme} » absentes — la fiche ne rend jamais de clé brute`)
+  }
+  return libelleIndicateur(metadata.value, clef)
 }
 
 /** The wide figures of the grid (the multi-detail groups). */
@@ -233,14 +235,14 @@ const lignesReseaux = computed(
               :clef="groupe.figureCompacte.clef"
               :lignes="groupe.figureCompacte.lignes"
               :reseaux="lignesReseaux"
-              :libelle="libelleIndicateur(groupe.figureCompacte.clef)"
+              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
               :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
             />
             <IndicatorFigure
               v-else
               :clef="groupe.figureCompacte.clef"
               :lignes="groupe.figureCompacte.lignes"
-              :libelle="libelleIndicateur(groupe.figureCompacte.clef)"
+              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
               :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
@@ -251,7 +253,7 @@ const lignesReseaux = computed(
             :key="figure.key"
             :clef="figure.key"
             :lignes="figure.lignes"
-            :libelle="libelleIndicateur(figure.key)"
+            :libelle="libelleIndicateurMetier(figure.key)"
             :labels-detail="labelsDetailPour(figure.key)"
             :large="figureLarge(figure.key)"
             :signe="figureSigne(figure.key)"

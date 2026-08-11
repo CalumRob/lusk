@@ -39,5 +39,57 @@
     "prix_m2": "dvf_2025_dep22",
     "part_passoires": "dpe_22",
     "distribution_dpe": "dpe_22"
+  },
+  "indicator_labels": {
+    "mix_logements": "Mix de logements",
+    "statut_anciennete_taille": "Statut d’occupation, ancienneté et taille",
+    "prix_m2": "Médiane prix au m²",
+    "part_passoires": "Part de passoires thermiques",
+    "distribution_dpe": "Distribution des étiquettes DPE (A à G)"
+  },
+  "detail_labels": {
+    "mix_logements": {
+      "principales": "Résidences principales",
+      "secondaires": "Résidences secondaires",
+      "vacants": "Logements vacants"
+    },
+    "statut_anciennete_taille": {
+      "statut_proprietaire": "Propriétaires",
+      "statut_locataire": "Locataires",
+      "statut_loge_gratuit": "Logés gratuitement",
+      "anciennete_lt2": "Moins de 2 ans",
+      "anciennete_2_4": "2 à 4 ans",
+      "anciennete_5_9": "5 à 9 ans",
+      "anciennete_10_19": "10 à 19 ans",
+      "anciennete_20_29": "20 à 29 ans",
+      "anciennete_30_plus": "30 ans et plus",
+      "taille_r1": "1 pièce",
+      "taille_r2": "2 pièces",
+      "taille_r3": "3 pièces",
+      "taille_r4": "4 pièces",
+      "taille_5_plus": "5 pièces et plus"
+    },
+    "prix_m2": {
+      "2021": "2021",
+      "2022": "2022",
+      "2023": "2023",
+      "2024": "2024",
+      "2025": "2025"
+    },
+    "distribution_dpe": {
+      "A": "A",
+      "B": "B",
+      "C": "C",
+      "D": "D",
+      "E": "E",
+      "F": "F",
+      "G": "G"
+    }
+  },
+  "param_labels": {
+    "classification": "Classification",
+    "part_passoires": "Part de passoires thermiques",
+    "part_abc": "Part des étiquettes A/B/C",
+    "n_dpe": "Nombre de DPE recensés"
   }
 }

@@ -60,10 +60,10 @@ INDICATEURS_HABITAT <- tibble::tibble(
           "part_passoires", "distribution_dpe"),
   libelle = c(
     "Mix de logements",
-    "Statut d'occupation, ancienneté et taille",
-    "Médiane du prix au m²",
-    "Part de passoires thermiques (F/G)",
-    "Distribution des étiquettes DPE (A–G)"
+    "Statut d’occupation, ancienneté et taille",
+    "Médiane prix au m²",
+    "Part de passoires thermiques",
+    "Distribution des étiquettes DPE (A à G)"
   ),
   sources = list(
     "logements",

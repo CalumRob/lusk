@@ -124,12 +124,15 @@
  * ?section=apropos|programmes|<theme> l'onglet intérieur (défauts : sources ·
  * apropos). Les valeurs inconnues sont normalisées comme la carte (ADR-0019) :
  * retirées, jamais un état cassé. Les clics d'onglet écrivent l'URL en
- * replace (pas de spam d'historique) ; le hash reste réservé aux ancres de
- * scroll dans l'onglet (#334). Pas de bannière de construction
- * (principles.md §1) : la page énonce ce qui est, jamais ce qui viendra.
+ * replace (pas de spam d'historique) ; le hash est l'ancre de scroll dans
+ * l'onglet (#334) : le hash d'arrivée (#indicateur-<clef>, #source-<slug>)
+ * défile une fois le panneau rendu (les onglets résolus — et, pour la table
+ * des sources, la fin du chargement du payload). Pas de bannière de
+ * construction (principles.md §1) : la page énonce ce qui est, jamais ce qui
+ * viendra.
  */
 import { BookOpen, Database, Landmark } from 'lucide-vue-next'
-import { computed, watch } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ThemeTabs from '@/components/ThemeTabs.vue'
@@ -142,6 +145,7 @@ import MethodesProgrammes from '@/methodes/MethodesProgrammes.vue'
 import MethodesProgrammesSources from '@/methodes/MethodesProgrammesSources.vue'
 import MethodesSources from '@/methodes/MethodesSources.vue'
 import MethodesSourcesApropos from '@/methodes/MethodesSourcesApropos.vue'
+import { usePayload } from '@/payload/usePayload'
 import type { Theme } from '@/payload/types'
 import { THEMES_CANONIQUES } from '@/payload/types'
 
@@ -193,6 +197,48 @@ function sectionValide(v: unknown): v is SectionInterieure {
     (typeof v === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(v))
   )
 }
+
+/**
+ * Le hash d'arrivée (#indicateur-<clef>, #source-<slug> — issue #334) : le
+ * scroll ne part qu'une fois le panneau rendu, l'onglet et l'onglet intérieur
+ * résolus (le hash ne précède jamais les onglets). La cible porte déjà
+ * scroll-margin-top (le header sticky) — scrollIntoView la respecte, aucun
+ * décalage codé en dur. usePayload n'est consommé ici que pour l'horloge de
+ * chargement : la table des sources rend après le payload, le hash d'arrivée
+ * vers une #source-<slug> attend sa fin de chargement.
+ */
+const { chargement } = usePayload()
+
+/** Le hash déjà défilé — le retry du payload ne repart jamais deux fois. */
+let ancreDefilee = ''
+
+function defilerVersAncre(): void {
+  if (!route.hash || route.hash === ancreDefilee) return
+  const cible = document.getElementById(route.hash.slice(1))
+  if (!cible) return
+  cible.scrollIntoView()
+  ancreDefilee = route.hash
+}
+
+// Le hash d'arrivée attend le rendu du panneau (le prochain tick après
+// l'installation des onglets) ; sans hash, la cible défilée est oubliée.
+watch(
+  () => route.hash,
+  () => {
+    if (!route.hash) {
+      ancreDefilee = ''
+      return
+    }
+    void nextTick(defilerVersAncre)
+  },
+  { immediate: true },
+)
+
+// La table des sources rend après le payload : un second essai de scroll à la
+// fin du chargement — jamais avant, et seulement si la cible n'a pas été vue.
+watch(chargement, (chargementEnCours) => {
+  if (!chargementEnCours && route.hash) void nextTick(defilerVersAncre)
+})
 
 /** Changer d'onglet préserve l'onglet intérieur (les deux niveaux sont indépendants). */
 function choisirOnglet(slug: SlugOnglet): void {

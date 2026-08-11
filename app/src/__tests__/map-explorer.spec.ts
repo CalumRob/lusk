@@ -468,9 +468,9 @@ describe('MapExplorer — le re-join au changement de niveau (ADR-0019, #281)', 
   it('une couche sans lignes au niveau affiché rend le remplissage neutre — jamais des valeurs inventées', async () => {
     const coucheHabitat: Couche = {
       source: 'indicateur',
-      clef: 'part_residences_secondaires',
+      clef: 'part_passoires',
       detail: null,
-      libelle: 'Part de résidences secondaires',
+      libelle: 'Part de passoires thermiques',
       parDefaut: false,
       sousGroupe: null,
       storyKey: null,

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { THEMES_CONSTRUITS, THEMES_METHODES } from '../methodes/indicateurs'
+import { THEMES_CONSTRUITS, THEMES_METHODES, ancreIndicateur } from '../methodes/indicateurs'
 import type { ThemeConstruit } from '../methodes/indicateurs'
 import {
   apercuAvecNAFixture,
@@ -106,6 +106,31 @@ describe('MethodologieView — Méthodes · <thème> (les blocs d\u2019indicateu
         // une unité vide (rapport sans unité) rend « sans unité », jamais une case vide
         expect(texte).toContain(indicateur.unite || 'sans unité')
       }
+    }
+  })
+
+  it('chaque bloc d\u2019indicateur porte l\u2019ancre #indicateur-<clef> de sa clé de payload', async () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      for (const [clef] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        const blocIndicateur = bloc.find(`.bloc-indicateur[data-clef="${clef}"]`)
+        expect(
+          blocIndicateur.attributes('id'),
+          `« ${theme}.${clef} » sans ancre #indicateur-<clef>`,
+        ).toBe(ancreIndicateur(clef))
+      }
+    }
+  })
+
+  it('ne met aucune ancre sur les blocs de Stories (le contrat n\u2019est pas minté — #308)', async () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      const storiesAvecAncre = bloc.findAll('.bloc-story[id]')
+      expect(storiesAvecAncre.length, `« ${theme} » — des Stories ancrées`).toBe(0)
     }
   })
 

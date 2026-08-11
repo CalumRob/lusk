@@ -265,46 +265,103 @@ export const vintagesFixture: Vintage[] = [
   },
 ]
 
-/** A second theme (habitat) — for the payload-driven tab bar (ADR-0007). */
-export const indicateursHabitatFixture: Indicateur[] = [
-  {
-    territoire: '22001',
-    type: 'commune',
-    theme: 'habitat',
-    key: 'part_residences_secondaires',
-    detail: null,
-    value: 0.18,
-    unit: '%',
-    rang_epci: 2,
-    rang_epci_n: 2,
-    rang_dep: null,
-    rang_dep_n: null,
-    rang_reg: null,
-    rang_reg_n: null,
-    vintage_source: 'INSEE — Logements (dossier complet)',
-    vintage_version: '2023',
-    vintage_date_reference: '2023-01-01',
-    vintage_date_publication: '2026-06-30',
+/** A second theme (habitat) — for the payload-driven tab bar (ADR-0007).
+ *  Keyed on the REAL habitat payload (public/data/indicateurs_habitat.json):
+ *  the five registered keys, the 22001 commune carrying the full detail set
+ *  (mix_logements 3, statut_anciennete_taille 14, prix_m2 pooled + 5 vintages,
+ *  part_passoires, distribution_dpe A–G — every detail the metadata labels,
+ *  so the loader's parity guard passes), the région 53 its scalars. DPE rows
+ *  wear the rolling-base reference (null — ADR-0009), like the committed
+ *  payload. */
+const vintageHabitatLogements = {
+  vintage_source: 'INSEE — Logements (dossier complet)',
+  vintage_version: '2023',
+  vintage_date_reference: '2023-01-01',
+  vintage_date_publication: '2026-06-30',
+}
+
+/** DVF — la médiane prix au m² (la référence du millésime le plus récent). */
+const vintageHabitatDvf = {
+  vintage_source: 'Étalab — DVF géolocalisées',
+  vintage_version: '2025',
+  vintage_date_reference: '2025-01-01',
+  vintage_date_publication: '2026-06-30',
+}
+
+/** DPE — la base roulante (ADR-0009) : la référence est null, jamais inventée. */
+const vintageHabitatDpe = {
+  vintage_source: 'ADEME — Observatoire DPE, logements existants',
+  vintage_version: '2024',
+  vintage_date_reference: null,
+  vintage_date_publication: '2026-06-30',
+}
+
+function ligneHabitat(
+  territoire: string,
+  type: Territoire['type'],
+  key: string,
+  detail: string | null,
+  value: number,
+  unit: string,
+  vintage: {
+    vintage_source: string
+    vintage_version: string
+    vintage_date_reference: string | null
+    vintage_date_publication: string
   },
-  {
-    territoire: '53',
-    type: 'region',
+): Indicateur {
+  return {
+    territoire,
+    type,
     theme: 'habitat',
-    key: 'part_residences_secondaires',
-    detail: null,
-    value: 0.12,
-    unit: '%',
+    key,
+    detail,
+    value,
+    unit,
     rang_epci: null,
     rang_epci_n: null,
     rang_dep: null,
     rang_dep_n: null,
     rang_reg: null,
     rang_reg_n: null,
-    vintage_source: 'INSEE — Logements (dossier complet)',
-    vintage_version: '2023',
-    vintage_date_reference: '2023-01-01',
-    vintage_date_publication: '2026-06-30',
-  },
+    ...vintage,
+  }
+}
+
+const DETAILS_STATUT_ANCIENNETE_TAILLE: { detail: string; valeur: number }[] = [
+  { detail: 'statut_proprietaire', valeur: 0.62 },
+  { detail: 'statut_locataire', valeur: 0.32 },
+  { detail: 'statut_loge_gratuit', valeur: 0.06 },
+  { detail: 'anciennete_lt2', valeur: 0.08 },
+  { detail: 'anciennete_2_4', valeur: 0.11 },
+  { detail: 'anciennete_5_9', valeur: 0.14 },
+  { detail: 'anciennete_10_19', valeur: 0.21 },
+  { detail: 'anciennete_20_29', valeur: 0.19 },
+  { detail: 'anciennete_30_plus', valeur: 0.27 },
+  { detail: 'taille_r1', valeur: 0.07 },
+  { detail: 'taille_r2', valeur: 0.2 },
+  { detail: 'taille_r3', valeur: 0.27 },
+  { detail: 'taille_r4', valeur: 0.24 },
+  { detail: 'taille_5_plus', valeur: 0.22 },
+]
+
+export const indicateursHabitatFixture: Indicateur[] = [
+  ...['principales', 'secondaires', 'vacants'].map((detail, i) =>
+    ligneHabitat('22001', 'commune', 'mix_logements', detail, [0.9, 0.07, 0.03][i]!, '%', vintageHabitatLogements),
+  ),
+  ...DETAILS_STATUT_ANCIENNETE_TAILLE.map(({ detail, valeur }) =>
+    ligneHabitat('22001', 'commune', 'statut_anciennete_taille', detail, valeur, '%', vintageHabitatLogements),
+  ),
+  ligneHabitat('22001', 'commune', 'prix_m2', null, 2450, '€/m²', vintageHabitatDvf),
+  ...['2021', '2022', '2023', '2024', '2025'].map((annee, i) =>
+    ligneHabitat('22001', 'commune', 'prix_m2', annee, 2100 + i * 90, '€/m²', vintageHabitatDvf),
+  ),
+  ligneHabitat('22001', 'commune', 'part_passoires', null, 0.13, '%', vintageHabitatDpe),
+  ...['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((etiquette, i) =>
+    ligneHabitat('22001', 'commune', 'distribution_dpe', etiquette, [0.05, 0.1, 0.15, 0.2, 0.2, 0.15, 0.15][i]!, '%', vintageHabitatDpe),
+  ),
+  ligneHabitat('53', 'region', 'part_passoires', null, 0.12, '%', vintageHabitatDpe),
+  ligneHabitat('53', 'region', 'prix_m2', null, 2400, '€/m²', vintageHabitatDvf),
 ]
 
 export const histoiresHabitatFixture: Histoire[] = [
@@ -711,8 +768,13 @@ export const indicateursMilieuxFixture: Indicateur[] = [
   // ---- 22001 — l'état complet + la série annuelle complète. Rangs ordinaux
   // directionnels (ADR-0015) : artif_par_habitant et conso_enaf_annuel sont
   // low-is-good — dans l'EPCI X, 22002 (900 m²/hab) est 1er devant 22001 (2250).
-  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 2250, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
-  { territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2025', value: 2550, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
+{ territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2021', value: 2250, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
+{ territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2025', value: 2550, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
+// les autres millésimes du jeu (35 : 2020/2023 · 56 : 2022/2024) — chaque
+// détail déclaré par la métadonnée est publié quelque part (la parité #318)
+{ territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2020', value: 2180, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
+{ territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2022', value: 2320, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
+{ territoire: '22001', type: 'commune', theme: 'milieux', key: 'artif_par_habitant', detail: '2023', value: 2410, unit: 'm²/hab', rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOcsge22 },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2011', value: 12, unit: 'ha', rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageConsoenaf },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2012', value: 8, unit: 'ha', rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageConsoenaf },
   { territoire: '22001', type: 'commune', theme: 'milieux', key: 'conso_enaf_annuel', detail: '2013', value: 10, unit: 'ha', rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageConsoenaf },
@@ -1070,6 +1132,29 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       evolution_1968: 'serie_historique',
       taille_menages: 'menages',
     },
+    indicator_labels: {
+      densite: 'Densité de population',
+      structure_age: 'Structure par âge',
+      evolution_1968: 'Évolution de la population depuis 1968',
+      taille_menages: 'Taille moyenne des ménages',
+    },
+    detail_labels: {
+      structure_age: {
+        '<15': 'Moins de 15 ans',
+        '15-24': '15 à 24 ans',
+        '25-39': '25 à 39 ans',
+        '40-54': '40 à 54 ans',
+        '55-64': '55 à 64 ans',
+        '65-79': '65 à 79 ans',
+        '80+': '80 ans et plus',
+      },
+    },
+    param_labels: {
+      periode: 'Période',
+      taux_solde_naturel: 'Solde naturel (‰/an)',
+      taux_solde_migratoire: 'Solde migratoire (‰/an)',
+      classification: 'Classification',
+    },
   },
   habitat: {
     theme: 'habitat',
@@ -1109,6 +1194,58 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       prix_m2: 'dvf_2025_dep22',
       part_passoires: 'dpe_22',
       distribution_dpe: 'dpe_22',
+    },
+    indicator_labels: {
+      mix_logements: 'Mix de logements',
+      statut_anciennete_taille: 'Statut d’occupation, ancienneté et taille',
+      prix_m2: 'Médiane prix au m²',
+      part_passoires: 'Part de passoires thermiques',
+      distribution_dpe: 'Distribution des étiquettes DPE (A à G)',
+    },
+    detail_labels: {
+      mix_logements: {
+        principales: 'Résidences principales',
+        secondaires: 'Résidences secondaires',
+        vacants: 'Logements vacants',
+      },
+      statut_anciennete_taille: {
+        statut_proprietaire: 'Propriétaires',
+        statut_locataire: 'Locataires',
+        statut_loge_gratuit: 'Logés gratuitement',
+        anciennete_lt2: 'Moins de 2 ans',
+        anciennete_2_4: '2 à 4 ans',
+        anciennete_5_9: '5 à 9 ans',
+        anciennete_10_19: '10 à 19 ans',
+        anciennete_20_29: '20 à 29 ans',
+        anciennete_30_plus: '30 ans et plus',
+        taille_r1: '1 pièce',
+        taille_r2: '2 pièces',
+        taille_r3: '3 pièces',
+        taille_r4: '4 pièces',
+        taille_5_plus: '5 pièces et plus',
+      },
+      prix_m2: {
+        '2021': '2021',
+        '2022': '2022',
+        '2023': '2023',
+        '2024': '2024',
+        '2025': '2025',
+      },
+      distribution_dpe: {
+        A: 'A',
+        B: 'B',
+        C: 'C',
+        D: 'D',
+        E: 'E',
+        F: 'F',
+        G: 'G',
+      },
+    },
+    param_labels: {
+      classification: 'Classification',
+      part_passoires: 'Part de passoires thermiques',
+      part_abc: 'Part des étiquettes A/B/C',
+      n_dpe: 'Nombre de DPE recensés',
     },
   },
   economie: {
@@ -1169,6 +1306,19 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       chomage: 'rp_chomage',
       eco_activites: 'sirene_snapshot',
     },
+    indicator_labels: {
+      effectifs_salaries: 'Effectifs salariés (lieu de travail)',
+      chomage: 'Chômage (population active)',
+      eco_activites: 'Part des éco-activités',
+    },
+    detail_labels: {},
+    param_labels: {
+      rang: 'Rang',
+      activity_label: 'Activité dominante',
+      lq: 'Location quotient (LQ)',
+      n: 'Nombre d’établissements',
+      part_parc: 'Part du parc breton',
+    },
   },
   milieux: {
     theme: 'milieux',
@@ -1209,6 +1359,45 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     sources: {
       artif_par_habitant: 'ocsge_artificialisation_22_2025',
       conso_enaf_annuel: 'consoenaf',
+    },
+    indicator_labels: {
+      artif_par_habitant: 'Intensité état',
+      conso_enaf_annuel: 'Consommation d’ENAF — série annuelle',
+    },
+    detail_labels: {
+      artif_par_habitant: {
+        M2: 'État initial (M2)',
+        M3: 'État final (M3)',
+        '2020': '2020',
+        '2021': '2021',
+        '2022': '2022',
+        '2023': '2023',
+        '2024': '2024',
+        '2025': '2025',
+      },
+      conso_enaf_annuel: {
+        '2011': '2011',
+        '2012': '2012',
+        '2013': '2013',
+        '2014': '2014',
+        '2015': '2015',
+        '2016': '2016',
+        '2017': '2017',
+        '2018': '2018',
+        '2019': '2019',
+        '2020': '2020',
+        '2021': '2021',
+        '2022': '2022',
+        '2023': '2023',
+        '2024': '2024',
+      },
+    },
+    param_labels: {
+      periode_pop: 'Période de population',
+      periode_artif: 'Période des états OCS-GE',
+      delta_population: 'Variation de population',
+      trajectoire_artif_par_habitant: 'Trajectoire par habitant',
+      classification: 'Classification',
     },
   },
   mobilite: {
@@ -1280,6 +1469,46 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       iso_administration: 'mobilite_snapshot',
       iso_ecole: 'mobilite_snapshot',
       iso_banque: 'mobilite_snapshot',
+    },
+    indicator_labels: {
+      nb_buildings: 'Bâtiments résidentiels analysés',
+      iso_alimentation: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
+      iso_sante: 'Part des bâtiments sans accès à la santé (à pied ou en transports en commun)',
+      iso_administration: 'Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)',
+      iso_ecole: 'Part des bâtiments sans accès à l’école (à pied ou en transports en commun)',
+      iso_banque: 'Part des bâtiments sans accès à la banque (à pied ou en transports en commun)',
+      voitures_menage: 'Voitures par ménage',
+      reseaux: 'Réseaux à pied / vélo / voiture',
+      offre_tc: 'Part des bâtiments près d’un arrêt (à 500 m)',
+      bornes_recharge: 'Bornes de recharge pour véhicules électriques',
+      places_stationnement_velo_1000: 'Places de stationnement vélo pour 1 000 hab.',
+      offre_cyclable: 'L’offre cyclable',
+    },
+    detail_labels: {
+      reseaux: {
+        t_longueur: 'Longueur — à pied ou en transports en commun',
+        t_densite: 'Densité — à pied ou en transports en commun',
+        b_longueur: 'Longueur — à vélo',
+        b_densite: 'Densité — à vélo',
+        c_longueur: 'Longueur — en voiture',
+        c_densite: 'Densité — en voiture',
+      },
+      voitures_menage: {
+        sans_voiture: 'Ménages sans voiture',
+        deux_plus: 'Ménages avec 2 voitures ou plus',
+      },
+      offre_cyclable: {
+        protege_longueur: 'Longueur protégée',
+        protege_km_1000: 'Protégé',
+        partage_longueur: 'Longueur partagée',
+        partage_km_1000: 'Partagé',
+        total_longueur: 'Longueur totale',
+      },
+    },
+    param_labels: {
+      div_loss_t: 'Types de services perdus à pied ou en transports en commun',
+      pct_iso_full_t: 'Part des bâtiments perdant tout accès',
+      classification_saillance: 'Classification de saillance',
     },
   },
 }

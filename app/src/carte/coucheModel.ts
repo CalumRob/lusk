@@ -24,23 +24,17 @@
  *   couches, c'est la règle d'exclusion de l'ADR).
  *
  * Every layer carries its metadata provenance (sousGroupe — the fiche
- * subgroup that owns the scalar ; storyKey for the story scalars). A payload
- * assembled WITHOUT the metadata seam (merged documents, pre-seam fixtures)
- * has no story layers and no default : the carte mirrors what the contract
- * declares, nothing invented. Labels come from the fiche's OWN shared
- * vocabulary (NOMS_INDICATEURS, the detail-label maps) — never a carte-side
- * list ; a scalar without a label wears its key, the honest fallback.
+ * subgroup that owns the scalar ; storyKey for the story scalars). Labels are
+ * payload-owned (issue #318) : they come from the theme's own metadata maps
+ * (indicator_labels for the indicator layers, param_labels for the story
+ * scalars, detail_labels for the detail layers) — never a carte-side list,
+ * never a raw internal key. A payload assembled WITHOUT the metadata seam
+ * (a pre-#313 payload, impossible under the loader contract) has NO layers :
+ * the carte mirrors what the contract declares, nothing invented.
  */
 
 import type { Histoire, Payload, Theme, ThemeMetadata } from '../payload/types'
-import {
-  NOMS_DETAILS_OFFRE_CYCLABLE,
-  NOMS_DETAILS_RESEAUX,
-  NOMS_DETAILS_VOITURES_MENAGE,
-  NOMS_INDICATEURS,
-  NOMS_TRANCHES_AGE,
-} from '../fiche/indicateurs'
-import { clesIndicateursDuTheme } from '../payload/selectors'
+import { libelleDetail, libelleIndicateur, libelleParam } from '../fiche/libelles'
 import type { CoucheProgramme } from './programmesCouches'
 
 /** Where the layer's rows live — the indicateur table or a story scalar. */
@@ -53,7 +47,8 @@ export interface Couche {
   clef: string
   /** Non-null for a multi-detail indicateur layer (the detail value it reads). */
   detail: string | null
-  /** French label — the fiche's NOMS_INDICATEURS, fallback: the key (never invented). */
+  /** French label — payload-owned (#318) : the theme's indicator_labels /
+   *  param_labels / detail_labels, never a raw internal key. */
   libelle: string
   /** True for the theme's default layer (its first declared story scalar). */
   parDefaut: boolean
@@ -105,20 +100,22 @@ const SERIES_EXCLUES: Partial<Record<Theme, readonly string[]>> = {
   milieux: ['conso_enaf_annuel'],
 }
 
-/** The fiche's detail-label maps, keyed like the fiche's own figures (OngletTheme.labelsDetailPour). */
-const LABELS_DETAILS: Record<string, Record<string, string>> = {
-  structure_age: NOMS_TRANCHES_AGE,
-  reseaux: NOMS_DETAILS_RESEAUX,
-  voitures_menage: NOMS_DETAILS_VOITURES_MENAGE,
-  offre_cyclable: NOMS_DETAILS_OFFRE_CYCLABLE,
+/** Le libellé d'un scalaire de Story — l'indicator_labels quand le champ est
+ *  AUSSI un indicateur (part_passoires), la param_labels sinon (les champs
+ *  d'histoires) : les deux cartes payload-owned (#318), jamais la clé brute. */
+function libelleScalaire(metadata: ThemeMetadata, champ: string): string {
+  if (champ in metadata.indicator_labels) return libelleIndicateur(metadata, champ)
+  return libelleParam(metadata, champ)
 }
 
-function libelleIndicateur(theme: Theme, clef: string): string {
-  return NOMS_INDICATEURS[theme]?.[clef] ?? clef
+/** Le libellé d'une couche d'indicateur — l'indicator_labels de la métadonnée. */
+function libelleIndicateurDe(metadata: ThemeMetadata, clef: string): string {
+  return libelleIndicateur(metadata, clef)
 }
 
-function libelleDetail(clef: string, detail: string): string {
-  return LABELS_DETAILS[clef]?.[detail] ?? detail
+/** Le libellé d'une couche de détail — le detail_labels de la métadonnée. */
+function libelleDetailDe(metadata: ThemeMetadata, clef: string, detail: string): string {
+  return libelleDetail(metadata, clef, detail)
 }
 
 /** The distinct detail values of a multi-detail key, in payload order. */
@@ -183,31 +180,38 @@ function scalairesStoryDe(metadata: ThemeMetadata, histoiresDuTheme: Histoire[])
 
 /**
  * The complete grouped layer list of a theme — payload in, the fiche's
- * mappable figures out. The story scalars come from the metadata's declared
- * reading params (a key that is BOTH a story scalar and an indicateur scalar
- * — part_passoires lives in both tables — is emitted once, as the story
- * scalar, reading the indicateur rows: the richer join, value + ranks +
- * vintage, never a second layer). The indicator layers follow the metadata's
- * indicator_keys order (payload order for a payload without the metadata
- * seam).
+ * mappable figures out. The metadata seam is REQUIRED (#313) : a theme
+ * present in the payload always carries its theme_<theme>.json (the loader
+ * refuses otherwise) — without it, the carte renders NO layers, never a
+ * key-only layer and never an app-side order. The story scalars come from
+ * the metadata's declared reading params (a key that is BOTH a story scalar
+ * and an indicateur scalar — part_passoires lives in both tables — is
+ * emitted once, as the story scalar, reading the indicateur rows: the richer
+ * join, value + ranks + vintage, never a second layer). The indicator layers
+ * follow the metadata's indicator_keys order; labels come from the theme's
+ * payload-owned maps (indicator_labels / detail_labels / param_labels).
  */
 export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
   const metadata = payload.themeMetadata?.[theme]
+  if (!metadata) {
+    return { theme, entrees: [], coucheParDefaut: null }
+  }
+  // L'alias resserré : les fermetures ci-dessous (sousGroupeDe, coucheStory)
+  // lisent les cartes de libellés — le narrowing de la garde ne traverse pas
+  // les déclarations de fonctions, l'alias porte le type ThemeMetadata.
+  const meta = metadata
   const histoiresDuTheme = payload.histoires.filter((histoire) => histoire.theme === theme)
   const aDesHistoires = histoiresDuTheme.length > 0
 
   // Les scalaires de Story — les params de lecture déclarés par les
   // métadonnées, filtrés aux champs numériques des lignes résolues.
-  const scalairesStory = metadata && aDesHistoires ? scalairesStoryDe(metadata, histoiresDuTheme) : []
+  const scalairesStory = aDesHistoires ? scalairesStoryDe(meta, histoiresDuTheme) : []
 
   // L'ordre des figures d'indicateurs — le registre des métadonnées (l'ordre
-  // de la fiche, payload-owned) ; l'ordre du payload pour un payload sans le
-  // seam des métadonnées.
-  const clesIndicateurs = metadata
-    ? metadata.indicator_keys.filter((clef) =>
-        payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef),
-      )
-    : clesIndicateursDuTheme(payload, theme)
+  // de la fiche, payload-owned), filtré aux clés que le payload publie.
+  const clesIndicateurs = meta.indicator_keys.filter((clef) =>
+    payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef),
+  )
 
   const scalairesIndicateurs = new Set<string>()
   for (const clef of clesIndicateurs) {
@@ -219,8 +223,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
 
   /** Le sous-groupe qui possède une clé d'indicateur (la provenance). */
   function sousGroupeDe(clef: string): string | null {
-    if (!metadata) return null
-    return metadata.subgroups.find((sousGroupe) => sousGroupe.indicators.includes(clef))?.key ?? null
+    return meta.subgroups.find((sousGroupe) => sousGroupe.indicators.includes(clef))?.key ?? null
   }
 
   /** La couche d'un scalaire de Story — lue depuis les indicateurs quand la
@@ -230,7 +233,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
       source: scalairesIndicateurs.has(scalaire.champ) ? 'indicateur' : 'histoire',
       clef: scalaire.champ,
       detail: null,
-      libelle: libelleIndicateur(theme, scalaire.champ),
+      libelle: libelleScalaire(meta, scalaire.champ),
       parDefaut,
       sousGroupe: scalaire.sousGroupe,
       storyKey: scalaire.storyKey,
@@ -274,7 +277,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
           source: 'indicateur',
           clef,
           detail: null,
-          libelle: libelleIndicateur(theme, clef),
+          libelle: libelleIndicateurDe(metadata, clef),
           parDefaut: false,
           sousGroupe: sousGroupeDe(clef),
           storyKey: null,
@@ -284,12 +287,12 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
       entrees.push({
         type: 'groupe',
         groupe: {
-          libelle: libelleIndicateur(theme, clef),
+          libelle: libelleIndicateurDe(metadata, clef),
           couches: detailsDe(payload, theme, clef).map((detail) => ({
             source: 'indicateur',
             clef,
             detail,
-            libelle: libelleDetail(clef, detail),
+            libelle: libelleDetailDe(metadata, clef, detail),
             parDefaut: false,
             sousGroupe: sousGroupeDe(clef),
             storyKey: null,
