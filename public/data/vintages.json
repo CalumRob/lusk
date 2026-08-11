@@ -169,7 +169,7 @@
   },
   {
     "id": "subventions_scdl",
-    "source": "Région Bretagne — subventions attribuées (SCDL), subventions_attribuees_scdl0 (data.bretagne.bzh, rafraîchi chaque semaine)",
+    "source": "Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh, rafraîchi chaque semaine",
     "version": "2026-08-05",
     "licence": "lov2",
     "date_reference": "2026-08-05",
@@ -257,7 +257,7 @@
   },
   {
     "id": "sirene_snapshot",
-    "source": "data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee)",
+    "source": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
     "version": "2026-04",
     "licence": "lov2",
     "date_reference": "2026-03-31",
@@ -465,7 +465,7 @@
   },
   {
     "id": "dpe_22",
-    "source": "ADEME — Observatoire DPE, logements existants (dpe03existant)",
+    "source": "ADEME — Observatoire DPE, logements existants",
     "version": "2026-08-03",
     "licence": "lov2",
     "date_reference": null,
@@ -473,7 +473,7 @@
   },
   {
     "id": "dpe_29",
-    "source": "ADEME — Observatoire DPE, logements existants (dpe03existant)",
+    "source": "ADEME — Observatoire DPE, logements existants",
     "version": "2026-08-03",
     "licence": "lov2",
     "date_reference": null,
@@ -481,7 +481,7 @@
   },
   {
     "id": "dpe_35",
-    "source": "ADEME — Observatoire DPE, logements existants (dpe03existant)",
+    "source": "ADEME — Observatoire DPE, logements existants",
     "version": "2026-08-03",
     "licence": "lov2",
     "date_reference": null,
@@ -489,7 +489,7 @@
   },
   {
     "id": "dpe_56",
-    "source": "ADEME — Observatoire DPE, logements existants (dpe03existant)",
+    "source": "ADEME — Observatoire DPE, logements existants",
     "version": "2026-08-03",
     "licence": "lov2",
     "date_reference": null,

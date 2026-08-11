@@ -161,7 +161,7 @@ pull_departement <- function(departement, base = URL_BASE_DPE, taille = 1000L,
 MANIFEST_HABITAT_DPE <- tibble::tibble(
   id = c("dpe_22", "dpe_29", "dpe_35", "dpe_56"),
   source = rep(
-    "ADEME — Observatoire DPE, logements existants (dpe03existant)",
+    "ADEME — Observatoire DPE, logements existants",
     4
   ),
   url = rep(URL_BASE_DPE, 4),

@@ -81,8 +81,8 @@ test_that("chaque estampille du payload vient de la source de référence décla
     source = c("INSEE — Logements (dossier complet)",
                "INSEE — Logements (dossier complet)",
                "Etalab — DVF géolocalisées",
-               "ADEME — Observatoire DPE, logements existants (dpe03existant)",
-               "ADEME — Observatoire DPE, logements existants (dpe03existant)"),
+               "ADEME — Observatoire DPE, logements existants",
+               "ADEME — Observatoire DPE, logements existants"),
     publication = c("2026-01-15", "2026-01-15", "2026-02-20",
                     NA_character_, NA_character_)
   )

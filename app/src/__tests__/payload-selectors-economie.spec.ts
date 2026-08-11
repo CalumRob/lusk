@@ -154,7 +154,7 @@ describe('histoireEconomiePourTerritoire — the resolved reading, top-5 replié
     const histoire = histoireEconomiePourTerritoire(payloadEconomie, '22001') as HistoireEconomie
 
     expect(formaterVintage(histoire)).toBe(
-      'data.bretagne.bzh — Base SIRENE - Région Bretagne (sirene-v3-consolidee) · 2026-04 · réf. 31 mars 2026 · publ. 1 mai 2026',
+      'data.bretagne.bzh — Base SIRENE — Région Bretagne · 2026-04 · réf. 31 mars 2026 · publ. 1 mai 2026',
     )
   })
 })

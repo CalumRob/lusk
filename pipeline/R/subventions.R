@@ -77,7 +77,7 @@ MANIFEST_SUBVENTIONS <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "subventions_scdl",
-  "Région Bretagne — subventions attribuées (SCDL), subventions_attribuees_scdl0 (data.bretagne.bzh, rafraîchi chaque semaine)",
+  "Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh, rafraîchi chaque semaine",
   "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/subventions_attribuees_scdl0/exports/csv?limit=-1&timezone=UTC&use_labels=false&delimiter=%3B",
   "subventions_attribuees_scdl0.csv",
   VINTAGE_SUBVENTIONS,
