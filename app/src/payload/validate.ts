@@ -1834,8 +1834,10 @@ export function verifierPariteLibelles(payload: Payload): void {
     if (meta.classification_labels) {
       const classificationsPubliees = new Set(
         payload.histoires
-          .filter((h) => h.theme === theme && (h as LigneBrute)['classification'] !== null)
-          .map((h) => (h as LigneBrute)['classification'] as string),
+          .filter(
+            (h) => h.theme === theme && (h as unknown as LigneBrute)['classification'] !== null,
+          )
+          .map((h) => (h as unknown as LigneBrute)['classification'] as string),
       )
       for (const valeur of classificationsPubliees) {
         if (!(valeur in meta.classification_labels)) {
