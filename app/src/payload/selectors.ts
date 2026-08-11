@@ -653,60 +653,160 @@ export function formaterLicence(code: string): string {
   return LICENCES[code] ?? code
 }
 
-/** One Méthodes source row — the registry's editorial facts joined to the live freshness facts. */
-export interface LigneSourceMethodes {
-  /** The source id — the registry × vintages join key (ancreSource derives the anchor). */
+/** Une ligne vintage d'un jeu — le libellé éditorial + les faits de fraîcheur (ADR-0022). */
+export interface LigneVintageMethodes {
+  /** L'id de la ligne — la clé de jointure registre × vintages (ancreSource dérive l'ancre de la ligne). */
   id: string
-  /** The source name (the registry's editorial fact — the degraded fallback). */
-  nom: string
-  editeur: string
-  url: string | null
-  themes: Theme[]
-  /** Live freshness — null when the source has no vintage row in the payload (never invented). */
+  /** Le libellé éditorial de la ligne — « Millésime 2021 · Côtes-d'Armor (22) » (le registre). */
+  libelle: string
+  /** La fraîcheur en direct — null quand la ligne n'a pas de vintage dans le payload (jamais inventée). */
   version: string | null
   licence: string | null
   dateReference: string | null
   datePublication: string | null
 }
 
-/** The Méthodes sources table — every registered source, one row, freshness joined live. */
+/** Un jeu de données de la table Méthodes — l'en-tête (les faits éditoriaux) + ses lignes vintage. */
+export interface LigneJeuMethodes {
+  /** L'id du jeu — la clé de groupement du registre (ancreSource dérive l'ancre de l'en-tête). */
+  id: string
+  /** Le nom du jeu (le fait éditorial du registre, partagé par les lignes d'une même famille). */
+  nom: string
+  editeur: string
+  url: string | null
+  themes: Theme[]
+  /**
+   * true = les lignes vintage partagent la même fraîcheur de publication (licence
+   * + date de publication) : le jeu se replie sur son en-tête seul, l'étendue des
+   * colonnes (version, date de référence) résume les lignes. false = les faits
+   * distincts restent des lignes visibles (OCS-GE — les replier mentirait sur la
+   * donnée, ADR-0022).
+   */
+  replie: boolean
+  /** La fraîcheur de l'en-tête — les faits partagés (ou leur étendue) quand replie, null (tiret) sinon. */
+  version: string | null
+  licence: string | null
+  dateReference: string | null
+  datePublication: string | null
+  /** Les lignes vintage — rendues seulement quand le jeu n'est pas replié. */
+  vintages: LigneVintageMethodes[]
+}
+
+/** La table Méthodes — les jeux de données du registre, leurs lignes vintage imbriquées. */
 export interface MethodesSources {
-  /** true when vintages.json was absent (404) — the freshness columns show the honest empty state. */
+  /** true quand vintages.json était absent (404) — la fraîcheur montre l'état vide honnête. */
   vintagesAbsents: boolean
-  lignes: LigneSourceMethodes[]
+  jeux: LigneJeuMethodes[]
+}
+
+/** Les valeurs distinctes d'une colonne de fraîcheur, triées — vide quand aucune. */
+function valeursDistinctes(valeurs: (string | null)[]): string[] {
+  return [...new Set(valeurs.filter((v): v is string => v !== null))].sort()
+}
+
+/** L'étendue « X – Y » d'une colonne dont les valeurs diffèrent (la fenêtre des millésimes DVF). */
+function etendue(valeurs: (string | null)[]): string | null {
+  const distinctes = valeursDistinctes(valeurs)
+  if (distinctes.length === 0) return null
+  if (distinctes.length === 1) return distinctes[0]
+  return `${distinctes[0]} – ${distinctes[distinctes.length - 1]}`
+}
+
+/** L'étendue des dates ISO, formatée en français — tri chronologique avant le formatage. */
+function etendueDates(isos: (string | null)[]): string | null {
+  const distinctes = valeursDistinctes(isos)
+  if (distinctes.length === 0) return null
+  if (distinctes.length === 1) return formaterDateFrancaise(distinctes[0])
+  return `${formaterDateFrancaise(distinctes[0])} – ${formaterDateFrancaise(distinctes[distinctes.length - 1])}`
 }
 
 /**
- * The Méthodes sources table (docs/themes/README.md §The Méthodes contract):
- * the registry's editorial facts (nom, éditeur, URL, thèmes) joined by id to
- * the vintages table's freshness facts (version, licence, dates). Registry
- * order is the table order; a registered source with no live vintage row
- * degrades gracefully — its editorial facts render, its freshness stays null
- * (no invented dates). Absent vintages (404 → null) render every registered
- * source with null freshness — the page never breaks.
+ * La table Méthodes à la granularité jeu de données (ADR-0022,
+ * docs/themes/README.md §The Méthodes contract) : le registre (faits
+ * éditoriaux) groupé par `dataset` — un en-tête par jeu (nom, éditeur, URL,
+ * thèmes), ses lignes vintage imbriquées (libellé éditorial + fraîcheur).
+ * Ordre du registre = ordre des jeux. La règle de repli honnête : un jeu se
+ * replie sur son en-tête seul quand ses lignes partagent la même fraîcheur de
+ * publication (licence + date de publication — la version et la date de
+ * référence encodent le millésime de la ligne, son identité) ; l'en-tête
+ * porte alors l'étendue des colonnes qui diffèrent. Des faits distincts
+ * (OCS-GE) gardent leurs lignes visibles — les replier mentirait sur la
+ * donnée. Une ligne sans vintage en direct dégrade gracieusement — ses faits
+ * éditoriaux rendent, sa fraîcheur reste null (aucune date inventée). Des
+ * vintages absents (404 → null) rendent chaque jeu avec une fraîcheur nulle —
+ * la page ne casse jamais.
  */
 export function sourcesMethodes(payload: Payload): MethodesSources {
   const vintagesAbsents = payload.vintages === null
   const parId = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
 
-  const lignes: LigneSourceMethodes[] = []
+  const groupes = new Map<
+    string,
+    {
+      id: string
+      nom: string
+      editeur: string
+      url: string | null
+      themes: Theme[]
+      lignes: LigneVintageMethodes[]
+    }
+  >()
   for (const [id, source] of Object.entries(SOURCES_METHODES)) {
+    const idJeu = source.dataset ?? id
+    let groupe = groupes.get(idJeu)
+    if (!groupe) {
+      groupe = {
+        id: idJeu,
+        nom: source.nom,
+        editeur: source.editeur,
+        url: source.url,
+        themes: source.themes,
+        lignes: [],
+      }
+      groupes.set(idJeu, groupe)
+    }
     const vintage = parId.get(id) ?? null
-    lignes.push({
+    groupe.lignes.push({
       id,
-      nom: source.nom,
-      editeur: source.editeur,
-      url: source.url,
-      themes: source.themes,
+      libelle: source.libelle,
       version: vintage?.version ?? null,
       licence: vintage ? formaterLicence(vintage.licence) : null,
-      dateReference: vintage?.date_reference ? formaterDateFrancaise(vintage.date_reference) : null,
-      datePublication: vintage?.date_publication
-        ? formaterDateFrancaise(vintage.date_publication)
-        : null,
+      dateReference: vintage?.date_reference ?? null,
+      datePublication: vintage?.date_publication ?? null,
     })
   }
-  return { vintagesAbsents, lignes }
+
+  const jeux: LigneJeuMethodes[] = []
+  for (const groupe of groupes.values()) {
+    const premiere = groupe.lignes[0]
+    const replie =
+      groupe.lignes.length <= 1 ||
+      groupe.lignes.every(
+        (ligne) =>
+          ligne.licence === premiere?.licence &&
+          ligne.datePublication === premiere?.datePublication,
+      )
+    jeux.push({
+      id: groupe.id,
+      nom: groupe.nom,
+      editeur: groupe.editeur,
+      url: groupe.url,
+      themes: groupe.themes,
+      replie,
+      version: replie ? etendue(groupe.lignes.map((l) => l.version)) : null,
+      licence: replie ? (premiere?.licence ?? null) : null,
+      dateReference: replie ? etendueDates(groupe.lignes.map((l) => l.dateReference)) : null,
+      datePublication: replie ? etendueDates(groupe.lignes.map((l) => l.datePublication)) : null,
+      vintages: groupe.lignes.map((ligne) => ({
+        ...ligne,
+        dateReference: ligne.dateReference ? formaterDateFrancaise(ligne.dateReference) : null,
+        datePublication: ligne.datePublication
+          ? formaterDateFrancaise(ligne.datePublication)
+          : null,
+      })),
+    })
+  }
+  return { vintagesAbsents, jeux }
 }
 
 /** Les deux labels communaux (ancrés à la commune, listes lauréates ANCT). */

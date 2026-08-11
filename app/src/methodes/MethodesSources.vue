@@ -1,26 +1,34 @@
 <script setup lang="ts">
 /**
- * La table des sources de /methodologie (layouts.md §5, issue #128): une ligne
- * par source du registre Méthodes, les faits éditoriaux (éditeur, thèmes,
- * URL) rejoints en direct aux faits de fraîcheur (version, licence, dates) de
- * la table vintages (sourcesMethodes, le seam du payload). Ordre du registre
- * = ordre de la table. Le shell à onglets (#332) peut filtrer via la prop
- * `themes` — l'onglet Sources · <thème> montre les sources qui alimentent ce
- * thème (une source multi-thèmes apparaît sous chacun de ses thèmes). Au-
- * dessous de 768px la table se superpose en lignes empilées (mêmes cellules,
- * CSS seul).
+ * La table des sources de /methodologie (layouts.md §5, issue #128): une
+ * ligne par jeu de données du registre Méthodes — l'en-tête porte les faits
+ * éditoriaux (nom, éditeur, thèmes, URL), les lignes vintage imbriquées
+ * portent le libellé éditorial et les faits de fraîcheur (version, licence,
+ * dates) rejoints en direct à la table vintages (sourcesMethodes, le seam du
+ * payload) — la granularité jeu de données d'ADR-0022. Un jeu dont les lignes
+ * vintage partagent la même fraîcheur de publication se replie sur son
+ * en-tête seul (DVF : 20 lignes, une publication) ; des faits distincts
+ * (OCS-GE : les millésimes par département) restent des lignes visibles —
+ * les replier mentirait sur la donnée. Ordre du registre = ordre de la
+ * table. Le shell à onglets (#332) filtre via la prop `themes` — l'onglet
+ * Sources · <thème> montre les jeux qui alimentent ce thème (un jeu
+ * multi-thèmes apparaît sous chacun de ses thèmes, jamais d'onglet « Tous »).
+ * Au-dessous de 768px la table se superpose en lignes empilées (mêmes
+ * cellules, CSS seul — la table partagée SourcesTable).
  *
  * États (ui-elements.md): squelette pendant le chargement, erreur typée avec
  * Réessayer, état vide honnête quand vintages.json est absent (404) — la page
- * ne casse jamais. Une source sans ligne vintages en direct rend ses faits
+ * ne casse jamais. Un jeu sans ligne vintages en direct rend ses faits
  * éditoriaux et un tiret pour la fraîcheur, jamais une date inventée.
  */
-import { AlertCircle, ExternalLink } from 'lucide-vue-next'
+import { AlertCircle } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { NOMS_THEMES } from '@/fiche/onglets'
 import { ancreSource } from '@/methodes/sources'
+import SourcesTable from '@/methodes/SourcesTable.vue'
+import type { ColonneTableSources, LigneTableSources } from '@/methodes/SourcesTable.vue'
 import { sourcesMethodes } from '@/payload/selectors'
 import type { Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
@@ -35,13 +43,65 @@ const { payload, erreur, chargement, recharger } = usePayload()
 
 const table = computed(() => (payload.value ? sourcesMethodes(payload.value) : null))
 
-const sources = computed(() => {
-  const lignes = table.value?.lignes ?? []
+const jeux = computed(() => {
+  const tous = table.value?.jeux ?? []
   const filtre = props.themes
-  return filtre ? lignes.filter((ligne) => ligne.themes.some((t) => filtre.includes(t))) : lignes
+  return filtre ? tous.filter((jeu) => jeu.themes.some((t) => filtre.includes(t))) : tous
 })
 
 const vintagesAbsents = computed(() => table.value?.vintagesAbsents ?? false)
+
+const colonnes: ColonneTableSources[] = [
+  { cle: 'source', libelle: 'Source' },
+  { cle: 'editeur', libelle: 'Éditeur' },
+  { cle: 'themes', libelle: 'Thèmes utilisés' },
+  { cle: 'version', libelle: 'Version' },
+  { cle: 'date_reference', libelle: 'Date de référence' },
+  { cle: 'date_publication', libelle: 'Date de publication' },
+  { cle: 'licence', libelle: 'Licence' },
+  { cle: 'lien', libelle: 'Lien vers le jeu de données', labelEmpile: 'Lien', classe: 'colonne-lien', cache: true },
+]
+
+/** Les lignes de la table — un en-tête par jeu, ses lignes vintage quand il est déplié. */
+const lignes = computed<LigneTableSources[]>(() => {
+  const lignesTable: LigneTableSources[] = []
+  for (const jeu of jeux.value) {
+    lignesTable.push({
+      id: ancreSource(jeu.id),
+      classe: 'source-jeu',
+      nom: jeu.nom,
+      url: jeu.url,
+      themes: jeu.themes,
+      cellules: {
+        editeur: jeu.editeur,
+        // Un jeu replié porte sa fraîcheur sur l'en-tête ; un jeu déplié la
+        // laisse à ses lignes vintage (les tirets, jamais une date inventée).
+        version: jeu.replie ? jeu.version : null,
+        date_reference: jeu.replie ? jeu.dateReference : null,
+        date_publication: jeu.replie ? jeu.datePublication : null,
+        licence: jeu.replie ? jeu.licence : null,
+      },
+    })
+    if (!jeu.replie) {
+      for (const vintage of jeu.vintages) {
+        lignesTable.push({
+          id: ancreSource(vintage.id),
+          classe: 'source-vintage',
+          nom: vintage.libelle,
+          url: null,
+          cellules: {
+            editeur: null,
+            version: vintage.version,
+            date_reference: vintage.dateReference,
+            date_publication: vintage.datePublication,
+            licence: vintage.licence,
+          },
+        })
+      }
+    }
+  }
+  return lignesTable
+})
 
 /** La rampe du thème en variables CSS pour les puces « thèmes utilisés ». */
 function styleTheme(theme: Theme): Record<string, string> {
@@ -51,7 +111,7 @@ function styleTheme(theme: Theme): Record<string, string> {
   }
 }
 
-function libelleThemes(themes: Theme[]): string {
+function libelleThemes(themes: readonly Theme[]): string {
   return themes.map((t) => NOMS_THEMES[t]).join(' · ')
 }
 </script>
@@ -79,65 +139,27 @@ function libelleThemes(themes: Theme[]): string {
         actualisation des données.
       </p>
 
-      <table class="sources-tableau">
-        <caption class="visuellement-cache">Les sources des fiches Lusk</caption>
-        <thead>
-          <tr>
-            <th scope="col">Source</th>
-            <th scope="col">Éditeur</th>
-            <th scope="col">Thèmes utilisés</th>
-            <th scope="col">Version</th>
-            <th scope="col">Date de référence</th>
-            <th scope="col">Date de publication</th>
-            <th scope="col">Licence</th>
-            <th scope="col" class="colonne-lien">
-              <span class="visuellement-cache">Lien vers le jeu de données</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="source in sources" :id="ancreSource(source.id)" :key="source.id">
-            <td data-label="Source" class="cellule-source">
-              <a
-                v-if="source.url"
-                :href="source.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="lien-source"
-              >{{ source.nom }}</a>
-              <span v-else>{{ source.nom }}</span>
-            </td>
-            <td data-label="Éditeur" class="cellule-editeur">{{ source.editeur }}</td>
-            <td data-label="Thèmes utilisés">
-              <ul class="puce-themes" :aria-label="libelleThemes(source.themes)">
-                <li
-                  v-for="theme in source.themes"
-                  :key="theme"
-                  class="puce-theme"
-                  :style="styleTheme(theme)"
-                >{{ NOMS_THEMES[theme] }}</li>
-              </ul>
-            </td>
-            <td data-label="Version" class="cellule-fraicheur">{{ source.version ?? '—' }}</td>
-            <td data-label="Date de référence" class="cellule-fraicheur">{{ source.dateReference ?? '—' }}</td>
-            <td data-label="Date de publication" class="cellule-fraicheur">{{ source.datePublication ?? '—' }}</td>
-            <td data-label="Licence" class="cellule-licence">{{ source.licence ?? '—' }}</td>
-            <td data-label="Lien" class="colonne-lien">
-              <a
-                v-if="source.url"
-                :href="source.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="lien-donnees"
-                :aria-label="`Ouvrir le jeu de données ${source.nom}`"
-              >
-                <AppIcon :icone="ExternalLink" :taille="16" aria-hidden="true" />
-              </a>
-              <span v-else>—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <SourcesTable
+        :colonnes="colonnes"
+        :lignes="lignes"
+        etiquette="Les sources des fiches Lusk"
+      >
+        <template #themes="{ ligne }">
+          <ul
+            v-if="ligne.themes && ligne.themes.length > 0"
+            class="puce-themes"
+            :aria-label="libelleThemes(ligne.themes)"
+          >
+            <li
+              v-for="theme in ligne.themes"
+              :key="theme"
+              class="puce-theme"
+              :style="styleTheme(theme)"
+            >{{ NOMS_THEMES[theme] }}</li>
+          </ul>
+          <span v-else>—</span>
+        </template>
+      </SourcesTable>
     </template>
   </section>
 </template>
@@ -160,70 +182,7 @@ function libelleThemes(themes: Theme[]): string {
   font: var(--text-body-sm);
 }
 
-/* ---- Le tableau (ui-elements.md §Table) ---- */
-.sources-tableau {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--surface-primary);
-  border: 1px solid var(--border-subtle);
-}
-
-.sources-tableau thead th {
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-tertiary);
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-primary);
-  font: var(--text-body-sm);
-  font-weight: 700;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.sources-tableau tbody td {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
-  font: var(--text-body-sm);
-  vertical-align: top;
-}
-
-.sources-tableau tbody tr {
-  scroll-margin-top: calc(var(--header-height) + 12px);
-  transition: background-color 100ms ease-out;
-}
-
-.sources-tableau tbody tr:hover {
-  background: var(--surface-tertiary);
-}
-
-.cellule-source {
-  min-width: 260px;
-}
-
-.lien-source {
-  font-weight: 600;
-  color: var(--accent-primary);
-}
-
-.lien-source:hover {
-  color: var(--accent-hover);
-}
-
-.cellule-editeur {
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.cellule-fraicheur {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-/* La licence se plie au lieu de déborder — la chaîne ODbL complète tient
-   dans la colonne à n'importe quelle largeur (issue #331, item 49). */
-.cellule-licence {
-  white-space: normal;
-}
-
+/* ---- Les puces « thèmes utilisés » (les cellules riches du slot themes) ---- */
 .puce-themes {
   display: flex;
   flex-wrap: wrap;
@@ -240,94 +199,6 @@ function libelleThemes(themes: Theme[]): string {
   color: var(--puce-strong);
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
-}
-
-.colonne-lien {
-  text-align: right;
-}
-
-.lien-donnees {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  transition:
-    color 150ms ease-out,
-    background-color 150ms ease-out;
-}
-
-.lien-donnees:hover {
-  color: var(--accent-hover);
-  background: var(--surface-tertiary);
-}
-
-/* ---- <768px : lignes empilées (les mêmes cellules, CSS seul) ---- */
-@media (max-width: 767.98px) {
-  .sources-tableau,
-  .sources-tableau tbody,
-  .sources-tableau tr,
-  .sources-tableau td {
-    display: block;
-    width: 100%;
-  }
-
-  .sources-tableau thead {
-    display: none;
-  }
-
-  .sources-tableau tbody tr {
-    margin-bottom: var(--space-4);
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-default);
-  }
-
-  .sources-tableau tbody tr:last-child {
-    margin-bottom: 0;
-  }
-
-  .sources-tableau tbody td {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding: var(--space-2) 0;
-    border-bottom: 0;
-    text-align: right;
-  }
-
-  .sources-tableau tbody td::before {
-    content: attr(data-label);
-    flex-shrink: 0;
-    color: var(--text-tertiary);
-    font: var(--text-caption);
-    letter-spacing: var(--text-caption-tracking);
-    font-weight: 600;
-  }
-
-  .cellule-source {
-    min-width: 0;
-  }
-
-  .cellule-source,
-  .cellule-editeur,
-  .cellule-licence {
-    text-align: left;
-    white-space: normal;
-  }
-
-  .cellule-source::before,
-  .cellule-editeur::before,
-  .cellule-licence::before {
-    align-self: flex-start;
-  }
-
-  .colonne-lien {
-    justify-content: flex-end;
-  }
 }
 
 /* ---- Les états (ui-elements.md §Loading/empty/error) ---- */
@@ -383,18 +254,5 @@ function libelleThemes(themes: Theme[]): string {
 .bouton-reessayer:hover {
   background: var(--surface-tertiary);
   border-color: var(--brand-500);
-}
-
-/* Visually hidden, kept in the a11y tree (the caption and the Lien header). */
-.visuellement-cache {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
 }
 </style>

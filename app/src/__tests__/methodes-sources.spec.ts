@@ -39,10 +39,56 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
   it('chaque entrée de registre porte les faits éditoriaux complets', () => {
     for (const [id, source] of Object.entries(SOURCES_METHODES)) {
       expect(source.nom.length, `« ${id} » sans nom`).toBeGreaterThan(0)
+      expect(source.libelle.length, `« ${id} » sans libellé éditorial`).toBeGreaterThan(0)
       expect(source.editeur.length, `« ${id} » sans éditeur`).toBeGreaterThan(0)
       expect(source.themes.length, `« ${id} » sans thème utilisé`).toBeGreaterThan(0)
       expect(source.themes.every((t) => ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'].includes(t))).toBe(true)
     }
+  })
+
+  it('déclare 24 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
+    const idsJeux = new Set(
+      Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
+    )
+    expect(idsJeux.size).toBe(24)
+  })
+
+  it('les familles générées partagent le nom du jeu et portent un libellé vintage dédié (ADR-0022)', () => {
+    // DVF — 20 lignes, un seul jeu (le même nom, des libellés millésimés)
+    const dvf = Object.entries(SOURCES_METHODES).filter(([id]) => id.startsWith('dvf_'))
+    expect(dvf.length).toBe(20)
+    expect(new Set(dvf.map(([, s]) => s.nom))).toEqual(new Set(['Étalab — DVF géolocalisées']))
+    expect(dvf.every(([, s]) => s.dataset === 'dvf')).toBe(true)
+    expect(SOURCES_METHODES['dvf_2021_dep22'].libelle).toBe('Millésime 2021 · Côtes-d\u2019Armor (22)')
+
+    // OCS-GE — les huit archives d'état partagent le nom du jeu, libellés millésimés par département
+    const etats = Object.entries(SOURCES_METHODES).filter(([id]) =>
+      id.startsWith('ocsge_artificialisation_'),
+    )
+    expect(etats.length).toBe(8)
+    expect(new Set(etats.map(([, s]) => s.nom)).size).toBe(1)
+    expect(SOURCES_METHODES['ocsge_artificialisation_22_2021'].libelle).toBe(
+      'Millésime 2021 · Côtes-d\u2019Armor (22)',
+    )
+    expect(SOURCES_METHODES['ocsge_artificialisation_35_2023'].libelle).toBe(
+      'Millésime 2023 · Ille-et-Vilaine (35)',
+    )
+
+    // les patchs correctifs — du MÊME jeu que les archives d'état (un seul
+    // en-tête OCS-GE, ADR-0022), leur nom dédié et leurs libellés propres
+    const patchs = Object.entries(SOURCES_METHODES).filter(([id]) =>
+      id.startsWith('ocsge_patch_correctif_'),
+    )
+    expect(patchs.length).toBe(3)
+    expect(new Set(patchs.map(([, s]) => s.dataset))).toEqual(
+      new Set(['ocsge_artificialisation']),
+    )
+    expect(SOURCES_METHODES['ocsge_patch_correctif_22'].nom).toBe(
+      'IGN — OCS GE « patch correctif » (Nouvelle Génération)',
+    )
+    expect(SOURCES_METHODES['ocsge_patch_correctif_22'].libelle).toBe(
+      'Patch correctif — Côtes-d\u2019Armor (22), millésime corrigé 2021',
+    )
   })
 
   it('signale les entrées de registre sans ligne vintages en direct (dégradation autorisée)', () => {
