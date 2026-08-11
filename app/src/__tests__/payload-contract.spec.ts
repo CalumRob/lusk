@@ -50,6 +50,11 @@ function chargerPayloadCommite(): Promise<Payload> {
     'histoires_economie.json',
     'indicateurs_milieux.json',
     'histoires_milieux.json',
+    'theme_demographie.json',
+    'theme_habitat.json',
+    'theme_economie.json',
+    'theme_mobilite.json',
+    'theme_milieux.json',
     'run-report.json',
     'vintages.json',
     'programmes.json',
@@ -198,6 +203,17 @@ describe('payload contract — the committed payload parses and renders', () => 
       'economie',
       'milieux',
     ])
+  })
+
+  it('loads the committed theme_<theme>.json metadata for all five built themes (#311, #313)', async () => {
+    const payload = obtenirPayload()
+
+    // Chaque thème construit (présent dans les faits) porte SA métadonnée
+    // validée — le fichier theme_<theme>.json committé, clé par thème.
+    for (const theme of ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const) {
+      expect(payload.themeMetadata?.[theme], `métadonnées « ${theme} » absentes`).toBeDefined()
+      expect(payload.themeMetadata?.[theme]?.theme).toBe(theme)
+    }
   })
 
   it('parses the regenerated Milieux histoires — the pivot schema field-by-field (spec #225 → #243)', async () => {

@@ -429,6 +429,13 @@ export interface Payload {
   vintages: Vintage[] | null
   /** The programmes payload (programmes.json) — optional; null = element absent (404). */
   programmes: ProgrammesPayload | null
+  /**
+   * The per-theme metadata files (theme_<theme>.json, issue #309, wired by
+   * #313) — keyed by theme, present themes only. Optional at the type level:
+   * payloads assembled from merged documents (parsePayload) or pre-seam
+   * fixtures carry none; the loader and the store always produce the section.
+   */
+  themeMetadata?: Partial<Record<Theme, ThemeMetadata>>
 }
 
 /**

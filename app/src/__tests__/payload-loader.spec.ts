@@ -8,12 +8,14 @@ import {
   indicateursHabitatFixture,
   indicateursMilieuxFixture,
   membresProgrammesFixture,
+  metadonneesThemesFixtures,
   programmesFixture,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
 import { chargerPayload, type ChargerOptions, type ReponseFetch } from '../payload/loader'
+import type { ThemeMetadata } from '../payload/types'
 import { PayloadError } from '../payload/validate'
 
 /**
@@ -41,6 +43,7 @@ const fichiersDemographie = {
   'territoires.json': territoiresFixture,
   'indicateurs_demographie.json': indicateursDemographieFixture,
   'histoires_demographie.json': histoiresDemographieFixture,
+  'theme_demographie.json': metadonneesThemesFixtures.demographie,
   'apercu.json': apercuAvecNAFixture,
   'run-report.json': runReportFraisFixture,
   'vintages.json': vintagesFixture,
@@ -90,6 +93,7 @@ describe('chargerPayload — the single seam', () => {
         ...fichiersDemographie,
         'indicateurs_habitat.json': indicateursHabitatFixture,
         'histoires_habitat.json': histoiresHabitatFixture,
+        'theme_habitat.json': metadonneesThemesFixtures.habitat,
       }),
     )
 
@@ -207,6 +211,7 @@ describe('chargerPayload — the single seam', () => {
         ...fichiersDemographie,
         'indicateurs_milieux.json': indicateursMilieuxFixture,
         'histoires_milieux.json': nouveauSchema,
+        'theme_milieux.json': metadonneesThemesFixtures.milieux,
       }),
     )
 
@@ -235,6 +240,7 @@ describe('chargerPayload — the single seam', () => {
           ...fichiersDemographie,
           'indicateurs_milieux.json': indicateursMilieuxFixture,
           'histoires_milieux.json': ancienSchema,
+          'theme_milieux.json': metadonneesThemesFixtures.milieux,
         }),
       ),
     ).rejects.toMatchObject({ kind: 'validation' })
@@ -246,6 +252,66 @@ describe('chargerPayload — the single seam', () => {
     await expect(
       chargerPayload(optionsPour(sansHistoires)),
     ).rejects.toMatchObject({ kind: 'validation', file: 'histoires_demographie.json' })
+  })
+
+  it('loads and validates theme_<theme>.json for every present theme — metadata keyed by theme (#313)', async () => {
+    const payload = await chargerPayload(
+      optionsPour({
+        ...fichiersDemographie,
+        'indicateurs_habitat.json': indicateursHabitatFixture,
+        'histoires_habitat.json': histoiresHabitatFixture,
+        'theme_habitat.json': metadonneesThemesFixtures.habitat,
+      }),
+    )
+
+    expect(payload.themeMetadata?.demographie).toEqual(metadonneesThemesFixtures.demographie)
+    expect(payload.themeMetadata?.habitat).toEqual(metadonneesThemesFixtures.habitat)
+  })
+
+  it('skips metadata for an absent theme — 404 sur tout le jeu du thème, jamais une erreur', async () => {
+    const payload = await chargerPayload(optionsPour(fichiersDemographie))
+
+    // Seule la Démographie est présente : sa métadonnée est là, aucune autre.
+    expect(payload.themeMetadata).toEqual({ demographie: metadonneesThemesFixtures.demographie })
+  })
+
+  it('requires theme metadata when a theme is present — 404 sur theme_<theme>.json = dérive typée, jamais une absence', async () => {
+    const { 'theme_demographie.json': _meta, ...sansMeta } = fichiersDemographie
+
+    await expect(
+      chargerPayload(optionsPour(sansMeta)),
+    ).rejects.toMatchObject({ kind: 'validation', file: 'theme_demographie.json' })
+  })
+
+  it('raises a typed validation error when theme metadata drifts from the contract', async () => {
+    const meta = JSON.parse(JSON.stringify(metadonneesThemesFixtures.demographie)) as ThemeMetadata
+    // la dérive d'herméticité (ADR-0020) : une story d'un autre thème
+    meta.story_keys.push('vingt-minutes-sans-voiture')
+
+    await expect(
+      chargerPayload(optionsPour({ ...fichiersDemographie, 'theme_demographie.json': meta })),
+    ).rejects.toMatchObject({ kind: 'validation', file: 'theme_demographie.json' })
+  })
+
+  it('never fetches another theme transitively — chaque thème présent n\u2019apporte que SES fichiers', async () => {
+    const demandees: string[] = []
+    const fetchImpl = async (url: string) => {
+      demandees.push(url)
+      return stubFetch(fichiersDemographie)(url)
+    }
+
+    await chargerPayload({ baseUrl: 'data/', fetchImpl })
+
+    // Le thème présent (demographie) charge SES trois fichiers…
+    expect(demandees).toContain('data/indicateurs_demographie.json')
+    expect(demandees).toContain('data/histoires_demographie.json')
+    expect(demandees).toContain('data/theme_demographie.json')
+    // …et jamais la métadonnée d'un thème absent (l'herméticité, ADR-0020) —
+    // aucun fetch transitif de theme_<autre-thème>.json.
+    expect(demandees).not.toContain('data/theme_habitat.json')
+    expect(demandees).not.toContain('data/theme_economie.json')
+    expect(demandees).not.toContain('data/theme_mobilite.json')
+    expect(demandees).not.toContain('data/theme_milieux.json')
   })
 
   it('defaults to the /data/ hosting (the nginx alias, self-hosting.md)', async () => {
