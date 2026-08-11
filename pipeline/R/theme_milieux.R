@@ -1228,8 +1228,8 @@ construire_territoires_milieux <- function(donnees) {
 INDICATEURS_MILIEUX <- tibble::tibble(
   key = c("artif_par_habitant", "conso_enaf_annuel"),
   libelle = c(
-    "Intensité état — surface artificialisée par habitant aux états OCS-GE (M2/M3), en m²/habitant",
-    "Consommation d'espaces naturels, agricoles et forestiers (ENAF) — consommation annuelle, en hectares"
+    "Intensité état",
+    "Consommation d’ENAF — série annuelle"
   ),
   sources = list(
     c("ocsge_artificialisation_22_2021", "ocsge_artificialisation_22_2025",

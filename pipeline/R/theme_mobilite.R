@@ -443,15 +443,15 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "Bâtiments résidentiels analysés",
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
-    "Part des bâtiments près d'un arrêt (à 500 m)",
+    "Part des bâtiments près d’un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
-    "L'offre cyclable (protégé / partagé)",
-    "Part des bâtiments sans accès à l'alimentation",
-    "Part des bâtiments sans accès à la santé",
-    "Part des bâtiments sans accès aux services administratifs",
-    "Part des bâtiments sans accès à l'école",
-    "Part des bâtiments sans accès à la banque"
+    "L’offre cyclable",
+    "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+    "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+    "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+    "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+    "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
   ),
   sources = list(
     "mobilite_snapshot",

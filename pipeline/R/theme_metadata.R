@@ -294,6 +294,70 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
   }
 
+  # 5bis. les libellés d'indicateurs (issue #318) — la carte du vocabulaire
+  #      payload-owned : EXACTEMENT indicator_keys (la bijection, comme les
+  #      sources), chaque valeur un libellé français non vide. C'est le seul
+  #      vocabulaire que la fiche et la carte rendent — jamais une clé brute.
+  if (is.null(metadata$indicator_labels) || !est_liste(metadata$indicator_labels)) {
+    manquer("indicator_labels",
+            "la carte des libellés d'indicateurs est absente ou non-objet")
+  }
+  cles_libelles <- names(metadata$indicator_labels)
+  sans_libelle <- setdiff(cles_indicateurs, cles_libelles)
+  fantomes_libelle <- setdiff(cles_libelles, cles_indicateurs)
+  if (length(sans_libelle) > 0 || length(fantomes_libelle) > 0) {
+    manquer("indicator_labels", paste0(
+      "la carte des libellés doit déclarer EXACTEMENT les indicateurs du ",
+      "registre — sans libellé : ", paste(sans_libelle, collapse = ", "),
+      " ; non déclarés : ", paste(fantomes_libelle, collapse = ", ")))
+  }
+  if (any(!vapply(metadata$indicator_labels, est_chaine_non_vide, logical(1L)))) {
+    manquer("indicator_labels",
+            "un libellé d'indicateur doit être une chaîne non vide")
+  }
+
+  # 5ter. les libellés de détail (issue #318) — la carte détail → libellé des
+  #       clés multi-détails : chaque clé déclarée appartient au registre
+  #       indicator_keys, chaque libellé est une chaîne non vide. La COUVERTURE
+  #       bidirectionnelle contre les faits publiés (chaque (key, detail) du
+  #       payload a son libellé, aucun libellé mort) est la parité vérifiée
+  #       ailleurs (l'app : verifierPariteLibelles ; les tests R sur le payload
+  #       committé) — le fichier, lui, reste auto-contenu comme sources.
+  if (is.null(metadata$detail_labels) || !est_liste(metadata$detail_labels)) {
+    manquer("detail_labels",
+            "la carte des libellés de détail est absente ou non-objet")
+  }
+  cles_details <- names(metadata$detail_labels)
+  hors_registre_details <- setdiff(cles_details, cles_indicateurs)
+  if (length(hors_registre_details) > 0) {
+    manquer("detail_labels", paste0(
+      "une clé de détail hors du registre indicator_keys : ",
+      paste(hors_registre_details, collapse = ", ")))
+  }
+  if (anyDuplicated(cles_details)) {
+    manquer("detail_labels", "une clé de détail est en double")
+  }
+  for (cle_detail in cles_details) {
+    carte_details <- metadata$detail_labels[[cle_detail]]
+    if (!est_liste(carte_details)) {
+      manquer("detail_labels", paste0(
+        "« ", cle_detail, " » : la carte des détails doit être un objet"))
+    }
+    if (length(carte_details) == 0L) {
+      manquer("detail_labels", paste0(
+        "« ", cle_detail, " » : la carte des détails est vide"))
+    }
+    details <- names(carte_details)
+    if (any(!nzchar(details)) || anyDuplicated(details)) {
+      manquer("detail_labels", paste0(
+        "« ", cle_detail, " » : un détail est vide ou en double"))
+    }
+    if (any(!vapply(carte_details, est_chaine_non_vide, logical(1L)))) {
+      manquer("detail_labels", paste0(
+        "« ", cle_detail, " » : un libellé de détail doit être une chaîne non vide"))
+    }
+  }
+
   # 6. les sous-groupes — l'ordre de la fiche (le premier est le premier
   #    rendu) ; chaque sous-groupe porte ses indicateurs, sa figure et sa
   #    lecture résolue
@@ -313,6 +377,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
 
   indicateurs_groupes <- list()
   histoires_groupes <- list()
+  # L'union des paramètres de lecture DÉCLARÉS par les sous-groupes, dans
+  # l'ordre de première déclaration — la base de la carte param_labels (#318).
+  params_uniques <- character(0L)
 
   for (i in seq_along(metadata$subgroups)) {
     groupe <- metadata$subgroups[[i]]
@@ -395,9 +462,35 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       manquer("lecture",
               paste0("« ", cle, " » : un paramètre de lecture est vide ou en double"))
     }
+    nouveaux_params <- params[!params %in% params_uniques]
+    params_uniques <- c(params_uniques, nouveaux_params)
 
     # le template — le texte riche TYPÉ
     valider_template(groupe$reading$template, params, cle, manquer)
+  }
+
+  # 6bis. les libellés des paramètres de lecture (issue #318) — la carte du
+  #       vocabulaire des reading.params : EXACTEMENT l'union des paramètres
+  #       déclarés par les sous-groupes (la bijection, comme indicator_labels),
+  #       chaque valeur un libellé français non vide. C'est le vocabulaire que
+  #       la carte lit pour les couches de scalaires de Story — jamais la clé
+  #       brute d'un champ d'histoires.
+  if (is.null(metadata$param_labels) || !est_liste(metadata$param_labels)) {
+    manquer("param_labels",
+            "la carte des libellés de paramètres est absente ou non-objet")
+  }
+  cles_params <- names(metadata$param_labels)
+  sans_param <- setdiff(params_uniques, cles_params)
+  fantomes_param <- setdiff(cles_params, params_uniques)
+  if (length(sans_param) > 0 || length(fantomes_param) > 0) {
+    manquer("param_labels", paste0(
+      "la carte des libellés de paramètres doit déclarer EXACTEMENT les ",
+      "reading.params — sans libellé : ", paste(sans_param, collapse = ", "),
+      " ; non déclarés : ", paste(fantomes_param, collapse = ", ")))
+  }
+  if (any(!vapply(metadata$param_labels, est_chaine_non_vide, logical(1L)))) {
+    manquer("param_labels",
+            "un libellé de paramètre doit être une chaîne non vide")
   }
 
   # 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans

@@ -59,5 +59,18 @@
     "effectifs_salaries": "flores_a88",
     "chomage": "rp_chomage",
     "eco_activites": "sirene_snapshot"
+  },
+  "indicator_labels": {
+    "effectifs_salaries": "Effectifs salariés (lieu de travail)",
+    "chomage": "Chômage (population active)",
+    "eco_activites": "Part des éco-activités"
+  },
+  "detail_labels": {},
+  "param_labels": {
+    "rang": "Rang",
+    "activity_label": "Activité dominante",
+    "lq": "Location quotient (LQ)",
+    "n": "Nombre d'établissements",
+    "part_parc": "Part du parc breton"
   }
 }
