@@ -636,6 +636,10 @@ theme_habitat <- function() {
       mix_logements = "low"
     ),
     compute_histoires = compute_histoires_habitat,
-    validations = validations_habitat
+    validations = validations_habitat,
+    # Issue #311 : les métadonnées du thème (le fichier épinglé
+    # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
+    # payload, jamais un recompute des tables de faits
+    metadata = function() lire_theme_metadata("habitat")
   )
 }

@@ -568,6 +568,10 @@ theme_demographie <- function() {
     # ménages) — aucune clé "low" à déclarer, le défaut de la machinerie tient.
     directions = list(),
     compute_histoires = compute_histoires_demographie,
-    validations = validations_demographie
+    validations = validations_demographie,
+    # Issue #311 : les métadonnées du thème (le fichier épinglé
+    # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
+    # payload, jamais un recompute des tables de faits
+    metadata = function() lire_theme_metadata("demographie")
   )
 }

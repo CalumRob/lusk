@@ -404,7 +404,7 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
 # un descripteur incomplet échoue FORT, en nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_ECONOMIE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier"
+  "construire_analytiques", "publier", "metadata"
 )
 
 # verifier_descripteur_economie -------------------------------------------------
@@ -434,7 +434,11 @@ theme_economie <- function() {
     vintages = vintages_economie,
     construire_donnees = construire_donnees_economie,
     construire_analytiques = construire_analytiques_economie,
-    publier = publier_economie
+    publier = publier_economie,
+    # Issue #311 : les métadonnées du thème (le fichier épinglé
+    # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
+    # payload, jamais un recompute des tables de faits
+    metadata = function() lire_theme_metadata("economie")
   )
   verifier_descripteur_economie(descripteur)
   descripteur
