@@ -185,13 +185,17 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
       info = cle)
   }
 
-  # les histoires : MULTI-LIGNES par territoire (issue #131) — le top-5
-  # « ce que la commune abrite » (avec les nombres : lq + n) pour les
-  # communes / EPCIs / départements, la lecture régionale « ce que la
-  # Bretagne abrite » pour la région ; plus JAMAIS de Story dortoir (parked)
+  # les histoires : une lecture RÉSOLUE par (territoire, groupe) (issue #312) —
+  # le top-5 « ce que la commune abrite » replié en paramètres plats
+  # (top1_*..top5_*, la matière de la lecture, jamais les lignes du top-5 comme
+  # autant de lectures) pour les communes / EPCIs / départements, la lecture
+  # régionale « ce que la Bretagne abrite » (groupe structure-verte) pour la
+  # région ; plus JAMAIS de Story dortoir (parked)
   expect_true(all(payload$histoires$theme == "economie"))
-  expect_true(all(c("story_key", "rang", "activity_code", "activity_label",
-                    "lq", "n") %in% names(payload$histoires)))
+  expect_true(all(c("groupe", "story_key", "salience_reason",
+                    "top1_activity_code", "top1_activity_label", "top1_lq",
+                    "top1_n", "top5_part_parc") %in% names(payload$histoires)))
+  expect_true(all(payload$histoires$salience_reason == "defaut"))
   expect_true(all(payload$histoires$story_key[
     payload$histoires$territoire == "22001"] ==
     "ce-que-la-commune-abrite"))
@@ -199,8 +203,19 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   expect_true(all(payload$histoires$story_key[
     payload$histoires$territoire == "53"] ==
     "ce-que-la-bretagne-abrite"))
+  # le groupe de fiche est EXPLICITE (US10, #308) : la spécialisation vit dans
+  # sante-et-taille, la lecture régionale dans structure-verte
+  expect_true(all(payload$histoires$groupe[
+    payload$histoires$story_key == "ce-que-la-commune-abrite"] ==
+    "sante-et-taille"))
+  expect_true(all(payload$histoires$groupe[
+    payload$histoires$story_key == "ce-que-la-bretagne-abrite"] ==
+    "structure-verte"))
+  # l'identité (territoire × groupe) est UNIQUE — le top-5 n'est plus 5 lignes
+  expect_false(any(duplicated(payload$histoires[c("territoire", "groupe")])))
   # la commune dortoir-profond ne porte plus AUCUNE colonne dortoir
-  expect_false(any(c("classification", "ratio", "workplace", "resident") %in%
+  expect_false(any(c("classification", "ratio", "workplace", "resident", "rang",
+                     "activity_code", "activity_label") %in%
                      names(payload$histoires)))
   # les Stories portent le vintage de leur source de référence (SIRENE pour
   # les deux lectures — issue #74)

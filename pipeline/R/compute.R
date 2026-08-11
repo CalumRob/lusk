@@ -625,6 +625,20 @@ validate_payload <- function(payload,
          paste(inconnus_ap, collapse = ", "), ".", call. = FALSE)
   }
 
+  # 5quater. les histoires RÉSOLUES (issue #312) : une lecture par
+  # (territoire, groupe) de fiche, avec le groupe, la story choisie et la
+  # raison de saillance valides — le pool n'est jamais émis, une lecture en
+  # double ou hors registre échoue FORT (valider_histoires_resolues,
+  # resoudre_histoires.R). Un payload porte un thème unique (publish le
+  # vérifie déjà) ; la validation cible le registre de CE thème.
+  themes_payload <- unique(payload$indicateurs$theme)
+  if (length(themes_payload) != 1L) {
+    stop("Payload invalide : le payload porte ", length(themes_payload),
+         " thèmes — la résolution des histoires est par thème.",
+         call. = FALSE)
+  }
+  valider_histoires_resolues(payload$histoires, themes_payload[[1L]])
+
   # 6. les validations de valeur déclarées par le thème (issue #13)
   for (valider in validations) valider(payload)
 
@@ -656,7 +670,12 @@ compute_payload <- function(data, theme = theme_demographie(),
       indicateurs_table = theme$indicateurs,
       vintages = vintages
     ),
-    histoires = theme$compute_histoires(territoires),
+    # Issue #312 : les histoires sont RÉSOLUES ici — une lecture par
+    # (territoire, groupe) de fiche, la clé choisie et la raison de saillance
+    # portées (resoudre_histoires). Le module du thème calcule les candidats,
+    # la machinerie partagée choisit — jamais le pool dans le payload.
+    histoires = resoudre_histoires(theme$compute_histoires(territoires),
+                                   theme$theme),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, theme$construire_apercu(territoires))
   )

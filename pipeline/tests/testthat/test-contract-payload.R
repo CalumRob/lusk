@@ -41,8 +41,8 @@ test_that("la forme des quatre tables est le contrat", {
     "vintage_date_reference", "vintage_date_publication"
   ))
   expect_named(payload$histoires, c(
-    "territoire", "type", "theme", "story_key", "periode",
-    "solde_naturel", "solde_migratoire",
+    "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
+    "periode", "solde_naturel", "solde_migratoire",
     "taux_solde_naturel", "taux_solde_migratoire",
     "classification"
   ))

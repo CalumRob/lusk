@@ -291,7 +291,11 @@ compute_histoires_economie <- function(analytiques, vintages) {
     )
 
   dplyr::bind_cols(
-    analytiques$histoires %>%
+    # Issue #312 : le top-5 multi-lignes devient la MATIÈRE d'une lecture par
+    # (territoire, story_key) — les paramètres plats top1_*..top5_* (jamais le
+    # top-5 comme autant de lectures dans le payload, l'identité (territoire ×
+    # groupe) est unique, parent #308)
+    replier_top5_en_lecture(analytiques$histoires) %>%
       dplyr::mutate(theme = "economie"),
     tampon
   )
@@ -352,7 +356,11 @@ construire_payload_economie <- function(analytiques, base_epci, vintages) {
 
   payload <- list(
     indicateurs = construire_indicateurs_economie(analytiques, territoires, vintages),
-    histoires = compute_histoires_economie(analytiques, vintages),
+    # Issue #312 : la lecture résolue par (territoire, groupe) — le top-5
+    # replié en paramètres, le groupe de fiche et la raison de saillance
+    # portés par la résolution partagée (resoudre_histoires)
+    histoires = resoudre_histoires(
+      compute_histoires_economie(analytiques, vintages), "economie"),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, construire_apercu_economie(territoires))
   )

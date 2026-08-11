@@ -80,13 +80,15 @@ test_that("les agrégats : EPCI, départements et région suivent la même règl
   expect_equal(h("29")$classification, "parc-intermediaire")
 })
 
-test_that("le schéma de la table est le contrat de l'issue #18 (inchangé)", {
+test_that("le schéma de la table est le contrat de l'issue #18 (étendu #312)", {
   p <- payload_habitat()
   expect_named(p$histoires, c(
-    "territoire", "type", "theme", "story_key",
+    "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
     "classification", "part_passoires", "part_abc", "n_dpe"
   ))
   expect_true(all(p$histoires$theme == "habitat"))
+  expect_true(all(p$histoires$groupe == "etat-du-parc"))
+  expect_true(all(p$histoires$salience_reason == "defaut"))
   expect_true(all(p$histoires$story_key == "etat-energetique-du-parc"))
 })
 
@@ -94,10 +96,13 @@ test_that("déterminisme : même territoire + mêmes données -> même lecture, 
   p1 <- payload_habitat()
   p2 <- payload_habitat()
   expect_identical(p1$histoires, p2$histoires)
-  # la re-computation directe du classifieur ne change rien non plus
+  # la re-computation directe du classifieur ne change rien non plus : la
+  # résolution partagée (issue #312) appliquée aux candidats du classifieur
+  # redonne exactement la table publiée
   h1 <- p1$histoires
-  h2 <- compute_histoires_habitat(
-    construire_territoires_habitat(load_fixture_habitat())
+  h2 <- resoudre_histoires(
+    compute_histoires_habitat(construire_territoires_habitat(load_fixture_habitat())),
+    "habitat"
   )
   expect_identical(h1, h2)
 })

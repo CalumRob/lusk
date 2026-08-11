@@ -2382,10 +2382,14 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
   )
 
   # un payload sain passe la validation générique + les validations du thème
+  # (les histoires RÉSOLUES du fixture — issue #312 : la validation générique
+  # exige une lecture par (territoire, groupe), jamais une table vide)
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(fx, territoires,
                                                   vintages_mobilite()),
-    histoires = tibble::tibble(),
+    histoires = resoudre_histoires(
+      compute_histoires_mobilite(analytiques_mobilite_fixture(),
+                                 vintages_mobilite()), "mobilite"),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, list())
   )
@@ -2416,7 +2420,9 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(fx, territoires,
                                                   vintages_mobilite()),
-    histoires = tibble::tibble(),
+    histoires = resoudre_histoires(
+      compute_histoires_mobilite(analytiques_mobilite_fixture(),
+                                 vintages_mobilite()), "mobilite"),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, list())
   )

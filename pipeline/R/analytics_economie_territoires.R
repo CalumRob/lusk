@@ -181,6 +181,40 @@ construire_histoires_economie_payload <- function(lq, base_epci,
     dplyr::arrange(territoire, story_key, rang)
 }
 
+# replier_top5_en_lecture -------------------------------------------------------
+# Issue #312 (parent #308) : une lecture RÉSOLUE par (territoire, groupe) — le
+# top-5 de « ce que la commune abrite » / « ce que la Bretagne abrite » devient
+# la MATIÈRE d'UNE SEULE ligne, en paramètres plats (top1_*..top5_* : code,
+# label, LQ, n, part du parc — les champs null selon la lecture, le LQ pour la
+# spécialisation, la part du parc pour la structure régionale). Le rang est
+# porté par l'index (top1 = rang 1, jamais une colonne de plus) ; un territoire
+# à moins de top_n activités garde ses seules activités réelles (jamais de
+# padding — les colonnes au-delà restent NA). L'identité (territoire × groupe)
+# est UNIQUE : le payload ne porte jamais les lignes du top-5 comme autant de
+# lectures, il porte la lecture et sa matière.
+replier_top5_en_lecture <- function(histoires_longues, top_n = 5L) {
+  if (nrow(histoires_longues) == 0L) {
+    return(histoires_longues)
+  }
+  rangees <- histoires_longues %>%
+    dplyr::group_by(territoire, story_key) %>%
+    dplyr::arrange(rang, activity_code, .by_group = TRUE) %>%
+    dplyr::mutate(k = dplyr::row_number()) %>%
+    dplyr::ungroup()
+
+  base <- unique(rangees[c("territoire", "type", "story_key")])
+  for (k in seq_len(top_n)) {
+    bloc <- rangees[rangees$k == k, c("territoire", "story_key",
+                                      "activity_code", "activity_label",
+                                      "lq", "n", "part_parc")]
+    names(bloc)[3:7] <- paste0("top", k, "_", c("activity_code", "activity_label",
+                                                "lq", "n", "part_parc"))
+    base <- dplyr::left_join(base, bloc, by = c("territoire", "story_key"))
+  }
+  base %>%
+    dplyr::arrange(territoire, story_key)
+}
+
 # construire_territoires_agregats_economie --------------------------------------
 # L'acte « calculer » du module : les tables communales des T1-T5 (effectifs,
 # éco, chômage, LQ) + la base des EPCI → les tables agrégées du payload (les
