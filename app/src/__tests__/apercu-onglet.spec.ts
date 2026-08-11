@@ -21,7 +21,7 @@ import type { Payload } from '../payload/types'
 /**
  * ApercuOnglet — the Aperçu tab (ADR-0007, layouts.md §2): the territory's
  * basic stats rendered through apercuPourTerritoire (NA values skipped by the
- * selector, never a phantom figure) and the Programmes & financements element
+ * selector, never a phantom figure) and the Programmes et subventions element
  * (issue #181) — rendered from REAL data through the ladder derivation
  * (programmesPourTerritoire, ADR-0013): the three voices (lauréate /
  * couverte / porte / compte / ort), the named lists (full, scrollable), the
@@ -92,7 +92,7 @@ describe('ApercuOnglet — les statistiques de base', () => {
   })
 })
 
-describe("ApercuOnglet — l'élément Programmes & financements (les données réelles)", () => {
+describe("ApercuOnglet — l'élément Programmes et subventions (les données réelles)", () => {
   it('rendre une fiche COMMUNE — le label lauréat, la couverture du contrat de son EPCI, la ventilation des subventions', () => {
     const wrapper = monter('22001')
 
@@ -345,7 +345,7 @@ describe("ApercuOnglet — l'état vide honnête (jamais « under construction �
     const sansProgrammes: Payload = { ...payloadDemographie, programmes: null }
     const wrapper = monter('22001', sansProgrammes)
 
-    expect(wrapper.find('.apercu-programmes').text()).toContain('Programmes & financements')
+    expect(wrapper.find('.apercu-programmes').text()).toContain('Programmes et subventions')
     expect(wrapper.find('.apercu-programmes').text()).toContain('Aucun programme référencé.')
     expect(wrapper.findAll('.puce-programme')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('À venir')

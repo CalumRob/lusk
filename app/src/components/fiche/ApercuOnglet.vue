@@ -3,11 +3,11 @@
  * ApercuOnglet — the Aperçu tab, the fiche's default landing view (ADR-0007,
  * layouts.md §2, CONTEXT.md §Aperçu). Deliberately not a theme block: it
  * holds the territory's basic stats, rendered from the pipeline's `apercu`
- * table via apercuPourTerritoire (never client-derived), and the Programmes &
- * financements element. Runs on the general brand ramp — no theme -wash, no
+ * table via apercuPourTerritoire (never client-derived), and the Programmes et
+ * subventions element. Runs on the general brand ramp — no theme -wash, no
  * theme colors (the shell already keeps the page on the brand background).
  *
- * The Programmes & financements element renders REAL data (issue #181): the
+ * The Programmes et subventions element renders REAL data (issue #181): the
  * ladder derivation (programmesPourTerritoire, ADR-0013 — a relational join
  * over the payload's membership rows + the territoires reference, never a
  * computed stat) produces the per-fiche rendering — the three voices
@@ -100,7 +100,7 @@ const lienProvenance = computed(() => {
     <p v-else class="apercu-vide">Aucune donnée disponible pour ce territoire.</p>
 
     <section class="apercu-programmes" aria-labelledby="titre-programmes">
-      <h2 class="apercu-titre" id="titre-programmes">Programmes &amp; financements</h2>
+      <h2 class="apercu-titre" id="titre-programmes">Programmes et subventions</h2>
 
       <p v-if="elementVide" class="programmes-vide">Aucun programme référencé.</p>
       <template v-else>
@@ -226,7 +226,7 @@ const lienProvenance = computed(() => {
   color: var(--text-secondary);
 }
 
-/* Programmes & financements — badge chips + the subvention figure + the
+/* Programmes et subventions — badge chips + the subvention figure + the
    Région portal link. One .programme-badge per programme: the chip (sigle),
    the honest voice line, the full named list (scrollable — never truncated,
    PRD #162-7), the rider when the label carries it, the vintage stamp. */

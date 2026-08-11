@@ -109,19 +109,19 @@ describe('ThemeTabs — the tab logic (URL state)', () => {
 })
 
 describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', () => {
-  it('override le premier onglet pour la carte — « Programmes & financements » au lieu d’Aperçu', () => {
+  it('override le premier onglet pour la carte — « Programmes et subventions » au lieu d’Aperçu', () => {
     const wrapper = mount(ThemeTabs, {
       props: {
         themes: ['demographie'],
         selected: 'programmes',
-        libellePremier: 'Programmes & financements',
+        libellePremier: 'Programmes et subventions',
         premierSlug: 'programmes',
       },
       attachTo: document.body,
     })
     montee = wrapper
 
-    expect(textesOnglets(wrapper)[0]).toBe('Programmes & financements')
+    expect(textesOnglets(wrapper)[0]).toBe('Programmes et subventions')
     expect(textesOnglets(wrapper)[1]).toBe('Démographie')
   })
 
@@ -130,7 +130,7 @@ describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', (
       props: {
         themes: ['demographie'],
         selected: 'programmes',
-        libellePremier: 'Programmes & financements',
+        libellePremier: 'Programmes et subventions',
         premierSlug: 'programmes',
       },
       attachTo: document.body,
@@ -147,7 +147,7 @@ describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', (
       props: {
         themes: ['demographie'],
         selected: 'programmes',
-        libellePremier: 'Programmes & financements',
+        libellePremier: 'Programmes et subventions',
         premierSlug: 'programmes',
       },
       attachTo: document.body,
@@ -166,7 +166,7 @@ describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', (
       props: {
         themes: [],
         selected: 'programmes',
-        libellePremier: 'Programmes & financements',
+        libellePremier: 'Programmes et subventions',
         premierSlug: 'programmes',
       },
       attachTo: document.body,
@@ -183,7 +183,7 @@ describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', (
       props: {
         themes: ['demographie', 'habitat'],
         selected: 'programmes',
-        libellePremier: 'Programmes & financements',
+        libellePremier: 'Programmes et subventions',
         premierSlug: 'programmes',
       },
       attachTo: document.body,

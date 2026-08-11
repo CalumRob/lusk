@@ -82,7 +82,7 @@ describe('libelleApercu — the French label registry', () => {
   })
 })
 
-describe('Programme — the programmes & financements element (CONTEXT.md)', () => {
+describe('Programme — the programmes et subventions element (CONTEXT.md)', () => {
   it('expands a programme to « sigle — nom » for its accessible name', () => {
     const acv: Programme = { sigle: 'ACV', nom: 'Action Cœur de Ville' }
     expect(libelleProgramme(acv)).toBe('ACV — Action Cœur de Ville')
