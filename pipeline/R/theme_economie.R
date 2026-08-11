@@ -262,13 +262,14 @@ construire_indicateurs_economie <- function(analytiques, territoires, vintages) 
 # compute_histoires_economie ---------------------------------------------------
 # L'Histoire du thème (issue #131, décision 2026-08-06 — thème à Story UNIQUE,
 # ADR-0002 : le pool de saillance se réduit à un défaut toujours allumé).
-# La table est MULTI-LIGNES par territoire : chaque ligne est une des top-5
-# spécialisations de la lecture « ce que la commune abrite » (rang /
-# activity_code / activity_label / lq / n — calculée par
-# construire_histoires_economie_payload, LQ à référence même-échelle pour les
-# agrégats), plus les 5 lignes de la lecture régionale « ce que la Bretagne
-# abrite » (présence, n + part du parc). Le Story dortoir est PARKED : aucune
-# colonne classification/ratio/workplace/resident ne part dans le payload.
+# Le top-5 multi-lignes (une ligne par rang de la lecture « ce que la commune
+# abrite » — calculé par construire_histoires_economie_payload, LQ à référence
+# même-échelle pour les agrégats — et de la lecture régionale « ce que la
+# Bretagne abrite », présence n + part du parc) est REPLIÉ en UNE ligne par
+# (territoire, story_key) : les paramètres plats top1_*..top5_* (issue #312 —
+# l'identité (territoire × groupe) est unique, jamais le top-5 comme autant de
+# lectures). Le Story dortoir est PARKED : aucune colonne
+# classification/ratio/workplace/resident ne part dans le payload.
 # Issue #74 : les Stories portent leurs estampilles vintage — les DEUX
 # lectures sourcent le snapshot SIRENE (la LQ et la structure régionale sont
 # toutes deux la matière du parc des établissements) : chaque ligne est
