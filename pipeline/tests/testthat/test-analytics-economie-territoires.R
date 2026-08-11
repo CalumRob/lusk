@@ -265,3 +265,58 @@ test_that("histoires : une commune sans EPCI (île) n'agrège à AUCUN niveau EP
   expect_equal(abrite$lq[abrite$territoire == "200000001" &
                            abrite$activity_code == "B"], 1.0)
 })
+
+test_that("replier_top5_en_lecture : le top-5 devient une lecture par (territoire, story_key), en paramètres plats", {
+  # issue #312 : l'identité (territoire × groupe) est unique — le top-5
+  # multi-lignes se replie en UNE ligne dont les top1_*..top5_* portent la
+  # matière (le rang est l'index, jamais une colonne de plus)
+  histoires <- construire_histoires_economie_payload(fixture_lq_territoires(),
+                                                     base_epci_histoires)
+  lectures <- replier_top5_en_lecture(histoires)
+
+  # une ligne par (territoire, story_key) — jamais le top-5 comme autant de
+  # lectures ; la colonne `rang` disparaît (l'index la porte)
+  expect_false("rang" %in% names(lectures))
+  expect_false(any(duplicated(lectures[c("territoire", "story_key")])))
+  expect_equal(nrow(lectures), length(unique(histoires$territoire)))
+
+  # la matière de la lecture 22001 : top1 = le rang 1 de la LQ (47.11Z, 1,5)
+  h22001 <- lectures[lectures$territoire == "22001", ]
+  expect_equal(h22001$top1_activity_code, "47.11Z")
+  expect_equal(h22001$top1_lq, 1.5)
+  expect_equal(h22001$top1_n, 3)
+  # un territoire à moins de 5 activités ne reçoit AUCUN padding : les
+  # colonnes au-delà de ses activités réelles restent NA
+  expect_true(is.na(h22001$top5_activity_code))
+  expect_true(is.na(h22001$top5_lq))
+  # les paramètres de la lecture régionale : la part du parc (jamais la LQ)
+  h53 <- lectures[lectures$territoire == "53", ]
+  expect_equal(h53$top1_activity_code, "01.11Z")
+  expect_true(is.na(h53$top1_lq))
+  expect_equal(h53$top1_part_parc, 12 / 30)
+  expect_equal(h53$top1_n, 12)
+})
+
+test_that("replier_top5_en_lecture : la matière passe par la résolution partagée (groupe + saillance)", {
+  # le bout du bout de l'issue #312 : le repli + resoudre_histoires donnent la
+  # lecture RÉSOLUE — groupe explicite, raison « defaut », une ligne par
+  # (territoire, groupe)
+  histoires <- construire_histoires_economie_payload(fixture_lq_territoires(),
+                                                     base_epci_histoires)
+  resolues <- resoudre_histoires(
+    replier_top5_en_lecture(histoires) %>% dplyr::mutate(theme = "economie"),
+    "economie"
+  )
+
+  expect_false(any(duplicated(resolues[c("territoire", "groupe")])))
+  expect_true(all(resolues$salience_reason == "defaut"))
+  expect_true(all(resolues$groupe[
+    resolues$story_key == "ce-que-la-commune-abrite"] == "sante-et-taille"))
+  expect_equal(resolues$groupe[
+    resolues$story_key == "ce-que-la-bretagne-abrite"], "structure-verte")
+  # la matière du top-5 survit à la résolution
+  expect_equal(
+    resolues$top1_activity_code[resolues$territoire == "22001"],
+    "47.11Z"
+  )
+})

@@ -262,13 +262,14 @@ construire_indicateurs_economie <- function(analytiques, territoires, vintages) 
 # compute_histoires_economie ---------------------------------------------------
 # L'Histoire du thème (issue #131, décision 2026-08-06 — thème à Story UNIQUE,
 # ADR-0002 : le pool de saillance se réduit à un défaut toujours allumé).
-# La table est MULTI-LIGNES par territoire : chaque ligne est une des top-5
-# spécialisations de la lecture « ce que la commune abrite » (rang /
-# activity_code / activity_label / lq / n — calculée par
-# construire_histoires_economie_payload, LQ à référence même-échelle pour les
-# agrégats), plus les 5 lignes de la lecture régionale « ce que la Bretagne
-# abrite » (présence, n + part du parc). Le Story dortoir est PARKED : aucune
-# colonne classification/ratio/workplace/resident ne part dans le payload.
+# Le top-5 multi-lignes (une ligne par rang de la lecture « ce que la commune
+# abrite » — calculé par construire_histoires_economie_payload, LQ à référence
+# même-échelle pour les agrégats — et de la lecture régionale « ce que la
+# Bretagne abrite », présence n + part du parc) est REPLIÉ en UNE ligne par
+# (territoire, story_key) : les paramètres plats top1_*..top5_* (issue #312 —
+# l'identité (territoire × groupe) est unique, jamais le top-5 comme autant de
+# lectures). Le Story dortoir est PARKED : aucune colonne
+# classification/ratio/workplace/resident ne part dans le payload.
 # Issue #74 : les Stories portent leurs estampilles vintage — les DEUX
 # lectures sourcent le snapshot SIRENE (la LQ et la structure régionale sont
 # toutes deux la matière du parc des établissements) : chaque ligne est
@@ -291,7 +292,11 @@ compute_histoires_economie <- function(analytiques, vintages) {
     )
 
   dplyr::bind_cols(
-    analytiques$histoires %>%
+    # Issue #312 : le top-5 multi-lignes devient la MATIÈRE d'une lecture par
+    # (territoire, story_key) — les paramètres plats top1_*..top5_* (jamais le
+    # top-5 comme autant de lectures dans le payload, l'identité (territoire ×
+    # groupe) est unique, parent #308)
+    replier_top5_en_lecture(analytiques$histoires) %>%
       dplyr::mutate(theme = "economie"),
     tampon
   )
@@ -352,7 +357,11 @@ construire_payload_economie <- function(analytiques, base_epci, vintages) {
 
   payload <- list(
     indicateurs = construire_indicateurs_economie(analytiques, territoires, vintages),
-    histoires = compute_histoires_economie(analytiques, vintages),
+    # Issue #312 : la lecture résolue par (territoire, groupe) — le top-5
+    # replié en paramètres, le groupe de fiche et la raison de saillance
+    # portés par la résolution partagée (resoudre_histoires)
+    histoires = resoudre_histoires(
+      compute_histoires_economie(analytiques, vintages), "economie"),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, construire_apercu_economie(territoires))
   )

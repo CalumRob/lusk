@@ -58,7 +58,7 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
   # les états OCS-GE en ha et en m²/habitant, la trajectoire par habitant et
   # la classification re-keyée sur le signe pair (Δpopulation × trajectoire)
   expect_named(payload$histoires, c(
-    "territoire", "type", "theme", "story_key",
+    "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
     "periode_pop", "periode_artif",
     "delta_population",
     "taux_variation_population",

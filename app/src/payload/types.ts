@@ -84,15 +84,32 @@ export interface Indicateur extends VintageStamp {
 }
 
 /**
- * The Story row per territoire (schema name kept: histoires) — the shape is
- * theme-specific (the R contract: Démographie carries the two soldes, Habitat
- * the parc-reading parts). Discriminated by `theme`.
+ * The Story row per territoire (schema name kept: histoires) — the RESOLVED
+ * reading per (territoire, groupe) (issue #312, parent #308): the pipeline
+ * selects the story and the salience; the payload carries ONE reading per
+ * fiche subgroup, never the candidate pool. Discriminated by `theme`.
  */
-export interface HistoireDemographie {
+
+/**
+ * The identity columns every resolved reading carries (issue #312): the
+ * territory, its fiche subgroup (`groupe` — the explicit join the app never
+ * infers, US10), the SELECTED story key and the salience reason (`defaut` for
+ * the always-on reading, the declared reason when a salience candidate fired).
+ */
+export interface LectureResolueBase {
   territoire: string
   type: TerritoireType
-  theme: 'demographie'
+  theme: Theme
+  /** The fiche subgroup this reading belongs to — the (territoire, groupe) identity. */
+  groupe: string
   story_key: string
+  /** Pourquoi cette lecture est choisie — « defaut » ou la raison de saillance déclarée. */
+  salience_reason: RaisonSaillance
+}
+
+export interface HistoireDemographie extends LectureResolueBase {
+  theme: 'demographie'
+  story_key: 'trajectoire-demographique'
   solde_naturel: number
   solde_migratoire: number
   /** Annualized per-mille rates (ADR-0011) — the two forces the reading crosses. */
@@ -107,11 +124,9 @@ export interface HistoireDemographie {
   periode: string | null
 }
 
-export interface HistoireHabitat {
-  territoire: string
-  type: TerritoireType
+export interface HistoireHabitat extends LectureResolueBase {
   theme: 'habitat'
-  story_key: string
+  story_key: 'etat-energetique-du-parc'
   /** Classification + parts de justification null sous le seuil n < 30 (suppression, R contract). */
   classification: string | null
   part_passoires: number | null
@@ -120,73 +135,73 @@ export interface HistoireHabitat {
 }
 
 /**
- * The Économie Story row (issue #120) — MULTI-LIGNES: 1 à 5 lignes par
- * (territoire × story_key), le top-5 de la lecture. Discriminé par `story_key` :
- * « ce que la commune abrite » (la spécialisation LQ, communes/EPCIs/
- * départements) et « ce que la Bretagne abrite » (la lecture de structure de la
- * région — sa LQ est dégénérée, elle lit la présence). Le label d'activité
- * vient TOUJOURS du payload (`activity_label`), jamais codé en dur. Chaque ligne
- * porte son estampille vintage (issue #74) : deux dates ISO + source/version.
+ * The Économie Story row (issue #120, RESOLVED by #312) — ONE row per
+ * (territoire, groupe), the top-5 folded into flat params (top1_*..top5_*:
+ * the reading content — the LQ for the specialisation reading, the parc share
+ * for the région's presence reading; the rank is the index, never a column).
+ * A territory with fewer than five activities carries only its real ones (no
+ * padding — the columns beyond stay null). Discriminated by `story_key` :
+ * « ce que la commune abrite » (communes/EPCIs/départements, groupe
+ * sante-et-taille) et « ce que la Bretagne abrite » (la région, groupe
+ * structure-verte). The activity label comes ALWAYS from the payload, never
+ * hard-coded. Each row wears its vintage stamp (issue #74).
  */
-export interface HistoireEconomieCommuneAbrite extends VintageStamp {
-  territoire: string
-  type: TerritoireType
+export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
   theme: 'economie'
-  story_key: 'ce-que-la-commune-abrite'
-  /** Le rang dans le top-5 du territoire (1–5, un rang par ligne). */
-  rang: number
-  /** La sous-classe NAF rév. 2 (APE 5 chiffres + lettre) — l'identité de l'activité. */
-  activity_code: string
-  activity_label: string
-  /** La spécialisation (LQ vs la moyenne bretonne, même échelle) — la matière de la lecture. */
-  lq: number
-  /** Les établissements actifs derrière le rang. */
-  n: number
-  /** La part du parc breton — hors de cette lecture (null par contrat). */
-  part_parc: number | null
+  story_key: 'ce-que-la-commune-abrite' | 'ce-que-la-bretagne-abrite'
+  /** La matière de la lecture — le top-5 replié (le rang est l'index). */
+  top1_activity_code: string | null
+  top1_activity_label: string | null
+  /** La spécialisation (LQ) — null pour la lecture de présence. */
+  top1_lq: number | null
+  top1_n: number | null
+  /** La part du parc breton — null pour la lecture de spécialisation. */
+  top1_part_parc: number | null
+  top2_activity_code: string | null
+  top2_activity_label: string | null
+  top2_lq: number | null
+  top2_n: number | null
+  top2_part_parc: number | null
+  top3_activity_code: string | null
+  top3_activity_label: string | null
+  top3_lq: number | null
+  top3_n: number | null
+  top3_part_parc: number | null
+  top4_activity_code: string | null
+  top4_activity_label: string | null
+  top4_lq: number | null
+  top4_n: number | null
+  top4_part_parc: number | null
+  top5_activity_code: string | null
+  top5_activity_label: string | null
+  top5_lq: number | null
+  top5_n: number | null
+  top5_part_parc: number | null
 }
-
-export interface HistoireEconomieBretagneAbrite extends VintageStamp {
-  territoire: string
-  type: TerritoireType
-  theme: 'economie'
-  story_key: 'ce-que-la-bretagne-abrite'
-  rang: number
-  activity_code: string
-  activity_label: string
-  /** La LQ est dégénérée pour la région (elle EST la référence) — null par contrat. */
-  lq: number | null
-  n: number
-  /** La part du parc breton — la matière de la lecture de structure. */
-  part_parc: number
-}
-
-export type HistoireEconomie = HistoireEconomieCommuneAbrite | HistoireEconomieBretagneAbrite
 
 /**
- * The Mobilité Story rows (issue #142, ADR-0012) — TWO rows per saillant
- * territory at most: the always-on default « vingt-minutes-sans-voiture » and,
- * ONLY where the bike delta is real (classification « saillant »), the salience
- * candidate « ce-que-le-velo-preserve ». The default row carries the story's
- * whole matter: the reading (div_loss_t — the number of service types that
- * leave the territory's reach à pied ou en transports en commun at 20 minutes),
- * the story depth (pct_iso_full_t — the share of buildings that lose ALL
- * access), the precomputed distribution signature (dens_1..10 + dec_1..10 +
- * min/max — the building-level density of div_loss_t, NEVER the matrix,
- * lesson of issue #131) and the saillance classification. The vélo row carries
- * only the delta reading — the distribution is hors contrat there (null in the
- * raw rows, dropped from the type). Each row carries the snapshot's vintage
- * stamp (issue #74 — the flagship cites its source).
+ * The Mobilité Story row (issue #142, RESOLVED by #312) — ONE row per
+ * territoire, the salience already resolved: the always-on default
+ * « vingt-minutes-sans-voiture » everywhere, replaced ONLY where the bike
+ * delta is real (classification « saillant », salience_reason
+ * « delta-velo-saillant ») by « ce-que-le-velo-preserve ». The candidate pool
+ * is never in the payload (ADR-0002). The row carries the reading (div_loss_t
+ * — the service types that leave the reach à pied ou en transports en commun
+ * at 20 minutes), the story depth (pct_iso_full_t), the precomputed
+ * distribution signature (dens_1..10 + dec_1..10 + min/max — the
+ * building-level density of div_loss_t, NEVER the matrix, lesson of issue
+ * #131) and the saillance classification. When the vélo reading fires, the
+ * signature columns are null on its row (the distribution is the default
+ * reading's matter — the same chart, the same plot, ADR-0012). Each row
+ * carries the snapshot's vintage stamp (issue #74).
  */
-export interface HistoireMobiliteVingtMinutes extends VintageStamp {
-  territoire: string
-  type: TerritoireType
+export interface HistoireMobilite extends LectureResolueBase, VintageStamp {
   theme: 'mobilite'
-  story_key: 'vingt-minutes-sans-voiture'
+  story_key: 'vingt-minutes-sans-voiture' | 'ce-que-le-velo-preserve'
   /** La lecture — les types de services perdus à pied ou en transports en commun à 20 min. */
   div_loss_t: number
   div_loss_b: number
-  /** La matière de la saillance — ce que le vélo préserve déjà (div_loss_t − div_loss_b). */
+  /** Ce que le vélo préserve déjà (div_loss_t − div_loss_b) — la matière de la saillance. */
   delta: number
   /** La part des bâtiments qui perdent TOUT accès — la profondeur du Story. */
   pct_iso_full_t: number | null
@@ -215,21 +230,6 @@ export interface HistoireMobiliteVingtMinutes extends VintageStamp {
   classification_saillance: string
 }
 
-/** La lecture du delta — le vélo préserve déjà ces types de services (réalisé, jamais potentiel). */
-export interface HistoireMobiliteVeloPreserve extends VintageStamp {
-  territoire: string
-  type: TerritoireType
-  theme: 'mobilite'
-  story_key: 'ce-que-le-velo-preserve'
-  div_loss_t: number
-  div_loss_b: number
-  delta: number
-  /** Le vélo ne se déclenche que sur la saillance — « saillant » par contrat. */
-  classification_saillance: 'saillant'
-}
-
-export type HistoireMobilite = HistoireMobiliteVingtMinutes | HistoireMobiliteVeloPreserve
-
 /**
  * The Milieux Story row (issue #174, ADR-0014, re-keyed by spec #225) —
  * « Se densifier, s'étaler, ou s'en aller », the single Story of the fifth
@@ -257,9 +257,7 @@ export type HistoireMobilite = HistoireMobiliteVingtMinutes | HistoireMobiliteVe
  * invariant holds. Classification null = incomplete window (never an
  * invented reading).
  */
-export interface HistoireMilieux {
-  territoire: string
-  type: TerritoireType
+export interface HistoireMilieux extends LectureResolueBase {
   theme: 'milieux'
   story_key: 'se-densifier-setaler-ou-sen-aller'
   /** La fenêtre partagée de la population (le bracket RP — "2017-2023"). */
@@ -482,6 +480,38 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
   habitat: ['etat-energetique-du-parc'],
   economie: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
   milieux: ['se-densifier-setaler-ou-sen-aller'],
+}
+
+/**
+ * The closed salience-reason vocabulary (issue #312): « defaut » for the
+ * always-on reading, the declared reason when a salience candidate replaced
+ * it (Mobilité: « delta-velo-saillant »). The validator refuses any other
+ * value — never an invented reason. Mirrors SALIENCE_DEFAUT + the declared
+ * reasons of STORIES_RESOLUES_PAR_THEME (pipeline/R/theme_metadata.R).
+ */
+export const RAISONS_SAILLANCE = ['defaut', 'delta-velo-saillant'] as const
+
+export type RaisonSaillance = (typeof RAISONS_SAILLANCE)[number]
+
+/**
+ * The fiche subgroup per story (issue #312) — the TS mirror of
+ * STORIES_RESOLUES_PAR_THEME (pipeline/R/theme_metadata.R): the groupe each
+ * story resolves into, the explicit join the app never infers. Mobilité's
+ * pool shares ONE groupe (the salience replaces the default inside the same
+ * slot, ADR-0002); Économie's two readings live in two distinct groups.
+ */
+export const GROUPES_PAR_STORY: Record<Theme, Record<string, string>> = {
+  mobilite: {
+    'vingt-minutes-sans-voiture': 'acces-aux-services',
+    'ce-que-le-velo-preserve': 'acces-aux-services',
+  },
+  demographie: { 'trajectoire-demographique': 'etat-et-dynamique' },
+  habitat: { 'etat-energetique-du-parc': 'etat-du-parc' },
+  economie: {
+    'ce-que-la-commune-abrite': 'sante-et-taille',
+    'ce-que-la-bretagne-abrite': 'structure-verte',
+  },
+  milieux: { 'se-densifier-setaler-ou-sen-aller': 'artificialisation' },
 }
 
 /** A text node — raw HTML in the content is forbidden (chevrons rejected). */

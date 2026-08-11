@@ -126,8 +126,10 @@ comptes_normalises_reels <- c(
 # le payload publié (T7-T8) — comptes verrouillés sur le run réel 2026-08-06
 # (issue #131 : le bloc passe à 3 clés × 4 types de territoire — lq et
 # lq_emploi quittent le payload, la matrice reste interne ; les histoires
-# deviennent MULTI-LIGNES : top-5 « ce que la commune abrite » pour les
-# territoires porteurs d'une LQ + les 5 lignes de la lecture régionale).
+# deviennent RÉSOLUES (issue #312) : une lecture par (territoire, groupe) —
+# le top-5 « ce que la commune abrite » replié en paramètres plats (jamais le
+# top-5 comme autant de lignes) pour les territoires porteurs d'une LQ + la
+# lecture régionale « ce que la Bretagne abrite » pour la région).
 # NB : 1268 territoires, pas 1269 — la référence n'a plus l'EPCI fantôme
 # « Sans objet » (fix #131) : 1202 communes + 61 EPCIs réels + 4 départements
 # + 1 région. Les trois îles sans EPCI (22016/29083/29155) n'agrègent à
@@ -135,7 +137,7 @@ comptes_normalises_reels <- c(
 # groupe de comparaison), jamais un rang inventé.
 comptes_payload_reels <- c(
   indicateurs = 1268 * 3,  # effectifs_salaries + chomage + eco_activites
-  histoires = 1202 * 5 + 61 * 5 + 4 * 5 + 5,  # top-5 (communes+EPCIs+deps) + région (5)
+  histoires = 1268,  # UNE lecture résolue par (territoire, groupe) — le top-5 replié en paramètres (issue #312)
   territoires = 1268,      # 1202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,              # le gating du thème : la table est présente mais vide
   vintages = 5             # une ligne par source du manifeste Économie

@@ -548,10 +548,10 @@ test_that("déterminisme : même territoire + mêmes données -> même lecture, 
   expect_identical(p1$histoires, p2$histoires)
 })
 
-test_that("le schéma de la table est le contrat de l'issue #238 (le pivot OCS-GE)", {
+test_that("le schéma de la table est le contrat de l'issue #238 (le pivot OCS-GE, étendu #312)", {
   p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   expect_named(p$histoires, c(
-    "territoire", "type", "theme", "story_key",
+    "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
     "periode_pop", "periode_artif",
     "delta_population",
     "taux_variation_population",
@@ -560,6 +560,10 @@ test_that("le schéma de la table est le contrat de l'issue #238 (le pivot OCS-G
     "trajectoire_artif_par_habitant",
     "classification"
   ))
+  # la lecture résolue (issue #312) : une par (territoire, groupe), la raison
+  # « defaut » — Milieux est un thème à story unique
+  expect_true(all(p$histoires$groupe == "artificialisation"))
+  expect_true(all(p$histoires$salience_reason == "defaut"))
   # les colonnes doublées de l'ancien schéma (#174) sont PARTIES
   expect_false("conso_fenetre" %in% names(p$histoires))
   expect_false("intensite_m2_par_habitant" %in% names(p$histoires))

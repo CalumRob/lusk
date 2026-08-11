@@ -43,7 +43,7 @@ test_that("la forme des quatre tables est le contrat (avec la colonne n)", {
     "n"
   ))
   expect_named(p$histoires, c(
-    "territoire", "type", "theme", "story_key",
+    "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
     "classification", "part_passoires", "part_abc", "n_dpe"
   ))
   expect_named(p$territoires, c("territoire", "type", "nom", "departement", "epci"))
@@ -74,7 +74,7 @@ test_that("les histoires portent le schéma de l'état énergétique du parc", {
   # part_passoires, part_abc, n_dpe — la classification réelle et les parts de
   # justification sont testées dans test-histoires-habitat.R
   expect_named(p$histoires, c(
-    "territoire", "type", "theme", "story_key",
+    "territoire", "type", "theme", "groupe", "story_key", "salience_reason",
     "classification", "part_passoires", "part_abc", "n_dpe"
   ))
 })

@@ -26,12 +26,14 @@
 import type {
   ApercuRow,
   Histoire,
-  HistoireMobiliteVingtMinutes,
+  HistoireEconomie,
+  HistoireMobilite,
   Indicateur,
   MembreProgramme,
   NoeudTexteRiche,
   Payload,
   ProgrammesPayload,
+  RaisonSaillance,
   RunReport,
   SigleProgramme,
   StatutRun,
@@ -45,6 +47,8 @@ import type {
 import {
   CLES_HISTOIRES_PAR_THEME,
   FAMILLES_FIGURE,
+  GROUPES_PAR_STORY,
+  RAISONS_SAILLANCE,
   SIGLES_PROGRAMMES,
   THEMES_CANONIQUES,
   TYPES_NOEUD_TEXTE_RICHE,
@@ -82,18 +86,6 @@ const STATUTS_SOURCE: readonly StatutRun['status'][] = [
 
 const MODES_SOURCE: readonly StatutRun['mode'][] = ['cron', 'manuel']
 
-/** Les story_keys du thème Économie (issue #120) — la spécialisation top-5 et la lecture de structure régionale. */
-const CLES_HISTOIRES_ECONOMIE = [
-  'ce-que-la-commune-abrite',
-  'ce-que-la-bretagne-abrite',
-] as const
-
-/** Les story_keys du thème Mobilité (issue #142, ADR-0012) — le défaut toujours allumé et la saillance vélo. */
-const CLES_HISTOIRES_MOBILITE = [
-  'vingt-minutes-sans-voiture',
-  'ce-que-le-velo-preserve',
-] as const
-
 /** Les story_keys du thème Milieux (issue #174, ADR-0014) — la Story unique « Se densifier, s'étaler, ou s'en aller ». */
 const CLES_HISTOIRES_MILIEUX = ['se-densifier-setaler-ou-sen-aller'] as const
 
@@ -110,7 +102,7 @@ const CLASSIFICATIONS_SAILLANCE = ['saillant', 'notable', 'non-saillant'] as con
 
 /** Les 20 champs précalculés de la signature de distribution (dens_1..10 + dec_1..10). */
 type SignatureDistribution = Pick<
-  HistoireMobiliteVingtMinutes,
+  HistoireMobilite,
   | 'dens_1' | 'dens_2' | 'dens_3' | 'dens_4' | 'dens_5'
   | 'dens_6' | 'dens_7' | 'dens_8' | 'dens_9' | 'dens_10'
   | 'dec_1' | 'dec_2' | 'dec_3' | 'dec_4' | 'dec_5'
@@ -503,7 +495,28 @@ export function validerIndicateurs(
   })
 }
 
-/** The histoires (Story) facts table — per-theme shape (types.ts). */
+/** La raison de saillance attendue pour chaque story (le miroir R du registre). */
+const RAISON_PAR_STORY: Record<string, RaisonSaillance> = {
+  'vingt-minutes-sans-voiture': 'defaut',
+  'ce-que-le-velo-preserve': 'delta-velo-saillant',
+  'trajectoire-demographique': 'defaut',
+  'etat-energetique-du-parc': 'defaut',
+  'ce-que-la-commune-abrite': 'defaut',
+  'ce-que-la-bretagne-abrite': 'defaut',
+  'se-densifier-setaler-ou-sen-aller': 'defaut',
+}
+
+/** L'en-tête commun d'une lecture résolue — l'identité (territoire × groupe) + la story choisie + la saillance. */
+interface EnteteLectureResolue {
+  territoire: string
+  type: TerritoireType
+  theme: Theme
+  groupe: string
+  story_key: string
+  salience_reason: RaisonSaillance
+}
+
+/** The histoires (Story) facts table — RESOLVED readings (issue #312): one row per (territoire × groupe), the explicit subgroup join (groupe), the SELECTED story key and the salience reason. Per-theme shape (types.ts). */
 export function validerHistoires(
   brut: unknown,
   fichier: string,
@@ -512,12 +525,9 @@ export function validerHistoires(
   exiger(Array.isArray(brut), fichier, 0, 'la table des histoires doit être un tableau')
   const lignes = brut as unknown[]
   const reference = indexerReference(territoires)
+  // l'identité (territoire × groupe) est UNIQUE — le pool non résolu ou une
+  // lecture en double échoue ICI, jamais deux lectures pour le même slot
   const vus = new Set<string>()
-  // Les groupes (territoire × story_key) de l'Économie — le top-5 multi-lignes.
-  const groupes = new Map<string, Set<number>>()
-  // La Mobilité est multi-lignes par territoire (défaut + saillance vélo) —
-  // une ligne par (territoire × story_key), jamais deux.
-  const groupesMobilite = new Set<string>()
 
   return lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
@@ -528,25 +538,49 @@ export function validerHistoires(
     const type = lireType(ligne, fichier, ligneIndexee)
     const theme = lireTheme(ligne, fichier, ligneIndexee)
     const story_key = lireChaine(ligne, 'story_key', fichier, ligneIndexee)
+    const groupe = lireChaine(ligne, 'groupe', fichier, ligneIndexee)
+    const salience_reason = lireChaine(ligne, 'salience_reason', fichier, ligneIndexee)
 
-    // L'Économie est MULTI-LIGNES (issue #120) : le top-5 par (territoire ×
-    // story_key) — l'invariant « une ligne par territoire » meurt pour ce
-    // thème (le même relâchement que la LQ côté R), il reste en vigueur pour
-    // Démographie / Habitat (plus bas).
-    if (theme === 'economie') return lireHistoireEconomie(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, groupes)
+    // la lecture résolue : la story appartient au registre du thème, vit dans
+    // SON groupe de fiche et porte la raison de saillance DÉCLARÉE — jamais
+    // une story hors contrat, jamais un slot déplacé, jamais une raison
+    // inventée (le miroir R de valider_histoires_resolues, #312)
+    exiger(
+      estUneDe(story_key, CLES_HISTOIRES_PAR_THEME[theme]),
+      fichier,
+      ligneIndexee,
+      `Story « ${story_key} » inconnue du contrat du thème « ${theme} »`,
+    )
+    const groupeAttendu = GROUPES_PAR_STORY[theme][story_key]
+    exiger(
+      groupe === groupeAttendu,
+      fichier,
+      ligneIndexee,
+      `la story « ${story_key} » vit dans le groupe « ${groupeAttendu} », reçu « ${groupe} »`,
+    )
+    const raisonAttendue = RAISON_PAR_STORY[story_key]
+    exiger(
+      estUneDe(salience_reason, RAISONS_SAILLANCE),
+      fichier,
+      ligneIndexee,
+      `« salience_reason » doit être l'un de ${RAISONS_SAILLANCE.join(' | ')}, reçu « ${String(salience_reason)} »`,
+    )
+    exiger(
+      salience_reason === raisonAttendue,
+      fichier,
+      ligneIndexee,
+      `« salience_reason » incohérente avec la story « ${story_key} » (attendu « ${raisonAttendue} », reçu « ${salience_reason} »)`,
+    )
+    const cle = `${territoire}\u0000${groupe}`
+    exiger(
+      !vus.has(cle),
+      fichier,
+      ligneIndexee,
+      `plusieurs lectures pour « ${territoire} » (groupe « ${groupe} »)`,
+    )
+    vus.add(cle)
 
-    // La Mobilité est multi-lignes AUSSI (issue #142) : le défaut toujours
-    // allumé + la saillance vélo quand le delta est réel — l'invariant devient
-    // « une ligne par (territoire × story_key) », jamais deux.
-    if (theme === 'mobilite') return lireHistoireMobilite(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, groupesMobilite)
-
-    // Milieux (issue #174) : une ligne par territoire, jamais deux — comme
-    // Démographie / Habitat.
-    if (theme === 'milieux') return lireHistoireMilieux(ligne, { territoire, type, theme, story_key }, ligneIndexee, fichier, vus)
-
-    // Démographie / Habitat : une ligne par territoire, jamais deux.
-    exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
-    vus.add(territoire)
+    const entete: EnteteLectureResolue = { territoire, type, theme, story_key, groupe, salience_reason }
 
     // La forme du Story est spécifique au thème (le contrat R) : Démographie
     // porte les deux soldes et leurs taux annuels (ADR-0011), Habitat les
@@ -564,18 +598,7 @@ export function validerHistoires(
       // La période est OPTIONNELLE : le pipeline ne la publie pas encore
       // (issue #113) — absente, le titre reste non daté (honnête).
       const periode = estChaine(ligne['periode']) ? (ligne['periode'] as string) : null
-      return {
-        territoire,
-        type,
-        theme,
-        story_key,
-        solde_naturel,
-        solde_migratoire,
-        taux_solde_naturel,
-        taux_solde_migratoire,
-        classification,
-        periode,
-      }
+      return { ...entete, theme: 'demographie', story_key: 'trajectoire-demographique', solde_naturel, solde_migratoire, taux_solde_naturel, taux_solde_migratoire, classification, periode }
     }
 
     if (theme === 'habitat') {
@@ -594,17 +617,12 @@ export function validerHistoires(
       exiger(estValeur(part_passoires), fichier, ligneIndexee, '« part_passoires » doit être un nombre ou null')
       exiger(estValeur(part_abc), fichier, ligneIndexee, '« part_abc » doit être un nombre ou null')
       exiger(estNombre(n_dpe), fichier, ligneIndexee, '« n_dpe » doit être un nombre')
-      return {
-        territoire,
-        type,
-        theme,
-        story_key,
-        classification,
-        part_passoires,
-        part_abc,
-        n_dpe,
-      }
+      return { ...entete, theme: 'habitat', story_key: 'etat-energetique-du-parc', classification, part_passoires, part_abc, n_dpe }
     }
+
+    if (theme === 'milieux') return lireHistoireMilieux(ligne, entete, ligneIndexee, fichier)
+    if (theme === 'mobilite') return lireHistoireMobilite(ligne, entete, ligneIndexee, fichier)
+    if (theme === 'economie') return lireHistoireEconomie(ligne, entete, ligneIndexee, fichier)
 
     // Un thème sans Story construite ne publie pas d'histoires (le loader 404
     // sur histoires_<theme>.json) — une ligne ici est une dérive du contrat.
@@ -612,64 +630,72 @@ export function validerHistoires(
   })
 }
 
-/** Une ligne d'Histoire Économie (issue #120) — le top-5 par (territoire × story_key). */
+/** Une ligne d'Histoire Économie (issue #120, RÉSOLUE par #312) — le top-5 replié en paramètres plats top1_*..top5_*, une lecture par (territoire, groupe). */
 function lireHistoireEconomie(
   ligne: LigneBrute,
-  entete: { territoire: string; type: TerritoireType; theme: 'economie'; story_key: string },
+  entete: EnteteLectureResolue,
   ligneIndexee: number,
   fichier: string,
-  groupes: Map<string, Set<number>>,
 ): Histoire {
-  const { territoire, type, theme, story_key } = entete
+  const { territoire, type, story_key, groupe, salience_reason } = entete
+  const estPresence = story_key === 'ce-que-la-bretagne-abrite'
 
-  // Une story_key inconnue du thème est une dérive — la lecture n'existe pas.
-  exiger(
-    estUneDe(story_key, CLES_HISTOIRES_ECONOMIE),
-    fichier,
-    ligneIndexee,
-    `Story Économie « ${story_key} » inconnue du contrat`,
-  )
-
-  const rang = ligne['rang']
-  exiger(
-    estNombre(rang) && Number.isInteger(rang) && rang >= 1 && rang <= 5,
-    fichier,
-    ligneIndexee,
-    '« rang » d\u2019une Story Économie doit être un entier de 1 à 5',
-  )
-
-  // Le groupe (territoire × story_key) : rangs uniques — le top-5 ne publie
-  // jamais deux fois le même rang. Le plafond de 5 lignes est porté par la
-  // contrainte rang ∈ 1..5 (une sixième ligne serait un rang hors contrat).
-  const cleGroupe = `${territoire}\u0000${story_key}`
-  const groupe = groupes.get(cleGroupe)
-  if (groupe) {
-    exiger(!groupe.has(rang), fichier, ligneIndexee, `rang « ${rang} » en double pour « ${territoire} » (${story_key})`)
-    groupe.add(rang)
-  } else {
-    groupes.set(cleGroupe, new Set([rang]))
+  // Le top-5 replié : chaque rang porte code + label (+ LQ pour la lecture de
+  // spécialisation, + part du parc pour la présence régionale). Le premier
+  // rang EXISTE toujours (une lecture sans sa première activité est une
+  // dérive) ; un territoire à moins de cinq activités porte NA au-delà (jamais
+  // de padding). Le label vient TOUJOURS du payload — jamais codé en dur.
+  const top = {} as Record<`top${1 | 2 | 3 | 4 | 5}_${'activity_code' | 'activity_label' | 'lq' | 'n' | 'part_parc'}`, string | number | null>
+  for (const prefixe of ['top1', 'top2', 'top3', 'top4', 'top5'] as const) {
+    const k = Number(prefixe.slice(3))
+    const code = ligne[`${prefixe}_activity_code`]
+    const label = ligne[`${prefixe}_activity_label`]
+    const lq = ligne[`${prefixe}_lq`]
+    const n = ligne[`${prefixe}_n`]
+    const part_parc = ligne[`${prefixe}_part_parc`]
+    if (k === 1) {
+      exiger(estChaine(code) && (code as string).length > 0, fichier, ligneIndexee, `« ${prefixe}_activity_code » doit être une chaîne non vide`)
+      exiger(estChaine(label) && (label as string).length > 0, fichier, ligneIndexee, `« ${prefixe}_activity_label » doit être une chaîne non vide`)
+    } else {
+      exiger(code === null || (estChaine(code) && (code as string).length > 0), fichier, ligneIndexee, `« ${prefixe}_activity_code » doit être une chaîne non vide ou null`)
+      exiger(label === null || (estChaine(label) && (label as string).length > 0), fichier, ligneIndexee, `« ${prefixe}_activity_label » doit être une chaîne non vide ou null`)
+      // un rang vide au-delà du premier impose les suivants vides (jamais un
+      // trou : top3 présent avec top2 absent est une dérive du repli)
+      if (code === null) {
+        for (const suivant of ['top3', 'top4', 'top5'] as const) {
+          if (Number(suivant.slice(3)) < k) continue
+          exiger(ligne[`${suivant}_activity_code`] === null, fichier, ligneIndexee, `le rang ${suivant} est présent alors que le rang ${k - 1} est vide (jamais un trou)`)
+        }
+        break
+      }
+    }
+    exiger(estValeur(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre ou null`)
+    exiger(estValeur(n), fichier, ligneIndexee, `« ${prefixe}_n » doit être un nombre ou null`)
+    exiger(estValeur(part_parc), fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être un nombre ou null`)
+    // la matière de la lecture : la LQ pour la spécialisation (jamais la part
+    // du parc), la part du parc pour la présence régionale (jamais la LQ)
+    if (estPresence) {
+      exiger(lq === null, fichier, ligneIndexee, `« ${prefixe}_lq » doit être null pour ce-que-la-bretagne-abrite`)
+      exiger(estNombre(part_parc), fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être un nombre pour ce-que-la-bretagne-abrite`)
+    } else {
+      exiger(estNombre(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre pour ce-que-la-commune-abrite`)
+      exiger(part_parc === null, fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être null pour ce-que-la-commune-abrite`)
+    }
+    exiger(estNombre(n), fichier, ligneIndexee, `« ${prefixe}_n » doit être un nombre`)
+    top[`${prefixe}_activity_code`] = code
+    top[`${prefixe}_activity_label`] = label
+    top[`${prefixe}_lq`] = lq
+    top[`${prefixe}_n`] = n
+    top[`${prefixe}_part_parc`] = part_parc
   }
-
-  const activity_code = lireChaine(ligne, 'activity_code', fichier, ligneIndexee)
-  // Le label d'activité vient TOUJOURS du payload (activity_label) — jamais
-  // codé en dur dans l'app (CONTEXT.md « Ce que la commune abrite »).
-  const activity_label = lireChaine(ligne, 'activity_label', fichier, ligneIndexee)
-  exiger(activity_label.length > 0, fichier, ligneIndexee, '« activity_label » vide')
-
-  const n = ligne['n']
-  exiger(estNombre(n), fichier, ligneIndexee, '« n » doit être un nombre')
-
-  const lq = ligne['lq']
-  const part_parc = ligne['part_parc']
-  exiger(estValeur(lq), fichier, ligneIndexee, '« lq » doit être un nombre ou null')
-  exiger(estValeur(part_parc), fichier, ligneIndexee, '« part_parc » doit être un nombre ou null')
-  if (story_key === 'ce-que-la-commune-abrite') {
-    // La lecture de spécialisation EST le LQ — une ligne sans quotient est
-    // une dérive du contrat (jamais de Story spécialisation sans sa matière).
-    exiger(estNombre(lq), fichier, ligneIndexee, '« lq » doit être un nombre pour ce-que-la-commune-abrite')
-  } else {
-    // La lecture de structure EST la part du parc — idem pour la région.
-    exiger(estNombre(part_parc), fichier, ligneIndexee, '« part_parc » doit être un nombre pour ce-que-la-bretagne-abrite')
+  // les rangs au-delà du dernier présent (une lecture courte, jamais un trou)
+  // portent null — le padding est interdit par le contrat
+  for (const prefixe of ['top1', 'top2', 'top3', 'top4', 'top5'] as const) {
+    if (top[`${prefixe}_activity_code`] === undefined) top[`${prefixe}_activity_code`] = null
+    if (top[`${prefixe}_activity_label`] === undefined) top[`${prefixe}_activity_label`] = null
+    if (top[`${prefixe}_lq`] === undefined) top[`${prefixe}_lq`] = null
+    if (top[`${prefixe}_n`] === undefined) top[`${prefixe}_n`] = null
+    if (top[`${prefixe}_part_parc`] === undefined) top[`${prefixe}_part_parc`] = null
   }
 
   // Les estampilles vintage des Stories : deux dates ISO + source/version,
@@ -692,77 +718,54 @@ function lireHistoireEconomie(
     '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
   )
 
-  // La forme discriminée : chaque story_key retourne SA ligne de contrat. Les
-  // exiger ci-dessus valident la matière (lq nombre pour la spécialisation,
-  // part_parc nombre pour la structure) — une garde assert ne narrowing pas le
-  // type, les champs sont resserrés ici.
-  if (story_key === 'ce-que-la-commune-abrite') {
-    return {
-      territoire,
-      type,
-      theme,
-      story_key,
-      rang,
-      activity_code,
-      activity_label,
-      lq: lq as number,
-      n,
-      part_parc,
-      vintage_source,
-      vintage_version,
-      vintage_date_reference,
-      vintage_date_publication,
-    }
-  }
-  return {
-    territoire,
-    type,
-    theme,
-    story_key,
-    rang,
-    activity_code,
-    activity_label,
-    lq,
-    n,
-    part_parc: part_parc as number,
-    vintage_source,
-    vintage_version,
-    vintage_date_reference,
-    vintage_date_publication,
-  }
+  // la matière est vérifiée rang par rang (top1_* non vide, lq/part_parc/n
+  // par lecture) — le resserrage des types plats se fait ici, comme les
+  // formes discriminées des autres thèmes
+  const lecture = estPresence
+    ? {
+        territoire,
+        type,
+        theme: 'economie' as const,
+        groupe,
+        story_key: 'ce-que-la-bretagne-abrite' as const,
+        salience_reason,
+        ...top,
+        vintage_source,
+        vintage_version,
+        vintage_date_reference,
+        vintage_date_publication,
+      }
+    : {
+        territoire,
+        type,
+        theme: 'economie' as const,
+        groupe,
+        story_key: 'ce-que-la-commune-abrite' as const,
+        salience_reason,
+        ...top,
+        vintage_source,
+        vintage_version,
+        vintage_date_reference,
+        vintage_date_publication,
+      }
+  return lecture as HistoireEconomie
 }
 
 /**
- * Une ligne d'Histoire Mobilité (issue #142, ADR-0012) — le défaut
- * « vingt-minutes-sans-voiture » (div_loss_t + la signature de distribution)
- * et la saillance « ce-que-le-velo-preserve » (le delta seul). L'estampille
- * snapshot est portée par chaque ligne comme l'Économie (issue #74) — la Story
- * cite SA source, la date d'instantané comme référence.
+ * Une ligne d'Histoire Mobilité (issue #142, RÉSOLUE par #312, ADR-0012) —
+ * UNE ligne par territoire : le défaut « vingt-minutes-sans-voiture »
+ * (div_loss_t + la signature de distribution), remplacé là où la saillance
+ * tire par « ce-que-le-velo-preserve » (le delta seul — la signature est la
+ * matière du défaut, null sur la ligne vélo). L'estampille snapshot est
+ * portée par chaque ligne comme l'Économie (issue #74).
  */
 function lireHistoireMobilite(
   ligne: LigneBrute,
-  entete: { territoire: string; type: TerritoireType; theme: 'mobilite'; story_key: string },
+  entete: EnteteLectureResolue,
   ligneIndexee: number,
   fichier: string,
-  groupes: Set<string>,
 ): Histoire {
-  const { territoire, type, theme, story_key } = entete
-
-  exiger(
-    estUneDe(story_key, CLES_HISTOIRES_MOBILITE),
-    fichier,
-    ligneIndexee,
-    `Story Mobilité « ${story_key} » inconnue du contrat`,
-  )
-
-  const cleGroupe = `${territoire}\u0000${story_key}`
-  exiger(
-    !groupes.has(cleGroupe),
-    fichier,
-    ligneIndexee,
-    `plusieurs Story « ${story_key} » pour « ${territoire} »`,
-  )
-  groupes.add(cleGroupe)
+  const { territoire, type, story_key, groupe, salience_reason } = entete
 
   const div_loss_t = ligne['div_loss_t']
   const div_loss_b = ligne['div_loss_b']
@@ -818,8 +821,9 @@ function lireHistoireMobilite(
 
   const estampille = { vintage_source, vintage_version, vintage_date_reference, vintage_date_publication }
 
-  // La saillance ne se déclenche que sur le delta réel — une Story vélo sans
-  // classification « saillant » est une dérive du contrat (theme_mobilite.R).
+  // La saillance ne se déclenche que sur le delta réel : la story vélo exige
+  // la classification « saillant » ET la raison de saillance déclarée
+  // (déjà vérifiée dans l'en-tête — la raison attendue de cette story)
   if (story_key === 'ce-que-le-velo-preserve') {
     exiger(
       classification_saillance === 'saillant',
@@ -830,11 +834,20 @@ function lireHistoireMobilite(
     return {
       territoire,
       type,
-      theme,
-      story_key,
+      theme: 'mobilite',
+      groupe,
+      story_key: 'ce-que-le-velo-preserve',
+      salience_reason,
       div_loss_t: div_loss_t as number,
       div_loss_b: div_loss_b as number,
       delta: delta as number,
+      pct_iso_full_t: null,
+      dens_min: null,
+      dens_max: null,
+      dens_1: null, dens_2: null, dens_3: null, dens_4: null, dens_5: null,
+      dens_6: null, dens_7: null, dens_8: null, dens_9: null, dens_10: null,
+      dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null,
+      dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null,
       classification_saillance: classification_saillance as 'saillant',
       ...estampille,
     }
@@ -873,8 +886,10 @@ function lireHistoireMobilite(
   return {
     territoire,
     type,
-    theme,
-    story_key,
+    theme: 'mobilite',
+    groupe,
+    story_key: 'vingt-minutes-sans-voiture',
+    salience_reason,
     div_loss_t: div_loss_t as number,
     div_loss_b: div_loss_b as number,
     delta: delta as number,
@@ -909,12 +924,11 @@ function lireHistoireMobilite(
  */
 function lireHistoireMilieux(
   ligne: LigneBrute,
-  entete: { territoire: string; type: TerritoireType; theme: 'milieux'; story_key: string },
+  entete: EnteteLectureResolue,
   ligneIndexee: number,
   fichier: string,
-  vus: Set<string>,
 ): Histoire {
-  const { territoire, type, theme, story_key } = entete
+  const { territoire, type, story_key, groupe, salience_reason } = entete
 
   exiger(
     estUneDe(story_key, CLES_HISTOIRES_MILIEUX),
@@ -923,8 +937,8 @@ function lireHistoireMilieux(
     `Story Milieux « ${story_key} » inconnue du contrat`,
   )
 
-  exiger(!vus.has(territoire), fichier, ligneIndexee, `plusieurs histoires pour « ${territoire} »`)
-  vus.add(territoire)
+  // L'unicité (territoire × groupe) est déjà vérifiée dans validerHistoires —
+  // une lecture par slot de sous-groupe, jamais deux.
 
   // Les deux fenêtres nommées séparément — la règle des deux horloges (spec
   // #225) : la fenêtre partagée de la population (le bracket RP) et la fenêtre
@@ -1089,8 +1103,10 @@ function lireHistoireMilieux(
   return {
     territoire,
     type,
-    theme,
-    story_key,
+    theme: 'milieux',
+    groupe,
+    story_key: 'se-densifier-setaler-ou-sen-aller',
+    salience_reason,
     periode_pop,
     periode_artif: periode_artif as string | null,
     delta_population: delta_population as number,

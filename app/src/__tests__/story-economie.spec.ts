@@ -5,25 +5,25 @@ import { histoiresEconomieFixture } from '../payload/fixtures'
 import type { HistoireEconomie } from '../payload/types'
 
 /**
- * The Économie Story (issue #121, forme reshapée — issue #120): the LQ is the
- * Story, never a block indicator. TWO readings, one per story_key:
- * « ce que la commune abrite » (the top-5 specialisations by LQ — communes,
- * EPCIs, départements) and « ce que la Bretagne abrite » (the region's top-5
- * by presence — its LQ is degenerate, it reads n + part du parc). The copy is
- * generated from the payload rows — never hand-written per territory
- * (reproducibility rule); the vintage rides on the rows themselves (issue
- * #74). Null for a territory without an Économie Story — never an invented
- * reading.
+ * The Économie Story (issue #121, RÉSOLUE par #312): the LQ is the Story,
+ * never a block indicator. ONE resolved reading row per (territoire, groupe) —
+ * « ce que la commune abrite » (the top-5 specialisations by LQ, folded into
+ * the flat params top1_*..top5_* — communes, EPCIs, départements) and
+ * « ce que la Bretagne abrite » (the region's top-5 by presence — its LQ is
+ * degenerate, it reads n + part du parc). The copy is generated from the
+ * payload rows — never hand-written per territory (reproducibility rule); the
+ * vintage rides on the rows themselves (issue #74). Null for a territory
+ * without an Économie Story — never an invented reading.
  */
 
-const lignesPour = (territoire: string): HistoireEconomie[] =>
-  histoiresEconomieFixture.filter(
+const lignePour = (territoire: string): HistoireEconomie | null =>
+  histoiresEconomieFixture.find(
     (h): h is HistoireEconomie => h.theme === 'economie' && h.territoire === territoire,
-  )
+  ) ?? null
 
 describe('storyEconomie — ce-que-la-commune-abrite (top-5 spécialisations LQ)', () => {
-  it('reads the commune’s top-5, one ligne per rang, labels from the payload', () => {
-    const story = storyEconomie(lignesPour('22001'), 'Commune A1')
+  it('reads the commune’s top-5 from the folded params, labels from the payload', () => {
+    const story = storyEconomie(lignePour('22001'), 'Commune A1')
 
     expect(story).not.toBeNull()
     expect(story?.storyKey).toBe('ce-que-la-commune-abrite')
@@ -40,7 +40,7 @@ describe('storyEconomie — ce-que-la-commune-abrite (top-5 spécialisations LQ)
   })
 
   it('drafts a one-liner naming the specialisation of active establishments — never the three activities — and a comment-lire on the LQ', () => {
-    const story = storyEconomie(lignesPour('22001'), 'Commune A1')
+    const story = storyEconomie(lignePour('22001'), 'Commune A1')
 
     expect(story?.uneLigne).toBe(
       'Commune A1 se distingue par la spécialisation de ses établissements actifs.',
@@ -51,31 +51,31 @@ describe('storyEconomie — ce-que-la-commune-abrite (top-5 spécialisations LQ)
   })
 
   it('uses the single fixed title « Ce que la commune abrite » for every territory type (issue #153)', () => {
-    expect(storyEconomie(lignesPour('22001'), 'Commune A1')?.titre).toBe(
+    expect(storyEconomie(lignePour('22001'), 'Commune A1')?.titre).toBe(
       'Ce que la commune abrite',
     )
-    expect(storyEconomie(lignesPour('200000001'), 'EPCI X')?.titre).toBe(
+    expect(storyEconomie(lignePour('200000001'), 'EPCI X')?.titre).toBe(
       'Ce que la commune abrite',
     )
-    expect(storyEconomie(lignesPour('22'), 'Département 22')?.titre).toBe(
+    expect(storyEconomie(lignePour('22'), 'Département 22')?.titre).toBe(
       'Ce que la commune abrite',
     )
   })
 
   it('carries a precision naming the matière — « Spécialisation des établissements actifs » (issues #153 + #156)', () => {
-    expect(storyEconomie(lignesPour('22001'), 'Commune A1')?.precision).toBe(
+    expect(storyEconomie(lignePour('22001'), 'Commune A1')?.precision).toBe(
       'Spécialisation des établissements actifs',
     )
-    expect(storyEconomie(lignesPour('200000001'), 'EPCI X')?.precision).toBe(
+    expect(storyEconomie(lignePour('200000001'), 'EPCI X')?.precision).toBe(
       'Spécialisation des établissements actifs',
     )
-    expect(storyEconomie(lignesPour('22'), 'Département 22')?.precision).toBe(
+    expect(storyEconomie(lignePour('22'), 'Département 22')?.precision).toBe(
       'Spécialisation des établissements actifs',
     )
   })
 
   it('states in its own copy that the reading is about establishments, never jobs (issue #156)', () => {
-    const story = storyEconomie(lignesPour('22001'), 'Commune A1')
+    const story = storyEconomie(lignePour('22001'), 'Commune A1')
 
     expect(story?.uneLigne).toContain('établissements actifs')
     expect(story?.precision).toContain('établissements')
@@ -83,8 +83,8 @@ describe('storyEconomie — ce-que-la-commune-abrite (top-5 spécialisations LQ)
     expect(story?.commentLire).toContain('jamais sur les emplois')
   })
 
-  it('stamps the story with its own vintage from the payload rows (issue #74)', () => {
-    const story = storyEconomie(lignesPour('22001'), 'Commune A1')
+  it('stamps the story with its own vintage from the payload row (issue #74)', () => {
+    const story = storyEconomie(lignePour('22001'), 'Commune A1')
 
     expect(story?.vintage).toContain('data.bretagne.bzh')
     expect(story?.vintage).toContain('réf. 31 mars 2026')
@@ -93,7 +93,7 @@ describe('storyEconomie — ce-que-la-commune-abrite (top-5 spécialisations LQ)
 
 describe('storyEconomie — ce-que-la-bretagne-abrite (top-5 par présence, région)', () => {
   it('reads the région’s top-5 by presence: n + part du parc, no LQ', () => {
-    const story = storyEconomie(lignesPour('53'), 'Bretagne')
+    const story = storyEconomie(lignePour('53'), 'Bretagne')
 
     expect(story).not.toBeNull()
     expect(story?.storyKey).toBe('ce-que-la-bretagne-abrite')
@@ -110,7 +110,7 @@ describe('storyEconomie — ce-que-la-bretagne-abrite (top-5 par présence, rég
   })
 
   it('drafts the presence one-liner and a comment-lire explaining why the LQ is absent', () => {
-    const story = storyEconomie(lignesPour('53'), 'Bretagne')
+    const story = storyEconomie(lignePour('53'), 'Bretagne')
 
     expect(story?.uneLigne).toBe(
       'La Bretagne abrite surtout Location de terrains et d\'autres biens immobiliers, ' +
@@ -123,12 +123,12 @@ describe('storyEconomie — ce-que-la-bretagne-abrite (top-5 par présence, rég
 
 describe('storyEconomie — honest edges', () => {
   it('returns null for a territory without an Économie Story — never invents a reading', () => {
-    expect(storyEconomie([], 'Commune D')).toBeNull()
+    expect(storyEconomie(null, 'Commune D')).toBeNull()
   })
 
-  it('is deterministic — the same rows give the same story', () => {
-    const une = storyEconomie(lignesPour('200000001'), 'EPCI X')
-    const deux = storyEconomie(lignesPour('200000001'), 'EPCI X')
+  it('is deterministic — the same row gives the same story', () => {
+    const une = storyEconomie(lignePour('200000001'), 'EPCI X')
+    const deux = storyEconomie(lignePour('200000001'), 'EPCI X')
 
     expect(une?.lignes).toEqual(deux?.lignes)
     expect(une?.uneLigne).toBe(deux?.uneLigne)

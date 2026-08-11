@@ -11,13 +11,13 @@ import {
 import {
   estampilleSnapshot,
   formaterValeur,
-  histoiresMobilitePourTerritoire,
+  histoireMobilitePourTerritoire,
   indicateursGroupeesPourTerritoire,
   indicateursPourTerritoire,
   nuageMobilite,
   ratioOffreCyclable,
 } from '../payload/selectors'
-import type { HistoireMobilite, Payload } from '../payload/types'
+import type { Payload } from '../payload/types'
 
 /**
  * The Mobilité block selectors — pure, French product strings out of the
@@ -154,15 +154,15 @@ describe("ratioOffreCyclable — le headline « X % de l'infrastructure routièr
   })
 })
 
-describe('histoiresMobilitePourTerritoire — le défaut et la saillance vélo', () => {
-  it('returns the default story row for a non-saillant commune, with its real matter', () => {
-    const lignes = histoiresMobilitePourTerritoire(payloadMobilite, '22001')
+describe('histoireMobilitePourTerritoire — la lecture RÉSOLUE (issue #312)', () => {
+  it('returns the default reading for a non-saillant commune, with its real matter', () => {
+    const histoire = histoireMobilitePourTerritoire(payloadMobilite, '22001')
 
-    expect(lignes).not.toBeNull()
-    expect(lignes).toHaveLength(1)
-    const defaut = lignes?.[0] as HistoireMobilite
-    expect(defaut).toMatchObject({
-      story_key: 'vingt-minutes-sans-voiture',
+    expect(histoire).not.toBeNull()
+    expect(histoire?.story_key).toBe('vingt-minutes-sans-voiture')
+    expect(histoire?.groupe).toBe('acces-aux-services')
+    expect(histoire?.salience_reason).toBe('defaut')
+    expect(histoire).toMatchObject({
       div_loss_t: 38,
       div_loss_b: 38,
       delta: 0,
@@ -170,19 +170,18 @@ describe('histoiresMobilitePourTerritoire — le défaut et la saillance vélo',
     })
   })
 
-  it('gives a saillant territory BOTH rows — le vélo remplace le défaut (ADR-0002)', () => {
-    const lignes = histoiresMobilitePourTerritoire(payloadMobilite, '22002')
+  it('gives a saillant territory the vélo reading ALONE — la saillance a remplacé le défaut (ADR-0002, #312)', () => {
+    const histoire = histoireMobilitePourTerritoire(payloadMobilite, '22002')
 
-    expect(lignes).not.toBeNull()
-    expect(lignes?.map((l) => l.story_key)).toEqual([
-      'vingt-minutes-sans-voiture',
-      'ce-que-le-velo-preserve',
-    ])
+    expect(histoire).not.toBeNull()
+    expect(histoire?.story_key).toBe('ce-que-le-velo-preserve')
+    expect(histoire?.salience_reason).toBe('delta-velo-saillant')
+    expect(histoire?.delta).toBe(11)
   })
 
   it('returns null for a territory without a Mobilité Story (never invents a reading)', () => {
-    expect(histoiresMobilitePourTerritoire(payloadMobilite, '29002')).toBeNull()
-    expect(histoiresMobilitePourTerritoire(payloadMobilite, '99999')).toBeNull()
+    expect(histoireMobilitePourTerritoire(payloadMobilite, '29002')).toBeNull()
+    expect(histoireMobilitePourTerritoire(payloadMobilite, '99999')).toBeNull()
   })
 })
 

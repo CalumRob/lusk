@@ -9,7 +9,7 @@ The object of analysis: a Commune, an EPCI, a Département, or the Région (Bret
 _Avoid_: Entité (internal code-level term), zone
 
 **Fiche d'identité**:
-The territory's page — the default **Aperçu** tab plus the theme tabs. Each theme block carries a variable number of indicators (decided per theme by what's analytically interesting — revised 2026-08-04, replacing the fixed-4 contract), each with a rank-in-context, plus **at least one Story** per theme (a salience pool of 1–3 candidates is still allowed; the default Story is always-on). The core artifact of the product.
+The territory's page — the default **Aperçu** tab plus the theme tabs. Each theme block carries a variable number of indicators (decided per theme by what's analytically interesting — revised 2026-08-04, replacing the fixed-4 contract), each with a rank-in-context, plus **at least one Story** per theme. The core artifact of the product.
 _Avoid_: Page d'indicateurs, profil, dashboard
 
 **Aperçu**:
@@ -17,7 +17,7 @@ The fiche's default, cross-theme tab — the first thing a visitor sees on a ter
 _Avoid_: Vue d'ensemble, overview, accueil (the landing page, not the tab)
 
 **Story**:
-The theme's signature moment on a fiche: the serif one-liner + chart that only works because it was *computed*, never downloaded. Each theme has a pool of 1–3 candidate Stories; exactly one is shown per fiche, chosen deterministically per territory by a salience rule (the Story that says the most about that territory). A Story is original to Lusk — a computation, not a repackaged figure. A theme with a single candidate is legitimate: that Story *is* its default. One candidate per theme is always-on as the **default**: the most universal computation, the one that applies to every territory (naturally the mildest of the pool); the others replace it only when their salience fires.
+The theme's signature reading on a fiche: the serif one-liner + chart that only works because it was *computed*, never downloaded. Since issue #312 (parent #308), Story selection and salience resolution are **pipeline-side**: each theme has a pool of 1–3 candidate Stories, and the pipeline resolves **one reading per (territoire, groupe de fiche)** — the payload carries the resolved `histoires` row (explicit `groupe`, selected `story_key`, `salience_reason`), never the candidate pool (ADR-0002). One candidate per theme is always-on as the **default**: the most universal computation, the one that applies to every territory (naturally the mildest of the pool); the others replace it only when their salience fires. A Story is original to Lusk — a computation, not a repackaged figure. A theme with a single candidate is legitimate: that Story *is* its default.
 _Avoid_: Récit, histoire (too generic), insight, feature
 > _Schema note:_ the pipeline's second payload table is named `histoires` (and `compute_histoires`, `story_key`). That is internal French plumbing — the product term remains **Story**. Do not "fix" the schema name; it is deliberately distinct so the domain term stays clean.
 

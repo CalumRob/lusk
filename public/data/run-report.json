@@ -1,74 +1,24 @@
 {
   "mode": "full",
-  "timestamp": "2026-08-10T18:15:44Z",
+  "timestamp": "2026-08-11T15:17:33Z",
   "statuts": [
-    {
-      "id": "epci",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "consoenaf",
-      "mode": "cron",
-      "status": "frais"
-    },
     {
       "id": "serie_historique",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_22_2021",
+      "id": "menages",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_22_2025",
+      "id": "age_detail",
       "mode": "cron",
       "status": "frais"
     },
     {
-      "id": "ocsge_artificialisation_29_2021",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_29_2024",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_35_2020",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_35_2023",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_56_2022",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_artificialisation_56_2024",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_patch_correctif_22",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_patch_correctif_29",
-      "mode": "cron",
-      "status": "frais"
-    },
-    {
-      "id": "ocsge_patch_correctif_56",
+      "id": "epci",
       "mode": "cron",
       "status": "frais"
     }

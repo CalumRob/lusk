@@ -44,6 +44,68 @@ CLES_HISTOIRES_PAR_THEME <- list(
   milieux = "se-densifier-setaler-ou-sen-aller"
 )
 
+# STORIES_RESOLUES_PAR_THEME ----------------------------------------------------
+# Le registre de la RÉSOLUTION des histoires (issue #312, parent #308) : pour
+# chaque thème, la table qui dit où chaque story vit (le `groupe` de la fiche —
+# le sous-groupe que la lecture rend), l'ORDRE de la story dans le pool
+# (1 = le défaut toujours allumé, ADR-0002 — les candidats de saillance le
+# REPLACENT quand leur règle tire) et la raison de saillance DÉCLARÉE du
+# candidat (NA pour le défaut — la raison est « defaut »). C'est la base de
+# resoudre_histoires (resoudre_histoires.R) : le pipeline choisit la lecture,
+# il ne publie jamais le pool.
+#
+# Les groupes des thèmes du contrat #309 (les fixtures theme-<theme>-valide.json)
+# font foi : « etat-et-dynamique » (Démographie), « sante-et-taille » +
+# « structure-verte » (Économie). Pour les thèmes sans fixture encore publiée
+# (Habitat, Milieux, Mobilité), le groupe est LE slot de lecture du thème — un
+# nom de fiche stable que les métadonnées publiées (#311) reprendront.
+# Mobilité est le SEUL pool (ADR-0002) : « vingt-minutes-sans-voiture » est le
+# défaut de chaque territoire, « ce-que-le-velo-preserve » le remplace là où
+# le delta est réel (raison « delta-velo-saillant »). Économie n'a pas de pool :
+# ses deux stories vivent dans DEUX groupes distincts (la lecture de
+# spécialisation des communes/EPCIs/départements, la lecture de structure de
+# la région).
+STORIES_RESOLUES_PAR_THEME <- list(
+  mobilite = tibble::tibble(
+    story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
+    groupe = "acces-aux-services",
+    ordre = c(1L, 2L),
+    salience_reason = c(NA_character_, "delta-velo-saillant")
+  ),
+  demographie = tibble::tibble(
+    story_key = "trajectoire-demographique",
+    groupe = "etat-et-dynamique",
+    ordre = 1L,
+    salience_reason = NA_character_
+  ),
+  habitat = tibble::tibble(
+    story_key = "etat-energetique-du-parc",
+    groupe = "etat-du-parc",
+    ordre = 1L,
+    salience_reason = NA_character_
+  ),
+  economie = tibble::tibble(
+    story_key = c("ce-que-la-commune-abrite", "ce-que-la-bretagne-abrite"),
+    groupe = c("sante-et-taille", "structure-verte"),
+    ordre = c(1L, 1L),
+    salience_reason = c(NA_character_, NA_character_)
+  ),
+  milieux = tibble::tibble(
+    story_key = "se-densifier-setaler-ou-sen-aller",
+    groupe = "artificialisation",
+    ordre = 1L,
+    salience_reason = NA_character_
+  )
+)
+
+# SALIENCE_DEFAUT ---------------------------------------------------------------
+# La raison de saillance de la lecture DÉFAUT — la story toujours allumée
+# (ordre 1 du pool) dont aucun candidat n'a tiré. Le vocabulaire clos de la
+# colonne salience_reason : « defaut » + les raisons déclarées des candidats
+# (STORIES_RESOLUES_PAR_THEME$salience_reason) — la validation refuse toute
+# autre valeur (jamais une raison inventée).
+SALIENCE_DEFAUT <- "defaut"
+
 # valider_template --------------------------------------------------------------
 # Le texte riche TYPÉ (parent #308) : une liste fermée de nœuds — text (avec
 # son contenu, jamais de chevrons — le HTML brut est interdit), param (une

@@ -24,8 +24,9 @@
 #     public/data du worktree n'est jamais touché) : 1 268 territoires × 17
 #     clés/détails (la « Taille » + la demande/réseaux + le sous-bloc + les 5
 #     parts d'isolation de la grille, assemblées par le ticket payload #141),
-#     histoires aux deux story keys verrouillées
-#     (« vingt-minutes-sans-voiture » 1 266 + « ce-que-le-velo-preserve » 139) ;
+#     histoires résolues aux comptes verrouillés (issue #312 — une lecture par
+#     (territoire, groupe) : le défaut « vingt-minutes-sans-voiture » 1 127 +
+#     la saillance « ce-que-le-velo-preserve » 139 qui le remplace) ;
 #   - le run est DÉTERMINISTE : un second run produit des tables et un payload
 #     octet-pour-octet identiques (run-report.json excepté — horodaté par
 #     conception, issue #10) ;
@@ -167,9 +168,9 @@ executer_run_reel <- function(cache, sortie) {
 #     (nb_buildings 1 + voitures_menage 2 + reseaux 6 + le sous-bloc 3 +
 #     offre_cyclable 5 + les 5 parts d'isolation de la grille = 27 896
 #     lignes) ;
-#     histoires : 1 405 lignes — 1 266 « vingt-minutes-sans-voiture » (une
-#     ligne par territoire, la Story par défaut) + 139 « ce-que-le-velo-
-#     preserve » (la saillance : 130 communes + 9 EPCIs au delta ≥ 10) ;
+#     histoires : 1 266 lignes — UNE lecture résolue par (territoire, groupe),
+#     la saillance vélo (139 : 130 communes + 9 EPCIs au delta ≥ 10) REMPLACE
+#     le défaut là où elle tire — jamais le pool (issue #312) ;
 #     apercu vide (gating) ; vintages : 4 lignes (une par source du manifeste).
 comptes_normalises_reels <- c(
   mobilite_snapshot = 1200
@@ -278,14 +279,16 @@ comptes_offre_par_niveau_reels <- c(
 )
 comptes_payload_reels <- c(
   indicateurs = 27896,  # 22 clés/détails × 1 268 territoires (nb_buildings 1 + voitures 2 + reseaux 6 + sous-bloc 3 + offre_cyclable 5 + isolation 5)
-  histoires = 1405,    # 1 266 « vingt-minutes-sans-voiture » + 139 « ce-que-le-vélo-préserve »
+  histoires = 1266,    # issue #312 : UNE lecture résolue par (territoire, groupe) — la saillance vélo remplace le défaut là où elle tire (139), jamais le pool
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
   vintages = 10        # snapshot + RP voitures + osm t/c + amenagements b (#222) + limites (#139) + korrigo + bâtiments + bornes + vélo (#140) + cog_passage (#222/#227)
 )
-# les comptes des Story keys (la forme multi-lignes du contrat histoires)
+# les comptes des Story keys (la forme RÉSOLUE du contrat histoires, #312) :
+# la story vélo ne remplace le défaut que là où la saillance tire (139
+# territoires) — les autres territoires gardent « vingt-minutes-sans-voiture »
 comptes_histoires_reels <- c(
-  vingt_minutes_sans_voiture = 1266,
+  vingt_minutes_sans_voiture = 1127,  # 1 266 territoires − 139 saillants
   ce_que_le_velo_preserve = 139
 )
 
@@ -959,27 +962,37 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(cyclable_communes$total_longueur[
     cyclable_communes$commune == "29083"], 0)
 
-  # les Stories : les deux story keys aux comptes verrouillés — le défaut
-  # « vingt-minutes-sans-voiture » une ligne par territoire, la saillance
-  # « ce-que-le-velo-preserve » seulement où le delta est réel (≥ 10)
+  # les Stories : la lecture RÉSOLUE par (territoire, groupe) — le défaut
+  # « vingt-minutes-sans-voiture » partout, la saillance « ce-que-le-velo-
+  # preserve » qui REMPLACE le défaut là où le delta est réel (≥ 10) : une
+  # ligne par territoire, jamais le pool (issue #312)
   h <- payload$histoires
-  expect_named(h, c("territoire", "type", "theme", "story_key",
+  expect_named(h, c("territoire", "type", "theme", "groupe", "story_key",
+                    "salience_reason",
                     "div_loss_t", "div_loss_b", "delta", "pct_iso_full_t",
                     "dens_min", "dens_max", paste0("dens_", 1:10),
                     paste0("dec_", 1:10), "classification_saillance",
                     "vintage_source", "vintage_version",
                     "vintage_date_reference", "vintage_date_publication"))
   expect_true(all(h$theme == "mobilite"))
+  expect_true(all(h$groupe == "acces-aux-services"))
+  expect_false(any(duplicated(h[c("territoire", "groupe")])))
   expect_equal(sum(h$story_key == "vingt-minutes-sans-voiture"),
                comptes_histoires_reels[["vingt_minutes_sans_voiture"]])
   expect_equal(sum(h$story_key == "ce-que-le-velo-preserve"),
                comptes_histoires_reels[["ce_que_le_velo_preserve"]])
+  # la raison de saillance : « defaut » pour la lecture par défaut, la raison
+  # déclarée du candidat quand la saillance a remplacé le défaut
+  expect_true(all(h$salience_reason[h$story_key == "vingt-minutes-sans-voiture"] ==
+                    "defaut"))
+  expect_true(all(h$salience_reason[h$story_key == "ce-que-le-velo-preserve"] ==
+                    "delta-velo-saillant"))
   vingt <- h[h$story_key == "vingt-minutes-sans-voiture", ]
   velo <- h[h$story_key == "ce-que-le-velo-preserve", ]
   # la Story de la région : « la même Story, pas de Story spéciale région »
   expect_equal(vingt$div_loss_t[vingt$territoire == "53"], 29)
   expect_equal(vingt$delta[vingt$territoire == "53"], 7)
-  expect_equal(sum(vingt$type == "commune"), 1200)
+  expect_equal(sum(vingt$type == "commune"), 1200 - 130)
   # la saillance : chaque ligne déclenchée porte un delta ≥ le seuil verrouillé
   expect_true(all(velo$delta >= SEUIL_SAILLANCE_VELO))
   expect_equal(sum(velo$type == "commune"), 130)

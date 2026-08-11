@@ -5,23 +5,25 @@ import { histoiresMobiliteFixture } from '../payload/fixtures'
 import type { HistoireMobilite } from '../payload/types'
 
 /**
- * The Mobilité Story (issue #142, ADR-0012) — the flagship's headline: the
- * default « Vingt minutes sans voiture » (div_loss_t, la lecture) and the
- * salience « Ce que le vélo préserve » (le delta). The copy is generated from
- * the payload rows — never hand-written per territoire; the title « Vingt
- * minutes sans voiture » is the ONE sanctioned "sans voiture" phrase, the
- * « comment lire » carries the precision « à pied ou en transports en commun »
- * and quotes the snapshot date.
+ * The Mobilité Story (issue #142, RÉSOLUE par #312, ADR-0012) — the
+ * flagship's headline: the default « Vingt minutes sans voiture » (div_loss_t,
+ * la lecture) and the salience « Ce que le vélo préserve » (le delta), ONE
+ * resolved reading per territoire — the payload carries the selected story,
+ * the mapper renders it, it never picks. The copy is generated from the
+ * payload rows — never hand-written per territoire; the title « Vingt minutes
+ * sans voiture » is the ONE sanctioned "sans voiture" phrase, the « comment
+ * lire » carries the precision « à pied ou en transports en commun » and
+ * quotes the snapshot date.
  */
 
-const lignesPour = (territoire: string): HistoireMobilite[] =>
-  histoiresMobiliteFixture.filter(
+const lignePour = (territoire: string): HistoireMobilite | null =>
+  histoiresMobiliteFixture.find(
     (h): h is HistoireMobilite => h.theme === 'mobilite' && h.territoire === territoire,
-  )
+  ) ?? null
 
 describe('storyMobilite — vingt-minutes-sans-voiture (le défaut)', () => {
   it('reads the commune’s div_loss_t — "Sans voiture, 38 types de services disparaissent."', () => {
-    const story = storyMobilite(lignesPour('22001'))
+    const story = storyMobilite(lignePour('22001'))
 
     expect(story).not.toBeNull()
     expect(story?.storyKey).toBe('vingt-minutes-sans-voiture')
@@ -33,7 +35,7 @@ describe('storyMobilite — vingt-minutes-sans-voiture (le défaut)', () => {
   })
 
   it('carries the distribution signature — the precomputed density, never the matrix', () => {
-    const story = storyMobilite(lignesPour('22001'))
+    const story = storyMobilite(lignePour('22001'))
 
     expect(story?.distribution).not.toBeNull()
     expect(story?.distribution?.min).toBe(28)
@@ -45,7 +47,7 @@ describe('storyMobilite — vingt-minutes-sans-voiture (le défaut)', () => {
   })
 
   it('the « comment lire » carries the precision « à pied ou en transports en commun » and the snapshot date', () => {
-    const story = storyMobilite(lignesPour('22001'))
+    const story = storyMobilite(lignePour('22001'))
 
     expect(story?.commentLire).toContain('À pied ou en transports en commun à 20 minutes')
     expect(story?.commentLire).toContain('alimentation')
@@ -53,16 +55,16 @@ describe('storyMobilite — vingt-minutes-sans-voiture (le défaut)', () => {
   })
 
   it('stamps the story with the snapshot’s vintage (issue #74)', () => {
-    const story = storyMobilite(lignesPour('22001'))
+    const story = storyMobilite(lignePour('22001'))
 
     expect(story?.vintage).toContain("Lusk — analyse d'accessibilité")
     expect(story?.vintage).toContain('réf. 28 févr. 2026')
   })
 })
 
-describe('storyMobilite — ce-que-le-velo-preserve (la saillance)', () => {
-  it('replaces the default where the payload carries the vélo row (ADR-0002)', () => {
-    const story = storyMobilite(lignesPour('22002'))
+describe('storyMobilite — ce-que-le-velo-preserve (la saillance résolue)', () => {
+  it('renders the vélo reading where the payload resolved it (issue #312 — le pool n’est jamais émis)', () => {
+    const story = storyMobilite(lignePour('22002'))
 
     expect(story).not.toBeNull()
     expect(story?.storyKey).toBe('ce-que-le-velo-preserve')
@@ -74,7 +76,7 @@ describe('storyMobilite — ce-que-le-velo-preserve (la saillance)', () => {
   })
 
   it('reads realized access only — never potential infrastructure', () => {
-    const story = storyMobilite(lignesPour('22002'))
+    const story = storyMobilite(lignePour('22002'))
 
     expect(story?.commentLire).toContain('à pied ou en transports en commun à 20 minutes')
     expect(story?.commentLire).toContain('accès déjà réalisé')
@@ -85,15 +87,15 @@ describe('storyMobilite — ce-que-le-velo-preserve (la saillance)', () => {
 
 describe('storyMobilite — honest edges', () => {
   it('returns null for a territory without any Mobilité Story', () => {
-    expect(storyMobilite([])).toBeNull()
+    expect(storyMobilite(null)).toBeNull()
   })
 
-  it('is deterministic — the same rows give the same story', () => {
-    expect(storyMobilite(lignesPour('22001'))?.uneLigne).toBe(
-      storyMobilite(lignesPour('22001'))?.uneLigne,
+  it('is deterministic — the same row gives the same story', () => {
+    expect(storyMobilite(lignePour('22001'))?.uneLigne).toBe(
+      storyMobilite(lignePour('22001'))?.uneLigne,
     )
-    expect(storyMobilite(lignesPour('22001'))?.distribution).toEqual(
-      storyMobilite(lignesPour('22001'))?.distribution,
+    expect(storyMobilite(lignePour('22001'))?.distribution).toEqual(
+      storyMobilite(lignePour('22001'))?.distribution,
     )
   })
 })

@@ -187,6 +187,8 @@ describe('chargerPayload — the single seam', () => {
         type: 'commune',
         theme: 'milieux',
         story_key: 'se-densifier-setaler-ou-sen-aller',
+        groupe: 'artificialisation',
+        salience_reason: 'defaut',
         periode_pop: '2017-2023',
         periode_artif: '2021-2025',
         delta_population: -15,

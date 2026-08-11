@@ -163,6 +163,8 @@ describe('OngletTheme — honest edge cases', () => {
           type: 'commune',
           theme: 'demographie',
           story_key: 'trajectoire-demographique',
+          groupe: 'etat-et-dynamique',
+          salience_reason: 'defaut',
           periode: '2017-2023',
           solde_naturel: 70,
           solde_migratoire: 30,

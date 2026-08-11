@@ -904,7 +904,11 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
 
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(analytiques, territoires, vintages),
-    histoires = compute_histoires_mobilite(analytiques, vintages),
+    # Issue #312 : le pool de Stories se RÉSOUT ici — une lecture par
+    # (territoire, groupe), la saillance vélo remplace le défaut là où elle
+    # tire, jamais le pool dans le payload (ADR-0002)
+    histoires = resoudre_histoires(
+      compute_histoires_mobilite(analytiques, vintages), "mobilite"),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
