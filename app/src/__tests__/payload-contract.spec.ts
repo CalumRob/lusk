@@ -120,7 +120,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })
 
-  it('publishes one indicateur row per (territoire × key × detail), across all four themes', async () => {
+  it('publishes one indicateur row per (territoire × key × detail), across all five themes', async () => {
     const payload = obtenirPayload()
 
     expect(payload.indicateurs.length).toBeGreaterThan(0)
@@ -129,6 +129,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(themes.has('demographie')).toBe(true)
     expect(themes.has('habitat')).toBe(true)
     expect(themes.has('economie')).toBe(true)
+    expect(themes.has('milieux')).toBe(true)
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
   })

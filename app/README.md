@@ -14,13 +14,13 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 |---|---|
 | `npm install` | Install dependencies (lockfile: `package-lock.json`) |
 | `npm run dev` | Vite dev server (hot reload) |
-| `npm run test` | Vitest, one run (tokens contract + router + render smoke tests) |
+| `npm run test` | Vitest, one run (payload contract + fiche/carte/méthodes + tokens + router — 1 092 tests) |
 | `npm run build` | `vue-tsc` type-check + `vite build` → `dist/` |
 | `npm run preview` | Serve the built `dist/` locally |
 
 ## Routes
 
-The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, payload-driven ThemeTabs (`?theme=`) — and lives in `src/views/TerritoireView.vue` (issue #35). The **carte interactive** (`/carte`) is built too (issue #39) — MapExplorer (MapLibre GL, Etalab positron vector basemap per ADR-0018 — OSM under ODbL, local vendored style without labels, GeoJSON territory masks per ADR-0008, theme-driven indicator layers), MapSidebar (search, mask levels, legend), and the same ThemeTabs subheader. maplibre-gl is lazy-loaded with the route (a ~225 ko gzip chunk on `/carte` only). The three **data lists** are built — `/communes`, `/epcis`, `/departements` as filterable link directories to the fiches (issue #40), sharing `src/components/ListeTerritoires.vue` over the pure list logic in `src/listes/listes.ts`. The remaining routes are placeholders until their tickets land:
+The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territoire/:type/:id`) is built — breadcrumb, H1 + type chip, context switcher, and the manifest-driven theme tabs: one shared subgroup loop over each theme's metadata (`theme_<theme>.json` — labels, order, figures, and reading templates are payload-owned, never app-side dictionaries), with the resolved `histoires` readings and payload-driven `?theme=` tabs — and lives in `src/views/TerritoireView.vue` (issues #35, #308, #314). The **carte interactive** (`/carte`) is built too (issue #39) — MapExplorer (MapLibre GL, Etalab positron vector basemap per ADR-0018 — OSM under ODbL, local vendored style without labels, GeoJSON territory masks per ADR-0008), MapSidebar (search, mask levels, legend), and the same ThemeTabs subheader. The carte consumes the **same metadata contract as the fiche** (ADR-0019): its layers, default layer, and popup rank semantics derive from `theme_<theme>.json` + `histoires_<theme>.json`, never from a carte-specific spec. maplibre-gl is lazy-loaded with the route (a ~225 ko gzip chunk on `/carte` only). The three **data lists** are built — `/communes`, `/epcis`, `/departements` as filterable link directories to the fiches (issue #40), sharing `src/components/ListeTerritoires.vue` over the pure list logic in `src/listes/listes.ts`. The remaining routes are placeholders until their tickets land:
 
 | Route | Name | Status |
 |---|---|---|
@@ -29,8 +29,8 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
 | `/departements` | `departements` | **Built** — link directory (#40) |
-| `/territoire/:type/:id` | `territoire` | **Built** — fiche shell (#35) |
-| `/methodologie` | `methodologie` | **Shell** — Sources & Méthodes (#42) |
+| `/territoire/:type/:id` | `territoire` | **Built** — fiche (#35, manifest-driven #308/#314) |
+| `/methodologie` | `methodologie` | **Built** — Sources & Méthodes (#42, sections sources #128 · indicateurs & Stories #129 · Programmes #180) |
 | `/a-propos` | `a-propos` | **Shell** — À propos (#42) |
 
 ## Deploy path
