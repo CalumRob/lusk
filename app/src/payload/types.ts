@@ -409,3 +409,138 @@ export interface Payload {
   /** The programmes payload (programmes.json) — optional; null = element absent (404). */
   programmes: ProgrammesPayload | null
 }
+
+/**
+ * The per-theme metadata file (theme_<theme>.json, parent #308, issue #309) —
+ * the payload-declared fiche grammar: subgroup order, labels/framing, figure
+ * families, typed rich text, the resolved-histoire linkage and the
+ * source-reference policy. The app renders labels, order and figures from
+ * this file; it never keeps a second vocabulary. Programmes & financements is
+ * NOT a theme — it is a separate publication contract (programmes.json,
+ * ADR-0013) and never receives a fabricated theme_<theme>.json file.
+ *
+ * Mirrored in R (CLES_HISTOIRES_PAR_THEME + valider_theme_metadata,
+ * pipeline/R/theme_metadata.R) — the same shape, the same rules, loud errors
+ * on both sides.
+ */
+
+/** The six figure families of the shared figure grammar (parent #308). */
+export const FAMILLES_FIGURE = [
+  'scalar',
+  'composition',
+  'distribution',
+  'trajectory',
+  'relationship',
+  'profile',
+] as const
+
+export type FamilleFigure = (typeof FAMILLES_FIGURE)[number]
+
+/** The constrained rich-text node types — raw HTML is forbidden (parent #308). */
+export const TYPES_NOEUD_TEXTE_RICHE = [
+  'text',
+  'param',
+  'territoire',
+  'strong',
+  'link',
+] as const
+
+export type TypeNoeudTexteRiche = (typeof TYPES_NOEUD_TEXTE_RICHE)[number]
+
+/**
+ * The canonical story keys per theme — the hermeticity registry (ADR-0020):
+ * a theme's metadata may only link ITS OWN stories, never another theme's —
+ * a story key owned by another theme is a cross-theme reference, rejected.
+ * Mirrored in R (CLES_HISTOIRES_PAR_THEME, pipeline/R/theme_metadata.R).
+ */
+export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
+  mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
+  demographie: ['trajectoire-demographique'],
+  habitat: ['etat-energetique-du-parc'],
+  economie: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+  milieux: ['se-densifier-setaler-ou-sen-aller'],
+}
+
+/** A text node — raw HTML in the content is forbidden (chevrons rejected). */
+export interface NoeudTexte {
+  type: 'text'
+  content: string
+}
+
+/** A reading value — must be declared in the subgroup's reading.params. */
+export interface NoeudParam {
+  type: 'param'
+  key: string
+}
+
+/** Renders the territory's name — no payload to carry. */
+export interface NoeudTerritoire {
+  type: 'territoire'
+}
+
+/** A container node — non-empty children; a link never nests inside it. */
+export interface NoeudGras {
+  type: 'strong'
+  children: NoeudTexteRiche[]
+}
+
+/** An explicit link node — raw HTML anchors are forbidden; no nested links. */
+export interface NoeudLien {
+  type: 'link'
+  href: string
+  children: NoeudTexteRiche[]
+}
+
+/** The constrained typed rich-text AST of a reading template. */
+export type NoeudTexteRiche = NoeudTexte | NoeudParam | NoeudTerritoire | NoeudGras | NoeudLien
+
+/** The subgroup's compact figure — a family + the indicator it renders. */
+export interface FigureSousGroupe {
+  family: FamilleFigure
+  /** An indicator the subgroup owns — the figure renders the subgroup's matter. */
+  indicator: string
+}
+
+/**
+ * The resolved-histoire reading of a subgroup (parent #308): the explicit
+ * story_key link (the app never infers it from names), the reading values
+ * the template may reference (params) and the typed rich-text template.
+ */
+export interface LectureSousGroupe {
+  story_key: string
+  params: string[]
+  template: NoeudTexteRiche[]
+}
+
+/** One subgroup of the fiche — a stable place with indicators, a figure and a reading. */
+export interface SousGroupeMetadata {
+  key: string
+  label: string
+  framing: string
+  indicators: string[]
+  figure: FigureSousGroupe
+  reading: LectureSousGroupe
+}
+
+/**
+ * The theme_<theme>.json contract. Validation rules (both sides):
+ * - `theme` ∈ THEMES_CANONIQUES, never « programmes » (separate contract);
+ * - `indicator_keys` / `story_keys` are the theme's registries; each subgroup
+ *   indicator ∈ indicator_keys and each reading.story_key ∈ story_keys, and
+ *   the bijection holds — every registry entry lives in EXACTLY one subgroup
+ *   (nothing orphaned, nothing shared: the unique (territoire × groupe)
+ *   identity of the parent #308);
+ * - story keys must be owned by the theme (CLES_HISTOIRES_PAR_THEME — no
+ *   cross-theme reference, ADR-0020);
+ * - `sources` declares EXACTLY indicator_keys, each to a non-empty source id
+ *   (the source-reference policy; the pipeline cross-checks ids against the
+ *   vintages table at run time).
+ */
+export interface ThemeMetadata {
+  theme: Theme
+  label: string
+  subgroups: SousGroupeMetadata[]
+  indicator_keys: string[]
+  story_keys: string[]
+  sources: Record<string, string>
+}

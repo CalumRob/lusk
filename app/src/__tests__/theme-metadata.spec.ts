@@ -1,0 +1,179 @@
+import { describe, expect, it } from 'vitest'
+
+import { metadonneesThemesFixtures } from '../payload/fixtures'
+import type { Theme, ThemeMetadata } from '../payload/types'
+import { PayloadError, validerThemeMetadata } from '../payload/validate'
+
+/**
+ * Le contrat de métadonnées par thème (issue #309, parent #308) — le miroir
+ * TypeScript de test-theme-metadata.R : le fichier theme_<theme>.json doit
+ * déclarer l'ordre des sous-groupes, leurs labels et cadrages, les familles
+ * de figures, le texte riche TYPÉ (jamais de HTML brut), le lien vers
+ * l'histoire résolue de chaque sous-groupe et la politique de source de
+ * référence. La dérive échoue FORT (PayloadError kind 'validation'), jamais
+ * silencieuse.
+ *
+ * Cas couverts (acceptance #309) : fixtures valides des cinq thèmes
+ * construits ; échouent — thème absent, sous-groupe invalide, figure
+ * invalide, texte riche invalide, référence cross-thème, lien d'histoire
+ * inconnu ; la frontière explicite : Programmes est un contrat de publication
+ * séparé, jamais un thème.
+ */
+
+function copieBrute(theme: Theme): ThemeMetadata {
+  return JSON.parse(JSON.stringify(metadonneesThemesFixtures[theme])) as ThemeMetadata
+}
+
+function attendErreur(theme: Theme, muter: (meta: ThemeMetadata) => void): PayloadError {
+  const meta = copieBrute(theme)
+  muter(meta)
+  let erreur: unknown
+  try {
+    validerThemeMetadata(meta, `theme_${theme}.json`)
+  } catch (e) {
+    erreur = e
+  }
+  expect(erreur).toBeInstanceOf(PayloadError)
+  const payloadError = erreur as PayloadError
+  expect(payloadError.kind).toBe('validation')
+  return payloadError
+}
+
+describe('validerThemeMetadata — accepte la forme du contrat', () => {
+  it('accepte les fixtures valides des cinq thèmes construits', () => {
+    for (const theme of Object.keys(metadonneesThemesFixtures) as Theme[]) {
+      const meta = validerThemeMetadata(metadonneesThemesFixtures[theme], `theme_${theme}.json`)
+
+      expect(meta.theme).toBe(theme)
+      expect(meta.subgroups.length).toBeGreaterThan(0)
+      // la bijection : chaque indicateur et chaque histoire du registre vit
+      // dans exactement un sous-groupe
+      const indicateurs = meta.subgroups.flatMap((g) => g.indicators)
+      expect(new Set(indicateurs).size).toBe(meta.indicator_keys.length)
+      const histoires = meta.subgroups.map((g) => g.reading.story_key)
+      expect(new Set(histoires).size).toBe(meta.story_keys.length)
+    }
+  })
+
+  it('l\u2019ordre des sous-groupes est l\u2019ordre de la fiche (Économie : deux sous-groupes)', () => {
+    const meta = validerThemeMetadata(metadonneesThemesFixtures.economie, 'theme_economie.json')
+    expect(meta.subgroups.map((g) => g.key)).toEqual([
+      'sante-et-taille',
+      'structure-verte',
+    ])
+  })
+})
+
+describe('validerThemeMetadata — rejette la dérive, fort', () => {
+  it('rejette un thème absent', () => {
+    const erreur = attendErreur('demographie', (meta) => {
+      delete (meta as unknown as Record<string, unknown>).theme
+    })
+    expect(erreur.message).toMatch(/theme/i)
+  })
+
+  it('rejette la frontière Programmes — un contrat séparé, jamais un thème', () => {
+    const erreur = attendErreur('demographie', (meta) => {
+      ;(meta as unknown as Record<string, unknown>).theme = 'programmes'
+    })
+    expect(erreur.message).toMatch(/s[ée]par[ée]/i)
+  })
+
+  it('rejette un sous-groupe invalide', () => {
+    // clé de sous-groupe en double
+    let erreur = attendErreur('economie', (meta) => {
+      meta.subgroups[1].key = meta.subgroups[0].key
+    })
+    expect(erreur.message).toMatch(/double/i)
+
+    // indicateur hors du registre indicator_keys
+    erreur = attendErreur('demographie', (meta) => {
+      meta.subgroups[0].indicators.push('fantome')
+    })
+    expect(erreur.message).toMatch(/indicator_keys/i)
+
+    // liste d'indicateurs vide
+    erreur = attendErreur('economie', (meta) => {
+      meta.subgroups[1].indicators = []
+    })
+    expect(erreur.message).toMatch(/indicateur/i)
+  })
+
+  it('rejette une figure invalide', () => {
+    // famille hors contrat
+    let erreur = attendErreur('demographie', (meta) => {
+      meta.subgroups[0].figure.family = 'camembert' as ThemeMetadata['subgroups'][number]['figure']['family']
+    })
+    expect(erreur.message).toMatch(/figure/i)
+
+    // la figure rend un indicateur que le sous-groupe ne possède pas
+    erreur = attendErreur('demographie', (meta) => {
+      meta.subgroups[0].figure.indicator = 'fantome'
+    })
+    expect(erreur.message).toMatch(/figure/i)
+  })
+
+  it('rejette un texte riche invalide', () => {
+    // type de nœud inconnu (le HTML n'est pas un type)
+    let erreur = attendErreur('demographie', (meta) => {
+      meta.subgroups[0].reading.template[0].type = 'html' as ThemeMetadata['subgroups'][number]['reading']['template'][number]['type']
+    })
+    expect(erreur.message).toMatch(/HTML/i)
+
+    // HTML brut dans un nœud text
+    erreur = attendErreur('demographie', (meta) => {
+      const noeud = meta.subgroups[0].reading.template.find((n) => n.type === 'text')
+      if (noeud && noeud.type === 'text') noeud.content = '<strong>gras</strong>'
+    })
+    expect(erreur.message).toMatch(/HTML/i)
+
+    // lien sans href
+    erreur = attendErreur('demographie', (meta) => {
+      const lien = meta.subgroups[0].reading.template.find((n) => n.type === 'link')
+      if (lien && lien.type === 'link') {
+        delete (lien as unknown as Record<string, unknown>).href
+      }
+    })
+    expect(erreur.message).toMatch(/lien/i)
+
+    // paramètre non déclaré dans reading.params
+    erreur = attendErreur('demographie', (meta) => {
+      const param = meta.subgroups[0].reading.template.find((n) => n.type === 'param')
+      if (param && param.type === 'param') param.key = 'fantome'
+    })
+    expect(erreur.message).toMatch(/param/i)
+  })
+
+  it('rejette une référence cross-thème (l\u2019herméticité, ADR-0020)', () => {
+    // une story d'un autre thème dans story_keys (la Mobilité dans la Démographie)
+    const erreur = attendErreur('demographie', (meta) => {
+      meta.story_keys.push('vingt-minutes-sans-voiture')
+    })
+    expect(erreur.message).toMatch(/cross-th[èe]me/i)
+  })
+
+  it('rejette un lien d\u2019histoire inconnu', () => {
+    // la lecture d'un sous-groupe pointe une story non déclarée dans story_keys
+    let erreur = attendErreur('demographie', (meta) => {
+      meta.subgroups[0].reading.story_key = 'histoire-inconnue'
+    })
+    expect(erreur.message).toMatch(/inconnu/i)
+
+    // une story déclarée sans sous-groupe qui la lit (orpheline)
+    erreur = attendErreur('economie', (meta) => {
+      meta.subgroups = meta.subgroups.slice(0, 1)
+      meta.indicator_keys = [...meta.subgroups[0].indicators]
+      meta.sources = Object.fromEntries(
+        Object.entries(meta.sources).filter(([cle]) => meta.indicator_keys.includes(cle)),
+      )
+    })
+    expect(erreur.message).toMatch(/orpheline/i)
+  })
+
+  it('rejette une carte des sources incomplète (la politique de source de référence)', () => {
+    const erreur = attendErreur('demographie', (meta) => {
+      delete meta.sources.densite
+    })
+    expect(erreur.message).toMatch(/source/i)
+  })
+})

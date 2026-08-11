@@ -29,6 +29,7 @@ import type {
   HistoireMobiliteVingtMinutes,
   Indicateur,
   MembreProgramme,
+  NoeudTexteRiche,
   Payload,
   ProgrammesPayload,
   RunReport,
@@ -38,9 +39,16 @@ import type {
   Territoire,
   TerritoireType,
   Theme,
+  ThemeMetadata,
   Vintage,
 } from './types'
-import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from './types'
+import {
+  CLES_HISTOIRES_PAR_THEME,
+  FAMILLES_FIGURE,
+  SIGLES_PROGRAMMES,
+  THEMES_CANONIQUES,
+  TYPES_NOEUD_TEXTE_RICHE,
+} from './types'
 
 export type PayloadErrorKind = 'fetch' | 'validation'
 
@@ -248,6 +256,110 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
   }
 
   return territoires
+}
+
+/** Un tableau de chaînes non vides, sans doublon — la forme des registres du contrat. */
+function lireTableauChaines(ligne: LigneBrute, champ: string, fichier: string, i: number): string[] {
+  const brut = ligne[champ]
+  exiger(Array.isArray(brut), fichier, i, `« ${champ} » doit être un tableau`)
+  const valeurs = brut as unknown[]
+  const chaines = valeurs.map((v, j) => {
+    exiger(
+      estChaine(v) && (v as string).length > 0,
+      fichier,
+      i,
+      `« ${champ} » : l'entrée ${j + 1} doit être une chaîne non vide`,
+    )
+    return v as string
+  })
+  exiger(
+    new Set(chaines).size === chaines.length,
+    fichier,
+    i,
+    `« ${champ} » : une entrée est en double`,
+  )
+  return chaines
+}
+
+/**
+ * Un nœud du texte riche TYPÉ (parent #308) — la liste fermée
+ * text | param | territoire | strong | link, jamais de HTML brut. Le
+ * paramètre d'un nœud param doit être déclaré dans reading.params (le lien
+ * résolu : la lecture ne cite que sa matière). Un lien ne peut pas en
+ * contenir un autre.
+ */
+function validerNoeudTexteRiche(
+  brut: unknown,
+  fichier: string,
+  params: string[],
+  cleGroupe: string,
+): NoeudTexteRiche {
+  exiger(estObjet(brut), fichier, 0, `« ${cleGroupe} » : un nœud de texte riche doit être un objet`)
+  const noeud = brut as LigneBrute
+  const type = lireChaine(noeud, 'type', fichier, 0)
+  exiger(
+    estUneDe(type, TYPES_NOEUD_TEXTE_RICHE),
+    fichier,
+    0,
+    `« ${cleGroupe} » : type de nœud « ${type} » hors contrat — attendu l'un de ${TYPES_NOEUD_TEXTE_RICHE.join(' | ')} (le HTML brut n'est pas un type de nœud)`,
+  )
+  if (type === 'text') {
+    const content = lireChaine(noeud, 'content', fichier, 0)
+    exiger(content.length > 0, fichier, 0, `« ${cleGroupe} » : un nœud text sans contenu`)
+    exiger(
+      !/[<>]/.test(content),
+      fichier,
+      0,
+      `« ${cleGroupe} » : HTML brut interdit dans le contenu « ${content} »`,
+    )
+    return { type, content }
+  }
+  if (type === 'param') {
+    const key = lireChaine(noeud, 'key', fichier, 0)
+    exiger(
+      params.includes(key),
+      fichier,
+      0,
+      `« ${cleGroupe} » : le paramètre « ${key} » n'est pas déclaré dans reading.params`,
+    )
+    return { type, key }
+  }
+  if (type === 'territoire') return { type }
+  // strong | link — des conteneurs à enfants non vides
+  let href: string | undefined
+  if (type === 'link') {
+    const hrefBrut = noeud['href']
+    exiger(
+      estChaine(hrefBrut) && hrefBrut.length > 0,
+      fichier,
+      0,
+      `« ${cleGroupe} » : un lien sans href`,
+    )
+    href = hrefBrut as string
+  }
+  exiger(Array.isArray(noeud['children']), fichier, 0, `« ${cleGroupe} » : un nœud ${type} sans enfants`)
+  const enfants = noeud['children'] as unknown[]
+  exiger(enfants.length > 0, fichier, 0, `« ${cleGroupe} » : un nœud ${type} sans enfants`)
+  const children = enfants.map((enfant, j) => {
+    if (estObjet(enfant) && (enfant as LigneBrute)['type'] === 'link') {
+      throw erreur(fichier, 0, `« ${cleGroupe} » : un lien ne peut pas en contenir un autre (nœud ${type}, enfant ${j + 1})`)
+    }
+    return validerNoeudTexteRiche(enfant, fichier, params, cleGroupe)
+  })
+  if (type === 'link') return { type, href: href as string, children }
+  return { type, children }
+}
+
+function validerTemplate(
+  brut: unknown,
+  fichier: string,
+  params: string[],
+  cleGroupe: string,
+): NoeudTexteRiche[] {
+  exiger(Array.isArray(brut), fichier, 0, `« ${cleGroupe} » : le template doit être un tableau`)
+  const tableau = brut as unknown[]
+  exiger(tableau.length > 0, fichier, 0, `« ${cleGroupe} » : le template de lecture est vide`)
+  return tableau.map((noeud) => validerNoeudTexteRiche(noeud, fichier, params, cleGroupe))
 }
 
 function indexerReference(territoires: Territoire[]): Map<string, TerritoireType> {
@@ -1238,4 +1350,196 @@ function validerSubventionsProgrammes(
   const programmes = validerProgrammes(documents.programmes ?? null, 'programmes.json', territoires)
 
   return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes }
+}
+
+/**
+ * The theme metadata file (theme_<theme>.json, issue #309) — the app's half
+ * of valider_theme_metadata() (pipeline/R/theme_metadata.R): subgroup order,
+ * labels/framing, figure families, typed rich text, the resolved-histoire
+ * linkage and the source-reference policy. Raw JSON in, typed ThemeMetadata
+ * out; drift is a loud, typed PayloadError — never silent wrong figures.
+ * Programmes is rejected: it is a separate publication contract, never a
+ * theme.
+ */
+export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetadata {
+  exiger(estObjet(brut), fichier, 0, 'le fichier theme_<theme>.json doit être un objet JSON, jamais un tableau')
+  const meta = brut as LigneBrute
+
+  // 1. le thème — présent, canonique, jamais « programmes » (la frontière
+  //    explicite du parent #308 : Programmes est un contrat de publication
+  //    séparé, il ne reçoit pas de fichier theme_programmes.json fabriqué)
+  const theme = lireChaine(meta, 'theme', fichier, 0)
+  if (theme === 'programmes') {
+    throw erreur(fichier, 0, '« programmes » est un contrat de publication SÉPARÉ (programmes.json, ADR-0013), jamais un thème — aucun fichier theme_programmes.json fabriqué')
+  }
+  exiger(
+    estUneDe(theme, THEMES_CANONIQUES),
+    fichier,
+    0,
+    `thème inconnu « ${theme} » — attendu l'un de ${THEMES_CANONIQUES.join(' | ')}`,
+  )
+
+  // 2. le label du thème
+  const label = lireChaine(meta, 'label', fichier, 0)
+  exiger(label.length > 0, fichier, 0, 'le label du thème est absent ou vide')
+
+  // 3. les clés d'indicateurs — le registre du thème
+  const indicator_keys = lireTableauChaines(meta, 'indicator_keys', fichier, 0)
+  exiger(indicator_keys.length > 0, fichier, 0, '« indicator_keys » : la liste des clés d\u2019indicateurs est vide')
+
+  // 4. les story_keys — le registre des histoires, avec la règle
+  //    d'herméticité (ADR-0020) : un thème ne peut lier que SES histoires
+  const story_keys = lireTableauChaines(meta, 'story_keys', fichier, 0)
+  exiger(story_keys.length > 0, fichier, 0, '« story_keys » : la liste des histoires est vide')
+  const portees = CLES_HISTOIRES_PAR_THEME[theme]
+  const autres = new Set(
+    (Object.keys(CLES_HISTOIRES_PAR_THEME) as Theme[])
+      .filter((t) => t !== theme)
+      .flatMap((t) => CLES_HISTOIRES_PAR_THEME[t]),
+  )
+  for (const cle of story_keys) {
+    if (!portees.includes(cle)) {
+      if (autres.has(cle)) {
+        throw erreur(fichier, 0, `référence cross-thème : la story « ${cle} » appartient à un AUTRE thème — l'herméticité (ADR-0020) interdit toute référence cross-thème`)
+      }
+      throw erreur(fichier, 0, `la story « ${cle} » est inconnue du contrat`)
+    }
+  }
+
+  // 5. les sources de référence — la politique : chaque indicateur déclare la
+  //    source de son composant signature ; la carte déclare EXACTEMENT les
+  //    indicateurs du registre (le « Reference source » de CONTEXT.md)
+  const sourcesBrut = meta['sources']
+  exiger(estObjet(sourcesBrut), fichier, 0, '« sources » doit être un objet — la carte des sources de référence')
+  const sources = sourcesBrut as LigneBrute
+  const clesSources = Object.keys(sources)
+  for (const cle of clesSources) {
+    exiger(
+      estChaine(sources[cle]) && (sources[cle] as string).length > 0,
+      fichier,
+      0,
+      `« sources » : la source de « ${cle} » doit être une chaîne non vide`,
+    )
+  }
+  const manquantes = indicator_keys.filter((cle) => !clesSources.includes(cle))
+  const fantomes = clesSources.filter((cle) => !indicator_keys.includes(cle))
+  exiger(
+    manquantes.length === 0 && fantomes.length === 0,
+    fichier,
+    0,
+    `« sources » : la carte des sources doit déclarer EXACTEMENT les indicateurs du registre — sans source : ${manquantes.join(', ')} ; non déclarés : ${fantomes.join(', ')}`,
+  )
+
+  // 6. les sous-groupes — l'ordre de la fiche (le premier est le premier
+  //    rendu) ; chaque sous-groupe porte ses indicateurs, sa figure et sa
+  //    lecture résolue
+  const subgroupsBrut = meta['subgroups']
+  exiger(Array.isArray(subgroupsBrut) && subgroupsBrut.length > 0, fichier, 0, '« subgroups » doit être un tableau non vide')
+  const clesGroupes = new Set<string>()
+  const indicateursGroupes = new Map<string, number>()
+  const histoiresGroupes = new Map<string, number>()
+
+  const subgroups = (subgroupsBrut as unknown[]).map((g, i) => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(g), fichier, ligneIndexee, 'chaque sous-groupe doit être un objet')
+    const groupe = g as LigneBrute
+
+    const cle = lireChaine(groupe, 'key', fichier, ligneIndexee)
+    exiger(!clesGroupes.has(cle), fichier, ligneIndexee, `clé de sous-groupe en double « ${cle} »`)
+    clesGroupes.add(cle)
+
+    const libelle = lireChaine(groupe, 'label', fichier, ligneIndexee)
+    exiger(libelle.length > 0, fichier, ligneIndexee, `« ${cle} » : le label est absent ou vide`)
+    const framing = lireChaine(groupe, 'framing', fichier, ligneIndexee)
+    exiger(framing.length > 0, fichier, ligneIndexee, `« ${cle} » : le cadrage (framing) est absent ou vide`)
+
+    const indicators = lireTableauChaines(groupe, 'indicators', fichier, ligneIndexee)
+    exiger(indicators.length > 0, fichier, ligneIndexee, `« ${cle} » : la liste des indicateurs est vide`)
+    for (const ind of indicators) {
+      exiger(
+        indicator_keys.includes(ind),
+        fichier,
+        ligneIndexee,
+        `« ${cle} » : indicateur « ${ind} » hors du registre indicator_keys`,
+      )
+      indicateursGroupes.set(ind, (indicateursGroupes.get(ind) ?? 0) + 1)
+    }
+
+    // la figure — une famille du contrat, un indicateur que le sous-groupe
+    // possède (la figure rend la matière du sous-groupe, jamais une autre)
+    const figureBrut = groupe['figure']
+    exiger(estObjet(figureBrut), fichier, ligneIndexee, `« ${cle} » : la figure est absente ou non-objet`)
+    const figure = figureBrut as LigneBrute
+    const family = lireChaine(figure, 'family', fichier, ligneIndexee)
+    exiger(
+      estUneDe(family, FAMILLES_FIGURE),
+      fichier,
+      ligneIndexee,
+      `« ${cle} » : la famille de figure « ${family} » est hors contrat — attendue l'une de ${FAMILLES_FIGURE.join(' | ')}`,
+    )
+    const indicateurFigure = lireChaine(figure, 'indicator', fichier, ligneIndexee)
+    exiger(
+      indicators.includes(indicateurFigure),
+      fichier,
+      ligneIndexee,
+      `« ${cle} » : la figure doit rendre un indicateur que le sous-groupe possède`,
+    )
+
+    // la lecture résolue — le lien explicite vers l'histoire du sous-groupe
+    // (parent #308 : l'app n'infère jamais la relation depuis les noms)
+    const readingBrut = groupe['reading']
+    exiger(estObjet(readingBrut), fichier, ligneIndexee, `« ${cle} » : la lecture (reading) est absente ou non-objet`)
+    const reading = readingBrut as LigneBrute
+    const story_key = lireChaine(reading, 'story_key', fichier, ligneIndexee)
+    exiger(
+      story_keys.includes(story_key),
+      fichier,
+      ligneIndexee,
+      `« ${cle} » : lien d'histoire inconnu « ${story_key} » — la story doit être déclarée dans story_keys`,
+    )
+    histoiresGroupes.set(story_key, (histoiresGroupes.get(story_key) ?? 0) + 1)
+
+    // les paramètres de lecture — les valeurs d'histoire que le template peut
+    // lire (le lien résolu : la matière de la lecture, jamais inventée)
+    const params = reading['params'] === undefined
+      ? []
+      : lireTableauChaines(reading, 'params', fichier, ligneIndexee)
+
+    // le template — le texte riche TYPÉ
+    const template = validerTemplate(reading['template'], fichier, params, cle)
+
+    return {
+      key: cle,
+      label: libelle,
+      framing,
+      indicators,
+      figure: { family, indicator: indicateurFigure },
+      reading: { story_key, params, template },
+    }
+  })
+
+  // 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
+  //    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
+  //    sous-groupe — rien d'orphelin, rien de partagé (l'identité
+  //    (territoire × groupe) unique du parent #308)
+  const orphelinsInd = indicator_keys.filter((cle) => !indicateursGroupes.has(cle))
+  exiger(
+    orphelinsInd.length === 0,
+    fichier,
+    0,
+    `indicateur(s) orphelin(s) — déclaré(s) au registre sans sous-groupe : ${orphelinsInd.join(', ')}`,
+  )
+  const partagesInd = [...indicateursGroupes.entries()].filter(([, n]) => n > 1).map(([cle]) => cle)
+  exiger(partagesInd.length === 0, fichier, 0, `indicateur(s) dans plusieurs sous-groupes : ${partagesInd.join(', ')}`)
+  const orphelinesHist = story_keys.filter((cle) => !histoiresGroupes.has(cle))
+  exiger(
+    orphelinesHist.length === 0,
+    fichier,
+    0,
+    `histoire(s) orpheline(s) — déclarée(s) au registre sans sous-groupe qui la lit : ${orphelinesHist.join(', ')}`,
+  )
+  const partageesHist = [...histoiresGroupes.entries()].filter(([, n]) => n > 1).map(([cle]) => cle)
+  exiger(partageesHist.length === 0, fichier, 0, `histoire(s) lue(s) par plusieurs sous-groupes : ${partageesHist.join(', ')}`)
+
+  return { theme, label, subgroups, indicator_keys, story_keys, sources: sources as Record<string, string> }
 }
