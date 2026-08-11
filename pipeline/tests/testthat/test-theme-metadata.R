@@ -267,3 +267,47 @@ test_that("valider_theme_metadata : param_labels déclare EXACTEMENT l'union des
   meta$param_labels <- NULL
   expect_error(valider_theme_metadata(meta), "param_labels")
 })
+
+# Les libellés des classifications (issue #362) — la 4e carte du vocabulaire :
+# les VALEURS de lecture (les quadrants/lectures du pipeline), pas les
+# paramètres. Optionnelle (le thème qui ne référence jamais `classification`
+# — Mobilité — n'en a pas besoin) ; présente, elle doit être un objet NON VIDE
+# de chaînes non vides (la discipline des cartes #318). La couverture contre
+# les valeurs publiées est la parité de chargement de l'app
+# (verifierPariteLibelles) — le fichier, lui, reste auto-contenu.
+
+metadonnees_demographie_avec_classifications <- function() {
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$classification_labels <- list(
+    `attire-renouvelle` = "attire et se renouvelle",
+    `attire-meurt` = "attire, mais se meurt",
+    `vide-meurt` = "se vide et se meurt",
+    `vide-renouvelle` = "se vide, mais se renouvelle"
+  )
+  meta
+}
+
+test_that("valider_theme_metadata : classification_labels — une carte non vide de chaînes non vides", {
+  # le cas valide passe (la carte complète des quatre lectures)
+  expect_no_error(valider_theme_metadata(metadonnees_demographie_avec_classifications()))
+
+  # un libellé vide est rejeté
+  meta <- metadonnees_demographie_avec_classifications()
+  meta$classification_labels[["attire-meurt"]] <- ""
+  expect_error(valider_theme_metadata(meta), "classification_labels")
+
+  # un libellé non-chaîne est rejeté
+  meta <- metadonnees_demographie_avec_classifications()
+  meta$classification_labels[["attire-meurt"]] <- 42
+  expect_error(valider_theme_metadata(meta), "classification_labels")
+
+  # une carte non-objet est rejetée
+  meta <- metadonnees_demographie_avec_classifications()
+  meta$classification_labels <- "attire et se renouvelle"
+  expect_error(valider_theme_metadata(meta), "classification_labels")
+
+  # une carte vide est rejetée
+  meta <- metadonnees_demographie_avec_classifications()
+  meta$classification_labels <- list()
+  expect_error(valider_theme_metadata(meta), "classification_labels")
+})
