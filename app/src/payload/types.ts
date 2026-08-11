@@ -9,15 +9,15 @@
  * loud type/validation error, never as silent wrong figures.
  *
  * Semantics locked by the contract:
- * - ranks are fractions in [0,1] (0.25, not 25); null = no comparison group
- *   at that level
+ * - ranks are direction-aware ordinals ≥ 1 (1 = best, ADR-0015), each with its
+ *   group-size column (« / Y »); null = no comparison group at that level
  * - value null = not computable for that territory
  * - keys of unbuilt themes are ABSENT from apercu (not null)
  * - two vintage dates per indicator: reference + publication
  * - territoires.epci is the SIREN for communes, null otherwise
  */
 
-/** The four themes, in canonical order (ADR-0007 — payload-driven tabs). */
+/** The five themes, in canonical order (ADR-0007 — payload-driven tabs). */
 export const THEMES_CANONIQUES = [
   'mobilite',
   'demographie',
