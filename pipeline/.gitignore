@@ -1,2 +1,7 @@
 # Données téléchargées et produites — jamais versionnées.
 data/
+
+# Le store du graphe targets (#329, #340) — le cache intermédiaire qui
+# remplace data/processed/*.rds. Jamais versionné : la régénération est le
+# point du port.
+_targets/
