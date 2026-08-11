@@ -73,7 +73,7 @@ describe('sourcesMethodes — la jointure registre × vintages', () => {
       editeur: 'Lusk',
       url: null,
       version: '2026-02',
-      licence: 'Licence ODbL — attribution « © OpenStreetMap contributors »',
+      licence: 'ODbL — © OpenStreetMap contributors',
       dateReference: '28 février 2026',
       datePublication: '6 août 2026',
     })

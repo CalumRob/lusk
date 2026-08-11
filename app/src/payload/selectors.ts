@@ -685,7 +685,7 @@ export function formaterVintage(vintage: {
 /** The known licence codes → their French names (the vintages table's `licence` column). */
 const LICENCES: Record<string, string> = {
   lov2: 'Licence Ouverte 2.0',
-  odbl: 'Licence ODbL — attribution « © OpenStreetMap contributors »',
+  odbl: 'ODbL — © OpenStreetMap contributors',
 }
 
 /** The licence's display name — the raw code when the map doesn't know it (never invented). */

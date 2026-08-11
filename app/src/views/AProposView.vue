@@ -28,10 +28,6 @@
 </script>
 
 <style scoped>
-.a-propos {
-  max-width: 900px;
-}
-
 .a-propos__titre {
   margin: 0 0 var(--space-4);
   font: var(--text-h1);
