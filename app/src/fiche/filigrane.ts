@@ -18,7 +18,7 @@ export const RAPPORT_ERMINE = 47 / 86.4
 
 /** The width thresholds — mirrors the --filigrane-largeur-* tokens. */
 export const FILIGRANE_LARGEUR = {
-  minVw: 0.24,
+  minVw: 0.04,
   minPx: 280,
   maxVw: 0.64,
   maxPx: 680,
