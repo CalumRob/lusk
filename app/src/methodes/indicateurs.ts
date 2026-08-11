@@ -18,6 +18,8 @@
  * forme reshapée (issue #131, 2026-08-06) : le registre suit les clés publiées.
  */
 
+import { slugifierAncre } from '@/methodes/ancres'
+
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
 export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
 
@@ -126,7 +128,7 @@ export interface DeuxHorlogesMethodes {
  * avec l'ancrage de section (#indicateurs).
  */
 export function ancreIndicateur(clef: string): string {
-  return `indicateur-${clef.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`
+  return slugifierAncre('indicateur', clef)
 }
 
 /**

@@ -236,8 +236,8 @@ watch(
 
 // La table des sources rend après le payload : un second essai de scroll à la
 // fin du chargement — jamais avant, et seulement si la cible n'a pas été vue.
-watch(chargement, (fini) => {
-  if (!fini && route.hash) void nextTick(defilerVersAncre)
+watch(chargement, (chargementEnCours) => {
+  if (!chargementEnCours && route.hash) void nextTick(defilerVersAncre)
 })
 
 /** Changer d'onglet préserve l'onglet intérieur (les deux niveaux sont indépendants). */

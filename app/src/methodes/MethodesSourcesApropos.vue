@@ -2,10 +2,11 @@
 /**
  * L'onglet Sources · À propos de /methodologie (issue #332) : la prose du
  * registre des sources — ce qu'il est (une entrée par source, l'éditeur, le
- * jeu de données, les thèmes alimentés), le contrat de parité avec la table
- * vintages (l'union est le contrat, jamais une date inventée), les faits de
- * fraîcheur en direct, et le rôle des onglets de thème. Pas la prose de la
- * page (l'intro reste au-dessus du shell) — la prose de l'onglet.
+ * jeu de données, les thèmes alimentés), le contrat de parité des sources
+ * documentées (toute source des fiches est documentée, jamais une date
+ * inventée), les faits de fraîcheur en direct, et le rôle des onglets de
+ * thème. Pas la prose de la page (l'intro reste au-dessus du shell) — la
+ * prose de l'onglet.
  */
 </script>
 
@@ -20,11 +21,10 @@
         version, sa licence, ses dates de référence et de publication.
       </p>
       <p>
-        Toute source publiée par le pipeline a son entrée de registre — une source n’est
-        affichée qu’avec sa documentation : un thème n’est pas « construit » tant que ses
-        sources ne sont pas documentées ici. Quand la fraîcheur d’une source n’est pas encore
-        connue, sa ligne reste rendue, avec des tirets à la place des dates : jamais des dates
-        inventées.
+        Toute source des fiches a son entrée de registre — une source n’est affichée qu’avec
+        sa documentation : un thème n’est pas « construit » tant que ses sources ne sont pas
+        documentées ici. Quand la fraîcheur d’une source n’est pas encore connue, sa ligne
+        reste rendue, avec des tirets à la place des dates : jamais des dates inventées.
       </p>
       <p>
         Les onglets de thème filtrent la table : une source multi-thèmes (la série historique

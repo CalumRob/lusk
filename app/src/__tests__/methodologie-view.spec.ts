@@ -406,9 +406,10 @@ describe('MethodologieView — Sources · À propos (le registre des sources)', 
     const texte = wrapper.find('section#sources-a-propos').text()
     expect(texte).toContain('registre')
     expect(texte).toMatch(/fraîcheur|version|licence/i)
-    // jamais la langue interne : ni le nom du fichier, ni la table vintages
+    // jamais la langue interne : ni le nom du fichier, ni la table vintages, ni le pipeline
     expect(texte).not.toContain('vintages')
     expect(texte).not.toContain('payload')
+    expect(texte).not.toContain('pipeline')
   })
 })
 
@@ -422,10 +423,11 @@ describe('MethodologieView — Méthodes · À propos (le registre des indicateu
     expect(texte).toContain('registre')
     expect(texte).toContain('indicateurs')
     expect(texte).toMatch(/Stories|lecture/i)
-    // le contrat des clés dit ce qu'il EST, jamais le fichier qui le porte
+    // le contrat des clés dit ce qu'il EST, jamais le fichier ni le pipeline qui le portent
     expect(texte).toMatch(/clés (des|d\u2019)indicateurs|même nom/i)
     expect(texte).not.toContain('payload')
     expect(texte).not.toContain('indicateurs_')
+    expect(texte).not.toContain('pipeline')
   })
 })
 
