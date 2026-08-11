@@ -147,7 +147,7 @@ describe('MethodologieView — la section « les sources »', () => {
 
     const ligne = wrapper.find('tr#source-mobilite-snapshot')
     expect(ligne.exists()).toBe(true)
-    expect(ligne.text()).toContain('Licence ODbL — attribution « © OpenStreetMap contributors »')
+    expect(ligne.text()).toContain('ODbL — © OpenStreetMap contributors')
     expect(ligne.text()).toContain('28 février 2026')
     expect(ligne.text()).toContain('6 août 2026')
     expect(ligne.text()).not.toContain('odbl')
@@ -159,8 +159,23 @@ describe('MethodologieView — la section « les sources »', () => {
     for (const id of ['osm-reseaux', 'korrigo', 'stationnement-velo']) {
       const ligne = wrapper.find(`tr#source-${id}`)
       expect(ligne.exists(), `ligne « ${id} » introuvable`).toBe(true)
-      expect(ligne.text()).toContain('Licence ODbL — attribution « © OpenStreetMap contributors »')
+      expect(ligne.text()).toContain('ODbL — © OpenStreetMap contributors')
       expect(ligne.text()).not.toContain('odbl')
+    }
+  })
+
+  it('la cellule licence se plie (classe dédiée) — version/date gardent le traitement tabulaire one-line (issue #331)', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
+
+    const ligne = wrapper.find('tr#source-mobilite-snapshot')
+    const celluleLicence = ligne.find('td[data-label="Licence"]')
+    expect(celluleLicence.classes()).toContain('cellule-licence')
+    expect(celluleLicence.classes()).not.toContain('cellule-fraicheur')
+
+    // version + dates gardent le traitement one-line (nowrap + tabular-nums)
+    for (const libelle of ['Version', 'Date de référence', 'Date de publication']) {
+      const cellule = ligne.find(`td[data-label="${libelle}"]`)
+      expect(cellule.classes(), `cellule « ${libelle} »`).toContain('cellule-fraicheur')
     }
   })
 

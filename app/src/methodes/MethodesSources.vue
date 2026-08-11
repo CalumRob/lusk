@@ -108,7 +108,7 @@ function libelleThemes(themes: Theme[]): string {
             <td data-label="Version" class="cellule-fraicheur">{{ source.version ?? '—' }}</td>
             <td data-label="Date de référence" class="cellule-fraicheur">{{ source.dateReference ?? '—' }}</td>
             <td data-label="Date de publication" class="cellule-fraicheur">{{ source.datePublication ?? '—' }}</td>
-            <td data-label="Licence" class="cellule-fraicheur">{{ source.licence ?? '—' }}</td>
+            <td data-label="Licence" class="cellule-licence">{{ source.licence ?? '—' }}</td>
             <td data-label="Lien" class="colonne-lien">
               <a
                 v-if="source.url"
@@ -205,6 +205,12 @@ function libelleThemes(themes: Theme[]): string {
   font-variant-numeric: tabular-nums;
 }
 
+/* La licence se plie au lieu de déborder — la chaîne ODbL complète tient
+   dans la colonne à n'importe quelle largeur (issue #331, item 49). */
+.cellule-licence {
+  white-space: normal;
+}
+
 .puce-themes {
   display: flex;
   flex-wrap: wrap;
@@ -294,13 +300,15 @@ function libelleThemes(themes: Theme[]): string {
   }
 
   .cellule-source,
-  .cellule-editeur {
+  .cellule-editeur,
+  .cellule-licence {
     text-align: left;
     white-space: normal;
   }
 
   .cellule-source::before,
-  .cellule-editeur::before {
+  .cellule-editeur::before,
+  .cellule-licence::before {
     align-self: flex-start;
   }
 
