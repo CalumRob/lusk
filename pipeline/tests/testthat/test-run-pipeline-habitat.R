@@ -47,6 +47,14 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
+    # issue #60 : la géométrie (ADR-0008) est publiée par le run — jamais de
+    # réseau dans la boucle de test (le fetch WFS réel est hors de la boucle).
+    publier_geometrie = function(cible = "public/data", fetch = NULL) {
+      # le vrai publier_geometrie crée la cible avant d'écrire (R/geometrie.R) ;
+      # le test 1 (sortie par défaut) s'appuie sur cet effet de bord
+      if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+      invisible(NULL)
+    },
     .package = "lusk"
   )
   local_mocked_bindings(
@@ -69,6 +77,12 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) {
+      # le vrai publier_geometrie crée la cible avant d'écrire (R/geometrie.R) ;
+      # le test 1 (sortie par défaut) s'appuie sur cet effet de bord
+      if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+      invisible(NULL)
+    },
     .package = "lusk"
   )
 
@@ -125,6 +139,12 @@ test_that("un re-run Habitat écrase sans dupliquer (upsert, issue #19)", {
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) {
+      # le vrai publier_geometrie crée la cible avant d'écrire (R/geometrie.R) ;
+      # le test 1 (sortie par défaut) s'appuie sur cet effet de bord
+      if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+      invisible(NULL)
+    },
     .package = "lusk"
   )
 
@@ -161,6 +181,12 @@ test_that("en mode cron, le rapport enregistre les sources manuel « à traiter 
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_cron,
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) {
+      # le vrai publier_geometrie crée la cible avant d'écrire (R/geometrie.R) ;
+      # le test 1 (sortie par défaut) s'appuie sur cet effet de bord
+      if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+      invisible(NULL)
+    },
     .package = "lusk"
   )
 
@@ -194,6 +220,12 @@ test_that("le run Habitat estampille les DPE depuis le cache (base roulante)", {
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_habitat(),
     construire_donnees_habitat = function(cache) load_fixture_habitat(),
+    publier_geometrie = function(cible = "public/data", fetch = NULL) {
+      # le vrai publier_geometrie crée la cible avant d'écrire (R/geometrie.R) ;
+      # le test 1 (sortie par défaut) s'appuie sur cet effet de bord
+      if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
+      invisible(NULL)
+    },
     .package = "lusk"
   )
 
