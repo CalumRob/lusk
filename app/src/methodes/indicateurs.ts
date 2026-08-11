@@ -120,6 +120,16 @@ export interface DeuxHorlogesMethodes {
 }
 
 /**
+ * L'ancrage stable d'un indicateur dans les blocs (#indicateur-<clef>, issue
+ * #334). La clé de payload est déjà un slug stable (part_passoires) ; on la
+ * préfixe et on normalise les séparateurs pour ne jamais entrer en collision
+ * avec l'ancrage de section (#indicateurs).
+ */
+export function ancreIndicateur(clef: string): string {
+  return `indicateur-${clef.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`
+}
+
+/**
  * Le registre complet — une entrée par thème construit. Ordre du registre =
  * ordre d'affichage de la page (démographie, habitat, économie). La forme
  * thème → documentation est le contrat que le futur test de parité assertera
