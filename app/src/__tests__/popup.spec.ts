@@ -30,15 +30,19 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: null,
 }
 
-/** The Démographie default layer — the first story scalar (ADR-0019 α rule). */
+/** The Démographie default layer — the first declared story scalar (ADR-0019 α rule). */
 const coucheTauxSoldeNaturel: Couche = {
   source: 'histoire',
   clef: 'taux_solde_naturel',
   detail: null,
   libelle: 'taux_solde_naturel',
   parDefaut: true,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: 'trajectoire-demographique',
 }
 
 /** The multi-detail layer of a grouped key (ADR-0019). */
@@ -48,6 +52,8 @@ const coucheTrancheMoin15: Couche = {
   detail: '<15',
   libelle: 'Moins de 15 ans',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: null,
 }
 
 function payloadAvecApercu(apercu = apercuFixture): Payload {
@@ -88,6 +94,71 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       valeur: '200',
       unite: 'hab/km²',
       rang: "1er/2 de l'EPCI",
+    })
+  })
+
+  it('a story scalar deduplicated with the indicateur table (part_passoires) shows its ordinal rank', () => {
+    const payload = payloadAvecApercu()
+    // la couche que le modèle émet pour un scalaire de Story présent dans les
+    // DEUX tables (issue #315) : source 'indicateur' — la jointure riche
+    // (valeur + rang + vintage), jamais une couche muette
+    const couchePartPassoires: Couche = {
+      source: 'indicateur',
+      clef: 'part_passoires',
+      detail: null,
+      libelle: 'part_passoires',
+      parDefaut: true,
+      sousGroupe: 'etat-du-parc',
+      storyKey: 'etat-energetique-du-parc',
+    }
+    const payloadHabitat: Payload = {
+      ...payload,
+      indicateurs: [
+        ...indicateursDemographieFixture,
+        {
+          territoire: '22001',
+          type: 'commune',
+          theme: 'habitat',
+          key: 'part_passoires',
+          detail: null,
+          value: 0.13,
+          unit: '%',
+          rang_epci: 2,
+          rang_epci_n: 2,
+          rang_dep: null,
+          rang_dep_n: null,
+          rang_reg: null,
+          rang_reg_n: null,
+          vintage_source: 'ADEME — DPE',
+          vintage_version: '2024',
+          vintage_date_reference: '2024-01-01',
+          vintage_date_publication: '2026-06-30',
+        },
+      ],
+      histoires: [
+        ...histoiresDemographieFixture,
+        {
+          territoire: '22001',
+          type: 'commune',
+          theme: 'habitat',
+          story_key: 'etat-energetique-du-parc',
+          groupe: 'etat-du-parc',
+          salience_reason: 'defaut',
+          classification: 'parc-performant',
+          part_passoires: 0.13,
+          part_abc: 0.5,
+          n_dpe: 90,
+        },
+      ],
+    }
+    const kpis = kpisPourPopup(payloadHabitat, '22001', 'habitat', couchePartPassoires)
+
+    expect(kpis).toHaveLength(1)
+    expect(kpis[0]).toEqual({
+      libelle: 'part_passoires',
+      valeur: '13',
+      unite: '%',
+      rang: "2e/2 de l'EPCI",
     })
   })
 
@@ -134,6 +205,8 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       detail: null,
       libelle: 'trajectoire_artif_par_habitant',
       parDefaut: true,
+      sousGroupe: 'artificialisation',
+      storyKey: 'se-densifier-setaler-ou-sen-aller',
     }
     // le trou NA honnête du Milieux (ADR-0017) : états absents → scalaire null
     const histoireSansEtat: Histoire = {

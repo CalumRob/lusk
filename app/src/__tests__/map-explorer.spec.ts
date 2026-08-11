@@ -108,15 +108,19 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: null,
 }
 
-/** The Démographie default layer — the first story scalar (ADR-0019 α rule). */
+/** The Démographie default layer — the first declared story scalar (ADR-0019 α rule). */
 const coucheTauxSoldeNaturel: Couche = {
   source: 'histoire',
   clef: 'taux_solde_naturel',
   detail: null,
   libelle: 'taux_solde_naturel',
   parDefaut: true,
+  sousGroupe: 'etat-et-dynamique',
+  storyKey: 'trajectoire-demographique',
 }
 
 async function monter(overrides: Record<string, unknown> = {}) {
@@ -468,6 +472,8 @@ describe('MapExplorer — le re-join au changement de niveau (ADR-0019, #281)', 
       detail: null,
       libelle: 'Part de résidences secondaires',
       parDefaut: false,
+      sousGroupe: null,
+      storyKey: null,
     }
     const payloadHabitat: Payload = {
       ...payload,
