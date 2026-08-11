@@ -113,9 +113,9 @@ describe('couchesDuTheme — Habitat (the real payload shape)', () => {
     expect(detailsDu(groupes[1])).toEqual(['A', 'B', 'C', 'D', 'E', 'F', 'G'])
   })
 
-  it('falls back to the key for habitat labels (NOMS_INDICATEURS.habitat is the #200 gap)', () => {
+  it('labels the default from the metadata\u2019s indicator_labels — the #200 gap is closed, never a raw key', () => {
     const couches = couchesDuTheme(payload, 'habitat')
 
-    expect(couches.coucheParDefaut?.libelle).toBe('part_passoires')
+    expect(couches.coucheParDefaut?.libelle).toBe('Part de passoires thermiques')
   })
 })

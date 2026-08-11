@@ -144,6 +144,15 @@ test_that("valider_theme_metadata : un lien d'histoire inconnu est rejeté", {
   meta$subgroups <- meta$subgroups[1]
   meta$indicator_keys <- meta$subgroups[[1]]$indicators
   meta$sources <- meta$sources[names(meta$sources) %in% meta$indicator_keys]
+  # les libellés suivent le registre resserré (la bijection indicator_labels)
+  meta$indicator_labels <- meta$indicator_labels[
+    names(meta$indicator_labels) %in% meta$indicator_keys
+  ]
+  # les libellés de paramètres suivent l'union des lectures restantes
+  params_restants <- unlist(meta$subgroups[[1]]$reading$params, use.names = FALSE)
+  meta$param_labels <- meta$param_labels[
+    names(meta$param_labels) %in% params_restants
+  ]
   expect_error(valider_theme_metadata(meta), "orpheline")
 })
 
@@ -160,4 +169,101 @@ test_that("valider_theme_metadata : la politique de source de référence", {
     valider_theme_metadata(meta, vintages = vintages_demographie()),
     "vintages"
   )
+})
+
+# Les libellés payload-owned (issue #318) — les trois cartes de vocabulaire
+# que le thème déclare : indicator_labels (EXACTEMENT indicator_keys),
+# detail_labels (clés ⊆ indicator_keys, chaque valeur une carte détail →
+# libellé non vide) et param_labels (EXACTEMENT l'union des reading.params
+# déclarés par les sous-groupes, dans l'ordre de première déclaration).
+# Chaque fixture des tests ci-dessous reçoit les cartes minimales du contrat.
+
+metadonnees_demographie_avec_libelles <- function() {
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_labels <- list(
+    densite = "Densité de population",
+    structure_age = "Structure par âge",
+    evolution_1968 = "Évolution de la population depuis 1968",
+    taille_menages = "Taille moyenne des ménages"
+  )
+  meta$detail_labels <- list(
+    structure_age = list(
+      "<15" = "Moins de 15 ans", "15-24" = "15 à 24 ans",
+      "25-39" = "25 à 39 ans", "40-54" = "40 à 54 ans",
+      "55-64" = "55 à 64 ans", "65-79" = "65 à 79 ans",
+      "80+" = "80 ans et plus"
+    )
+  )
+  meta$param_labels <- list(
+    periode = "Période",
+    taux_solde_naturel = "Solde naturel (‰/an)",
+    taux_solde_migratoire = "Solde migratoire (‰/an)",
+    classification = "Classification"
+  )
+  meta
+}
+
+test_that("valider_theme_metadata : les cartes de libellés valides passent (indicator/detail/param)", {
+  expect_no_error(valider_theme_metadata(metadonnees_demographie_avec_libelles()))
+})
+
+test_that("valider_theme_metadata : indicator_labels déclare EXACTEMENT indicator_keys", {
+  # un indicateur du registre sans libellé
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$indicator_labels <- meta$indicator_labels[names(meta$indicator_labels) != "densite"]
+  expect_error(valider_theme_metadata(meta), "indicator_labels")
+
+  # un libellé déclaré pour une clé hors du registre (fantôme)
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$indicator_labels$fantome <- "Libellé fantôme"
+  expect_error(valider_theme_metadata(meta), "indicator_labels")
+
+  # un libellé vide
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$indicator_labels$densite <- ""
+  expect_error(valider_theme_metadata(meta), "indicator_labels")
+
+  # une carte absente
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$indicator_labels <- NULL
+  expect_error(valider_theme_metadata(meta), "indicator_labels")
+})
+
+test_that("valider_theme_metadata : detail_labels — clés ⊆ indicator_keys, libellés non vides", {
+  # une clé de détail hors du registre des indicateurs
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$detail_labels$fantome <- list(x = "y")
+  expect_error(valider_theme_metadata(meta), "detail_labels")
+
+  # un libellé de détail vide
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$detail_labels$structure_age[["15-24"]] <- ""
+  expect_error(valider_theme_metadata(meta), "detail_labels")
+
+  # un libellé de détail non-chaîne
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$detail_labels$structure_age[["15-24"]] <- 42
+  expect_error(valider_theme_metadata(meta), "detail_labels")
+
+  # une carte de détail absente
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$detail_labels <- NULL
+  expect_error(valider_theme_metadata(meta), "detail_labels")
+})
+
+test_that("valider_theme_metadata : param_labels déclare EXACTEMENT l'union des reading.params", {
+  # un paramètre de lecture sans libellé
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$param_labels <- meta$param_labels[names(meta$param_labels) != "periode"]
+  expect_error(valider_theme_metadata(meta), "param_labels")
+
+  # un libellé pour un paramètre jamais déclaré (fantôme)
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$param_labels$fantome <- "Libellé fantôme"
+  expect_error(valider_theme_metadata(meta), "param_labels")
+
+  # une carte absente
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$param_labels <- NULL
+  expect_error(valider_theme_metadata(meta), "param_labels")
 })

@@ -4,6 +4,7 @@ import {
   apercuAvecNAFixture,
   histoiresMobiliteFixture,
   indicateursMobiliteFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -25,7 +26,8 @@ import type { Payload } from '../payload/types'
  * payload: la commune 22001 (le défaut non-saillant), la commune 22002 (les
  * lignes réelles de la commune saillante 22055 — le vélo remplace le défaut),
  * l'EPCI, le département 22 et la région 53. The block's seam: the component
- * consumes these, never raw JSON.
+ * consumes these, never raw JSON. The ORDER is the metadata's indicator_keys
+ * (#318) — the fiche's order, payload-owned, never an app-side dictionary.
  */
 
 const payloadMobilite: Payload = {
@@ -36,29 +38,33 @@ const payloadMobilite: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { mobilite: metadonneesThemesFixtures.mobilite },
 }
 
-describe('indicateursPourTerritoire — the Mobilité block in contract order', () => {
-  it('returns the 12 keys in the block order (Taille → grille → demande/réseaux → sous-bloc)', () => {
+/** L'ordre de la fiche — le registre indicator_keys de la métadonnée Mobilité. */
+const ORDRE_METADONNEES = [
+  'nb_buildings',
+  'voitures_menage',
+  'reseaux',
+  'offre_tc',
+  'bornes_recharge',
+  'places_stationnement_velo_1000',
+  'offre_cyclable',
+  'iso_alimentation',
+  'iso_sante',
+  'iso_administration',
+  'iso_ecole',
+  'iso_banque',
+]
+
+describe('indicateursPourTerritoire — the Mobilité block in the metadata order', () => {
+  it('returns the 12 keys in the fiche order (the metadata indicator_keys, #318)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
-    expect(groupes.map((g) => g.key)).toEqual([
-      'nb_buildings',
-      'iso_alimentation',
-      'iso_sante',
-      'iso_administration',
-      'iso_ecole',
-      'iso_banque',
-      'voitures_menage',
-      'reseaux',
-      'offre_tc',
-      'bornes_recharge',
-      'places_stationnement_velo_1000',
-      'offre_cyclable',
-    ])
+    expect(groupes.map((g) => g.key)).toEqual(ORDRE_METADONNEES)
   })
 
-  it('keeps the same contract order at every level (EPCI, département, région)', () => {
+  it('keeps the same fiche order at every level (EPCI, département, région)', () => {
     for (const territoire of ['200000001', '22', '53']) {
       const cles = indicateursGroupeesPourTerritoire(
         payloadMobilite,
@@ -66,19 +72,18 @@ describe('indicateursPourTerritoire — the Mobilité block in contract order', 
         territoire,
       ).map((g) => g.key)
       expect(cles[0]).toBe('nb_buildings')
-      expect(cles.slice(1, 6)).toEqual([
+      expect(cles.slice(1, 4)).toEqual(['voitures_menage', 'reseaux', 'offre_tc'])
+      expect(cles.slice(4, 7)).toEqual([
+        'bornes_recharge',
+        'places_stationnement_velo_1000',
+        'offre_cyclable',
+      ])
+      expect(cles.slice(7)).toEqual([
         'iso_alimentation',
         'iso_sante',
         'iso_administration',
         'iso_ecole',
         'iso_banque',
-      ])
-      expect(cles.slice(6, 8)).toEqual(['voitures_menage', 'reseaux'])
-      expect(cles.slice(8)).toEqual([
-        'offre_tc',
-        'bornes_recharge',
-        'places_stationnement_velo_1000',
-        'offre_cyclable',
       ])
     }
   })
@@ -93,7 +98,7 @@ describe('indicateursPourTerritoire — the Mobilité block in contract order', 
     const lignes = indicateursPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     expect(lignes[0]).toMatchObject({ value: 168, unit: 'bâtiments' })
-    const grille = lignes.slice(1, 6)
+    const grille = lignes.filter((l) => l.key.startsWith('iso_'))
     expect(grille.map((l) => formaterValeur(l))).toEqual(['100', '100', '64', '100', '100'])
   })
 

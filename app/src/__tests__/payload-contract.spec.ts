@@ -263,9 +263,51 @@ describe('payload contract — the committed payload parses and renders', () => 
         if (vus.has(identite)) violations.push(`${theme}: lecture en double pour ${identite}`)
         vus.add(identite)
       }
+
+      // les libellés payload-owned (#318) : chaque (key, detail) publié a son
+      // libellé (indicator_labels / detail_labels), et chaque détail déclaré
+      // est publié — la parité bidirectionnelle de verifierPariteLibelles,
+      // documentée ici sur le payload committé
+      for (const ligne of indicateurs) {
+        if (!(ligne.key in meta.indicator_labels)) {
+          violations.push(`${theme}: indicateur « ${ligne.key} » publié sans libellé`)
+        }
+        if (ligne.detail !== null) {
+          const carte = meta.detail_labels[ligne.key]
+          if (!carte || !(ligne.detail in carte)) {
+            violations.push(`${theme}: détail « ${ligne.detail} » de « ${ligne.key} » publié sans libellé`)
+          }
+        }
+      }
+      for (const [cle, carte] of Object.entries(meta.detail_labels)) {
+        const publies = new Set(
+          indicateurs.filter((i) => i.key === cle && i.detail !== null).map((i) => i.detail as string),
+        )
+        for (const detail of Object.keys(carte)) {
+          if (!publies.has(detail)) violations.push(`${theme}: détail « ${detail} » de « ${cle} » déclaré jamais publié`)
+        }
+      }
     }
 
     expect(violations).toEqual([])
+  })
+
+  it('couvre chaque libellé d’indicateur du payload committé par la métadonnée — la fiche ne rend jamais une clé brute (#318)', async () => {
+    const payload = obtenirPayload()
+    const meta = payload.themeMetadata ?? {}
+    const sansLibelle = payload.indicateurs.filter(
+      (i) => !(i.key in (meta[i.theme]?.indicator_labels ?? {})),
+    )
+    expect(sansLibelle).toEqual([])
+    // les libellés de détail couvrent chaque (key, detail) publié
+    for (const theme of Object.keys(meta) as (keyof typeof meta)[]) {
+      for (const ligne of payload.indicateurs.filter((i) => i.theme === theme && i.detail !== null)) {
+        expect(
+          meta[theme]?.detail_labels[ligne.key]?.[ligne.detail as string],
+          `${theme}/${ligne.key}/${ligne.detail}`,
+        ).toBeDefined()
+      }
+    }
   })
 
   it('parses the regenerated Milieux histoires — the pivot schema field-by-field (spec #225 → #243)', async () => {

@@ -65,7 +65,10 @@ const segments = computed<Segment[]>(() => {
   const avecValeur = props.lignes.filter((ligne) => ligne.value !== null)
   const total = avecValeur.reduce((somme, ligne) => somme + (ligne.value ?? 0), 0)
   return avecValeur.map((ligne) => ({
-    libelle: props.labelsDetail?.[ligne.detail ?? ''] ?? ligne.detail ?? ligne.key,
+    // Le libellé vient de la métadonnée (labelsDetail) — jamais une clé brute :
+    // la parité au load (verifierPariteLibelles) garantit le libellé de chaque
+    // (key, detail) publié. Un libellé absent rend la place vide, jamais la clé.
+    libelle: props.labelsDetail?.[ligne.detail ?? ''] ?? '',
     texte: formaterValeur(ligne) ?? '—',
     largeur: total > 0 ? ((ligne.value ?? 0) / total) * 100 : 0,
   }))
@@ -99,7 +102,7 @@ const segments = computed<Segment[]>(() => {
           :key="ligne.detail ?? ligne.key"
           class="tranche"
         >
-          <span class="tranche-libelle">{{ labelsDetail?.[ligne.detail ?? ''] ?? ligne.detail }}</span>
+          <span class="tranche-libelle">{{ labelsDetail?.[ligne.detail ?? ''] }}</span>
           <span class="tranche-valeur">{{ formaterValeur(ligne) ?? '—' }}</span>
           <span v-if="ligne.unit" class="tranche-unite">{{ ligne.unit }}</span>
         </li>

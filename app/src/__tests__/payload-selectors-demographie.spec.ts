@@ -5,6 +5,7 @@ import {
   histoiresDemographieFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -23,8 +24,10 @@ import {
 import type { Payload } from '../payload/types'
 
 /**
- * The Démographie block selectors — pure, French product strings out of the
+ * The Démographie block selectors - pure, French product strings out of the
  * payload. The block's seam: the component consumes these, never raw JSON.
+ * The ORDER is the metadata's indicator_keys (#318) - the fiche's order,
+ * payload-owned, never an app-side dictionary.
  */
 
 const payloadDemographie: Payload = {
@@ -35,6 +38,7 @@ const payloadDemographie: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { demographie: metadonneesThemesFixtures.demographie },
 }
 
 describe('indicateursPourTerritoire — the standard block in contract order', () => {
@@ -162,11 +166,13 @@ describe('formaterVintage — the always-present freshness stamp', () => {
   })
 
   it('omits a missing reference date (the DPE rolling base) instead of inventing one', () => {
-    const passoires = indicateursHabitatFixture.find((l) => l.key === 'part_residences_secondaires')!
+    const passoires = indicateursHabitatFixture.find(
+      (l) => l.key === 'part_passoires' && l.detail === null,
+    )!
     const sansReference = { ...passoires, vintage_date_reference: null }
 
     expect(formaterVintage(sansReference)).toBe(
-      'INSEE — Logements (dossier complet) · 2023 · publ. 30 juin 2026',
+      'ADEME — Observatoire DPE, logements existants · 2024 · publ. 30 juin 2026',
     )
   })
 })

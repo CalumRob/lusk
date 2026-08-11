@@ -3,16 +3,21 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import IndicatorFigure from '../components/fiche/IndicatorFigure.vue'
-import { NOMS_TRANCHES_AGE } from '../fiche/indicateurs'
-import { indicateursDemographieFixture } from '../payload/fixtures'
+import { indicateursDemographieFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur } from '../payload/types'
 
 /**
- * IndicatorFigure — the fiche's indicator number (ui-elements.md
- * §Indicator/KPI figure): value + label + unit + rank-in-context chip +
+ * IndicatorFigure - the fiche's indicator number (ui-elements.md
+ * �Indicator/KPI figure): value + label + unit + rank-in-context chip +
  * vintage stamp, and the structure_age 7-tranche breakdown for multi-detail
  * keys. The vintage is always present; the chip only when a rank exists.
+ * The detail labels are payload-owned (issue #318): the test passes the
+ * theme's metadata detail_labels (the same map the fiche reads), never an
+ * app-side dictionary.
  */
+
+/** The structure_age detail labels — the metadata's detail_labels (the only source). */
+const LABELS_TRANCHES = metadonneesThemesFixtures.demographie.detail_labels.structure_age
 
 let montee: ReturnType<typeof mount> | null = null
 
@@ -113,7 +118,7 @@ describe('IndicatorFigure — the structure_age breakdown (multi-detail)', () =>
   )
 
   it('renders the 7 tranches as a compact tabular breakdown', () => {
-    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: NOMS_TRANCHES_AGE, large: true })
+    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: LABELS_TRANCHES, large: true })
 
     expect(wrapper.findAll('.tranche')).toHaveLength(7)
     expect(wrapper.find('.barre-segmentee').exists()).toBe(true)
@@ -121,7 +126,7 @@ describe('IndicatorFigure — the structure_age breakdown (multi-detail)', () =>
   })
 
   it('maps the tranche codes to their French labels and values', () => {
-    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: NOMS_TRANCHES_AGE })
+    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: LABELS_TRANCHES })
 
     const premiere = wrapper.findAll('.tranche')[0]
     expect(premiere.find('.tranche-libelle').text()).toBe('Moins de 15 ans')
@@ -133,13 +138,13 @@ describe('IndicatorFigure — the structure_age breakdown (multi-detail)', () =>
   })
 
   it('carries no single rank chip — the breakdown has 7 rows, no one rank', () => {
-    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: NOMS_TRANCHES_AGE })
+    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: LABELS_TRANCHES })
 
     expect(wrapper.find('.puce-rang').exists()).toBe(false)
   })
 
   it('still renders the vintage stamp (the breakdown is one indicator)', () => {
-    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: NOMS_TRANCHES_AGE })
+    const wrapper = monter({ clef: 'structure_age', lignes: tranches, labelsDetail: LABELS_TRANCHES })
 
     expect(wrapper.find('.estampille-vintage').exists()).toBe(true)
   })
@@ -148,7 +153,7 @@ describe('IndicatorFigure — the structure_age breakdown (multi-detail)', () =>
     const wrapper = monter({
       clef: 'structure_age',
       lignes: tranches,
-      labelsDetail: NOMS_TRANCHES_AGE,
+      labelsDetail: LABELS_TRANCHES,
       libelle: 'Structure par âge',
     })
 

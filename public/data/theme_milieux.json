@@ -96,5 +96,44 @@
   "sources": {
     "artif_par_habitant": "ocsge_artificialisation_22_2025",
     "conso_enaf_annuel": "consoenaf"
+  },
+  "indicator_labels": {
+    "artif_par_habitant": "Intensité état",
+    "conso_enaf_annuel": "Consommation d’ENAF — série annuelle"
+  },
+  "detail_labels": {
+    "artif_par_habitant": {
+      "M2": "État initial (M2)",
+      "M3": "État final (M3)",
+      "2020": "2020",
+      "2021": "2021",
+      "2022": "2022",
+      "2023": "2023",
+      "2024": "2024",
+      "2025": "2025"
+    },
+    "conso_enaf_annuel": {
+      "2011": "2011",
+      "2012": "2012",
+      "2013": "2013",
+      "2014": "2014",
+      "2015": "2015",
+      "2016": "2016",
+      "2017": "2017",
+      "2018": "2018",
+      "2019": "2019",
+      "2020": "2020",
+      "2021": "2021",
+      "2022": "2022",
+      "2023": "2023",
+      "2024": "2024"
+    }
+  },
+  "param_labels": {
+    "periode_pop": "Période de population",
+    "periode_artif": "Période des états OCS-GE",
+    "delta_population": "Variation de population",
+    "trajectoire_artif_par_habitant": "Trajectoire par habitant",
+    "classification": "Classification"
   }
 }
