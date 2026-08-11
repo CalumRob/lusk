@@ -373,12 +373,12 @@ describe('MethodologieView — les ancres d\u2019indicateurs (issue #334)', () =
     const contenant = creerContenant()
 
     const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
-      chemin: '/methodologie?onglet=sources&section=habitat#source-dvf-2021-dep22',
+      chemin: '/methodologie?onglet=sources&section=habitat#source-dvf',
       attachTo: contenant,
     })
     await flushPromises()
 
-    const ligne = wrapper.find('tr#source-dvf-2021-dep22')
+    const ligne = wrapper.find('tr#source-dvf')
     expect(ligne.exists()).toBe(true)
     expect(defile).toHaveBeenCalled()
     expect(defile.mock.instances[defile.mock.instances.length - 1]).toBe(ligne.element)
