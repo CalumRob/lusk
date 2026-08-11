@@ -27,6 +27,8 @@
 
 import type { HistoireDemographie } from '@/payload/types'
 
+import { formaterTaux } from '@/payload/selectors'
+
 import { SCALAIRES_STORY } from './storyScalaires'
 
 export type ClassificationDemographie =
@@ -50,15 +52,9 @@ interface AngleParClassification {
   commentLire: (tauxNaturel: number, tauxMigratoire: number) => string
 }
 
-/**
- * A signed annualized rate, French ("+4,99/an pour 1 000 hab."). The unit is
- * spelled out — "pour 1 000 habitants" is what ‰ means (issue #73: ‰/an
- * alone is cryptic in a sentence; the chart's axes keep the compact form).
- */
-function formaterTaux(taux: number): string {
-  const signe = taux > 0 ? '+' : ''
-  const deux = taux.toFixed(2).replace('.', ',')
-  return `${signe}${deux}/an pour 1 000 hab.`
+/** The shared signed-rate number (formaterTaux, selectors) with the unit spelled out — "pour 1 000 habitants" is what ‰ means (issue #73: ‰/an alone is cryptic in a sentence; the chart's axes keep the compact form). */
+function formaterTauxUnite(taux: number): string {
+  return `${formaterTaux(taux)}/an pour 1 000 hab.`
 }
 
 /** Does the positive force outweigh the negative one? |positive| ≥ |negative|. */
@@ -71,8 +67,8 @@ const ANGLES_PAR_CLASSIFICATION: Record<ClassificationDemographie, AngleParClass
     titre: 'Trajectoire démographique',
     uneLigne: () => 'Le territoire attire et se renouvelle.',
     commentLire: (tauxNaturel, tauxMigratoire) =>
-      `Les deux forces sont positives — solde naturel ${formaterTaux(tauxNaturel)}, ` +
-      `solde migratoire ${formaterTaux(tauxMigratoire)} : la population croît sur ses deux composantes.`,
+      `Les deux forces sont positives — solde naturel ${formaterTauxUnite(tauxNaturel)}, ` +
+      `solde migratoire ${formaterTauxUnite(tauxMigratoire)} : la population croît sur ses deux composantes.`,
   },
   'attire-meurt': {
     titre: 'Trajectoire démographique',
@@ -84,17 +80,17 @@ const ANGLES_PAR_CLASSIFICATION: Record<ClassificationDemographie, AngleParClass
         : 'La population diminue malgré les arrivées.',
     commentLire: (tauxNaturel, tauxMigratoire) =>
       positiveCompense(tauxMigratoire, tauxNaturel)
-        ? `Le solde naturel est négatif (${formaterTaux(tauxNaturel)}) et le solde migratoire positif ` +
-          `(${formaterTaux(tauxMigratoire)}) : la population se maintient grâce aux arrivées.`
-        : `Le solde naturel est négatif (${formaterTaux(tauxNaturel)}), plus marqué que le solde ` +
-          `migratoire positif (${formaterTaux(tauxMigratoire)}) : la population diminue malgré les arrivées.`,
+        ? `Le solde naturel est négatif (${formaterTauxUnite(tauxNaturel)}) et le solde migratoire positif ` +
+          `(${formaterTauxUnite(tauxMigratoire)}) : la population se maintient grâce aux arrivées.`
+        : `Le solde naturel est négatif (${formaterTauxUnite(tauxNaturel)}), plus marqué que le solde ` +
+          `migratoire positif (${formaterTauxUnite(tauxMigratoire)}) : la population diminue malgré les arrivées.`,
   },
   'vide-meurt': {
     titre: 'Trajectoire démographique',
     uneLigne: () => 'La population diminue sur ses deux composantes.',
     commentLire: (tauxNaturel, tauxMigratoire) =>
-      `Les deux forces sont négatives — solde naturel ${formaterTaux(tauxNaturel)}, ` +
-      `solde migratoire ${formaterTaux(tauxMigratoire)} : la population diminue.`,
+      `Les deux forces sont négatives — solde naturel ${formaterTauxUnite(tauxNaturel)}, ` +
+      `solde migratoire ${formaterTauxUnite(tauxMigratoire)} : la population diminue.`,
   },
   'vide-renouvelle': {
     titre: 'Trajectoire démographique',
@@ -107,10 +103,10 @@ const ANGLES_PAR_CLASSIFICATION: Record<ClassificationDemographie, AngleParClass
         : 'La population diminue malgré les naissances.',
     commentLire: (tauxNaturel, tauxMigratoire) =>
       positiveCompense(tauxNaturel, tauxMigratoire)
-        ? `Le solde naturel est positif (${formaterTaux(tauxNaturel)}) et le solde migratoire négatif ` +
-          `(${formaterTaux(tauxMigratoire)}) : la population se maintient grâce aux naissances.`
-        : `Le solde naturel est positif (${formaterTaux(tauxNaturel)}), moins marqué que le solde ` +
-          `migratoire négatif (${formaterTaux(tauxMigratoire)}) : la population diminue malgré les naissances.`,
+        ? `Le solde naturel est positif (${formaterTauxUnite(tauxNaturel)}) et le solde migratoire négatif ` +
+          `(${formaterTauxUnite(tauxMigratoire)}) : la population se maintient grâce aux naissances.`
+        : `Le solde naturel est positif (${formaterTauxUnite(tauxNaturel)}), moins marqué que le solde ` +
+          `migratoire négatif (${formaterTauxUnite(tauxMigratoire)}) : la population diminue malgré les naissances.`,
   },
 }
 

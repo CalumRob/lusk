@@ -23,7 +23,7 @@ import type { HistoireMilieux } from '../payload/types'
 
 /** Une ligne Milieux valide du contrat (validate.ts) — les états et la trajectoire restent nullables (#243). */
 function uneHistoire(overrides: Partial<HistoireMilieux> = {}): HistoireMilieux {
-  return {
+  const histoire: HistoireMilieux = {
     territoire: '22001',
     type: 'commune',
     theme: 'milieux',
@@ -31,6 +31,7 @@ function uneHistoire(overrides: Partial<HistoireMilieux> = {}): HistoireMilieux 
     periode_pop: '2017-2023',
     periode_artif: '2021-2025',
     delta_population: 0,
+    taux_variation_population: 0,
     artif_m2: 0,
     artif_m3: 0,
     artif_m2_par_habitant: 0,
@@ -39,6 +40,11 @@ function uneHistoire(overrides: Partial<HistoireMilieux> = {}): HistoireMilieux 
     classification: 'grandir-en-setalant',
     ...overrides,
   }
+  // Le contrat (#306) exige taux et delta de même signe — le taux dérive du delta surchargé.
+  if (histoire.taux_variation_population === 0 && histoire.delta_population !== 0) {
+    histoire.taux_variation_population = Math.sign(histoire.delta_population) * 10
+  }
+  return histoire
 }
 
 const LECTURES = [

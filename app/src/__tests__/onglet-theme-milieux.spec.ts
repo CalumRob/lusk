@@ -116,14 +116,15 @@ describe('OngletTheme — the Milieux block (la Story + les deux figures Intensi
   })
 
   it('feeds the quadrant graph the two forces, the classification and the same-scale nuage', async () => {
-    const wrapper = await monter('22001') // Δpop +200, Δm²/hab = 2550 − 2250 = +300
+    const wrapper = await monter('22001') // taux +14,49 ‰/an (#306), Δm²/hab = 2550 − 2250 = +300
 
     const graphique = wrapper.findComponent(GraphiqueQuadrantMilieux)
     expect(graphique.props()).toMatchObject({
-      deltaPopulation: 200,
+      tauxVariationPopulation: 14.4927536231884,
       deltaM2ParHabitant: 300,
       classification: 'grandir-en-setalant',
       nom: 'Commune A1',
+      periodePop: '2017-2023',
       periodeArtif: '2021-2025',
     })
     // le nuage au même échelle : la commune voit les communes de SON EPCI

@@ -90,13 +90,13 @@ describe('nuageMilieux — the Milieux quadrant’s context cloud (ADR-0011)', (
   it('carries each point’s two forces, its type/code and its state window', () => {
     const nuage = nuageMilieux(payloadMilieux, '200000001') // EPCI X → EPCI Y
 
-    // EPCI Y (200000002) : Δpop −160, Δ(m²/hab) = 410 − 420 = −10, fenêtre 2021-2024
+    // EPCI Y (200000002) : taux −6,01 ‰/an (#306), Δ(m²/hab) = 410 − 420 = −10, fenêtre 2021-2024
     expect(nuage?.[0]).toEqual({
       territoire: '200000002',
       type: 'epci',
       nom: 'EPCI Y',
       periodeArtif: '2021-2024',
-      deltaPopulation: -160,
+      tauxVariationPopulation: -6.00600600600601,
       deltaM2ParHabitant: -10,
     })
   })

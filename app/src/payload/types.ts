@@ -272,6 +272,16 @@ export interface HistoireMilieux {
    */
   periode_artif: string | null
   delta_population: number
+  /**
+   * Le taux annuel de variation de la population (‰/an) — la force population
+   * du quadrant, annualisée et normalisée par la population moyenne du bracket
+   * INSEE ((pop_debut + pop_fin) / 2, la même convention que Démographie,
+   * ADR-0011). Null quand la population moyenne est nulle (le 0 réel des
+   * villages détruits — jamais une division par zéro, jamais un taux inventé).
+   * Le delta brut reste publié à côté (le prose le cite) ; la classification
+   * lit le signe seul du delta — identique pour le compte et pour le taux.
+   */
+  taux_variation_population: number | null
   /** La surface artificialisée à l'état initial (M2), en ha — null si la donnée manque. */
   artif_m2: number | null
   /** La surface artificialisée à l'état final (M3), en ha — null si la donnée manque. */

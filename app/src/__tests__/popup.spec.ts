@@ -144,6 +144,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       periode_pop: '2017-2023',
       periode_artif: null,
       delta_population: 0,
+      taux_variation_population: 0,
       artif_m2: null,
       artif_m3: null,
       artif_m2_par_habitant: null,

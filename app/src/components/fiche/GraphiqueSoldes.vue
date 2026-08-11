@@ -22,6 +22,7 @@ import type * as echarts from 'echarts/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { formaterTaux } from '@/payload/selectors'
 import type { PointNuage } from '@/payload/selectors'
 
 const props = defineProps<{
@@ -60,11 +61,6 @@ function token(nom: string, fallback: string): string {
   } catch {
     return fallback
   }
-}
-
-function formaterTaux(x: number): string {
-  const signe = x > 0 ? '+' : ''
-  return `${signe}${x.toFixed(2).replace('.', ',')}`
 }
 
 const libelleAccesible = computed(

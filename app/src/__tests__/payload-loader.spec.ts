@@ -190,6 +190,7 @@ describe('chargerPayload — the single seam', () => {
         periode_pop: '2017-2023',
         periode_artif: '2021-2025',
         delta_population: -15,
+        taux_variation_population: -4.19111483654652,
         artif_m2: 0.84571,
         artif_m3: 2.8089577,
         artif_m2_par_habitant: 14.0018,

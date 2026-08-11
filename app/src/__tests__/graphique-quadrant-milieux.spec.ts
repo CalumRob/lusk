@@ -21,7 +21,8 @@ import { routes } from '../router'
 
 /**
  * GraphiqueQuadrantMilieux — the Milieux story chart (issue #241, ADR-0011 +
- * ADR-0017): the quadrant of the two signed forces — x = Δpopulation, y =
+ * ADR-0017, amendé #306): the quadrant of the two signed forces — x = le taux
+ * annuel de variation de la population (‰/an, le registre Démographie), y =
  * Δ(m²/hab) = artif_m3_par_habitant − artif_m2_par_habitant — axes crossing
  * at 0 (markLine), plus the context cloud (nuageMilieux): the territory's
  * comparison group at the same scale. Every cloud point is hoverable (its
@@ -38,7 +39,7 @@ const pointA1: PointNuageMilieux = {
   type: 'commune',
   nom: 'Commune A1',
   periodeArtif: '2021-2025',
-  deltaPopulation: 200,
+  tauxVariationPopulation: 14.4927536231884,
   deltaM2ParHabitant: 300,
 }
 const pointD: PointNuageMilieux = {
@@ -46,7 +47,7 @@ const pointD: PointNuageMilieux = {
   type: 'commune',
   nom: 'Commune D',
   periodeArtif: '2021-2025',
-  deltaPopulation: 100,
+  tauxVariationPopulation: 13.3333333333333,
   deltaM2ParHabitant: -45,
 }
 const pointTransversal: PointNuageMilieux = {
@@ -54,7 +55,7 @@ const pointTransversal: PointNuageMilieux = {
   type: 'epci',
   nom: 'EPCI Y',
   periodeArtif: '2021-2025 (22) · 2021-2024 (29)',
-  deltaPopulation: -160,
+  tauxVariationPopulation: -6.00600600600601,
   deltaM2ParHabitant: -10,
 }
 
@@ -74,10 +75,11 @@ function instanceRendue() {
 function monter(nuage: PointNuageMilieux[] = [], periodeArtif = '2021-2025') {
   return mount(GraphiqueQuadrantMilieux, {
     props: {
-      deltaPopulation: 200,
+      tauxVariationPopulation: 14.4927536231884,
       deltaM2ParHabitant: 300,
       classification: 'grandir-en-setalant',
       nom: 'Commune A1',
+      periodePop: '2017-2023',
       periodeArtif,
       nuage,
     },
@@ -95,7 +97,7 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
 
     const zone = wrapper.find('[role="img"]')
     expect(zone.attributes('aria-label')).toContain('Commune A1')
-    expect(zone.attributes('aria-label')).toContain('+200')
+    expect(zone.attributes('aria-label')).toContain('+14,49')
     expect(zone.attributes('aria-label')).toContain('+300')
     expect(zone.attributes('aria-label')).toContain('grandir-en-setalant')
   })
@@ -133,18 +135,19 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
     const series = (optionRendue()?.series as Array<Record<string, unknown>>) ?? []
     const nuage = series.find((s) => s.name === 'contexte')
     expect(nuage).toBeTruthy()
-    // x = Δpopulation, y = Δ(m²/hab) — chaque point porte son nom, son code,
-    // son type et sa fenêtre OCS-GE (le rider du millésime pour les pairs multi-dépt)
+    // x = le taux annuel de population (‰/an, #306), y = Δ(m²/hab) — chaque
+    // point porte son nom, son code, son type et sa fenêtre OCS-GE (le rider
+    // du millésime pour les pairs multi-dépt)
     expect(nuage?.data).toEqual([
       {
-        value: [200, 300],
+        value: [14.4927536231884, 300],
         nom: 'Commune A1',
         territoire: '22001',
         type: 'commune',
         periodeArtif: '2021-2025',
       },
       {
-        value: [100, -45],
+        value: [13.3333333333333, -45],
         nom: 'Commune D',
         territoire: '22002',
         type: 'commune',
@@ -152,7 +155,7 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
       },
     ])
     const point = series.find((s) => s.name === 'Commune A1')
-    expect(point?.data).toEqual([{ value: [200, 300], nom: 'Commune A1' }])
+    expect(point?.data).toEqual([{ value: [14.4927536231884, 300], nom: 'Commune A1' }])
 
     wrapper.unmount()
   })
@@ -169,10 +172,10 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
       ?.formatter as ((p: unknown) => string) | undefined
     expect(formatter).toBeTypeOf('function')
     const texte = formatter?.({
-      data: { value: [100, -45], nom: 'Commune D', territoire: '22002', type: 'commune' },
+      data: { value: [13.3333333333333, -45], nom: 'Commune D', territoire: '22002', type: 'commune' },
     })
     expect(texte).toContain('Commune D')
-    expect(texte).toContain('+100 hab')
+    expect(texte).toContain('+13,33 ‰/an')
     expect(texte).toContain('-45')
 
     wrapper.unmount()

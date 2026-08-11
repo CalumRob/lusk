@@ -200,14 +200,17 @@ const milieuxSansLecture = computed(() => {
 })
 
 // The Milieux Story row, narrowed to the definite OCS-GE state fields — the
-// quadrant graph reads the two forces (Δpopulation, Δ m²/hab) and the
-// classification. Seulement quand la lecture existe : classification ET
-// trajectoire définies (le contrat #243 — une lecture porte toujours sa
-// seconde force) — les états sont alors forcément des nombres, jamais le
-// trou NA. Le record étroit garde le template typé (la soustraction du
-// delta) sans ré-ouvrir le nullable.
+// quadrant graph reads the two forces (le taux annuel de variation de la
+// population ‰/an #306, Δ m²/hab) and the classification. Seulement quand la
+// lecture existe : classification ET trajectoire définies (le contrat #243 —
+// une lecture porte toujours sa seconde force) — les états sont alors
+// forcément des nombres, jamais le trou NA. Le record étroit garde le
+// template typé (la soustraction du delta) sans ré-ouvrir le nullable. Le
+// taux population, lui, doit être défini (la population moyenne non nulle —
+// un taux absent rend le point intracable, jamais un x inventé).
 interface EtatsMilieux {
-  delta_population: number
+  taux_variation_population: number
+  periode_pop: string
   artif_m2_par_habitant: number
   artif_m3_par_habitant: number
   periode_artif: string
@@ -222,10 +225,12 @@ const histoireMilieuxEtats = computed<EtatsMilieux | null>(() => {
   if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
     return null
   }
+  if (histoire.taux_variation_population === null) return null
   // une lecture porte toujours sa fenêtre d'états (le contrat #243)
   if (histoire.periode_artif === null) return null
   return {
-    delta_population: histoire.delta_population,
+    taux_variation_population: histoire.taux_variation_population,
+    periode_pop: histoire.periode_pop,
     artif_m2_par_habitant: histoire.artif_m2_par_habitant,
     artif_m3_par_habitant: histoire.artif_m3_par_habitant,
     periode_artif: histoire.periode_artif,
@@ -234,9 +239,9 @@ const histoireMilieuxEtats = computed<EtatsMilieux | null>(() => {
 })
 
 // The Milieux story chart's context cloud (ADR-0011, issue #241) — the
-// same-scale peers' Δpopulation × Δ(m²/hab), each carrying its OCS-GE state
-// window. The Démographie nuage pattern: computed from the selector, fed to
-// the quadrant graph.
+// same-scale peers' taux annuel de population (‰/an, #306) × Δ(m²/hab), each
+// carrying its OCS-GE state window. The Démographie nuage pattern: computed
+// from the selector, fed to the quadrant graph.
 const nuageMilieuxComputed = computed(() =>
   props.theme === 'milieux' ? nuageMilieux(props.payload, props.territoire) ?? [] : [],
 )
@@ -345,23 +350,25 @@ function libelleIndicateur(clef: string): string {
            « Se densifier, s'étaler, ou s'en aller » — la lecture du territoire
            contre sa terre, une des quatre lectures par les signes. L'angle
            porte le GRAPHE QUADRANT (issue #241, ADR-0011) — le nuage des
-           pairs au même échelle (x = Δpopulation, y = Δ m²/hab) — au premier
-           plan, la lecture d'abord (issue #71). L'intensité (m² d'ENAF par
-           habitant ajouté) est morte du prose avec les flux CONSOENAF : la
-           surface artificialisée par habitant (l'état) vit dans le « comment
-           lire », l'intensité est la figure (#65, #241). -->
+           pairs au même échelle (x = le taux annuel de variation de la
+           population ‰/an #306, y = Δ m²/hab) — au premier plan, la lecture
+           d'abord (issue #71). L'intensité (m² d'ENAF par habitant ajouté)
+           est morte du prose avec les flux CONSOENAF : la surface
+           artificialisée par habitant (l'état) vit dans le « comment lire »,
+           l'intensité est la figure (#65, #241). -->
       <template v-if="storyMilieuxAngle">
         <p class="angle-story-une-ligne">{{ storyMilieuxAngle.uneLigne }}</p>
         <p class="angle-story-titre">{{ storyMilieuxAngle.titre }}</p>
         <GraphiqueQuadrantMilieux
           v-if="histoireMilieuxEtats"
-          :delta-population="histoireMilieuxEtats.delta_population"
+          :taux-variation-population="histoireMilieuxEtats.taux_variation_population"
           :delta-m2-par-habitant="
             histoireMilieuxEtats.artif_m3_par_habitant -
             histoireMilieuxEtats.artif_m2_par_habitant
           "
           :classification="histoireMilieuxEtats.classification"
           :nom="nomTerritoire"
+          :periode-pop="histoireMilieuxEtats.periode_pop"
           :periode-artif="histoireMilieuxEtats.periode_artif"
           :nuage="nuageMilieuxComputed"
         />
