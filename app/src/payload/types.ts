@@ -594,7 +594,17 @@ export interface SousGroupeMetadata {
  *   cross-theme reference, ADR-0020);
  * - `sources` declares EXACTLY indicator_keys, each to a non-empty source id
  *   (the source-reference policy; the pipeline cross-checks ids against the
- *   vintages table at run time).
+ *   vintages table at run time);
+ * - the three label maps (issue #318 — the payload-owned vocabulary, the
+ *   ONLY labels the fiche and the carte render, never a raw internal key):
+ *   `indicator_labels` declares EXACTLY indicator_keys (a French label per
+ *   registered indicator), `detail_labels` declares the detail labels of the
+ *   multi-detail keys (each declared key ∈ indicator_keys, each label a
+ *   non-empty string), `param_labels` declares EXACTLY the union of the
+ *   subgroups' reading.params (the story-scalar labels the carte reads). The
+ *   bidirectional parity against the published facts — every (key, detail)
+ *   row of the payload has its label, no declared label is dead — is the
+ *   guard verifierPariteLibelles (validate.ts), run at load.
  */
 export interface ThemeMetadata {
   theme: Theme
@@ -603,4 +613,21 @@ export interface ThemeMetadata {
   indicator_keys: string[]
   story_keys: string[]
   sources: Record<string, string>
+  /**
+   * The indicator labels — EXACTLY indicator_keys, key → French label
+   * (the fiche's figures and the carte's indicator layers read it).
+   */
+  indicator_labels: Record<string, string>
+  /**
+   * The detail labels of the multi-detail keys — key → (detail → French
+   * label). Keys are a subset of indicator_keys; the parity guard proves
+   * every published detail value has its label.
+   */
+  detail_labels: Record<string, Record<string, string>>
+  /**
+   * The reading-param labels — EXACTLY the union of subgroups[].reading.params
+   * (first-declaration order), param → French label. The carte reads it for
+   * the story-scalar layers; a raw histoire field name is never a label.
+   */
+  param_labels: Record<string, string>
 }

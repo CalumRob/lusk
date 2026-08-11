@@ -136,42 +136,16 @@ export function trouverTerritoire(payload: Payload, id: string): Territoire | nu
   return payload.territoires.find((t) => t.territoire === id) ?? null
 }
 
-/**
- * The canonical order of the standard indicators per theme — the fiche
- * contract (docs/themes/<theme>.md, INDICATEURS_<theme> côté R). Keys absent
- * from the map keep their payload order (later themes extend the map when
- * their block lands).
- */
-export const ORDRE_INDICATEURS: Partial<Record<Theme, readonly string[]>> = {
-  demographie: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
-  // Économie (issue #120) : « Taille » → « santé » → « verdure » — l'ordre du
-  // contrat R (INDICATEURS_ECONOMIE), pas celui du JSON.
-  economie: ['effectifs_salaries', 'chomage', 'eco_activites'],
-  // Mobilité (issue #142, ADR-0012) : la « Taille » → la grille d'isolation
-  // (les 5 parts) → l'étage demande/réseaux → le sous-bloc — l'ordre du bloc,
-  // pas celui d'INDICATEURS_MOBILITE (nb_buildings → voitures → reseaux → …).
-  mobilite: [
-    'nb_buildings',
-    'iso_alimentation',
-    'iso_sante',
-    'iso_administration',
-    'iso_ecole',
-    'iso_banque',
-    'voitures_menage',
-    'reseaux',
-    'offre_tc',
-    'bornes_recharge',
-    'places_stationnement_velo_1000',
-    'offre_cyclable',
-  ],
-  // Milieux (spec #225, ADR-0017) : « Intensité état · Série annuelle » —
-  // l'état par habitant (artif_par_habitant) puis la série annuelle
-  // CONSOENAF (conso_enaf_annuel) — l'ordre du bloc, pas celui du JSON.
-  milieux: ['artif_par_habitant', 'conso_enaf_annuel'],
+/** L'ordre de la fiche — le registre des métadonnées (indicator_keys du
+ *  theme_<theme>.json), jamais une carte app-side (#318). Un payload sans le
+ *  seam garde l'ordre du payload (la stabilité du tri). */
+function ordreDuTheme(payload: Payload, theme: Theme): readonly string[] | undefined {
+  return payload.themeMetadata?.[theme]?.indicator_keys
 }
 
-/** The shared key comparator — the fiche contract order (mapped keys first, then unmapped in payload order). */
-function comparerOrdreIndicateurs(ordre: readonly string[] | undefined): (a: string, b: string) => number {
+/** Le comparateur partagé — l'ordre de la fiche (les clés du registre
+ *  d'abord, puis les clés hors registre en ordre de payload). */
+function comparerOrdre(ordre: readonly string[] | undefined): (a: string, b: string) => number {
   return (a, b) => {
     if (!ordre) return 0
     const ia = ordre.indexOf(a)
@@ -183,7 +157,8 @@ function comparerOrdreIndicateurs(ordre: readonly string[] | undefined): (a: str
   }
 }
 
-/** The standard indicator rows for a territoire + theme, in the contract's order. */
+/** The standard indicator rows for a territoire + theme, in the fiche's order
+ *  (the metadata indicator_keys; payload order for a payload without the seam). */
 export function indicateursPourTerritoire(
   payload: Payload,
   theme: Theme,
@@ -192,22 +167,7 @@ export function indicateursPourTerritoire(
   const lignes = payload.indicateurs.filter(
     (ligne) => ligne.theme === theme && ligne.territoire === territoire,
   )
-  return [...lignes].sort((a, b) => comparerOrdreIndicateurs(ORDRE_INDICATEURS[theme])(a.key, b.key))
-}
-
-/**
- * The theme's distinct indicator keys, in the fiche contract's order (the
- * ORDRE_INDICATEURS map; payload order for a theme the map doesn't cover —
- * habitat's order lives in its payload, like its labels). The carte's layer
- * model reads THIS list — the layer order mirrors the fiche, never a
- * carte-side order.
- */
-export function clesIndicateursDuTheme(payload: Payload, theme: Theme): string[] {
-  const vues = new Set<string>()
-  for (const ligne of payload.indicateurs) {
-    if (ligne.theme === theme) vues.add(ligne.key)
-  }
-  return [...vues].sort(comparerOrdreIndicateurs(ORDRE_INDICATEURS[theme]))
+  return [...lignes].sort((a, b) => comparerOrdre(ordreDuTheme(payload, theme))(a.key, b.key))
 }
 
 /** One indicator figure of the block: a key and its rows (multi-detail keys group). */

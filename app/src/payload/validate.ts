@@ -1515,6 +1515,67 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     `« sources » : la carte des sources doit déclarer EXACTEMENT les indicateurs du registre — sans source : ${manquantes.join(', ')} ; non déclarés : ${fantomes.join(', ')}`,
   )
 
+  // 5bis. les libellés d'indicateurs (issue #318) — la carte du vocabulaire
+  //      payload-owned : EXACTEMENT indicator_keys (la bijection, comme les
+  //      sources), chaque valeur un libellé français non vide. C'est le seul
+  //      vocabulaire que la fiche et la carte rendent — jamais une clé brute.
+  const indicator_labels = lireCarteChaines(meta, 'indicator_labels', fichier)
+  const sansLibelle = indicator_keys.filter((cle) => !(cle in indicator_labels))
+  const fantomesLibelle = Object.keys(indicator_labels).filter(
+    (cle) => !indicator_keys.includes(cle),
+  )
+  exiger(
+    sansLibelle.length === 0 && fantomesLibelle.length === 0,
+    fichier,
+    0,
+    `« indicator_labels » : la carte des libellés doit déclarer EXACTEMENT les indicateurs du registre — sans libellé : ${sansLibelle.join(', ')} ; non déclarés : ${fantomesLibelle.join(', ')}`,
+  )
+
+  // 5ter. les libellés de détail (issue #318) — la carte détail → libellé des
+  //      clés multi-détails : chaque clé déclarée appartient au registre
+  //      indicator_keys, chaque libellé est une chaîne non vide. La COUVERTURE
+  //      bidirectionnelle contre les faits publiés est la garde
+  //      verifierPariteLibelles (le loader) — le fichier, lui, reste
+  //      auto-contenu comme sources.
+  const detailLabelsBrut = meta['detail_labels']
+  exiger(
+    estObjet(detailLabelsBrut),
+    fichier,
+    0,
+    '« detail_labels » doit être un objet — la carte des libellés de détail',
+  )
+  const detail_labels: Record<string, Record<string, string>> = {}
+  for (const [cle, valeur] of Object.entries(detailLabelsBrut as LigneBrute)) {
+    exiger(
+      indicator_keys.includes(cle),
+      fichier,
+      0,
+      `« detail_labels » : clé « ${cle} » hors du registre indicator_keys`,
+    )
+    exiger(
+      estObjet(valeur),
+      fichier,
+      0,
+      `« detail_labels » : « ${cle} » doit être un objet (détail → libellé)`,
+    )
+    const details = valeur as LigneBrute
+    exiger(
+      Object.keys(details).length > 0,
+      fichier,
+      0,
+      `« detail_labels » : « ${cle} » : la carte des détails est vide`,
+    )
+    for (const [detail, libelle] of Object.entries(details)) {
+      exiger(
+        estChaine(libelle) && (libelle as string).length > 0,
+        fichier,
+        0,
+        `« detail_labels » : le libellé du détail « ${detail} » de « ${cle} » doit être une chaîne non vide`,
+      )
+    }
+    detail_labels[cle] = details as Record<string, string>
+  }
+
   // 6. les sous-groupes — l'ordre de la fiche (le premier est le premier
   //    rendu) ; chaque sous-groupe porte ses indicateurs, sa figure et sa
   //    lecture résolue
@@ -1523,6 +1584,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   const clesGroupes = new Set<string>()
   const indicateursGroupes = new Map<string, number>()
   const histoiresGroupes = new Map<string, number>()
+  // L'union des paramètres de lecture DÉCLARÉS, dans l'ordre de première
+  // déclaration — la base de la carte param_labels (#318).
+  const paramsUniques: string[] = []
 
   const subgroups = (subgroupsBrut as unknown[]).map((g, i) => {
     const ligneIndexee = i + 1
@@ -1589,6 +1653,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     const params = reading['params'] === undefined
       ? []
       : lireTableauChaines(reading, 'params', fichier, ligneIndexee)
+    for (const p of params) {
+      if (!paramsUniques.includes(p)) paramsUniques.push(p)
+    }
 
     // le template — le texte riche TYPÉ
     const template = validerTemplate(reading['template'], fichier, params, cle)
@@ -1637,5 +1704,97 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   const partageesHist = [...histoiresGroupes.entries()].filter(([, n]) => n > 1).map(([cle]) => cle)
   exiger(partageesHist.length === 0, fichier, 0, `histoire(s) lue(s) par plusieurs sous-groupes : ${partageesHist.join(', ')}`)
 
-  return { theme, label, subgroups, indicator_keys, story_keys, sources: sources as Record<string, string> }
+  // 6bis. les libellés des paramètres de lecture (issue #318) — la carte du
+  //      vocabulaire des reading.params : EXACTEMENT l'union des paramètres
+  //      déclarés (la bijection, comme indicator_labels), chaque valeur un
+  //      libellé français non vide. La carte lit ces libellés pour les
+  //      couches de scalaires de Story — jamais le nom brut d'un champ.
+  const param_labels = lireCarteChaines(meta, 'param_labels', fichier)
+  const sansParam = paramsUniques.filter((p) => !(p in param_labels))
+  const fantomesParam = Object.keys(param_labels).filter(
+    (p) => !paramsUniques.includes(p),
+  )
+  exiger(
+    sansParam.length === 0 && fantomesParam.length === 0,
+    fichier,
+    0,
+    `« param_labels » : la carte des libellés de paramètres doit déclarer EXACTEMENT les reading.params — sans libellé : ${sansParam.join(', ')} ; non déclarés : ${fantomesParam.join(', ')}`,
+  )
+
+  return {
+    theme,
+    label,
+    subgroups,
+    indicator_keys,
+    story_keys,
+    sources: sources as Record<string, string>,
+    indicator_labels,
+    detail_labels,
+    param_labels,
+  }
+}
+
+/** Une carte clé → libellé français non vide (le type des trois cartes #318). */
+function lireCarteChaines(ligne: LigneBrute, champ: string, fichier: string): Record<string, string> {
+  const brut = ligne[champ]
+  exiger(estObjet(brut), fichier, 0, `« ${champ} » doit être un objet — la carte des libellés`)
+  const carte = brut as LigneBrute
+  for (const [cle, valeur] of Object.entries(carte)) {
+    exiger(
+      estChaine(valeur) && (valeur as string).length > 0,
+      fichier,
+      0,
+      `« ${champ} » : le libellé de « ${cle} » doit être une chaîne non vide`,
+    )
+  }
+  return carte as Record<string, string>
+}
+
+/**
+ * La parité BIDIRECTIONNELLE libellés ↔ payload (issue #318) — la garde de
+ * chargement qui prouve que les libellés sont payload-owned : pour chaque
+ * thème présent, chaque ligne (key, detail) publiée dans les faits a son
+ * libellé (indicator_labels pour la clé, detail_labels pour le détail) — et
+ * aucun libellé de détail déclaré n'est mort (chaque détail déclaré est
+ * publié quelque part). La fiche et la carte ne retombent JAMAIS sur la clé
+ * brute : c'est cette garde qui garantit que le vocabulaire vit dans les
+ * métadonnées. Appelée par le loader à l'assemblage (chargerPayload).
+ */
+export function verifierPariteLibelles(payload: Payload): void {
+  const violations: string[] = []
+  for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
+    const indicateursTheme = payload.indicateurs.filter((i) => i.theme === theme)
+
+    for (const ligne of indicateursTheme) {
+      if (!(ligne.key in meta.indicator_labels)) {
+        violations.push(`${theme}: indicateur « ${ligne.key} » publié sans libellé (indicator_labels)`)
+      }
+      if (ligne.detail !== null) {
+        const carte = meta.detail_labels[ligne.key]
+        if (!carte || !(ligne.detail in carte)) {
+          violations.push(`${theme}: détail « ${ligne.detail} » de « ${ligne.key} » publié sans libellé (detail_labels)`)
+        }
+      }
+    }
+
+    for (const [cle, carte] of Object.entries(meta.detail_labels)) {
+      const publies = new Set(
+        indicateursTheme
+          .filter((i) => i.key === cle && i.detail !== null)
+          .map((i) => i.detail as string),
+      )
+      for (const detail of Object.keys(carte)) {
+        if (!publies.has(detail)) {
+          violations.push(`${theme}: détail « ${detail} » de « ${cle} » déclaré jamais publié (libellé mort)`)
+        }
+      }
+    }
+  }
+  if (violations.length > 0) {
+    throw new PayloadError(
+      'validation',
+      'theme_<theme>.json',
+      `Parité libellés ↔ payload rompue — ${violations.join(' · ')}`,
+    )
+  }
 }

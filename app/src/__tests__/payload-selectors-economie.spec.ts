@@ -4,6 +4,7 @@ import {
   apercuAvecNAFixture,
   histoiresEconomieFixture,
   indicateursEconomieFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -18,10 +19,11 @@ import {
 import type { HistoireEconomie, Payload } from '../payload/types'
 
 /**
- * The Économie block selectors — pure, French product strings out of the
+ * The Économie block selectors - pure, French product strings out of the
  * payload (issue #120, forme reshapée). Fixtures extracted from the REAL
  * committed payload: one commune (22001), one EPCI, the département 22 and the
  * région 53. The block's seam: the component consumes these, never raw JSON.
+ * The ORDER is the metadata's indicator_keys (#318) - the fiche's order.
  */
 
 const payloadEconomie: Payload = {
@@ -32,6 +34,7 @@ const payloadEconomie: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { economie: metadonneesThemesFixtures.economie },
 }
 
 describe('indicateursPourTerritoire — the Économie block in contract order', () => {

@@ -60,6 +60,7 @@ import {
   validerTerritoires,
   validerThemeMetadata,
   validerVintages,
+  verifierPariteLibelles,
 } from './validate'
 
 /** The minimal Response surface the loader needs (fetch() satisfies it). */
@@ -278,5 +279,12 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // run-report / vintages, ADR-0013 « 404 = table absente »).
   const programmes = await chargerFichier('programmes', territoires, options)
 
-  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, themeMetadata }
+  // La parité bidirectionnelle libellés ↔ payload (issue #318) : chaque ligne
+  // (key, detail) publiée a son libellé dans les métadonnées du thème — et
+  // aucun libellé déclaré n'est mort. Une dérive échoue FORT ici, jamais au
+  // rendu (la fiche et la carte ne retombent jamais sur la clé brute).
+  const payload = { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, themeMetadata }
+  verifierPariteLibelles(payload)
+
+  return payload
 }

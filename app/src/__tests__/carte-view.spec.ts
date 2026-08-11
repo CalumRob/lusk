@@ -241,24 +241,24 @@ describe('CarteView — la carte avec fond publié', () => {
 
     expect(router.currentRoute.value.query.theme).toBe('demographie')
     // la couche par défaut du thème — le premier scalaire de Story (ADR-0019 α)
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
     expect(wrapper.find('.carte--theme-demographie').exists()).toBe(true)
   })
 
   it('an absent ?theme= in the URL selects the theme when it is in the payload', async () => {
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
 
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
   })
 
   it('the sidebar lists the theme’s layers — the default story layer active', async () => {
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
 
     const couches = wrapper.findAll('.carte-sidebar-couche').map((b) => b.text().trim())
-    expect(couches[0]).toBe('taux_solde_naturel')
+    expect(couches[0]).toBe('Solde naturel (‰/an)')
     expect(couches).toContain('Densité de population')
     expect(couches).toContain('Moins de 15 ans')
-    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
   })
 
   it('clicking a layer in the sidebar switches the map + legend (in-memory state)', async () => {
@@ -482,7 +482,7 @@ describe('CarteView — la légende suit l’échelle du niveau actif (ADR-0019,
       chargerGeometrie: async () => masquesNiveauxComplets,
     })
 
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
 
     const estDemographie = (h: Histoire): h is HistoireDemographie => h.theme === 'demographie'
     const valeursDuNiveau = (type: string) =>
@@ -658,8 +658,8 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     await flushPromises()
 
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
-    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
+    expect(wrapper.find('.carte-sidebar-couche.est-actif').text()).toBe('Solde naturel (‰/an)')
   })
 
   it('le groupe de couches « Programmes & financements » apparaît quand programmes atterrit (arrière-plan)', async () => {
@@ -732,7 +732,7 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
     // Retry ne refetch que l'échoué → la carte remonte, le thème demandé rend.
     expect(wrapper.find('.carte-etat--erreur').exists()).toBe(false)
     expect(router.currentRoute.value.query.theme).toBe('demographie')
-    expect(wrapper.find('.carte-legendes-titre').text()).toBe('taux_solde_naturel')
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Solde naturel (‰/an)')
   })
 
   it('un thème non canonique demandé est nettoyé de l’URL (la normalisation d’avant, toujours en vie)', async () => {

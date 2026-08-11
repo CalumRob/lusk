@@ -41,13 +41,12 @@ import type { Indicateur, Payload, Theme } from '../payload/types'
  *   dec_* bins) are excluded — a choropleth needs one value per territory
  *   (ADR-0019).
  *
- * Labels come from the fiche's own vocabulary (NOMS_INDICATEURS — shared with
- * the fiche, never carte-only), the metadata subgroup labels for the story
- * groups, and the key itself as the honest fallback. Every layer carries its
- * metadata provenance (sousGroupe — the subgroup that owns the scalar;
- * storyKey for the story scalars). A payload assembled WITHOUT the metadata
- * seam has no story layers and no default — the carte mirrors what the
- * contract declares, nothing invented.
+ * Labels are payload-owned (#318) — the theme's indicator_labels /
+ * param_labels / detail_labels, never a carte-side list, never a raw key.
+ * Every layer carries its metadata provenance (sousGroupe — the subgroup
+ * that owns the scalar; storyKey for the story scalars). A payload assembled
+ * WITHOUT the metadata seam (impossible under the loader contract) has NO
+ * layers — the carte mirrors what the contract declares, nothing invented.
  */
 
 function payloadAvec(indicateurs: Indicateur[], histoires: Payload['histoires'], theme: Theme): Payload {
@@ -116,13 +115,13 @@ describe('couchesDuTheme — Démographie (fixture)', () => {
     expect(apresStory[3]).toMatchObject({ type: 'couche', couche: { clef: 'taille_menages' } })
   })
 
-  it('labels come from the fiche’s NOMS_INDICATEURS — fallback to the key, never invented', () => {
+  it('labels come from the metadata\u2019s payload-owned maps — indicator_labels, param_labels, detail_labels (#318)', () => {
     const couches = couchesDuTheme(payload, 'demographie')
 
     expect(couches.entrees[2]).toMatchObject({ couche: { libelle: 'Densité de population' } })
-    // the story scalar has no label in NOMS_INDICATEURS → the key itself
-    expect(couches.entrees[0]).toMatchObject({ couche: { libelle: 'taux_solde_naturel' } })
-    // the structure_age tranches wear the fiche’s tranche labels
+    // the default story scalar wears its param label — never the raw field name
+    expect(couches.entrees[0]).toMatchObject({ couche: { libelle: 'Solde naturel (‰/an)' } })
+    // the structure_age tranches wear the metadata's detail labels
     const groupe = couches.entrees[3] as { type: 'groupe'; groupe: { couches: { libelle: string }[] } }
     expect(groupe.groupe.couches[0].libelle).toBe('Moins de 15 ans')
     expect(groupe.groupe.couches[6].libelle).toBe('80 ans et plus')
@@ -248,7 +247,11 @@ describe('couchesDuTheme — Milieux (fixture)', () => {
 
     const groupe = couches.entrees[2] as { type: 'groupe'; groupe: { libelle: string; couches: { clef: string; detail: string | null }[] } }
     expect(groupe.groupe.libelle).toBe('Intensité état')
-    expect(groupe.groupe.couches.map((c) => c.detail ?? c.clef)).toEqual(['2021', '2025', '2024', 'M2', 'M3'])
+    // les millésimes du jeu (22 : 2021/2025 · 29 : 2021/2024 · 35 : 2020/2023 ·
+    // 56 : 2022/2024) + les états M2/M3 — chaque détail déclaré est publié (#318)
+    expect(groupe.groupe.couches.map((c) => c.detail ?? c.clef)).toEqual([
+      '2021', '2025', '2020', '2022', '2023', '2024', 'M2', 'M3',
+    ])
   })
 })
 
@@ -298,7 +301,7 @@ describe('couchesDuTheme — the default layer per theme (ADR-0019 α rule, re-r
   })
 })
 
-describe('couchesDuTheme — sans le seam des métadonnées (un payload fusionné, pré-seam)', () => {
+describe('couchesDuTheme — sans le seam des métadonnées (impossible sous le contrat du loader, #313/#318)', () => {
   const sansMetadonnees: Payload = {
     territoires: territoiresFixture,
     indicateurs: indicateursDemographieFixture,
@@ -309,24 +312,10 @@ describe('couchesDuTheme — sans le seam des métadonnées (un payload fusionn�
     programmes: null,
   }
 
-  it('has no story layers and no default — the carte mirrors what the contract declares, nothing invented', () => {
+  it('renders NO layers — the metadata is the contract; never a key-only layer, never a label-less layer', () => {
     const couches = couchesDuTheme(sansMetadonnees, 'demographie')
 
     expect(couches.coucheParDefaut).toBeNull()
-    // les figures d'indicateurs restent (elles vivent dans le payload) ; les
-    // scalaires de Story, eux, ne sont pas déclarés — jamais inventés
-    const clefs = couches.entrees.flatMap((e) =>
-      e.type === 'couche' ? [clefDe(e)] : detailsDu(e),
-    )
-    expect(clefs[0]).toBe('densite')
-    expect(clefs).not.toContain('taux_solde_naturel')
-    expect(clefs).not.toContain('taux_solde_migratoire')
-  })
-
-  it('indicator layers carry no provenance (null) — the metadata is absent, honest', () => {
-    const couches = couchesDuTheme(sansMetadonnees, 'demographie')
-
-    const densite = couches.entrees[0]
-    expect(densite).toMatchObject({ couche: { sousGroupe: null, storyKey: null } })
+    expect(couches.entrees).toEqual([])
   })
 })

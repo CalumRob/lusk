@@ -101,5 +101,28 @@
     "structure_age": "age_detail",
     "evolution_1968": "serie_historique",
     "taille_menages": "menages"
+  },
+  "indicator_labels": {
+    "densite": "Densité de population",
+    "structure_age": "Structure par âge",
+    "evolution_1968": "Évolution de la population depuis 1968",
+    "taille_menages": "Taille moyenne des ménages"
+  },
+  "detail_labels": {
+    "structure_age": {
+      "<15": "Moins de 15 ans",
+      "15-24": "15 à 24 ans",
+      "25-39": "25 à 39 ans",
+      "40-54": "40 à 54 ans",
+      "55-64": "55 à 64 ans",
+      "65-79": "65 à 79 ans",
+      "80+": "80 ans et plus"
+    }
+  },
+  "param_labels": {
+    "periode": "Période",
+    "taux_solde_naturel": "Solde naturel (‰/an)",
+    "taux_solde_migratoire": "Solde migratoire (‰/an)",
+    "classification": "Classification"
   }
 }
