@@ -1,0 +1,72 @@
+{
+  "theme": "mobilite",
+  "label": "Mobilité",
+  "subgroups": [
+    {
+      "key": "acces-aux-services",
+      "label": "L’accès aux services",
+      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l’offre de transport qui le permet.",
+      "indicators": [
+        "nb_buildings",
+        "voitures_menage",
+        "reseaux",
+        "offre_tc",
+        "bornes_recharge",
+        "places_stationnement_velo_1000",
+        "offre_cyclable",
+        "iso_alimentation",
+        "iso_sante",
+        "iso_administration",
+        "iso_ecole",
+        "iso_banque"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "offre_cyclable"
+      },
+      "reading": {
+        "story_key": "vingt-minutes-sans-voiture",
+        "params": ["div_loss_t", "pct_iso_full_t", "classification_saillance"],
+        "template": [
+          { "type": "text", "content": "Sans voiture, " },
+          { "type": "param", "key": "div_loss_t" },
+          { "type": "text", "content": " types de services disparaissent de l’accès quotidien de " },
+          { "type": "territoire" },
+          { "type": "text", "content": ". " },
+          { "type": "link", "href": "/methodologie#mobilite", "children": [
+            { "type": "text", "content": "Sources et méthodes" }
+          ] }
+        ]
+      }
+    }
+  ],
+  "indicator_keys": [
+    "nb_buildings",
+    "voitures_menage",
+    "reseaux",
+    "offre_tc",
+    "bornes_recharge",
+    "places_stationnement_velo_1000",
+    "offre_cyclable",
+    "iso_alimentation",
+    "iso_sante",
+    "iso_administration",
+    "iso_ecole",
+    "iso_banque"
+  ],
+  "story_keys": ["vingt-minutes-sans-voiture"],
+  "sources": {
+    "nb_buildings": "mobilite_snapshot",
+    "voitures_menage": "rp_logement_princ",
+    "reseaux": "amenagements_cyclables",
+    "offre_tc": "korrigo",
+    "bornes_recharge": "bornes-recharges",
+    "places_stationnement_velo_1000": "stationnement-velo",
+    "offre_cyclable": "osm_reseaux",
+    "iso_alimentation": "mobilite_snapshot",
+    "iso_sante": "mobilite_snapshot",
+    "iso_administration": "mobilite_snapshot",
+    "iso_ecole": "mobilite_snapshot",
+    "iso_banque": "mobilite_snapshot"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "theme": "habitat",
+  "label": "Habitat",
+  "subgroups": [
+    {
+      "key": "etat-du-parc",
+      "label": "L’état du parc",
+      "framing": "Le parc de logements de la commune : sa composition, son statut, son prix et son efficacité énergétique.",
+      "indicators": ["mix_logements", "statut_anciennete_taille", "prix_m2", "part_passoires", "distribution_dpe"],
+      "figure": {
+        "family": "composition",
+        "indicator": "distribution_dpe"
+      },
+      "reading": {
+        "story_key": "etat-energetique-du-parc",
+        "params": ["classification", "part_passoires", "part_abc", "n_dpe"],
+        "template": [
+          { "type": "text", "content": "Le parc de " },
+          { "type": "territoire" },
+          { "type": "text", "content": " est " },
+          { "type": "strong", "children": [
+            { "type": "param", "key": "classification" }
+          ] },
+          { "type": "text", "content": " : " },
+          { "type": "param", "key": "part_passoires" },
+          { "type": "text", "content": " de passoires thermiques. " },
+          { "type": "link", "href": "/methodologie#habitat", "children": [
+            { "type": "text", "content": "Sources et méthodes" }
+          ] }
+        ]
+      }
+    }
+  ],
+  "indicator_keys": ["mix_logements", "statut_anciennete_taille", "prix_m2", "part_passoires", "distribution_dpe"],
+  "story_keys": ["etat-energetique-du-parc"],
+  "sources": {
+    "mix_logements": "logements",
+    "statut_anciennete_taille": "logements",
+    "prix_m2": "dvf_2025_dep22",
+    "part_passoires": "dpe_22",
+    "distribution_dpe": "dpe_22"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "theme": "milieux",
+  "label": "Milieux",
+  "subgroups": [
+    {
+      "key": "artificialisation",
+      "label": "L’artificialisation",
+      "framing": "La consommation de la terre par l’urbanisation : l’état artificialisé et le flux annuel.",
+      "indicators": ["artif_par_habitant", "conso_enaf_annuel"],
+      "figure": {
+        "family": "trajectory",
+        "indicator": "artif_par_habitant"
+      },
+      "reading": {
+        "story_key": "se-densifier-setaler-ou-sen-aller",
+        "params": ["periode_pop", "periode_artif", "delta_population", "trajectoire_artif_par_habitant", "classification"],
+        "template": [
+          { "type": "text", "content": "Entre " },
+          { "type": "param", "key": "periode_pop" },
+          { "type": "text", "content": " et " },
+          { "type": "param", "key": "periode_artif" },
+          { "type": "text", "content": ", " },
+          { "type": "territoire" },
+          { "type": "text", "content": " " },
+          { "type": "strong", "children": [
+            { "type": "param", "key": "classification" }
+          ] },
+          { "type": "text", "content": " (trajectoire " },
+          { "type": "param", "key": "trajectoire_artif_par_habitant" },
+          { "type": "text", "content": " par habitant). " },
+          { "type": "link", "href": "/methodologie#milieux", "children": [
+            { "type": "text", "content": "Sources et méthodes" }
+          ] }
+        ]
+      }
+    }
+  ],
+  "indicator_keys": ["artif_par_habitant", "conso_enaf_annuel"],
+  "story_keys": ["se-densifier-setaler-ou-sen-aller"],
+  "sources": {
+    "artif_par_habitant": "ocsge_artificialisation_22_2025",
+    "conso_enaf_annuel": "consoenaf"
+  }
+}
