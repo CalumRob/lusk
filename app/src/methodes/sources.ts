@@ -54,6 +54,26 @@ export function ancreSource(id: string): string {
   return slugifierAncre('source', id)
 }
 
+/**
+ * L'id du jeu d'une entrée du registre — la clé de groupement de la table à
+ * granularité jeu de données (source.dataset ?? id, ADR-0022). C'est CETTE clé
+ * que portent les en-têtes de la table (sourcesMethodes) : la jointure inverse
+ * de la matrice (#336) résout un sourceId vers son jeu.
+ */
+export function datasetDeSource(id: string): string {
+  return SOURCES_METHODES[id]?.dataset ?? id
+}
+
+/**
+ * L'ancre de l'en-tête du jeu d'une source — le lien « Source » des blocs
+ * d'indicateurs pointe l'en-tête du jeu (#source-dvf), jamais une ligne
+ * vintage (la matrice #336 : les deux directions s'ancrent sur les mêmes
+ * en-têtes).
+ */
+export function ancreDuJeu(id: string): string {
+  return ancreSource(datasetDeSource(id))
+}
+
 /** La fenêtre glissante des millésimes DVF — l'expansion du manifeste (manifest_habitat_dvf.R). */
 const ANNEES_DVF = [2021, 2022, 2023, 2024, 2025] as const
 const DEPARTEMENTS_BRETAGNE = ['22', '29', '35', '56'] as const
@@ -103,7 +123,10 @@ function sourcesDpe(): Record<string, SourceEditoriale> {
   for (const dep of DEPARTEMENTS_BRETAGNE) {
     sources[`dpe_${dep}`] = {
       ...SOURCE_DPE,
-      nom: 'ADEME — Observatoire DPE, logements existants (dpe03existant)',
+      // Le nom PUBLIC du jeu — le même que les citations des indicateurs et
+      // que la source des lignes vintages du payload ; l'id d'artefact
+      // (dpe03existant) vit dans l'URL, jamais dans le nom affiché.
+      nom: 'ADEME — Observatoire DPE, logements existants',
       libelle: `${NOMS_DEPARTEMENTS[dep]} (${dep})`,
     }
   }

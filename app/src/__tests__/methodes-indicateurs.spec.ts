@@ -3,8 +3,13 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { THEMES_CONSTRUITS, THEMES_METHODES, ancreIndicateur } from '../methodes/indicateurs'
-import { SOURCES_METHODES } from '../methodes/sources'
+import {
+  THEMES_CONSTRUITS,
+  THEMES_METHODES,
+  ancreIndicateur,
+  indicateursParDataset,
+} from '../methodes/indicateurs'
+import { SOURCES_METHODES, datasetDeSource } from '../methodes/sources'
 import type { ThemeConstruit } from '../methodes/indicateurs'
 
 /**
@@ -455,6 +460,81 @@ describe('ancreIndicateur — l\u2019ancrage stable par indicateur (#334)', () =
         expect(ancre, `« ${theme}.${clef} »`).toMatch(/^indicateur-[a-z0-9-]+$/)
         expect(ancre, `« ${theme}.${clef} »`).not.toBe('indicateurs')
         expect(ancre, `« ${theme}.${clef} »`).not.toMatch(/--|-$/)
+      }
+    }
+  })
+})
+
+describe('la matrice indicateur ↔ source (issue #336, #206 item 52)', () => {
+  it('joint chaque indicateur à SON jeu de données — y compris les sources multi-vintage DVF/DPE, jadis injoignables', () => {
+    const matrice = indicateursParDataset()
+
+    // DVF — la médiane prix au m² était injoignable (sourceId null) ; l'en-tête
+    // du jeu existe depuis #333, la jointure résout maintenant
+    expect(matrice.get('dvf')).toEqual([
+      { clef: 'prix_m2', label: 'Médiane prix au m²', theme: 'habitat' },
+    ])
+
+    // DPE — les deux indicateurs de la base roulante, dans l'ordre du registre
+    expect(matrice.get('dpe')).toEqual([
+      { clef: 'part_passoires', label: 'Part de passoires thermiques', theme: 'habitat' },
+      {
+        clef: 'distribution_dpe',
+        label: 'Distribution des étiquettes DPE (A à G)',
+        theme: 'habitat',
+      },
+    ])
+
+    // OCS-GE — l'en-tête du jeu (jamais une ligne vintage)
+    expect(matrice.get('ocsge_artificialisation')).toEqual([
+      { clef: 'artif_par_habitant', label: 'Intensité état', theme: 'milieux' },
+    ])
+  })
+
+  it('couvre chaque indicateur dont le sourceId pointe le registre — l\u2019union de la jointure', () => {
+    const matrice = indicateursParDataset()
+    for (const theme of THEMES_CONSTRUITS) {
+      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        if (indicateur.sourceId === null) continue
+        const dataset = datasetDeSource(indicateur.sourceId)
+        const consommateurs = matrice.get(dataset) ?? []
+        expect(
+          consommateurs.some((c) => c.clef === clef),
+          `« ${theme}.${clef} » → dataset « ${dataset} » absent de la matrice`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it('ne résout que des jeux du registre des sources — jamais un dataset inventé', () => {
+    const datasetsDuRegistre = new Set(
+      Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
+    )
+    for (const dataset of indicateursParDataset().keys()) {
+      expect(datasetsDuRegistre.has(dataset), `dataset « ${dataset} » hors registre`).toBe(true)
+    }
+  })
+
+  it('n\u2019invente aucun consommateur — un jeu sans indicateur documenté reste absent de la matrice', () => {
+    const matrice = indicateursParDataset()
+    // flores_a38 (le registre cite la A88 pour les effectifs), la base des EPCI,
+    // les sources du référentiel (COG, limites communales, BDNB) n'ont AUCUN
+    // indicateur documenté : la matrice ne les liste pas, elle n'invente rien
+    for (const dataset of ['flores_a38', 'epci', 'cog_passage', 'communes_limites', 'batiments_residentiels']) {
+      expect(matrice.has(dataset), `« ${dataset} » listé sans consommateur documenté`).toBe(false)
+    }
+  })
+
+  it('ne liste jamais les Stories — elles ne portent pas de champ source (gated #74/#308)', () => {
+    const storyClefs = new Set(
+      THEMES_CONSTRUITS.flatMap((theme) => THEMES_METHODES[theme].stories.map((s) => s.clef)),
+    )
+    for (const consommateurs of indicateursParDataset().values()) {
+      for (const consommateur of consommateurs) {
+        expect(
+          storyClefs.has(consommateur.clef),
+          `Story « ${consommateur.clef} » listée dans la matrice`,
+        ).toBe(false)
       }
     }
   })
