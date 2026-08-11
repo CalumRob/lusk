@@ -47,3 +47,42 @@ Copy-Item (Join-Path $src '*') -Destination $dst -Recurse -Force
 ```
 
 Verify from the worktree before proceeding: `Rscript -e "cat(requireNamespace('dplyr'), requireNamespace('testthat'), requireNamespace('pkgload'))"` → `TRUE TRUE TRUE`.
+
+### Data + worktrees (pipeline) — READ BEFORE ANY WORKTREE OPERATION
+
+The real data lives ONLY in the main checkout: `E:\Lusk\pipeline\data\raw` (the ~14 GB download
+cache) and `data/processed` (regenerated intermediates). Both are gitignored — a worktree
+checkout NEVER contains them.
+
+**NEVER create a junction/symlink from a worktree's `pipeline/data` to the main checkout's data.**
+On Windows, recursive deletes — notably `git worktree remove`, but also `rm -rf` and
+`Remove-Item -Recurse` — FOLLOW junctions and wipe the TARGET. This has happened twice and each
+time destroyed the full ~14 GB cache + intermediates, forcing hours of re-download. There is no
+safe junction; do not "test" one.
+
+A worktree that needs real data gets its OWN COPY — deleting the worktree then only deletes the
+copy:
+
+```powershell
+robocopy E:\Lusk\pipeline\data <worktree>\pipeline\data /E /MT:16 /NFL /NDL /NJH /NJS
+```
+
+(~2–5 min for the full cache on NVMe; disk cost ≈14 GB per copy. `data/` is gitignored, so the
+copy never pollutes git.)
+
+**Before ANY `git worktree remove`** (orchestrator OR worker), run the guard — it scans the
+worktree for junctions/symlinks pointing outside it and exits 1 (abort) if any exist:
+
+```powershell
+powershell -File scripts/guard-worktree-remove.ps1 <worktree-path>
+```
+
+`git worktree remove` is FORBIDDEN when the guard fails. Remove the links first
+(`Remove-Item -LiteralPath '<lien>' -Force` — never `-Recurse`, which would follow the link).
+
+As a last line of defence, `pipeline/data` is ACL-protected against deletion
+(`scripts/set-data-acl.ps1`). Trade-off: `download_sources`' corrupt-file replacement (an
+`unlink`) fails loudly under the lock — acceptable (loud failure > silent 14 GB wipe). To
+replace a corrupt file or deliberately clear the cache, remove the lock first with
+`powershell -File scripts/set-data-acl.ps1 -Remove`, do the operation, then re-apply
+`powershell -File scripts/set-data-acl.ps1`.
