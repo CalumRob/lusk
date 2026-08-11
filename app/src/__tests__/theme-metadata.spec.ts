@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Theme, ThemeMetadata } from '../payload/types'
+import { GROUPES_PAR_STORY } from '../payload/types'
 import { PayloadError, validerThemeMetadata } from '../payload/validate'
 
 /**
@@ -46,12 +47,22 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
 
       expect(meta.theme).toBe(theme)
       expect(meta.subgroups.length).toBeGreaterThan(0)
-      // la bijection : chaque indicateur et chaque histoire du registre vit
-      // dans exactement un sous-groupe
+      // la bijection : chaque indicateur du registre vit dans exactement un
+      // sous-groupe ; chaque sous-groupe lie une story déclarée au registre —
+      // une fois, jamais deux lectures pour le même slot
       const indicateurs = meta.subgroups.flatMap((g) => g.indicators)
       expect(new Set(indicateurs).size).toBe(meta.indicator_keys.length)
-      const histoires = meta.subgroups.map((g) => g.reading.story_key)
-      expect(new Set(histoires).size).toBe(meta.story_keys.length)
+      const liees = meta.subgroups.map((g) => g.reading.story_key)
+      expect(new Set(liees).size).toBe(liees.length)
+      for (const cle of liees) expect(meta.story_keys).toContain(cle)
+      // chaque story du registre est liée OU candidate de saillance déclarée
+      // du groupe d'un sous-groupe (le pool Mobilité partage SON slot —
+      // ADR-0002) : jamais une story orpheline, jamais un slot fabriqué
+      for (const cle of meta.story_keys.filter((c) => !liees.includes(c))) {
+        const groupe = GROUPES_PAR_STORY[meta.theme]?.[cle]
+        expect(groupe, `« ${cle} » — candidate déclarée au registre`).toBeDefined()
+        expect(meta.subgroups.map((g) => g.key)).toContain(groupe)
+      }
     }
   })
 
@@ -61,6 +72,21 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
       'sante-et-taille',
       'structure-verte',
     ])
+  })
+
+  it('accepte une story candidate de saillance déclarée au registre (le pool Mobilité, ADR-0002)', () => {
+    // Le registre story_keys du thème déclare AUSSI les candidates de saillance
+    // — pas seulement la story liée par le sous-groupe : le pool Mobilité
+    // résout « ce-que-le-velo-preserve » là où le delta tire (139 territoires
+    // du payload committé), le candidat partage le slot du défaut
+    // (acces-aux-services). Une story déclarée mais non liée est LÉGITIME
+    // quand le registre la déclare candidate du groupe d'un sous-groupe —
+    // jamais une lecture en double, jamais un slot supplémentaire.
+    const meta = copieBrute('mobilite')
+    meta.story_keys = ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve']
+
+    const validee = validerThemeMetadata(meta, 'theme_mobilite.json')
+    expect(validee.story_keys).toEqual(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'])
   })
 })
 

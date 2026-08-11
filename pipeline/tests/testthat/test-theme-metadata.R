@@ -27,9 +27,25 @@ lire_metadata <- function(nom) {
 }
 
 test_that("valider_theme_metadata : les fixtures valides passent", {
-  for (nom in c("theme-demographie-valide.json", "theme-economie-valide.json")) {
+  for (nom in c("theme-demographie-valide.json", "theme-economie-valide.json",
+                "theme-mobilite-valide.json")) {
     expect_no_error(valider_theme_metadata(lire_metadata(nom)))
   }
+})
+
+test_that("valider_theme_metadata : le pool Mobilité déclare sa candidate de saillance au registre", {
+  # Le registre story_keys du thème déclare AUSSI les candidates de saillance
+  # (ADR-0002) — pas seulement la story liée par le sous-groupe : le payload
+  # publié résout « ce-que-le-velo-preserve » là où le delta tire, le candidat
+  # partage le slot du défaut (acces-aux-services). Une story déclarée mais non
+  # liée est LÉGITIME quand le registre de résolution la déclare candidate du
+  # groupe d'un sous-groupe — jamais une lecture en double, jamais un slot
+  # supplémentaire. La bijection (territoire × groupe) reste garantie : le
+  # candidat partage le groupe du défaut, une lecture résolue par slot.
+  meta <- lire_metadata("theme-mobilite-valide.json")
+  expect_identical(unlist(meta$story_keys, use.names = FALSE),
+                   c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"))
+  expect_no_error(valider_theme_metadata(meta))
 })
 
 test_that("valider_theme_metadata : les sources de référence existent dans les vintages du thème", {

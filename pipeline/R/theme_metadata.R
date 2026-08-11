@@ -403,7 +403,13 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
   # 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
   #    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
   #    sous-groupe — rien d'orphelin, rien de partagé (l'identité
-  #    (territoire × groupe) unique du parent #308)
+  #    (territoire × groupe) unique du parent #308). Une story déclarée au
+  #    registre sans sous-groupe qui la lit est LÉGITIME quand le registre de
+  #    résolution (STORIES_RESOLUES_PAR_THEME) la déclare candidate de
+  #    saillance (ADR-0002) du groupe d'un sous-groupe déclaré : le pool
+  #    Mobilité partage SON slot — « ce-que-le-velo-preserve » remplace le
+  #    défaut dans le même groupe, jamais une lecture en double, jamais un
+  #    slot supplémentaire.
   orphelins_ind <- setdiff(cles_indicateurs, names(indicateurs_groupes))
   if (length(orphelins_ind) > 0) {
     manquer("indicateurs", paste0(
@@ -417,11 +423,21 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       "indicateur(s) dans plusieurs sous-groupes : ",
       paste(partages_ind, collapse = ", ")))
   }
+  registre_resolution <- STORIES_RESOLUES_PAR_THEME[[theme]]
+  est_candidate_legitime <- function(cle) {
+    if (is.null(registre_resolution)) return(FALSE)
+    ligne <- registre_resolution[registre_resolution$story_key == cle, , drop = FALSE]
+    if (nrow(ligne) != 1L) return(FALSE)
+    if (is.na(ligne$salience_reason[1])) return(FALSE)  # le défaut, lui, est lié
+    ligne$groupe[1] %in% cles_groupes
+  }
   orphelines_hist <- setdiff(cles_histoires, names(histoires_groupes))
-  if (length(orphelines_hist) > 0) {
+  illegitimes <- orphelines_hist[!vapply(orphelines_hist, est_candidate_legitime, logical(1L))]
+  if (length(illegitimes) > 0) {
     manquer("histoires", paste0(
-      "histoire(s) orpheline(s) — déclarée(s) au registre sans sous-groupe qui la lit : ",
-      paste(orphelines_hist, collapse = ", ")))
+      "histoire(s) orpheline(s) — déclarée(s) au registre sans sous-groupe qui la lit, ",
+      "sans être candidate de saillance déclarée (ADR-0002) : ",
+      paste(illegitimes, collapse = ", ")))
   }
   partagees_hist <- names(histoires_groupes)[
     vapply(histoires_groupes, function(n) n > 1L, logical(1L))]

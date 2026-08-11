@@ -1266,7 +1266,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       'iso_ecole',
       'iso_banque',
     ],
-    story_keys: ['vingt-minutes-sans-voiture'],
+    story_keys: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
     sources: {
       nb_buildings: 'mobilite_snapshot',
       voitures_menage: 'rp_logement_princ',

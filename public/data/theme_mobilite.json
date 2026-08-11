@@ -80,7 +80,8 @@
     "iso_banque"
   ],
   "story_keys": [
-    "vingt-minutes-sans-voiture"
+    "vingt-minutes-sans-voiture",
+    "ce-que-le-velo-preserve"
   ],
   "sources": {
     "nb_buildings": "mobilite_snapshot",

@@ -139,3 +139,19 @@ test_that("lire_theme_metadata : un thème sans fichier épinglé s'arrête bruy
   expect_error(lire_theme_metadata("programmes"), "introuvable")
   expect_error(lire_theme_metadata("theme-inexistant"), "introuvable")
 })
+
+test_that("la parité registre ↔ métadonnées : chaque thème déclare les stories que sa résolution peut émettre", {
+  # La parité bidirectionnelle du contrat (#316) : le fichier épinglé
+  # theme_<theme>.json déclare EXACTEMENT les story_keys du registre de
+  # résolution (STORIES_RESOLUES_PAR_THEME) — ni moins (une story résolue
+  # non déclarée : le pool Mobilité qui publierait « ce-que-le-velo-preserve »
+  # sans le déclarer) ni plus (une story déclarée que la résolution ne peut
+  # jamais émettre). Le registre est la source de vérité de ce que le
+  # pipeline peut résoudre ; les métadonnées déclarent ce que la fiche lit.
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    declarees <- unlist(meta$story_keys, use.names = FALSE)
+    resolvables <- STORIES_RESOLUES_PAR_THEME[[theme]]$story_key
+    expect_true(setequal(declarees, resolvables), info = theme)
+  }
+})
