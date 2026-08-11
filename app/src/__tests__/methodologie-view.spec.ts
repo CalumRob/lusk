@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import { ancreIndicateur } from '../methodes/indicateurs'
 import { ancreSource } from '../methodes/sources'
 import {
   apercuAvecNAFixture,
@@ -662,6 +663,94 @@ describe('MethodologieView — la table des sources par thème (Sources · <thè
 
     const liens = wrapper.findAll('tbody tr a.lien-source')
     expect(liens.every((l) => l.attributes('href')?.startsWith('https://'))).toBe(true)
+  })
+})
+
+describe('MethodologieView — la matrice indicateur ↔ source (issue #336)', () => {
+  it('chaque en-tête de jeu liste les indicateurs qui le consomment, liés à #indicateur-<clef>', async () => {
+    const demographie = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=demographie',
+    })
+
+    const serie = demographie.wrapper.find('tr#source-serie-historique')
+    const liens = serie.findAll('a.matrice-indicateur-lien')
+    expect(liens.map((l) => l.attributes('href'))).toEqual([
+      `#${ancreIndicateur('densite')}`,
+      `#${ancreIndicateur('evolution_1968')}`,
+    ])
+    expect(liens[0].text()).toBe('Densité de population')
+    expect(liens[1].text()).toBe('Évolution de la population depuis 1968')
+  })
+
+  it('la jointure DVF/DPE résout — l\u2019en-tête du jeu liste ses indicateurs, jadis injoignables', async () => {
+    const habitat = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=habitat',
+    })
+
+    const dvf = habitat.wrapper.find('tr#source-dvf')
+    const liensDvf = dvf.findAll('a.matrice-indicateur-lien')
+    expect(liensDvf.map((l) => l.attributes('href'))).toEqual([`#${ancreIndicateur('prix_m2')}`])
+    expect(liensDvf[0].text()).toBe('Médiane prix au m²')
+
+    const dpe = habitat.wrapper.find('tr#source-dpe')
+    expect(dpe.findAll('a.matrice-indicateur-lien').map((l) => l.attributes('href'))).toEqual([
+      `#${ancreIndicateur('part_passoires')}`,
+      `#${ancreIndicateur('distribution_dpe')}`,
+    ])
+  })
+
+  it('respecte les onglets de thème — un onglet ne montre que les indicateurs de SON thème', async () => {
+    // serie_historique alimente la Démographie ET les Milieux (multi-thèmes) :
+    // sous Démographie, ses deux indicateurs démographiques ; sous Milieux, où
+    // seule la Story la lit (jamais listée — #74/#308), l'état vide honnête
+    const demographie = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=demographie',
+    })
+    expect(
+      demographie.wrapper.find('tr#source-serie-historique a.matrice-indicateur-lien').exists(),
+    ).toBe(true)
+
+    const milieux = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=milieux',
+    })
+    const serieMilieux = milieux.wrapper.find('tr#source-serie-historique')
+    expect(serieMilieux.findAll('a.matrice-indicateur-lien').length).toBe(0)
+    // les indicateurs de l'autre thème ne fuient jamais sous Milieux
+    expect(serieMilieux.text()).not.toContain('Densité de population')
+  })
+
+  it('rend l\u2019état vide honnête — un jeu sans consommateur documenté le dit, rien n\u2019est inventé', async () => {
+    const economie = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=economie',
+    })
+
+    // flores_a38 n'a aucun indicateur documenté (le registre cite la A88 pour
+    // les effectifs) : l'en-tête dit « aucun indicateur », jamais une liste vide
+    const flores = economie.wrapper.find('tr#source-flores-a38')
+    expect(flores.find('a.matrice-indicateur-lien').exists()).toBe(false)
+    expect(flores.text()).toContain('Aucun indicateur ne cite ce jeu')
+  })
+
+  it('les lignes vintage ne portent pas la matrice — le tiret, jamais une répétition', async () => {
+    const milieux = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=milieux',
+    })
+
+    // OCS-GE est déplié : l'en-tête porte la matrice (artif_par_habitant), les
+    // 11 lignes vintage montrent le tiret dans la colonne Indicateurs
+    const enTete = milieux.wrapper.find('tr#source-ocsge-artificialisation')
+    expect(enTete.findAll('a.matrice-indicateur-lien').map((l) => l.attributes('href'))).toEqual([
+      `#${ancreIndicateur('artif_par_habitant')}`,
+    ])
+
+    const enfants = milieux.wrapper.findAll('tr.source-vintage')
+    expect(enfants.length).toBe(11)
+    for (const enfant of enfants) {
+      const cellule = enfant.find('td[data-label="Indicateurs"]')
+      expect(cellule.exists(), 'cellule Indicateurs absente sur une ligne vintage').toBe(true)
+      expect(cellule.text()).toBe('—')
+      expect(enfant.find('a.matrice-indicateur-lien').exists()).toBe(false)
+    }
   })
 })
 

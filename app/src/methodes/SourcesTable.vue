@@ -12,15 +12,17 @@
  *
  * Le composant possède le chrome ; les callers fournissent les colonnes et
  * les lignes (LigneTableSources), et passent par un slot nommé par clé de
- * colonne pour les cellules riches (les puces « thèmes utilisés » du
- * registre — le slot reçoit la ligne). Les clés réservées « source » et
- * « lien » sont rendues par le composant (le lien vers le jeu vit sur
- * l'en-tête, jamais répété par ligne vintage — ADR-0022). Une cellule texte
- * null rend « — » : jamais une donnée inventée.
+ * colonne pour les cellules riches (les puces « thèmes utilisés » du registre
+ * et la matrice « indicateurs » de l'en-tête de jeu, issue #336 — le slot
+ * reçoit la ligne). Les clés réservées « source » et « lien » sont rendues par
+ * le composant (le lien vers le jeu vit sur l'en-tête, jamais répété par ligne
+ * vintage — ADR-0022). Une cellule texte null rend « — » : jamais une donnée
+ * inventée.
  */
 import { ExternalLink } from 'lucide-vue-next'
 
 import AppIcon from '@/components/AppIcon.vue'
+import type { IndicateurConsommateur } from '@/methodes/indicateurs'
 import type { Theme } from '@/payload/types'
 
 /** Une colonne de la table — l'en-tête et le libellé empilé <768px. */
@@ -49,6 +51,10 @@ export interface LigneTableSources {
   url: string | null
   /** Les thèmes du jeu — rendus par le slot « themes » (les puces), jamais par le composant. */
   themes?: readonly Theme[] | null
+  /** Les indicateurs qui consomment le jeu — la matrice (issue #336), rendue
+   *  par le slot « indicateurs » de l'en-tête de jeu ; absente sur une ligne
+   *  vintage (le tiret, jamais une répétition). */
+  indicateurs?: readonly IndicateurConsommateur[] | null
   /** Les cellules texte — clé → contenu (null = « — »). Les clés « source » et « lien » sont rendues par le composant. */
   cellules: Record<string, string | null>
 }

@@ -13,6 +13,11 @@
  * table. Le shell à onglets (#332) filtre via la prop `themes` — l'onglet
  * Sources · <thème> montre les jeux qui alimentent ce thème (un jeu
  * multi-thèmes apparaît sous chacun de ses thèmes, jamais d'onglet « Tous »).
+ * Chaque en-tête de jeu porte la matrice indicateur ↔ source (issue #336) :
+ * les indicateurs qui consomment le jeu, liés à leur documentation
+ * (#indicateur-<clef>) — filtrés par l'onglet de thème (un onglet ne montre
+ * que les indicateurs de SON thème), et un jeu sans consommateur documenté
+ * dit « Aucun indicateur ne cite ce jeu » — jamais une liste inventée.
  * Au-dessous de 768px la table se superpose en lignes empilées (mêmes
  * cellules, CSS seul — la table partagée SourcesTable).
  *
@@ -26,6 +31,8 @@ import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { NOMS_THEMES } from '@/fiche/onglets'
+import { ancreIndicateur, indicateursParDataset } from '@/methodes/indicateurs'
+import type { IndicateurConsommateur } from '@/methodes/indicateurs'
 import { ancreSource } from '@/methodes/sources'
 import SourcesTable from '@/methodes/SourcesTable.vue'
 import type { ColonneTableSources, LigneTableSources } from '@/methodes/SourcesTable.vue'
@@ -49,12 +56,24 @@ const jeux = computed(() => {
   return filtre ? tous.filter((jeu) => jeu.themes.some((t) => filtre.includes(t))) : tous
 })
 
+/** La matrice dataset → indicateurs (issue #336) — la jointure inverse du lien « Source ». */
+const matrice = computed(() => indicateursParDataset())
+
+/** Les indicateurs du jeu — filtrés par l'onglet de thème (un onglet ne montre
+ *  que les indicateurs de SON thème, jamais ceux des autres). */
+function indicateursDuJeu(idJeu: string): readonly IndicateurConsommateur[] | null {
+  const consommateurs = matrice.value.get(idJeu) ?? []
+  const filtre = props.themes
+  return filtre ? consommateurs.filter((c) => filtre.includes(c.theme)) : consommateurs
+}
+
 const vintagesAbsents = computed(() => table.value?.vintagesAbsents ?? false)
 
 const colonnes: ColonneTableSources[] = [
   { cle: 'source', libelle: 'Source' },
   { cle: 'editeur', libelle: 'Éditeur' },
   { cle: 'themes', libelle: 'Thèmes utilisés' },
+  { cle: 'indicateurs', libelle: 'Indicateurs' },
   { cle: 'version', libelle: 'Version' },
   { cle: 'date_reference', libelle: 'Date de référence' },
   { cle: 'date_publication', libelle: 'Date de publication' },
@@ -72,6 +91,7 @@ const lignes = computed<LigneTableSources[]>(() => {
       nom: jeu.nom,
       url: jeu.url,
       themes: jeu.themes,
+      indicateurs: indicateursDuJeu(jeu.id),
       cellules: {
         editeur: jeu.editeur,
         // Un jeu replié porte sa fraîcheur sur l'en-tête ; un jeu déplié la
@@ -159,6 +179,28 @@ function libelleThemes(themes: readonly Theme[]): string {
           </ul>
           <span v-else>—</span>
         </template>
+
+        <template #indicateurs="{ ligne }">
+          <ul
+            v-if="ligne.indicateurs && ligne.indicateurs.length > 0"
+            class="matrice-indicateurs"
+          >
+            <li
+              v-for="indicateur in ligne.indicateurs"
+              :key="indicateur.clef"
+              class="matrice-indicateur"
+            >
+              <a
+                :href="`#${ancreIndicateur(indicateur.clef)}`"
+                class="matrice-indicateur-lien"
+              >{{ indicateur.label }}</a>
+            </li>
+          </ul>
+          <span v-else-if="ligne.classe === 'source-jeu'" class="matrice-vide">
+            Aucun indicateur ne cite ce jeu
+          </span>
+          <span v-else>—</span>
+        </template>
       </SourcesTable>
     </template>
   </section>
@@ -199,6 +241,33 @@ function libelleThemes(themes: readonly Theme[]): string {
   color: var(--puce-strong);
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
+}
+
+/* ---- La matrice indicateur ↔ source (issue #336) — les consommateurs du
+   jeu sur l'en-tête, chacun lié à sa documentation #indicateur-<clef> ---- */
+.matrice-indicateurs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.matrice-indicateur-lien {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.matrice-indicateur-lien:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.matrice-vide {
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 /* ---- Les états (ui-elements.md §Loading/empty/error) ---- */

@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { THEMES_CONSTRUITS, THEMES_METHODES, ancreIndicateur } from '../methodes/indicateurs'
 import type { ThemeConstruit } from '../methodes/indicateurs'
+import { ancreSource } from '../methodes/sources'
 import {
   apercuAvecNAFixture,
   chargerAvec,
@@ -242,5 +243,37 @@ describe('MethodologieView — Méthodes · <thème> (les blocs d\u2019indicateu
 
     const texte = wrapper.text()
     expect(texte).not.toMatch(/à venir|en construction|bientôt|under construction/i)
+  })
+})
+
+describe('MethodologieView — le lien « Source » pointe l\u2019en-tête du jeu (matrice #336)', () => {
+  it('chaque indicateur lié cible l\u2019ancre de l\u2019en-tête de SON jeu — jamais une ligne vintage', async () => {
+    // le sens inverse de la matrice : le lien « Source » d'un indicateur doit
+    // atterrir sur l'en-tête du jeu (#source-<dataset>), y compris pour les
+    // sources multi-vintage jadis injoignables (DVF, DPE, OCS-GE)
+    const attendus: Record<string, string> = {
+      prix_m2: ancreSource('dvf'),
+      part_passoires: ancreSource('dpe'),
+      distribution_dpe: ancreSource('dpe'),
+      artif_par_habitant: ancreSource('ocsge_artificialisation'),
+      densite: ancreSource('serie_historique'),
+      nb_buildings: ancreSource('mobilite_snapshot'),
+    }
+
+    for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      for (const clef of Object.keys(THEMES_METHODES[theme].indicateurs)) {
+        const blocIndicateur = bloc.find(`.bloc-indicateur[data-clef="${clef}"]`)
+        const lien = blocIndicateur.find('a.meta-source-lien')
+        if (clef in attendus) {
+          expect(lien.exists(), `« ${theme}.${clef} » sans lien Source`).toBe(true)
+          expect(
+            lien.attributes('href'),
+            `« ${theme}.${clef} » → ${lien.attributes('href')}`,
+          ).toBe(`#${attendus[clef]}`)
+        }
+      }
+    }
   })
 })

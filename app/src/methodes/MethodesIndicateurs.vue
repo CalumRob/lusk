@@ -24,7 +24,7 @@ import { computed } from 'vue'
 import { NOMS_THEMES } from '@/fiche/onglets'
 import { ancreIndicateur, THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
-import { ancreSource } from '@/methodes/sources'
+import { ancreDuJeu } from '@/methodes/sources'
 
 const props = defineProps<{
   /** Les thèmes à documenter — le filtre du shell à onglets (défaut : tous). */
@@ -76,7 +76,7 @@ function uniteAffichage(unite: string): string {
                   <span class="meta-etiquette">Source</span>
                   <a
                     v-if="indicateur.sourceId"
-                    :href="`#${ancreSource(indicateur.sourceId)}`"
+                    :href="`#${ancreDuJeu(indicateur.sourceId)}`"
                     class="meta-source-lien"
                   >{{ indicateur.source }}</a>
                   <span v-else>{{ indicateur.source }}</span>

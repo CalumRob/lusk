@@ -19,6 +19,7 @@
  */
 
 import { slugifierAncre } from '@/methodes/ancres'
+import { datasetDeSource } from '@/methodes/sources'
 
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
 export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
@@ -131,6 +132,40 @@ export function ancreIndicateur(clef: string): string {
   return slugifierAncre('indicateur', clef)
 }
 
+/** Un indicateur qui consomme un jeu — la ligne de la matrice (issue #336). */
+export interface IndicateurConsommateur {
+  /** La clé de payload — l'ancre #indicateur-<clef> du bloc de documentation. */
+  clef: string
+  /** Le label d'affichage (le même que le bloc). */
+  label: string
+  /** Le thème construit de l'indicateur — le filtre des onglets Sources · <thème>. */
+  theme: ThemeConstruit
+}
+
+/**
+ * La matrice indicateur ↔ source (issue #336, #206 item 52) — la jointure
+ * INVERSE du lien « Source » des blocs : chaque indicateur dont le sourceId
+ * pointe une entrée du registre des sources appartient au jeu de cette entrée
+ * (datasetDeSource, ADR-0022). Ordre du registre = ordre de la liste. Les
+ * Stories n'y sont jamais (elles ne portent pas de champ source — gated
+ * #74/#308) : la matrice énonce ce que le modèle peut exprimer aujourd'hui,
+ * et sa forme n'aura pas à changer quand elles rejoindront (seule sa source).
+ */
+export function indicateursParDataset(): ReadonlyMap<string, readonly IndicateurConsommateur[]> {
+  const parDataset = new Map<string, IndicateurConsommateur[]>()
+  for (const theme of THEMES_CONSTRUITS) {
+    for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+      if (indicateur.sourceId === null) continue
+      const dataset = datasetDeSource(indicateur.sourceId)
+      const ligne: IndicateurConsommateur = { clef, label: indicateur.label, theme }
+      const groupe = parDataset.get(dataset)
+      if (groupe) groupe.push(ligne)
+      else parDataset.set(dataset, [ligne])
+    }
+  }
+  return parDataset
+}
+
 /**
  * Le registre complet — une entrée par thème construit. Ordre du registre =
  * ordre d'affichage de la page (démographie, habitat, économie). La forme
@@ -236,7 +271,9 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
           'Le prix médian déclaré au mètre carré des ventes de maisons et d’appartements, sur les cinq dernières années. La médiane, plutôt que la moyenne, n’est pas tirée par les ventes extrêmes ; chaque année de la période est publiée à part pour suivre l’évolution. L’indicateur n’est pas publié quand les ventes sont trop peu nombreuses pour être représentatives.',
         unite: '€/m²',
         source: 'Étalab — DVF géolocalisées',
-        sourceId: null,
+        // Le jeu DVF (ADR-0022 : l'en-tête #source-dvf) — le sourceId épingle
+        // une ligne du jeu, la matrice et le lien « Source » résolvent l'en-tête
+        sourceId: 'dvf_2021_dep22',
       },
       part_passoires: {
         label: 'Part de passoires thermiques',
@@ -244,7 +281,8 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
           'La part des logements dont l’étiquette énergétique du diagnostic de performance énergétique (DPE) est F ou G — les passoires thermiques. La part est calculée sur la base des DPE recensés, jamais sur le parc entier : cette base surreprésente les logements vendus ou loués, une limite documentée. L’indicateur n’est pas publié quand la base compte moins de 30 logements.',
         unite: '%',
         source: 'ADEME — Observatoire DPE, logements existants',
-        sourceId: null,
+        // Le jeu DPE (ADR-0022 : l'en-tête #source-dpe), la même forme que DVF
+        sourceId: 'dpe_22',
       },
       distribution_dpe: {
         label: 'Distribution des étiquettes DPE (A à G)',
@@ -252,7 +290,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
           'La répartition des étiquettes énergétiques du parc, de A à G, sur la même base que la part de passoires : c’est la visualisation de l’indicateur précédent, les parts F et G étant mises en évidence. La base mêle plusieurs régimes d’étiquetage — les réformes de 2024 et de 2026 ont rendu les diagnostics récents plus favorables, une limite de comparabilité documentée.',
         unite: '%',
         source: 'ADEME — Observatoire DPE, logements existants',
-        sourceId: null,
+        sourceId: 'dpe_22',
       },
     },
     stories: [
