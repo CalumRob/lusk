@@ -41,6 +41,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$rapport_cible_vue <- NULL
   appels$geometrie_cible_vue <- NULL
   appels$vintages_json <- 0
+  appels$meta <- 0
 
   faux_payload <- list(
     indicateurs = data.frame(x = 1),
@@ -91,6 +92,19 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$geometrie_cible_vue <- cible
       invisible(NULL)
     },
+    # issue #311 : la publication des métadonnées (theme_<theme>.json) est une
+    # étape SÉPARÉE du payload — le run la branche après les faits, avec les
+    # vintages du thème et la garde theme_attendu (le seam lui-même est testé
+    # dans test-publier-theme-metadata.R)
+    publier_theme_metadata = function(metadata, sortie, vintages = NULL,
+                                      theme_attendu = NULL) {
+      appels$meta <- appels$meta + 1
+      appels$meta_metadata <- metadata
+      appels$meta_cible <- sortie
+      appels$meta_vintages <- vintages
+      appels$meta_attendu <- theme_attendu
+      invisible(metadata)
+    },
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL) {
       appels$rapport_statuts_vus <- statuts
@@ -128,6 +142,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_equal(appels$parquet, 1)
   expect_equal(appels$geometrie, 1)
   expect_equal(appels$vintages_json, 1)
+  expect_equal(appels$meta, 1)
   expect_identical(appels$vintages_json_vus, faux_vintages)
 
   # la donnée du compute vient de construire_donnees_brut
@@ -149,6 +164,13 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
 
   # le mode par défaut est "full" — le comportement local est inchangé
   expect_equal(appels$mode_vu, "full")
+
+  # issue #311 : les métadonnées du thème partent après le payload — la même
+  # cible, les vintages du thème, la garde theme_attendu (le thème du run)
+  expect_identical(appels$meta_metadata$theme, "demographie")
+  expect_equal(appels$meta_cible, "public/data")
+  expect_identical(appels$meta_vintages, faux_vintages)
+  expect_equal(appels$meta_attendu, "demographie")
 
   # issue #10 : le rapport de run est écrit avec les statuts capturés depuis
   # download_sources(), le mode du run et la même cible que le payload
@@ -185,6 +207,9 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     vintages_demographie = function() faux_vintages,
     compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
+    publier_theme_metadata = function(metadata, sortie, vintages = NULL,
+                                      theme_attendu = NULL)
+      invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
@@ -235,6 +260,9 @@ test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapp
     publish = function(payload, cible, backend = NULL) invisible(payload),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
+    publier_theme_metadata = function(metadata, sortie, vintages = NULL,
+                                      theme_attendu = NULL)
+      invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL) {
       recu <<- couverture

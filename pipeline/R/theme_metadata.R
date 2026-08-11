@@ -44,6 +44,12 @@ CLES_HISTOIRES_PAR_THEME <- list(
   milieux = "se-densifier-setaler-ou-sen-aller"
 )
 
+# lire_theme_metadata / publier_theme_metadata ---------------------------------
+# Le lecteur du fichier épinglé et le seam de publication vivent dans
+# publier_theme_metadata.R — le contrat (valider_theme_metadata, les registres
+# ci-dessus) est ici, la publication est là (la même séparation que
+# theme_programmes.R : le contrat d'un côté, publier_programmes de l'autre).
+
 # STORIES_RESOLUES_PAR_THEME ----------------------------------------------------
 # Le registre de la RÉSOLUTION des histoires (issue #312, parent #308) : pour
 # chaque thème, la table qui dit où chaque story vit (le `groupe` de la fiche —

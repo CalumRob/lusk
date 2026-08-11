@@ -950,7 +950,7 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
 # nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_MOBILITE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier"
+  "construire_analytiques", "publier", "metadata"
 )
 
 # verifier_descripteur_mobilite -------------------------------------------------
@@ -980,7 +980,11 @@ theme_mobilite <- function() {
     vintages = vintages_mobilite,
     construire_donnees = construire_donnees_mobilite,
     construire_analytiques = construire_analytiques_mobilite,
-    publier = publier_mobilite
+    publier = publier_mobilite,
+    # Issue #311 : les métadonnées du thème (le fichier épinglé
+    # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
+    # payload, jamais un recompute des tables de faits
+    metadata = function() lire_theme_metadata("mobilite")
   )
   verifier_descripteur_mobilite(descripteur)
   descripteur

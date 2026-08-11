@@ -83,6 +83,20 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     payload <- compute_payload(brut, theme = theme, vintages = vintages)
     publish(payload, sortie)
   }
+  # Issue #311 : la publication des métadonnées du thème (theme_<theme>.json)
+  # est une étape SÉPARÉE du payload — un thème qui déclare `metadata` (la
+  # fonction qui lit son fichier épinglé inst/extdata/theme-metadata/) publie
+  # SON fichier après les faits ; un thème sans membre (Programmes, ADR-0013 —
+  # un contrat de publication SÉPARÉ) ne publie NI n'écrase rien. Publier les
+  # métadonnées ne recompute JAMAIS les tables de faits : l'étape n'écrit que
+  # theme_<theme>.json. Le nom du fichier dérive du thème VALIDÉ du contenu
+  # (jamais d'un paramètre) et la garde theme_attendu refuse qu'un thème
+  # écrive le fichier d'un autre — la collision est impossible.
+  if ("metadata" %in% names(theme)) {
+    publier_theme_metadata(theme$metadata(), sortie,
+                           vintages = vintages,
+                           theme_attendu = theme$theme)
+  }
   # Issue #60 : la géométrie du fond de carte (ADR-0008) est un artefact
   # partagé, pas une table du thème — le run la publie vers la MÊME cible que
   # le payload (communes/epcis/departements.geojson sous public/data/), depuis

@@ -1843,7 +1843,11 @@ theme_milieux <- function() {
     retire_vintages = c(
       "ocsge_artificialisation_22", "ocsge_artificialisation_29",
       "ocsge_artificialisation_35", "ocsge_artificialisation_56"
-    )
+    ),
+    # Issue #311 : les métadonnées du thème (le fichier épinglé
+    # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
+    # payload, jamais un recompute des tables de faits
+    metadata = function() lire_theme_metadata("milieux")
   )
   verifier_descripteur_milieux(descripteur)
   descripteur

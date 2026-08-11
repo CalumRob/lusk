@@ -107,11 +107,13 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
 
   # les fichiers par thème + la référence partagée + vintages + rapport.
   # L'Aperçu est vide par design : le fichier partagé apercu n'est NI écrit
-  # NI écrasé par un thème sans aperçu (issue #116).
+  # NI écrasé par un thème sans aperçu (issue #116). Issue #311 : les
+  # métadonnées du thème partent avec le run (theme_milieux.json).
   for (f in c("indicateurs_milieux.parquet", "indicateurs_milieux.json",
               "histoires_milieux.parquet", "histoires_milieux.json",
               "territoires.parquet", "territoires.json",
-              "vintages.parquet", "run-report.json")) {
+              "vintages.parquet", "run-report.json",
+              "theme_milieux.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
   expect_false(file.exists(file.path(cible, "apercu.parquet")))

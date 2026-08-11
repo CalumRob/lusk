@@ -68,7 +68,8 @@ test_that("theme_habitat : le descripteur porte toutes les pièces du contrat", 
                      "construire_donnees", "construire_territoires",
                      "construire_indicateurs", "construire_apercu", "scalaires",
                      "directions",
-                     "compute_histoires", "validations"))
+                     "compute_histoires", "validations",
+                     "metadata"))
   expect_equal(th$theme, "habitat")
   expect_identical(th$manifest, MANIFEST_HABITAT)
   expect_identical(th$indicateurs, INDICATEURS_HABITAT)

@@ -1,0 +1,46 @@
+{
+  "theme": "demographie",
+  "label": "Démographie",
+  "subgroups": [
+    {
+      "key": "etat-et-dynamique",
+      "label": "État et dynamique de la population",
+      "framing": "La population de la commune : sa taille, sa densité, son évolution depuis 1968 et la structure de ses ménages.",
+      "indicators": ["densite", "structure_age", "evolution_1968", "taille_menages"],
+      "figure": {
+        "family": "composition",
+        "indicator": "structure_age"
+      },
+      "reading": {
+        "story_key": "trajectoire-demographique",
+        "params": ["periode", "taux_solde_naturel", "taux_solde_migratoire", "classification"],
+        "template": [
+          { "type": "text", "content": "Entre " },
+          { "type": "param", "key": "periode" },
+          { "type": "text", "content": ", la population de " },
+          { "type": "territoire" },
+          { "type": "text", "content": " " },
+          { "type": "strong", "children": [
+            { "type": "param", "key": "classification" }
+          ] },
+          { "type": "text", "content": " : " },
+          { "type": "param", "key": "taux_solde_naturel" },
+          { "type": "text", "content": " par an (naturel), " },
+          { "type": "param", "key": "taux_solde_migratoire" },
+          { "type": "text", "content": " (migratoire). " },
+          { "type": "link", "href": "/methodologie#demographie", "children": [
+            { "type": "text", "content": "Sources et méthodes" }
+          ] }
+        ]
+      }
+    }
+  ],
+  "indicator_keys": ["densite", "structure_age", "evolution_1968", "taille_menages"],
+  "story_keys": ["trajectoire-demographique"],
+  "sources": {
+    "densite": "serie_historique",
+    "structure_age": "age_detail",
+    "evolution_1968": "serie_historique",
+    "taille_menages": "menages"
+  }
+}

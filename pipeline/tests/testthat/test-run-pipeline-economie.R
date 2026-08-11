@@ -238,11 +238,13 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   # les fichiers par thème + la référence partagée + vintages + rapport.
   # Issue #116 : l'Aperçu d'un run Économie est vide par design — le fichier
   # partagé apercu n'est NI écrit NI écrasé par un thème sans aperçu (seul
-  # Démographie le peuple).
+  # Démographie le peuple). Issue #311 : les métadonnées du thème partent
+  # avec le run (theme_economie.json).
   for (f in c("indicateurs_economie.parquet", "indicateurs_economie.json",
               "histoires_economie.parquet", "histoires_economie.json",
               "territoires.parquet", "territoires.json",
-              "vintages.parquet", "run-report.json")) {
+              "vintages.parquet", "run-report.json",
+              "theme_economie.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
