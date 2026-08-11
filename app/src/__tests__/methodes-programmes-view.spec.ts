@@ -20,21 +20,21 @@ import {
   indicateursDemographieFixture,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { ChargerFichier } from '../payload/usePayload'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Payload, Vintage } from '../payload/types'
 import { routes } from '../router'
 import MethodologieView from '../views/MethodologieView.vue'
 
 /**
- * /methodologie — la section « Programmes & financements » (issue #180,
- * layouts.md §5), dans l'onglet Programmes du shell à onglets (#332,
- * ?onglet=programmes). La section documente l'élément du même nom de la
- * fiche : le vocabulaire des badges (sigle → nom), les trois sortes de
- * couverture, la règle du badge ORT, la ligne « jamais les résultats », et la
- * table de ses SIX sources (URL, format, licence, fraîcheur — les faits que
- * le pipeline ingère réellement, jamais inventés). Jamais de bannière de
- * construction (principles.md §1) : la page énonce ce qui est.
+ * /methodologie — l'élément « Programmes et subventions » (issue #180,
+ * layouts.md §5) dans le shell à deux niveaux (#332) : l'onglet
+ * Méthodes · Programmes et subventions (l'éditorial — le vocabulaire des
+ * badges, les trois sortes de couverture, la règle du badge ORT, la ligne
+ * « jamais les résultats », SANS la table des sources) et l'onglet
+ * Sources · Programmes et subventions (la table de ses SIX sources — URL,
+ * format, licence, fraîcheur — les faits que le pipeline ingère réellement,
+ * jamais inventés). Jamais de bannière de construction (principles.md §1) :
+ * la page énonce ce qui est.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -53,41 +53,43 @@ const payload: Payload = {
   programmes: null,
 }
 
-async function monter(charger: ChargerFichier) {
+async function monter(chemin: string) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push('/methodologie?onglet=programmes')
+  await router.push(chemin)
   await router.isReady()
   const wrapper = mount(MethodologieView, {
     global: {
       plugins: [router],
-      provide: { [PAYLOAD_CHARGER_KEY]: charger },
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payload) },
     },
   })
   await flushPromises()
   return wrapper
 }
 
-describe('MethodologieView — la section « Programmes & financements »', () => {
-  it('rend la section à son ancre #programmes', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+describe('MethodologieView — Méthodes · Programmes et subventions (l\u2019éditorial)', () => {
+  it('rend la section à son ancre #programmes, sans la table des sources', async () => {
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
     expect(wrapper.find('section#programmes').exists()).toBe(true)
+    expect(wrapper.find('section#programmes .sources-tableau').exists()).toBe(false)
+    expect(wrapper.find('section#programmes-sources').exists()).toBe(false)
   })
 
-  it('porte le titre « Programmes & financements »', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+  it('porte le titre « Programmes et subventions »', async () => {
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
-    expect(wrapper.find('section#programmes h2').text()).toBe('Programmes & financements')
+    expect(wrapper.find('section#programmes h2').text()).toBe('Programmes et subventions')
   })
 
   it('porte la ligne « adhésion et montants attribués, jamais les résultats »', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
     expect(wrapper.find('section#programmes').text()).toContain(LIGNE_JAMAIS_RESULTATS)
   })
 
   it('documente les trois sortes de couverture, avec leurs sigles', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
     const texte = wrapper.find('section#programmes').text()
     for (const couverture of COUVERTURES_PROGRAMMES) {
@@ -97,13 +99,13 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('documente la règle du badge ORT', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
     expect(wrapper.find('section#programmes').text()).toContain(REGLE_BADGE_ORT)
   })
 
   it('affiche le vocabulaire des badges (sigle — nom complet)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
     const texte = wrapper.find('section#programmes').text()
     for (const [sigle, nom] of Object.entries(VOCABULAIRE_PROGRAMMES)) {
@@ -112,9 +114,28 @@ describe('MethodologieView — la section « Programmes & financements »', () =
     }
   })
 
-  it('liste chaque source du registre avec ses faits (URL, format, licence, fraîcheur)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+  it('ne rend aucune bannière de construction', async () => {
+    const wrapper = await monter('/methodologie?onglet=methodes&section=programmes')
 
+    expect(wrapper.text()).not.toMatch(/à venir|en construction|bientôt|under construction/i)
+  })
+})
+
+describe('MethodologieView — Sources · Programmes et subventions (la table des six sources)', () => {
+  it('rend la table à son ancre #programmes-sources, sans l\u2019éditorial', async () => {
+    const wrapper = await monter('/methodologie?onglet=sources&section=programmes')
+
+    expect(wrapper.find('section#programmes-sources').exists()).toBe(true)
+    expect(wrapper.find('section#programmes-sources .sources-tableau').exists()).toBe(true)
+    expect(wrapper.find('section#programmes').exists()).toBe(false)
+  })
+
+  it('liste chaque source du registre avec ses faits (URL, format, licence, fraîcheur)', async () => {
+    const wrapper = await monter('/methodologie?onglet=sources&section=programmes')
+
+    expect(wrapper.findAll('section#programmes-sources tbody tr').length).toBe(
+      Object.keys(SOURCES_PROGRAMMES).length,
+    )
     for (const [id, source] of Object.entries(SOURCES_PROGRAMMES)) {
       const ligne = wrapper.find(`tr#${ancreSource(id)}`)
       expect(ligne.exists(), `ligne « ${id} » introuvable`).toBe(true)
@@ -128,7 +149,7 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('chaque source rend un lien vers son jeu de données', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=sources&section=programmes')
 
     for (const [id, source] of Object.entries(SOURCES_PROGRAMMES)) {
       const lien = wrapper.find(`tr#${ancreSource(id)} a.lien-source`)
@@ -138,7 +159,7 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('l\u2019ORT rend sa fraîcheur PAR LIGNE, jamais la métadonnée de page périmée', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=sources&section=programmes')
 
     const ligne = wrapper.find('tr#source-ort')
     expect(ligne.text()).toMatch(/par ligne|actualisation/i)
@@ -148,15 +169,9 @@ describe('MethodologieView — la section « Programmes & financements »', () =
   })
 
   it('la subvention rend sa fraîcheur hebdomadaire', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('/methodologie?onglet=sources&section=programmes')
 
     const ligne = wrapper.find('tr#source-subventions-scdl')
     expect(ligne.text()).toMatch(/semaine|hebdomadaire/i)
-  })
-
-  it('ne rend aucune bannière de construction', async () => {
-    const wrapper = await monter(chargerAvec(payload))
-
-    expect(wrapper.text()).not.toMatch(/à venir|en construction|bientôt|under construction/i)
   })
 })

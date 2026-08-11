@@ -1,18 +1,19 @@
 <script setup lang="ts">
 /**
- * La section « les indicateurs » de /methodologie (layouts.md §5, issue #129):
- * pour chaque thème construit, un bloc d'ancre (#demographie, #habitat,
- * #economie) qui porte la rampe du thème (overline/labels en -strong, fond
- * en -wash, accent -line — le langage visuel des blocs de thème de la fiche),
- * les définitions éditoriales de ses indicateurs (label, définition, unité,
+ * Les blocs d'indicateurs de /methodologie (layouts.md §5, issue #129) : pour
+ * chaque thème construit, un bloc d'ancre (#demographie, #habitat, #economie)
+ * qui porte la rampe du thème (overline/labels en -strong, fond en -wash,
+ * accent -line — le langage visuel des blocs de thème de la fiche), les
+ * définitions éditoriales de ses indicateurs (label, définition, unité,
  * source) puis la documentation de ses Stories (ce qu'elles lisent, leurs
  * lectures). Le registre (indicateurs.ts) est statique et typé — la section
  * ne dépend pas du payload. Pas de bannière de construction (principles.md
  * §1) : la page énonce ce qui est.
  *
- * Le shell à onglets (#332) peut restreindre la liste via la prop `themes` —
- * le sélecteur de thème de l'onglet Indicateurs filtre les blocs (défaut :
- * tous les construits, le « Tous » du sélecteur).
+ * Le shell à onglets (#332) restreint la liste via la prop `themes` — l'onglet
+ * Méthodes · <thème> montre le bloc de ce thème seul (défaut : tous les
+ * construits). La prose du registre vit dans l'onglet Méthodes · À propos
+ * (MethodesIndicateursApropos), jamais ici.
  */
 import { computed } from 'vue'
 
@@ -45,14 +46,6 @@ function uniteAffichage(unite: string): string {
 
 <template>
   <section id="indicateurs" class="indicateurs">
-    <h2 class="indicateurs__titre">Les indicateurs</h2>
-
-    <p class="indicateurs__intro">
-      Pour chaque thème construit, la définition de chacun de ses indicateurs — ce qu’il
-      mesure, son unité, sa source — puis ce que racontent ses Stories et comment elles
-      se lisent.
-    </p>
-
     <article
       v-for="theme in themesAffiches"
       :id="theme"
@@ -160,19 +153,6 @@ function uniteAffichage(unite: string): string {
   display: flex;
   flex-direction: column;
   gap: var(--space-10);
-}
-
-.indicateurs__titre {
-  margin: 0;
-  font: 600 1.5rem/1.3 var(--font-serif);
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.indicateurs__intro {
-  margin: 0;
-  color: var(--text-secondary);
-  font: var(--text-body-lg);
 }
 
 /* ---- Le bloc de thème (le langage visuel des blocs de la fiche) ---- */

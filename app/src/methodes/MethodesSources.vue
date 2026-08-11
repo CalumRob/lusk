@@ -1,11 +1,14 @@
 <script setup lang="ts">
 /**
- * La section « les sources » de /methodologie (layouts.md §5, issue #128):
- * la table des sources — une ligne par source du registre Méthodes, les faits
- * éditoriaux (éditeur, thèmes, URL) rejoints en direct aux faits de fraîcheur
- * (version, licence, dates) de la table vintages (sourcesMethodes, le seam du
- * payload). Ordre du registre = ordre de la table. Au-dessous de 768px la
- * table se superpose en lignes empilées (mêmes cellules, CSS seul).
+ * La table des sources de /methodologie (layouts.md §5, issue #128): une ligne
+ * par source du registre Méthodes, les faits éditoriaux (éditeur, thèmes,
+ * URL) rejoints en direct aux faits de fraîcheur (version, licence, dates) de
+ * la table vintages (sourcesMethodes, le seam du payload). Ordre du registre
+ * = ordre de la table. Le shell à onglets (#332) peut filtrer via la prop
+ * `themes` — l'onglet Sources · <thème> montre les sources qui alimentent ce
+ * thème (une source multi-thèmes apparaît sous chacun de ses thèmes). Au-
+ * dessous de 768px la table se superpose en lignes empilées (mêmes cellules,
+ * CSS seul).
  *
  * États (ui-elements.md): squelette pendant le chargement, erreur typée avec
  * Réessayer, état vide honnête quand vintages.json est absent (404) — la page
@@ -22,11 +25,21 @@ import { sourcesMethodes } from '@/payload/selectors'
 import type { Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
+const props = defineProps<{
+  /** Les thèmes dont les sources sont à montrer — le filtre de l'onglet
+   *  Sources · <thème> ; absent = tout le registre. */
+  themes?: readonly Theme[]
+}>()
+
 const { payload, erreur, chargement, recharger } = usePayload()
 
 const table = computed(() => (payload.value ? sourcesMethodes(payload.value) : null))
 
-const sources = computed(() => table.value?.lignes ?? [])
+const sources = computed(() => {
+  const lignes = table.value?.lignes ?? []
+  const filtre = props.themes
+  return filtre ? lignes.filter((ligne) => ligne.themes.some((t) => filtre.includes(t))) : lignes
+})
 
 const vintagesAbsents = computed(() => table.value?.vintagesAbsents ?? false)
 

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { THEMES_CONSTRUITS, THEMES_METHODES } from '../methodes/indicateurs'
+import type { ThemeConstruit } from '../methodes/indicateurs'
 import {
   apercuAvecNAFixture,
   chargerAvec,
@@ -13,19 +14,18 @@ import {
   indicateursDemographieFixture,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { ChargerFichier } from '../payload/usePayload'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { Payload, Vintage } from '../payload/types'
 import { routes } from '../router'
 import MethodologieView from '../views/MethodologieView.vue'
 
 /**
- * /methodologie — la section « les indicateurs » (issue #129, layouts.md §5) :
- * dans l'onglet Indicateurs du shell à onglets (#332, ?onglet=indicateurs),
- * pour chaque thème construit, un bloc d'ancre (#demographie, #habitat,
- * #economie) qui porte la rampe du thème, les définitions des indicateurs
- * (label, définition, unité, source) puis les Stories. Jamais de bannière de
- * construction (principles.md §1).
+ * /methodologie — les blocs d'indicateurs (issue #129, layouts.md §5) : dans
+ * l'onglet Méthodes du shell à onglets (#332, ?onglet=methodes), chaque
+ * onglet intérieur de thème (?section=<theme>) montre le bloc d'ancre de ce
+ * thème seul (#demographie, #habitat, #economie) — la rampe du thème, les
+ * définitions des indicateurs (label, définition, unité, source) puis les
+ * Stories. Jamais de bannière de construction (principles.md §1).
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -44,34 +44,42 @@ const payload: Payload = {
   programmes: null,
 }
 
-async function monter(charger: ChargerFichier) {
+async function monter(theme: ThemeConstruit) {
   const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push('/methodologie?onglet=indicateurs')
+  await router.push(`/methodologie?onglet=methodes&section=${theme}`)
   await router.isReady()
   const wrapper = mount(MethodologieView, {
     global: {
       plugins: [router],
-      provide: { [PAYLOAD_CHARGER_KEY]: charger },
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payload) },
     },
   })
   await flushPromises()
   return wrapper
 }
 
-describe('MethodologieView — la section « les indicateurs »', () => {
-  it('rend une section par thème construit, chacune à son ancre', async () => {
-    const wrapper = await monter(chargerAvec(payload))
-
+describe('MethodologieView — Méthodes · <thème> (les blocs d\u2019indicateurs)', () => {
+  it('rend le bloc du thème sélectionné à son ancre — et lui seul', async () => {
     for (const theme of THEMES_CONSTRUITS) {
-      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
-      expect(bloc.exists(), `bloc « ${theme} » introuvable`).toBe(true)
+      const wrapper = await monter(theme)
+
+      expect(wrapper.find(`section#indicateurs article#${theme}`).exists(), `bloc « ${theme} »`).toBe(
+        true,
+      )
+      for (const autre of THEMES_CONSTRUITS) {
+        if (autre === theme) continue
+        expect(
+          wrapper.find(`section#indicateurs article#${autre}`).exists(),
+          `bloc « ${autre} » rendu sous ${theme}`,
+        ).toBe(false)
+      }
     }
   })
 
   it('chaque bloc de thème porte la rampe du thème (strong/wash/line)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
-
     for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
       const bloc = wrapper.find(`section#indicateurs article#${theme}`)
       expect(bloc.classes()).toContain(`bloc-theme--${theme}`)
       const style = bloc.attributes('style') ?? ''
@@ -84,9 +92,9 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('liste chaque indicateur du registre avec sa définition, son unité et sa source', async () => {
-    const wrapper = await monter(chargerAvec(payload))
-
     for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
       const bloc = wrapper.find(`section#indicateurs article#${theme}`)
       for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
         const blocIndicateur = bloc.find(`.bloc-indicateur[data-clef="${clef}"]`)
@@ -102,9 +110,9 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('documente chaque Story du registre avec son titre, sa définition et ses lectures', async () => {
-    const wrapper = await monter(chargerAvec(payload))
-
     for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
       const bloc = wrapper.find(`section#indicateurs article#${theme}`)
       const texte = bloc.text()
       for (const story of THEMES_METHODES[theme].stories) {
@@ -120,7 +128,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('documente la Story de la région « Ce que la Bretagne abrite » dans le bloc économie', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('economie')
 
     const bloc = wrapper.find('section#indicateurs article#economie')
     const texte = bloc.text()
@@ -129,7 +137,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('documente l\u2019horloge lente dans le bloc mobilité — fait de première classe (ADR-0012)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('mobilite')
 
     const bloc = wrapper.find('section#indicateurs article#mobilite')
     expect(bloc.exists()).toBe(true)
@@ -145,7 +153,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('documente les horloges dans le bloc milieux — fait de première classe (ADR-0014, étendu ADR-0017)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('milieux')
 
     const bloc = wrapper.find('section#indicateurs article#milieux')
     expect(bloc.exists()).toBe(true)
@@ -161,7 +169,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('rend la figure « L\u2019offre cyclable » dans le bloc mobilité — la documentation de la règle (issue #233)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('mobilite')
 
     const bloc = wrapper.find('section#indicateurs article#mobilite')
     expect(bloc.exists()).toBe(true)
@@ -176,7 +184,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('documente les deux horloges du ratio dans le bloc mobilité — fait de première classe (issue #233)', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('mobilite')
 
     const bloc = wrapper.find('section#indicateurs article#mobilite')
     expect(bloc.exists()).toBe(true)
@@ -192,7 +200,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('marque la Story en pause comme non publiée, jamais comme une Story active', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('economie')
 
     const bloc = wrapper.find('section#indicateurs article#economie')
     const marqueur = bloc.find('.bloc-story--en-pause .bloc-story-pause')
@@ -205,7 +213,7 @@ describe('MethodologieView — la section « les indicateurs »', () => {
   })
 
   it('ne rend aucune bannière de construction', async () => {
-    const wrapper = await monter(chargerAvec(payload))
+    const wrapper = await monter('demographie')
 
     const texte = wrapper.text()
     expect(texte).not.toMatch(/à venir|en construction|bientôt|under construction/i)

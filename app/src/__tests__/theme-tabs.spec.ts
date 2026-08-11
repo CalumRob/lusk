@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { Database, Gauge, LayoutDashboard } from 'lucide-vue-next'
+import { BookOpen, Database, Landmark } from 'lucide-vue-next'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -257,8 +257,8 @@ describe('ThemeTabs — keyboard navigation', () => {
 
 describe('ThemeTabs — les onglets supplémentaires (le shell Méthodes, #332)', () => {
   const ongletsMethodes = [
-    { slug: 'indicateurs' as const, nom: 'Indicateurs', icone: Gauge },
-    { slug: 'programmes' as const, nom: 'Programmes', icone: LayoutDashboard },
+    { slug: 'methodes' as const, nom: 'Méthodes', icone: BookOpen },
+    { slug: 'programmes' as const, nom: 'Programmes et subventions', icone: Landmark },
   ]
 
   function montageShell(selected: SlugOnglet = 'sources') {
@@ -282,18 +282,18 @@ describe('ThemeTabs — les onglets supplémentaires (le shell Méthodes, #332)'
 
     expect(textesOnglets(wrapper)).toEqual([
       'Sources',
-      'Indicateurs',
-      'Programmes',
+      'Méthodes',
+      'Programmes et subventions',
       'Démographie',
     ])
   })
 
   it('marque un onglet supplémentaire sélectionné (aria-selected + roving tabindex)', () => {
-    const wrapper = montageShell('indicateurs')
+    const wrapper = montageShell('methodes')
 
-    const indicateurs = wrapper.findAll('[role="tab"]')[1]
-    expect(indicateurs.attributes('aria-selected')).toBe('true')
-    expect(indicateurs.attributes('tabindex')).toBe('0')
+    const methodes = wrapper.findAll('[role="tab"]')[1]
+    expect(methodes.attributes('aria-selected')).toBe('true')
+    expect(methodes.attributes('tabindex')).toBe('0')
     expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('false')
     expect(wrapper.findAll('[role="tab"]')[0].attributes('tabindex')).toBe('-1')
   })
@@ -301,9 +301,9 @@ describe('ThemeTabs — les onglets supplémentaires (le shell Méthodes, #332)'
   it('donne à chaque onglet supplémentaire un id stable et un aria-controls', () => {
     const wrapper = montageShell()
 
-    const indicateurs = wrapper.findAll('[role="tab"]')[1]
-    expect(indicateurs.attributes('id')).toBe('onglet-indicateurs')
-    expect(indicateurs.attributes('aria-controls')).toBe('panneau-indicateurs')
+    const methodes = wrapper.findAll('[role="tab"]')[1]
+    expect(methodes.attributes('id')).toBe('onglet-methodes')
+    expect(methodes.attributes('aria-controls')).toBe('panneau-methodes')
     const programmes = wrapper.findAll('[role="tab"]')[2]
     expect(programmes.attributes('id')).toBe('onglet-programmes')
     expect(programmes.attributes('aria-controls')).toBe('panneau-programmes')
@@ -314,11 +314,11 @@ describe('ThemeTabs — les onglets supplémentaires (le shell Méthodes, #332)'
 
     await wrapper.findAll('[role="tab"]')[1].trigger('click')
 
-    expect(wrapper.emitted('select')).toEqual([['indicateurs']])
+    expect(wrapper.emitted('select')).toEqual([['methodes']])
   })
 
   it('la navigation clavier couvre les onglets supplémentaires (Home → premier, flèche → suivant)', async () => {
-    const wrapper = montageShell('indicateurs')
+    const wrapper = montageShell('methodes')
 
     await wrapper.findAll('[role="tab"]')[1].trigger('keydown', { key: 'Home' })
     expect(wrapper.emitted('select')).toEqual([['sources']])
@@ -327,7 +327,7 @@ describe('ThemeTabs — les onglets supplémentaires (le shell Méthodes, #332)'
     // flèche droite avance vers l'onglet supplémentaire suivant
     const suivant = montageShell('sources')
     await suivant.findAll('[role="tab"]')[0].trigger('keydown', { key: 'ArrowRight' })
-    expect(suivant.emitted('select')).toEqual([['indicateurs']])
+    expect(suivant.emitted('select')).toEqual([['methodes']])
   })
 
   it('sans onglets supplémentaires, le composant garde le comportement hérité (Aperçu + thèmes)', () => {

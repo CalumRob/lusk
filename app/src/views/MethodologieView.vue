@@ -26,62 +26,75 @@
     </div>
 
     <ThemeTabs
-      class="methodologie__onglets-sections"
+      class="methodologie__onglets"
       :themes="[]"
-      :selected="section"
+      :selected="onglet"
       libelle-premier="Sources"
       premier-slug="sources"
       :icone-premier="Database"
-      :onglets-supplementaires="ongletsSections"
-      aria-label="Sections de la page Méthodes"
-      @select="choisirSection"
+      :onglets-supplementaires="ongletsExterieurs"
+      aria-label="Onglets de la page Méthodes"
+      @select="choisirOnglet"
     />
 
     <div
-      v-if="section === 'sources'"
+      v-if="onglet === 'sources'"
       id="panneau-sources"
-      class="methodologie__panneau"
+      class="methodologie__onglet"
       role="tabpanel"
       aria-labelledby="onglet-sources"
     >
-      <MethodesSources />
-    </div>
-
-    <div
-      v-else-if="section === 'indicateurs'"
-      id="panneau-indicateurs"
-      class="methodologie__panneau"
-      role="tabpanel"
-      aria-labelledby="onglet-indicateurs"
-    >
-      <div class="methodologie__onglets-themes">
-        <ThemeTabs
-          :themes="THEMES_CONSTRUITS"
-          :selected="themeSelectionne"
-          libelle-premier="Tous"
-          aria-label="Thèmes des indicateurs"
-          @select="choisirTheme"
-        />
-      </div>
+      <ThemeTabs
+        class="methodologie__onglets-interieurs"
+        :themes="THEMES_CANONIQUES"
+        :selected="section"
+        libelle-premier="À propos"
+        premier-slug="apropos"
+        :onglets-supplementaires="ongletsInterieurs"
+        aria-label="Sections des sources"
+        @select="choisirSection"
+      />
 
       <div
-        class="methodologie__panneau-theme"
+        class="methodologie__panneau"
         role="tabpanel"
-        :id="idPanneau(themeSelectionne)"
-        :aria-labelledby="idOnglet(themeSelectionne)"
+        :id="idPanneau(section)"
+        :aria-labelledby="idOnglet(section)"
       >
-        <MethodesIndicateurs :themes="themesAffiches" />
+        <MethodesSourcesApropos v-if="section === 'apropos'" />
+        <MethodesProgrammesSources v-else-if="section === 'programmes'" />
+        <MethodesSources v-else :themes="[section]" />
       </div>
     </div>
 
     <div
       v-else
-      id="panneau-programmes"
-      class="methodologie__panneau"
+      id="panneau-methodes"
+      class="methodologie__onglet"
       role="tabpanel"
-      aria-labelledby="onglet-programmes"
+      aria-labelledby="onglet-methodes"
     >
-      <MethodesProgrammes />
+      <ThemeTabs
+        class="methodologie__onglets-interieurs"
+        :themes="THEMES_CANONIQUES"
+        :selected="section"
+        libelle-premier="À propos"
+        premier-slug="apropos"
+        :onglets-supplementaires="ongletsInterieurs"
+        aria-label="Sections des indicateurs"
+        @select="choisirSection"
+      />
+
+      <div
+        class="methodologie__panneau"
+        role="tabpanel"
+        :id="idPanneau(section)"
+        :aria-labelledby="idOnglet(section)"
+      >
+        <MethodesIndicateursApropos v-if="section === 'apropos'" />
+        <MethodesProgrammes v-else-if="section === 'programmes'" />
+        <MethodesIndicateurs v-else :themes="[section]" />
+      </div>
     </div>
   </section>
 </template>
@@ -91,113 +104,124 @@
  * /methodologie — Sources & Méthodes (site-map.md, layouts.md §5, CONTEXT.md →
  * Méthodes, issue #128). L'intro factuelle (ce qu'est Lusk, le pipeline, la
  * reproductibilité) reste le bloc d'orientation permanent au-dessus du shell
- * à onglets (#332) : Sources | Indicateurs | Programmes — le composant
- * ThemeTabs du site, premier onglet renommé « Sources » (le défaut, la même
- * convention que /carte) et deux onglets supplémentaires. Les trois sections
- * existantes (MethodesSources, MethodesIndicateurs, MethodesProgrammes)
- * rendent inchangées dans leur onglet ; l'onglet Indicateurs porte en plus le
- * sélecteur de thème (« Tous » + les thèmes construits) qui filtre ses blocs.
+ * à deux niveaux (#332) : les onglets Sources | Méthodes (le composant
+ * ThemeTabs du site, premier onglet « Sources » renommé + un onglet
+ * supplémentaire), chacun avec sa barre intérieure — À propos | Programmes et
+ * subventions | les cinq thèmes construits (la même grammaire d'onglets que
+ * la fiche, l'Aperçu remplacé par « Programmes et subventions »).
+ *
+ * Le contenu : Sources porte la table des sources du registre (filtrée par
+ * thème — une source multi-thèmes apparaît sous chacun de ses thèmes, jamais
+ * d'onglet « Tous »), la table des sources de l'élément Programmes et
+ * subventions, et la prose du registre ; Méthodes porte les blocs
+ * d'indicateurs par thème, l'éditorial de l'élément Programmes et
+ * subventions, et la prose du registre des indicateurs. La table des sources
+ * reste plate à ce stade — la granularité jeu de données est un ticket
+ * séparé (#333).
  *
  * L'état est l'URL, la convention du site (fiche ?theme=, carte ?onglet=/
- * ?theme=) : ?onglet=sources|indicateurs|programmes sélectionne la section,
- * ?theme=<slug> compose à l'intérieur (un thème dans Indicateurs — les
- * sources l'utiliseront quand leurs onglets de thème atterriront, #335). Les
- * valeurs inconnues sont normalisées comme la carte (ADR-0019) : retirées,
- * jamais un état cassé — un thème hors de sa section n'est pas un état. Les
- * clics d'onglet écrivent l'URL en replace (pas de spam d'historique) ; le
- * hash reste réservé aux ancres de scroll dans l'onglet (#334). Pas de
- * bannière de construction (principles.md §1) : la page énonce ce qui est,
- * jamais ce qui viendra.
+ * ?theme=) : ?onglet=sources|methodes sélectionne l'onglet,
+ * ?section=apropos|programmes|<theme> l'onglet intérieur (défauts : sources ·
+ * apropos). Les valeurs inconnues sont normalisées comme la carte (ADR-0019) :
+ * retirées, jamais un état cassé. Les clics d'onglet écrivent l'URL en
+ * replace (pas de spam d'historique) ; le hash reste réservé aux ancres de
+ * scroll dans l'onglet (#334). Pas de bannière de construction
+ * (principles.md §1) : la page énonce ce qui est, jamais ce qui viendra.
  */
-import { Database, Gauge } from 'lucide-vue-next'
+import { BookOpen, Database, Landmark } from 'lucide-vue-next'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import type { OngletSupplementaire } from '@/components/ThemeTabs.vue'
-import { ICONE_APERCU, idOnglet, idPanneau } from '@/fiche/onglets'
+import { idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
-import { THEMES_CONSTRUITS } from '@/methodes/indicateurs'
-import type { ThemeConstruit } from '@/methodes/indicateurs'
 import MethodesIndicateurs from '@/methodes/MethodesIndicateurs.vue'
+import MethodesIndicateursApropos from '@/methodes/MethodesIndicateursApropos.vue'
 import MethodesProgrammes from '@/methodes/MethodesProgrammes.vue'
+import MethodesProgrammesSources from '@/methodes/MethodesProgrammesSources.vue'
 import MethodesSources from '@/methodes/MethodesSources.vue'
+import MethodesSourcesApropos from '@/methodes/MethodesSourcesApropos.vue'
 import type { Theme } from '@/payload/types'
+import { THEMES_CANONIQUES } from '@/payload/types'
 
 const route = useRoute()
 const router = useRouter()
 
-/** Les trois sections de la page — l'onglet du shell Méthodes (sources est le
- *  défaut, le premier onglet gagne comme sur /carte). */
-type SectionMethodes = 'sources' | 'indicateurs' | 'programmes'
+/** Les deux onglets de la page — sources est le défaut (le premier onglet gagne, la convention de /carte). */
+type OngletMethodes = 'sources' | 'methodes'
 
-/** Les deux onglets après le premier — Indicateurs (Gauge) et Programmes
- *  (le même icône que l'onglet programmes de la carte, ADR-0019 #282). */
-const ongletsSections: OngletSupplementaire[] = [
-  { slug: 'indicateurs', nom: 'Indicateurs', icone: Gauge },
-  { slug: 'programmes', nom: 'Programmes', icone: ICONE_APERCU },
+/** Les onglets intérieurs — À propos (défaut), Programmes et subventions, ou un thème construit. */
+type SectionInterieure = 'apropos' | 'programmes' | Theme
+
+/** Le second onglet de la barre extérieure — Méthodes (BookOpen, la documentation). */
+const ongletsExterieurs: OngletSupplementaire[] = [
+  { slug: 'methodes', nom: 'Méthodes', icone: BookOpen },
 ]
 
-/** La section active — ?onglet=sources|indicateurs|programmes, sinon sources. */
-const section = computed<SectionMethodes>(() => {
+/** L'onglet supplémentaire de la barre intérieure — Programmes et subventions (Landmark). */
+const ongletsInterieurs: OngletSupplementaire[] = [
+  { slug: 'programmes', nom: 'Programmes et subventions', icone: Landmark },
+]
+
+/** L'onglet actif — ?onglet=sources|methodes, sinon sources. */
+const onglet = computed<OngletMethodes>(() => {
   const demande = route.query.onglet
-  return demande === 'sources' || demande === 'indicateurs' || demande === 'programmes'
-    ? demande
-    : 'sources'
+  return demande === 'methodes' ? 'methodes' : 'sources'
 })
 
-/** Le thème sélectionné dans l'onglet indicateurs — ?theme=<slug> n'est un
- *  état que dans sa section (les sources l'utiliseront avec #335). */
-const themeSelectionne = computed<Theme | null>(() => {
-  if (section.value !== 'indicateurs') return null
-  const demande = route.query.theme
-  return typeof demande === 'string' && (THEMES_CONSTRUITS as readonly string[]).includes(demande)
-    ? (demande as Theme)
-    : null
+/** L'onglet intérieur actif — ?section=apropos|programmes|<theme>, sinon apropos. */
+const section = computed<SectionInterieure>(() => {
+  const demande = route.query.section
+  if (demande === 'programmes') return 'programmes'
+  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
+    return demande as Theme
+  }
+  return 'apropos'
 })
 
-/** Les blocs de l'onglet indicateurs — le thème demandé seul, sinon tous. */
-const themesAffiches = computed<readonly ThemeConstruit[]>(() =>
-  themeSelectionne.value ? [themeSelectionne.value as ThemeConstruit] : THEMES_CONSTRUITS,
-)
+/** Un ?onglet= valide — sources ou methodes. */
+function ongletValide(v: unknown): v is OngletMethodes {
+  return v === 'sources' || v === 'methodes'
+}
 
-function choisirSection(slug: SlugOnglet): void {
-  if (slug === 'sources' || slug === 'indicateurs' || slug === 'programmes') {
-    // Sources est l'état par défaut — sa forme canonique est l'URL nue.
-    router.replace({ query: slug === 'sources' ? {} : { onglet: slug } })
+/** Une ?section= valide — apropos, programmes, ou un thème construit. */
+function sectionValide(v: unknown): v is SectionInterieure {
+  return (
+    v === 'apropos' ||
+    v === 'programmes' ||
+    (typeof v === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(v))
+  )
+}
+
+/** Changer d'onglet préserve l'onglet intérieur (les deux niveaux sont indépendants). */
+function choisirOnglet(slug: SlugOnglet): void {
+  if (ongletValide(slug)) {
+    router.replace({ query: { ...route.query, onglet: slug } })
   }
 }
 
-function choisirTheme(slug: SlugOnglet): void {
-  // Le sélecteur intérieur n'émet que null (« Tous ») ou un thème construit.
-  if (slug !== null && slug !== 'sources' && slug !== 'indicateurs' && slug !== 'programmes') {
-    router.replace({ query: { onglet: 'indicateurs', theme: slug } })
-    return
+function choisirSection(slug: SlugOnglet): void {
+  if (sectionValide(slug)) {
+    router.replace({ query: { ...route.query, section: slug } })
   }
-  router.replace({ query: { onglet: 'indicateurs' } })
 }
 
 // Normalisation de l'URL (le pattern carte, ADR-0019) : un ?onglet= inconnu
-// retombe sur l'état par défaut ({} → Sources) ; ?theme= n'est conservé que
-// dans l'onglet qui le consomme (indicateurs) et seulement s'il est construit
-// — un thème hors section, un thème inconnu : retirés, jamais un état cassé.
+// retombe sur sources, une ?section= inconnue sur apropos — les valeurs
+// valides sont gardées, les invalides retirées, jamais un état cassé.
 watch(
-  () => [route.query.onglet, route.query.theme] as const,
-  ([onglet, theme]) => {
-    const ongletValide = onglet === 'sources' || onglet === 'indicateurs' || onglet === 'programmes'
-    const themeValide =
-      typeof theme === 'string' && (THEMES_CONSTRUITS as readonly string[]).includes(theme)
-    const themeConsomme = onglet === 'indicateurs' && themeValide
-
-    if (ongletValide) {
-      if (theme !== undefined && !themeConsomme) {
-        router.replace({ query: { onglet } })
-      }
-      return
-    }
-    if (onglet !== undefined || theme !== undefined) {
-      router.replace({ query: {} })
-    }
+  () => [route.query.onglet, route.query.section] as const,
+  ([ongletDemande, sectionDemande]) => {
+    const ongletOK = ongletDemande === undefined || ongletValide(ongletDemande)
+    const sectionOK = sectionDemande === undefined || sectionValide(sectionDemande)
+    if (ongletOK && sectionOK) return
+    router.replace({
+      query: {
+        ...(ongletValide(ongletDemande) ? { onglet: ongletDemande } : {}),
+        ...(sectionValide(sectionDemande) ? { section: sectionDemande } : {}),
+      },
+    })
   },
   { immediate: true },
 )
@@ -232,29 +256,23 @@ watch(
   color: var(--accent-hover);
 }
 
-/* La barre des sections (ThemeTabs) colle sous le header ; la barre de thème
-   intérieure, elle, reste dans le flux (jamais deux barres collantes). */
-.methodologie__onglets-sections {
-  margin: 0 0 var(--space-10);
-}
-
-.methodologie__onglets-themes :deep(.theme-tabs) {
-  position: static;
-}
-
-.methodologie__onglets-themes {
+/* La barre des onglets (ThemeTabs) colle sous le header ; la barre intérieure,
+   elle, reste dans le flux (jamais deux barres collantes). */
+.methodologie__onglets {
   margin: 0 0 var(--space-8);
 }
 
-.methodologie__panneau {
+.methodologie__onglets-interieurs :deep(.theme-tabs) {
+  position: static;
+}
+
+.methodologie__onglets-interieurs {
+  margin: 0 0 var(--space-8);
+}
+
+.methodologie__onglet {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-}
-
-.methodologie__panneau-theme {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
 }
 </style>
