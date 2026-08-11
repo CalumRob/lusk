@@ -166,6 +166,9 @@ test_that("un run peuplé écrit programmes.json + les parquets par table ; le J
   expect_true(file.exists(file.path(sortie, "programmes.json")))
   expect_true(file.exists(file.path(sortie, "programmes_membres.parquet")))
   expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
+  # Issue #311 : Programmes & financements est un contrat de publication SÉPARÉ
+  # (ADR-0013) — le run ne fabrique JAMAIS de fichier theme_programmes.json
+  expect_false(file.exists(file.path(sortie, "theme_programmes.json")))
 
   # la forme du JSON : un OBJET à deux clés (ce que l'app lit — #179)
   js <- jsonlite::fromJSON(file.path(sortie, "programmes.json"))
@@ -290,6 +293,39 @@ test_that("un run à tables VIDES n'écrit RIEN et laisse la sentinelle INTACTE 
   apres <- lapply(c("programmes.json", "programmes_membres.parquet",
                     "programmes_subventions.parquet"), octets)
   for (i in seq_along(avant)) expect_identical(apres[[i]], avant[[i]])
+})
+
+test_that("un run Programmes laisse INTACT un theme_programmes.json préexistant (issue #311)", {
+  # Issue #311 : Programmes n'est PAS un thème — le run ne fabrique jamais de
+  # fichier theme_programmes.json, et un fichier qui existerait (une relique,
+  # un fichier d'un autre outil) n'est JAMAIS écrasé par le run : la
+  # publication des métadonnées est branchée sur les seuls thèmes construits.
+  racine <- tempfile("pub-prog-sent-meta-")
+  dir.create(racine)
+  cache <- file.path(racine, "cache")
+  sortie <- file.path(racine, "pub")
+  dir.create(sortie, recursive = TRUE)
+  on.exit(unlink(racine, recursive = TRUE), add = TRUE)
+
+  # la sentinelle : un fichier theme_programmes.json préexistant
+  sentinelle <- '{"theme": "programmes", "relique": true}'
+  writeLines(sentinelle, file.path(sortie, "theme_programmes.json"))
+  octets <- function() {
+    readBin(file.path(sortie, "theme_programmes.json"), "raw",
+            n = file.info(file.path(sortie, "theme_programmes.json"))$size)
+  }
+  avant <- octets()
+
+  executer_run_programmes_pub(
+    cache, sortie,
+    donnees = donnees_programmes_pub(),
+    conventions = conventions_subventions_pub(),
+    statuts = statuts_programmes_pub()
+  )
+
+  # le run Programmes publie SES fichiers partagés, sans toucher à la relique
+  expect_true(file.exists(file.path(sortie, "programmes.json")))
+  expect_identical(octets(), avant)
 })
 
 test_that("un run à tables vides ne crée JAMAIS les fichiers partagés (issue #178)", {

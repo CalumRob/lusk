@@ -44,6 +44,11 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
            histoires = data.frame(y = 2),
            territoires = data.frame(territoire = "53", nom = "Bretagne")),
     publish = function(payload, cible, backend = NULL) invisible(payload),
+    # issue #311 : le seam des métadonnées est mocké ici (test 1 — sortie par
+    # défaut, la publication réelle est couverte par test 2 + le test dédié)
+    publier_theme_metadata = function(metadata, sortie, vintages = NULL,
+                                      theme_attendu = NULL)
+      invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
@@ -102,11 +107,13 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
   # les fichiers par thème + la référence partagée + vintages + rapport.
   # Issue #116 : l'Aperçu d'un run Habitat est vide par design — le fichier
   # partagé apercu n'est NI écrit NI écrasé par un thème sans aperçu (seul
-  # Démographie le peuple).
+  # Démographie le peuple). Issue #311 : les métadonnées du thème partent
+  # avec le run (theme_habitat.json).
   for (f in c("indicateurs_habitat.parquet", "indicateurs_habitat.json",
               "histoires_habitat.parquet", "histoires_habitat.json",
               "territoires.parquet", "territoires.json",
-              "vintages.parquet", "run-report.json")) {
+              "vintages.parquet", "run-report.json",
+              "theme_habitat.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
