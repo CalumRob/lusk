@@ -999,9 +999,19 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
           const lignes = payload.indicateurs.filter((l) => l.theme === theme)
           return lignes.length > 0 ? lignes : null
         }
-        const theme = fichier.slice('histoires_'.length) as Theme
-        const lignes = payload.histoires.filter((l) => l.theme === theme)
-        return lignes.length > 0 ? lignes : null
+        if (fichier.startsWith('histoires_')) {
+          const theme = fichier.slice('histoires_'.length) as Theme
+          const lignes = payload.histoires.filter((l) => l.theme === theme)
+          return lignes.length > 0 ? lignes : null
+        }
+        const theme = fichier.slice('theme_'.length) as Theme
+        const declaree = payload.themeMetadata?.[theme]
+        if (declaree) return declaree
+        // La présence du thème (des faits) implique SES métadonnées — le
+        // contrat #313 : le fixture sert alors la métadonnée canonique,
+        // comme le loader l'exige d'un thème présent.
+        const presente = payload.indicateurs.some((l) => l.theme === theme)
+        return presente ? metadonneesThemesFixtures[theme] : null
     }
   }
 }

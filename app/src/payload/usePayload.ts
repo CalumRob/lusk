@@ -46,6 +46,7 @@ import type {
   RunReport,
   Territoire,
   Theme,
+  ThemeMetadata,
   Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
@@ -78,6 +79,7 @@ function payloadVide(): Payload {
     runReport: null,
     vintages: null,
     programmes: null,
+    themeMetadata: {},
   }
 }
 
@@ -92,7 +94,7 @@ const TOUS_LES_FICHIERS: Fichier[] = [
   'apercu',
   'programmes',
   ...THEMES_CANONIQUES.flatMap(
-    (theme) => [`indicateurs_${theme}`, `histoires_${theme}`] as Fichier[],
+    (theme) => [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
   ),
 ]
 
@@ -150,6 +152,11 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
           p.indicateurs.push(...(valeur as Indicateur[]))
         } else if (nom.startsWith('histoires_') && Array.isArray(valeur)) {
           p.histoires.push(...(valeur as Histoire[]))
+        } else if (nom.startsWith('theme_') && valeur !== null) {
+          // Les métadonnées du thème (theme_<theme>.json, #313) — une entrée
+          // par thème présent ; un thème absent ne contribue aucune entrée.
+          p.themeMetadata ??= {}
+          p.themeMetadata[themeDe(nom)] = valeur as ThemeMetadata
         }
     }
   }
@@ -210,6 +217,32 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         })
       })
     }
+    // Les métadonnées (theme_<theme>.json, #313) suivent la même découverte
+    // que les histoires : chaînées sur la paire indicateurs du MÊME thème
+    // (jamais un fetch transitif) — thème absent → métadonnées absentes ;
+    // thème présent sans son fichier → dérive typée, loud.
+    if (nom.startsWith('theme_')) {
+      const theme = themeDe(nom)
+      const indicateurs = etats.get(`indicateurs_${theme}`)
+      if (!indicateurs) {
+        return Promise.reject(
+          new PayloadError('validation', `${nom}.json`, `« ${nom}.json » doit suivre ses indicateurs.`),
+        )
+      }
+      return indicateurs.promesse.then((indicateursTheme) => {
+        if (indicateursTheme === null) return null // thème absent → métadonnées absentes
+        return territoires.promesse.then(fetchant).then((meta) => {
+          if (meta === null) {
+            throw new PayloadError(
+              'validation',
+              `${nom}.json`,
+              `Le thème « ${theme} » publie des indicateurs sans métadonnées (${nom}.json introuvable)`,
+            )
+          }
+          return meta
+        })
+      })
+    }
     return territoires.promesse.then(fetchant)
   }
 
@@ -266,6 +299,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     for (const theme of THEMES_CANONIQUES) {
       lancer(`indicateurs_${theme}`)
       lancer(`histoires_${theme}`)
+      lancer(`theme_${theme}`)
     }
   }
 

@@ -7,6 +7,7 @@ import {
   chargerAvec,
   histoiresDemographieFixture,
   indicateursDemographieFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -32,6 +33,7 @@ const payload: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { demographie: metadonneesThemesFixtures.demographie },
 }
 
 const Harness = defineComponent({
@@ -74,6 +76,8 @@ describe('le store progressif — la gating par wait-set', () => {
     expect(p.value?.indicateurs).toEqual(indicateursDemographieFixture)
     expect(p.value?.histoires).toEqual(histoiresDemographieFixture)
     expect(p.value?.runReport).toEqual(runReportFraisFixture)
+    // La métadonnée du thème présent peuple le payload qui grandit.
+    expect(p.value?.themeMetadata?.demographie).toEqual(metadonneesThemesFixtures.demographie)
   })
 
   it('attendre = gate de rendu : chargement false dès que le wait-set est réglé, même si le reste pend', async () => {
@@ -195,6 +199,35 @@ describe('le store progressif — échecs scopés (option C)', () => {
     expect(chargement.value).toBe(false)
     // L'échec reste scopé : il n'est PAS dans le wait-set → erreur null, page vivante.
     expect(erreur.value).toBeNull()
+  })
+
+  it('un thème présent sans métadonnées = dérive de validation LOUD, jamais une absence silencieuse (#313)', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = await monter(
+      async (fichier) => {
+        if (fichier === 'theme_demographie') return null
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires'],
+    )
+    const { erreur, chargement, payload: p } = wrapper.vm.etat
+
+    // Le thème est présent (indicateurs) mais sa métadonnée 404 → dérive.
+    expect(consoleError).toHaveBeenCalled()
+    expect(chargement.value).toBe(false)
+    // L'échec reste scopé : erreur null, page vivante, la section reste à son
+    // état vide honnête — aucune entrée de métadonnée pour le thème dérivé.
+    expect(erreur.value).toBeNull()
+    expect(p.value?.themeMetadata).toEqual({})
+  })
+
+  it('un thème absent (404 sur tout le jeu) ne contribue aucune entrée de métadonnées', async () => {
+    const wrapper = await monter(chargerAvec(payload))
+    const { payload: p } = wrapper.vm.etat
+
+    // L'habitat est absent : ses indicateurs, histoires ET métadonnées sont
+    // absents ensemble — seule la Démographie porte sa métadonnée.
+    expect(p.value?.themeMetadata).toEqual({ demographie: metadonneesThemesFixtures.demographie })
   })
 
   it('recharger refetch UNIQUEMENT les fichiers échoués — jamais le full set', async () => {

@@ -17,17 +17,21 @@
  * Theme discovery is payload-driven (ADR-0007): the canonical themes are
  * tried in order, a 404 on indicateurs_<theme>.json means the theme is
  * absent (dead tab — never an error), while a present theme without its
- * histoires file is contract drift (loud). run-report.json is optional —
- * a 404 means the static-rhythm freshness claim, never an error. So is
- * apercu.json (issue #122): since #116 the pipeline only publishes it when
- * a theme HAS an aperçu — a 404 means the Aperçu element is simply not
- * built, never an error.
+ * histoires file is contract drift (loud). The same presence rule holds for
+ * the theme's metadata (theme_<theme>.json, issue #309, wired by #313): a
+ * present theme REQUIRES its metadata file — 404 is drift, loud. run-report
+ * and vintages.json are optional — a 404 means the static-rhythm freshness
+ * claim, never an error. So is apercu.json (issue #122): since #116 the
+ * pipeline only publishes it when a theme HAS an aperçu — a 404 means the
+ * Aperçu element is simply not built, never an error.
  *
  * The reference-table dependency holds for any caller of the per-file entry
  * point that needs it: theme files (indicateurs_<theme>, histoires_<theme>),
  * apercu and programmes validate AGAINST the validated territoires table —
  * the ordering constraint of the loader, kept (chargerFichier('indicateurs_
- * habitat', territoires)).
+ * habitat', territoires)). theme_<theme>.json does NOT validate against the
+ * table (validerThemeMetadata is self-contained) — its per-file entry takes
+ * no reference; the presence rule lives in chargerPayload and the store.
  *
  * Failure is typed (PayloadError, validate.ts): kind 'fetch' for transport
  * problems (the UI's error state), kind 'validation' for contract drift.
@@ -42,6 +46,7 @@ import type {
   RunReport,
   Territoire,
   Theme,
+  ThemeMetadata,
   Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
@@ -53,6 +58,7 @@ import {
   validerProgrammes,
   validerRapportRun,
   validerTerritoires,
+  validerThemeMetadata,
   validerVintages,
 } from './validate'
 
@@ -85,6 +91,7 @@ export type Fichier =
   | 'programmes'
   | `indicateurs_${Theme}`
   | `histoires_${Theme}`
+  | `theme_${Theme}`
 
 /** Les fichiers MANDATOIRES — un 404 dessus est une erreur de chargement, jamais une absence. */
 const FICHIERS_MANDATOIRES: ReadonlySet<Fichier> = new Set<Fichier>(['territoires'])
@@ -94,6 +101,7 @@ const FICHIERS_SANS_REFERENCE: ReadonlySet<Fichier> = new Set<Fichier>([
   'territoires',
   'run-report',
   'vintages',
+  ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
 ])
 
 /**
@@ -150,6 +158,12 @@ for (const theme of THEMES_CANONIQUES) {
   VALIDER_PAR_FICHIER.set(`histoires_${theme}`, (brut, fichier, territoires) =>
     validerHistoires(brut, fichier, territoires),
   )
+  // La métadonnée du thème (issue #309/#313) — le validateur est autonome
+  // (aucune table de référence) ; la règle de présence vit dans
+  // chargerPayload et le store, jamais ici.
+  VALIDER_PAR_FICHIER.set(`theme_${theme}`, (brut, fichier) =>
+    validerThemeMetadata(brut, fichier),
+  )
 }
 
 /** La table de référence est REQUISE pour les fichiers qui se valident contre elle. */
@@ -195,6 +209,10 @@ export async function chargerFichier(
   options?: ChargerOptions,
 ): Promise<Histoire[] | null>
 export async function chargerFichier(
+  nom: `theme_${Theme}`,
+  options?: ChargerOptions,
+): Promise<ThemeMetadata | null>
+export async function chargerFichier(
   nom: Fichier,
   territoiresOuOptions?: Territoire[] | ChargerOptions,
   options?: ChargerOptions,
@@ -219,6 +237,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
 
   const indicateurs: Indicateur[] = []
   const histoires: Histoire[] = []
+  const themeMetadata: Partial<Record<Theme, ThemeMetadata>> = {}
 
   for (const theme of THEMES_CANONIQUES) {
     const indicateursTheme = await chargerFichier(`indicateurs_${theme}`, territoires, options)
@@ -233,8 +252,21 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
       )
     }
 
+    // La règle de présence des métadonnées (issue #313) : un thème présent
+    // REQUIERT son theme_<theme>.json — 404 = dérive typée, jamais une
+    // absence silencieuse (le même contrat que les histoires).
+    const metadataTheme = await chargerFichier(`theme_${theme}`, options)
+    if (metadataTheme === null) {
+      throw new PayloadError(
+        'validation',
+        `theme_${theme}.json`,
+        `Le thème « ${theme} » publie des indicateurs sans métadonnées (theme_${theme}.json introuvable)`,
+      )
+    }
+
     indicateurs.push(...indicateursTheme)
     histoires.push(...histoiresTheme)
+    themeMetadata[theme] = metadataTheme
   }
 
   const apercu = await chargerFichier('apercu', territoires, options)
@@ -246,5 +278,5 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // run-report / vintages, ADR-0013 « 404 = table absente »).
   const programmes = await chargerFichier('programmes', territoires, options)
 
-  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes }
+  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, themeMetadata }
 }
