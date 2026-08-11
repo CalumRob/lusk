@@ -581,6 +581,18 @@ export function formaterSolde(x: number): string {
 }
 
 /**
+ * A signed rate with two fixed decimals and a French comma — the Démographie
+ * register's annualized per-mille rates ("+8,10", "-4,19", "0,00"). Two fixed
+ * decimals, never stripped: the shared format of `taux_solde_*` (Démographie)
+ * and `taux_variation_population` (Milieux, #306) — the SAME formatter in both
+ * themes, so the two stories never drift apart.
+ */
+export function formaterTaux(x: number): string {
+  const signe = x > 0 ? '+' : ''
+  return `${signe}${x.toFixed(2).replace('.', ',')}`
+}
+
+/**
  * The « L'offre cyclable » headline ratio (issue #232) — the total cyclable
  * length ÷ the territory's OWN c network. Both rows already exist in the
  * payload (offre_cyclable.total_longueur and reseaux.c_longueur) — the

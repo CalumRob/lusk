@@ -25,7 +25,7 @@ import type * as echarts from 'echarts/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterNombreFR, formaterTaux } from '@/payload/selectors'
 import type { PointNuageMilieux } from '@/payload/selectors'
 
 const props = defineProps<{
@@ -76,15 +76,6 @@ function token(nom: string, fallback: string): string {
 function formaterDelta(x: number): string {
   const signe = x > 0 ? '+' : ''
   return `${signe}${formaterNombreFR(x, 1)}`
-}
-
-/**
- * The Démographie rate convention (GraphiqueSoldes — signed, 2 decimals,
- * comma) for the annualized per-mille register: "+14,49", "-8,26", "0,00".
- */
-function formaterTaux(x: number): string {
-  const signe = x > 0 ? '+' : ''
-  return `${signe}${x.toFixed(2).replace('.', ',')}`
 }
 
 /**
