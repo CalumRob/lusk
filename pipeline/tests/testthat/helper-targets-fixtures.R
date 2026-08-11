@@ -79,6 +79,37 @@ ecrire_source_toypkg <- function(projet, scenario) {
     "    construire_donnees = construire_fake,",
     "    vintages = vintages_fake",
     "  )",
+    "}",
+    "# Le SECOND thème du mini-paquet (issue #341) : un thème « futur » avec SES",
+    "# propres pièces (construire_fake2, compute_fake2, ...) — câblé dans le",
+    "# mini-graphe par la SEULE liste des descripteurs, zéro édit à la fabrique.",
+    "# Les corps sont DISTINCTS de ceux de toy (base2, id \"b\") pour que les",
+    "# éditions de fixture (sub, fixed = TRUE) ne touchent jamais qu'un thème.",
+    "construire_fake2 <- function(cache = \"data/raw\") {",
+    "  base <- read.csv(file.path(cache, \"entree2.txt\"), stringsAsFactors = FALSE)",
+    "  data.frame(code = base$code, base2 = base$base, stringsAsFactors = FALSE)",
+    "}",
+    "compute_fake2 <- function(brut) {",
+    "  brut$double <- brut$base2 * 2",
+    "  brut",
+    "}",
+    "publish_fake2 <- function(payload, sortie = \"out.txt\") {",
+    "  writeLines(as.character(payload$double), sortie)",
+    "  sortie",
+    "}",
+    "vintages_fake2 <- function() {",
+    "  data.frame(id = \"b\", version = \"2023\", stringsAsFactors = FALSE)",
+    "}",
+    "theme_toy2 <- function() {",
+    "  list(",
+    "    theme = \"toy2\",",
+    "    manifest = data.frame(",
+    "      id = \"b\", fichier = \"entree2.txt\", mode = \"cron\", type = \"fichier\",",
+    "      url = \"https://example.invalid/b.txt\", stringsAsFactors = FALSE",
+    "    ),",
+    "    construire_donnees = construire_fake2,",
+    "    vintages = vintages_fake2",
+    "  )",
     "}"
   )
   writeLines(src, file.path(projet, "toypkg", "R", "toy.R"))
@@ -184,4 +215,116 @@ lire_rapport <- function(projet) {
   chemin <- file.path(projet, "out", "rapport.txt")
   if (!file.exists(chemin)) return(NULL)
   readLines(chemin, warn = FALSE)
+}
+
+# charger_pieces_graphe ---------------------------------------------------------
+# Charge les fonctions de MÉCANIQUE de _targets.R (jamais le graphe entier)
+# dans un environnement vierge : parse du fichier, sélection des définitions
+# par nom (les affectations `nom <- function(...)`), évaluation dans un
+# environnement dont le parent est baseenv. Ce sont les MÊMES fonctions que
+# tar_make exécute à la construction, sans les effets de bord du script
+# (pkgload::load_all, tar_option_set, le graphe évalué en tête de fichier).
+# Défini dans le HELPER (et non dans un fichier de test) : les tests targets
+# tournent dans des processus parallèles, un helper est sourcé par chacun.
+charger_pieces_graphe <- function(noms) {
+  arbres <- parse(file.path(pkgload::pkg_path(), "_targets.R"))
+  defs <- arbres[vapply(arbres, function(a) {
+    is.call(a) && identical(a[[1]], as.name("<-")) &&
+      is.name(a[[2]]) && as.character(a[[2]]) %in% noms
+  }, logical(1))]
+  stopifnot("définitions introuvables dans _targets.R" = length(defs) == length(noms))
+  env <- new.env(parent = baseenv())
+  eval(defs, env)
+  env
+}
+
+# ecrire_mini_graphe_multi ------------------------------------------------------
+# Le mini-graphe PLURITHÈME (issue #341) : une FABRIQUE de grappe
+# (grappe_mini) écrite DANS le _targets.R — la même mécanique que la vraie
+# grappe_theme (noms par thème via paste0, pièces résolues par SYMBOLE dans le
+# namespace du mini-paquet, jamais un nom de thème en dur) — appliquée à la
+# LISTE des descripteurs. La propriété « futur thème » : ajouter un thème au
+# mini-graphe = l'ajouter à la liste (et ses pièces au paquet) — la fabrique
+# ne change pas. Les fichiers de sortie sont par thème (out_<theme>.txt) : le
+# mini-graphe n'a pas les fichiers partagés du graphe réel (territoires.*,
+# vintages.*, run-report.json) et donc pas leurs chaînes de sérialisation —
+# la preuve porte sur la mécanique (descripteur -> grappe) et l'isolation du
+# skip, jamais sur les artefacts partagés (prouvés par le graphe réel).
+ecrire_mini_graphe_multi <- function(projet, themes = c("toy", "toy2")) {
+  noms_themes <- paste0("theme_", themes, "()", collapse = ", ")
+  lignes <- c(
+    sprintf('pkgload::load_all("%s", quiet = TRUE)',
+            gsub("\\\\", "/", file.path(projet, "toypkg"))),
+    "library(targets)",
+    'tar_option_set(imports = "toypkg", trust_timestamps = FALSE, error = "continue")',
+    'CACHE_RUN <- "data/raw"',
+    'MODE_RUN <- "full"',
+    'SORTIE_RUN <- "out"',
+    "# la fabrique de grappe — la même forme que grappe_theme du graphe réel :",
+    "# une grappe par DESCRIPTEUR, les pièces appelées PAR SYMBOLE (le suivi",
+    "# d'imports hashe leur corps), aucun nom de thème en dur.",
+    "grappe_mini <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {",
+    "  nom <- theme$theme",
+    '  ns <- asNamespace("toypkg")',
+    "  trouver <- function(piece) {",
+    "    noms <- ls(ns, all.names = TRUE)",
+    "    noms <- noms[vapply(noms, function(n)",
+    "      identical(get(n, envir = ns, inherits = FALSE), piece), logical(1))]",
+    "    stopifnot(length(noms) == 1L)",
+    "    as.name(noms[[1L]])",
+    "  }",
+    "  construire <- trouver(theme$construire_donnees)",
+    "  vintages_fn <- trouver(theme$vintages)",
+    "  sources <- as.name(paste0(\"sources_\", nom))",
+    "  fichiers <- as.name(paste0(\"fichiers_\", nom))",
+    "  brut <- as.name(paste0(\"brut_\", nom))",
+    "  vintages <- as.name(paste0(\"vintages_table_\", nom))",
+    "  payload <- as.name(paste0(\"payload_\", nom))",
+    "  publie <- as.name(paste0(\"publie_\", nom))",
+    "  list(",
+    "    tar_target_raw(as.character(sources),",
+    "               bquote(download_fake(.(theme$manifest), cache = .(cache),",
+    "                                    mode = MODE_RUN))),",
+    '    tar_target_raw(as.character(fichiers),',
+    '               bquote({ .(sources); file.path(.(cache), .(theme$manifest)$fichier) }),',
+    '               format = "file"),',
+    "    tar_target_raw(as.character(brut),",
+    "               bquote({ .(fichiers); .(construire)(cache = .(cache)) })),",
+    "    tar_target_raw(as.character(vintages), bquote(.(vintages_fn)())),",
+    "    tar_target_raw(as.character(payload), bquote(compute_fake(.(brut)))),",
+    "    tar_target_raw(as.character(publie),",
+    "               bquote(publish_fake(.(payload),",
+    '                                     file.path(.(sortie),',
+    '                                              .(paste0("out_", nom, ".txt"))))),',
+    '               format = "file")',
+    "  )",
+    "}",
+    paste0("THEMES <- list(", noms_themes, ")"),
+    "list(unlist(lapply(THEMES, grappe_mini), recursive = FALSE))"
+  )
+  writeLines(lignes, file.path(projet, "_targets.R"))
+  invisible(projet)
+}
+
+# installer_mini_projet_multi ---------------------------------------------------
+# La variante PLURITHÈME d'installer_mini_projet : le mini-paquet porte toy ET
+# toy2 (ecrire_source_toypkg les écrit tous les deux), le fichier d'entrée du
+# second thème est créé, et le mini-graphe est construit par la fabrique sur
+# la liste des descripteurs.
+installer_mini_projet_multi <- function() {
+  projet <- tempfile("mini-multi-")
+  dir.create(file.path(projet, "toypkg", "R"), recursive = TRUE)
+  dir.create(file.path(projet, "data", "raw"), recursive = TRUE)
+  dir.create(file.path(projet, "out"), recursive = TRUE)
+
+  writeLines(TOYPKG_DESCRIPTION, file.path(projet, "toypkg", "DESCRIPTION"))
+  writeLines('exportPattern("^[^\\\\.]")', file.path(projet, "toypkg", "NAMESPACE"))
+  writeLines(c("code,base", "a,1", "b,2", "c,3"),
+             file.path(projet, "data", "raw", "entree.txt"))
+  writeLines(c("code,base", "a,1", "b,2", "c,3"),
+             file.path(projet, "data", "raw", "entree2.txt"))
+
+  ecrire_source_toypkg(projet, "base")
+  ecrire_mini_graphe_multi(projet)
+  projet
 }
