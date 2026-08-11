@@ -187,7 +187,8 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     const panneau = wrapper.find('[role="tabpanel"]')
     expect(panneau.text()).toContain('Démographie')
     expect(panneau.text()).toContain('Densité de population')
-    expect(panneau.text()).toContain('La population diminue sur ses deux composantes.')
+    // the reading slot renders the metadata template with the row's values (29002 : vide-meurt)
+    expect(panneau.text()).toContain('la population de Commune C vide-meurt : -1,04 par an (naturel)')
   })
 
   it('writes ?theme= into the URL when a theme tab is chosen', async () => {
@@ -327,7 +328,8 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
         fichier !== 'territoires' &&
         fichier !== 'run-report' &&
         fichier !== 'indicateurs_habitat' &&
-        fichier !== 'histoires_habitat'
+        fichier !== 'histoires_habitat' &&
+        fichier !== 'theme_habitat'
       ) {
         return enAttente
       }
@@ -339,8 +341,11 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(false)
     const panneau = wrapper.find('[role="tabpanel"]')
     expect(panneau.attributes('id')).toBe('panneau-habitat')
+    // le bloc est piloté par la métadonnée : l'overline publiée, le sous-groupe
+    // et la lecture résolue (jamais une liste d'indicateurs app-side)
     expect(panneau.text()).toContain('Habitat')
-    expect(panneau.text()).toContain('part_residences_secondaires')
+    expect(panneau.text()).toContain('L’état du parc')
+    expect(panneau.text()).toContain('parc-performant')
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
     expect(onglets).toEqual(['Aperçu', 'Habitat'])
     expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
@@ -442,7 +447,8 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     // Retry ne refetch que l'échoué → le bloc habitat demandé rend.
     expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-habitat')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('part_residences_secondaires')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('L’état du parc')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('parc-performant')
   })
 
   it('garde l’URL ?theme= demandée quand son wait-set échoue — Retry peut la remettre debout sans normalisation prématurée', async () => {

@@ -7,6 +7,7 @@ import {
   apercuAvecNAFixture,
   histoiresEconomieFixture,
   indicateursEconomieFixture,
+  metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
@@ -14,13 +15,14 @@ import {
 import type { Histoire, Payload } from '../payload/types'
 
 /**
- * OngletTheme — the Économie block (issue #121, forme reshapée): the overline
- * (-strong) → the 3 indicator figures in contract order (taille · santé ·
- * verdure, issue #120 — never a LQ figure: the LQ IS the Story) → the Story
- * angle (serif one-liner + the list of the top-5 specialisations with
- * labels/LQ/n; the région reads its top-5 by presence, n + part du parc) →
- * "comment lire" + the Story's own vintage (issue #74) + Méthodes link.
- * Consumes the payload selectors — never raw JSON.
+ * OngletTheme — the Économie block through the SHARED subgroup anatomy
+ * (issue #314): the metadata's TWO subgroups in order — « Santé et taille du
+ * tissu productif » (the specialisation reading + the effectifs compact
+ * figure + chômage) then « La structure verte » (the eco-activités figure).
+ * The LQ is the Story, never a block indicator: the reading comes from the
+ * metadata template resolved on the folded top-5 row; the région reads its
+ * presence sentence in structure-verte. Consumes the payload selectors —
+ * never raw JSON.
  */
 
 const payloadEconomie: Payload = {
@@ -31,6 +33,7 @@ const payloadEconomie: Payload = {
   runReport: runReportFraisFixture,
   vintages: vintagesFixture,
   programmes: null,
+  themeMetadata: { economie: metadonneesThemesFixtures.economie },
 }
 
 async function monter(territoire: string, histoires: Histoire[] = histoiresEconomieFixture) {
@@ -46,13 +49,26 @@ async function monter(territoire: string, histoires: Histoire[] = histoiresEcono
   return wrapper
 }
 
-describe('OngletTheme — the Économie block (3 indicateurs)', () => {
-  it('renders the theme overline and the 3 indicator figures in contract order', async () => {
+describe('OngletTheme — the two metadata subgroups (3 indicateurs)', () => {
+  it('renders the theme overline from the metadata label and the subgroups in metadata order', async () => {
     const wrapper = await monter('22001')
 
-    expect(wrapper.find('.onglet-theme-overline').text()).toBe('Économie')
-    const figures = wrapper.findAll('.figure-indicateur').map((f) => f.attributes('data-clef'))
+    expect(wrapper.find('.onglet-theme-overline').text()).toBe('Économie/Emploi')
+    const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text())
+    expect(titres).toEqual(['Santé et taille du tissu productif', 'La structure verte'])
+  })
+
+  it('renders the 3 indicator figures — the compact figures first in each subgroup, then the grid', async () => {
+    const wrapper = await monter('22001')
+
+    const figures = wrapper
+      .findAll('.grille-indicateurs .figure-indicateur')
+      .map((f) => f.attributes('data-clef'))
     expect(figures).toEqual(['effectifs_salaries', 'chomage', 'eco_activites'])
+    expect(wrapper.findAll('.figure-compacte')).toHaveLength(2)
+    expect(
+      wrapper.findAll('.figure-compacte').map((f) => f.attributes('data-famille')),
+    ).toEqual(['scalar', 'profile'])
   })
 
   it('renders the 3 French labels and a vintage stamp per figure', async () => {
@@ -82,80 +98,59 @@ describe('OngletTheme — the Économie block (3 indicateurs)', () => {
   })
 })
 
-describe('OngletTheme — the Économie Story angle (la Story, jamais un indicateur)', () => {
-  it('renders the serif one-liner, the fixed title with its precision, and the top-5 specialisations list for a commune', async () => {
+describe('OngletTheme — the reading slot (la Story, jamais un indicateur)', () => {
+  it('renders the specialisation reading from the metadata template, resolved on the top-5 row', async () => {
     const wrapper = await monter('22001')
 
-    const uneLigne = wrapper.find('.angle-story-une-ligne')
-    expect(uneLigne.exists()).toBe(true)
-    expect(uneLigne.text()).toBe(
-      'Commune A1 se distingue par la spécialisation de ses établissements actifs.',
+    const texte = wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .lecture-texte')
+    expect(texte.exists()).toBe(true)
+    expect(texte.text()).toBe(
+      'La commune se spécialise dans Élevage de volailles (rang 1 du top 5). Sources et méthodes',
     )
-    expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que la commune abrite')
-    expect(wrapper.find('.angle-story-precision').text()).toBe(
-      'Spécialisation des établissements actifs',
-    )
-
-    const lignes = wrapper.findAll('.specialisation')
-    expect(lignes).toHaveLength(5)
-    expect(lignes[0].text()).toContain('Élevage de volailles')
-    expect(lignes[0].text()).toContain('LQ 23,7')
-    expect(lignes[0].text()).toContain('12 établissements')
+    // the template's Méthodes link renders as a RouterLink
+    const liens = wrapper
+      .findAllComponents(RouterLinkStub)
+      .map((l) => l.props('to'))
+    expect(liens).toContain('/methodologie#economie')
   })
 
-  it('shows the Story’s own vintage under the list (issue #74)', async () => {
+  it('shows the reading’s own vintage under the sentence (issue #74)', async () => {
     const wrapper = await monter('22001')
 
-    const source = wrapper.find('.angle-story-source')
+    const source = wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .lecture-source')
     expect(source.exists()).toBe(true)
     expect(source.text()).toContain('data.bretagne.bzh')
     expect(source.text()).toContain('réf. 31 mars 2026')
   })
 
-  it('gives an EPCI its top-5 Story with the same fixed title and precision (issue #153)', async () => {
-    const wrapper = await monter('200000001')
-
-    expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que la commune abrite')
-    expect(wrapper.find('.angle-story-precision').text()).toBe(
-      'Spécialisation des établissements actifs',
-    )
-    const lignes = wrapper.findAll('.specialisation')
-    expect(lignes).toHaveLength(5)
-    expect(lignes[0].text()).toContain('Production de sel')
-    expect(lignes[0].text()).toContain('LQ 35,7')
-  })
-
-  it('gives the région (53) its presence Story — n + part du parc, no LQ, no precision', async () => {
-    const wrapper = await monter('53')
-
-    expect(wrapper.find('.angle-story-titre').text()).toBe('Ce que la Bretagne abrite')
-    expect(wrapper.find('.angle-story-precision').exists()).toBe(false)
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'La Bretagne abrite surtout Location de terrains et d\'autres biens immobiliers, ' +
-        'Location de logements et Autres organisations fonctionnant par adhésion volontaire.',
-    )
-    const lignes = wrapper.findAll('.specialisation')
-    expect(lignes).toHaveLength(5)
-    expect(lignes[0].text()).toContain('124 881 établissements')
-    expect(lignes[0].text()).toContain('16,5 % du parc breton')
-    expect(lignes[0].text()).not.toContain('LQ')
-  })
-
-  it('renders "comment lire" (explicitly about establishments), the Méthodes link, and keeps the indicators', async () => {
+  it('keeps the second subgroup silent for a commune — the région-only presence reading', async () => {
     const wrapper = await monter('22001')
 
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('Comment lire')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('quotient de localisation')
-    expect(wrapper.find('.angle-story-comment-lire').text()).toContain('jamais sur les emplois')
-    expect(wrapper.find('.angle-story-methodes').text()).toBe('Méthodes')
-    expect(wrapper.findAll('.figure-indicateur')).toHaveLength(3)
+    expect(wrapper.find('.sous-groupe[data-groupe="structure-verte"] .sous-groupe-lecture').exists()).toBe(false)
+  })
+
+  it('gives the région (53) its presence reading in structure-verte — no lecture in sante-et-taille', async () => {
+    const wrapper = await monter('53')
+
+    expect(
+      wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .sous-groupe-lecture').exists(),
+    ).toBe(false)
+    const texte = wrapper.find('.sous-groupe[data-groupe="structure-verte"] .lecture-texte')
+    expect(texte.exists()).toBe(true)
+    expect(texte.text()).toBe(
+      "La Bretagne abrite surtout Location de terrains et d'autres biens immobiliers (16,5 du parc). Méthodes",
+    )
   })
 })
 
 describe('OngletTheme — honest edge cases', () => {
-  it('keeps each theme’s own story: a territory with BOTH stories shows the Démographie one on the Démographie tab', async () => {
+  it('keeps each theme’s own reading: the demographie tab reads its own (territoire, groupe) row', async () => {
     const payloadMixte: Payload = {
       ...payloadEconomie,
+      themeMetadata: {
+        economie: metadonneesThemesFixtures.economie,
+        demographie: metadonneesThemesFixtures.demographie,
+      },
       histoires: [
         // 22001 has its demographie trajectoire AND its economie top-5 in the real payload
         {
@@ -182,19 +177,18 @@ describe('OngletTheme — honest edge cases', () => {
     await flushPromises()
 
     // the demographie block reads its own reading, never the economie top-5
-    expect(wrapper.find('.angle-story-une-ligne').text()).toBe(
-      'Le territoire attire et se renouvelle.',
-    )
-    expect(wrapper.find('.liste-specialisations').exists()).toBe(false)
-    expect(wrapper.find('.angle-story-titre').text()).toContain('Trajectoire démographique')
+    const texte = wrapper.find('.lecture-texte')
+    expect(texte.text()).toContain('la population de Commune A1')
+    expect(texte.text()).toContain('attire-renouvelle')
+    expect(wrapper.text()).not.toContain('se spécialise dans')
   })
 
-  it('renders the 3 indicators but no Story angle for a territory without an Économie Story', async () => {
+  it('renders the 3 figures but no reading slot for a territory without an Économie Story', async () => {
     const wrapper = await monter('29002', [])
 
     expect(wrapper.findAll('.figure-indicateur')).toHaveLength(0)
-    expect(wrapper.find('.angle-story').exists()).toBe(false)
-    expect(wrapper.find('.angle-story-une-ligne').exists()).toBe(false)
+    expect(wrapper.find('.sous-groupe-lecture').exists()).toBe(false)
+    expect(wrapper.find('.lecture-texte').exists()).toBe(false)
   })
 
   it('displays NA values cleanly — a null indicator shows "—", never breaks the block', async () => {
@@ -216,8 +210,7 @@ describe('OngletTheme — honest edge cases', () => {
     const chomage = wrapper.find('.figure-indicateur[data-clef="chomage"]')
     expect(chomage.find('.valeur-numerique').text()).toBe('—')
     expect(chomage.find('.puce-rang').exists()).toBe(false)
-    // the Story still renders — the LQ reading doesn't depend on the NA indicator
-    expect(wrapper.find('.angle-story').exists()).toBe(true)
-    expect(wrapper.findAll('.specialisation')).toHaveLength(5)
+    // the reading still renders — the LQ reading doesn't depend on the NA indicator
+    expect(wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .lecture-texte').exists()).toBe(true)
   })
 })

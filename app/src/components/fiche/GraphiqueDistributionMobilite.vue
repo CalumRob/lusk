@@ -23,7 +23,7 @@ import type * as echarts from 'echarts/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import type { DistributionMobilite } from '@/fiche/storyMobilite'
+import type { DistributionMobilite } from '@/fiche/sousGroupes'
 import { formaterNombreFR } from '@/payload/selectors'
 import type { PointNuageMobilite } from '@/payload/selectors'
 

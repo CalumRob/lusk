@@ -2,14 +2,9 @@
  * The story-scalar declaration (ADR-0019 — « la Carte, miroir de la fiche ») :
  * per theme, the scalar FIELD NAMES of the Story's numbers, in contract order
  * (the declaration order of the Histoire interfaces in payload/types.ts — the
- * order the pipeline publishes them). Consumed by BOTH sides of the miroir :
- *
- * - the story mappers (fiche/storyDemographie.ts, storyMobilite.ts,
- *   storyMilieux.ts) read their scalar args' field names from here — the fiche
- *   never hardcodes a field name ;
- * - the carte's layer model (carte/coucheModel.ts) derives the theme's story
- *   layers AND its default layer (the FIRST scalar — the α rule of ADR-0019)
- *   from here.
+ * order the pipeline publishes them). Consumed by the carte's layer model
+ * (carte/coucheModel.ts), which derives the theme's story layers AND its
+ * default layer (the FIRST scalar — the α rule of ADR-0019) from here.
  *
  * A theme without a story scalar (Économie today — its LQ Story reads a list,
  * never a per-territory scalar) declares [] : the carte has no map default for
