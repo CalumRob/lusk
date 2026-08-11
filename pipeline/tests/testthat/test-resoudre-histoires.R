@@ -73,6 +73,14 @@ test_that("Milieux : chaque lecture résolue porte son groupe et « defaut »", 
   expect_true(all(h$salience_reason == "defaut"))
   expect_false(any(duplicated(h[c("territoire", "groupe")])))
   expect_setequal(unique(h$story_key), "se-densifier-setaler-ou-sen-aller")
+  # la matière de la lecture passe la résolution intacte — dont la force
+  # population en taux annuel pour mille (#306, amendement d'ADR-0017) : le
+  # signe du taux égale le signe du delta brut quand il est défini
+  expect_true("taux_variation_population" %in% names(h))
+  definis <- !is.na(h$taux_variation_population)
+  expect_true(all(definis == !is.na(h$delta_population)))
+  expect_true(all(sign(h$taux_variation_population[definis]) ==
+                    sign(h$delta_population[definis])))
 })
 
 test_that("Mobilité : la saillance REMPLACE le défaut — une lecture par territoire", {
