@@ -31,6 +31,7 @@ function regle(css: string, selecteur: string): string {
 const cssMethodologie = extraireStyleScoped('views/MethodologieView.vue')
 const cssAPropos = extraireStyleScoped('views/AProposView.vue')
 const cssSources = extraireStyleScoped('methodes/MethodesSources.vue')
+const cssIndicateurs = extraireStyleScoped('methodes/MethodesIndicateurs.vue')
 const baseCss = readFileSync(join(process.cwd(), 'src', 'styles', 'base.css'), 'utf-8')
 
 describe('#331 — l\u2019intro de /methodologie au corps standard (item 48)', () => {
@@ -64,5 +65,13 @@ describe('#331 — /methodologie et /a-propos sur la colonne de contenu standard
     expect(reglePage).not.toBeNull()
     expect(reglePage![1]).toContain('max-width: var(--content-max-width)')
     expect(reglePage![1]).toContain('margin-inline: auto')
+  })
+})
+
+describe('#334 — les blocs d\u2019indicateurs défilent sous le header (ancre #indicateur-<clef>)', () => {
+  it('porte la marge de scroll du header — la même convention que les blocs de thème', () => {
+    expect(regle(cssIndicateurs, '\\.bloc-indicateur')).toContain(
+      'scroll-margin-top: calc(var(--header-height) + 12px)',
+    )
   })
 })

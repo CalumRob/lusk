@@ -58,11 +58,15 @@ function sourcesDuTheme(theme: Theme): number {
   return Object.values(SOURCES_METHODES).filter((source) => source.themes.includes(theme)).length
 }
 
-async function monter(charger: ChargerFichier, options: { chemin?: string } = {}) {
+async function monter(
+  charger: ChargerFichier,
+  options: { chemin?: string; attachTo?: HTMLElement } = {},
+) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(options.chemin ?? '/methodologie')
   await router.isReady()
   const wrapper = mount(MethodologieView, {
+    attachTo: options.attachTo,
     global: {
       plugins: [router],
       provide: { [PAYLOAD_CHARGER_KEY]: charger },
@@ -70,6 +74,13 @@ async function monter(charger: ChargerFichier, options: { chemin?: string } = {}
   })
   await flushPromises()
   return { router, wrapper }
+}
+
+/** Un contenant attaché au document — le scroll (#334) cible document.getElementById. */
+function creerContenant(): HTMLElement {
+  const contenant = document.createElement('div')
+  document.body.appendChild(contenant)
+  return contenant
 }
 
 describe('MethodologieView — l\u2019intro factuelle', () => {
@@ -308,19 +319,102 @@ describe('MethodologieView — la normalisation de l\u2019URL (le pattern carte,
   })
 })
 
+describe('MethodologieView — les ancres d\u2019indicateurs (issue #334)', () => {
+  it('défile jusqu\u2019à l\u2019ancre d\u2019indicateur à l\u2019arrivée — après le rendu de l\u2019onglet Méthodes et de l\u2019onglet intérieur', async () => {
+    const defile = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => {})
+    const contenant = creerContenant()
+
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=methodes&section=habitat#indicateur-part-passoires',
+      attachTo: contenant,
+    })
+    await flushPromises()
+
+    // l'onglet Méthodes et l'onglet intérieur Habitat sont actifs
+    expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
+    const habitat = wrapper.findAll('[role="tab"]').find((o) => o.text().trim() === 'Habitat')
+    expect(habitat!.attributes('aria-selected')).toBe('true')
+
+    // le scroll est parti vers le bloc de l'indicateur, une seule fois
+    expect(defile).toHaveBeenCalledTimes(1)
+    const bloc = wrapper.find('.bloc-indicateur[data-clef="part_passoires"]')
+    expect(bloc.exists()).toBe(true)
+    expect(defile.mock.instances[0]).toBe(bloc.element)
+
+    defile.mockRestore()
+    wrapper.unmount()
+    contenant.remove()
+  })
+
+  it('défile jusqu\u2019à l\u2019ancre de source à l\u2019arrivée — une fois la table rendue (le hash attend le payload)', async () => {
+    const defile = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => {})
+    const contenant = creerContenant()
+
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=sources&section=habitat#source-dvf-2021-dep22',
+      attachTo: contenant,
+    })
+    await flushPromises()
+
+    const ligne = wrapper.find('tr#source-dvf-2021-dep22')
+    expect(ligne.exists()).toBe(true)
+    expect(defile).toHaveBeenCalled()
+    expect(defile.mock.instances[defile.mock.instances.length - 1]).toBe(ligne.element)
+
+    defile.mockRestore()
+    wrapper.unmount()
+    contenant.remove()
+  })
+
+  it('ne défile pas sans hash — et pas vers un hash inconnu', async () => {
+    const defile = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(() => {})
+    const contenant = creerContenant()
+
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=methodes&section=habitat',
+      attachTo: contenant,
+    })
+    await flushPromises()
+
+    expect(defile).not.toHaveBeenCalled()
+
+    defile.mockRestore()
+    wrapper.unmount()
+    contenant.remove()
+  })
+
+  it('les blocs de thème gardent leurs ancres de section existantes (#demographie, #habitat…)', async () => {
+    const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
+      chemin: '/methodologie?onglet=methodes&section=habitat',
+    })
+
+    expect(wrapper.find('section#indicateurs article#habitat').exists()).toBe(true)
+    expect(wrapper.find('section#indicateurs article#demographie').exists()).toBe(false)
+  })
+})
+
 describe('MethodologieView — Sources · À propos (le registre des sources)', () => {
-  it('énonce ce qu\u2019est le registre, le contrat de parité avec vintages et les faits de fraîcheur', async () => {
+  it('énonce ce qu\u2019est le registre, la fraîcheur jointe en direct et la règle de documentation — en français public', async () => {
     const { wrapper } = await monter(chargerAvec(payloadAvecVintages))
 
     const texte = wrapper.find('section#sources-a-propos').text()
     expect(texte).toContain('registre')
-    expect(texte).toContain('vintages')
     expect(texte).toMatch(/fraîcheur|version|licence/i)
+    // jamais la langue interne : ni le nom du fichier, ni la table vintages, ni le pipeline
+    expect(texte).not.toContain('vintages')
+    expect(texte).not.toContain('payload')
+    expect(texte).not.toContain('pipeline')
   })
 })
 
 describe('MethodologieView — Méthodes · À propos (le registre des indicateurs)', () => {
-  it('énonce ce qu\u2019est le registre des indicateurs et le contrat avec les clés de la payload', async () => {
+  it('énonce ce qu\u2019est le registre et le contrat des clés — en français public', async () => {
     const { wrapper } = await monter(chargerAvec(payloadAvecVintages), {
       chemin: '/methodologie?onglet=methodes',
     })
@@ -328,8 +422,12 @@ describe('MethodologieView — Méthodes · À propos (le registre des indicateu
     const texte = wrapper.find('section#methodes-a-propos').text()
     expect(texte).toContain('registre')
     expect(texte).toContain('indicateurs')
-    expect(texte).toContain('payload')
     expect(texte).toMatch(/Stories|lecture/i)
+    // le contrat des clés dit ce qu'il EST, jamais le fichier ni le pipeline qui le portent
+    expect(texte).toMatch(/clés (des|d\u2019)indicateurs|même nom/i)
+    expect(texte).not.toContain('payload')
+    expect(texte).not.toContain('indicateurs_')
+    expect(texte).not.toContain('pipeline')
   })
 })
 

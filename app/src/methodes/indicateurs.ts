@@ -18,6 +18,8 @@
  * forme reshapée (issue #131, 2026-08-06) : le registre suit les clés publiées.
  */
 
+import { slugifierAncre } from '@/methodes/ancres'
+
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
 export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
 
@@ -117,6 +119,16 @@ export interface DeuxHorlogesMethodes {
   entrees: EntreeHorlogeLente[]
   /** Le déclencheur — quand chaque horloge fait bouger le thème. */
   declencheur: string
+}
+
+/**
+ * L'ancrage stable d'un indicateur dans les blocs (#indicateur-<clef>, issue
+ * #334). La clé de payload est déjà un slug stable (part_passoires) ; on la
+ * préfixe et on normalise les séparateurs pour ne jamais entrer en collision
+ * avec l'ancrage de section (#indicateurs).
+ */
+export function ancreIndicateur(clef: string): string {
+  return slugifierAncre('indicateur', clef)
 }
 
 /**

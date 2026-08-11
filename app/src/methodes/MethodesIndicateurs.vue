@@ -6,9 +6,13 @@
  * accent -line — le langage visuel des blocs de thème de la fiche), les
  * définitions éditoriales de ses indicateurs (label, définition, unité,
  * source) puis la documentation de ses Stories (ce qu'elles lisent, leurs
- * lectures). Le registre (indicateurs.ts) est statique et typé — la section
- * ne dépend pas du payload. Pas de bannière de construction (principles.md
- * §1) : la page énonce ce qui est.
+ * lectures). Chaque indicateur porte en plus son ancre stable
+ * #indicateur-<clef> (issue #334 — la clé de payload, slugifiée par
+ * ancreIndicateur) : le hash d'arrivée de la vue défile jusqu'au bloc. Les
+ * Stories, elles, n'ont pas d'ancre (le contrat n'est pas minté — #308). Le
+ * registre (indicateurs.ts) est statique et typé — la section ne dépend pas
+ * du payload. Pas de bannière de construction (principles.md §1) : la page
+ * énonce ce qui est.
  *
  * Le shell à onglets (#332) restreint la liste via la prop `themes` — l'onglet
  * Méthodes · <thème> montre le bloc de ce thème seul (défaut : tous les
@@ -18,9 +22,9 @@
 import { computed } from 'vue'
 
 import { NOMS_THEMES } from '@/fiche/onglets'
-import { ancreSource } from '@/methodes/sources'
-import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
+import { ancreIndicateur, THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
+import { ancreSource } from '@/methodes/sources'
 
 const props = defineProps<{
   /** Les thèmes à documenter — le filtre du shell à onglets (défaut : tous). */
@@ -60,7 +64,7 @@ function uniteAffichage(unite: string): string {
         <h3 class="groupe-titre">Les indicateurs</h3>
         <dl class="liste-indicateurs">
           <template v-for="(indicateur, clef) in THEMES_METHODES[theme].indicateurs" :key="clef">
-            <div class="bloc-indicateur" :data-clef="clef">
+            <div class="bloc-indicateur" :id="ancreIndicateur(clef)" :data-clef="clef">
               <dt class="bloc-indicateur-label">{{ indicateur.label }}</dt>
               <dd class="bloc-indicateur-definition">{{ indicateur.definition }}</dd>
               <dd class="bloc-indicateur-meta">
@@ -198,6 +202,7 @@ function uniteAffichage(unite: string): string {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--surface-primary);
+  scroll-margin-top: calc(var(--header-height) + 12px);
 }
 
 .bloc-indicateur-label {

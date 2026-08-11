@@ -2,10 +2,11 @@
 /**
  * L'onglet Sources · À propos de /methodologie (issue #332) : la prose du
  * registre des sources — ce qu'il est (une entrée par source, l'éditeur, le
- * jeu de données, les thèmes alimentés), le contrat de parité avec la table
- * vintages (l'union est le contrat, jamais une date inventée), les faits de
- * fraîcheur en direct, et le rôle des onglets de thème. Pas la prose de la
- * page (l'intro reste au-dessus du shell) — la prose de l'onglet.
+ * jeu de données, les thèmes alimentés), le contrat de parité des sources
+ * documentées (toute source des fiches est documentée, jamais une date
+ * inventée), les faits de fraîcheur en direct, et le rôle des onglets de
+ * thème. Pas la prose de la page (l'intro reste au-dessus du shell) — la
+ * prose de l'onglet.
  */
 </script>
 
@@ -16,14 +17,14 @@
     <div class="sources-a-propos__corps">
       <p>
         Chaque source que les fiches consomment a sa ligne dans le registre : son éditeur, son
-        jeu de données, les thèmes qu’elle alimente — et, rejoints en direct depuis la table
-        vintages, sa version, sa licence, ses dates de référence et de publication.
+        jeu de données, les thèmes qu’elle alimente — et sa fraîcheur, jointe en direct : sa
+        version, sa licence, ses dates de référence et de publication.
       </p>
       <p>
-        L’union est le contrat : chaque ligne de vintages.json a son entrée de registre — une
-        source n’expédie qu’avec sa documentation (un thème n’est pas « construit » tant que
-        ses sources ne sont pas documentées ici). Une entrée sans ligne vintages en direct
-        reste rendue, avec des tirets pour la fraîcheur : jamais des dates inventées.
+        Toute source des fiches a son entrée de registre — une source n’est affichée qu’avec
+        sa documentation : un thème n’est pas « construit » tant que ses sources ne sont pas
+        documentées ici. Quand la fraîcheur d’une source n’est pas encore connue, sa ligne
+        reste rendue, avec des tirets à la place des dates : jamais des dates inventées.
       </p>
       <p>
         Les onglets de thème filtrent la table : une source multi-thèmes (la série historique
