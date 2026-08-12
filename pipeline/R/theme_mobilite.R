@@ -534,7 +534,7 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 # Les estampilles viennent des vintages de SA source de référence (les tampons
 # de la table déclarative) — la même règle que la machinerie partagée.
 construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
-                                             directions = theme_mobilite()$directions) {
+                                             directions = DIRECTIONS_MOBILITE) {
   aligner <- function(table_agregee, key, unit) {
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
       dplyr::transmute(
@@ -973,6 +973,35 @@ verifier_descripteur_mobilite <- function(descripteur) {
   invisible(TRUE)
 }
 
+# DIRECTIONS_MOBILITE ----------------------------------------------------------
+# La désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) — AUCUNE
+# clé ne se repose sur le défaut high-is-good. Les CINQ parts d'isolation de la
+# grille sont low-is-good (le cadrage en privation : moins de bâtiments sans
+# accès, mieux — la machinerie de construire_rangs_isolation les classe low) ;
+# tout le reste est high-is-good, le scalaire classé de chaque clé nommé :
+# la part sans voiture pour voitures_menage, la longueur vélo pour reseaux, la
+# part près d'un arrêt pour offre_tc, les bornes, le stationnement vélo, la
+# longueur protégée/totale pour offre_cyclable. Les LECTURES de la Story
+# (div_loss_t/b — le nombre de types de services qui disparaissent) sont elles
+# aussi déclarées low-is-good : moins de services perdus, mieux — ce sont des
+# valeurs de lecture, jamais des clés du registre. La constante est la SOURCE
+# UNIQUE : le descripteur (theme_mobilite) et la machinerie de rangs
+# (construire_indicateurs_mobilite) la consomment — jamais un appel à
+# theme_mobilite() depuis un builder (le graphe targets ne peut pas suivre le
+# cycle descriptor → builder → descriptor).
+DIRECTIONS_MOBILITE <- list(
+  voitures_menage = "high",
+  reseaux = "high",
+  offre_tc = "high",
+  bornes_recharge = "high",
+  places_stationnement_velo_1000 = "high",
+  offre_cyclable = "high",
+  div_loss_t = "low",
+  div_loss_b = "low",
+  iso_alimentation = "low", iso_sante = "low",
+  iso_administration = "low", iso_ecole = "low", iso_banque = "low"
+)
+
 # theme_mobilite ---------------------------------------------------------------
 # Le descripteur du thème Mobilité : la même forme de contrat que
 # theme_economie() / theme_demographie(), avec les pièces du thème. Le
@@ -987,31 +1016,10 @@ theme_mobilite <- function() {
     construire_donnees = construire_donnees_mobilite,
     construire_analytiques = construire_analytiques_mobilite,
     publier = publier_mobilite,
-    # la désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) —
-    # AUCUNE clé ne se repose sur le défaut high-is-good. Les CINQ parts
-    # d'isolation de la grille sont low-is-good (le cadrage en privation :
-    # moins de bâtiments sans accès, mieux — la machinerie de
-    # construire_rangs_isolation les classe low) ; tout le reste est
-    # high-is-good, le scalaire classé de chaque clé nommé au descripteur :
-    # la part sans voiture pour voitures_menage, la longueur vélo pour
-    # reseaux, la part près d'un arrêt pour offre_tc, les bornes, le
-    # stationnement vélo, la longueur protégée/totale pour offre_cyclable.
-    # Les LECTURES de la Story (div_loss_t/b — le nombre de types de services
-    # qui disparaissent) sont elles aussi déclarées low-is-good : moins de
-    # services perdus, mieux — ce sont des valeurs de lecture, jamais des clés
-    # du registre.
-    directions = list(
-      voitures_menage = "high",
-      reseaux = "high",
-      offre_tc = "high",
-      bornes_recharge = "high",
-      places_stationnement_velo_1000 = "high",
-      offre_cyclable = "high",
-      div_loss_t = "low",
-      div_loss_b = "low",
-      iso_alimentation = "low", iso_sante = "low",
-      iso_administration = "low", iso_ecole = "low", iso_banque = "low"
-    ),
+    # la désirabilité par clé — la constante DIRECTIONS_MOBILITE (l'audit
+    # ordinal de l'issue #368 : aucune clé ne se repose sur le défaut
+    # high-is-good)
+    directions = DIRECTIONS_MOBILITE,
     # Issue #311 : les métadonnées du thème (le fichier épinglé
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits

@@ -237,10 +237,7 @@ construire_territoires_economie <- function(base_epci, analytiques) {
 # territoires) : un territoire sans donnée porte NA — jamais une ligne
 # manquante (la multiplicité 1 de la table déclarative l'exige).
 construire_indicateurs_economie <- function(analytiques, territoires, vintages,
-                                            directions = list(
-                                              effectifs_salaries = "high",
-                                              chomage = "low",
-                                              eco_activites = "high")) {
+                                            directions = DIRECTIONS_ECONOMIE) {
   aligner <- function(table_agregee, key, unit) {
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
       dplyr::transmute(
@@ -363,7 +360,7 @@ construire_payload_economie <- function(analytiques, base_epci, vintages) {
   payload <- list(
     indicateurs = construire_indicateurs_economie(
       analytiques, territoires, vintages,
-      directions = theme_economie()$directions
+      directions = DIRECTIONS_ECONOMIE
     ),
     # Issue #312 : la lecture résolue par (territoire, groupe) — le top-5
     # replié en paramètres, le groupe de fiche et la raison de saillance
@@ -429,6 +426,23 @@ verifier_descripteur_economie <- function(descripteur) {
   invisible(TRUE)
 }
 
+# DIRECTIONS_ECONOMIE ----------------------------------------------------------
+# La désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) — AUCUNE
+# clé ne se repose sur le défaut high-is-good : le chômage est low-is-good (la
+# plus petite valeur est la meilleure — la machinerie du payload la consomme
+# dans construire_indicateurs_economie, corrigeant le défaut silencieux qui
+# classait le chômage high) ; les effectifs salariés et la part des
+# éco-activités sont high-is-good (explicites). La constante est la SOURCE
+# UNIQUE : le descripteur (theme_economie) et la machinerie de rangs
+# (construire_indicateurs_economie / construire_payload_economie) la
+# consomment — jamais un appel à theme_economie() depuis un builder (le graphe
+# targets ne peut pas suivre le cycle descriptor → builder → descriptor).
+DIRECTIONS_ECONOMIE <- list(
+  effectifs_salaries = "high",
+  chomage = "low",
+  eco_activites = "high"
+)
+
 # theme_economie ---------------------------------------------------------------
 # Le descripteur du thème Économie/Emploi : la même forme de contrat que
 # theme_demographie() / theme_habitat(), avec les pièces du thème. Le
@@ -443,17 +457,10 @@ theme_economie <- function() {
     construire_donnees = construire_donnees_economie,
     construire_analytiques = construire_analytiques_economie,
     publier = publier_economie,
-    # la désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) —
-    # AUCUNE clé ne se repose sur le défaut high-is-good : le chômage est
-    # low-is-good (la plus petite valeur est la meilleure — la machinerie du
-    # payload la consomme dans construire_indicateurs_economie, corrigeant le
-    # défaut silencieux qui classait le chômage high) ; les effectifs salariés
-    # et la part des éco-activités sont high-is-good (explicites).
-    directions = list(
-      effectifs_salaries = "high",
-      chomage = "low",
-      eco_activites = "high"
-    ),
+    # la désirabilité par clé — la constante DIRECTIONS_ECONOMIE (l'audit
+    # ordinal de l'issue #368 : aucune clé ne se repose sur le défaut
+    # high-is-good, le chômage est low-is-good)
+    directions = DIRECTIONS_ECONOMIE,
     # Issue #311 : les métadonnées du thème (le fichier épinglé
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
