@@ -217,9 +217,14 @@ test_that("un deuxième thème se câble dans le mini-graphe par la seule liste 
 
   # les DEUX grappes ont tourné — le thème « futur » (toy2) n'a demandé aucun
   # édit à la fabrique (seulement sa pièce dans le paquet et sa ligne dans la
-  # liste des descripteurs)
-  expect_true(file.exists(file.path(projet, "out", "out_toy.txt")))
-  expect_true(file.exists(file.path(projet, "out", "out_toy2.txt")))
+  # liste des descripteurs). Le CONTENU EXACT des deux sorties prouve que
+  # CHAQUE thème a tourné avec SES propres pièces (compute/publish du
+  # descripteur — toy2 écrit son marqueur et son multiplicateur ×7, jamais les
+  # pièces de toy : c'est le seam de dispatch que le graphe réel exploite).
+  expect_identical(readLines(file.path(projet, "out", "out_toy.txt")),
+                   c("2", "4", "6"))
+  expect_identical(readLines(file.path(projet, "out", "out_toy2.txt")),
+                   c("toy2", "7", "14", "21"))
 })
 
 test_that("sémantique de skip par thème : un changement de pièce de toy ne touche pas toy2", {
