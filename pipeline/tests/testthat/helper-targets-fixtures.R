@@ -114,6 +114,40 @@ ecrire_source_toypkg <- function(projet, scenario) {
     "    compute = compute_fake2,",
     "    publish = publish_fake2",
     "  )",
+    "}",
+    "# Le TROISIÈME thème du mini-paquet (revue #341, finding 5) : le thème",
+    "# « jetable » — le SIXIÈME thème jetable du mini-graphe, SES propres pièces",
+    "# (construire_fake_jetable, compute_fake_jetable, ...) et SON propre fichier",
+    "# d'entrée (entree3.txt). La preuve « futur thème » EXÉCUTÉE : ajouter un",
+    "# thème au mini-graphe = ajouter SES pièces au paquet, SON constructeur et",
+    "# SA ligne dans la liste — la FABRIQUE (grappe_mini) ne change jamais.",
+    "construire_fake_jetable <- function(cache = \"data/raw\") {",
+    "  base <- read.csv(file.path(cache, \"entree3.txt\"), stringsAsFactors = FALSE)",
+    "  data.frame(code = base$code, base3 = base$base, stringsAsFactors = FALSE)",
+    "}",
+    "compute_fake_jetable <- function(brut) {",
+    "  brut$double <- brut$base3 * 11",
+    "  brut",
+    "}",
+    "publish_fake_jetable <- function(payload, sortie = \"out.txt\") {",
+    "  writeLines(c(\"jetable\", as.character(payload$double)), sortie)",
+    "  sortie",
+    "}",
+    "vintages_fake_jetable <- function() {",
+    "  data.frame(id = \"c\", version = \"2023\", stringsAsFactors = FALSE)",
+    "}",
+    "theme_jetable <- function() {",
+    "  list(",
+    "    theme = \"jetable\",",
+    "    manifest = data.frame(",
+    "      id = \"c\", fichier = \"entree3.txt\", mode = \"cron\", type = \"fichier\",",
+    "      url = \"https://example.invalid/c.txt\", stringsAsFactors = FALSE",
+    "    ),",
+    "    construire_donnees = construire_fake_jetable,",
+    "    vintages = vintages_fake_jetable,",
+    "    compute = compute_fake_jetable,",
+    "    publish = publish_fake_jetable",
+    "  )",
     "}"
   )
   writeLines(src, file.path(projet, "toypkg", "R", "toy.R"))
@@ -317,7 +351,7 @@ ecrire_mini_graphe_multi <- function(projet, themes = c("toy", "toy2")) {
 # toy2 (ecrire_source_toypkg les écrit tous les deux), le fichier d'entrée du
 # second thème est créé, et le mini-graphe est construit par la fabrique sur
 # la liste des descripteurs.
-installer_mini_projet_multi <- function() {
+installer_mini_projet_multi <- function(themes = c("toy", "toy2")) {
   projet <- tempfile("mini-multi-")
   dir.create(file.path(projet, "toypkg", "R"), recursive = TRUE)
   dir.create(file.path(projet, "data", "raw"), recursive = TRUE)
@@ -329,8 +363,10 @@ installer_mini_projet_multi <- function() {
              file.path(projet, "data", "raw", "entree.txt"))
   writeLines(c("code,base", "a,1", "b,2", "c,3"),
              file.path(projet, "data", "raw", "entree2.txt"))
+  writeLines(c("code,base", "a,10", "b,20", "c,30"),
+             file.path(projet, "data", "raw", "entree3.txt"))
 
   ecrire_source_toypkg(projet, "base")
-  ecrire_mini_graphe_multi(projet)
+  ecrire_mini_graphe_multi(projet, themes = themes)
   projet
 }

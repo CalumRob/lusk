@@ -172,7 +172,7 @@ test_that("la vérification de structure lit un store isolé — jamais la meta 
                            "raw", n = 8L), meta_midrun)
 })
 
-test_that("un sixième descripteur jetable se câble avec zéro édit du graphe (la propriété « futur thème »)", {
+test_that("la fabrique réelle construit la famille de cibles d'un descripteur arbitraire (la structure « futur thème »)", {
   env <- charger_pieces_graphe(c("attributs_nuls", "meme_fonction_paquet",
                                  "symbole_ns", "grappe_theme", "publie_theme"))
   # les pièces targets (hors baseenv — l'environnement de charger_pieces_graphe)
@@ -180,7 +180,11 @@ test_that("un sixième descripteur jetable se câble avec zéro édit du graphe 
 
   # un descripteur JETABLE construit ici (jamais dans le paquet) à partir de
   # pièces RÉELLES du namespace — la preuve porte sur la MÉCANIQUE du graphe :
-  # un futur thème se câble par son descripteur, zéro édit à la fabrique
+  # la fabrique construit la famille de cibles d'un descripteur arbitraire.
+  # L'EXÉCUTION d'un sixième thème (avec SON constructeur, SES pièces, SA ligne
+  # de liste) est prouvée par le test mini-graphe « futur thème » ci-dessous —
+  # le généré réel référence theme_<slug>() par construction (la convention des
+  # modules de thème), un constructeur inexistant ne peut pas s'exécuter.
   jetable <- list(
     theme = "jetable",
     manifest = theme_demographie()$manifest,
@@ -221,6 +225,26 @@ test_that("un deuxième thème se câble dans le mini-graphe par la seule liste 
   # CHAQUE thème a tourné avec SES propres pièces (compute/publish du
   # descripteur — toy2 écrit son marqueur et son multiplicateur ×7, jamais les
   # pièces de toy : c'est le seam de dispatch que le graphe réel exploite).
+  expect_identical(readLines(file.path(projet, "out", "out_toy.txt")),
+                   c("2", "4", "6"))
+  expect_identical(readLines(file.path(projet, "out", "out_toy2.txt")),
+                   c("toy2", "7", "14", "21"))
+})
+
+test_that("un sixième thème jetable se câble dans le mini-graphe avec zéro édit de la fabrique — EXÉCUTÉ", {
+  # la preuve « futur thème » de bout en bout : un thème de plus se câble par
+  # SON constructeur (theme_jetable, sa ligne dans la liste) et SES pièces —
+  # la fabrique (grappe_mini) ne change pas. Le mini-graphe EXÉCUTE le thème :
+  # sa sortie porte SON marqueur et SON multiplicateur (×11) sur SON fichier
+  # d'entrée (entree3.txt = 10/20/30 → 110/220/330).
+  projet <- installer_mini_projet_multi(themes = c("toy", "toy2", "jetable"))
+  withr::local_dir(projet)
+
+  targets::tar_make(callr_function = NULL)
+
+  expect_identical(readLines(file.path(projet, "out", "out_jetable.txt")),
+                   c("jetable", "110", "220", "330"))
+  # les thèmes historiques tournent toujours
   expect_identical(readLines(file.path(projet, "out", "out_toy.txt")),
                    c("2", "4", "6"))
   expect_identical(readLines(file.path(projet, "out", "out_toy2.txt")),
