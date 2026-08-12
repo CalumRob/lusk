@@ -200,6 +200,14 @@ metadonnees_demographie_avec_libelles <- function() {
     taux_solde_migratoire = "Solde migratoire (‰/an)",
     classification = "Classification"
   )
+  # la 4e carte (issue #362) : les valeurs de lecture — la démographie
+  # référence `classification`, la carte est requise (le miroir de l'app)
+  meta$classification_labels <- list(
+    `attire-renouvelle` = "attire et se renouvelle",
+    `attire-meurt` = "attire, mais se meurt",
+    `vide-meurt` = "se vide et se meurt",
+    `vide-renouvelle` = "se vide, mais se renouvelle"
+  )
   meta
 }
 
@@ -270,44 +278,45 @@ test_that("valider_theme_metadata : param_labels déclare EXACTEMENT l'union des
 
 # Les libellés des classifications (issue #362) — la 4e carte du vocabulaire :
 # les VALEURS de lecture (les quadrants/lectures du pipeline), pas les
-# paramètres. Optionnelle (le thème qui ne référence jamais `classification`
-# — Mobilité — n'en a pas besoin) ; présente, elle doit être un objet NON VIDE
-# de chaînes non vides (la discipline des cartes #318). La couverture contre
-# les valeurs publiées est la parité de chargement de l'app
-# (verifierPariteLibelles) — le fichier, lui, reste auto-contenu.
-
-metadonnees_demographie_avec_classifications <- function() {
-  meta <- metadonnees_demographie_avec_libelles()
-  meta$classification_labels <- list(
-    `attire-renouvelle` = "attire et se renouvelle",
-    `attire-meurt` = "attire, mais se meurt",
-    `vide-meurt` = "se vide et se meurt",
-    `vide-renouvelle` = "se vide, mais se renouvelle"
-  )
-  meta
-}
+# paramètres. REQUISE dès que l'union des reading.params référence
+# `classification` — le miroir EXACT de l'app (validerThemeMetadata) ; le thème
+# qui ne la référence jamais (Mobilité) n'en a pas besoin. Présente, elle doit
+# être un objet NON VIDE de chaînes non vides (la discipline des cartes #318).
+# La couverture contre les valeurs publiées est la parité de chargement de
+# l'app (verifierPariteLibelles) — le fichier, lui, reste auto-contenu.
 
 test_that("valider_theme_metadata : classification_labels — une carte non vide de chaînes non vides", {
   # le cas valide passe (la carte complète des quatre lectures)
-  expect_no_error(valider_theme_metadata(metadonnees_demographie_avec_classifications()))
+  expect_no_error(valider_theme_metadata(metadonnees_demographie_avec_libelles()))
 
   # un libellé vide est rejeté
-  meta <- metadonnees_demographie_avec_classifications()
+  meta <- metadonnees_demographie_avec_libelles()
   meta$classification_labels[["attire-meurt"]] <- ""
   expect_error(valider_theme_metadata(meta), "classification_labels")
 
   # un libellé non-chaîne est rejeté
-  meta <- metadonnees_demographie_avec_classifications()
+  meta <- metadonnees_demographie_avec_libelles()
   meta$classification_labels[["attire-meurt"]] <- 42
   expect_error(valider_theme_metadata(meta), "classification_labels")
 
   # une carte non-objet est rejetée
-  meta <- metadonnees_demographie_avec_classifications()
+  meta <- metadonnees_demographie_avec_libelles()
   meta$classification_labels <- "attire et se renouvelle"
   expect_error(valider_theme_metadata(meta), "classification_labels")
 
   # une carte vide est rejetée
-  meta <- metadonnees_demographie_avec_classifications()
+  meta <- metadonnees_demographie_avec_libelles()
   meta$classification_labels <- list()
+  expect_error(valider_theme_metadata(meta), "classification_labels")
+})
+
+test_that("valider_theme_metadata : la lecture qui référence « classification » exige la carte (#362, le miroir exact de l'app)", {
+  # La démographie référence `classification` dans ses reading.params — sans la
+  # carte, la lecture rendrait la clé brute (attire-meurt) : rejetée FORT,
+  # exactement comme le validateur de l'app (validerThemeMetadata). La règle est
+  # locale aux métadonnées (l'union des reading.params) — aucun besoin des
+  # histoires publiées : le miroir R/TS peut être exact.
+  meta <- metadonnees_demographie_avec_libelles()
+  meta$classification_labels <- NULL
   expect_error(valider_theme_metadata(meta), "classification_labels")
 })
