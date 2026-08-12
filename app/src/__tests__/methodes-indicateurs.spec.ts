@@ -4,13 +4,14 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
+  LIBELLES_DIRECTION,
   THEMES_CONSTRUITS,
   THEMES_METHODES,
   ancreIndicateur,
   indicateursParDataset,
 } from '../methodes/indicateurs'
 import { SOURCES_METHODES, datasetDeSource } from '../methodes/sources'
-import type { ThemeConstruit } from '../methodes/indicateurs'
+import type { DirectionRang, ThemeConstruit } from '../methodes/indicateurs'
 
 /**
  * Le registre Méthodes des indicateurs & Stories (issue #129, docs/themes/
@@ -188,19 +189,23 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
     }
   })
 
-  it('l\u2019économie documente le modèle CONTEXT.md — Story unique, région, note en pause', () => {
+  it('l\u2019économie documente le modèle CONTEXT.md — Story unique, note en pause (la Story de la région retirée, #367)', () => {
     const clefs = new Set(THEMES_METHODES.economie.stories.map((s) => s.clef))
     expect(clefs).toEqual(
-      new Set(['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite', 'le-matin-la-commune-se-vide']),
+      new Set(['ce-que-la-commune-abrite', 'le-matin-la-commune-se-vide']),
     )
 
     // la Story unique est publiée ; la note en pause est documentée, jamais publiée
     const commune = THEMES_METHODES.economie.stories.find((s) => s.clef === 'ce-que-la-commune-abrite')
-    const region = THEMES_METHODES.economie.stories.find((s) => s.clef === 'ce-que-la-bretagne-abrite')
     const dortoir = THEMES_METHODES.economie.stories.find((s) => s.clef === 'le-matin-la-commune-se-vide')
     expect(commune?.statut).toBe('publiee')
-    expect(region?.statut).toBe('publiee')
     expect(dortoir?.statut).toBe('en-pause')
+
+    // la Story de structure de la région « Ce que la Bretagne abrite » est
+    // RETIRÉE du contrat de la fiche (#367 — la fiche de la région ne la
+    // référence plus) : le registre ne la documente plus
+    expect(THEMES_METHODES.economie.stories.find((s) => s.clef === 'ce-que-la-bretagne-abrite')).toBeUndefined()
+    expect(commune?.definition).toMatch(/retirée|retiré/)
   })
 
   it('la mobilité documente le modèle CONTEXT.md — la Story par défaut et sa candidate saillante', () => {
@@ -393,6 +398,99 @@ describe('registre Méthodes — la parité avec les Stories de la payload', () 
   })
 })
 
+describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () => {
+  const DIRECTIONS: DirectionRang[] = ['plus-est-mieux', 'moins-est-mieux']
+
+  it('chaque indicateur porte sa direction — jamais silencieuse', () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        expect(DIRECTIONS, `« ${theme}.${clef} » sans direction`).toContain(indicateur.direction)
+      }
+    }
+  })
+
+  it('déclare « moins = mieux » les clés dont le rang se lit à l\u2019envers (le tableau #367, amendé CONTEXT.md 2026-08-12)', () => {
+    const clefsMoins: string[] = []
+    for (const theme of THEMES_CONSTRUITS) {
+      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        if (indicateur.direction === 'moins-est-mieux') clefsMoins.push(`${theme}.${clef}`)
+      }
+    }
+    // iso_* ×5, part_passoires, chomage, div_loss_t/b, prix_m2, age_du_bati,
+    // artif_par_habitant, conso_enaf_annuel, trajectoire_artif_par_habitant —
+    // plus places_stationnement_voiture_1000 (la direction « moins = mieux »
+    // verrouillée par le sourçage #369, CONTEXT.md 2026-08-12)
+    expect(clefsMoins.sort()).toEqual(
+      [
+        'economie.chomage',
+        'habitat.age_du_bati',
+        'habitat.part_passoires',
+        'habitat.prix_m2',
+        'milieux.artif_par_habitant',
+        'milieux.conso_enaf_annuel',
+        'milieux.trajectoire_artif_par_habitant',
+        'mobilite.div_loss_b',
+        'mobilite.div_loss_t',
+        'mobilite.iso_administration',
+        'mobilite.iso_alimentation',
+        'mobilite.iso_banque',
+        'mobilite.iso_ecole',
+        'mobilite.iso_sante',
+        'mobilite.places_stationnement_voiture_1000',
+      ].sort(),
+    )
+  })
+
+  it('déclare « plus = mieux » les clés re-travées et les ratios (voitures, statut, type, les deux rapports)', () => {
+    const attendues: Record<string, DirectionRang> = {
+      'mobilite.voitures_menage': 'plus-est-mieux',
+      'habitat.statut': 'plus-est-mieux',
+      'habitat.type': 'plus-est-mieux',
+      'mobilite.bornes_ev_par_station_service': 'plus-est-mieux',
+      'mobilite.stationnement_velo_par_voiture': 'plus-est-mieux',
+    }
+    for (const [themeClef, direction] of Object.entries(attendues)) {
+      const [theme, clef] = themeClef.split('.') as [ThemeConstruit, string]
+      expect(
+        THEMES_METHODES[theme].indicateurs[clef]?.direction,
+        `« ${theme}.${clef} »`,
+      ).toBe(direction)
+    }
+  })
+
+  it('expose les libellés publics « plus = mieux » / « moins = mieux » — le vocabulaire du glyphe de la fiche', () => {
+    expect(LIBELLES_DIRECTION['plus-est-mieux']).toBe('plus = mieux')
+    expect(LIBELLES_DIRECTION['moins-est-mieux']).toBe('moins = mieux')
+  })
+
+  it('documente les indicateurs re-través de la décomposition #367', () => {
+    // voitures : les trois parts réelles (0/1/2+), la part sans voiture en tête
+    const voitures = THEMES_METHODES.mobilite.indicateurs.voitures_menage
+    expect(voitures, '« mobilite.voitures_menage »').toBeDefined()
+    expect(voitures!.definition).toMatch(/sans voiture/)
+    expect(voitures!.definition).toMatch(/deux voitures ou plus/)
+    expect(voitures!.definition).toMatch(/100 %|totalisent/)
+
+    // le découpage statut / âge du bâti / type remplace statut_anciennete_taille
+    for (const clef of ['statut', 'type', 'age_du_bati']) {
+      expect(THEMES_METHODES.habitat.indicateurs[clef], `« habitat.${clef} »`).toBeDefined()
+      expect(THEMES_METHODES.habitat.indicateurs[clef]!.unite).toBe('%')
+    }
+    expect(THEMES_METHODES.habitat.indicateurs.statut!.definition).toMatch(/HLM/)
+    expect(THEMES_METHODES.habitat.indicateurs.age_du_bati!.definition).toMatch(/isol/)
+
+    // le stationnement voiture et les deux ratios scalaires
+    expect(THEMES_METHODES.mobilite.indicateurs.places_stationnement_voiture_1000).toBeDefined()
+    expect(THEMES_METHODES.mobilite.indicateurs.bornes_ev_par_station_service).toBeDefined()
+    expect(THEMES_METHODES.mobilite.indicateurs.stationnement_velo_par_voiture).toBeDefined()
+
+    // les lectures perte de diversité / perte totale, valeurs d'indicateurs du sous-groupe
+    for (const clef of ['div_loss_t', 'div_loss_b', 'tot_loss_t', 'tot_loss_b']) {
+      expect(THEMES_METHODES.mobilite.indicateurs[clef], `« mobilite.${clef} »`).toBeDefined()
+    }
+  })
+})
+
 describe('registre Méthodes — la langue publique, jamais celle du pipeline', () => {
   /** Les mots du pipeline à ne jamais publier (issue #129 : pas de gates, pas de noms d\u2019artefacts). */
   const MOTS_INTERNES = [
@@ -485,9 +583,11 @@ describe('la matrice indicateur ↔ source (issue #336, #206 item 52)', () => {
       },
     ])
 
-    // OCS-GE — l'en-tête du jeu (jamais une ligne vintage)
+    // OCS-GE — l'en-tête du jeu (jamais une ligne vintage) ; la trajectoire
+    // par habitant (la valeur de la lecture Milieux, #367) rejoint le même jeu
     expect(matrice.get('ocsge_artificialisation')).toEqual([
       { clef: 'artif_par_habitant', label: 'Intensité état', theme: 'milieux' },
+      { clef: 'trajectoire_artif_par_habitant', label: 'Trajectoire par habitant', theme: 'milieux' },
     ])
   })
 

@@ -46,11 +46,13 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     }
   })
 
-  it('déclare 24 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
+  it('déclare 26 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
     const idsJeux = new Set(
       Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
     )
-    expect(idsJeux.size).toBe(24)
+    // les deux nouveaux jeux de #369 (osm_parkings, bpe_b316) sont des jeux
+    // uniques, sans clé `dataset` — le compte monte de 24 à 26
+    expect(idsJeux.size).toBe(26)
   })
 
   it('les familles générées partagent le nom du jeu et portent un libellé vintage dédié (ADR-0022)', () => {
@@ -96,14 +98,15 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     const idsVintages = new Set(vintages.map((v) => v.id))
     const registreSeul = Object.keys(SOURCES_METHODES).filter((id) => !idsVintages.has(id))
 
-    // Aucune aujourd'hui — si ce test passe avec une liste non vide, la
-    // dégradation gracieuse doit être vérifiée à l'écran (faits éditoriaux
-    // rendus, dates jamais inventées).
-    expect(registreSeul).toEqual([])
+    // Les deux sources de #369 (osm_parkings, bpe_b316) sont documentées AVANT
+    // leur ligne vintages — la dégradation gracieuse est exercée à l'écran
+    // (faits éditoriaux rendus, dates jamais inventées) jusqu'à la publication
+    // pipeline (#369). Toute autre entrée sans ligne vintages est un signal.
+    expect(registreSeul).toEqual(['osm_parkings', 'bpe_b316'])
   })
 
-  it('déclare 56 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(56)
+  it('déclare 58 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369)', () => {
+    expect(Object.keys(SOURCES_METHODES).length).toBe(58)
   })
 
   it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {

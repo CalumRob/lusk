@@ -83,14 +83,15 @@ function vintagesOcsGe(): Vintage[] {
 }
 
 describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () => {
-  it('groupe les 56 lignes du registre en 24 jeux de données, dans l\u2019ordre du registre', () => {
+  it('groupe les 58 lignes du registre en 26 jeux de données, dans l\u2019ordre du registre', () => {
     const { jeux } = sourcesMethodes(payloadAvec(vintagesFixture))
 
     const attendus = [
       ...new Set(Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id)),
     ]
     expect(jeux.map((j) => j.id)).toEqual(attendus)
-    expect(jeux.length).toBe(24)
+    // les deux jeux de #369 (osm_parkings, bpe_b316) montent le compte de 24 à 26
+    expect(jeux.length).toBe(26)
   })
 
   it('porte les faits éditoriaux du jeu sur l\u2019en-tête (nom, éditeur, URL, thèmes)', () => {
@@ -237,7 +238,8 @@ describe('sourcesMethodes — vintages absents (404)', () => {
     const { jeux, vintagesAbsents } = sourcesMethodes(payloadAvec(null))
 
     expect(vintagesAbsents).toBe(true)
-    expect(jeux.length).toBe(24)
+    // les deux jeux de #369 (osm_parkings, bpe_b316) montent le compte à 26
+    expect(jeux.length).toBe(26)
     for (const jeu of jeux) {
       expect(jeu.replie).toBe(true)
       expect(jeu.vintages[0].version).toBeNull()

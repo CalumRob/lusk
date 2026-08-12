@@ -21,6 +21,14 @@
         Stories et comment elles se lisent.
       </p>
       <p>
+        Chaque indicateur porte aussi son rang « Xᵉ / Y » dans son groupe de comparaison, et
+        « 1er est toujours bon » (ADR-0015) : la table « Le sens des classements » de chaque
+        thème documente le sens de ce rang — plus la valeur est élevée, meilleur est le rang
+        (« plus = mieux »), ou l’inverse (« moins = mieux »). C’est le vocabulaire du glyphe
+        de la fiche (#367) : le glyphe ne porte jamais le sens à lui seul, la phrase complète
+        l’accompagne toujours.
+      </p>
+      <p>
         Les clés des indicateurs sont les clés utilisées dans les fiches : un indicateur porte
         le même nom ici et sur sa fiche. Une Story « en pause » est documentée comme note
         Méthodes, jamais publiée. Un thème n’est pas « construit » tant que ses indicateurs et

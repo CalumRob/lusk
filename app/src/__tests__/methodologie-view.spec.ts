@@ -736,11 +736,13 @@ describe('MethodologieView — la matrice indicateur ↔ source (issue #336)', (
       chemin: '/methodologie?onglet=sources&section=milieux',
     })
 
-    // OCS-GE est déplié : l'en-tête porte la matrice (artif_par_habitant), les
+    // OCS-GE est déplié : l'en-tête porte la matrice (artif_par_habitant et la
+    // trajectoire par habitant — la valeur de la lecture Milieux, #367), les
     // 11 lignes vintage montrent le tiret dans la colonne Indicateurs
     const enTete = milieux.wrapper.find('tr#source-ocsge-artificialisation')
     expect(enTete.findAll('a.matrice-indicateur-lien').map((l) => l.attributes('href'))).toEqual([
       `#${ancreIndicateur('artif_par_habitant')}`,
+      `#${ancreIndicateur('trajectoire_artif_par_habitant')}`,
     ])
 
     const enfants = milieux.wrapper.findAll('tr.source-vintage')

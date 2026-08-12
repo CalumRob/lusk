@@ -22,7 +22,12 @@
 import { computed } from 'vue'
 
 import { NOMS_THEMES } from '@/fiche/onglets'
-import { ancreIndicateur, THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
+import {
+  ancreIndicateur,
+  LIBELLES_DIRECTION,
+  THEMES_CONSTRUITS,
+  THEMES_METHODES,
+} from '@/methodes/indicateurs'
 import type { ThemeConstruit } from '@/methodes/indicateurs'
 import { ancreDuJeu } from '@/methodes/sources'
 
@@ -68,6 +73,10 @@ function uniteAffichage(unite: string): string {
               <dt class="bloc-indicateur-label">{{ indicateur.label }}</dt>
               <dd class="bloc-indicateur-definition">{{ indicateur.definition }}</dd>
               <dd class="bloc-indicateur-meta">
+                <span class="meta-direction">
+                  <span class="meta-etiquette">Sens du classement</span>
+                  {{ LIBELLES_DIRECTION[indicateur.direction] }}
+                </span>
                 <span class="meta-unite">
                   <span class="meta-etiquette">Unité</span>
                   {{ uniteAffichage(indicateur.unite) }}
@@ -85,6 +94,35 @@ function uniteAffichage(unite: string): string {
             </div>
           </template>
         </dl>
+      </div>
+
+      <div class="groupe-ordinalite">
+        <h3 class="groupe-titre">Le sens des classements</h3>
+        <p class="ordinalite-intro">
+          Chaque indicateur a un rang « Xᵉ / Y » dans son groupe de comparaison, et « 1er est
+          toujours bon » (ADR-0015) : la direction indique quel bout du classement est le bon —
+          le vocabulaire du glyphe de la fiche (#367). Le rang est direction-correcté par le
+          pipeline ; cette table documente le sens, jamais le calcul.
+        </p>
+        <table class="table-ordinalite">
+          <thead>
+            <tr>
+              <th scope="col">Indicateur</th>
+              <th scope="col">Le 1er du classement est…</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(indicateur, clef) in THEMES_METHODES[theme].indicateurs"
+              :key="clef"
+              class="ligne-ordinalite"
+              :data-clef="clef"
+            >
+              <td class="ordinalite-indicateur">{{ indicateur.label }}</td>
+              <td class="ordinalite-direction">{{ LIBELLES_DIRECTION[indicateur.direction] }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div class="groupe-stories">
@@ -234,6 +272,11 @@ function uniteAffichage(unite: string): string {
   color: var(--text-tertiary);
 }
 
+.meta-direction {
+  font-weight: 600;
+  color: var(--bloc-strong);
+}
+
 .meta-source-lien {
   color: var(--bloc-strong);
   font-weight: 600;
@@ -242,6 +285,50 @@ function uniteAffichage(unite: string): string {
 .meta-source-lien:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+/* ---- La table « Le sens des classements » (ADR-0015, #367) ---- */
+.groupe-ordinalite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ordinalite-intro {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+}
+
+.table-ordinalite {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface-primary);
+  font: var(--text-body-sm);
+}
+
+.table-ordinalite th,
+.table-ordinalite td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.table-ordinalite th {
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.ordinalite-indicateur {
+  font-weight: 600;
+  color: var(--bloc-strong);
+}
+
+.ordinalite-direction {
+  color: var(--text-secondary);
 }
 
 /* ---- Les Stories ---- */
