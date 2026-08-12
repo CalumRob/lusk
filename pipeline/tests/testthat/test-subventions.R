@@ -434,37 +434,3 @@ test_that("construire_donnees_subventions : une source absente du cache s'arrêt
     "subventions_attribuees_scdl0"
   )
 })
-
-# Données réelles --------------------------------------------------------------
-# Le bloc « données réelles » (hors boucle par défaut — LUSK_RUN_REAL=1, le
-# helper skip_sans_donnees_reelles) : l'export SCDL réel du cache
-# (pipeline/data/raw/, gitignoré). Il attrape les dérives de format de
-# l'export réel (délimiteur, noms de champs, types) que les fixtures ne
-# peuvent pas voir — sans fichier réel, le test est sauté.
-
-test_that("données réelles : l'export SCDL réel s'ingère et agrège sans dérive de format", {
-  cache <- testthat::test_path("..", "..", "data", "raw")
-  fichier <- file.path(cache, "subventions_attribuees_scdl0.csv")
-  skip_sans_donnees_reelles(file.exists(fichier),
-                            "l'export SCDL réel est absent du cache")
-
-  donnees <- construire_donnees_subventions(cache = cache)
-  conventions <- donnees$conventions
-
-  # la forme du contrat, l'ancre TOUJOURS valide (le marqueur « Non
-  # disponible » n'y figure jamais)
-  expect_named(conventions, c("commune", "annee", "programme_libl", "montant"))
-  expect_true(all(grepl("^[0-9]{5}$", conventions$commune)))
-  expect_true(all(conventions$montant >= 0))
-
-  # l'année complète la plus récente porte des conventions (jamais un agrégat
-  # vide) et le seam de calcul complet s'exécute, estampillé hebdomadaire
-  annee_ref <- annee_reference_subventions(conventions$annee)
-  expect_true(annee_ref %in% conventions$annee)
-  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
-  analytiques <- construire_analytiques_subventions(
-    conventions, base_epci, vintages_subventions())
-  ref <- vintages_subventions()
-  expect_true(all(analytiques$vintage_source == ref$source))
-  expect_true(all(analytiques$montant >= 0))
-})

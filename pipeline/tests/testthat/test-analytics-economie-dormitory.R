@@ -22,9 +22,10 @@
 #   - le ratio non défini (22007 : zéro actif résident -> NA, rapporté) ;
 #   - la perspective absente (22008 : commune sans résidents ; 22009 : cellule
 #     non diffusée K -> somme NA, JAMAIS convertie en zéro observé).
-# Le réseau n'entre jamais dans la boucle de test : le dernier test_that lit
-# les tables réelles quand elles sont présentes (data/ gitignoré) et saute
-# proprement sinon (CI).
+# Le réseau n'entre jamais dans la boucle de test. Le verrou « données
+# réelles » (les tables réelles du worktree, pipeline/data/ — gitignoré) vit
+# désormais dans le graphe targets (verif_economie_dortoir, _targets.R — le
+# run de l'issue #342).
 
 # Le fixture côté lieu de travail (forme flores_a88) ----------------------------
 fixture_flores_dortoir <- function() {
@@ -100,14 +101,6 @@ fixture_rp_dortoir <- function() {
 
 construire_dortoir_fixture <- function() {
   construire_dortoir_economie(fixture_flores_dortoir(), fixture_rp_dortoir())
-}
-
-# Les tables réelles vivent sous pipeline/data/ (gitignoré) — résolues par
-# rapport au dossier des tests (testthat::test_path), quel que soit le répertoire
-# de travail du lanceur (test_dir depuis la racine ou test_file depuis pipeline/).
-chemin_reel_economie <- function(fichier) {
-  file.path(testthat::test_path("..", ".."),
-            "data", "processed", "economie", fichier)
 }
 
 test_that("la formule du ratio : lieu de travail / résidence, hors _T et hors mesure etablissements", {
@@ -233,38 +226,4 @@ test_that("persister_dortoir_economie : table + rapport de suppression sous data
   # (data/ étant gitignoré, seul le chemin est vérifié — jamais public/)
   expect_match(as.character(formals(persister_dortoir_economie)$sortie),
                "data/processed/economie")
-})
-
-test_that("données réelles : ratio calculable pour 100 % des communes, distribution verrouillée", {
-  chemin_a88 <- chemin_reel_economie("flores_a88.rds")
-  skip_sans_donnees_reelles(file.exists(chemin_a88),
-              "les tables réelles ne sont pas présentes (data/ est gitignoré)")
-
-  res <- construire_dortoir_economie(
-    readr::read_rds(chemin_a88),
-    readr::read_rds(chemin_reel_economie("rp_emploi.rds"))
-  )
-  d <- res$table
-
-  # acceptance : ratio calculable pour 100 % des 1202 communes (les deux côtés > 0)
-  expect_equal(nrow(d), 1202)
-  expect_equal(sum(!is.na(d$ratio)), 1202)
-  expect_true(all(d$workplace > 0))
-  expect_true(all(d$resident > 0))
-
-  # la distribution réelle verrouillée à la construction (évidence 2026-08-05) :
-  # 304 dortoirs profonds (25,3 %), 55 pôles d'emploi (4,6 %), 6 communes sous le
-  # plancher gate D (0,5 %), le reste « equilibre » (69,6 %)
-  expect_equal(sum(d$classification == "dortoir-profond", na.rm = TRUE), 304)
-  expect_equal(sum(d$classification == "pole-emploi", na.rm = TRUE), 55)
-  expect_equal(sum(is.na(d$classification)), 6)
-  expect_equal(nrow(res$suppression), 6)
-  # les 6 supprimées sont toutes sous le plancher (motif gate D)
-  expect_true(all(grepl("plancher", res$suppression$motif)))
-
-  # l'Histoire ne se déclenche JAMAIS sur la majorité : < 50 % de communes
-  expect_lt(sum(d$classification != "equilibre", na.rm = TRUE) / nrow(d), 0.5)
-  # médiane ~0.3 (l'évidence : médiane 0.3, 69.4 % < 0.5×)
-  expect_lt(median(d$ratio), 0.5)
-  expect_gt(median(d$ratio), 0.2)
 })
