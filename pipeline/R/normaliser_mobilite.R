@@ -126,7 +126,12 @@ normaliser_snapshot_mobilite <- function(snapshot) {
 # dimensions résiduelles au total (_T), croisées par la dimension CARS :
 #   _T    -> menages_total (le nombre de ménages) ;
 #   C0    -> menages_sans_voiture ;
+#   C1    -> menages_une_voiture ;
 #   C_GE2 -> menages_deux_plus.
+# Depuis l'issue #368, la catégorie du MILIEU (C1 — un ménage avec une seule
+# voiture) est publiée : les trois parts (0 / 1 / 2+) somment à 1 — la
+# catégorie 1 était dans la source RP et manquait au payload (les seules
+# parties sans_voiture / deux_plus ne sommaient pas à 1).
 # Une colonne requise manquante (une vague qui change de structure) s'arrête
 # ici, en nommant le champ fautif. Déterministe : trié par commune.
 extraire_voitures <- function(long) {
@@ -149,7 +154,7 @@ extraire_voitures <- function(long) {
       OCS == "DW_MAIN",
       L_STAY == "_T", TDW == "_T", CARPARK == "_T", NOR == "_T",
       TSH == "_T", BUILD_END == "_T", NRG_SRC == "_T",
-      CARS %in% c("_T", "C0", "C_GE2"),
+      CARS %in% c("_T", "C0", "C1", "C_GE2"),
       # la Bretagne : le préfixe départemental du code commune (le même filtre
       # que le snapshot porté — jamais une commune hors 22/29/35/56)
       substr(GEO, 1, 2) %in% DEPT_BRETAGNE
@@ -158,14 +163,16 @@ extraire_voitures <- function(long) {
     tidyr::pivot_wider(id_cols = GEO, names_from = CARS,
                        values_from = OBS_VALUE) %>%
     dplyr::rename(commune = GEO, menages_total = `_T`,
-                  menages_sans_voiture = C0, menages_deux_plus = C_GE2)
+                  menages_sans_voiture = C0, menages_une_voiture = C1,
+                  menages_deux_plus = C_GE2)
 
   absentes <- setdiff(c("commune", "menages_total", "menages_sans_voiture",
-                        "menages_deux_plus"), names(voitures))
+                        "menages_une_voiture", "menages_deux_plus"),
+                      names(voitures))
   if (length(absentes) > 0) {
     stop("Voitures/ménage corrompu — la dimension CARS du cube ne porte pas ",
-         "les comptes attendus (C0 / C_GE2 / _T) : ", paste(absentes, collapse = ", "),
-         ".", call. = FALSE)
+         "les comptes attendus (C0 / C1 / C_GE2 / _T) : ",
+         paste(absentes, collapse = ", "), ".", call. = FALSE)
   }
   voitures %>%
     dplyr::arrange(commune)

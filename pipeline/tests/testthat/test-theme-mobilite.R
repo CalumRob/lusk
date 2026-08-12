@@ -324,7 +324,8 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
     lire_voitures_communes = function(chemin) {
       appels$voitures <- chemin
       tibble::tibble(commune = "29011", menages_total = 100,
-                     menages_sans_voiture = 10, menages_deux_plus = 20)
+                     menages_sans_voiture = 10, menages_une_voiture = 70,
+                     menages_deux_plus = 20)
     },
     lire_communes_limites = function(chemin) {
       appels$limites <- chemin
@@ -1135,39 +1136,55 @@ test_that("compute_histoires_mobilite : « Ce que le vélo préserve » ne se d�
 
 # fixture_voitures_mini -------------------------------------------------------
 # Les comptes voitures/ménage de 4 communes (la forme que lire_voitures_communes
-# persiste) : menages_total (DWELLINGS, CARS=_T), menages_sans_voiture (CARS=C0)
-# et menages_deux_plus (CARS=C_GE2). Des comptes simples pour des parts
-# calculables à la main :
-#   22001 : 100 ménages, 10 sans voiture (0.1), 20 avec 2+ (0.2)
-#   22002 : 300 ménages, 60 sans (0.2), 90 avec 2+ (0.3)
-#   29001 : 200 ménages, 80 sans (0.4), 40 avec 2+ (0.2)
-#   29002 : 400 ménages, 100 sans (0.25), 240 avec 2+ (0.6)
+# persiste) : menages_total (DWELLINGS, CARS=_T), menages_sans_voiture (CARS=C0),
+# menages_une_voiture (CARS=C1) et menages_deux_plus (CARS=C_GE2) — les TROIS
+# parties depuis l'issue #368. Des comptes simples pour des parts calculables à
+# la main (les trois parts somment à 1 par construction) :
+#   22001 : 100 ménages, 10 sans (0.1), 70 avec 1 (0.7), 20 avec 2+ (0.2)
+#   22002 : 300 ménages, 60 sans (0.2), 150 avec 1 (0.5), 90 avec 2+ (0.3)
+#   29001 : 200 ménages, 80 sans (0.4), 80 avec 1 (0.4), 40 avec 2+ (0.2)
+#   29002 : 400 ménages, 100 sans (0.25), 60 avec 1 (0.15), 240 avec 2+ (0.6)
 fixture_voitures_mini <- function() {
   tibble::tribble(
-    ~commune, ~menages_total, ~menages_sans_voiture, ~menages_deux_plus,
-    "22001", 100, 10, 20,
-    "22002", 300, 60, 90,
-    "29001", 200, 80, 40,
-    "29002", 400, 100, 240
+    ~commune, ~menages_total, ~menages_sans_voiture, ~menages_une_voiture,
+    ~menages_deux_plus,
+    "22001", 100, 10, 70, 20,
+    "22002", 300, 60, 150, 90,
+    "29001", 200, 80, 80, 40,
+    "29002", 400, 100, 60, 240
   )
 }
 
-test_that("calculer_voitures_communes : les parts sans voiture / 2+ par commune (le miroir de la demande)", {
+test_that("calculer_voitures_communes : les TROIS parts (0 / 1 / 2+) par commune (le miroir de la demande)", {
   v <- calculer_voitures_communes(fixture_voitures_mini())
 
-  # une ligne par commune, la forme : identité + le poids (ménages) + les deux
-  # parts (sans voiture / 2+) — des fractions dans [0, 1]
+  # une ligne par commune, la forme : identité + le poids (ménages) + les trois
+  # parts (sans voiture / une voiture / 2+) — des fractions dans [0, 1]
   expect_equal(nrow(v), 4)
-  expect_named(v, c("commune", "menages", "part_sans_voiture", "part_deux_plus"))
+  expect_named(v, c("commune", "menages", "part_sans_voiture",
+                    "part_une_voiture", "part_deux_plus"))
   lire <- function(commune) v[v$commune == commune, ]
   expect_equal(lire("22001")$part_sans_voiture, 0.1)
+  expect_equal(lire("22001")$part_une_voiture, 0.7)
   expect_equal(lire("22001")$part_deux_plus, 0.2)
   expect_equal(lire("22002")$part_sans_voiture, 0.2)
+  expect_equal(lire("22002")$part_une_voiture, 0.5)
   expect_equal(lire("22002")$part_deux_plus, 0.3)
   expect_equal(lire("29001")$part_sans_voiture, 0.4)
+  expect_equal(lire("29001")$part_une_voiture, 0.4)
   expect_equal(lire("29001")$part_deux_plus, 0.2)
   expect_equal(lire("29002")$part_sans_voiture, 0.25)
+  expect_equal(lire("29002")$part_une_voiture, 0.15)
   expect_equal(lire("29002")$part_deux_plus, 0.6)
+  # les trois parts SOMMENT à 1 (la dimension CARS partitionne les ménages —
+  # issue #368 : la catégorie du milieu C1 est publiée, plus jamais un total
+  # qui ne ferme pas)
+  for (commune in v$commune) {
+    expect_equal(sum(v$part_sans_voiture[v$commune == commune] +
+                       v$part_une_voiture[v$commune == commune] +
+                       v$part_deux_plus[v$commune == commune]), 1,
+                 info = commune)
+  }
   # le poids de l'agrégation : le nombre de ménages (la moyenne pondérée par
   # les ménages, jamais une moyenne de parts)
   expect_equal(lire("22001")$menages, 100)
@@ -1181,25 +1198,33 @@ test_that("agreger_voitures_territoires : les niveaux RECALCULENT depuis les par
   ag <- agreger_voitures_territoires(v, base_epci_mini_analytique())
 
   # les quatre niveaux : 4 communes + 2 EPCIs + 2 départements + la région, ×
-  # les deux parts = 18 lignes
-  expect_equal(nrow(ag), 9 * 2)
+  # les trois parts = 27 lignes
+  expect_equal(nrow(ag), 9 * 3)
   expect_named(ag, c("code", "key", "detail", "value"))
   expect_true(all(ag$key == "voitures_menage"))
-  expect_setequal(unique(ag$detail), c("sans_voiture", "deux_plus"))
+  expect_setequal(unique(ag$detail),
+                  c("sans_voiture", "une_voiture", "deux_plus"))
   lire <- function(code, detail) ag$value[ag$code == code & ag$detail == detail]
 
   # EPCI 200000001 (22001 + 22002) : Σ (part × ménages) ÷ Σ ménages — la
   # moyenne PONDÉRÉE par les ménages, jamais la moyenne des parts
   expect_equal(lire("200000001", "sans_voiture"), (0.1 * 100 + 0.2 * 300) / 400)
+  expect_equal(lire("200000001", "une_voiture"), (0.7 * 100 + 0.5 * 300) / 400)
   expect_equal(lire("200000001", "deux_plus"), (0.2 * 100 + 0.3 * 300) / 400)
   # EPCI 200000002 (29001 + 29002)
   expect_equal(lire("200000002", "sans_voiture"), (0.4 * 200 + 0.25 * 400) / 600)
+  expect_equal(lire("200000002", "une_voiture"), (0.4 * 200 + 0.15 * 400) / 600)
   expect_equal(lire("200000002", "deux_plus"), (0.2 * 200 + 0.6 * 400) / 600)
   # départements : la même pondération sur leurs communes ; la région : toutes
   expect_equal(lire("22", "sans_voiture"), (0.1 * 100 + 0.2 * 300) / 400)
   expect_equal(lire("29", "deux_plus"), (0.2 * 200 + 0.6 * 400) / 600)
   expect_equal(lire("53", "sans_voiture"), (10 + 60 + 80 + 100) / 1000)
+  expect_equal(lire("53", "une_voiture"), (70 + 150 + 80 + 60) / 1000)
   expect_equal(lire("53", "deux_plus"), (20 + 90 + 40 + 240) / 1000)
+  # les agrégats portent eux aussi les trois parts qui somment à 1
+  for (code in unique(ag$code)) {
+    expect_equal(sum(ag$value[ag$code == code]), 1, info = code)
+  }
   # la commune garde SA part telle quelle
   expect_equal(lire("22001", "sans_voiture"), 0.1)
   # déterministe : trié par code puis détail
@@ -2143,11 +2168,12 @@ test_that("INDICATEURS_MOBILITE : les douze clés du payload, chacune estampill�
   ind <- INDICATEURS_MOBILITE
 
   # la « Taille » (le tracer bullet #137/#138) + les deux clés multi-mesures
-  # de l'étage demande/réseaux (issue #139 : voitures_menage × 2, reseaux × 6)
+  # de l'étage demande/réseaux (issue #139 : voitures_menage × 3 depuis #368,
+  # reseaux × 6)
   # + les QUATRE clés du sous-bloc « L'offre de mobilité alternative »
   # (issue #140 : offre_tc, bornes_recharge, places_stationnement_velo_1000 ;
   # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
-  # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 2 / 6 /
+  # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
   expect_equal(nrow(ind), 12L)
   expect_setequal(ind$key, c("nb_buildings", "voitures_menage", "reseaux",
@@ -2157,7 +2183,7 @@ test_that("INDICATEURS_MOBILITE : les douze clés du payload, chacune estampill�
                              "iso_alimentation", "iso_sante",
                              "iso_administration", "iso_ecole", "iso_banque"))
   expect_equal(ind$multiplicite[ind$key == "nb_buildings"], 1L)
-  expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 2L)
+  expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 3L)
   expect_equal(ind$multiplicite[ind$key == "reseaux"], 6L)
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
@@ -2253,9 +2279,15 @@ fixture_indicateurs_mobilite <- function() {
   # l'étage demande/réseaux (issue #139) et le sous-bloc (issue #140) : les
   # formes longues (code, key[, detail], value) des artefacts du chaînon
   voitures_territoires <- tidyr::crossing(
-    code = codes, detail = c("sans_voiture", "deux_plus")
+    code = codes, detail = c("sans_voiture", "une_voiture", "deux_plus")
   ) %>%
-    dplyr::mutate(key = "voitures_menage", value = 0.3)
+    dplyr::mutate(
+      key = "voitures_menage",
+      # les trois parts SOMMENT à 1 (0.2 + 0.5 + 0.3 — la validation du
+      # thème l'exige depuis l'issue #368)
+      value = dplyr::if_else(detail == "sans_voiture", 0.2,
+                             dplyr::if_else(detail == "une_voiture", 0.5, 0.3))
+    )
   reseaux_territoires <- tidyr::crossing(
     code = codes,
     detail = c("t_longueur", "t_densite", "b_longueur", "b_densite",
@@ -2303,7 +2335,7 @@ test_that("construire_indicateurs_mobilite : les douze clés, avec les 5 parts d
 
   # les douze clés : la « Taille » + la demande/réseaux + le sous-bloc
   # (issue #140 + #231) + les 5 parts d'isolation (issue #141) — une ligne
-  # par (territoire × détail) (9 territoires × 22 détails)
+  # par (territoire × détail) (9 territoires × 23 détails)
   expect_setequal(unique(ind$key), c(
     "nb_buildings", "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
@@ -2311,9 +2343,9 @@ test_that("construire_indicateurs_mobilite : les douze clés, avec les 5 parts d
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque"
   ))
-  expect_equal(nrow(ind), 9 * 22)
+  expect_equal(nrow(ind), 9 * 23)
   expect_equal(sum(ind$key == "nb_buildings"), 9)
-  expect_equal(sum(ind$key == "voitures_menage"), 9 * 2)
+  expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
   for (cle in c("offre_tc", "bornes_recharge",
                 "places_stationnement_velo_1000")) {

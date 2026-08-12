@@ -386,12 +386,15 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     une ligne PAR TERRITOIRE (commune / EPCI / département / région : les
 #     agrégats sont recalculés depuis les parties, jamais une moyenne de
 #     parts) — la clé du tracer bullet (#137), toujours publiée ;
-#   - « voitures_menage » (l'étage demande, #139) : les parts des ménages SANS
-#     voiture / avec 2+ voitures, une ligne par (territoire × part) — la
-#     multiplicité 2, agrégée depuis les parties par la moyenne pondérée par
-#     les ménages, JAMAIS une moyenne de parts. Source de référence : le cube
-#     RP exploitation principale (rp_logement_princ — le code de table épinglé
-#     LOG T12) ;
+#   - « voitures_menage » (l'étage demande, #139) : les TROIS parts réelles
+#     des ménages SANS voiture / avec UNE voiture / avec 2+ voitures (la
+#     dimension CARS du cube RP : C0 / C1 / C_GE2 — la catégorie du milieu
+#     C1 publiée depuis l'issue #368, les trois parts SOMMENT à 1), une ligne
+#     par (territoire × part) — la multiplicité 3, agrégée depuis les parties
+#     par la moyenne pondérée par les ménages, JAMAIS une moyenne de parts. Le
+#     scalaire classé de la fiche est la part SANS voiture (high-is-good,
+#     ADR-0015). Source de référence : le cube RP exploitation principale
+#     (rp_logement_princ — le code de table épinglé LOG T12) ;
 #   - « reseaux » (l'étage réseaux, #139, mode `b` alimenté par le jeu Geovelo
 #     depuis #222/#228) : les longueurs et densités des réseaux t/b/c (à pied /
 #     vélo / voiture), une ligne par (territoire × mesure) — la multiplicité 6
@@ -469,7 +472,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                        "korrigo", "bornes-recharges", "stationnement-velo",
                        "osm_reseaux",
                        rep("mobilite_snapshot", 5)),
-  multiplicite = c(1L, 2L, 6L, 1L, 1L, 1L, 5L, rep(1L, 5))
+  multiplicite = c(1L, 3L, 6L, 1L, 1L, 1L, 5L, rep(1L, 5))
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -595,7 +598,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
 
   voitures <- aligner_detail(
     analytiques$voitures_territoires, "voitures_menage",
-    c(sans_voiture = "%", deux_plus = "%")
+    c(sans_voiture = "%", une_voiture = "%", deux_plus = "%")
   )
   reseaux <- aligner_detail(
     analytiques$reseaux_territoires, "reseaux",
@@ -822,6 +825,21 @@ validations_mobilite <- list(
       payload$indicateurs$key == "voitures_menage"]
     if (any(!is.na(voitures) & (voitures < 0 | voitures > 1))) {
       stop("Payload invalide : une part voitures/ménage sort de [0, 1].",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # les TROIS parts voitures/ménage (0 / 1 / 2+) SOMMENT à 1 par territoire
+  # (issue #368 — la dimension CARS partitionne les ménages : C0 + C1 + C_GE2
+  # = _T ; un total qui déraille est une corruption)
+  function(payload) {
+    parts <- stats::aggregate(
+      value ~ territoire,
+      payload$indicateurs[payload$indicateurs$key == "voitures_menage", ],
+      sum
+    )
+    if (any(abs(parts$value - 1) > 1e-6)) {
+      stop("Payload invalide : les parts voitures/ménage ne somment pas à 1.",
            call. = FALSE)
     }
     invisible(payload)
