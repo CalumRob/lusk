@@ -6,8 +6,8 @@
 # « cron » sur ubuntu-latest et publie le payload (parquet + JSON + vintages +
 # rapport de run) vers public/data/ à la racine du dépôt, committé et servi
 # par l'hôte statique (Pages). L'orchestration est volontairement mince : toute
-# la logique de décision vit dans le package R (run_pipeline, detecter_changement,
-# run-report.json) et y est testée.
+# la logique de décision vit dans le package R (le GRAPHE targets #329,
+# detecter_changement, run-report.json) et y est testée.
 #
 # Choix documentés :
 #
@@ -20,13 +20,38 @@
 #   arrête le run (pas de publication). Le réseau n'entre jamais dans la boucle
 #   de test.
 #
+# - Orchestration : le build invoque le GRAPHE targets (issue #329, câblé par
+#   #343) au lieu de run_pipeline() — la configuration de run est explicite :
+#   LUSK_MODE=cron, LUSK_CACHE=data/raw, LUSK_SORTIE=../public/data et
+#   LUSK_THEMES vide = le run COMPLET (les CINQ thèmes + le payload partagé
+#   Programmes, ADR-0013). La sémantique mode cron d'ADR-0004 est préservée
+#   (le graphe la transmet à download_sources : « cron » téléchargées,
+#   « manuel » sautées sans échec) et la sémantique #8/#10 du rapport aussi :
+#   le rapport de run est un target INDÉPENDANT des étapes aval, réestampillé
+#   à chaque run et écrit même quand une cible échoue (tar_option_set error =
+#   "continue"). Un échec de cible ne fait donc PAS lever tar_make : l'étape
+#   build détecte les cibles en échec (tar_errored) et en fait un exit non nul
+#   — le run reste rouge (l'étape « Signaler l'échec du build ») et la trace
+#   (le rapport, committé par la décision commit/skip) est committée comme
+#   avant. Quand le TÉLÉCHARGEMENT lui-même échoue, le DAG n'écrit aucun
+#   rapport (les rapports dépendent des sources) : l'étape build écrit alors
+#   le rapport d'échec (statuts « échec » portés par l'erreur, issue #8) — la
+#   responsabilité du câblage cron, documentée dans _targets.R.
+#
+# - Rebuild à froid assumé : le store _targets/ (gitignoré par
+#   pipeline/.gitignore) n'est PAS caché entre deux runs du runner — chaque
+#   run cron re-télécharge et re-construit tout, le coût du présent (la même
+#   classe de run que run_pipeline sur cache vide). La décision de cache du
+#   store vit dans #338 (quand le cron devient production) ; rien ne change
+#   ici.
+#
 # - Chemins : les étapes R tournent DEPUIS pipeline/ — le .Rprofile du paquet
 #   (source("renv/activate.R")) active renv automatiquement, y compris le
 #   bootstrap renv sur un runner à cache froid. Le cache brut est donc
 #   pipeline/data/raw (gitignoré par pipeline/.gitignore) et la sortie est
 #   explicite : ../public/data, le home public du payload à la racine du dépôt
-#   (les défauts de run_pipeline(), "data/raw" et "public/data", sont relatifs
-#   au CWD du process R — on rend les chemins explicites pour lever l'ambiguïté).
+#   (les défauts du graphe, "data/raw" et "public/data", sont relatifs au CWD
+#   du process R — on rend les chemins explicites pour lever l'ambiguïté).
 #
 # - testthat/pkgload hors lock : renv.lock est en snapshot.type « explicit »
 #   avec package.dependency.fields = Imports/Depends/LinkingTo — les Suggests
@@ -122,13 +147,21 @@ jobs:
             git archive HEAD public/data | tar -x -C "$RUNNER_TEMP/commite"
           fi
 
-      - name: Build en mode cron (exit capturé — le rapport s'écrit même sur échec)
+      - name: Build en mode cron — le graphe targets (exit capturé, le rapport s'écrit même sur échec)
         id: build
         working-directory: pipeline
         shell: bash
+        env:
+          # la configuration du run que _targets.R lit (le mode cron d'ADR-0004
+          # est transmis tel quel à download_sources ; LUSK_THEMES vide = le run
+          # COMPLET, les cinq thèmes + le payload partagé Programmes)
+          LUSK_MODE: cron
+          LUSK_CACHE: data/raw
+          LUSK_SORTIE: ../public/data
+          LUSK_THEMES: ""
         run: |
           set +e
-          Rscript -e "pkgload::load_all(); run_pipeline(mode = 'cron', cache = 'data/raw', sortie = '../public/data')"
+          Rscript -e 'pkgload::load_all(); targets::tar_make(callr_function = NULL); err <- targets::tar_errored(); if (length(err) > 0) { rapport <- file.path("../public/data", "run-report.json"); if (!file.exists(rapport) && any(grepl("^sources_", err))) { statuts <- NULL; for (m in list(theme_demographie()$manifest, theme_habitat()$manifest, theme_economie()$manifest, theme_mobilite()$manifest, theme_milieux()$manifest, theme_programmes()$manifest)) { statuts <- tryCatch(download_sources(m, cache = "data/raw", mode = "cron"), erreur_telechargement = function(e) e$statuts); if (any(statuts$status == "\u00e9chec")) break }; if (any(statuts$status == "\u00e9chec")) ecrire_rapport_run(statuts, "cron", "../public/data") }; quit(status = 1) }'
           status=$?
           echo "build_exit=$status" >> "$GITHUB_OUTPUT"
           exit 0
