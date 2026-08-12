@@ -563,10 +563,17 @@ theme_demographie <- function() {
     construire_indicateurs = construire_indicateurs_demographie,
     construire_apercu = construire_apercu_demographie,
     scalaires = scalaires_demographie,
-    # la désirabilité par clé (ADR-0015) : les quatre indicateurs Démographie
-    # sont high-is-good (la densité, la jeunesse, la croissance, la taille des
-    # ménages) — aucune clé "low" à déclarer, le défaut de la machinerie tient.
-    directions = list(),
+    # la désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) —
+    # AUCUNE clé ne se repose sur le défaut high-is-good : les quatre
+    # indicateurs Démographie déclarent TOUS leur direction (la densité, la
+    # jeunesse de la structure par âge, la croissance et la taille moyenne des
+    # ménages sont high-is-good — la plus grande valeur est la meilleure).
+    directions = list(
+      densite = "high",
+      structure_age = "high",
+      evolution_1968 = "high",
+      taille_menages = "high"
+    ),
     compute_histoires = compute_histoires_demographie,
     validations = validations_demographie,
     # Issue #311 : les métadonnées du thème (le fichier épinglé

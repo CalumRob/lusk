@@ -37,8 +37,11 @@ test_that("MANIFEST_ECONOMIE : les quatre fragments concaténés, une ligne par 
 test_that("theme_economie : le descripteur porte les membres requis du contrat", {
   th <- theme_economie()
 
-  # la forme du contrat : les membres requis, dans l'ordre
-  expect_named(th, MEMBRES_DESCRIPTEUR_ECONOMIE)
+  # la forme du contrat : les membres requis (dans l'ordre) + la déclaration
+  # des directions (issue #368 — chaque clé classée déclare SA direction)
+  expect_named(th, c("theme", "manifest", "vintages", "construire_donnees",
+                     "construire_analytiques", "publier", "directions",
+                     "metadata"))
   expect_equal(th$theme, "economie")
   expect_identical(th$manifest, MANIFEST_ECONOMIE)
   # les trois pièces que run_pipeline(theme = theme_economie()) consomme

@@ -88,8 +88,11 @@ test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de produ
 test_that("theme_mobilite : le descripteur porte les membres requis du contrat", {
   th <- theme_mobilite()
 
-  # la forme du contrat : les membres requis, dans l'ordre
-  expect_named(th, MEMBRES_DESCRIPTEUR_MOBILITE)
+  # la forme du contrat : les membres requis (dans l'ordre) + la déclaration
+  # des directions (issue #368 — chaque clé classée déclare SA direction)
+  expect_named(th, c("theme", "manifest", "vintages", "construire_donnees",
+                     "construire_analytiques", "publier", "directions",
+                     "metadata"))
   expect_equal(th$theme, "mobilite")
   expect_identical(th$manifest, MANIFEST_MOBILITE)
   # les pièces que run_pipeline(theme = theme_mobilite()) consomme
@@ -2164,25 +2167,26 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
 })
 
 # INDICATEURS_MOBILITE -----------------------------------------------------------
-test_that("INDICATEURS_MOBILITE : les douze clés du payload, chacune estampillée de SA source de référence", {
+test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retiré), chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
 
-  # la « Taille » (le tracer bullet #137/#138) + les deux clés multi-mesures
-  # de l'étage demande/réseaux (issue #139 : voitures_menage × 3 depuis #368,
-  # reseaux × 6)
+  # les clés multi-mesures de l'étage demande/réseaux (issue #139 :
+  # voitures_menage × 3 depuis #368, reseaux × 6)
   # + les QUATRE clés du sous-bloc « L'offre de mobilité alternative »
   # (issue #140 : offre_tc, bornes_recharge, places_stationnement_velo_1000 ;
   # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
   # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
-  expect_equal(nrow(ind), 12L)
-  expect_setequal(ind$key, c("nb_buildings", "voitures_menage", "reseaux",
+  expect_equal(nrow(ind), 11L)
+  expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
                              "places_stationnement_velo_1000",
                              "offre_cyclable",
                              "iso_alimentation", "iso_sante",
                              "iso_administration", "iso_ecole", "iso_banque"))
-  expect_equal(ind$multiplicite[ind$key == "nb_buildings"], 1L)
+  # `nb_buildings` QUITTE le payload (issue #368, décision #196) — jamais
+  # publié, la « Taille » reste la pondération interne du thème
+  expect_false("nb_buildings" %in% ind$key)
   expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 3L)
   expect_equal(ind$multiplicite[ind$key == "reseaux"], 6L)
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
@@ -2196,7 +2200,6 @@ test_that("INDICATEURS_MOBILITE : les douze clés du payload, chacune estampill�
   }
 
   # chaque clé est estampillée du vintage de SA source de référence :
-  #   - nb_buildings              -> le snapshot porté (l'horloge lente) ;
   #   - voitures_menage           -> le cube RP exploitation principale (le
   #     code de table LOG T12) ;
   #   - reseaux                   -> le jeu Geovelo « Aménagements cyclables »
@@ -2212,11 +2215,9 @@ test_that("INDICATEURS_MOBILITE : les douze clés du payload, chacune estampill�
   #     décision #226 US6 : le ratio « X % de l'infrastructure routière » est
   #     limité par sa plus lente horloge, le réseau `c` OSM — JAMAIS le
   #     vintage Geovelo frais) ;
-  #   - les 5 parts d'isolation (issue #141) -> le snapshot porté, comme la
-  #     « Taille » : l'estampille SNAPSHOT du flagship (la date d'instantané
-  #     de l'analyse comme référence — la grille est la matière du snapshot).
-  expect_equal(ind$source_reference[ind$key == "nb_buildings"],
-               "mobilite_snapshot")
+  #   - les 5 parts d'isolation (issue #141) -> le snapshot porté :
+  #     l'estampille SNAPSHOT du flagship (la date d'instantané de l'analyse
+  #     comme référence — la grille est la matière du snapshot).
   expect_equal(ind$source_reference[ind$key == "voitures_menage"],
                "rp_logement_princ")
   expect_equal(ind$source_reference[ind$key == "reseaux"], "amenagements_cyclables")
@@ -2322,7 +2323,7 @@ fixture_indicateurs_mobilite <- function() {
   )
 }
 
-test_that("construire_indicateurs_mobilite : les douze clés, avec les 5 parts d'isolation, leurs rangs et l'estampille snapshot", {
+test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retiré, #368), avec les 5 parts d'isolation, leurs rangs et l'estampille snapshot", {
   fx <- fixture_indicateurs_mobilite()
   base <- base_epci_mini_analytique()
   poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
@@ -2333,18 +2334,19 @@ test_that("construire_indicateurs_mobilite : les douze clés, avec les 5 parts d
 
   ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
 
-  # les douze clés : la « Taille » + la demande/réseaux + le sous-bloc
+  # les onze clés : la demande/réseaux + le sous-bloc
   # (issue #140 + #231) + les 5 parts d'isolation (issue #141) — une ligne
-  # par (territoire × détail) (9 territoires × 23 détails)
+  # par (territoire × détail) (9 territoires × 22 détails) ; `nb_buildings`
+  # n'est PLUS publié (issue #368, décision #196)
   expect_setequal(unique(ind$key), c(
-    "nb_buildings", "voitures_menage", "reseaux",
+    "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
     "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque"
   ))
-  expect_equal(nrow(ind), 9 * 23)
-  expect_equal(sum(ind$key == "nb_buildings"), 9)
+  expect_equal(nrow(ind), 9 * 22)
+  expect_false("nb_buildings" %in% ind$key)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
   for (cle in c("offre_tc", "bornes_recharge",

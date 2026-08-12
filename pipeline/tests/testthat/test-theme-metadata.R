@@ -320,3 +320,48 @@ test_that("valider_theme_metadata : la lecture qui référence « classification
   meta$classification_labels <- NULL
   expect_error(valider_theme_metadata(meta), "classification_labels")
 })
+
+# L'audit ordinal de l'issue #368 : CHAQUE clé classée de CHAQUE thème déclare
+# SA direction (ADR-0015) — aucune clé ne se repose sur le défaut high-is-good
+# de la machinerie. Le registre des clés classées est la table déclarative des
+# indicateurs du thème (INDICATEURS_<THEME>) ; les valeurs de lecture
+# supplémentaires (div_loss_t/b, trajectoire_artif_par_habitant) sont des
+# déclarations documentées, jamais des clés du registre.
+test_that("directions : chaque clé classée de chaque thème déclare SA direction (aucun défaut silencieux, #368)", {
+  # le registre par thème : les thèmes légers (Économie, Mobilité) ne portent
+  # pas de membre `indicateurs` — leur registre est leur table déclarative
+  registre <- list(
+    demographie = INDICATEURS_DEMOGRAPHIE$key,
+    habitat = INDICATEURS_HABITAT$key,
+    milieux = INDICATEURS_MILIEUX$key,
+    economie = INDICATEURS_ECONOMIE$key,
+    mobilite = INDICATEURS_MOBILITE$key
+  )
+  # les valeurs de lecture supplémentaires déclarées (jamais des clés du
+  # registre — des lectures de Story rendues avec leur glyph directionnel)
+  lectures_documentees <- list(
+    mobilite = c("div_loss_t", "div_loss_b"),
+    milieux = "trajectoire_artif_par_habitant"
+  )
+
+  for (theme in names(registre)) {
+    descripteur <- get(paste0("theme_", theme))()
+    directions <- descripteur$directions
+
+    # le membre directions est présent et déclare EXACTEMENT le registre +
+    # les lectures documentées — aucune clé du registre sans direction
+    manquantes <- setdiff(registre[[theme]], names(directions))
+    expect_true(length(manquantes) == 0L, info = paste(
+      theme, ": clé(s) classée(s) sans direction (défaut high-is-good) :",
+      paste(manquantes, collapse = ", ")))
+    lectures <- if (is.null(lectures_documentees[[theme]])) {
+      character(0L)
+    } else {
+      lectures_documentees[[theme]]
+    }
+    expect_setequal(names(directions), c(registre[[theme]], lectures))
+    # chaque direction est une valeur du contrat (high | low)
+    expect_true(all(vapply(directions, function(d) d %in% c("high", "low"),
+                           logical(1L))), info = theme)
+  }
+})

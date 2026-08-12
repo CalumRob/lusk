@@ -34,8 +34,8 @@
 #     sources_offre_mobilite.R), tous persistés sous data/processed/mobilite/ ;
 #   - le SEAM de publication : publier_mobilite — le payload contractuel
 #     (territoires / indicateurs / histoires / apercu) publié par la
-#     machinerie partagée publish. Le chaînon publie les DOUZE clés du thème
-#     (nb_buildings + voitures_menage + reseaux + offre_tc + bornes_recharge +
+#     machinerie partagée publish. Le chaînon publie les ONZE clés du thème
+#     (voitures_menage + reseaux + offre_tc + bornes_recharge +
 #     places_stationnement_velo_1000 + offre_cyclable — la figure « L'offre
 #     cyclable » du sous-bloc, issue #231 — + les 5 parts d'isolation de la
 #     grille, assemblées au ticket #141 avec leurs rangs et l'estampille
@@ -379,13 +379,11 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 # INDICATEURS_MOBILITE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. DOUZE clés depuis les
-# issues #139 + #140 + #141 + #231 :
-#   - « nb_buildings » (la « Taille » du thème — le nombre de bâtiments
-#     résidentiels analysés par commune, le poids du thème dans le squelette),
-#     une ligne PAR TERRITOIRE (commune / EPCI / département / région : les
-#     agrégats sont recalculés depuis les parties, jamais une moyenne de
-#     parts) — la clé du tracer bullet (#137), toujours publiée ;
+# l'estampille — les vintages T7) et sa multiplicité. ONZE clés depuis les
+# issues #139 + #140 + #141 + #231 — `nb_buildings` QUITTE le payload à l'issue
+# #368 (décision #196, jamais exécutée : la « Taille » reste la pondération
+# INTERNE du thème — le poids des agrégats et la règle de pluralité — mais
+# n'est plus une clé publiée) :
 #   - « voitures_menage » (l'étage demande, #139) : les TROIS parts réelles
 #     des ménages SANS voiture / avec UNE voiture / avec 2+ voitures (la
 #     dimension CARS du cube RP : C0 / C1 / C_GE2 — la catégorie du milieu
@@ -438,12 +436,11 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     la date d'instantané de l'analyse, le fait de vintage de première classe
 #     du flagship, ADR-0012).
 INDICATEURS_MOBILITE <- tibble::tibble(
-  key = c("nb_buildings", "voitures_menage", "reseaux",
+  key = c("voitures_menage", "reseaux",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
           "offre_cyclable",
           names(CLES_ISOLATION_MOBILITE)),
   libelle = c(
-    "Bâtiments résidentiels analysés",
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
     "Part des bâtiments près d’un arrêt (à 500 m)",
@@ -457,7 +454,6 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
   ),
   sources = list(
-    "mobilite_snapshot",
     "rp_logement_princ",
     c("amenagements_cyclables", "osm_reseaux", "communes_limites"),
     c("korrigo", "batiments_residentiels"),
@@ -467,12 +463,12 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
     "mobilite_snapshot", "mobilite_snapshot"
   ),
-  source_reference = c("mobilite_snapshot", "rp_logement_princ",
+  source_reference = c("rp_logement_princ",
                        "amenagements_cyclables",
                        "korrigo", "bornes-recharges", "stationnement-velo",
                        "osm_reseaux",
                        rep("mobilite_snapshot", 5)),
-  multiplicite = c(1L, 3L, 6L, 1L, 1L, 1L, 5L, rep(1L, 5))
+  multiplicite = c(3L, 6L, 1L, 1L, 1L, 5L, rep(1L, 5))
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -506,13 +502,14 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
-# Les indicateurs publiés du thème : les DOUZE clés déclarées, alignées sur la
-# référence (un territoire sans donnée porte NA — jamais une ligne manquante,
-# la multiplicité de la table déclarative l'exige), avec leurs rangs et leurs
-# estampilles T7 (la machinerie partagée compute_ranks + assembler_indicateurs
-# pour les clés scalaires, un rang PAR DÉTAIL pour les clés multi-mesures).
-#   - nb_buildings : une ligne par territoire, le rang de compute_ranks (la
-#     machinerie partagée) ;
+# Les indicateurs publiés du thème : les ONZE clés déclarées (issue #368 :
+# `nb_buildings` QUITTE le payload — la décision #196, jamais exécutée ; la
+# « Taille » reste la pondération INTERNE du thème, elle n'est plus une clé),
+# alignées sur la référence (un territoire sans donnée porte NA — jamais une
+# ligne manquante, la multiplicité de la table déclarative l'exige), avec leurs
+# rangs et leurs estampilles T7 (la machinerie partagée compute_ranks +
+# assembler_indicateurs pour les clés scalaires, un rang PAR DÉTAIL pour les
+# clés multi-mesures).
 #   - voitures_menage / reseaux / offre_cyclable : une ligne par (territoire ×
 #     détail) — chaque MESURE porte le rang-en-contexte de SA valeur (la part
 #     sans voiture classée contre les parts sans voiture des pairs, la
@@ -536,7 +533,8 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 #     machinerie partagée — jamais re-forké ici).
 # Les estampilles viennent des vintages de SA source de référence (les tampons
 # de la table déclarative) — la même règle que la machinerie partagée.
-construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) {
+construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
+                                             directions = theme_mobilite()$directions) {
   aligner <- function(table_agregee, key, unit) {
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
       dplyr::transmute(
@@ -554,11 +552,10 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     )
   }
 
-  # les clés scalaires : la « Taille » + les trois clés du sous-bloc — le rang
-  # via la machinerie partagée (compute_ranks)
+  # les clés scalaires : les trois clés du sous-bloc — le rang via la
+  # machinerie partagée (compute_ranks) — `nb_buildings` n'est PLUS publié
+  # (issue #368, décision #196)
   tables <- list(
-    nb_buildings = aligner(analytiques$nb_buildings_territoires,
-                           "nb_buildings", "bâtiments"),
     offre_tc = aligner(sous_bloc("offre_tc"), "offre_tc", "%"),
     bornes_recharge = aligner(sous_bloc("bornes_recharge"),
                               "bornes_recharge", "bornes"),
@@ -566,7 +563,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
       sous_bloc("places_stationnement_velo_1000"),
       "places_stationnement_velo_1000", "places / 1 000 hab")
   )
-  rangs <- compute_ranks(territoires, tables, scalaires = list())
+  rangs <- compute_ranks(territoires, tables, scalaires = list(),
+                         directions = directions)
 
   # les 5 parts d'isolation (issue #141, la grille du flagship) : les valeurs
   # de l'artefact analytique isolation_territoires (longue code × key × value),
@@ -632,7 +630,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
     territoires
   )
 
-  # l'assemblage : les douze clés + leurs rangs (le détail NA des clés
+  # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
   # table déclarative — la même forme que la machinerie partagée
   # assembler_indicateurs
@@ -656,7 +654,6 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages) 
   )
 
   dplyr::bind_rows(
-    tables$nb_buildings,
     tables$offre_tc,
     tables$bornes_recharge,
     tables$places_stationnement_velo_1000,
@@ -808,16 +805,6 @@ construire_apercu_mobilite <- function(territoires) {
 # Les vérifications de valeur propres au thème (point 7) : déclarées ici,
 # exécutées par validate_payload() après ses vérifications génériques.
 validations_mobilite <- list(
-  # la « Taille » du thème est un total non négatif (une valeur NA — commune
-  # hors snapshot — est un cas légitime, jamais une corruption)
-  function(payload) {
-    nb <- payload$indicateurs$value[payload$indicateurs$key == "nb_buildings"]
-    if (any(!is.na(nb) & nb < 0)) {
-      stop("Payload invalide : des bâtiments analysés négatifs.",
-           call. = FALSE)
-    }
-    invisible(payload)
-  },
   # les parts voitures/ménage sont des parts dans [0, 1] (une part hors de la
   # borne est une corruption — un ratio RP qui déraille, jamais un NA)
   function(payload) {
@@ -912,8 +899,9 @@ validations_mobilite <- list(
 
 # construire_payload_mobilite --------------------------------------------------
 # L'assembleur du payload du thème : les quatre tables du contrat (la forme
-# d'compute_payload, compute.R) — indicateurs (les douze clés, avec rangs +
-# estampilles T7, les 5 parts d'isolation portant l'estampille snapshot),
+# d'compute_payload, compute.R) — indicateurs (les onze clés — `nb_buildings`
+# retiré, issue #368 — avec rangs + estampilles T7, les 5 parts d'isolation
+# portant l'estampille snapshot),
 # histoires (les deux story keys), territoires (référence partagée) et apercu
 # (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
@@ -999,6 +987,31 @@ theme_mobilite <- function() {
     construire_donnees = construire_donnees_mobilite,
     construire_analytiques = construire_analytiques_mobilite,
     publier = publier_mobilite,
+    # la désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) —
+    # AUCUNE clé ne se repose sur le défaut high-is-good. Les CINQ parts
+    # d'isolation de la grille sont low-is-good (le cadrage en privation :
+    # moins de bâtiments sans accès, mieux — la machinerie de
+    # construire_rangs_isolation les classe low) ; tout le reste est
+    # high-is-good, le scalaire classé de chaque clé nommé au descripteur :
+    # la part sans voiture pour voitures_menage, la longueur vélo pour
+    # reseaux, la part près d'un arrêt pour offre_tc, les bornes, le
+    # stationnement vélo, la longueur protégée/totale pour offre_cyclable.
+    # Les LECTURES de la Story (div_loss_t/b — le nombre de types de services
+    # qui disparaissent) sont elles aussi déclarées low-is-good : moins de
+    # services perdus, mieux — ce sont des valeurs de lecture, jamais des clés
+    # du registre.
+    directions = list(
+      voitures_menage = "high",
+      reseaux = "high",
+      offre_tc = "high",
+      bornes_recharge = "high",
+      places_stationnement_velo_1000 = "high",
+      offre_cyclable = "high",
+      div_loss_t = "low",
+      div_loss_b = "low",
+      iso_alimentation = "low", iso_sante = "low",
+      iso_administration = "low", iso_ecole = "low", iso_banque = "low"
+    ),
     # Issue #311 : les métadonnées du thème (le fichier épinglé
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
