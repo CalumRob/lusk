@@ -78,6 +78,36 @@ describe('verifierPariteLibelles — la garde bidirectionnelle du loader', () =>
     const { themeMetadata: _meta, ...sansMetadonnees } = payloadDemographie
     expect(() => verifierPariteLibelles(sansMetadonnees)).not.toThrow()
   })
+
+  it('rejette une classification publiée sans libellé — jamais la clé brute dans le texte (#362)', () => {
+    // une valeur hors de la carte (le quadrant inconnu) ne peut pas fuir :
+    // la lecture deviendrait indisponible, pas une clé brute rendue
+    const histoires = histoiresDemographieFixture.map((h) =>
+      h.territoire === '22001' ? { ...h, classification: 'attire-meurt-bis' } : h,
+    )
+    const payload = { ...payloadDemographie, histoires }
+    expect(() => verifierPariteLibelles(payload)).toThrow(PayloadError)
+    try {
+      verifierPariteLibelles(payload)
+    } catch (e) {
+      expect((e as PayloadError).message).toMatch(/classification « attire-meurt-bis »/)
+    }
+  })
+
+  it('accepte une carte de classifications qui couvre les valeurs publiées — les libellés au-delà restent légitimes (#362)', () => {
+    // la direction unique : le vocabulaire complet du thème (les quatre
+    // lectures) garde ses libellés même si un quadrant est vide dans les
+    // données actuelles — contrairement à la bijection des detail_labels
+    const meta = JSON.parse(JSON.stringify(metadonneesThemesFixtures.demographie)) as typeof metadonneesThemesFixtures.demographie
+    const payload = {
+      ...payloadDemographie,
+      histoires: histoiresDemographieFixture.filter(
+        (h) => (h as unknown as { classification: string | null }).classification !== 'vide-meurt',
+      ),
+      themeMetadata: { demographie: meta },
+    }
+    expect(() => verifierPariteLibelles(payload)).not.toThrow()
+  })
 })
 
 describe('les lookups payload-owned (fiche/libelles.ts) — jamais une clé brute', () => {

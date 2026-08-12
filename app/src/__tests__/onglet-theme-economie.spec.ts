@@ -179,7 +179,7 @@ describe('OngletTheme — honest edge cases', () => {
     // the demographie block reads its own reading, never the economie top-5
     const texte = wrapper.find('.lecture-texte')
     expect(texte.text()).toContain('la population de Commune A1')
-    expect(texte.text()).toContain('attire-renouvelle')
+    expect(texte.text()).toContain('attire et se renouvelle')
     expect(wrapper.text()).not.toContain('se spécialise dans')
   })
 

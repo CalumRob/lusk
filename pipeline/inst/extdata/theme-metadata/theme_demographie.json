@@ -65,5 +65,11 @@
     "taux_solde_naturel": "Solde naturel (‰/an)",
     "taux_solde_migratoire": "Solde migratoire (‰/an)",
     "classification": "Classification"
+  },
+  "classification_labels": {
+    "attire-renouvelle": "attire et se renouvelle",
+    "attire-meurt": "attire, mais se meurt",
+    "vide-meurt": "se vide et se meurt",
+    "vide-renouvelle": "se vide, mais se renouvelle"
   }
 }

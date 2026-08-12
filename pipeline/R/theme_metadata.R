@@ -493,6 +493,36 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
             "un libellé de paramètre doit être une chaîne non vide")
   }
 
+  # 6ter. les libellés des classifications (issue #362) — la 4e carte du
+  #       vocabulaire : les VALEURS de lecture (les quadrants/lectures du
+  #       pipeline), pas les paramètres — jamais une clé brute (attire-meurt,
+  #       parc-intermediaire…) dans le texte français. REQUISE dès que l'union
+  #       des reading.params référence `classification` — le miroir EXACT de
+  #       l'app (validerThemeMetadata) : la règle est locale aux métadonnées
+  #       (aucun besoin des histoires publiées) ; le thème qui ne la référence
+  #       jamais (Mobilité) n'en a pas besoin. Présente, elle doit être un objet
+  #       NON VIDE de chaînes non vides (la discipline des cartes #318). La
+  #       couverture contre les valeurs publiées est la parité de chargement de
+  #       l'app (verifierPariteLibelles) — le fichier, lui, reste auto-contenu.
+  if ("classification" %in% params_uniques && is.null(metadata$classification_labels)) {
+    manquer("classification_labels",
+            "la lecture référence « classification » — la carte des libellés est requise (jamais une clé brute)")
+  }
+  if (!is.null(metadata$classification_labels)) {
+    if (!est_liste(metadata$classification_labels)) {
+      manquer("classification_labels",
+              "la carte des libellés de classification doit être un objet")
+    }
+    if (length(metadata$classification_labels) == 0L) {
+      manquer("classification_labels",
+              "la carte des libellés de classification est vide")
+    }
+    if (any(!vapply(metadata$classification_labels, est_chaine_non_vide, logical(1L)))) {
+      manquer("classification_labels",
+              "un libellé de classification doit être une chaîne non vide")
+    }
+  }
+
   # 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
   #    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
   #    sous-groupe — rien d'orphelin, rien de partagé (l'identité

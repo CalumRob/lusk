@@ -15,6 +15,9 @@
 !/pipeline/
 !/.github/
 
+# Windows/agent safety scripts (worktree/data guards) — versioned
+!/scripts/
+
 # The published payload (public/data/ at the repo root) is the product's
 # artifact — committed and served by the static host (ADR-0004). The
 # pipeline's raw and produced data (pipeline/data/) stays gitignored.

@@ -1155,6 +1155,12 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       taux_solde_migratoire: 'Solde migratoire (‰/an)',
       classification: 'Classification',
     },
+    classification_labels: {
+      'attire-renouvelle': 'attire et se renouvelle',
+      'attire-meurt': 'attire, mais se meurt',
+      'vide-meurt': 'se vide et se meurt',
+      'vide-renouvelle': 'se vide, mais se renouvelle',
+    },
   },
   habitat: {
     theme: 'habitat',
@@ -1246,6 +1252,12 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       part_passoires: 'Part de passoires thermiques',
       part_abc: 'Part des étiquettes A/B/C',
       n_dpe: 'Nombre de DPE recensés',
+    },
+    classification_labels: {
+      'parc-performant': 'performant',
+      'parc-intermediaire': 'intermédiaire',
+      'passoire-energetique': 'une passoire énergétique',
+      'parc-heterogene': 'hétérogène',
     },
   },
   economie: {
@@ -1398,6 +1410,12 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       delta_population: 'Variation de population',
       trajectoire_artif_par_habitant: 'Trajectoire par habitant',
       classification: 'Classification',
+    },
+    classification_labels: {
+      'grandir-en-se-densifiant': 'grandit en se densifiant',
+      'grandir-en-setalant': "grandit en s'étalant",
+      'sen-aller-et-consommer-quand-meme': 'se vide, et consomme quand même',
+      'les-departs-laissent-la-place-a-la-renaturation': 'se vide, laissant la place à la renaturation',
     },
   },
   mobilite: {

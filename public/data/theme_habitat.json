@@ -140,5 +140,11 @@
     "part_passoires": "Part de passoires thermiques",
     "part_abc": "Part des étiquettes A/B/C",
     "n_dpe": "Nombre de DPE recensés"
+  },
+  "classification_labels": {
+    "parc-performant": "performant",
+    "parc-intermediaire": "intermédiaire",
+    "passoire-energetique": "une passoire énergétique",
+    "parc-heterogene": "hétérogène"
   }
 }
