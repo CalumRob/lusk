@@ -128,6 +128,17 @@ executer_run_reel <- function(cache, sortie) {
 
 # Les comptes verrouillés (issue #137 : « compute and lock them in the test ») --
 # Verrouillés sur le run réel 2026-08-06 (le snapshot porté, figé 2026-02-28) :
+# POLITIQUE DES VERROUS DE VALEUR (issue #380, après la restauration du cache) :
+# les verrous de VALEUR des couches dérivées de sources VIVANTES (les modes t/c
+# de l'extrait OSM `latest`, les flux vivants) sont RELATIFS À L'ÉPOQUE DU CACHE :
+# un extrait `latest` re-téléchargé bouge les derniers chiffres — ces verrous
+# sont donc re-baselinés sur le cache restauré à leur précision naturelle
+# (densités et parts au 4ᵉ décimale, longueurs au 3ᵉ, comptes exacts — issue
+# #380, décision « accepter + documenter » : le payload publié n'est PAS
+# régénéré).
+# Les verrous de FORMAT (comptes, noms de colonnes, estampilles, règles
+# d'agrégation, valeurs dérivées du snapshot FIGÉ) restent FORTS — la dérive
+# d'époque ne touche que les couches vivantes, jamais le snapshot.
 #   - mobilite_snapshot             : 1 200 communes × 2 061 colonnes — les 1 202
 #     communes de la base moins 29083 (Île-de-Sein) et 29084 (Île-Molène), que
 #     l'analyse d'origine n'a pas couvertes (un fait du portage, à documenter) ;
@@ -217,8 +228,11 @@ comptes_saillance_reels <- c(
 # les comptes verrouillés du sous-bloc « L'offre de mobilité alternative »
 # (issue #140) — verrouillés sur le run réel 2026-08-06 (les sources
 # téléchargées : korrigo GTFS stops.txt, la couche bâtiments BDNB 2025-07,
-# bornes 2026-07/08, hub vélo 2022-2025) :
-#   - korrigo (les arrêts GTFS stops.txt) : 27 297 arrêts — la FÉDÉRATION
+# bornes 2026-07/08, hub vélo 2022-2025). Korrigo (GTFS) et bornes (IRVE)
+# sont des sources VIVANTES (flux vivants) : leurs comptes sont relatifs à
+# l'époque du cache (issue #380) — re-baselinés sur le cache restauré
+# (korrigo 27 543 arrêts, bornes 9 900 lignes / 1 909 stations, 707 communes).
+#   - korrigo (les arrêts GTFS stops.txt) : 27 543 arrêts — la FÉDÉRATION
 #     complète (le réseau STAR de Rennes y figure, contrairement à
 #     mobibreizh-stops : la correction de la source, documentée dans le
 #     manifeste) ;
@@ -226,15 +240,15 @@ comptes_saillance_reels <- c(
 #     (EPSG:2154) + code_commune_insee, sur 1 200 communes — la couche qui
 #     porte la VRAIE part des bâtiments près d'un arrêt (la correction de la
 #     méthode : la fraction des BÂTIMENTS, jamais une part de superficie) ;
-#   - bornes_recharges : 9 898 lignes de points de charge, 1 918 stations
+#   - bornes_recharges : 9 900 lignes de points de charge, 1 909 stations
 #     distinctes avec un code du référentiel (les codes postaux /
 #     départementaux du fichier consolidé tombent) ;
 #   - stationnement_velo : 1 202 communes × 4 millésimes (2022-2025) — la
 #     couverture bretonne VÉRIFIÉE à la lecture (l'acceptance) ;
 #   - offre_tc_communes : 1 200 lignes (les communes avec ≥ 1 bâtiment) — les
 #     deux îles sans bâtiment géocodé (29083, 29084) n'ont pas de part ;
-#   - bornes_communes : 709 lignes (les communes du référentiel avec ≥ 1
-#     station), 1 918 stations au total ;
+#   - bornes_communes : 707 lignes (les communes du référentiel avec ≥ 1
+#     station), 1 909 stations au total ;
 #   - stationnement_velo_communes : 1 202 lignes (le millésime 2025) ;
 #   - offre_cyclable_communes : 1 202 lignes (la figure « L'offre cyclable »,
 #     issue #231 — TOUTES les communes de l'univers population, la commune
@@ -244,14 +258,14 @@ comptes_saillance_reels <- c(
 #     EPCIs + 4 départements + la région) + bornes 1 268 + velo 1 268 + la clé
 #     offre_cyclable 6 340 (1 268 territoires × 5 mesures).
 comptes_sources_offre_reels <- c(
-  korrigo = 27297,
+  korrigo = 27543,
   batiments_residentiels = 1235417,
-  bornes_recharges = 9898,
+  bornes_recharges = 9900,
   stationnement_velo = 4808
 )
 comptes_sous_bloc_analytiques_reels <- c(
   offre_tc_communes = 1200,
-  bornes_communes = 709,
+  bornes_communes = 707,
   stationnement_velo_communes = 1202,
   offre_cyclable_communes = 1202,
   offre_territoires = 10142
@@ -420,8 +434,12 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
                0.094700)
   rennes_sans <- lire_ind("35238", "voitures_menage", "sans_voiture")
   expect_equal(round(rennes_sans$value, 6), 0.319333)
-  expect_equal(round(rennes_sans$rang_epci, 4), 0.9767)
-  expect_equal(round(rennes_sans$rang_reg, 4), 0.9933)
+  # ADR-0021 : une commune avec EPCI se classe DANS son EPCI — Rennes est 1re
+  # de Rennes Métropole (le rang ordinal 1, plus jamais une fraction), et son
+  # rang régional n'existe plus (NA par design — le repli régional n'est que
+  # pour les communes SANS EPCI)
+  expect_equal(rennes_sans$rang_epci, 1)
+  expect_true(is.na(rennes_sans$rang_reg))
   expect_equal(round(lire_ind("35238", "voitures_menage", "deux_plus")$value, 6),
                0.150348)
   # l'île de Sein : sans EPCI → pas de rang EPCI (jamais un rang fantôme), et
@@ -429,34 +447,48 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   sein_sans <- lire_ind("29083", "voitures_menage", "sans_voiture")
   expect_equal(round(sein_sans$value, 6), 0.603082)
   expect_true(is.na(sein_sans$rang_epci))
-  expect_equal(round(sein_sans$rang_dep, 4), 0.9892)
+  # ADR-0021 : plus AUCUN groupe de comparaison au niveau département —
+  # rang_dep est NA pour tout le monde (la colonne reste dans le contrat, vide)
+  expect_true(is.na(sein_sans$rang_dep))
   # l'étage réseaux (issue #139) : les longueurs/densités de la région
-  # (longueurs SOMMÉES, densités Σ L ÷ Σ surface) et de Rennes
+  # (longueurs SOMMÉES, densités Σ L ÷ Σ surface) et de Rennes. Verrous de
+  # VALEUR des couches dérivées de l'extrait OSM `latest` (les modes t/c) :
+  # relatifs à l'ÉPOQUE du cache (issue #380) — re-baselinés sur le cache
+  # restauré au 4ᵉ décimale (les longueurs gardent leur précision, une dérive
+  # d'époque déplace le nombre entier) — les verrous de FORMAT restent forts.
   expect_equal(round(lire_ind("53", "reseaux", "c_longueur")$value, 3),
-               101353.736)
-  expect_equal(round(lire_ind("53", "reseaux", "c_densite")$value, 6),
-               3.692786)
+               101373.625)
+  expect_equal(round(lire_ind("53", "reseaux", "c_densite")$value, 4),
+               3.6935)
   expect_equal(round(lire_ind("53", "reseaux", "b_longueur")$value, 3),
                4940.309)
   expect_equal(round(lire_ind("53", "reseaux", "b_densite")$value, 6),
                0.179998)
   expect_equal(round(lire_ind("53", "reseaux", "t_longueur")$value, 3),
-               6732.870)
-  expect_equal(round(lire_ind("53", "reseaux", "t_densite")$value, 6),
-               0.245310)
+               6742.766)
+  expect_equal(round(lire_ind("53", "reseaux", "t_densite")$value, 4),
+               0.2457)
   rennes_c <- lire_ind("35238", "reseaux", "c_densite")
-  expect_equal(round(rennes_c$value, 6), 18.162491)
-  expect_equal(round(rennes_c$rang_reg, 4), 0.9967)
-  expect_equal(round(lire_ind("242900314", "reseaux", "c_densite")$value, 6),
-               8.946547)
+  expect_equal(round(rennes_c$value, 4), 18.1578)
+  # ADR-0021 : Rennes a un EPCI → pas de rang régional (NA par design — le
+  # repli régional n'est que pour les communes SANS EPCI)
+  expect_true(is.na(rennes_c$rang_reg))
+  # Brest Métropole : la densité routière dérivée du pbf OSM `latest` (source
+  # vivante) — verrou de VALEUR relatif à l'époque du cache, au 4ᵉ décimale
+  # (le 6ᵉ décimale chahute entre extraits re-téléchargés)
+  expect_equal(round(lire_ind("242900314", "reseaux", "c_densite")$value, 4),
+               8.9465)
   # le sous-bloc (issue #140) : la part des bâtiments près d'un arrêt (l'offre
   # TC corrigée — la vraie part des BÂTIMENTS à 500 m d'un arrêt GTFS, jamais
-  # une part de superficie), les bornes et le stationnement vélo de la région
-  expect_equal(round(lire_ind("53", "offre_tc", NA)$value, 6), 0.572896)
+  # une part de superficie), les bornes et le stationnement vélo de la région.
+  # Korrigo (GTFS) et bornes IRVE sont des sources VIVANTES re-téléchargées par
+  # la restauration du cache (issue #380) : verrous de VALEUR relatifs à
+  # l'époque du cache (4ᵉ décimale pour une part, re-baselinés)
+  expect_equal(round(lire_ind("53", "offre_tc", NA)$value, 4), 0.5731)
   expect_equal(round(lire_ind("35238", "offre_tc", NA)$value, 6), 0.995736)
   expect_equal(round(lire_ind("29011", "offre_tc", NA)$value, 6), 0.918206)
   expect_equal(round(lire_ind("29232", "offre_tc", NA)$value, 6), 0.968711)
-  expect_equal(round(lire_ind("53", "bornes_recharge", NA)$value, 6), 1918)
+  expect_equal(round(lire_ind("53", "bornes_recharge", NA)$value, 6), 1909)
   expect_equal(round(lire_ind("35238", "bornes_recharge", NA)$value, 6), 49)
   expect_equal(round(lire_ind("53", "places_stationnement_velo_1000", NA)$value,
                      6), 18.498939)
@@ -480,14 +512,16 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(round(lire_iso("53", "iso_banque"), 6), 0.502248)
   # Rennes : la métropole — la part des bâtiments isolés est nulle (l'offre
   # dense), et chaque part porte ses rangs-en-contexte (Rennes se classe très
-  # haut — les bâtiments isolés sont rares)
+  # haut — les bâtiments isolés sont rares). ADR-0021 : Rennes a un EPCI → son
+  # rang EPCI est porté (Rennes 1re de Rennes Métropole), ses rangs
+  # départemental et régional sont NA par design
   expect_equal(round(lire_iso("35238", "iso_alimentation"), 6), 0)
   expect_equal(round(lire_iso("35238", "iso_banque"), 6), 0)
   rennes_iso <- payload$indicateurs[
     payload$indicateurs$territoire == "35238" &
       payload$indicateurs$key == "iso_banque", ]
-  expect_true(all(!is.na(c(rennes_iso$rang_epci, rennes_iso$rang_dep,
-                           rennes_iso$rang_reg))))
+  expect_true(!is.na(rennes_iso$rang_epci))
+  expect_true(all(is.na(c(rennes_iso$rang_dep, rennes_iso$rang_reg))))
   # Brest Métropole (l'EPCI) : la moyenne pondérée par les bâtiments de ses
   # communes membres
   expect_equal(round(lire_iso("242900314", "iso_banque"), 6), 0.076433)
@@ -644,12 +678,14 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
 
   # Les réseaux : les longueurs/densités aux quatre niveaux, RECALCULÉES
   # depuis les parties (les longueurs SOMMÉES, les densités Σ L ÷ Σ surface —
-  # jamais la moyenne des densités communales). La région : 101 354 km de
+  # jamais la moyenne des densités communales). La région : 101 374 km de
   # routes (3.69 km/km²), 4 940 km de réseau cyclable Geovelo par direction
   # (0.18 km/km² — ADR-0016, issue #230 : le comptage par direction de la
   # table normalisée, ~4 913 km de géométrie unique + 155 lignes
-  # bidirectionnelles, verrouillé sur le snapshot du 2026-08-07), 6 733 km de
-  # trottoirs.
+  # bidirectionnelles, verrouillé sur le snapshot du 2026-08-07), 6 743 km de
+  # trottoirs. Les modes t/c (l'extrait OSM `latest`) portent des verrous de
+  # VALEUR relatifs à l'époque du cache (issue #380 — re-baselinés sur le
+  # cache restauré), les modes b (Geovelo épinglé) restent forts.
   rt <- readRDS(file.path(sortie_analytiques, "reseaux_territoires.rds"))
   expect_named(rt, c("code", "key", "detail", "value"))
   expect_true(all(rt$key == "reseaux"))
@@ -657,17 +693,17 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
                   c("t_longueur", "t_densite", "b_longueur", "b_densite",
                     "c_longueur", "c_densite"))
   lire_rt <- function(code, detail) rt$value[rt$code == code & rt$detail == detail]
-  expect_equal(round(lire_rt("53", "c_longueur"), 3), 101353.736)
-  expect_equal(round(lire_rt("53", "c_densite"), 6), 3.692786)
+  expect_equal(round(lire_rt("53", "c_longueur"), 3), 101373.625)
+  expect_equal(round(lire_rt("53", "c_densite"), 4), 3.6935)
   expect_equal(round(lire_rt("53", "b_longueur"), 3), 4940.309)
   expect_equal(round(lire_rt("53", "b_densite"), 6), 0.179998)
-  expect_equal(round(lire_rt("53", "t_longueur"), 3), 6732.870)
-  expect_equal(round(lire_rt("53", "t_densite"), 6), 0.245310)
+  expect_equal(round(lire_rt("53", "t_longueur"), 3), 6742.766)
+  expect_equal(round(lire_rt("53", "t_densite"), 4), 0.2457)
   # le contraste urbain : Rennes à 18.16 km/km² de routes (la densité la plus
   # forte de Bretagne), Brest Métropole à 8.95, l'île de Sein sans réseau
   # cyclable (0 km — un fait, jamais une ligne manquante)
-  expect_equal(round(lire_rt("35238", "c_densite"), 6), 18.162491)
-  expect_equal(round(lire_rt("242900314", "c_densite"), 6), 8.946547)
+  expect_equal(round(lire_rt("35238", "c_densite"), 4), 18.1578)
+  expect_equal(round(lire_rt("242900314", "c_densite"), 4), 8.9465)
   expect_equal(lire_rt("29083", "b_longueur"), 0)
   # la règle d'agrégation : une densité de niveau = Σ L ÷ Σ surface (la
   # moyenne pondérée par la surface), jamais la moyenne des densités
@@ -754,23 +790,36 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(nu$nuage_median[nu$code == "53"], 36)
 
   # les rangs-en-contexte via la machinerie partagée : les artefacts portent
-  # les trois rangs, alignés sur la référence (les 2 communes hors snapshot
-  # portent NA, jamais une ligne manquante)
+  # les trois rangs ORDINAUX directionnels et la TAILLE de chaque groupe
+  # (rang_*_n — ADR-0015, #310), alignés sur la référence (les 2 communes
+  # hors snapshot portent NA, jamais une ligne manquante)
   rangs <- readRDS(file.path(sortie_analytiques, "isolation_rangs.rds"))
-  expect_named(rangs, c("code", "key", "rang_epci", "rang_dep", "rang_reg"))
+  expect_named(rangs, c("code", "key",
+                        "rang_epci", "rang_epci_n",
+                        "rang_dep", "rang_dep_n",
+                        "rang_reg", "rang_reg_n"))
   expect_equal(length(unique(rangs$code)), 1268)
   expect_true(all(is.na(rangs$rang_epci[rangs$code %in% c("29083", "29084")])))
+  # ADR-0021 : rang_dep vide partout (plus aucun groupe départemental) — la
+  # colonne reste dans le contrat, NA ; une commune avec EPCI n'a pas de rang
+  # régional (le repli régional n'est que pour les communes SANS EPCI)
+  expect_true(all(is.na(rangs$rang_dep)))
+  rennes_rangs <- rangs[rangs$code == "35238", ]
+  expect_true(all(!is.na(rennes_rangs$rang_epci)))
+  expect_true(all(is.na(rennes_rangs$rang_reg)))
 
   # le sous-bloc « L'offre de mobilité alternative » (issue #140) ---------------
   # Les sources NORMALISÉES du sous-bloc, aux comptes réels verrouillés (la
   # matière de construire_donnees_mobilite — jamais re-persistée par le
   # chaînon, lue directement depuis le run).
-  #   - korrigo : les arrêts du stops.txt GTFS (27 297 — la fédération, dont
-  #     le réseau STAR de Rennes) — la correction de la source (mobibreizh-
-  #     stops n'a aucun arrêt STAR) ;
+  #   - korrigo : les arrêts du stops.txt GTFS (27 543 — la fédération, dont
+  #     le réseau STAR de Rennes — re-baseliné sur le cache restauré, issue
+  #     #380) — la correction de la source (mobibreizh-stops n'a aucun arrêt
+  #     STAR) ;
   #   - batiments_residentiels : la couche bâtiments BDNB (1 235 417 points
   #     géocodés, 1 200 communes) — la couche qui porte la VRAIE part ;
-  #   - bornes_recharges : 9 898 lignes de points de charge ;
+  #   - bornes_recharges : 9 900 lignes de points de charge (issue #380 :
+  #     re-baseliné sur le cache restauré) ;
   #   - stationnement_velo : 1 202 communes × 4 millésimes.
   # Le chaînon persiste ses propres artefacts sous data/processed/mobilite/ —
   # les tables COMMUNALES et l'agrégation aux quatre niveaux.
@@ -817,9 +866,13 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   #     d'oiseau d'un arrêt GTFS (stops.txt Korrigo), par commune — Rennes
   #     0,9957 (la superficie communale donnait 0,40 — la divergence corrigée),
   #     Bohars 0,9182 (desservi par ARBUS), Quimper 0,9687 ; l'agrégat régional
-  #     0,5729 = la moyenne pondérée par les bâtiments de la couche ;
-  #   - bornes_recharge : les stations IRVE distinctes — région 1 918,
-  #     Ille-et-Vilaine 634, Rennes 49 ;
+  #     0,5731 = la moyenne pondérée par les bâtiments de la couche. Korrigo
+  #     (GTFS) est une source VIVANTE re-téléchargée par la restauration du
+  #     cache (issue #380) : verrous de VALEUR relatifs à l'époque du cache
+  #     (re-baselinés, 4ᵉ décimale) ;
+  #   - bornes_recharge : les stations IRVE distinctes — région 1 909,
+  #     Ille-et-Vilaine 623, Rennes 49. Les bornes (IRVE) sont une source
+  #     VIVANTE (issue #380) : verrous de VALEUR relatifs à l'époque du cache ;
   #   - places_stationnement_velo_1000 : le hub Ecolab 2025 pris tel quel —
   #     région 18,4989 (la même valeur que le fichier région du hub — la
   #     recomposition communale est exactement le calcul du hub) ;
@@ -828,7 +881,7 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   #     `b`) : région 4 913,2 km de total cyclable (protégé 3 290,5 + partagé
   #     1 622,7 — le mode `b` par direction donne 4 940,3 : la différence de
   #     +0,5 % documentée par ADR-0016), le numérateur du headline « X % de
-  #     l'infrastructure routière » (le dénominateur `c` — 101 353,7 km — est
+  #     l'infrastructure routière » (le dénominateur `c` — 101 373,6 km — est
   #     une ligne du payload, la règle du « dans l'EPCI : X % » d'ADR-0015 :
   #     l'app regarde les lignes existantes) ; Rennes 263,1 km (105,0 protégé
   #     + 158,1 partagé), Brest 126,4, Bohars 1,47, Plumieux 0 (la commune de
@@ -843,9 +896,9 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(round(lire_offre("35238", "offre_tc"), 4), 0.9957)
   expect_equal(round(lire_offre("29232", "offre_tc"), 4), 0.9687)
   expect_equal(round(lire_offre("29011", "offre_tc"), 4), 0.9182)
-  expect_equal(round(lire_offre("242900314", "offre_tc"), 4), 0.9323)
-  expect_equal(round(lire_offre("29", "offre_tc"), 4), 0.6749)
-  expect_equal(round(lire_offre("53", "offre_tc"), 4), 0.5729)
+  expect_equal(round(lire_offre("242900314", "offre_tc"), 4), 0.9412)
+  expect_equal(round(lire_offre("29", "offre_tc"), 4), 0.6761)
+  expect_equal(round(lire_offre("53", "offre_tc"), 4), 0.5731)
   # la règle d'agrégation : un agrégat n'est JAMAIS la moyenne des parts
   # communales — le contraste réel (la moyenne des 1 200 parts communales vs
   # la valeur pondérée de la région)
@@ -857,9 +910,10 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_true(all(!is.na(offre$value[offre$key == "offre_tc"]) &
                     offre$value[offre$key == "offre_tc"] >= 0 &
                     offre$value[offre$key == "offre_tc"] <= 1))
-  # bornes_recharge — région, département, EPCI, communes
-  expect_equal(lire_offre("53", "bornes_recharge"), 1918)
-  expect_equal(lire_offre("35", "bornes_recharge"), 634)
+  # bornes_recharge — région, département, EPCI, communes (bornes IRVE : une
+  # source VIVANTE — verrous relatifs à l'époque du cache, issue #380)
+  expect_equal(lire_offre("53", "bornes_recharge"), 1909)
+  expect_equal(lire_offre("35", "bornes_recharge"), 623)
   expect_equal(lire_offre("242900314", "bornes_recharge"), 74)
   expect_equal(lire_offre("35238", "bornes_recharge"), 49)
   expect_equal(lire_offre("29011", "bornes_recharge"), 1)
