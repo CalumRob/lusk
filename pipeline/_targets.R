@@ -425,36 +425,40 @@ rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
 
 # VERIFICATIONS_RUN -------------------------------------------------------------
 # La REGISTRE des verrous : par thème du graphe, la liste des (slug,
-# verificateur, entrées). DEUX formes (voir les verifier_*_reel) :
+# verificateur, entrées). Chaque entrée décrit comment le verrou reçoit SES
+# entrées (voir les verifier_*_reel) :
 #   - `sur_brut = TRUE` : le verrou reçoit les tables NORMALISÉES du thème
 #     (donnees = brut_<theme>, déjà calculé par le graphe) — jamais de
 #     re-dérivation ni d'écriture : il suit la fraîcheur du brut du thème
 #     (toutes ses sources et ses lecteurs, via fichiers_<theme> + imports) ;
-#   - sinon : le verrou lit SES fichiers bruts directement (les ids des
-#     sources du manifeste du thème qu'il lit — des cibles fichier_<theme>_<id>
-#     à hash de contenu, la précision du skip par source).
-# `epci = TRUE` : le verrou lit aussi le référentiel partagé extrait
-# (fichier_epci_extrait).
+#   - `args` : la liste nommée des CHEMINS que le verrou lit — nom = le
+#     paramètre de la fonction, valeur = l'id de la source du manifeste du
+#     thème (créé en cible fichier_<theme>_<id>, à hash de contenu — la
+#     précision du skip par source) OU le sentinelle "epci" (le référentiel
+#     partagé extrait, fichier_epci_extrait). La cible de fichiers passée en
+#     ARGUMENT est la dépendance : le manifeste résout le chemin, la commande
+#     ne hard-code JAMAIS un nom de fichier.
 VERIFICATIONS_RUN <- list(
   mobilite = list(
     list(slug = "mobilite_passage_cog",
          verifier = verifier_passage_cog_reel,
-         ids = "cog_passage"),
+         args = list(zip = "cog_passage")),
     list(slug = "mobilite_amenagements",
          verifier = verifier_amenagements_cyclables_reel,
-         ids = c("amenagements_cyclables", "cog_passage")),
+         args = list(parquet = "amenagements_cyclables",
+                     zip_cog = "cog_passage")),
     list(slug = "mobilite_e2e",
          verifier = verifier_mobilite_e2e_reel,
          sur_brut = TRUE,
-         epci = TRUE)
+         args = list(base_epci = "epci"))
   ),
   milieux = list(
     list(slug = "milieux_consoenaf",
          verifier = verifier_consoenaf_reel,
-         ids = "consoenaf"),
+         args = list(fichier = "consoenaf")),
     list(slug = "milieux_serie_historique",
          verifier = verifier_serie_historique_reel,
-         ids = "serie_historique"),
+         args = list(zip = "serie_historique")),
     list(slug = "milieux_histoires",
          verifier = verifier_milieux_histoires_reel,
          sur_brut = TRUE)
@@ -478,11 +482,11 @@ VERIFICATIONS_RUN <- list(
     list(slug = "economie_rangs",
          verifier = verifier_rangs_economie_reel,
          sur_brut = TRUE,
-         epci = TRUE),
+         args = list(base_epci = "epci")),
     list(slug = "economie_e2e",
          verifier = verifier_economie_e2e_reel,
          sur_brut = TRUE,
-         epci = TRUE)
+         args = list(base_epci = "epci"))
   )
 )
 
@@ -492,16 +496,22 @@ VERIFICATIONS_RUN <- list(
 # du graphe). Câblés sur le run COMPLET SEULEMENT (LUSK_THEMES vide — le
 # cron) : le graphe télécharge alors les six sources du manifeste complet
 # (sources_programmes) et les verrous les vérifient ; un run restreint ne
-# force rien de tout cela.
+# force rien de tout cela. `args` suit la même convention que
+# VERIFICATIONS_RUN (nom du paramètre -> id du manifeste ou "epci").
 VERIFICATIONS_PROGRAMMES <- list(
   list(slug = "subventions",
        verifier = verifier_subventions_reel,
-       ids = "subventions_scdl",
-       epci = TRUE),
+       args = list(scdl = "subventions_scdl",
+                   base_epci = "epci")),
   list(slug = "programmes",
        verifier = verifier_programmes_reel,
-       ids = c("acv", "pvd", "crte", "territoires_industrie", "ort"),
-       epci = TRUE)
+       args = list(acv = "acv",
+                   pvd = "pvd",
+                   crte = "crte",
+                   ti = "territoires_industrie",
+                   ort = "ort",
+                   scdl = "subventions_scdl",
+                   base_epci = "epci"))
 )
 
 # fichier_source ----------------------------------------------------------------
@@ -524,28 +534,29 @@ fichier_source <- function(theme_nom, id, manifeste, sources,
 }
 
 # verifications_theme -----------------------------------------------------------
-# Les cibles de vérification d'UN thème du graphe. Deux formes (la REGISTRE) :
-#   - `sur_brut` : le verrou reçoit les tables normalisées du BRUT du thème
-#     (donnees = brut_<theme>) — la fraîcheur du verrou suit celle du brut
-#     (toutes les sources du thème en targets de fichiers + les lecteurs via
-#     imports) ; jamais de re-dérivation ni d'écriture (pas de course avec le
-#     target brut) ;
-#   - sinon : les cibles de fichiers PAR SOURCE (dédupliquées entre verrous
-#     du thème) puis le verrou LEAF qui lit SES fichiers.
+# Les cibles de vérification d'UN thème du graphe (la REGISTRE) : le verrou
+# reçoit SES entrées en ARGUMENTS — les cibles de fichiers PAR SOURCE
+# (fichier_<theme>_<id>, dédupliquées entre verrous du thème, ordonnées
+# après le téléchargement), ou le brut du thème (`sur_brut`), ou le
+# référentiel partagé (la sentinelle "epci"). Passer la cible en argument EST
+# la dépendance — le manifeste résout le chemin, la commande ne hard-code
+# jamais un nom de fichier.
 verifications_theme <- function(theme, cache = CACHE_RUN) {
   spec <- VERIFICATIONS_RUN[[theme$theme]]
   if (is.null(spec)) return(list())
   cibles <- list()
   deja <- character(0)
   for (v in spec) {
-    entetes <- list()
     fn_sym <- symbole_ns(v$verifier)
+    appels <- list()
     if (isTRUE(v$sur_brut)) {
-      brut <- as.name(paste0("brut_", theme$theme))
-      entetes <- c(entetes, list(brut))
-      appel <- bquote(.(fn_sym)(donnees = .(brut), cache = .(cache)))
-    } else {
-      for (id in v$ids) {
+      appels[["donnees"]] <- as.name(paste0("brut_", theme$theme))
+    }
+    for (param in names(v$args)) {
+      id <- v$args[[param]]
+      if (identical(id, "epci")) {
+        appels[[param]] <- as.name("fichier_epci_extrait")
+      } else {
         if (!id %in% deja) {
           cibles <- c(cibles, list(fichier_source(
             theme$theme, id,
@@ -555,19 +566,13 @@ verifications_theme <- function(theme, cache = CACHE_RUN) {
           )))
           deja <- c(deja, id)
         }
-        entetes <- c(entetes,
-                     list(as.name(paste0("fichier_", theme$theme, "_", id))))
+        appels[[param]] <- as.name(paste0("fichier_", theme$theme, "_", id))
       }
-      appel <- bquote(.(fn_sym)(cache = .(cache)))
     }
-    if (isTRUE(v$epci)) {
-      entetes <- c(entetes, list(as.name("fichier_epci_extrait")))
-    }
-    corps <- c(entetes, list(appel))
     cibles <- c(cibles, list(
       tar_target_raw(
         paste0("verif_", v$slug),
-        as.call(c(list(as.name("{")), corps))
+        as.call(c(list(fn_sym), appels))
       )
     ))
   }
@@ -577,8 +582,9 @@ verifications_theme <- function(theme, cache = CACHE_RUN) {
 # verifications_programmes -------------------------------------------------------
 # Les cibles de vérification du thème Programmes (hors DAG) : le
 # téléchargement des six sources (sources_programmes), les cibles de fichiers
-# par source, puis les verrous LEAF — la même mécanique que
-# verifications_theme, sans grappe.
+# par source (dédupliquées entre verrous), puis les verrous LEAF qui reçoivent
+# leurs chemins en arguments — la même mécanique que verifications_theme,
+# sans grappe.
 verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
   cibles <- list(
     tar_target_raw(
@@ -589,27 +595,28 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
   )
   deja <- character(0)
   for (v in VERIFICATIONS_PROGRAMMES) {
-    entetes <- list()
-    for (id in v$ids) {
-      if (!id %in% deja) {
-        cibles <- c(cibles, list(fichier_source(
-          "programmes", id,
-          as.name("manifeste_programmes"), as.name("sources_programmes"),
-          cache = cache
-        )))
-        deja <- c(deja, id)
-      }
-      entetes <- c(entetes, list(as.name(paste0("fichier_programmes_", id))))
-    }
-    if (isTRUE(v$epci)) {
-      entetes <- c(entetes, list(as.name("fichier_epci_extrait")))
-    }
     fn_sym <- symbole_ns(v$verifier)
-    corps <- c(entetes, list(bquote(.(fn_sym)(cache = .(cache)))))
+    appels <- list()
+    for (param in names(v$args)) {
+      id <- v$args[[param]]
+      if (identical(id, "epci")) {
+        appels[[param]] <- as.name("fichier_epci_extrait")
+      } else {
+        if (!id %in% deja) {
+          cibles <- c(cibles, list(fichier_source(
+            "programmes", id,
+            as.name("manifeste_programmes"), as.name("sources_programmes"),
+            cache = cache
+          )))
+          deja <- c(deja, id)
+        }
+        appels[[param]] <- as.name(paste0("fichier_programmes_", id))
+      }
+    }
     cibles <- c(cibles, list(
       tar_target_raw(
         paste0("verif_", v$slug),
-        as.call(c(list(as.name("{")), corps))
+        as.call(c(list(fn_sym), appels))
       )
     ))
   }
@@ -622,13 +629,15 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
 # sous son zip par les manifestes Démographie/Habitat/Milieux — JAMAIS une
 # source Économie/Mobilité/Programmes). Le target de fichiers la suit PAR
 # CONTENU (une nouvelle édition du zip change l'xlsx -> les verrous qui la
-# lisent rejouent) et garantit l'extraction idempotente (la même que les
-# builders). L'ORDRE : quand un thème du run déclare la source `epci`, le
-# target est ordonné après SON téléchargement (sources_<thème> — pas de
-# course entre l'extraction et le download du run) ; sur un run restreint
-# sans thème déclarant epci, il lit le cache tel quel (la base y est déjà —
-# la condition préexistante des runs mono-thème, publier_<thème> la lit
-# pareil).
+# lisent rejouent) et garantit l'extraction CONTENT-idempotente : overwrite =
+# TRUE — une nouvelle édition du zip REMPLACE l'xlsx extrait (le hash du
+# target change, les verrous rejouent), un zip inchangé ré-extraie des
+# fichiers byte-identiques (même hash, les verrous sautent). L'ORDRE : quand
+# un thème du run déclare la source `epci`, le target est ordonné après SON
+# téléchargement (sources_<thème> — pas de course entre l'extraction et le
+# download du run) ; sur un run restreint sans thème déclarant epci, il lit
+# le cache tel quel (la base y est déjà — la condition préexistante des runs
+# mono-thème, publier_<thème> la lit pareil).
 construire_fichier_epci_extrait <- function(cache = CACHE_RUN) {
   proprietaire <- NULL
   for (t in THEMES_RUN) {
@@ -654,7 +663,7 @@ construire_fichier_epci_extrait <- function(cache = CACHE_RUN) {
       stop("Le référentiel partagé des EPCI est absent du cache (", zip_epci,
            ") — les verrous « données réelles » en ont besoin.", call. = FALSE)
     }
-    suppressWarnings(utils::unzip(zip_epci, exdir = extrait, overwrite = FALSE))
+    suppressWarnings(utils::unzip(zip_epci, exdir = extrait, overwrite = TRUE))
     file.path(extrait, "EPCI_au_01-01-2025.xlsx")
   })))
   tar_target_raw("fichier_epci_extrait",
@@ -688,14 +697,15 @@ for (t in THEMES_RUN) {
 # Les verrous « données réelles » du run : par thème du graphe, plus (sur le
 # run COMPLET — LUSK_THEMES vide, le cron) les verrous du thème Programmes.
 # Le référentiel partagé extrait (fichier_epci_extrait) n'est câblé qu'une
-# fois, et seulement si un verrou du run le lit.
+# fois, et seulement si un verrou du run le lit (la sentinelle "epci" de SES
+# args — la REGISTRE).
 verifications <- list()
 besoin_epci <- FALSE
 for (t in THEMES_RUN) {
   verifications <- c(verifications, verifications_theme(t))
   spec <- VERIFICATIONS_RUN[[t$theme]]
   if (!is.null(spec) &&
-      any(vapply(spec, function(v) isTRUE(v$epci), logical(1)))) {
+      any(vapply(spec, function(v) "epci" %in% unlist(v$args), logical(1)))) {
     besoin_epci <- TRUE
   }
 }
@@ -706,7 +716,7 @@ if (!nzchar(selection)) {
   assign("manifeste_programmes", MANIFEST_PROGRAMMES_COMPLET)
   verifications <- c(verifications, verifications_programmes())
   if (any(vapply(VERIFICATIONS_PROGRAMMES,
-                 function(v) isTRUE(v$epci), logical(1)))) {
+                 function(v) "epci" %in% unlist(v$args), logical(1)))) {
     besoin_epci <- TRUE
   }
 }

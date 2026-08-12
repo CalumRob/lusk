@@ -19,22 +19,25 @@
 # "continue" laisse le rapport de run s'écrire — l'alerte est le câblage
 # cron #343), jamais un silence.
 #
-# DEUX formes, selon l'entrée du verrou :
+# TOUTES les entrées arrivent en ARGUMENTS — les chemins sont résolus par le
+# GRAPHE depuis le manifeste (les cibles fichier_<theme>_<id> / fichier_
+# programme_<id> / fichier_epci_extrait, la REGISTRE VERIFICATIONS_* de
+# _targets.R) : une fonction ne hard-code JAMAIS un nom de fichier du cache.
+# Deux formes (voir la REGISTRE) :
 #   - sur les tables NORMALISÉES du thème (les blocs analytiques Économie,
-#     le run complet Milieux, le e2e Mobilité) : la fonction reçoit `donnees`
-#     — la liste du BRUT du graphe (brut_<theme> = construire_donnees_<theme>,
-#     déjà calculé par le graphe) — JAMAIS elle ne re-dérive : pas de
-#     re-normalisation, pas d'écriture, pas de course avec le target brut du
-#     graphe (les builders persistent data/processed/*.rds — deux appels
-#     concurrents se marcheraient dessus). Le verrou SAUTE/REJOUE avec le
-#     brut du thème (la frontière des entrées du thème).
+#     le run complet Milieux, le e2e Mobilité) : `donnees` — la liste du
+#     BRUT du graphe (brut_<theme> = construire_donnees_<theme>, déjà
+#     calculé par le graphe) — JAMAIS re-dérivée (pas de re-normalisation,
+#     pas d'écriture, pas de course avec le target brut du graphe) ;
 #   - sur les FICHIERS BRUTS directement (la table de passage COG, le
 #     snapshot Geovelo, le CSV CONSOENAF, la série historique, les exports
-#     SCDL/ANCT) : la fonction reçoit `cache` et lit SES fichiers (les
-#     cibles fichier_<theme>_<id> à hash de contenu — la précision du skip
-#     par source) ; l'extraction d'un zip se fait dans un répertoire
-#     TEMPORAIRE (jamais cache/extracted — pas de course avec les builders
-#     du graphe qui y extraient aussi).
+#     SCDL/ANCT) : le chemin arrive en argument (la cible fichier_<theme>_<id>
+#     à hash de contenu — la précision du skip par source) ; l'extraction
+#     d'un zip se fait dans un répertoire TEMPORAIRE (jamais cache/extracted
+#     — pas de course avec les builders du graphe qui y extraient aussi) ;
+#   - le référentiel partagé extrait (la base des EPCI) arrive en argument
+#     `base_epci` (fichier_epci_extrait — lu par lire_epci, jamais un chemin
+#     en dur).
 #
 # Les fonctions sont appelées PAR SYMBOLE par les commandes du graphe
 # (symbole_ns, _targets.R) : le suivi d'imports de targets (hash du corps +
@@ -80,17 +83,17 @@ ILES_SANS_EPCI <- c("22016", "29083", "29155")
 
 # verifier_passage_cog_reel ----------------------------------------------------
 # Verrou du bloc converti de test-passage-cog.R : la table de passage INSEE
-# RÉELLE (le zip cog_passage du cache) — les fusions bretonnes 2022→2025
-# vérifiées sur le fichier réel (Le Cambout + Coëtlogon → Plumieux, Pléven →
-# Val-d'Arguenon, Saint-Launeuc → Merdrignac, Fleurigné → La Chapelle-
-# Fleurigné), l'identité passe, et passage_cog sur de vrais codes Geovelo
-# (COG 2022) ne produit AUCUNE NA — des codes 2025 bretons. L'extraction du
-# zip se fait dans un répertoire TEMPORAIRE (jamais cache/extracted — pas de
-# course avec le builder Mobilité du graphe).
-verifier_passage_cog_reel <- function(cache = "data/raw") {
-  zip <- file.path(cache, "table_passage_annuelle_2025.zip")
+# RÉELLE (le zip cog_passage, résolu par le manifeste et passé en argument)
+# — les fusions bretonnes 2022→2025 vérifiées sur le fichier réel (Le Cambout
+# + Coëtlogon → Plumieux, Pléven → Val-d'Arguenon, Saint-Launeuc →
+# Merdrignac, Fleurigné → La Chapelle-Fleurigné), l'identité passe, et
+# passage_cog sur de vrais codes Geovelo (COG 2022) ne produit AUCUNE NA —
+# des codes 2025 bretons. L'extraction du zip se fait dans un répertoire
+# TEMPORAIRE (jamais cache/extracted — pas de course avec le builder
+# Mobilité du graphe).
+verifier_passage_cog_reel <- function(zip) {
   verifier_vrai(file.exists(zip),
-                "passage COG", paste("la source COG est absente du cache :", zip))
+                "passage COG", paste("la source COG est absente :", zip))
 
   extrait <- tempfile("verif-cog-")
   dir.create(extrait)
@@ -122,21 +125,19 @@ verifier_passage_cog_reel <- function(cache = "data/raw") {
 
 # verifier_amenagements_cyclables_reel -----------------------------------------
 # Verrou du bloc converti de test-qualite-amenagements-reelles.R : le snapshot
-# Geovelo RÉEL (france-<date>.parquet) passe le lecteur (412 681 lignes — le
-# compte réel verrouillé de la research note §4), la porte de qualité, et le
-# normaliseur breton (27 797 lignes, EPSG:4326, aucun code 2022 breton
-# survivant non mappé par les fusions vérifiées). Extraction COG en
-# répertoire TEMPORAIRE (jamais cache/extracted).
-verifier_amenagements_cyclables_reel <- function(cache = "data/raw") {
-  parquet <- file.path(cache, "france-20260807.parquet")
+# Geovelo RÉEL (le parquet, résolu par le manifeste et passé en argument)
+# passe le lecteur (412 681 lignes — le compte réel verrouillé de la research
+# note §4), la porte de qualité, et le normaliseur breton (27 797 lignes,
+# EPSG:4326, aucun code 2022 breton survivant non mappé par les fusions
+# vérifiées). Extraction COG en répertoire TEMPORAIRE (jamais cache/extracted).
+verifier_amenagements_cyclables_reel <- function(parquet, zip_cog) {
   verifier_vrai(file.exists(parquet),
                 "Aménagements cyclables",
-                paste("le snapshot Geovelo est absent du cache :", parquet))
+                paste("le snapshot Geovelo est absent :", parquet))
 
   # la table de passage COG 2022→2025 (depuis le fichier réel, filtrée
   # Bretagne) — la même construction que l'orchestrateur du mode `b`, extraite
   # dans un répertoire temporaire
-  zip_cog <- file.path(cache, "table_passage_annuelle_2025.zip")
   extrait <- tempfile("verif-cog-")
   dir.create(extrait)
   suppressWarnings(
@@ -173,14 +174,13 @@ verifier_amenagements_cyclables_reel <- function(cache = "data/raw") {
 
 # verifier_consoenaf_reel ------------------------------------------------------
 # Verrou du bloc converti de test-theme-milieux-reshape.R : le CSV CONSOENAF
-# RÉEL — les 172 colonnes du dictionnaire, l'anomalie d'unité m²/ha vérifiée
-# sur Rennes (1 233 202 m² ÷ 50 311 729 m² = 2,45 %, docs/research/
-# zan-rennes.md), et le reshape réel (conversion + filtre Bretagne).
-verifier_consoenaf_reel <- function(cache = "data/raw") {
-  fichier <- file.path(cache, "conso-com.csv")
+# RÉEL (résolu par le manifeste et passé en argument) — les 172 colonnes du
+# dictionnaire, l'anomalie d'unité m²/ha vérifiée sur Rennes (1 233 202 m² ÷
+# 50 311 729 m² = 2,45 %, docs/research/zan-rennes.md), et le reshape réel
+# (conversion + filtre Bretagne).
+verifier_consoenaf_reel <- function(fichier) {
   verifier_vrai(file.exists(fichier),
-                "CONSOENAF", paste("le CSV CONSOENAF est absent du cache :",
-                                   fichier))
+                "CONSOENAF", paste("le CSV CONSOENAF est absent :", fichier))
 
   brut <- lire_consoenaf(fichier)
   verifier_egale(ncol(brut), 172L, "CONSOENAF — les colonnes du dictionnaire")
@@ -211,26 +211,20 @@ verifier_consoenaf_reel <- function(cache = "data/raw") {
 # dur — un nouveau recensement INSEE la fait glisser), et les populations
 # réelles ne sont JAMAIS négatives aux deux bornes (le 0 réel des villages
 # détruits de la Meuse est un dénombrement exact, jamais une corruption).
-# Extraction du zip en répertoire TEMPORAIRE (jamais cache/extracted).
-verifier_serie_historique_reel <- function(cache = "data/raw") {
-  zip_serie <- file.path(cache, "DS_RP_SERIE_HISTORIQUE_2023_CSV_FR.zip")
-  extrait <- file.path(cache, "extracted")
-  fichier <- file.path(extrait, NOM_FICHIER_SERIE_HISTORIQUE)
-  verifier_vrai(file.exists(fichier) || file.exists(zip_serie),
+# Le zip (résolu par le manifeste et passé en argument) est extrait dans un
+# répertoire TEMPORAIRE (jamais cache/extracted — pas de course avec les
+# builders du graphe, et jamais une extraction périmée du cache).
+verifier_serie_historique_reel <- function(zip) {
+  verifier_vrai(file.exists(zip),
                 "série historique",
-                "la série historique réelle est absente du cache")
+                paste("la série historique réelle est absente :", zip))
 
-  if (!file.exists(fichier)) {
-    # le zip seul (un cache sans extraction préalable) : extraction en
-    # répertoire TEMPORAIRE — le contenu est le même, sans course avec les
-    # builders du graphe qui extraient aussi dans cache/extracted
-    extrait <- tempfile("verif-serie-")
-    dir.create(extrait, recursive = TRUE)
-    suppressWarnings(
-      utils::unzip(zip_serie, exdir = extrait, overwrite = FALSE)
-    )
-    fichier <- file.path(extrait, NOM_FICHIER_SERIE_HISTORIQUE)
-  }
+  extrait <- tempfile("verif-serie-")
+  dir.create(extrait, recursive = TRUE)
+  suppressWarnings(
+    utils::unzip(zip, exdir = extrait, overwrite = FALSE)
+  )
+  fichier <- file.path(extrait, NOM_FICHIER_SERIE_HISTORIQUE)
 
   serie <- lire_serie_historique_pop(fichier)
   verifier_egale(unique(serie$millesime_debut), 2017,
@@ -253,7 +247,7 @@ verifier_serie_historique_reel <- function(cache = "data/raw") {
 # renaturation MESURÉE. Reçoit `donnees` — le BRUT du thème (la table des
 # communes de construire_donnees_milieux, déjà calculée par le graphe) :
 # jamais de re-dérivation, la vérification suit la fraîcheur du brut.
-verifier_milieux_histoires_reel <- function(donnees, cache = "data/raw") {
+verifier_milieux_histoires_reel <- function(donnees) {
   verifier_vrai(!is.null(donnees) && nrow(donnees) > 0,
                 "Milieux — histoires",
                 "le brut du thème est vide — la donnée réelle est absente")
@@ -297,7 +291,7 @@ verifier_milieux_histoires_reel <- function(donnees, cache = "data/raw") {
 # distribution verrouillée à la construction (304 dortoirs profonds, 55 pôles
 # d'emploi, 6 communes sous le plancher), et l'Histoire ne se déclenche
 # JAMAIS sur la majorité (médiane ~0,3).
-verifier_dortoir_economie_reel <- function(donnees, cache = "data/raw") {
+verifier_dortoir_economie_reel <- function(donnees) {
   res <- construire_dortoir_economie(donnees$flores_a88, donnees$rp_emploi)
   d <- res$table
 
@@ -335,7 +329,7 @@ verifier_dortoir_economie_reel <- function(donnees, cache = "data/raw") {
 # censitaire) et le taux construit (une ligne par commune, dans [0, 1],
 # aucune suppression, la cohérence structurelle 1T2 = 1 + 2 au dernier
 # arrondi près — INSEE publie les deux côtés indépendamment).
-verifier_chomage_economie_reel <- function(donnees, cache = "data/raw") {
+verifier_chomage_economie_reel <- function(donnees) {
   rp <- donnees$rp_chomage
 
   verifier_egale(length(unique(rp$commune)), 1202L,
@@ -376,7 +370,7 @@ verifier_chomage_economie_reel <- function(donnees, cache = "data/raw") {
 # 48 821 lignes A88 / 109 413 A38, 1202 communes, les 6 communes sous le
 # plancher gate D (min 2 salariés) TOUTES comptées, 1196 retenues, des LQ
 # continues, finies, positives.
-verifier_lq_flores_reel <- function(donnees, cache = "data/raw") {
+verifier_lq_flores_reel <- function(donnees) {
   verifier_egale(nrow(donnees$flores_a88), 48821L,
                  "Flores A88 — le compte réel des lignes")
   verifier_egale(dplyr::n_distinct(donnees$flores_a88$commune), 1202L,
@@ -420,7 +414,7 @@ verifier_lq_flores_reel <- function(donnees, cache = "data/raw") {
 # regroupement, le plancher (0 suppression : le minimum observé est 10
 # établissements), la LQ de Balassa continue, l'Histoire top-5 par commune et
 # la matrice M sidecar.
-verifier_lq_economie_reel <- function(donnees, cache = "data/raw") {
+verifier_lq_economie_reel <- function(donnees) {
   snapshot <- donnees$sirene_snapshot
 
   verifier_egale(nrow(snapshot), 181481L, "LQ Économie — le compte réel")
@@ -464,7 +458,7 @@ verifier_lq_economie_reel <- function(donnees, cache = "data/raw") {
 # observé : 10 établissements actifs), des parts dans [0, 1], et la
 # distribution verrouillée à la construction (moyenne ~0,32 — un déplacement
 # de plusieurs points signalerait une liste EGSS ou un snapshot changé).
-verifier_eco_activites_economie_reel <- function(donnees, cache = "data/raw") {
+verifier_eco_activites_economie_reel <- function(donnees) {
   res <- construire_eco_activites_economie(donnees$sirene_snapshot,
                                            artefact_egss())
   d <- res$table
@@ -493,10 +487,11 @@ verifier_eco_activites_economie_reel <- function(donnees, cache = "data/raw") {
 # rangs-en-contexte des quatre indicateurs sur les tables réelles — des
 # ordinaux (entiers ≥ 1, 1 = meilleur) ou NA, les îles sans EPCI portant
 # rang_epci = NA (jamais un rang inventé, ADR-0021), la région et les
-# départements ne se classant que parmi leurs pairs. `cache` sert au
-# référentiel partagé extrait (lire_epci) — déjà extrait par fichier_epci_extrait.
-verifier_rangs_economie_reel <- function(donnees, cache = "data/raw") {
-  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
+# départements ne se classant que parmi leurs pairs. `base_epci` est le
+# chemin du référentiel partagé extrait (fichier_epci_extrait), lu par
+# lire_epci — jamais un chemin en dur.
+verifier_rangs_economie_reel <- function(donnees, base_epci) {
+  base <- lire_epci(base_epci)
 
   verifier_ordinaux <- function(r, verrou) {
     verifier_vrai(all(is.na(r$rang_reg) |
@@ -515,7 +510,7 @@ verifier_rangs_economie_reel <- function(donnees, cache = "data/raw") {
 
   # LQ (SIRENE) : 1202 communes, une ligne par cellule commune × activité
   lq <- construire_analytique_lq_economie(donnees$sirene_snapshot)$lq
-  r <- attacher_rangs_lq(lq, base_epci)
+  r <- attacher_rangs_lq(lq, base)
   verifier_egale(nrow(r), nrow(lq), "rangs LQ — une ligne par cellule")
   verifier_egale(dplyr::n_distinct(r$commune), 1202L,
                  "rangs LQ — les 1202 communes")
@@ -523,7 +518,7 @@ verifier_rangs_economie_reel <- function(donnees, cache = "data/raw") {
 
   # LQ d'emploi (A88) : 1196 communes retenues (1202 − 6 sous le plancher)
   lq_emploi <- calculer_lq_emploi_flores(donnees$flores_a88, "A88")$lq
-  r_emploi <- attacher_rangs_lq_emploi(lq_emploi, base_epci)
+  r_emploi <- attacher_rangs_lq_emploi(lq_emploi, base)
   verifier_egale(dplyr::n_distinct(r_emploi$commune), 1196L,
                  "rangs LQ d'emploi — les 1196 communes retenues")
   verifier_egale(nrow(r_emploi), nrow(lq_emploi),
@@ -533,13 +528,13 @@ verifier_rangs_economie_reel <- function(donnees, cache = "data/raw") {
   # score vert : 1202 communes, 0 suppression
   eco <- construire_eco_activites_economie(
     donnees$sirene_snapshot, artefact_egss())$table
-  r_eco <- attacher_rangs_eco_activites(eco, base_epci)
+  r_eco <- attacher_rangs_eco_activites(eco, base)
   verifier_egale(nrow(r_eco), 1202L, "rangs score vert — les 1202 communes")
   verifier_ordinaux(r_eco, "rangs score vert")
 
   # chômage : 1202 communes, une ligne par commune
   r_chomage <- attacher_rangs_chomage(
-    construire_chomage_economie(donnees$rp_chomage)$table, base_epci)
+    construire_chomage_economie(donnees$rp_chomage)$table, base)
   verifier_egale(nrow(r_chomage), 1202L, "rangs chômage — les 1202 communes")
   verifier_egale(anyDuplicated(r_chomage$commune), 0L,
                  "rangs chômage — aucune ligne en double")
@@ -557,7 +552,7 @@ verifier_rangs_economie_reel <- function(donnees, cache = "data/raw") {
 # porte de test-targets-byte-identical.R (un target est un run unique). Les
 # artefacts analytiques sont écrits dans un répertoire TEMPORAIRE (jamais la
 # sortie analytique du run — pas de course avec publie_economie).
-verifier_economie_e2e_reel <- function(donnees, cache = "data/raw") {
+verifier_economie_e2e_reel <- function(donnees, base_epci) {
   comptes_normalises <- c(
     sirene_snapshot = 181481L, flores_a38 = 109413L, flores_a88 = 48821L,
     rp_emploi = 7212L, rp_chomage = 1202L * 3L
@@ -567,11 +562,11 @@ verifier_economie_e2e_reel <- function(donnees, cache = "data/raw") {
                    paste("Économie e2e — la table normalisée", nom))
   }
 
-  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
+  base <- lire_epci(base_epci)
   sortie_analytiques <- tempfile("verif-economie-")
   dir.create(sortie_analytiques)
   analytiques <- construire_analytiques_economie(
-    donnees, base_epci, artefact_egss(), sortie = sortie_analytiques)
+    donnees, base, artefact_egss(), sortie = sortie_analytiques)
 
   comptes_analytiques <- c(
     lq_economie = 135784L, lq_emploi_a88 = 22616L,
@@ -597,7 +592,7 @@ verifier_economie_e2e_reel <- function(donnees, cache = "data/raw") {
   verifier_egale(nrow(analytiques$m), 835390L,
                  "Économie e2e — l'artefact support m_economie")
 
-  payload <- construire_payload_economie(analytiques, base_epci,
+  payload <- construire_payload_economie(analytiques, base,
                                          vintages_economie())
   comptes_payload <- c(
     indicateurs = 1268L * 3L, histoires = 1268L,
@@ -637,9 +632,11 @@ verifier_economie_e2e_reel <- function(donnees, cache = "data/raw") {
 # les Stories résolues (une lecture par territoire, la saillance vélo qui
 # remplace le défaut). `donnees` est le BRUT du thème (construire_donnees_
 # mobilite — le snapshot ET les sources du sous-bloc normalisées y sont) ;
-# les artefacts analytiques sont écrits dans un répertoire TEMPORAIRE (jamais
-# la sortie analytique du run — pas de course avec publie_mobilite).
-verifier_mobilite_e2e_reel <- function(donnees, cache = "data/raw") {
+# `base_epci` est le chemin du référentiel partagé extrait (fichier_epci_
+# extrait) ; les artefacts analytiques sont écrits dans un répertoire
+# TEMPORAIRE (jamais la sortie analytique du run — pas de course avec
+# publie_mobilite).
+verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   snapshot <- donnees$mobilite_snapshot
   verifier_egale(nrow(snapshot), 1200L,
                  "Mobilité e2e — les 1200 communes du snapshot porté")
@@ -648,10 +645,10 @@ verifier_mobilite_e2e_reel <- function(donnees, cache = "data/raw") {
   verifier_egale(sum(snapshot$nb_buildings), 1223578L,
                  "Mobilité e2e — le total réel des bâtiments analysés")
 
-  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
+  base <- lire_epci(base_epci)
   sortie_analytiques <- tempfile("verif-mobilite-")
   dir.create(sortie_analytiques)
-  analytiques <- construire_analytiques_mobilite(donnees, base_epci,
+  analytiques <- construire_analytiques_mobilite(donnees, base,
                                                  sortie = sortie_analytiques)
 
   # les comptes par niveau des parts d'isolation (issue #138) : 5 clés × le
@@ -842,7 +839,7 @@ verifier_mobilite_e2e_reel <- function(donnees, cache = "data/raw") {
 
   # les Stories résolues (issue #312) : une lecture par (territoire, groupe),
   # la saillance vélo REMPLACE le défaut là où elle tire (139 territoires)
-  payload <- construire_payload_mobilite(analytiques, base_epci,
+  payload <- construire_payload_mobilite(analytiques, base,
                                          vintages_mobilite())
   h <- payload$histoires
   verifier_egale(nrow(h), 1266L, "Mobilité e2e — une lecture par territoire")
@@ -875,8 +872,10 @@ verifier_mobilite_e2e_reel <- function(donnees, cache = "data/raw") {
 # TOUJOURS valide (le marqueur « Non disponible » n'y figure jamais), des
 # montants non négatifs, l'année complète la plus récente porte des
 # conventions, et les agrégats sont estampillés du vintage hebdomadaire.
-verifier_subventions_reel <- function(cache = "data/raw") {
-  conventions <- construire_donnees_subventions(cache = cache)$conventions
+# `scdl` est le chemin de l'export (résolu par le manifeste), `base_epci`
+# celui du référentiel partagé extrait.
+verifier_subventions_reel <- function(scdl, base_epci) {
+  conventions <- normaliser_subventions_scdl(lire_subventions_scdl(scdl))
 
   verifier_egale(names(conventions),
                  c("commune", "annee", "programme_libl", "montant"),
@@ -890,9 +889,9 @@ verifier_subventions_reel <- function(cache = "data/raw") {
   verifier_vrai(annee_ref %in% conventions$annee,
                 "subventions", "l'année de référence sans convention")
 
-  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
+  base <- lire_epci(base_epci)
   analytiques <- construire_analytiques_subventions(
-    conventions, base_epci, vintages_subventions())
+    conventions, base, vintages_subventions())
   ref <- vintages_subventions()
   verifier_vrai(all(analytiques$vintage_source == ref$source),
                 "subventions", "une estampille de source hors contrat")
@@ -911,12 +910,21 @@ verifier_subventions_reel <- function(cache = "data/raw") {
 # seules communes signées NON labellisées, jamais de double badge, une ligne
 # par (territoire × sigle), les estampilles vintage de SA source) — la RÈGLE,
 # jamais un compte figé pour la partie dérivée. Les agrégats de subventions
-# du payload partagé sont vérifiés par verifier_subventions_reel.
-verifier_programmes_reel <- function(cache = "data/raw") {
-  donnees <- construire_donnees_programmes(cache = cache)
-  base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
+# du payload partagé sont vérifiés par verifier_subventions_reel. TOUS les
+# chemins arrivent en arguments (résolus par le manifeste — la REGISTRE
+# VERIFICATIONS_PROGRAMMES de _targets.R), jamais un nom de fichier en dur.
+verifier_programmes_reel <- function(acv, pvd, crte, ti, ort, scdl,
+                                     base_epci) {
+  donnees <- list(
+    acv = lire_acv(acv),
+    pvd = lire_pvd(pvd),
+    crte = lire_crte(crte),
+    territoires_industrie = lire_ti(ti),
+    ort = lire_ort(ort)
+  )
+  base <- lire_epci(base_epci)
   vintages <- vintages_programmes()
-  membres <- construire_membres_programmes(donnees, base_epci, vintages)
+  membres <- construire_membres_programmes(donnees, base, vintages)
 
   # le contrat de forme ET la validation forte du payload (elle s'arrête
   # elle-même bruyamment sur toute dérive)
@@ -925,7 +933,7 @@ verifier_programmes_reel <- function(cache = "data/raw") {
                    "vintage_source", "vintage_version",
                    "vintage_date_reference", "vintage_date_publication"),
                  "programmes — la forme de la table des adhésions")
-  verifier_membres_programmes(membres, base_epci, vintages)
+  verifier_membres_programmes(membres, base, vintages)
 
   # les inputs FERMÉS : ACV 11 villes lauréates, NOMINATIVEMENT
   acv <- membres[membres$sigle == "ACV", ]
@@ -941,7 +949,7 @@ verifier_programmes_reel <- function(cache = "data/raw") {
   # « Signée » dans le fichier ORT réel), jamais un compte
   pvd <- membres[membres$sigle == "PVD", ]
   verifier_egale(nrow(pvd), 135L, "programmes — les communes PVD")
-  ort_source <- lire_ort(file.path(cache, "ort-conventions.xlsx"))
+  ort_source <- donnees$ort
   signees_ort <- unique(ort_source$code_commune[ort_source$statut == "Signée"])
   verifier_egale(pvd$convention_valant_ort, pvd$territoire %in% signees_ort,
                  "programmes — le drapeau PVD suit la règle « Signée »")
@@ -964,7 +972,7 @@ verifier_programmes_reel <- function(cache = "data/raw") {
   # paires (contrat × EPCI signataire) du fichier de suivi, une ligne par
   # EPCI, aucun doublon
   crte <- membres[membres$sigle == "CRTE", ]
-  crte_source <- lire_crte(file.path(cache, "liste-crte-grpt2025-20250717.csv"))
+  crte_source <- donnees$crte
   verifier_egale(length(unique(crte_source$id_crte)), 40L,
                  "programmes — les contrats CRTE")
   epcis_crte_attendus <- unique(crte_source$siren_epci[
@@ -976,7 +984,7 @@ verifier_programmes_reel <- function(cache = "data/raw") {
 
   # Territoires d'industrie : les 10 territoires (l'input FERMÉ)
   ti <- membres[membres$sigle == "Territoires d'industrie", ]
-  ti_source <- lire_ti(file.path(cache, "liste-ti-communes.csv"))
+  ti_source <- donnees$territoires_industrie
   verifier_egale(length(unique(ti_source$id_ti)), 10L,
                  "programmes — les territoires d'industrie")
   verifier_egale(sort(ti$territoire), sort(unique(ti_source$siren_epci)),
@@ -1003,8 +1011,8 @@ verifier_programmes_reel <- function(cache = "data/raw") {
 
   # les agrégats de subventions du payload partagé (issue #178) : la table
   # estampillée hebdomadaire de la source SCDL, avec une ligne de région
-  conventions <- construire_donnees_subventions(cache = cache)$conventions
-  subventions <- construire_analytiques_subventions(conventions, base_epci,
+  conventions <- normaliser_subventions_scdl(lire_subventions_scdl(scdl))
+  subventions <- construire_analytiques_subventions(conventions, base,
                                                     vintages)
   verifier_vrai(all(subventions$vintage_source ==
                       vintages_programmes()$source[
