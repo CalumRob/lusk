@@ -21,24 +21,8 @@
 # seam metadata. La preuve de bout en bout sur données réelles reste
 # test-targets-byte-identical.R (detecter_changement FALSE sur le même cache).
 
-# charger_pieces_graphe ---------------------------------------------------------
-# Charge les fonctions de mécanique de _targets.R (jamais le graphe entier) dans
-# un environnement vierge : parse du fichier, sélection des définitions par nom
-# (les affectations `nom <- function(...)`), évaluation dans un environnement
-# dont le parent est baseenv. Ce sont les MÊMES fonctions que tar_make exécute
-# à la construction, sans les effets de bord du script (pkgload::load_all,
-# tar_option_set, le graphe évalué en tête de fichier).
-charger_pieces_graphe <- function(noms) {
-  arbres <- parse(file.path(pkgload::pkg_path(), "_targets.R"))
-  defs <- arbres[vapply(arbres, function(a) {
-    is.call(a) && identical(a[[1]], as.name("<-")) &&
-      is.name(a[[2]]) && as.character(a[[2]]) %in% noms
-  }, logical(1))]
-  stopifnot("définitions introuvables dans _targets.R" = length(defs) == length(noms))
-  env <- new.env(parent = baseenv())
-  eval(defs, env)
-  env
-}
+# charger_pieces_graphe est défini dans helper-targets-fixtures.R (partagé par
+# les processus parallèles de la suite targets).
 
 test_that("attributs_nuls : un descripteur portant metadata = function() ne rétrécit pas l'appel (#351)", {
   env <- charger_pieces_graphe("attributs_nuls")
@@ -73,4 +57,53 @@ test_that("symbole_ns : la construction du graphe survit au seam metadata (#351)
     env$symbole_ns(theme$construire_donnees),
     as.name("construire_donnees_brut")
   )
+})
+
+# appel_function_a_srcref -------------------------------------------------------
+# Un appel `function` porte sa srcref comme QUATRIÈME ÉLÉMENT (le parser R ne
+# la met PAS en attribut) — le piège que #341 a exposé en câblant Mobilité :
+# le srcfile (un environnement) diffère entre deux chargements du même fichier,
+# l'arbre nu de deux générations ne pouvait pas égaler.
+appel_function_a_srcref <- function(x) {
+  if (is.call(x)) {
+    if (identical(x[[1L]], as.name("function")) && length(x) == 4L &&
+        inherits(x[[4L]], "srcref")) {
+      return(TRUE)
+    }
+    any(vapply(as.list(x), appel_function_a_srcref, logical(1)))
+  } else {
+    FALSE
+  }
+}
+
+# appel_function : un appel `function` quel qu'il soit (formals vides ou non).
+appel_function <- function(x) {
+  if (is.call(x)) {
+    if (identical(x[[1L]], as.name("function"))) return(TRUE)
+    any(vapply(as.list(x), appel_function, logical(1)))
+  } else {
+    FALSE
+  }
+}
+
+test_that("attributs_nuls : la srcref embarquée d'une fonction anonyme est retirée (#341)", {
+  env <- charger_pieces_graphe("attributs_nuls")
+
+  # construire_donnees_mobilite porte des fonctions anonymes (le parser R
+  # stocke leur srcref comme 4e ÉLÉMENT de l'appel `function`, avec un
+  # srcfile-environnement) — le corps nu doit ne plus en porter AUCUNE : deux
+  # générations du même corps deviennent comparables (le pont
+  # meme_fonction_paquet), la construction du graphe Mobilité survit.
+  corps <- body(construire_donnees_mobilite)
+  expect_true(appel_function_a_srcref(corps))   # le corps EN porte (le piège)
+  expect_true(appel_function(corps))            # des fonctions anonymes, oui
+
+  nu <- env$attributs_nuls(corps)
+  expect_false(appel_function_a_srcref(nu))     # attributs_nuls les retire
+  expect_identical(nu, env$attributs_nuls(nu))  # idempotent
+  expect_null(attributes(nu))
+
+  # la forme est préservée : la fonction anonyme est toujours là, seule la
+  # srcref embarquée a disparu
+  expect_true(appel_function(nu))
 })

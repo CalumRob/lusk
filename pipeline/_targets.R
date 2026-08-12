@@ -1,11 +1,16 @@
 # _targets.R --------------------------------------------------------------------
-# Le graphe targets du pipeline (#329) — le tracer bullet sur le thème
-# Démographie (#340). Remplace la séquence d'orchestration de run_pipeline()
-# (download -> construire -> vintages -> compute -> publish -> géométrie ->
-# fusion des vintages -> rapport) par un DAG :
+# Le graphe targets du pipeline (#329) — généralisé aux CINQ thèmes (#341) :
+# une grappe par thème, construite depuis SON descripteur (issue #13, jamais
+# un nom de thème en dur, jamais une liste de pas par thème), plus les
+# artefacts PARTAGÉS du run (la fusion des vintages #124/#243, le rapport de
+# run, la géométrie ADR-0008). Remplace la séquence d'orchestration de
+# run_pipeline() (download -> construire -> vintages -> compute -> publish ->
+# géométrie -> fusion des vintages -> rapport) par un DAG :
 #
 #   - la régénération devient chirurgicale : un changement de compute ne
-#     rejoue pas la couche construire lourde (Q1) ;
+#     rejoue pas la couche construire lourde (Q1) — et la frontière du skip
+#     suit la frontière des DESCRIPTEURS : les étapes de données d'un thème
+#     ne dépendent jamais de celles d'un autre (test-targets-graphe-cinq-themes) ;
 #   - un changement de corps d'un builder invalide tout l'aval même sans
 #     changement d'entrées — le « piège de la fraîcheur » (#325) est géré
 #     nativement par le hash des fonctions importées (Q2) ;
@@ -21,9 +26,16 @@
 # seule la couche d'orchestration change. Le store _targets/ (gitignoré)
 # remplace data/processed/*.rds comme cache intermédiaire.
 #
-# Le graphe se construit depuis le DESCRIPTEUR du thème (theme_demographie(),
-# issue #13) — jamais un nom de thème en dur : le ticket #341 balayera les
-# cinq descripteurs sans réécrire la mécanique.
+# Les fichiers PARTAGÉS du home public (territoires.*, vintages.*,
+# run-report.json) sont écrits par des cibles chaînées ou uniques — le DAG
+# produit la MÊME sortie que cinq run_pipeline() séquentiels (le cron) :
+#   - la référence des territoires est écrite par chaque publish ; le dernier
+#     thème de la chaîne publie_* gagne (comme le dernier appel du cron) ;
+#   - la table des vintages est FUSIONNÉE par UN target unique (fusion_vintages)
+#     qui upsert séquentiellement les cinq tables dans la table partagée sur
+#     disque, ids retirés du thème compris (retire_vintages, #243) ;
+#   - run-report.json est écrit par les rapports de run chaînés, le dernier
+#     thème gagne.
 
 library(targets)
 # Le workflow de dev : le paquet est chargé par pkgload::load_all ICI (dans
@@ -46,11 +58,30 @@ MODE_RUN <- Sys.getenv("LUSK_MODE", unset = "full")
 CACHE_RUN <- Sys.getenv("LUSK_CACHE", unset = "data/raw")
 SORTIE_RUN <- Sys.getenv("LUSK_SORTIE", unset = "../public/data")
 
-# Le thème du tracer bullet. Le manifeste du thème est une variable du script :
-# targets hashe sa VALEUR (siphash) — une source ajoutée/retirée du manifeste
-# invalide le téléchargement et tout l'aval.
-THEME_RUN <- theme_demographie()
-manifeste <- THEME_RUN$manifest
+# THEMES_RUN : les CINQ descripteurs — LA donnée du graphe. LUSK_THEMES
+# restreint le run à un sous-ensemble (le cron slow-clock de Mobilité, les
+# tests byte-identical un thème à la fois) ; vide = les cinq. Les manifestes
+# sont des variables du script : targets hashe leur VALEUR (siphash) — une
+# source ajoutée/retirée d'un manifeste invalide le téléchargement de SON
+# thème et tout son aval.
+THEMES_RUN <- list(
+  demographie = theme_demographie(),
+  habitat = theme_habitat(),
+  economie = theme_economie(),
+  mobilite = theme_mobilite(),
+  milieux = theme_milieux()
+)
+selection <- Sys.getenv("LUSK_THEMES", unset = "")
+if (nzchar(selection)) {
+  selection <- strsplit(selection, ",")[[1L]]
+  inconnus <- setdiff(selection, names(THEMES_RUN))
+  if (length(inconnus) > 0) {
+    stop("LUSK_THEMES : thème(s) inconnu(s) : ",
+         paste(inconnus, collapse = ", "), ".", call. = FALSE)
+  }
+  THEMES_RUN <- THEMES_RUN[selection]
+}
+for (t in THEMES_RUN) assign(paste0("manifeste_", t$theme), t$manifest)
 
 # attributs_nuls -----------------------------------------------------------------
 # Le corps d'une fonction chargée par parse() porte des attributs de source
@@ -61,8 +92,19 @@ manifeste <- THEME_RUN$manifest
 attributs_nuls <- function(x) {
   if (is.call(x) || is.pairlist(x)) {
     attributes(x) <- NULL
+    # Issue #341 : le parser R stocke la srcref d'une fonction anonyme comme
+    # QUATRIÈME ÉLÉMENT de l'appel `function` (jamais un attribut) — elle
+    # porte un srcfile (un environnement) qui diffère entre deux chargements
+    # du même fichier : comparer deux générations d'un corps qui contient une
+    # fonction anonyme (construire_donnees_mobilite) échouerait. On la retire
+    # AVANT la boucle (l'arbre rétrécit, mais seq_along est recalculé après —
+    # pas de dépassement) ; deparse l'ignore, l'arbre de parse nu est intact.
+    if (is.call(x) && length(x) == 4L &&
+        identical(x[[1L]], as.name("function")) &&
+        inherits(x[[4L]], "srcref")) {
+      x[[4L]] <- NULL
+    }
     for (i in seq_along(x)) {
-      enfant <- attributs_nuls(x[[i]])
       # Issue #351 : un enfant NULL (les formals vides d'une fonction anonyme
       # `function() ...` — le seam `metadata` de #311, mais toute fonction
       # anonyme du paquet passe par là) ne doit PAS être affecté : en R,
@@ -70,6 +112,13 @@ attributs_nuls <- function(x) {
       # seq_along(x) précalculé dépasse (subscript out of bounds). On garde le
       # nœud tel quel — l'arbre de parse nu est préservé (un enfant NULL reste
       # NULL, deparse produit la même forme).
+      # Issue #341 : une FENTE VIDE (x[i, ] — l'index manquant d'un subscript
+      # à virgule, des corps comme construire_donnees_programmes) est
+      # l'argument manquant R_MissingArg : y récurser forcerait la promesse et
+      # lèverait « argument manquant ». On la garde telle quelle — elle fait
+      # partie de l'arbre de parse, les deux générations la portent.
+      if (identical(x[[i]], quote(expr = ))) next
+      enfant <- attributs_nuls(x[[i]])
       if (is.null(enfant)) next
       x[[i]] <- enfant
     }
@@ -118,31 +167,46 @@ symbole_ns <- function(piece, paquet = "lusk") {
 }
 
 # grappe_theme ------------------------------------------------------------------
-# La grappe d'un thème — construite depuis le descripteur : download (mode
+# La grappe d'UN thème — construite depuis SON descripteur : download (mode
 # full/cron préservé, idempotent) -> fichiers du cache brut (fraîcheur par
-# contenu) -> construire -> vintages -> compute -> publish -> métadonnées du
-# thème (theme_<theme>.json, le seam `metadata` de #311 — quand le descripteur
-# le déclare) -> fusion des vintages (upsert, issue #124) -> rapport de run
-# (indépendant, toujours).
-# Le seam de publication du thème (issue #97) est respecté par le dispatch :
-# un thème classique (Démographie, Habitat) n'expose pas `publier` — la
-# branche compute_payload + publish, à l'identique de run_pipeline.
-grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
-                         sortie = SORTIE_RUN) {
+# contenu) -> construire -> vintages -> [compute] -> [métadonnées]. La
+# publication (publie_theme), la fusion partagée (fusion_themes) et le
+# rapport de run (rapport_theme) vivent dans le câblage commun ci-dessous —
+# les fichiers partagés qu'ils écrivent doivent être déterministes (chaînes).
+# Les seams se dispatchent sur les TRAITS du descripteur, jamais sur les noms
+# de thèmes :
+#   - `metadata` (issue #311) : un target publie theme_<theme>.json quand le
+#     descripteur le déclare ;
+#   - `publier` (issue #97) : dispatché par publie_theme — un thème qui
+#     expose `publier` n'a PAS de target compute ici : son seam produit le
+#     payload lui-même, à l'identique de run_pipeline ;
+#   - la SIGNATURE de `vintages` (issue #19) : le cache atteint le builder
+#     qui le déclare (vintages_habitat lit la date de pull des DPE sur le
+#     mtime du cache) — le même dispatch sur formals() que run_pipeline.
+grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
+                         cache = CACHE_RUN, sortie = SORTIE_RUN) {
   nom <- theme$theme
   theme_c <- as.name(paste0("theme_", nom))   # le constructeur du descripteur
   theme_descripteur <- bquote(.(theme_c)())
   construire <- symbole_ns(theme$construire_donnees)
   vintages_fn <- symbole_ns(theme$vintages)
+  manifeste <- as.name(paste0("manifeste_", nom))
 
   sources <- as.name(paste0("sources_", nom))
   fichiers <- as.name(paste0("fichiers_", nom))
   brut <- as.name(paste0("brut_", nom))
   vintages <- as.name(paste0("vintages_table_", nom))
   payload <- as.name(paste0("payload_", nom))
-  publie <- as.name(paste0("publie_", nom))
   metadata <- as.name(paste0("metadata_", nom))
-  rapport <- as.name(paste0("rapport_", nom))
+
+  # vintages : le builder du thème prend le cache seulement s'il le déclare —
+  # le dispatch sur la signature, à l'identique de run_pipeline (Démographie
+  # n'en prend pas, Habitat lit les dates de pull DPE sur le cache).
+  appel_vintages <- if ("cache" %in% names(formals(theme$vintages))) {
+    bquote(.(vintages_fn)(cache = .(cache)))
+  } else {
+    bquote(.(vintages_fn)())
+  }
 
   grappe <- list(
     # download : idempotent (saute ce qui existe et est valide, retente et
@@ -150,7 +214,7 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
     # tel quel. Renvoie les statuts par source — le cœur du rapport de run.
     tar_target_raw(
       as.character(sources),
-      bquote(download_sources(manifeste, cache = .(cache), mode = .(mode)))
+      bquote(download_sources(.(manifeste), cache = .(cache), mode = .(mode)))
     ),
     # les fichiers du cache brut comme cibles de fichiers : la fraîcheur des
     # entrées est par CONTENU (trust_timestamps = FALSE). Un re-téléchargement
@@ -159,7 +223,7 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
     # hash n'est pris qu'après le téléchargement du run.
     tar_target_raw(
       as.character(fichiers),
-      bquote({ .(sources); file.path(.(cache), manifeste$fichier) }),
+      bquote({ .(sources); file.path(.(cache), .(manifeste)$fichier) }),
       format = "file"
     ),
     # construire : le builder du thème, appelé par son SYMBOLE — un
@@ -169,88 +233,37 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
       as.character(brut),
       bquote({ .(fichiers); .(construire)(cache = .(cache)) })
     ),
-    # vintages : la table du thème (le builder prend le cache seulement s'il
-    # le déclare — Démographie n'en prend pas, la signature est respectée).
-    tar_target_raw(
-      as.character(vintages),
-      bquote(.(vintages_fn)())
-    ),
-    # compute : le payload de la fiche. Le descripteur est reconstruit par son
-    # constructeur (theme_<slug>(), la convention des modules de thème) — le
-    # corps du constructeur référence TOUTES les pièces du thème : le hash
-    # transitif des imports couvre chacune, sans liste déclarée à maintenir.
-    tar_target_raw(
-      as.character(payload),
-      bquote(compute_payload(.(brut), theme = .(theme_descripteur),
-                             vintages = .(vintages)))
-    ),
-    # publish : la publication static du payload vers la cible du run (upsert,
-    # ADR-0004). Un thème qui expose `publier` (issue #97) câblerait ici sa
-    # publication au lieu de la branche compute + publish. Les métadonnées du
-    # thème (theme_<theme>.json, issue #311) sont publiées par un target dédié
-    # inséré APRÈS celui-ci — le même seam `metadata` que run_pipeline.
-    tar_target_raw(
-      as.character(publie),
-      bquote(publish(.(payload), .(sortie)))
-    ),
-    # fusion des vintages (issue #124) : upsert dans la table partagée déjà
-    # sur disque + projections parquet/JSON — la MÊME séquence que
-    # run_pipeline. `retire_vintages` (issue #243) : les ids que le thème ne
-    # déclare plus, déclarés par le descripteur quand il les porte.
-    tar_target_raw(
-      paste0("fusion_vintages_", nom),
-      bquote({
-        theme_ <- .(theme_descripteur)
-        retires <- if ("retire_vintages" %in% names(theme_)) {
-          theme_$retire_vintages
-        } else {
-          character(0)
-        }
-        v <- fusionner_vintages(.(vintages), .(sortie), retires = retires)
-        nanoparquet::write_parquet(v, file.path(.(sortie), "vintages.parquet"))
-        jsonlite::write_json(v, file.path(.(sortie), "vintages.json"),
-                             dataframe = "rows", na = "null",
-                             digits = 17, pretty = TRUE)
-        v
-      })
-    ),
-    # le rapport de run : un target indépendant des étapes AVAL (aucune
-    # dépendance sur payload/publie/fusion), réestampillé à CHAQUE run
-    # (tar_cue mode = "always") même quand la chaîne saute, et survivant à
-    # l'échec d'une étape aval (error = "continue"). Le diagnostic de
-    # couverture (issue #233) y voyage quand le thème le porte — le même seam
-    # `names(brut)` que run_pipeline (NULL pour Démographie, jamais une clé
-    # vide). NB : sur un échec du TÉLÉCHARGEMENT lui-même, les statuts sont
-    # portés par l'erreur (issue #8) — le rapport d'échec est une
-    # responsabilité de l'étape de câblage cron (étape 5 du port), pas du DAG.
-    tar_target_raw(
-      as.character(rapport),
-      bquote({
-        brut_ <- .(brut)
-        couverture <- if ("couverture" %in% names(brut_)) {
-          brut_$couverture
-        } else {
-          NULL
-        }
-        ecrire_rapport_run(.(sources), .(mode), .(sortie),
-                           couverture = couverture)
-        file.path(.(sortie), "run-report.json")
-      }),
-      format = "file",
-      cue = tar_cue(mode = "always")
-    )
+    tar_target_raw(as.character(vintages), appel_vintages)
   )
+
+  # compute : le payload de la fiche. Un thème qui expose `publier` (issue
+  # #97 — Économie, Mobilité) n'a PAS de target compute : son seam de
+  # publication produit le payload lui-même (publie_theme), à l'identique de
+  # run_pipeline — le dispatch est PAR TRAIT (is.function(theme$publier)),
+  # jamais un nom de thème. Le descripteur est reconstruit par son
+  # constructeur (theme_<slug>(), la convention des modules de thème) — le
+  # corps du constructeur référence TOUTES les pièces du thème : le hash
+  # transitif des imports couvre chacune, sans liste déclarée à maintenir.
+  if (!is.function(theme$publier)) {
+    grappe <- c(grappe, list(
+      tar_target_raw(
+        as.character(payload),
+        bquote(compute_payload(.(brut), theme = .(theme_descripteur),
+                               vintages = .(vintages)))
+      )
+    ))
+  }
 
   # les métadonnées du thème (issue #311) : le seam metadata de run_pipeline —
   # un thème qui déclare `metadata` (la fonction qui lit son fichier épinglé
   # inst/extdata/theme-metadata/) publie SON theme_<theme>.json à côté des
-  # faits ; le dispatch est PAR TRAIT (jamais un nom de thème en dur) et un
-  # thème sans membre (Programmes, ADR-0013) n'écrit NI n'écrase rien.
-  # Publier les métadonnées ne recompute JAMAIS les tables de faits : le
-  # target n'écrit que theme_<theme>.json, validé contre les vintages du thème
-  # (publier_theme_metadata — la garde theme_attendu refuse la collision).
+  # faits ; le dispatch est PAR TRAIT et un thème sans membre n'écrit NI
+  # n'écrase rien. Publier les métadonnées ne recompute JAMAIS les tables de
+  # faits : le target n'écrit que theme_<theme>.json, validé contre les
+  # vintages du thème (publier_theme_metadata — la garde theme_attendu refuse
+  # la collision).
   if ("metadata" %in% names(theme)) {
-    grappe <- append(grappe, list(
+    grappe <- c(grappe, list(
       tar_target_raw(
         as.character(metadata),
         bquote({
@@ -260,16 +273,144 @@ grappe_theme <- function(theme = THEME_RUN, mode = MODE_RUN, cache = CACHE_RUN,
                                  theme_attendu = theme_$theme)
         })
       )
-    ), after = 6L)
+    ))
   }
 
   grappe
 }
 
-# Le graphe du tracer bullet : la grappe du thème + la géométrie du fond de
-# carte — un artefact PARTAGÉ du run (issue #60, ADR-0008), pas une table du
-# thème : publiée vers la même cible que le payload, upsert comme lui.
+# publie_theme ------------------------------------------------------------------
+# La publication d'UN thème — le seam `publier` du descripteur quand il
+# l'expose (issue #97 : Économie, Mobilité — theme$publier(brut, cache,
+# vintages, sortie), à l'identique de run_pipeline) ; la machinerie partagée
+# (compute_payload + publish) sinon (Démographie, Habitat, Milieux).
+# `precedent` CHAÎNE les écritures de la référence partagée des territoires
+# (territoires.* est écrit par chaque publish, le dernier thème gagne — comme
+# cinq run_pipeline séquentiels) : sans chaîne, cinq cibles indépendantes
+# écriraient le fichier partagé en parallèle (course, vainqueur non
+# déterministe). La chaîne est construite depuis THEMES_RUN, jamais une
+# décision par thème.
+publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
+                         precedent = NULL) {
+  nom <- theme$theme
+  if (is.function(theme$publier)) {
+    publier_fn <- symbole_ns(theme$publier)
+    command <- bquote(
+      .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
+                    vintages = .(as.name(paste0("vintages_table_", nom))),
+                    sortie = .(sortie))
+    )
+  } else {
+    command <- bquote(
+      publish(.(as.name(paste0("payload_", nom))), .(sortie))
+    )
+  }
+  if (!is.null(precedent)) {
+    command <- bquote({ .(precedent); .(command) })
+  }
+  tar_target_raw(paste0("publie_", nom), command)
+}
+
+# fusion_themes -----------------------------------------------------------------
+# La fusion PARTAGÉE des vintages (issue #124, amendée #243) : UN target pour
+# les thèmes du run — chaque table du thème est upsertée SÉQUENTIELLEMENT dans
+# la table partagée déjà sur disque (parquet écrit entre deux fusions, la même
+# accumulation que cinq run_pipeline successifs), puis les projections
+# parquet/JSON. `retire_vintages` (issue #243) : les ids que le thème ne
+# déclare plus, retirés de la table partagée à SON étape (les différentielles
+# OCS-GE de Milieux) — dispatché par trait, jamais un nom de thème.
+fusion_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
+  corps <- list(bquote(v <- NULL))
+  for (t in themes) {
+    retires <- if ("retire_vintages" %in% names(t)) {
+      t$retire_vintages
+    } else {
+      character(0)
+    }
+    table <- as.name(paste0("vintages_table_", t$theme))
+    corps <- c(corps, list(bquote({
+      v <- fusionner_vintages(.(table), .(sortie), retires = .(retires))
+      nanoparquet::write_parquet(v, file.path(.(sortie), "vintages.parquet"))
+    })))
+  }
+  corps <- c(corps, list(
+    # Issue #73 : la table des vintages est aussi projetée en JSON — la table
+    # partagée que l'app lit pour citer les sources d'un bloc.
+    bquote(jsonlite::write_json(v, file.path(.(sortie), "vintages.json"),
+                                dataframe = "rows", na = "null",
+                                digits = 17, pretty = TRUE)),
+    bquote(v)
+  ))
+  tar_target_raw("fusion_vintages", as.call(c(list(as.name("{")), corps)))
+}
+
+# rapport_theme -----------------------------------------------------------------
+# Le rapport de run d'UN thème : un target INDÉPENDANT des étapes aval
+# (aucune dépendance sur payload/publie/fusion), réestampillé à CHAQUE run
+# (tar_cue mode = "always") même quand la chaîne saute, et survivant à
+# l'échec d'une étape aval (error = "continue") — la sémantique #8/#10 du
+# cron (Q4). Le diagnostic de couverture (issue #233) y voyage quand le BRUT
+# du thème le porte — le même seam `names(brut)` que run_pipeline (Mobilité,
+# jamais un nom de thème en dur ; NULL pour les autres, jamais une clé vide).
+# `precedent` CHAÎNE les écritures du fichier PARTAGÉ run-report.json (le
+# dernier thème gagne, comme cinq run_pipeline séquentiels).
+# NB : sur un échec du TÉLÉCHARGEMENT lui-même, les statuts sont portés par
+# l'erreur (issue #8) — le rapport d'échec est une responsabilité de l'étape
+# de câblage cron (étape 5 du port), pas du DAG.
+rapport_theme <- function(theme, mode = MODE_RUN, sortie = SORTIE_RUN,
+                          precedent = NULL) {
+  nom <- theme$theme
+  brut <- as.name(paste0("brut_", nom))
+  sources <- as.name(paste0("sources_", nom))
+  corps <- list(
+    bquote(brut_ <- .(brut)),
+    bquote(couverture <- if ("couverture" %in% names(brut_)) {
+      brut_$couverture
+    } else {
+      NULL
+    }),
+    bquote(ecrire_rapport_run(.(sources), .(mode), .(sortie),
+                              couverture = couverture)),
+    bquote(file.path(.(sortie), "run-report.json"))
+  )
+  if (!is.null(precedent)) {
+    corps <- c(list(bquote(.(precedent))), corps)
+  }
+  tar_target_raw(
+    paste0("rapport_", nom),
+    as.call(c(list(as.name("{")), corps)),
+    format = "file",
+    cue = tar_cue(mode = "always")
+  )
+}
+
+# Le graphe ---------------------------------------------------------------------
+# Les grappes des thèmes du run, puis les artefacts partagés : les
+# publications chaînées (la référence des territoires est déterministe), la
+# fusion partagée des vintages, les rapports de run chaînés, et la géométrie
+# du fond de carte — un artefact PARTAGÉ du run (issue #60, ADR-0008), pas
+# une table du thème : publiée vers la même cible que le payload, upsert
+# comme lui.
+grappes <- unlist(lapply(THEMES_RUN, grappe_theme), recursive = FALSE)
+
+publies <- list()
+precedent <- NULL
+for (t in THEMES_RUN) {
+  publies <- c(publies, list(publie_theme(t, precedent = precedent)))
+  precedent <- as.name(paste0("publie_", t$theme))
+}
+
+rapports <- list()
+precedent <- NULL
+for (t in THEMES_RUN) {
+  rapports <- c(rapports, list(rapport_theme(t, precedent = precedent)))
+  precedent <- as.name(paste0("rapport_", t$theme))
+}
+
 list(
-  grappe_theme(),
+  grappes,
+  publies,
+  fusion_themes(),
+  rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN))
 )
