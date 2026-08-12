@@ -605,6 +605,15 @@ export interface SousGroupeMetadata {
  *   bidirectional parity against the published facts — every (key, detail)
  *   row of the payload has its label, no declared label is dead — is the
  *   guard verifierPariteLibelles (validate.ts), run at load.
+ * - the fourth map (issue #362 — the reading-VALUE labels):
+ *   `classification_labels` maps the classification VALUES of the reading
+ *   templates (the pipeline's quadrants/lectures — attire-meurt,
+ *   parc-intermediaire…) to their French prose, so a reading never renders a
+ *   raw key. Optional for a theme whose templates never reference
+ *   `classification` (Mobilité); REQUIRED (non-empty object of non-empty
+ *   strings) once a reading.params references it. The one-directional
+ *   parity — every published non-null classification value has its label —
+ *   is verifierPariteLibelles.
  */
 export interface ThemeMetadata {
   theme: Theme
@@ -630,4 +639,15 @@ export interface ThemeMetadata {
    * the story-scalar layers; a raw histoire field name is never a label.
    */
   param_labels: Record<string, string>
+  /**
+   * The classification-VALUE labels (issue #362 — the 4th map, the reading
+   * values): classification key → French prose (attire-meurt → « attire, mais
+   * se meurt »). The reading templates resolve the `classification` param
+   * through it — a value absent from the map makes the reading unavailable,
+   * never a raw key. Optional for themes that never reference `classification`
+   * (Mobilité); REQUIRED once a reading.params references it (non-empty
+   * object of non-empty strings). The published-value parity is the
+   * verifierPariteLibelles load guard.
+   */
+  classification_labels?: Record<string, string>
 }

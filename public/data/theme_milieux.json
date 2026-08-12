@@ -135,5 +135,11 @@
     "delta_population": "Variation de population",
     "trajectoire_artif_par_habitant": "Trajectoire par habitant",
     "classification": "Classification"
+  },
+  "classification_labels": {
+    "grandir-en-se-densifiant": "grandit en se densifiant",
+    "grandir-en-setalant": "grandit en s'étalant",
+    "sen-aller-et-consommer-quand-meme": "se vide, et consomme quand même",
+    "les-departs-laissent-la-place-a-la-renaturation": "se vide, laissant la place à la renaturation"
   }
 }

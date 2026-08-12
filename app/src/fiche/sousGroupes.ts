@@ -32,6 +32,7 @@ import type {
   NoeudTexteRiche,
   Payload,
   Theme,
+  ThemeMetadata,
 } from '@/payload/types'
 import {
   formaterNombreFR,
@@ -182,9 +183,25 @@ function clesParametresReferencees(template: NoeudTexteRiche[]): string[] {
 }
 
 /** One display value of the template — null means the reading cannot be composed. */
-function formaterValeurParametre(valeur: unknown, clef: string): string | null {
+function formaterValeurParametre(
+  valeur: unknown,
+  clef: string,
+  metadata?: ThemeMetadata,
+): string | null {
   if (valeur === null || valeur === undefined) return null
-  if (typeof valeur !== 'number') return String(valeur)
+  if (typeof valeur !== 'number') {
+    // La classification se résout à travers la carte payload-owned (#362) —
+    // JAMAIS la clé brute : une valeur absente de la carte (impossible sous
+    // le validateur, qui l'exige dès qu'un template référence classification)
+    // rend la lecture indisponible, pas une clé brute dans le texte. Les
+    // autres chaînes (periode, periode_pop…) passent telles quelles.
+    if (clef === 'classification') {
+      const libelle = metadata?.classification_labels?.[String(valeur)]
+      if (libelle === undefined) return null
+      return libelle
+    }
+    return String(valeur)
+  }
   // les fractions % se lisent en pourcentage (0,1333 → « 13,3 ») ; les autres
   // nombres (taux ‰, ratios, comptes) restent tels quels
   if (CLEFS_POURCENT.has(clef)) return formaterNombreFR(valeur * 100, 1)
@@ -195,10 +212,16 @@ function formaterValeurParametre(valeur: unknown, clef: string): string | null {
  * Resolve ONE template param from the row: the row's own field first, then the
  * folded top-N aliases of the Économie reading (activity_label, lq, n,
  * part_parc — resolved on the FIRST present rank; « rang » is the index).
+ * The theme metadata rides down so a referenced `classification` resolves
+ * through its classification_labels map (issue #362) — never a raw key.
  */
-function valeurParametre(histoire: Histoire, clef: string): string | null {
+function valeurParametre(
+  histoire: Histoire,
+  clef: string,
+  metadata?: ThemeMetadata,
+): string | null {
   const brut = (histoire as unknown as Record<string, unknown>)[clef]
-  if (brut !== undefined) return formaterValeurParametre(brut, clef)
+  if (brut !== undefined) return formaterValeurParametre(brut, clef, metadata)
 
   if (clef === 'rang' || CLEFS_TOP_N.includes(clef)) {
     const ligne = histoire as unknown as Record<string, unknown>
@@ -206,7 +229,7 @@ function valeurParametre(histoire: Histoire, clef: string): string | null {
       const code = ligne[`top${k}_activity_code`]
       if (code === null || code === undefined) continue
       if (clef === 'rang') return String(k)
-      return formaterValeurParametre(ligne[`top${k}_${clef}`], clef)
+      return formaterValeurParametre(ligne[`top${k}_${clef}`], clef, metadata)
     }
   }
   return null
@@ -219,6 +242,7 @@ function lecturePour(
   territoire: string,
   groupe: string,
   template: NoeudTexteRiche[],
+  metadata: ThemeMetadata,
 ): { lecture: LectureSousGroupe | null; indisponible: boolean } {
   const histoire = payload.histoires.find(
     (h) => h.theme === theme && h.territoire === territoire && h.groupe === groupe,
@@ -227,7 +251,7 @@ function lecturePour(
 
   const parametres: Record<string, string> = {}
   for (const clef of clesParametresReferencees(template)) {
-    const valeur = valeurParametre(histoire, clef)
+    const valeur = valeurParametre(histoire, clef, metadata)
     if (valeur === null) return { lecture: null, indisponible: true }
     parametres[clef] = valeur
   }
@@ -282,6 +306,7 @@ export function sousGroupesPourTerritoire(
       territoire,
       sousGroupe.key,
       sousGroupe.reading.template,
+      metadata,
     )
 
     return {

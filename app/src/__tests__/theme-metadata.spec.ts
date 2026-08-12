@@ -288,3 +288,43 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
     }
   })
 })
+
+describe('validerThemeMetadata — la 4e carte, les libellés des classifications (#362)', () => {
+  it('exige classification_labels dès qu\u2019un reading.params référence `classification`', () => {
+    // Démographie référence `classification` — sans la carte, la lecture
+    // rendrait la clé brute (attire-meurt) dans le texte français : rejetée.
+    const erreur = attendErreur('demographie', (meta) => {
+      delete (meta as unknown as Record<string, unknown>).classification_labels
+    })
+    expect(erreur.message).toMatch(/classification_labels/i)
+  })
+
+  it('rejette un libellé de classification vide', () => {
+    const erreur = attendErreur('demographie', (meta) => {
+      meta.classification_labels!['attire-meurt'] = ''
+    })
+    expect(erreur.message).toMatch(/classification_labels/i)
+  })
+
+  it('rejette une carte de classifications vide', () => {
+    const erreur = attendErreur('demographie', (meta) => {
+      meta.classification_labels = {}
+    })
+    expect(erreur.message).toMatch(/classification_labels/i)
+  })
+
+  it('accepte les fixtures : chaque thème qui référence `classification` porte une carte non vide de libellés non vides', () => {
+    for (const theme of Object.keys(metadonneesThemesFixtures) as Theme[]) {
+      const meta = validerThemeMetadata(metadonneesThemesFixtures[theme], `theme_${theme}.json`)
+      const referenceClassification = meta.subgroups.some((g) =>
+        g.reading.params.includes('classification'),
+      )
+      if (referenceClassification) {
+        const carte = meta.classification_labels
+        expect(carte, `« ${theme} » référence classification — la carte est requise`).toBeDefined()
+        expect(Object.keys(carte!).length).toBeGreaterThan(0)
+        for (const libelle of Object.values(carte!)) expect(libelle.length).toBeGreaterThan(0)
+      }
+    }
+  })
+})

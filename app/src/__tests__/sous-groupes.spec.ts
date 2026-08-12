@@ -200,8 +200,45 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
       periode: '2017-2023',
       taux_solde_naturel: '5,98',
       taux_solde_migratoire: '2,56',
-      classification: 'attire-renouvelle',
+      classification: 'attire et se renouvelle',
     })
+  })
+
+  it('résout la classification à travers classification_labels — jamais la clé brute (Milieux 22002)', () => {
+    // les autres chaînes (periode_pop, periode_artif) passent telles quelles ;
+    // seule la classification se résout à travers la carte payload-owned (#362)
+    const sousGroupes = sousGroupesDe(
+      'milieux',
+      '22002',
+      histoiresMilieuxFixture,
+      indicateursMilieuxFixture,
+    )
+
+    expect(lectureDe(sousGroupes[0])?.parametres).toEqual({
+      periode_pop: '2017-2023',
+      periode_artif: '2021-2025',
+      trajectoire_artif_par_habitant: '0,95',
+      classification: 'grandit en se densifiant',
+    })
+  })
+
+  it('rend la lecture indisponible pour une classification inconnue — jamais la clé brute dans le texte (#362)', () => {
+    const histoires = histoiresDemographieFixture.map((h) =>
+      h.territoire === '22001' ? { ...h, classification: 'quadrant-inconnu' } : h,
+    ) as Histoire[]
+    const sousGroupes = sousGroupesDe(
+      'demographie',
+      '22001',
+      histoires,
+      indicateursDemographieFixture,
+    )
+
+    expect(lectureDe(sousGroupes[0])).toBeNull()
+    expect(sousGroupes[0].lectureIndisponible).toBe(true)
+    // le texte ne contient JAMAIS la clé brute — pas de lecture à composer
+    const parametres = lectureDe(sousGroupes[0])?.parametres
+    expect(parametres).toBeUndefined()
+    expect(JSON.stringify(sousGroupes[0])).not.toContain('quadrant-inconnu')
   })
 
   it('résout les clés repliées du top-5 Économie (le rang est l’index, jamais une colonne)', () => {

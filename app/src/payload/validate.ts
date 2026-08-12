@@ -1721,6 +1721,35 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     `« param_labels » : la carte des libellés de paramètres doit déclarer EXACTEMENT les reading.params — sans libellé : ${sansParam.join(', ')} ; non déclarés : ${fantomesParam.join(', ')}`,
   )
 
+  // 6ter. les libellés des classifications (issue #362) — la 4e carte, les
+  //      VALEURS de lecture (les quadrants/lectures du pipeline), pas les
+  //      paramètres : une lecture qui référence `classification` SANS carte
+  //      rendrait la clé brute (attire-meurt) dans le texte français — rejetée.
+  //      Présente, la carte doit être NON VIDE de chaînes non vides (la
+  //      discipline #318). L'ensemble des clés est piloté par les données (les
+  //      valeurs publiées) — la parité complète est la garde de chargement
+  //      verifierPariteLibelles, jamais une contrainte de bijection ici.
+  const referenceClassification = paramsUniques.includes('classification')
+  const classificationLabelsBrut = meta['classification_labels']
+  if (referenceClassification) {
+    exiger(
+      estObjet(classificationLabelsBrut),
+      fichier,
+      0,
+      '« classification_labels » : la carte des libellés de classification est REQUISE dès qu\u2019un reading.params référence « classification » — jamais une clé brute dans le texte',
+    )
+  }
+  let classification_labels: Record<string, string> | undefined
+  if (classificationLabelsBrut !== undefined) {
+    classification_labels = lireCarteChaines(meta, 'classification_labels', fichier)
+    exiger(
+      Object.keys(classification_labels).length > 0,
+      fichier,
+      0,
+      '« classification_labels » : la carte des libellés de classification est vide',
+    )
+  }
+
   return {
     theme,
     label,
@@ -1731,6 +1760,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     indicator_labels,
     detail_labels,
     param_labels,
+    classification_labels,
   }
 }
 
@@ -1759,6 +1789,14 @@ function lireCarteChaines(ligne: LigneBrute, champ: string, fichier: string): Re
  * publié quelque part). La fiche et la carte ne retombent JAMAIS sur la clé
  * brute : c'est cette garde qui garantit que le vocabulaire vit dans les
  * métadonnées. Appelée par le loader à l'assemblage (chargerPayload).
+ *
+ * Issue #362 — la parité des classifications, UNIDIRECTIONNELLE (publié →
+ * libellé) : chaque valeur `classification` non nulle publiée dans
+ * histoires_<theme> doit avoir son libellé dans classification_labels — jamais
+ * une clé brute (attire-meurt) dans le texte. Contrairement à detail_labels,
+ * AUCUNE bijection : les quatre lectures sont le vocabulaire complet du thème,
+ * un quadrant légitimement vide dans les données actuelles garde son libellé
+ * (le libellé reste vrai pour la lecture que le pipeline émettra demain).
  */
 export function verifierPariteLibelles(payload: Payload): void {
   const violations: string[] = []
@@ -1786,6 +1824,24 @@ export function verifierPariteLibelles(payload: Payload): void {
       for (const detail of Object.keys(carte)) {
         if (!publies.has(detail)) {
           violations.push(`${theme}: détail « ${detail} » de « ${cle} » déclaré jamais publié (libellé mort)`)
+        }
+      }
+    }
+
+    // Issue #362 — la parité des classifications : chaque valeur publiée a son
+    // libellé (direction unique, jamais la clé brute ; les libellés au-delà
+    // des valeurs publiées restent légitimes — un quadrant vide garde le sien).
+    if (meta.classification_labels) {
+      const classificationsPubliees = new Set(
+        payload.histoires
+          .filter(
+            (h) => h.theme === theme && (h as unknown as LigneBrute)['classification'] !== null,
+          )
+          .map((h) => (h as unknown as LigneBrute)['classification'] as string),
+      )
+      for (const valeur of classificationsPubliees) {
+        if (!(valeur in meta.classification_labels)) {
+          violations.push(`${theme}: classification « ${valeur} » publiée sans libellé (classification_labels)`)
         }
       }
     }
