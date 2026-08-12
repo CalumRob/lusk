@@ -131,10 +131,11 @@ executer_run_reel <- function(cache, sortie) {
 # POLITIQUE DES VERROUS DE VALEUR (issue #380, après la restauration du cache) :
 # les verrous de VALEUR des couches dérivées de sources VIVANTES (les modes t/c
 # de l'extrait OSM `latest`, les flux vivants) sont RELATIFS À L'ÉPOQUE DU CACHE :
-# un extrait `latest` re-téléchargé bouge les derniers chiffres (6ᵉ décimale
-# pour les densités, 3ᵉ pour les longueurs sommées) — ces verrous sont donc
-# verrouillés au 4ᵉ décimale et re-baselinés sur le cache restauré (issue #380,
-# décision « accepter + documenter » : le payload publié n'est PAS régénéré).
+# un extrait `latest` re-téléchargé bouge les derniers chiffres — ces verrous
+# sont donc re-baselinés sur le cache restauré à leur précision naturelle
+# (densités et parts au 4ᵉ décimale, longueurs au 3ᵉ, comptes exacts — issue
+# #380, décision « accepter + documenter » : le payload publié n'est PAS
+# régénéré).
 # Les verrous de FORMAT (comptes, noms de colonnes, estampilles, règles
 # d'agrégation, valeurs dérivées du snapshot FIGÉ) restent FORTS — la dérive
 # d'époque ne touche que les couches vivantes, jamais le snapshot.
