@@ -257,10 +257,26 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
       },
-      statut_anciennete_taille: {
-        label: 'Statut d’occupation, ancienneté et taille',
+      statut: {
+        label: 'Statut d’occupation',
         definition:
-          'Trois dimensions du parc de résidences principales : le statut d’occupation (propriétaire, locataire, logé gratuitement), l’ancienneté d’emménagement (de moins de 2 ans à 30 ans et plus) et la taille du logement (du studio aux 5 pièces et plus), chacune en part du parc concerné.',
+          'L’occupation des résidences principales, en quatre parts : propriétaire, locataire HLM (le parc social), locataire du parc privé et logé gratuitement. Le poids du logement social et la part des propriétaires lisent la tension du parc (issue #368 : l’ancienne clé à 14 modalités — occupation, ancienneté et taille confondus — est scindée, la taille n’est plus publiée).',
+        unite: '%',
+        source: 'INSEE — Logements (dossier complet)',
+        sourceId: 'logements',
+      },
+      age_du_bati: {
+        label: 'Âge du bâti',
+        definition:
+          'La période d’achèvement des résidences principales, en six tranches (d’avant 1919 à 2006 et après), en part du stock dont la période est connue. Le vieux bâti est le plus dur à isoler — la part du parc d’avant 1971 (avant la première réglementation thermique) est la tension DPE de la commune. La période inconnue du recensement (~2 % des résidences principales) est un fait de la donnée, hors de l’univers publié.',
+        unite: '%',
+        source: 'INSEE — Logements (dossier complet)',
+        sourceId: 'logements',
+      },
+      type: {
+        label: 'Type de logement',
+        definition:
+          'La répartition des résidences principales entre maisons et appartements, en part de l’univers (maison + appartement) — les autres logements de métropole (~1 %), hors de l’univers comme les dépendances côté prix. La part d’appartements signale la densité du bâti.',
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
@@ -408,19 +424,10 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
   // ---- Mobilité (docs/themes/mobilite.md, ADR-0012) ----
   mobilite: {
     indicateurs: {
-      nb_buildings: {
-        label: 'Bâtiments résidentiels',
-        definition:
-          'Le nombre de bâtiments résidentiels du territoire, comptés un à un par l’analyse d’accessibilité. Chaque bâtiment est le point de départ d’un trajet à pied ou en transports en commun : c’est sur cet ensemble que se calculent la part des bâtiments isolés et la perte de diversité.',
-        unite: 'bâtiments',
-        source:
-          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
-        sourceId: 'mobilite_snapshot',
-      },
       voitures_menage: {
         label: 'Voitures par ménage',
         definition:
-          'La motorisation des ménages du territoire : la part des ménages sans voiture et la part des ménages équipés de deux voitures ou plus, issues du recensement. C’est le pendant de la demande — ce qu’on peut atteindre à pied ou en transports en commun d’un côté, combien de voitures on possède de l’autre.',
+          'La motorisation des ménages du territoire : la part des ménages sans voiture, la part des ménages avec une voiture et la part des ménages avec deux voitures ou plus, issues du recensement — les trois parts somment à 1. C’est le pendant de la demande — ce qu’on peut atteindre à pied ou en transports en commun d’un côté, combien de voitures on possède de l’autre ; la part sans voiture est la lecture classée.',
         unite: '%',
         source:
           'INSEE \u2014 Recensement de la population, exploitations principales (Logements) \u2014 tableau LOG T12 \u00ab \u00c9quipement automobile des m\u00e9nages \u00bb (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)',

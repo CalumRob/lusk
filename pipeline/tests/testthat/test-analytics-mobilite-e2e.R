@@ -169,16 +169,17 @@ executer_run_reel <- function(cache, sortie) {
 #   - L'étage demande/réseaux (issue #139) : voitures_communes (1 202 communes
 #     du cube RP exploitation principale — TOUTES les communes bretonnes, le RP
 #     couvre ce que l'analyse d'accessibilité ne couvre pas), voitures_
-#     territoires (1 268 territoires × 2 parts = 2 536 lignes — la moyenne
-#     pondérée par les ménages), reseaux_communes (1 202 communes × 6 mesures)
+#     territoires (1 268 territoires × 3 parts depuis l'issue #368 = 3 804
+#     lignes — la moyenne pondérée par les ménages), reseaux_communes (1 202
+#     communes × 6 mesures)
 #     et reseaux_territoires (1 268 × 6 = 7 608 lignes — longueurs sommées,
 #     densités Σ L ÷ Σ surface) ;
 #   - payload : 1 268 territoires (1 202 communes + 61 EPCIs + 4 départements +
 #     la région — le squelette partagé, les 2 communes hors snapshot portent NA
 #     pour l'indicateur, jamais une ligne manquante), × 22 clés/détails
-#     (nb_buildings 1 + voitures_menage 2 + reseaux 6 + le sous-bloc 3 +
+#     (voitures_menage 3 + reseaux 6 + le sous-bloc 3 +
 #     offre_cyclable 5 + les 5 parts d'isolation de la grille = 27 896
-#     lignes) ;
+#     lignes) — `nb_buildings` QUITTE le payload (issue #368, décision #196) ;
 #     histoires : 1 266 lignes — UNE lecture résolue par (territoire, groupe),
 #     la saillance vélo (139 : 130 communes + 9 EPCIs au delta ≥ 10) REMPLACE
 #     le défaut là où elle tire — jamais le pool (issue #312) ;
@@ -196,7 +197,7 @@ comptes_analytiques_reels <- c(
   nuage_territoires = 1266,
   isolation_rangs = 6340,
   voitures_communes = 1202,
-  voitures_territoires = 2536,
+  voitures_territoires = 3804,
   reseaux_communes = 1202,
   reseaux_territoires = 7608
 )
@@ -292,7 +293,7 @@ comptes_offre_par_niveau_reels <- c(
   cyclable_region = 5        # 1 × 5
 )
 comptes_payload_reels <- c(
-  indicateurs = 27896,  # 22 clés/détails × 1 268 territoires (nb_buildings 1 + voitures 2 + reseaux 6 + sous-bloc 3 + offre_cyclable 5 + isolation 5)
+  indicateurs = 27896,  # 22 clés/détails × 1 268 territoires (voitures 3 + reseaux 6 + sous-bloc 3 + offre_cyclable 5 + isolation 5 — nb_buildings retiré, #368)
   histoires = 1266,    # issue #312 : UNE lecture résolue par (territoire, groupe) — la saillance vélo remplace le défaut là où elle tire (139), jamais le pool
   territoires = 1268,  # 1 202 communes + 61 EPCIs + 4 départements + 1 région
   apercu = 0,          # le gating du thème : la table est présente mais vide
@@ -351,26 +352,28 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_equal(nrow(payload$histoires), comptes_payload_reels[["histoires"]])
   expect_equal(nrow(payload$territoires), comptes_payload_reels[["territoires"]])
   expect_equal(nrow(payload$apercu), comptes_payload_reels[["apercu"]])
-  # les clés publiées : la « Taille » (nb_buildings) + l'étage demande/réseaux
+  # les clés publiées : l'étage demande/réseaux
   # (issue #139 : voitures_menage, reseaux) + le sous-bloc « L'offre de
   # mobilité alternative » (issue #140 : offre_tc, bornes_recharge,
   # places_stationnement_velo_1000 + issue #231 : offre_cyclable) + les 5
   # parts d'isolation de la GRILLE (issue #141 : iso_alimentation, iso_sante,
   # iso_administration, iso_ecole, iso_banque) — une ligne par territoire ×
-  # multiplicité, avec leurs rangs. La matrice complète ne part JAMAIS dans le
-  # payload : les seules clés du payload sont les douze déclarées (aucune clé
-  # dens_div_t_*, div_loss_t_dec_*, share_* — la leçon de l'issue #131)
+  # multiplicité, avec leurs rangs. `nb_buildings` n'est PLUS publié (issue
+  # #368, décision #196 — la « Taille » reste la pondération interne). La
+  # matrice complète ne part JAMAIS dans le payload : les seules clés du
+  # payload sont les ONZE déclarées (aucune clé dens_div_t_*, div_loss_t_dec_*,
+  # share_* — la leçon de l'issue #131)
   expect_setequal(unique(payload$indicateurs$key),
-                  c("nb_buildings", "voitures_menage", "reseaux",
+                  c("voitures_menage", "reseaux",
                     "offre_tc", "bornes_recharge",
                     "places_stationnement_velo_1000",
                     "offre_cyclable",
                     "iso_alimentation", "iso_sante", "iso_administration",
                     "iso_ecole", "iso_banque"))
+  expect_false("nb_buildings" %in% payload$indicateurs$key)
   expect_false(any(grepl("dens_|dec_|share_|norm_score|tot_loss",
                          payload$indicateurs$key)))
-  expect_equal(sum(payload$indicateurs$key == "nb_buildings"), 1268)
-  expect_equal(sum(payload$indicateurs$key == "voitures_menage"), 2536)
+  expect_equal(sum(payload$indicateurs$key == "voitures_menage"), 3804)
   expect_equal(sum(payload$indicateurs$key == "reseaux"), 7608)
   for (cle in c("offre_tc", "bornes_recharge",
                 "places_stationnement_velo_1000")) {
@@ -393,32 +396,19 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in%
                     names(payload$indicateurs)))
   # les deux communes hors snapshot (Île-de-Sein, Île-Molène) portent NA pour
-  # la « Taille » et l'offre TC (aucun bâtiment géocodé dans la couche — un
-  # fait de la donnée, jamais une part fabriquée) — jamais une ligne manquante
-  # (l'alignement sur la référence du squelette). Le RP, lui, couvre Île-de-Sein
+  # l'offre TC (aucun bâtiment géocodé dans la couche — un fait de la donnée,
+  # jamais une part fabriquée) — jamais une ligne manquante (l'alignement sur
+  # la référence du squelette). Le RP, lui, couvre Île-de-Sein
   # (voitures 0.603 sans voiture) ; les bornes et le stationnement vélo, eux,
-  # les couvrent (zéro porté)
-  expect_true(all(is.na(payload$indicateurs$value[
-    payload$indicateurs$territoire %in% c("29083", "29084") &
-      payload$indicateurs$key == "nb_buildings"])))
+  # les couvrent (zéro porté). (`nb_buildings` n'est plus publié — #368.)
   expect_true(all(is.na(payload$indicateurs$value[
     payload$indicateurs$territoire %in% c("29083", "29084") &
       payload$indicateurs$key == "offre_tc"])))
-  # la valeur de la région : la SOMME des 1 200 communes (recalculée depuis les
-  # parties, jamais une moyenne) — le total verrouillé du fichier de production
-  expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "53" &
-                                payload$indicateurs$key == "nb_buildings"],
-    1223578
-  )
-  expect_equal(
-    payload$indicateurs$value[payload$indicateurs$territoire == "22" &
-                                payload$indicateurs$key == "nb_buildings"],
-    260617
-  )
   # l'étage demande (issue #139) : les parts voitures/ménage de la région
   # (recalculées depuis les parties — la moyenne pondérée par les ménages,
-  # jamais une moyenne de parts) et de Rennes, avec leurs rangs-en-contexte
+  # jamais une moyenne de parts) et de Rennes, avec leurs rangs-en-contexte.
+  # Les TROIS parts (0 / 1 / 2+) — la catégorie du milieu C1 publiée depuis
+  # l'issue #368 — somment à 1.
   lire_ind <- function(territoire, key, detail) {
     payload$indicateurs[
       payload$indicateurs$territoire == territoire &
@@ -428,6 +418,8 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   }
   expect_equal(round(lire_ind("53", "voitures_menage", "sans_voiture")$value, 6),
                0.118268)
+  expect_equal(round(lire_ind("53", "voitures_menage", "une_voiture")$value, 6),
+               0.479502)
   expect_equal(round(lire_ind("53", "voitures_menage", "deux_plus")$value, 6),
                0.402230)
   expect_equal(round(lire_ind("22", "voitures_menage", "sans_voiture")$value, 6),
@@ -556,10 +548,6 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
                           !is.na(payload$indicateurs$value), ]
   }
   ref_snapshot <- vintages[vintages$id == "mobilite_snapshot", ]
-  nb <- pour("nb_buildings")
-  expect_true(all(nb$vintage_source == ref_snapshot$source))
-  expect_true(all(nb$vintage_date_reference == "2026-02-28"))
-  expect_true(all(nb$vintage_date_publication == "2026-08-06"))
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     iso_stamp <- pour(cle)
     expect_true(all(iso_stamp$vintage_source == ref_snapshot$source), info = cle)
@@ -651,22 +639,30 @@ test_that("le run de bout en bout : snapshot normalisé + payload publié, aux c
   }
 
   # l'étage demande/réseaux (issue #139) --------------------------------------
-  # La demande : les parts voitures/ménage aux quatre niveaux, RECALCULÉES
-  # depuis les parties (la moyenne pondérée par les ménages — jamais une
-  # moyenne de parts), la région à 0.1183 sans voiture / 0.4022 avec 2+ (la
-  # Bretagne rurale possède la voiture), Rennes à 0.319 (la métropole), l'île
-  # de Sein à 0.603 (sans voiture — une île).
+  # La demande : les TROIS parts voitures/ménage (0 / 1 / 2+ — issue #368, la
+  # catégorie du milieu C1 publiée, les parts somment à 1) aux quatre niveaux,
+  # RECALCULÉES depuis les parties (la moyenne pondérée par les ménages —
+  # jamais une moyenne de parts), la région à 0.1183 sans voiture / 0.4795
+  # avec 1 / 0.4022 avec 2+ (la Bretagne rurale possède la voiture), Rennes à
+  # 0.319 (la métropole), l'île de Sein à 0.603 (sans voiture — une île).
   vt <- readRDS(file.path(sortie_analytiques, "voitures_territoires.rds"))
   expect_named(vt, c("code", "key", "detail", "value"))
   expect_true(all(vt$key == "voitures_menage"))
-  expect_setequal(unique(vt$detail), c("sans_voiture", "deux_plus"))
+  expect_setequal(unique(vt$detail),
+                  c("sans_voiture", "une_voiture", "deux_plus"))
   lire_vt <- function(code, detail) vt$value[vt$code == code & vt$detail == detail]
   expect_equal(round(lire_vt("53", "sans_voiture"), 6), 0.118268)
+  expect_equal(round(lire_vt("53", "une_voiture"), 6), 0.479502)
   expect_equal(round(lire_vt("53", "deux_plus"), 6), 0.402230)
   expect_equal(round(lire_vt("22", "sans_voiture"), 6), 0.094700)
   expect_equal(round(lire_vt("35238", "sans_voiture"), 6), 0.319333)
   expect_equal(round(lire_vt("242900314", "sans_voiture"), 6), 0.208605)
   expect_equal(round(lire_vt("29083", "sans_voiture"), 6), 0.603082)
+  # les TROIS parts somment à 1 sur chaque territoire (la dimension CARS
+  # partitionne les ménages — issue #368 ; tolérance 1e-6, l'arrondi
+  # flottant du cube — le même seuil que la validation du thème)
+  par_code <- stats::aggregate(value ~ code, vt, sum)
+  expect_true(all(abs(par_code$value - 1) < 1e-6))
   # la règle d'agrégation : un agrégat n'est JAMAIS la moyenne des parts
   # communales — le contraste réel (la moyenne des 1 202 parts communales vs
   # la valeur agrégée de la région, pondérée par les ménages)

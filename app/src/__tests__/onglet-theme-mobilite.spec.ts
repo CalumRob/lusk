@@ -46,7 +46,7 @@ async function monter(territoire: string, payload: Payload = payloadMobilite) {
 }
 
 describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le sous-bloc)', () => {
-  it('renders the metadata subgroup and the 12 figures — compact figure first, then the key order', async () => {
+  it('renders the metadata subgroup and the 11 figures — compact figure first, then the key order', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
@@ -56,7 +56,6 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       .map((f) => f.attributes('data-clef'))
     expect(figures).toEqual([
       'offre_cyclable',
-      'nb_buildings',
       'voitures_menage',
       'reseaux',
       'offre_tc',
@@ -88,9 +87,11 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       expect(libelle).not.toContain('sans voiture')
     }
     expect(libelles.some((l) => l.includes('à pied ou en transports en commun'))).toBe(true)
-    expect(libelles).toContain('Bâtiments résidentiels analysés')
     expect(libelles).toContain('Voitures par ménage')
     expect(libelles).toContain('Bornes de recharge pour véhicules électriques')
+    // `nb_buildings` QUITTE le payload (issue #368, décision #196) — la
+    // « Taille » n'est plus une figure de la fiche
+    expect(libelles).not.toContain('Bâtiments résidentiels analysés')
   })
 
   it('shows a rank-in-context chip per isolation part (a commune reads its EPCI rank)', async () => {
@@ -112,11 +113,12 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     }
   })
 
-  it('renders the multi-detail figures with their own detail labels (voitures ×2, reseaux ×6)', async () => {
+  it('renders the multi-detail figures with their own detail labels (voitures ×3, reseaux ×6)', async () => {
     const wrapper = await monter('22001')
 
     const voitures = wrapper.find('.figure-indicateur[data-clef="voitures_menage"]')
     expect(voitures.text()).toContain('Ménages sans voiture')
+    expect(voitures.text()).toContain('Ménages avec 1 voiture')
     expect(voitures.text()).toContain('Ménages avec 2 voitures ou plus')
     const reseaux = wrapper.find('.figure-indicateur[data-clef="reseaux"]')
     expect(reseaux.text()).toContain('Longueur — à pied ou en transports en commun')

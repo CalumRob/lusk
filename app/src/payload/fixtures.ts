@@ -267,12 +267,12 @@ export const vintagesFixture: Vintage[] = [
 
 /** A second theme (habitat) — for the payload-driven tab bar (ADR-0007).
  *  Keyed on the REAL habitat payload (public/data/indicateurs_habitat.json):
- *  the five registered keys, the 22001 commune carrying the full detail set
- *  (mix_logements 3, statut_anciennete_taille 14, prix_m2 pooled + 5 vintages,
- *  part_passoires, distribution_dpe A–G — every detail the metadata labels,
- *  so the loader's parity guard passes), the région 53 its scalars. DPE rows
- *  wear the rolling-base reference (null — ADR-0009), like the committed
- *  payload. */
+ *  the seven registered keys, the 22001 commune carrying the full detail set
+ *  (mix_logements 3, statut 4 — HLM comprise —, age_du_bati 6, type 2,
+ *  prix_m2 pooled + 5 vintages, part_passoires, distribution_dpe A–G — every
+ *  detail the metadata labels, so the loader's parity guard passes), the
+ *  région 53 its scalars. DPE rows wear the rolling-base reference (null —
+ *  ADR-0009), like the committed payload. */
 const vintageHabitatLogements = {
   vintage_source: 'INSEE — Logements (dossier complet)',
   vintage_version: '2023',
@@ -328,29 +328,39 @@ function ligneHabitat(
   }
 }
 
-const DETAILS_STATUT_ANCIENNETE_TAILLE: { detail: string; valeur: number }[] = [
-  { detail: 'statut_proprietaire', valeur: 0.62 },
-  { detail: 'statut_locataire', valeur: 0.32 },
-  { detail: 'statut_loge_gratuit', valeur: 0.06 },
-  { detail: 'anciennete_lt2', valeur: 0.08 },
-  { detail: 'anciennete_2_4', valeur: 0.11 },
-  { detail: 'anciennete_5_9', valeur: 0.14 },
-  { detail: 'anciennete_10_19', valeur: 0.21 },
-  { detail: 'anciennete_20_29', valeur: 0.19 },
-  { detail: 'anciennete_30_plus', valeur: 0.27 },
-  { detail: 'taille_r1', valeur: 0.07 },
-  { detail: 'taille_r2', valeur: 0.2 },
-  { detail: 'taille_r3', valeur: 0.27 },
-  { detail: 'taille_r4', valeur: 0.24 },
-  { detail: 'taille_5_plus', valeur: 0.22 },
+const DETAILS_STATUT: { detail: string; valeur: number }[] = [
+  { detail: 'proprietaire', valeur: 0.62 },
+  { detail: 'hlm', valeur: 0.12 },
+  { detail: 'locataire_prive', valeur: 0.2 },
+  { detail: 'loge_gratuit', valeur: 0.06 },
+]
+
+const DETAILS_AGE_DU_BATI: { detail: string; valeur: number }[] = [
+  { detail: 'lt1919', valeur: 0.08 },
+  { detail: '1919_1945', valeur: 0.11 },
+  { detail: '1946_1970', valeur: 0.14 },
+  { detail: '1971_1990', valeur: 0.21 },
+  { detail: '1991_2005', valeur: 0.19 },
+  { detail: '2006_plus', valeur: 0.27 },
+]
+
+const DETAILS_TYPE: { detail: string; valeur: number }[] = [
+  { detail: 'maison', valeur: 0.68 },
+  { detail: 'appartement', valeur: 0.32 },
 ]
 
 export const indicateursHabitatFixture: Indicateur[] = [
   ...['principales', 'secondaires', 'vacants'].map((detail, i) =>
     ligneHabitat('22001', 'commune', 'mix_logements', detail, [0.9, 0.07, 0.03][i]!, '%', vintageHabitatLogements),
   ),
-  ...DETAILS_STATUT_ANCIENNETE_TAILLE.map(({ detail, valeur }) =>
-    ligneHabitat('22001', 'commune', 'statut_anciennete_taille', detail, valeur, '%', vintageHabitatLogements),
+  ...DETAILS_STATUT.map(({ detail, valeur }) =>
+    ligneHabitat('22001', 'commune', 'statut', detail, valeur, '%', vintageHabitatLogements),
+  ),
+  ...DETAILS_AGE_DU_BATI.map(({ detail, valeur }) =>
+    ligneHabitat('22001', 'commune', 'age_du_bati', detail, valeur, '%', vintageHabitatLogements),
+  ),
+  ...DETAILS_TYPE.map(({ detail, valeur }) =>
+    ligneHabitat('22001', 'commune', 'type', detail, valeur, '%', vintageHabitatLogements),
   ),
   ligneHabitat('22001', 'commune', 'prix_m2', null, 2450, '€/m²', vintageHabitatDvf),
   ...['2021', '2022', '2023', '2024', '2025'].map((annee, i) =>
@@ -609,15 +619,15 @@ export const indicateursOffreCyclableFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 4913.233, unit: 'km', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
 ]
 
-/** Les DOUZE clés du thème (INDICATEURS_MOBILITE) : la « Taille », les 5 parts
- * d'isolation de la grille, l'étage demande/réseaux et le sous-bloc — valeurs
- * réelles du payload reshapé, une ligne par (territoire × key × detail), plus
- * la clé multi-mesures « L'offre cyclable » (issue #232, les lignes
+/** Les ONZE clés du thème (INDICATEURS_MOBILITE) : les 5 parts d'isolation de
+ * la grille, l'étage demande/réseaux et le sous-bloc — `nb_buildings` QUITTE
+ * le payload (issue #368, décision #196) — valeurs réelles du payload
+ * reshapé, une ligne par (territoire × key × detail), plus la clé
+ * multi-mesures « L'offre cyclable » (issue #232, les lignes
  * d'indicateursOffreCyclableFixture). */
 export const indicateursMobiliteFixture: Indicateur[] = [
   // 22001 — la commune réelle : ses rangs ordinaux dans SON EPCI (ADR-0021),
   // tailles portées (le « / Y »), plus aucun rang départemental ou régional.
-  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'nb_buildings', detail: null, value: 168, unit: "bâtiments", rang_epci: 35, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0, unit: "%", rang_epci: 16, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOffreTcMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 0, unit: "bornes", rang_epci: 18, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageBornesMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 0, unit: "places / 1 000 hab", rang_epci: 7, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageStationnementVeloMobilite },
@@ -628,6 +638,7 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'iso_banque', detail: null, value: 1, unit: "%", rang_epci: 16, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.482473250797723, unit: "%", rang_epci: 15, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.0552161313870770, unit: "%", rang_epci: 27, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.4623106178152, unit: "%", rang_epci: 19, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'reseaux', detail: 'b_densite', value: 0, unit: "km/km²", rang_epci: 23, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'reseaux', detail: 'b_longueur', value: 0, unit: "km", rang_epci: 23, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'reseaux', detail: 'c_densite', value: 3.31530620984322, unit: "km/km²", rang_epci: 16, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
@@ -636,7 +647,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'reseaux', detail: 't_longueur', value: 0.742091680549188, unit: "km", rang_epci: 22, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   // l'EPCI (les lignes réelles de 200027027, remappées) — un EPCI se classe
   // parmi TOUS les EPCIs bretons (rang_reg — ADR-0021)
-  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'nb_buildings', detail: null, value: 13760, unit: "bâtiments", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 31, rang_reg_n: 61, ...vintageSnapshotMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.327643092813083, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 41, rang_reg_n: 61, ...vintageOffreTcMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 17, unit: "bornes", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 32, rang_reg_n: 61, ...vintageBornesMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 3.91577645725277, unit: "places / 1 000 hab", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 38, rang_reg_n: 61, ...vintageStationnementVeloMobilite },
@@ -647,6 +657,7 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'iso_banque', detail: null, value: 0.700989825581395, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 47, rang_reg_n: 61, ...vintageSnapshotMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.471139230368514, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 27, rang_reg_n: 61, ...vintageVoituresMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.0599463471318512, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 48, rang_reg_n: 61, ...vintageVoituresMobilite },
+  { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.468914422499635, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 27, rang_reg_n: 61, ...vintageVoituresMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'reseaux', detail: 'b_densite', value: 0.0531785929720190, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 23, rang_reg_n: 61, ...vintageReseauxMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'reseaux', detail: 'b_longueur', value: 18.8991188731007, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 28, rang_reg_n: 61, ...vintageReseauxMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'reseaux', detail: 'c_densite', value: 3.20869838604353, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 45, rang_reg_n: 61, ...vintageReseauxMobilite },
@@ -654,7 +665,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'reseaux', detail: 't_densite', value: 0.284622283773651, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 19, rang_reg_n: 61, ...vintageReseauxMobilite },
   { territoire: '200000001', type: 'epci', theme: 'mobilite', key: 'reseaux', detail: 't_longueur', value: 101.151799518313, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 15, rang_reg_n: 61, ...vintageReseauxMobilite },
   // le département 22 — parmi les départements (rang_reg, ADR-0021)
-  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'nb_buildings', detail: null, value: 260617, unit: "bâtiments", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageSnapshotMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.446562999011482, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageOffreTcMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 407, unit: "bornes", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageBornesMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 8.82384784726984, unit: "places / 1 000 hab", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageStationnementVeloMobilite },
@@ -665,6 +675,7 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'iso_banque', detail: null, value: 0.554599392978969, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageSnapshotMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.422902086572718, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 1, rang_reg_n: 4, ...vintageVoituresMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.0946997418501721, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageVoituresMobilite },
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.48239817157711, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageVoituresMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'reseaux', detail: 'b_densite', value: 0.00992657439927286, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageReseauxMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'reseaux', detail: 'b_longueur', value: 69.2726674073839, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageReseauxMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'reseaux', detail: 'c_densite', value: 3.61624518147289, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 3, rang_reg_n: 4, ...vintageReseauxMobilite },
@@ -672,7 +683,6 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'reseaux', detail: 't_densite', value: 0.140963882727450, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageReseauxMobilite },
   { territoire: '22', type: 'departement', theme: 'mobilite', key: 'reseaux', detail: 't_longueur', value: 983.717420719418, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageReseauxMobilite },
   // la région 53 — aucun rang
-  { territoire: '53', type: 'region', theme: 'mobilite', key: 'nb_buildings', detail: null, value: 1223578, unit: "bâtiments", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.572896439016138, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOffreTcMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'bornes_recharge', detail: null, value: 1918, unit: "bornes", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageBornesMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'places_stationnement_velo_1000', detail: null, value: 18.4989387483219, unit: "places / 1 000 hab", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageStationnementVeloMobilite },
@@ -683,6 +693,7 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'iso_banque', detail: null, value: 0.502247735738956, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSnapshotMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'voitures_menage', detail: 'deux_plus', value: 0.402229632062882, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'voitures_menage', detail: 'sans_voiture', value: 0.118268000112935, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'voitures_menage', detail: 'une_voiture', value: 0.479502367824183, unit: "%", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageVoituresMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 'b_densite', value: 0.0346391466921539, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 'b_longueur', value: 950.720513830103, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 'c_densite', value: 3.69278551285507, unit: "km/km²", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
@@ -1169,8 +1180,8 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       {
         key: 'etat-du-parc',
         label: 'L\u2019état du parc',
-        framing: 'Le parc de logements de la commune : sa composition, son statut, son prix et son efficacité énergétique.',
-        indicators: ['mix_logements', 'statut_anciennete_taille', 'prix_m2', 'part_passoires', 'distribution_dpe'],
+        framing: 'Le parc de logements de la commune : sa composition, son statut, son âge, son type, son prix et son efficacité énergétique.',
+        indicators: ['mix_logements', 'statut', 'age_du_bati', 'type', 'prix_m2', 'part_passoires', 'distribution_dpe'],
         figure: { family: 'composition', indicator: 'distribution_dpe' },
         reading: {
           story_key: 'etat-energetique-du-parc',
@@ -1192,18 +1203,22 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         },
       },
     ],
-    indicator_keys: ['mix_logements', 'statut_anciennete_taille', 'prix_m2', 'part_passoires', 'distribution_dpe'],
+    indicator_keys: ['mix_logements', 'statut', 'age_du_bati', 'type', 'prix_m2', 'part_passoires', 'distribution_dpe'],
     story_keys: ['etat-energetique-du-parc'],
     sources: {
       mix_logements: 'logements',
-      statut_anciennete_taille: 'logements',
+      statut: 'logements',
+      age_du_bati: 'logements',
+      type: 'logements',
       prix_m2: 'dvf_2025_dep22',
       part_passoires: 'dpe_22',
       distribution_dpe: 'dpe_22',
     },
     indicator_labels: {
       mix_logements: 'Mix de logements',
-      statut_anciennete_taille: 'Statut d’occupation, ancienneté et taille',
+      statut: 'Statut d’occupation',
+      age_du_bati: 'Âge du bâti',
+      type: 'Type de logement',
       prix_m2: 'Médiane prix au m²',
       part_passoires: 'Part de passoires thermiques',
       distribution_dpe: 'Distribution des étiquettes DPE (A à G)',
@@ -1214,21 +1229,23 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         secondaires: 'Résidences secondaires',
         vacants: 'Logements vacants',
       },
-      statut_anciennete_taille: {
-        statut_proprietaire: 'Propriétaires',
-        statut_locataire: 'Locataires',
-        statut_loge_gratuit: 'Logés gratuitement',
-        anciennete_lt2: 'Moins de 2 ans',
-        anciennete_2_4: '2 à 4 ans',
-        anciennete_5_9: '5 à 9 ans',
-        anciennete_10_19: '10 à 19 ans',
-        anciennete_20_29: '20 à 29 ans',
-        anciennete_30_plus: '30 ans et plus',
-        taille_r1: '1 pièce',
-        taille_r2: '2 pièces',
-        taille_r3: '3 pièces',
-        taille_r4: '4 pièces',
-        taille_5_plus: '5 pièces et plus',
+      statut: {
+        proprietaire: 'Propriétaires',
+        hlm: 'Locataires HLM (parc social)',
+        locataire_prive: 'Locataires du parc privé',
+        loge_gratuit: 'Logés gratuitement',
+      },
+      age_du_bati: {
+        lt1919: 'Avant 1919',
+        '1919_1945': 'De 1919 à 1945',
+        '1946_1970': 'De 1946 à 1970',
+        '1971_1990': 'De 1971 à 1990',
+        '1991_2005': 'De 1991 à 2005',
+        '2006_plus': 'De 2006 à aujourd’hui',
+      },
+      type: {
+        maison: 'Maisons',
+        appartement: 'Appartements',
       },
       prix_m2: {
         '2021': '2021',
@@ -1427,7 +1444,6 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         label: 'L\u2019accès aux services',
         framing: 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l\u2019offre de transport qui le permet.',
         indicators: [
-          'nb_buildings',
           'voitures_menage',
           'reseaux',
           'offre_tc',
@@ -1460,7 +1476,6 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       },
     ],
     indicator_keys: [
-      'nb_buildings',
       'voitures_menage',
       'reseaux',
       'offre_tc',
@@ -1475,7 +1490,6 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     ],
     story_keys: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
     sources: {
-      nb_buildings: 'mobilite_snapshot',
       voitures_menage: 'rp_logement_princ',
       reseaux: 'amenagements_cyclables',
       offre_tc: 'korrigo',
@@ -1489,7 +1503,6 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       iso_banque: 'mobilite_snapshot',
     },
     indicator_labels: {
-      nb_buildings: 'Bâtiments résidentiels analysés',
       iso_alimentation: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
       iso_sante: 'Part des bâtiments sans accès à la santé (à pied ou en transports en commun)',
       iso_administration: 'Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)',
@@ -1513,6 +1526,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       },
       voitures_menage: {
         sans_voiture: 'Ménages sans voiture',
+        une_voiture: 'Ménages avec 1 voiture',
         deux_plus: 'Ménages avec 2 voitures ou plus',
       },
       offre_cyclable: {

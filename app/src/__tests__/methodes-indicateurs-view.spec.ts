@@ -257,7 +257,6 @@ describe('MethodologieView — le lien « Source » pointe l\u2019en-tête du je
       distribution_dpe: ancreSource('dpe'),
       artif_par_habitant: ancreSource('ocsge_artificialisation'),
       densite: ancreSource('serie_historique'),
-      nb_buildings: ancreSource('mobilite_snapshot'),
     }
 
     for (const theme of THEMES_CONSTRUITS) {

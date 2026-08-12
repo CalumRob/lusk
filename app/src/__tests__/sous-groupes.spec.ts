@@ -103,7 +103,6 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
     )
 
     expect(sousGroupes[0].figures.map((f) => f.key)).toEqual([
-      'nb_buildings',
       'voitures_menage',
       'reseaux',
       'offre_tc',
