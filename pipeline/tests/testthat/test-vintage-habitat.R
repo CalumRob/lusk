@@ -76,15 +76,14 @@ test_that("chaque estampille du payload vient de la source de référence décla
                        vintages = vintages)
 
   attendus <- tibble::tibble(
-    key = c("mix_logements", "statut_anciennete_taille", "prix_m2",
+    key = c("mix_logements", "statut", "age_du_bati", "type", "prix_m2",
             "part_passoires", "distribution_dpe"),
-    source = c("INSEE — Logements (dossier complet)",
-               "INSEE — Logements (dossier complet)",
+    source = c(rep("INSEE — Logements (dossier complet)", 4),
                "Etalab — DVF géolocalisées",
                "ADEME — Observatoire DPE, logements existants",
                "ADEME — Observatoire DPE, logements existants"),
-    publication = c("2026-01-15", "2026-01-15", "2026-02-20",
-                    NA_character_, NA_character_)
+    publication = c("2026-01-15", "2026-01-15", "2026-01-15", "2026-01-15",
+                    "2026-02-20", NA_character_, NA_character_)
   )
   for (i in seq_len(nrow(attendus))) {
     cle <- attendus$key[i]

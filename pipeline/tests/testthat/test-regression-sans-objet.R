@@ -66,19 +66,21 @@ iles_habitat <- function() {
   tibble::tribble(
     ~code, ~nom, ~departement, ~epci, ~nom_epci,
     ~logements, ~logements_principales, ~logements_secondaires, ~logements_vacants,
-    ~statut_proprietaire, ~statut_locataire, ~statut_loge_gratuit,
-    ~anciennete_lt2, ~anciennete_2_4, ~anciennete_5_9, ~anciennete_10_19,
-    ~anciennete_20_29, ~anciennete_30_plus,
-    ~taille_r1, ~taille_r2, ~taille_r3, ~taille_r4, ~taille_5_plus,
-    # le contrat des indicateurs Habitat : mix → parts de `logements` ;
-    # statut/ancienneté/taille → parts des RÉSIDENCES PRINCIPALES (chaque
-    # famille de comptes somme à logements_principales)
+    ~statut_proprietaire, ~statut_hlm, ~statut_locataire_prive,
+    ~statut_loge_gratuit,
+    ~bati_lt1919, ~bati_1919_1945, ~bati_1946_1970, ~bati_1971_1990,
+    ~bati_1991_2005, ~bati_2006_plus,
+    ~type_maison, ~type_appartement,
+    # le contrat des indicateurs Habitat (le split #368) : mix → parts de
+    # `logements` ; statut (4 parts) et type (2 parts) → parts des RÉSIDENCES
+    # PRINCIPALES (chaque famille de comptes somme à logements_principales),
+    # âge du bâti → les 6 tranches (le stock connu)
     "22016", "Île-de-Bréhat", "22", "ZZZZZZZZZ", "Sans objet",
-    300, 150, 140, 10, 90, 45, 15, 15, 20, 25, 20, 30, 40, 20, 30, 35, 30, 35,
+    300, 150, 140, 10, 90, 20, 25, 15, 15, 20, 25, 20, 30, 40, 100, 50,
     "29083", "Île-de-Sein", "29", "ZZZZZZZZZ", "Sans objet",
-    200, 120, 70, 10, 70, 35, 15, 12, 18, 24, 18, 24, 24, 18, 24, 30, 24, 24,
+    200, 120, 70, 10, 70, 15, 20, 15, 12, 18, 24, 18, 24, 24, 80, 40,
     "29155", "Ouessant", "29", "ZZZZZZZZZ", "Sans objet",
-    450, 250, 180, 20, 150, 75, 25, 25, 35, 40, 40, 50, 60, 40, 50, 55, 55, 50
+    450, 250, 180, 20, 150, 30, 45, 25, 25, 35, 40, 40, 50, 60, 170, 80
   )
 }
 
