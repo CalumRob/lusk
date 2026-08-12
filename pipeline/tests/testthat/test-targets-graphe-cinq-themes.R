@@ -23,10 +23,11 @@
 test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun pas par thème", {
   racine <- pkgload::pkg_path()
   withr::local_dir(racine)
-  # le graphe complet (LUSK_THEMES vide = les cinq) — le store est jetable
+  # le graphe complet (LUSK_THEMES vide = les cinq). Issue #341 (course en
+  # parallèle) : tar_manifest ne lit JAMAIS le store réel (la structure vient
+  # du script _targets.R) — pas de unlink, le store du worker byte-identical
+  # reste intact.
   withr::local_envvar(LUSK_THEMES = "")
-  unlink("_targets", recursive = TRUE)
-  on.exit(unlink("_targets", recursive = TRUE), add = TRUE)
 
   manifeste <- targets::tar_manifest(callr_function = NULL)
   noms <- manifeste$name
@@ -57,9 +58,9 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
 test_that("les seams se dispatchent sur les traits du descripteur, jamais sur les noms de thèmes", {
   racine <- pkgload::pkg_path()
   withr::local_dir(racine)
+  # Issue #341 (course en parallèle) : pas de unlink du store réel (tar_manifest
+  # ne le lit jamais).
   withr::local_envvar(LUSK_THEMES = "")
-  unlink("_targets", recursive = TRUE)
-  on.exit(unlink("_targets", recursive = TRUE), add = TRUE)
 
   manifeste <- targets::tar_manifest(callr_function = NULL)
   commande <- function(nom) manifeste$command[manifeste$name == nom]
@@ -101,10 +102,12 @@ test_that("les étapes de données d'un thème ne dépendent jamais de celles d'
   racine <- pkgload::pkg_path()
   withr::local_dir(racine)
   withr::local_envvar(LUSK_THEMES = "")
-  unlink("_targets", recursive = TRUE)
-  on.exit(unlink("_targets", recursive = TRUE), add = TRUE)
+  # Issue #341 (course en parallèle) : la vérification de structure lit un
+  # store ISOLÉ (jamais le store réel, jamais de unlink) — voir le test de
+  # régression ci-dessous.
+  store_structure <- tempfile("graphe-structure-")
 
-  reseau <- targets::tar_network(callr_function = NULL)
+  reseau <- targets::tar_network(callr_function = NULL, store = store_structure)
   aretes <- reseau$edges
   partages <- c("fusion_vintages", "geometrie")
 
@@ -128,6 +131,45 @@ test_that("les étapes de données d'un thème ne dépendent jamais de celles d'
       }
     }
   }
+})
+
+test_that("la vérification de structure lit un store isolé — jamais la meta réelle en cours d'écriture (course parallèle #341)", {
+  # Régression #341 : en parallèle, le worker de test-targets-byte-identical
+  # écrit le store RÉEL (tar_make sur le même cache) pendant que ce fichier
+  # vérifie la structure du graphe (tar_manifest/tar_network). Le mode
+  # d'origine lisait la meta réelle (échec « replacement has 0 rows, data has
+  # 489 ») et faisait un unlink("_targets") qui pouvait DÉTRUIRE le store du
+  # worker concurrent mid-run. La vérification de structure est PURE : un
+  # store jetable ISOLÉ, jamais le chemin réel — prouvé en deux portes qui ne
+  # touchent JAMAIS au store réel (aucune course possible en parallèle) :
+  #   - le VRAI graphe se lit avec un store isolé (edges) ;
+  #   - un mini-graphe portant une meta PARTIELLEMENT ÉCRITE (l'état mid-run)
+  #     se lit pareil, et la meta factice reste INTACTE après la vérification
+  #     (ni lue, ni supprimée, ni réécrite).
+  racine <- pkgload::pkg_path()
+  withr::local_dir(racine)
+  withr::local_envvar(LUSK_THEMES = "")
+
+  # 1) le VRAI graphe : la structure se lit avec un store isolé
+  reseau <- targets::tar_network(callr_function = NULL,
+                                 store = tempfile("graphe-structure-"))
+  expect_true(nrow(reseau$edges) > 0)
+
+  # 2) le mini-graphe : une meta partiellement écrite ne gêne pas la lecture
+  # isolée — et reste INTACTE (jamais lue par la vérification, qui n'en a pas
+  # besoin : la structure vient du script _targets.R, jamais de la meta)
+  projet <- installer_mini_projet()
+  dir.create(file.path(projet, "_targets", "meta"), recursive = TRUE)
+  meta_midrun <- as.raw(c(0x50, 0x41, 0x52, 0x31, 0x00, 0xde, 0xad, 0xef))
+  writeBin(meta_midrun, file.path(projet, "_targets", "meta", "meta"))
+  withr::local_dir(projet)
+  on.exit(unlink(projet, recursive = TRUE), add = TRUE)
+
+  reseau2 <- targets::tar_network(callr_function = NULL,
+                                  store = tempfile("graphe-structure-"))
+  expect_true(nrow(reseau2$edges) > 0)
+  expect_identical(readBin(file.path(projet, "_targets", "meta", "meta"),
+                           "raw", n = 8L), meta_midrun)
 })
 
 test_that("un sixième descripteur jetable se câble avec zéro édit du graphe (la propriété « futur thème »)", {
