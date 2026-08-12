@@ -27,20 +27,15 @@
 # regroupement est exercé), dont une commune sous le plancher (56001, 3
 # établissements). Les attendus de LQ sont des fractions exactes — la cellule
 # 29001 × 01.11Z vérifie le cas LQ = 1 (la part de la commune = la part
-# bretonne). Le chemin de joie RÉEL (la vraie table, pipeline/data/) est aussi
-# exercé : 1202 communes, 0 suppression (min = 10 établissements), comptes
-# connus. Aucun appel réseau dans la boucle de test.
+# bretonne). Le verrou « données réelles » (la vraie table, pipeline/data/ —
+# gitignoré) vit désormais dans le graphe targets (verif_economie_lq,
+# _targets.R — le run de l'issue #342) : il rejoue quand le snapshot SIRENE
+# ou un lecteur change, saute sinon — sans variable d'environnement à
+# retenir. Aucun appel réseau dans la boucle de test.
 
 # La fixture analytique --------------------------------------------------------
 # (vivante dans helper-fixture-sirene.R — partagée avec
 # test-analytics-economie-territoires.R)
-
-# Le chemin de la vraie table normalisée (gitignorée ; absente hors worktree —
-# le test saute proprement sur une machine sans la donnée)
-chemin_sirene_reel <- function() {
-  testthat::test_path("..", "..", "data", "processed", "economie",
-                      "sirene_snapshot.rds")
-}
 
 # 1. Regroupement de la dimension tranche --------------------------------------
 test_that("le regroupement des tranches somme value par commune × code APE", {
@@ -343,50 +338,6 @@ test_that("relancer l'analyse est déterministe (octet-pour-octet)", {
   expect_identical(res1$histoires, res2$histoires)
   expect_identical(res1$m, res2$m)
   expect_identical(res1$suppression, res2$suppression)
-})
-
-# 7. Le chemin de joie RÉEL ------------------------------------------------------
-test_that("la vraie table sirene_snapshot : 1202 communes, 0 suppression, comptes connus", {
-  skip_sans_donnees_reelles(file.exists(chemin_sirene_reel()),
-              "La vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
-  snapshot <- readRDS(chemin_sirene_reel())
-
-  # la forme réelle connue (issue #91) : 181 481 lignes, 1202 communes,
-  # 695 codes APE 5 chiffres
-  expect_equal(nrow(snapshot), 181481)
-  expect_equal(dplyr::n_distinct(snapshot$commune), 1202)
-  expect_equal(dplyr::n_distinct(snapshot$activity_code), 695)
-
-  agrege <- agreger_sirene_par_activite(snapshot)
-  res <- appliquer_plancher_communes(agrege)
-  # 0 commune supprimée (le minimum observé est 10 établissements — gate D)
-  expect_equal(nrow(res$suppression), 0)
-  expect_equal(dplyr::n_distinct(res$retenu$commune), 1202)
-
-  lq <- calculer_lq_balassa(res$retenu)
-  # une ligne par cellule observée commune × activité (regroupée)
-  expect_equal(nrow(lq), nrow(res$retenu))
-  expect_equal(dplyr::n_distinct(lq$commune), 1202)
-  # LQ continues, finies, positives — aucune valeur binaire
-  expect_true(all(is.finite(lq$lq)))
-  expect_true(all(lq$lq > 0))
-  expect_true(any(lq$lq < 1) & any(lq$lq > 1))
-
-  # Histoire : 5 lignes par commune (TOP_N_SPECIALISATIONS_LQ), déterminée
-  histoires <- calculer_histoires_lq(lq)
-  expect_equal(nrow(histoires), 1202 * TOP_N_SPECIALISATIONS_LQ)
-  expect_identical(histoires, calculer_histoires_lq(lq))
-  expect_true("n" %in% names(histoires))
-
-  # M sidecar : une ligne par cellule croisée commune × activité, binaire
-  m <- calculer_matrice_m(lq)
-  expect_equal(nrow(m), dplyr::n_distinct(lq$commune) * dplyr::n_distinct(lq$activity_code))
-  expect_true(all(m$m %in% c(0, 1)))
-  # l'analyse entière tourne en un temps raisonnable (dplyr, aucune boucle)
-  duree <- system.time(
-    construire_analytique_lq_economie(snapshot, sortie = tempfile("lq-reel-"))
-  )["elapsed"]
-  expect_lt(unname(duree), 120)
 })
 
 # 8. La LQ à référence même-échelle (issue #131, décision 2026-08-06) ---------

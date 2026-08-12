@@ -141,43 +141,6 @@ test_that("Mobilité : la lecture résolue garde la matière du défaut quand el
   expect_equal(resolue$salience_reason, "defaut")
 })
 
-test_that("Mobilité : le payload publié porte une lecture par territoire (le pool n'est pas émis)", {
-  skip_sans_donnees_reelles(fixtures_reelles_presentes(),
-                            "les fixtures réelles ne sont pas présentes (data/ est gitignoré).")
-
-  racine <- tempfile("e2e-mob-")
-  dir.create(racine)
-  cache <- file.path(racine, "cache")
-  cwd_run <- file.path(racine, "cwd")
-  dir.create(cwd_run)
-  sortie <- file.path(racine, "pub")
-  on.exit(unlink(racine, recursive = TRUE), add = TRUE)
-
-  fabriquer_cache_e2e(cache)
-  withr::local_dir(cwd_run)
-
-  payload <- executer_run_reel(cache, sortie)
-  h <- payload$histoires
-
-  # une lecture par territoire (1 266 territoires — le pool résolu, jamais les
-  # 1 266 + 139 lignes candidates de l'ancien contrat)
-  expect_equal(nrow(h), 1266)
-  expect_false(any(duplicated(h[c("territoire", "groupe")])))
-  expect_true(all(h$groupe == "acces-aux-services"))
-  # la saillance a remplacé le défaut là où elle tire (139 territoires) : la
-  # story vélo y porte la raison de saillance, le défaut « defaut » ailleurs
-  saillants <- h$story_key == "ce-que-le-velo-preserve"
-  expect_equal(sum(saillants), 139)
-  expect_true(all(h$salience_reason[saillants] == "delta-velo-saillant"))
-  expect_true(all(h$salience_reason[!saillants] == "defaut"))
-  # la matière de la lecture reste portée (la profondeur du défaut pour la
-  # région — la région n'est pas saillante)
-  expect_equal(
-    h$pct_iso_full_t[h$type == "region"],
-    0.1
-  )
-})
-
 test_that("Économie : chaque lecture résolue porte son groupe (les deux lectures)", {
   # la lecture « ce que la commune abrite » vit dans le groupe sante-et-taille,
   # la lecture régionale « ce que la Bretagne abrite » dans structure-verte —

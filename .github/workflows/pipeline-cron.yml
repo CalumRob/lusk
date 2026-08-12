@@ -106,11 +106,12 @@ jobs:
       - name: Tests (suite complète — un échec arrête le run)
         working-directory: pipeline
         shell: Rscript {0}
-        # Les blocs « données réelles » (les verrous sur les vraies tables) sont
-        # opt-in (PR #146) : LUSK_RUN_REAL=1 les active quand les tables sont
-        # présentes ; le helper saute proprement quand elles ne le sont pas.
-        env:
-          LUSK_RUN_REAL: "1"
+        # La vérification « données réelles » (les verrous de format sur les
+        # vrais fichiers) n'est plus un opt-in (LUSK_RUN_REAL supprimé — PR
+        # #146) : elle vit dans le GRAPHE targets, pilotée par ses entrées —
+        # la vérification rejoue quand la donnée ou le lecteur change, saute
+        # sinon (issue #342). La suite testthat, elle, reste la suite de
+        # fixtures (jamais le réseau, jamais les fichiers réels).
         run: testthat::test_local(stop_on_failure = TRUE)
 
       - name: Instantané du payload committé (avant le build)

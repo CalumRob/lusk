@@ -85,13 +85,11 @@ fixture_sirene_green <- function() {
   )
 }
 
-# Les tables réelles vivent sous pipeline/data/ (gitignoré) — résolues par
-# rapport au dossier des tests (testthat::test_path), comme test-analytics-
-# economie-dormitory.R.
-chemin_reel_economie <- function(fichier) {
-  file.path(testthat::test_path("..", ".."),
-            "data", "processed", "economie", fichier)
-}
+# Le verrou « données réelles » (la part sur les 1202 communes du worktree —
+# pipeline/data/, gitignoré) vit désormais dans le graphe targets
+# (verif_economie_eco_activites, _targets.R — le run de l'issue #342) : il
+# rejoue quand le snapshot SIRENE ou un lecteur change, saute sinon — sans
+# variable d'environnement à retenir.
 
 # construire le fixture prêt pour le calcul
 construire_green_fixture <- function() {
@@ -277,32 +275,4 @@ test_that("persister_eco_activites_economie : table + rapport de suppression sou
   # (data/ étant gitignoré, seul le chemin est vérifié — jamais public/)
   expect_match(as.character(formals(persister_eco_activites_economie)$sortie),
                "data/processed/economie")
-})
-
-# 3. Données réelles : la part sur les 1202 communes ---------------------------------
-
-test_that("données réelles : part calculable pour 1202 communes, 0 supprimée, distribution verrouillée", {
-  chemin <- chemin_reel_economie("sirene_snapshot.rds")
-  skip_sans_donnees_reelles(file.exists(chemin),
-              "les tables réelles ne sont pas présentes (data/ est gitignoré)")
-
-  res <- construire_eco_activites_economie(readr::read_rds(chemin), artefact_egss())
-  d <- res$table
-
-  # acceptance : 1202 communes, aucune suppression au plancher gate D
-  # (vérifié sur le réel : min 10 établissements actifs par commune)
-  expect_equal(nrow(d), 1202)
-  expect_equal(nrow(res$suppression), 0)
-  # une ligne par commune, part dans [0, 1]
-  expect_equal(anyDuplicated(d$commune), 0L)
-  expect_true(all(d$part_economie_verte >= 0 & d$part_economie_verte <= 1))
-  # la distribution verrouillée à la construction (2026-08-05) : part moyenne
-  # ~0.32, min ~0.076, max ~0.684 — un déplacement de plusieurs points signalerait
-  # une liste EGSS ou un snapshot changé
-  expect_lt(mean(d$part_economie_verte), 0.35)
-  expect_gt(mean(d$part_economie_verte), 0.29)
-  expect_gt(min(d$part_economie_verte), 0.05)
-  expect_lt(max(d$part_economie_verte), 0.75)
-  # les 1202 communes couvrent les quatre départements bretons
-  expect_setequal(unique(substr(d$commune, 1, 2)), c("22", "29", "35", "56"))
 })

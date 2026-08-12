@@ -31,8 +31,11 @@ resolve from the populated worktree library + the user library. Run tests exactl
 
 ```
 Rscript -e "testthat::test_local(stop_on_failure = TRUE)"
-Rscript -e "Sys.setenv(LUSK_RUN_REAL='1'); testthat::test_local(stop_on_failure = TRUE)"   # real-data block
 ```
+
+(La vérification « données réelles » ne passe plus par une variable d'environnement :
+elle vit dans le graphe targets, pilotée par ses entrées — `pipeline/_targets.R`,
+verrous `verif_*`, issue #342.)
 
 **If the worktree library is genuinely empty** (fresh worktree), populate it by copying the main
 checkout's populated library into the worktree's hashed library — never by restoring:

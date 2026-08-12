@@ -181,12 +181,11 @@ fixture_flores_lq_a38 <- function() {
   )
 }
 
-# Le chemin des vraies tables normalisées (gitignorées ; absentes hors worktree
-# — le test saute proprement sur une machine sans la donnée)
-chemin_flores_reel <- function(grain) {
-  testthat::test_path("..", "..", "data", "processed", "economie",
-                      paste0("flores_", tolower(grain), ".rds"))
-}
+# Le verrou « données réelles » (les vraies tables Flores du worktree —
+# pipeline/data/, gitignoré) vit désormais dans le graphe targets
+# (verif_economie_lq_flores, _targets.R — le run de l'issue #342) : il rejoue
+# quand une archive Flores ou un lecteur change, saute sinon — sans variable
+# d'environnement à retenir.
 
 # 1. A88 : la LQ de Balassa sur la fixture calculée à la main ------------------
 test_that("A88 : la LQ de Balassa correspond à la formule calculée à la main (cellule LQ = 1)", {
@@ -377,53 +376,4 @@ test_that("une valeur effectifs manquante (non diffusée) échoue — jamais sil
       statut_observation = "K", source = "DS_FLORES_A38_2024", vintage = "2024"
     ))
   expect_error(calculer_lq_emploi_flores(flores, "A38"), "manquante|non diffus")
-})
-
-# 7. Le chemin de joie RÉEL ------------------------------------------------------
-test_that("la vraie table flores_a88 : 1202 communes, 6 supprimées (min = 2), LQ continues", {
-  skip_sans_donnees_reelles(file.exists(chemin_flores_reel("A88")),
-              "flores_a88.rds n'est pas présente (worktree sans donnée).")
-  flores <- readRDS(chemin_flores_reel("A88"))
-
-  # la forme réelle connue (issue #92) : 48 821 lignes, 1202 communes
-  expect_equal(nrow(flores), 48821)
-  expect_equal(dplyr::n_distinct(flores$commune), 1202)
-
-  res <- calculer_lq_emploi_flores(flores, "A88")
-
-  # gate D : 6 communes sous le plancher (min = 2 salariés), TOUTES comptées
-  # dans le rapport de suppression — jamais une suppression silencieuse
-  expect_equal(nrow(res$suppression), 6)
-  expect_equal(min(res$suppression$n_total), 2)
-  expect_setequal(
-    res$suppression$commune,
-    c("22057", "22169", "22350", "35026", "35325", "56025")
-  )
-  # 1202 - 6 = 1196 communes retenues dans la LQ
-  expect_equal(dplyr::n_distinct(res$lq$commune), 1196)
-  # LQ continues, finies, positives — aucune valeur binaire
-  expect_true(all(is.finite(res$lq$lq)))
-  expect_true(all(res$lq$lq > 0))
-  expect_true(any(res$lq$lq < 1) & any(res$lq$lq > 1))
-  # déterministe
-  expect_identical(res$lq,
-                   calculer_lq_emploi_flores(flores, "A88")$lq)
-})
-
-test_that("la vraie table flores_a38 tourne via la MÊME fonction (mêmes 6 communes)", {
-  skip_sans_donnees_reelles(file.exists(chemin_flores_reel("A38")),
-              "flores_a38.rds n'est pas présente (worktree sans donnée).")
-  flores <- readRDS(chemin_flores_reel("A38"))
-
-  # la forme réelle connue (issue #92) : 109 413 lignes, 1202 communes
-  expect_equal(nrow(flores), 109413)
-  expect_equal(dplyr::n_distinct(flores$commune), 1202)
-
-  # le grain A38 filtre tranche_effectifs == "_T" — mêmes 6 communes supprimées
-  res <- calculer_lq_emploi_flores(flores, "A38")
-  expect_equal(nrow(res$suppression), 6)
-  expect_equal(min(res$suppression$n_total), 2)
-  expect_equal(dplyr::n_distinct(res$lq$commune), 1196)
-  expect_true(all(is.finite(res$lq$lq)))
-  expect_true(all(res$lq$lq > 0))
 })
