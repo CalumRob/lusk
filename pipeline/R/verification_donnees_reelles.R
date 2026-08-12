@@ -49,6 +49,15 @@
 # (un second run produit les mêmes octets) ne sont PAS re-verrouillés ici —
 # la propriété est déjà la porte de test-targets-byte-identical.R, hors de la
 # portée d'un target (un target est un run unique).
+#
+# POLITIQUE DES VERROUS DE VALEUR (issue #380) : les verrous de VALEUR des
+# couches dérivées de sources VIVANTES (les modes t/c de l'extrait OSM
+# `latest`, les flux vivants GTFS/IRVE) sont RELATIFS À L'ÉPOQUE DU CACHE —
+# un extrait re-téléchargé bouge les derniers chiffres : ils sont verrouillés
+# à leur précision naturelle (densités et parts au 4ᵉ décimale, longueurs au
+# 3ᵉ, comptes exacts). Les verrous de FORMAT (comptes du snapshot FIGÉ,
+# colonnes, estampilles, règles d'agrégation) restent FORTS — la dérive
+# d'époque ne touche que les couches vivantes, jamais le snapshot.
 
 # verifier_egale / verifier_vrai ----------------------------------------------
 # Les deux micro-gardes des verrous : un échec s'arrête bruyamment en nommant
@@ -710,12 +719,28 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
                  "Mobilité e2e — la médiane du nuage de la région")
 
   # les rangs d'isolation : alignés sur la référence — les 2 communes hors
-  # snapshot portent NA, jamais une ligne manquante
+  # snapshot portent NA, jamais une ligne manquante. Le schéma porte la
+  # TAILLE de chaque groupe (rang_*_n — ADR-0015, #310) ; rang_dep est VIDE
+  # partout (plus aucun groupe de comparaison départemental — la colonne
+  # reste dans le contrat, NA) et une commune avec EPCI n'a pas de rang
+  # régional (le repli régional n'est que pour les communes SANS EPCI —
+  # ADR-0021, #380)
   rangs <- analytiques$isolation_rangs
+  verifier_egale(names(rangs),
+                 c("code", "key", "rang_epci", "rang_epci_n",
+                   "rang_dep", "rang_dep_n", "rang_reg", "rang_reg_n"),
+                 "Mobilité e2e — le schéma des rangs d'isolation")
   verifier_egale(length(unique(rangs$code)), 1268L,
                  "Mobilité e2e — les rangs d'isolation alignés")
   verifier_vrai(all(is.na(rangs$rang_epci[rangs$code %in% c("29083", "29084")])),
                 "Mobilité e2e", "une île hors snapshot avec un rang EPCI")
+  verifier_vrai(all(is.na(rangs$rang_dep)),
+                "Mobilité e2e", "un rang départemental porté (rang_dep vide par design)")
+  rennes_rangs <- rangs[rangs$code == "35238", ]
+  verifier_vrai(all(!is.na(rennes_rangs$rang_epci)),
+                "Mobilité e2e", "le rang EPCI de Rennes manquant")
+  verifier_vrai(all(is.na(rennes_rangs$rang_reg)),
+                "Mobilité e2e", "un rang régional pour une commune avec EPCI")
 
   # l'étage demande/réseaux (issue #139) : les parts voitures/ménage et les
   # longueurs/densités des réseaux aux comptes verrouillés
@@ -740,14 +765,25 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
                  "Mobilité e2e — les réseaux par commune")
   verifier_egale(nrow(rt), 7608L, "Mobilité e2e — les réseaux par territoire")
   lire_rt <- function(code, detail) rt$value[rt$code == code & rt$detail == detail]
-  verifier_egale(round(lire_rt("53", "c_longueur"), 3), 101353.736,
+  # Verrous de VALEUR des couches dérivées de l'extrait OSM `latest` (les
+  # modes t/c) : relatifs à l'ÉPOQUE du cache (issue #380) — re-baselinés sur
+  # le cache restauré à la précision naturelle (densités au 4ᵉ décimale,
+  # longueurs au 3ᵉ — le 6ᵉ chahute entre extraits re-téléchargés) ; les
+  # modes b (Geovelo épinglé) restent FORTS
+  verifier_egale(round(lire_rt("53", "c_longueur"), 3), 101373.625,
                  "Mobilité e2e — les routes de la région")
-  verifier_egale(round(lire_rt("53", "c_densite"), 6), 3.692786,
+  verifier_egale(round(lire_rt("53", "c_densite"), 4), 3.6935,
                  "Mobilité e2e — la densité routière de la région")
+  verifier_egale(round(lire_rt("53", "t_longueur"), 3), 6742.766,
+                 "Mobilité e2e — les trottoirs de la région")
+  verifier_egale(round(lire_rt("53", "t_densite"), 4), 0.2457,
+                 "Mobilité e2e — la densité de trottoirs de la région")
   verifier_egale(round(lire_rt("53", "b_longueur"), 3), 4940.309,
                  "Mobilité e2e — le réseau cyclable de la région (mode b)")
-  verifier_egale(round(lire_rt("35238", "c_densite"), 6), 18.162491,
+  verifier_egale(round(lire_rt("35238", "c_densite"), 4), 18.1578,
                  "Mobilité e2e — la densité routière de Rennes")
+  verifier_egale(round(lire_rt("242900314", "c_densite"), 4), 8.9465,
+                 "Mobilité e2e — la densité routière de Brest Métropole")
   verifier_egale(lire_rt("29083", "b_longueur"), 0,
                  "Mobilité e2e — l'île de Sein sans réseau cyclable")
   verifier_vrai(all(!is.na(rt$value) & rt$value >= 0),
@@ -755,18 +791,21 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
 
   # le sous-bloc « L'offre de mobilité alternative » (issue #140) : les
   # sources normalisées du BRUT et les artefacts du chaînon aux comptes
-  # verrouillés
-  verifier_egale(nrow(donnees$korrigo), 27297L,
+  # verrouillés. Korrigo (GTFS) et bornes (IRVE) sont des sources VIVANTES
+  # (flux vivants) : leurs comptes sont relatifs à l'époque du cache (issue
+  # #380) — re-baselinés sur le cache restauré (27 543 arrêts, 9 900 lignes /
+  # 1 909 stations, 707 communes)
+  verifier_egale(nrow(donnees$korrigo), 27543L,
                  "Mobilité e2e — les arrêts GTFS korrigo")
   verifier_egale(nrow(donnees$batiments_residentiels), 1235417L,
                  "Mobilité e2e — les bâtiments résidentiels")
-  verifier_egale(nrow(donnees$bornes_recharges), 9898L,
+  verifier_egale(nrow(donnees$bornes_recharges), 9900L,
                  "Mobilité e2e — les points de charge")
   verifier_egale(nrow(donnees$stationnement_velo), 4808L,
                  "Mobilité e2e — le hub stationnement vélo")
   verifier_egale(nrow(analytiques$offre_tc_communes), 1200L,
                  "Mobilité e2e — l'offre TC par commune")
-  verifier_egale(nrow(analytiques$bornes_communes), 709L,
+  verifier_egale(nrow(analytiques$bornes_communes), 707L,
                  "Mobilité e2e — les bornes par commune")
   verifier_egale(nrow(analytiques$stationnement_velo_communes), 1202L,
                  "Mobilité e2e — le stationnement vélo par commune")
@@ -783,10 +822,21 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   }
   verifier_egale(round(lire_offre("35238", "offre_tc"), 4), 0.9957,
                  "Mobilité e2e — l'offre TC de Rennes (la vraie part des bâtiments)")
-  verifier_egale(round(lire_offre("53", "offre_tc"), 4), 0.5729,
+  # Korrigo (GTFS) est une source VIVANTE re-téléchargée par la restauration
+  # du cache (issue #380) : verrous de VALEUR relatifs à l'époque du cache
+  # (parts au 4ᵉ décimale, re-baselinés)
+  verifier_egale(round(lire_offre("53", "offre_tc"), 4), 0.5731,
                  "Mobilité e2e — l'offre TC de la région")
-  verifier_egale(lire_offre("53", "bornes_recharge"), 1918L,
+  verifier_egale(round(lire_offre("242900314", "offre_tc"), 4), 0.9412,
+                 "Mobilité e2e — l'offre TC de Brest Métropole")
+  verifier_egale(round(lire_offre("29", "offre_tc"), 4), 0.6761,
+                 "Mobilité e2e — l'offre TC du Finistère")
+  # Les bornes (IRVE) sont une source VIVANTE (issue #380) : verrous de
+  # VALEUR relatifs à l'époque du cache (comptes exacts, re-baselinés)
+  verifier_egale(lire_offre("53", "bornes_recharge"), 1909L,
                  "Mobilité e2e — les bornes de la région")
+  verifier_egale(lire_offre("35", "bornes_recharge"), 623L,
+                 "Mobilité e2e — les bornes de l'Ille-et-Vilaine")
   verifier_egale(round(lire_offre("53", "places_stationnement_velo_1000"), 4),
                  18.4989, "Mobilité e2e — le stationnement vélo de la région")
   verifier_egale(round(lire_offre("35238", "places_stationnement_velo_1000"), 4),
@@ -841,6 +891,33 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   # la saillance vélo REMPLACE le défaut là où elle tire (139 territoires)
   payload <- construire_payload_mobilite(analytiques, base,
                                          vintages_mobilite())
+
+  # les rangs-en-contexte du payload (ADR-0021, #380) : des ORDINAUX
+  # directionnels (Rennes 1re de Rennes Métropole — jamais une fraction), une
+  # commune avec EPCI n'a PAS de rang régional (le repli régional n'est que
+  # pour les communes SANS EPCI), rang_dep est vide partout (la colonne reste
+  # dans le contrat, NA)
+  lire_ind <- function(territoire, key, detail) {
+    payload$indicateurs[
+      payload$indicateurs$territoire == territoire &
+        payload$indicateurs$key == key &
+        ifelse(is.na(payload$indicateurs$detail), is.na(detail),
+               payload$indicateurs$detail == detail), ]
+  }
+  rennes_sans <- lire_ind("35238", "voitures_menage", "sans_voiture")
+  verifier_egale(rennes_sans$rang_epci, 1L,
+                 "Mobilité e2e — Rennes 1re de Rennes Métropole (rang ordinal)")
+  verifier_vrai(is.na(rennes_sans$rang_reg),
+                "Mobilité e2e", "un rang régional pour une commune avec EPCI")
+  sein_sans <- lire_ind("29083", "voitures_menage", "sans_voiture")
+  verifier_vrai(is.na(sein_sans$rang_dep),
+                "Mobilité e2e", "un rang départemental porté (rang_dep vide par design)")
+  rennes_iso <- lire_ind("35238", "iso_banque", NA)
+  verifier_vrai(!is.na(rennes_iso$rang_epci),
+                "Mobilité e2e", "le rang EPCI de l'iso_banque de Rennes manquant")
+  verifier_vrai(all(is.na(c(rennes_iso$rang_dep, rennes_iso$rang_reg))),
+                "Mobilité e2e", "un rang dep/reg pour l'iso_banque de Rennes")
+
   h <- payload$histoires
   verifier_egale(nrow(h), 1266L, "Mobilité e2e — une lecture par territoire")
   verifier_egale(sum(h$story_key == "vingt-minutes-sans-voiture"), 1127L,
