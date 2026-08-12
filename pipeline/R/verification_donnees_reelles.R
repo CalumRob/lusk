@@ -1015,8 +1015,15 @@ verifier_programmes_reel <- function(acv, pvd, crte, ti, ort, scdl,
   # les inputs FERMÉS : ACV 11 villes lauréates, NOMINATIVEMENT
   acv <- membres[membres$sigle == "ACV", ]
   verifier_egale(nrow(acv), 11L, "programmes — les villes ACV")
-  verifier_vrai(all(acv$convention_valant_ort),
-                "programmes", "une ville ACV sans drapeau « convention valant ORT »")
+  # ACV : le drapeau suit la RÈGLE (TRUE ⟺ présente AU STATUT « Signée » dans
+  # le fichier ORT réel), jamais un compte — Lannion (22113) porte une
+  # convention « Terminée » dans le cache restauré : le drapeau est FALSE par
+  # la règle, la ville reste ACV (l'input FERMÉ, verrouillé nominativement —
+  # #380, politique des verrous de valeur).
+  ort_source <- donnees$ort
+  signees_ort <- unique(ort_source$code_commune[ort_source$statut == "Signée"])
+  verifier_egale(acv$convention_valant_ort, acv$territoire %in% signees_ort,
+                 "programmes - le drapeau ACV suit la règle « Signée »")
   verifier_egale(sort(acv$territoire),
                  sort(c("22113", "22278", "29151", "29232", "35115", "35236",
                         "35288", "35360", "56121", "56178", "56260")),
@@ -1026,8 +1033,6 @@ verifier_programmes_reel <- function(acv, pvd, crte, ti, ort, scdl,
   # « Signée » dans le fichier ORT réel), jamais un compte
   pvd <- membres[membres$sigle == "PVD", ]
   verifier_egale(nrow(pvd), 135L, "programmes — les communes PVD")
-  ort_source <- donnees$ort
-  signees_ort <- unique(ort_source$code_commune[ort_source$statut == "Signée"])
   verifier_egale(pvd$convention_valant_ort, pvd$territoire %in% signees_ort,
                  "programmes — le drapeau PVD suit la règle « Signée »")
 
