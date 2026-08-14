@@ -1,5 +1,7 @@
 # -----------------------------------------------------------------------------
-# Pipeline Démographie — run hebdomadaire automatisé (issue #7 + #11, ADR-0004)
+# Pipeline — run hebdomadaire automatisé : les TROIS thèmes légers
+# (démographie, habitat, économie) via le graphe targets (issue #7 + #11,
+# ADR-0004)
 #
 # L'automatisation qui rend la promesse « alive » littéralement vraie : chaque
 # semaine (et à la demande via workflow_dispatch), le pipeline tourne en mode
@@ -7,7 +9,11 @@
 # rapport de run) vers public/data/ à la racine du dépôt, committé et servi
 # par l'hôte statique (Pages). L'orchestration est volontairement mince : toute
 # la logique de décision vit dans le package R (le GRAPHE targets #329,
-# detecter_changement, run-report.json) et y est testée.
+# detecter_changement, run-report.json) et y est testée. Le cron hebdomadaire
+# ne tourne que les trois thèmes légers du graphe (voir « Orchestration ») :
+# le run complet — les six thèmes incl. le payload partagé Programmes — reste
+# le contrat du graphe et devient le cron quand #338 + le budget de
+# téléchargement le permettent.
 #
 # Choix documentés :
 #
@@ -23,8 +29,13 @@
 # - Orchestration : le build invoque le GRAPHE targets (issue #329, câblé par
 #   #343) au lieu de run_pipeline() — la configuration de run est explicite :
 #   LUSK_MODE=cron, LUSK_CACHE=data/raw, LUSK_SORTIE=../public/data et
-#   LUSK_THEMES vide = le run COMPLET (les CINQ thèmes + le payload partagé
-#   Programmes, ADR-0013). La sémantique mode cron d'ADR-0004 est préservée
+#   LUSK_THEMES = demographie,habitat,economie : le cron hebdomadaire ne tourne
+#   que les TROIS thèmes légers du graphe. Milieux (les archives OCS-GE ~7 Go)
+#   et Mobilité (le rebuild slow-clock) sont exclus ; le run COMPLET — les six
+#   thèmes incl. le payload partagé Programmes, ADR-0013 — reste le contrat du
+#   graphe (testé byte-identique) et devient le cron quand #338 (cache du
+#   store) et le budget de téléchargement du runner le permettent. La
+#   sémantique mode cron d'ADR-0004 est préservée
 #   (le graphe la transmet à download_sources : « cron » téléchargées,
 #   « manuel » sautées sans échec) et la sémantique #8/#10 du rapport aussi :
 #   le rapport de run est un target INDÉPENDANT des étapes aval, réestampillé
@@ -40,10 +51,10 @@
 #
 # - Rebuild à froid assumé : le store _targets/ (gitignoré par
 #   pipeline/.gitignore) n'est PAS caché entre deux runs du runner — chaque
-#   run cron re-télécharge et re-construit tout, le coût du présent (la même
-#   classe de run que run_pipeline sur cache vide). La décision de cache du
-#   store vit dans #338 (quand le cron devient production) ; rien ne change
-#   ici.
+#   run cron re-télécharge et re-construit les trois thèmes légers, le coût
+#   du présent (la même classe de run que run_pipeline sur cache vide). La
+#   décision de cache du store vit dans #338 (quand le cron devient
+#   production) ; rien ne change ici.
 #
 # - Chemins : les étapes R tournent DEPUIS pipeline/ — le .Rprofile du paquet
 #   (source("renv/activate.R")) active renv automatiquement, y compris le
@@ -81,7 +92,7 @@
 #   pour le seam d'alerte).
 # -----------------------------------------------------------------------------
 
-name: Pipeline Démographie — cron hebdomadaire
+name: Pipeline — cron hebdomadaire (trois thèmes légers via le graphe targets)
 
 on:
   schedule:
@@ -153,15 +164,19 @@ jobs:
         shell: bash
         env:
           # la configuration du run que _targets.R lit (le mode cron d'ADR-0004
-          # est transmis tel quel à download_sources ; LUSK_THEMES vide = le run
-          # COMPLET, les cinq thèmes + le payload partagé Programmes)
+          # est transmis tel quel à download_sources). LUSK_THEMES : le cron
+          # hebdomadaire = les TROIS thèmes légers du graphe — Milieux (les
+          # archives OCS-GE ~7 Go) et Mobilité (le rebuild slow-clock) exclus ;
+          # le run COMPLET (les six thèmes incl. le payload partagé Programmes)
+          # reste le contrat, testé byte-identique, et devient le cron quand
+          # #338 (cache du store) + le budget de téléchargement le permettent.
           LUSK_MODE: cron
           LUSK_CACHE: data/raw
           LUSK_SORTIE: ../public/data
-          LUSK_THEMES: ""
+          LUSK_THEMES: "demographie,habitat,economie"
         run: |
           set +e
-          Rscript -e 'pkgload::load_all(); targets::tar_make(callr_function = NULL); err <- targets::tar_errored(); if (length(err) > 0) { rapport <- file.path("../public/data", "run-report.json"); if (!file.exists(rapport) && any(grepl("^sources_", err))) { statuts <- NULL; for (m in list(theme_demographie()$manifest, theme_habitat()$manifest, theme_economie()$manifest, theme_mobilite()$manifest, theme_milieux()$manifest, theme_programmes()$manifest)) { statuts <- tryCatch(download_sources(m, cache = "data/raw", mode = "cron"), erreur_telechargement = function(e) e$statuts); if (any(statuts$status == "\u00e9chec")) break }; if (any(statuts$status == "\u00e9chec")) ecrire_rapport_run(statuts, "cron", "../public/data") }; quit(status = 1) }'
+          Rscript -e 'pkgload::load_all(); targets::tar_make(callr_function = NULL); err <- targets::tar_errored(); if (length(err) > 0) { rapport <- file.path("../public/data", "run-report.json"); if (!file.exists(rapport) && any(grepl("^sources_", err))) { statuts <- NULL; for (m in list(theme_demographie()$manifest, theme_habitat()$manifest, theme_economie()$manifest)) { statuts <- tryCatch(download_sources(m, cache = "data/raw", mode = "cron"), erreur_telechargement = function(e) e$statuts); if (any(statuts$status == "\u00e9chec")) break }; if (any(statuts$status == "\u00e9chec")) ecrire_rapport_run(statuts, "cron", "../public/data") }; quit(status = 1) }'
           status=$?
           echo "build_exit=$status" >> "$GITHUB_OUTPUT"
           exit 0
