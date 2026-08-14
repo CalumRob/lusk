@@ -2,8 +2,10 @@
 # Le remodelage de la source RP Logements (issue #14) : les fichiers longs
 # INSEE (DS_RP_LOGEMENT_PRINC, docs/research/rp-logements.md) vers la table
 # des communes bretonnes par le stock de logements — une ligne par commune,
-# portant les champs des deux indicateurs de stock (mix de logements ;
-# statut d'occupation / ancienneté / taille). Les pivots sont spécifiques à
+# portant les champs des indicateurs de stock (mix de logements ; statut
+# d'occupation ; âge du bâti ; type de logement — la taille est sortie du
+# payload à l'issue #368, le split statut / âge du bâti / type remplace
+# l'ancienne clé à 14 modalités). Les pivots sont spécifiques à
 # cette source et restent dans ce fichier (fragment de la vague 2) ; le lecteur
 # CSV partagé (lire_csv_long), le filtre Bretagne (filter_bretagne,
 # DEPT_BRETAGNE) et la base des EPCI (lire_epci) sont réutilisés.
@@ -12,12 +14,28 @@
 #   - RP_MEASURE = "DWELLINGS"  : le nombre de logements (la mesure des comptes)
 #   - OCS  : DW_MAIN (RP) / DW_SEC_DW_OCC (RS + occasionnels) / DW_VAC (vacants)
 #            / _T (total) — le mix de logements (indicateur 1)
-#   - TSH  : 100 (propriétaire) / 200 (locataire) / 300 (gratuit) — le statut
-#            d'occupation (indicateur 2, RP seulement)
-#   - L_STAY : Y_LT2 / Y2T4 / Y5T9 / Y10T19 / Y20T29 / Y_GE30 — l'ancienneté
-#            d'emménagement (indicateur 2, RP seulement)
-#   - NOR  : R1 / R2 / R3 / R4 / R_GE5 — la taille en pièces (indicateur 2,
-#            RP seulement)
+#   - TSH  : 100 (propriétaire) / 200 (locataire) / 211 (locataire du parc
+#            privé vide) / 212_222 (locataire de logement meublé) / 221
+#            (locataire du parc social — le HLM) / 300 (gratuit) — le statut
+#            d'occupation (indicateur 2, RP seulement). Depuis l'issue #368, le
+#            statut est décliné en QUATRE parts : propriétaire (100), HLM — le
+#            parc social (221) —, locataire du parc privé (211 + 212_222) et
+#            logé gratuitement (300) : 200 = 211 + 212_222 + 221, les quatre
+#            parts partitionnent les résidences principales.
+#   - BUILD_END : la période d'achèvement de la construction — Y_LT1919 (avant
+#            1919) / Y1919T1945 / Y1946T1970 / Y1971T1990 / Y1991T2005 /
+#            Y2006TAAAA (2006 et après) — l'ÂGE DU BÂTI (indicateur 2, RP
+#            seulement, issue #368). Les six tranches disjointes couvrent le
+#            stock dont la période est connue (~97,7 % des RP en Bretagne — la
+#            période inconnue est un fait de la donnée RP, documenté) ; les
+#            niveaux agrégés du cube (Y_LT1946, Y1946T1990, Y1991T2009,
+#            Y_LT2010, Y_LT2015, Y_LT2021) sont des redondances, jamais pivotées.
+#   - TDW  : le type de logement — 1 (maison) / 2 (appartement) / 3T6 (autres
+#            logements de métropole) — le TYPE (indicateur 2, RP seulement,
+#            issue #368) : les parts maison / appartement, la famille « autres »
+#            (~0,7 % des RP) écartée du dénominateur comme les dépendances DVF.
+#   - NOR  : la taille en pièces (R1 / R2 / R3 / R4 / R_GE5) — SORTIE du
+#            payload à l'issue #368 (le split ne la reprend pas).
 # Chaque ligne « totale » d'une dimension porte _T sur toutes les autres ;
 # OBS_STATUS = "A" écarte les doublons d'inclusion (K/W) ; une commune code
 # réapparaît en BV2022/AAV2020/etc. — on ne garde que GEO_OBJECT = "COM".
@@ -46,79 +64,103 @@ pivoter_logements_rp <- function(long) {
 
 # pivoter_statut_rp -----------------------------------------------------------
 # Le statut d'occupation (indicateur 2) : DWELLINGS des résidences principales
-# (OCS = DW_MAIN) ventilé par TSH — propriétaire (100), locataire (200), logé
-# gratuitement (300). Les sous-catégories de locataire (211/212_222/221) sont
-# laissées de côté : 200 = 211 + 212_222 + 221, vérifié sur Rennes.
+# (OCS = DW_MAIN) ventilé par TSH — propriétaire (100), locataire du parc
+# social — le HLM — (221), locataire du parc privé (211 + 212_222) et logé
+# gratuitement (300). Depuis l'issue #368 le locataire est SPLIT en ses deux
+# familles : la part HLM est le scalaire classé de la clé `statut` (high-is-
+# good — plus de logement social, mieux) et les QUATRE parts partitionnent les
+# résidences principales (200 = 211 + 212_222 + 221, vérifié sur le fichier
+# réel : 526 579 locataires bretons = 306 056 privé + 53 802 meublé + 166 721
+# social).
 pivoter_statut_rp <- function(long) {
   long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
       RP_MEASURE == "DWELLINGS", OCS == "DW_MAIN",
       TIME_PERIOD == 2023, OBS_STATUS == "A",
-      TSH %in% c("100", "200", "300"),
+      TSH %in% c("100", "211", "212_222", "221", "300"),
       L_STAY == "_T", TDW == "_T", CARS == "_T", CARPARK == "_T",
       NOR == "_T", BUILD_END == "_T", NRG_SRC == "_T"
     ) %>%
     dplyr::select(GEO, TSH, OBS_VALUE) %>%
-    tidyr::pivot_wider(id_cols = GEO, names_from = TSH, values_from = OBS_VALUE) %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = TSH,
+                       values_from = OBS_VALUE) %>%
+    dplyr::mutate(
+      statut_hlm = `221`,
+      statut_locataire_prive = `211` + `212_222`
+    ) %>%
     dplyr::rename(
       statut_proprietaire = `100`,
-      statut_locataire = `200`,
       statut_loge_gratuit = `300`
-    )
+    ) %>%
+    dplyr::select(GEO, statut_proprietaire, statut_hlm,
+                  statut_locataire_prive, statut_loge_gratuit)
 }
 
-# pivoter_anciennete_rp -------------------------------------------------------
-# L'ancienneté d'emménagement (indicateur 2) : DWELLINGS des RP ventilé par
-# L_STAY — les 6 tranches documentées.
-pivoter_anciennete_rp <- function(long) {
+# pivoter_build_end_rp --------------------------------------------------------
+# L'âge du bâti (indicateur 2, issue #368) : DWELLINGS des RP ventilé par
+# BUILD_END — les SIX tranches disjointes de la période d'achèvement (avant
+# 1919, 1919-1945, 1946-1970, 1971-1990, 1991-2005, 2006 et après). Les
+# niveaux agrégés du cube (Y_LT1946, Y1946T1990, Y1991T2009, Y_LT2010,
+# Y_LT2015, Y_LT2021) sont des redondances de la même ventilation — jamais
+# pivotées, un double comptage serait silencieux. La période inconnue (le
+# résidu entre la somme des six tranches et le total RP, ~2,3 % en Bretagne)
+# est un fait de la donnée RP : les parts sont calculées sur le stock dont la
+# période est CONNUE (la somme des six tranches), documenté dans la note de
+# l'indicateur — jamais une part fabriquée sur un total qui ne ferme pas.
+pivoter_build_end_rp <- function(long) {
   long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
       RP_MEASURE == "DWELLINGS", OCS == "DW_MAIN",
       TIME_PERIOD == 2023, OBS_STATUS == "A",
-      L_STAY %in% c("Y_LT2", "Y2T4", "Y5T9", "Y10T19", "Y20T29", "Y_GE30"),
+      BUILD_END %in% c("Y_LT1919", "Y1919T1945", "Y1946T1970",
+                       "Y1971T1990", "Y1991T2005", "Y2006TAAAA"),
       TDW == "_T", CARS == "_T", CARPARK == "_T", NOR == "_T",
-      TSH == "_T", BUILD_END == "_T", NRG_SRC == "_T"
+      TSH == "_T", L_STAY == "_T", NRG_SRC == "_T"
     ) %>%
-    dplyr::select(GEO, L_STAY, OBS_VALUE) %>%
-    tidyr::pivot_wider(id_cols = GEO, names_from = L_STAY, values_from = OBS_VALUE) %>%
+    dplyr::select(GEO, BUILD_END, OBS_VALUE) %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = BUILD_END,
+                       values_from = OBS_VALUE) %>%
     dplyr::rename(
-      anciennete_lt2 = Y_LT2, anciennete_2_4 = Y2T4, anciennete_5_9 = Y5T9,
-      anciennete_10_19 = Y10T19, anciennete_20_29 = Y20T29,
-      anciennete_30_plus = Y_GE30
+      bati_lt1919 = Y_LT1919, bati_1919_1945 = Y1919T1945,
+      bati_1946_1970 = Y1946T1970, bati_1971_1990 = Y1971T1990,
+      bati_1991_2005 = Y1991T2005, bati_2006_plus = Y2006TAAAA
     )
 }
 
-# pivoter_taille_rp -----------------------------------------------------------
-# La taille (indicateur 2) : DWELLINGS des RP ventilé par NOR — R1 à R_GE5.
-pivoter_taille_rp <- function(long) {
+# pivoter_type_rp -------------------------------------------------------------
+# Le type de logement (indicateur 2, issue #368) : DWELLINGS des RP ventilé
+# par TDW — maison (1) et appartement (2). La famille « autres logements de
+# métropole » (3T6, ~0,7 % des RP en Bretagne) est ÉCARTÉE du dénominateur
+# comme les dépendances côté DVF : les parts maison / appartement somment à 1
+# sur l'univers (maison + appartement), la part d'appartements étant le
+# scalaire classé de la clé `type` (high-is-good).
+pivoter_type_rp <- function(long) {
   long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
       RP_MEASURE == "DWELLINGS", OCS == "DW_MAIN",
       TIME_PERIOD == 2023, OBS_STATUS == "A",
-      NOR %in% c("R1", "R2", "R3", "R4", "R_GE5"),
-      L_STAY == "_T", TDW == "_T", CARS == "_T", CARPARK == "_T",
+      TDW %in% c("1", "2"),
+      L_STAY == "_T", CARS == "_T", CARPARK == "_T", NOR == "_T",
       TSH == "_T", BUILD_END == "_T", NRG_SRC == "_T"
     ) %>%
-    dplyr::select(GEO, NOR, OBS_VALUE) %>%
-    tidyr::pivot_wider(id_cols = GEO, names_from = NOR, values_from = OBS_VALUE) %>%
-    dplyr::rename(
-      taille_r1 = R1, taille_r2 = R2, taille_r3 = R3, taille_r4 = R4,
-      taille_5_plus = R_GE5
-    )
+    dplyr::select(GEO, TDW, OBS_VALUE) %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = TDW,
+                       values_from = OBS_VALUE) %>%
+    dplyr::rename(type_maison = `1`, type_appartement = `2`)
 }
 
 # assembler_communes_rp -------------------------------------------------------
-# Assemble les quatre pivots en une table par commune bretonne, dans la forme
-# du contrat. La jointure avec la base des EPCI (limitée à la Bretagne) est LE
+# Assemble les pivots en une table par commune bretonne, dans la forme du
+# contrat. La jointure avec la base des EPCI (limitée à la Bretagne) est LE
 # filtre : les communes hors 22/29/35/56 tombent (même pattern que Démographie).
-assembler_communes_rp <- function(logements, statut, anciennete, taille, epci) {
+assembler_communes_rp <- function(logements, statut, build_end, type, epci) {
   logements %>%
     dplyr::left_join(statut, by = "GEO") %>%
-    dplyr::left_join(anciennete, by = "GEO") %>%
-    dplyr::left_join(taille, by = "GEO") %>%
+    dplyr::left_join(build_end, by = "GEO") %>%
+    dplyr::left_join(type, by = "GEO") %>%
     dplyr::inner_join(epci, by = c("GEO" = "CODGEO")) %>%
     dplyr::rename(
       code = GEO, nom = LIBGEO, departement = DEP, epci = EPCI,
@@ -127,10 +169,11 @@ assembler_communes_rp <- function(logements, statut, anciennete, taille, epci) {
     dplyr::select(code, nom, departement, epci, nom_epci,
                   logements, logements_principales, logements_secondaires,
                   logements_vacants,
-                  statut_proprietaire, statut_locataire, statut_loge_gratuit,
-                  anciennete_lt2, anciennete_2_4, anciennete_5_9,
-                  anciennete_10_19, anciennete_20_29, anciennete_30_plus,
-                  taille_r1, taille_r2, taille_r3, taille_r4, taille_5_plus)
+                  statut_proprietaire, statut_hlm, statut_locataire_prive,
+                  statut_loge_gratuit,
+                  bati_lt1919, bati_1919_1945, bati_1946_1970,
+                  bati_1971_1990, bati_1991_2005, bati_2006_plus,
+                  type_maison, type_appartement)
 }
 
 # construire_donnees_brut_rp --------------------------------------------------
@@ -161,7 +204,7 @@ construire_donnees_brut_rp <- function(cache = "data/raw",
 
   brut <- assembler_communes_rp(
     pivoter_logements_rp(long), pivoter_statut_rp(long),
-    pivoter_anciennete_rp(long), pivoter_taille_rp(long), epci
+    pivoter_build_end_rp(long), pivoter_type_rp(long), epci
   )
 
   # L'étape « filter » documentée : la jointure EPCI (limitée à la Bretagne)

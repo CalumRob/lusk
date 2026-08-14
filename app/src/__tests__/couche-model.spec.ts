@@ -183,8 +183,7 @@ describe('couchesDuTheme — Mobilité (fixture)', () => {
       e.type === 'couche' ? clefDe(e) : `groupe:${detailsDu(e).join('|')}`,
     )
     expect(apresStory).toEqual([
-      'nb_buildings',
-      'groupe:deux_plus|sans_voiture',
+      'groupe:deux_plus|sans_voiture|une_voiture',
       'groupe:b_densite|b_longueur|c_densite|c_longueur|t_densite|t_longueur',
       'offre_tc',
       'bornes_recharge',
@@ -200,10 +199,11 @@ describe('couchesDuTheme — Mobilité (fixture)', () => {
 
   it('wears the fiche’s detail labels for the voitures_menage group', () => {
     const couches = couchesDuTheme(payload, 'mobilite')
-    const voitures = couches.entrees[2 + 1] as { type: 'groupe'; groupe: { couches: { libelle: string }[] } }
+    const voitures = couches.entrees[2] as { type: 'groupe'; groupe: { couches: { libelle: string }[] } }
     expect(voitures.groupe.couches.map((c) => c.libelle)).toEqual([
       'Ménages avec 2 voitures ou plus',
       'Ménages sans voiture',
+      'Ménages avec 1 voiture',
     ])
   })
 })

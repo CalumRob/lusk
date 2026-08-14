@@ -7,7 +7,6 @@
       "label": "L’accès aux services",
       "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l’offre de transport qui le permet.",
       "indicators": [
-        "nb_buildings",
         "voitures_menage",
         "reseaux",
         "offre_tc",
@@ -41,7 +40,6 @@
     }
   ],
   "indicator_keys": [
-    "nb_buildings",
     "voitures_menage",
     "reseaux",
     "offre_tc",
@@ -56,7 +54,6 @@
   ],
   "story_keys": ["vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"],
   "sources": {
-    "nb_buildings": "mobilite_snapshot",
     "voitures_menage": "rp_logement_princ",
     "reseaux": "amenagements_cyclables",
     "offre_tc": "korrigo",
@@ -70,7 +67,6 @@
     "iso_banque": "mobilite_snapshot"
   },
   "indicator_labels": {
-    "nb_buildings": "Bâtiments résidentiels analysés",
     "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
     "iso_sante": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
     "iso_administration": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
@@ -94,6 +90,7 @@
     },
     "voitures_menage": {
       "sans_voiture": "Ménages sans voiture",
+      "une_voiture": "Ménages avec 1 voiture",
       "deux_plus": "Ménages avec 2 voitures ou plus"
     },
     "offre_cyclable": {

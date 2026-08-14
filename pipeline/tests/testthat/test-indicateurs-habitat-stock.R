@@ -1,6 +1,6 @@
 # Les indicateurs de stock du thème Habitat (issue #17) : le mix de logements
-# et le statut/ancienneté/taille, des parts du stock RP — la colonne `n` y est
-# NA (indicateurs de stock, pas d'échantillon).
+# et le split statut / âge du bâti / type (issue #368), des parts du stock RP —
+# la colonne `n` y est NA (indicateurs de stock, pas d'échantillon).
 
 test_that("mix de logements : une ligne par catégorie, part du total", {
   p <- payload_habitat()
@@ -28,38 +28,55 @@ test_that("mix de logements : les agrégats somment les communes", {
     valeur_payload(p, "53", "mix_logements")$detail == "principales"], 3990 / 4900)
 })
 
-test_that("statut / ancienneté / taille : 14 modalités en part des RP", {
+test_that("statut : les 4 parts (HLM comprise) en part des RP, elles somment à 1", {
   p <- payload_habitat()
-  v <- valeur_payload(p, "22001", "statut_anciennete_taille")
+  v <- valeur_payload(p, "22001", "statut")
 
-  expect_equal(nrow(v), 14)
-  expect_setequal(v$detail, c(
-    "statut_proprietaire", "statut_locataire", "statut_loge_gratuit",
-    "anciennete_lt2", "anciennete_2_4", "anciennete_5_9",
-    "anciennete_10_19", "anciennete_20_29", "anciennete_30_plus",
-    "taille_r1", "taille_r2", "taille_r3", "taille_r4", "taille_5_plus"
-  ))
-  # statut : 500 + 250 + 100 = 850 RP de A1
-  expect_equal(v$value[v$detail == "statut_proprietaire"], 500 / 850)
-  expect_equal(v$value[v$detail == "statut_locataire"], 250 / 850)
-  expect_equal(v$value[v$detail == "statut_loge_gratuit"], 100 / 850)
-  # ancienneté : 6 tranches = 850
-  expect_equal(v$value[v$detail == "anciennete_lt2"], 150 / 850)
-  expect_equal(v$value[v$detail == "anciennete_30_plus"], 100 / 850)
-  # taille : 5 tranches = 850
-  expect_equal(v$value[v$detail == "taille_r1"], 100 / 850)
-  expect_equal(v$value[v$detail == "taille_5_plus"], 200 / 850)
+  expect_equal(nrow(v), 4)
+  expect_setequal(v$detail,
+                  c("proprietaire", "hlm", "locataire_prive", "loge_gratuit"))
+  # statut : 500 + 100 (HLM) + 150 (privé) + 100 (gratuit) = 850 RP de A1
+  expect_equal(v$value[v$detail == "proprietaire"], 500 / 850)
+  expect_equal(v$value[v$detail == "hlm"], 100 / 850)
+  expect_equal(v$value[v$detail == "locataire_prive"], 150 / 850)
+  expect_equal(v$value[v$detail == "loge_gratuit"], 100 / 850)
   # indicateur de stock : pas de n publié
   expect_true(all(is.na(v$n)))
+  # les 4 parts somment à 1 partout
+  for (code in unique(p$indicateurs$territoire)) {
+    expect_equal(sum(valeur_payload(p, code, "statut")$value), 1, info = code)
+  }
 })
 
-test_that("statut / ancienneté / taille : chaque sous-métrique somme à 1", {
+test_that("âge du bâti : les 6 tranches de la période d'achèvement, somment à 1 sur le stock connu", {
   p <- payload_habitat()
+  v <- valeur_payload(p, "22001", "age_du_bati")
+
+  expect_equal(nrow(v), 6)
+  expect_setequal(v$detail, c("lt1919", "1919_1945", "1946_1970",
+                              "1971_1990", "1991_2005", "2006_plus"))
+  # bâti : 100 + 150 + 200 + 200 + 100 + 100 = 850 = RP de A1 (stock connu)
+  expect_equal(v$value[v$detail == "lt1919"], 100 / 850)
+  expect_equal(v$value[v$detail == "2006_plus"], 100 / 850)
+  expect_true(all(is.na(v$n)))
+  # les 6 tranches somment à 1 partout (le stock connu)
   for (code in unique(p$indicateurs$territoire)) {
-    v <- valeur_payload(p, code, "statut_anciennete_taille")
-    v$sous_metrique <- sub("_.*$", "", v$detail)
-    for (sm in unique(v$sous_metrique)) {
-      expect_equal(sum(v$value[v$sous_metrique == sm]), 1, info = paste(code, sm))
-    }
+    expect_equal(sum(valeur_payload(p, code, "age_du_bati")$value), 1,
+                 info = code)
+  }
+})
+
+test_that("type : maison / appartement, la part d'appartements publiée", {
+  p <- payload_habitat()
+  v <- valeur_payload(p, "22001", "type")
+
+  expect_equal(nrow(v), 2)
+  expect_setequal(v$detail, c("maison", "appartement"))
+  # type : 550 maisons + 300 appartements = 850 RP de A1 (l'univers type)
+  expect_equal(v$value[v$detail == "maison"], 550 / 850)
+  expect_equal(v$value[v$detail == "appartement"], 300 / 850)
+  expect_true(all(is.na(v$n)))
+  for (code in unique(p$indicateurs$territoire)) {
+    expect_equal(sum(valeur_payload(p, code, "type")$value), 1, info = code)
   }
 })

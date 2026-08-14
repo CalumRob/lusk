@@ -743,14 +743,22 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
                 "Mobilité e2e", "un rang régional pour une commune avec EPCI")
 
   # l'étage demande/réseaux (issue #139) : les parts voitures/ménage et les
-  # longueurs/densités des réseaux aux comptes verrouillés
+  # longueurs/densités des réseaux aux comptes verrouillés. Depuis l'issue
+  # #368, la demande publie les TROIS parties réelles (0 / 1 / 2+ — la
+  # catégorie du milieu C1 est dans le cube RP et manquait au payload) : les
+  # parts somment à 1 par territoire.
   vt <- analytiques$voitures_territoires
   verifier_egale(nrow(analytiques$voitures_communes), 1202L,
                  "Mobilité e2e — les voitures par commune")
-  verifier_egale(nrow(vt), 2536L, "Mobilité e2e — les voitures par territoire")
+  verifier_egale(nrow(vt), 3804L, "Mobilité e2e — les voitures par territoire (3 parts)")
+  verifier_egale(sort(unique(vt$detail)),
+                 c("deux_plus", "sans_voiture", "une_voiture"),
+                 "Mobilité e2e — les trois parts voitures (0 / 1 / 2+, #368)")
   lire_vt <- function(code, detail) vt$value[vt$code == code & vt$detail == detail]
   verifier_egale(round(lire_vt("53", "sans_voiture"), 6), 0.118268,
                  "Mobilité e2e — la région sans voiture")
+  verifier_egale(round(lire_vt("53", "une_voiture"), 6), 0.479502,
+                 "Mobilité e2e — la région à 1 voiture")
   verifier_egale(round(lire_vt("53", "deux_plus"), 6), 0.402230,
                  "Mobilité e2e — la région à 2+ voitures")
   verifier_egale(round(lire_vt("35238", "sans_voiture"), 6), 0.319333,
@@ -759,6 +767,11 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
                  "Mobilité e2e — l'île de Sein sans voiture")
   verifier_vrai(all(!is.na(vt$value) & vt$value >= 0 & vt$value <= 1),
                 "Mobilité e2e", "une part voitures/ménage hors [0, 1]")
+  # les trois parts somment à 1 sur chaque territoire (la dimension CARS du
+  # cube partitionne les ménages — tolérance 1e-6, l'arrondi flottant du cube)
+  parts_par_code <- stats::aggregate(value ~ code, vt, sum)
+  verifier_vrai(all(abs(parts_par_code$value - 1) < 1e-6),
+                "Mobilité e2e", "les trois parts voitures ne somment pas à 1")
 
   rt <- analytiques$reseaux_territoires
   verifier_egale(nrow(analytiques$reseaux_communes), 1202L,
@@ -896,7 +909,14 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   # directionnels (Rennes 1re de Rennes Métropole — jamais une fraction), une
   # commune avec EPCI n'a PAS de rang régional (le repli régional n'est que
   # pour les communes SANS EPCI), rang_dep est vide partout (la colonne reste
-  # dans le contrat, NA)
+  # dans le contrat, NA). Le payload porte les ONZE clés du thème :
+  # `nb_buildings` QUITTE le payload (issue #368, décision #196 — la
+  # « Taille » reste la pondération interne) et voitures_menage porte ses
+  # trois parts (1268 territoires × 3).
+  verifier_vrai(!("nb_buildings" %in% payload$indicateurs$key),
+                "Mobilité e2e", "nb_buildings publié (retiré du payload, #368)")
+  verifier_egale(sum(payload$indicateurs$key == "voitures_menage"), 3804L,
+                 "Mobilité e2e — les trois parts voitures du payload")
   lire_ind <- function(territoire, key, detail) {
     payload$indicateurs[
       payload$indicateurs$territoire == territoire &

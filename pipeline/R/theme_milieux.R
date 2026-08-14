@@ -1824,14 +1824,17 @@ theme_milieux <- function() {
     construire_indicateurs = construire_indicateurs_milieux,
     construire_apercu = construire_apercu_milieux,
     scalaires = scalaires_milieux,
-    # la désirabilité par clé (ADR-0015) : low-is-good — l'intensité d'état
-    # (la surface artificialisée par habitant, classée par l'état final M3) et
-    # la part de surface consommée (le scalaire de la série annuelle) : moins
-    # de terre artificialisée et moins de consommation valent mieux pour le
-    # milieu (ADR-0014/0017).
+    # la désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) —
+    # AUCUNE clé ne se repose sur le défaut high-is-good : low-is-good —
+    # l'intensité d'état (la surface artificialisée par habitant, classée par
+    # l'état final M3), la part de surface consommée (le scalaire de la série
+    # annuelle) et la trajectoire par habitant (le ratio M3/M2 — la lecture
+    # de la Story, jamais une clé du registre) : moins de terre artificialisée
+    # et moins de consommation valent mieux pour le milieu (ADR-0014/0017).
     directions = list(
       artif_par_habitant = "low",
-      conso_enaf_annuel = "low"
+      conso_enaf_annuel = "low",
+      trajectoire_artif_par_habitant = "low"
     ),
     compute_histoires = compute_histoires_milieux,
     validations = validations_milieux,

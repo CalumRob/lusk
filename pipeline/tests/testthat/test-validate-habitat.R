@@ -19,14 +19,36 @@ test_that("validations_habitat : des parts de mix qui ne somment pas à 1 -> err
                "mix")
 })
 
-test_that("validations_habitat : une sous-métrique qui ne somme pas à 1 -> erreur", {
+test_that("validations_habitat : des parts de statut qui ne somment pas à 1 -> erreur", {
   p <- payload_habitat()
-  p$indicateurs$value[p$indicateurs$key == "statut_anciennete_taille" &
-                        p$indicateurs$detail == "statut_proprietaire"] <- 0.5
+  p$indicateurs$value[p$indicateurs$key == "statut" &
+                        p$indicateurs$detail == "proprietaire"] <- 0.5
   expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
                                 vintages = vintages_habitat(),
                                 validations = validations_habitat, apercu = APERCU_HABITAT),
                "statut")
+})
+
+test_that("validations_habitat : des parts d'âge du bâti qui ne somment pas à 1 -> erreur", {
+  p <- payload_habitat()
+  p$indicateurs$value[p$indicateurs$key == "age_du_bati" &
+                        p$indicateurs$detail == "lt1919" &
+                        p$indicateurs$territoire == "22001"] <- 0.5
+  expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
+                                vintages = vintages_habitat(),
+                                validations = validations_habitat, apercu = APERCU_HABITAT),
+               "age_du_bati")
+})
+
+test_that("validations_habitat : des parts de type qui ne somment pas à 1 -> erreur", {
+  p <- payload_habitat()
+  p$indicateurs$value[p$indicateurs$key == "type" &
+                        p$indicateurs$detail == "maison" &
+                        p$indicateurs$territoire == "22001"] <- 0.5
+  expect_error(validate_payload(p, indicateurs = INDICATEURS_HABITAT,
+                                vintages = vintages_habitat(),
+                                validations = validations_habitat, apercu = APERCU_HABITAT),
+               "type")
 })
 
 test_that("validations_habitat : la distribution DPE doit sommer à 1 (quand publiée)", {

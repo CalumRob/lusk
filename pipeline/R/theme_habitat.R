@@ -45,22 +45,34 @@ MANIFEST_HABITAT <- dplyr::bind_rows(
 # validation générique la vérifie). La source de référence est DÉCLARÉE, jamais
 # inférée : « la source du composant signature de l'indicateur ».
 #   - mix_logements (3) : une ligne par catégorie (principales/secondaires/
-#     vacants) — source logements (RP).
-#   - statut_anciennete_taille (14) : 3 statuts + 6 tranches d'ancienneté + 5
-#     tranches de taille — source logements (RP).
+#     vacants) — source logements (RP). Le scalaire classé est la part de
+#     résidences principales (issue #368 — plus de logements occupés, mieux ;
+#     la part de secondaires était classée low-is-good avant l'audit ordinal).
+#   - statut (4) : propriétaire / HLM (le parc social) / locataire du parc
+#     privé / logé gratuitement — le split de l'ancienne clé à 14 modalités
+#     (issue #368). Le scalaire classé est la part HLM (high-is-good).
+#   - age_du_bati (6) : les six tranches de la période d'achèvement (RP
+#     BUILD_END) — issue #368. Le scalaire classé est la part du parc d'avant
+#     1971 (low-is-good : le vieux bâti est dur à isoler, la tension DPE).
+#   - type (2) : maison / appartement — issue #368. Le scalaire classé est la
+#     part d'appartements (high-is-good).
 #   - prix_m2 (6) : une ligne poolée (detail NA, le headline classé) + une
 #     ligne par année de la fenêtre glissante (ANNEE_DVF, la série
 #     d'évolution) — source DVF. La référence est le millésime le plus récent
 #     de la fenêtre (dvf_2025_dep22) : la fraîcheur de la série poolée est
-#     celle de la livraison qui a régénéré la fenêtre.
+#     celle de la livraison qui a régénéré la fenêtre. Direction LOW depuis
+#     l'audit ordinal (issue #368) : un prix élevé pèse sur l'accès au
+#     logement — moins cher, mieux.
 #   - part_passoires (1) + distribution_dpe (7) : le F/G et les parts A–G de la
 #     distribution — source DPE (la base roulante, vintage = date du pull).
 INDICATEURS_HABITAT <- tibble::tibble(
-  key = c("mix_logements", "statut_anciennete_taille", "prix_m2",
+  key = c("mix_logements", "statut", "age_du_bati", "type", "prix_m2",
           "part_passoires", "distribution_dpe"),
   libelle = c(
     "Mix de logements",
-    "Statut d’occupation, ancienneté et taille",
+    "Statut d’occupation",
+    "Âge du bâti",
+    "Type de logement",
     "Médiane prix au m²",
     "Part de passoires thermiques",
     "Distribution des étiquettes DPE (A à G)"
@@ -68,13 +80,15 @@ INDICATEURS_HABITAT <- tibble::tibble(
   sources = list(
     "logements",
     "logements",
+    "logements",
+    "logements",
     MANIFEST_HABITAT_DVF$id,
     MANIFEST_HABITAT_DPE$id,
     MANIFEST_HABITAT_DPE$id
   ),
-  source_reference = c("logements", "logements", "dvf_2025_dep22",
-                       "dpe_22", "dpe_22"),
-  multiplicite = c(3L, 14L, 1L + length(ANNEE_DVF), 1L, 7L)
+  source_reference = c("logements", "logements", "logements", "logements",
+                       "dvf_2025_dep22", "dpe_22", "dpe_22"),
+  multiplicite = c(3L, 4L, 6L, 2L, 1L + length(ANNEE_DVF), 1L, 7L)
 )
 
 # La construction des données du thème ----------------------------------------
@@ -119,10 +133,11 @@ construire_donnees_habitat <- function(cache = "data/raw") {
 COLONNES_HABITAT_RP <- c(
   "logements", "logements_principales", "logements_secondaires",
   "logements_vacants",
-  "statut_proprietaire", "statut_locataire", "statut_loge_gratuit",
-  "anciennete_lt2", "anciennete_2_4", "anciennete_5_9", "anciennete_10_19",
-  "anciennete_20_29", "anciennete_30_plus",
-  "taille_r1", "taille_r2", "taille_r3", "taille_r4", "taille_5_plus"
+  "statut_proprietaire", "statut_hlm", "statut_locataire_prive",
+  "statut_loge_gratuit",
+  "bati_lt1919", "bati_1919_1945", "bati_1946_1970",
+  "bati_1971_1990", "bati_1991_2005", "bati_2006_plus",
+  "type_maison", "type_appartement"
 )
 
 # agreger_territoires_habitat : la part du thème côté stock — les comptes RP,
@@ -349,23 +364,22 @@ indicator_mix_logements <- function(territoires) {
     dplyr::select(code, key, detail, value, unit, n)
 }
 
-# 2. Statut d'occupation, ancienneté, taille : les 14 modalités (3 statuts + 6
-# tranches d'ancienneté + 5 tranches de taille) en part des résidences
-# principales. Le détail nomme la sous-métrique + la modalité (le nom de la
-# colonne). Indicateur de stock : n = NA. Le scalaire classé est la part de
-# locataires (documenté, Méthodes).
-indicator_statut_anciennete_taille <- function(territoires) {
+# 2. Statut d'occupation : les QUATRE parts (propriétaire / HLM — le parc
+# social — / locataire du parc privé / logé gratuitement) en part des
+# résidences principales (issue #368 — le split de l'ancienne clé à 14
+# modalités, la taille et l'ancienneté quittent le payload). Indicateur de
+# stock : n = NA. Le scalaire classé est la part HLM (documenté, Méthodes).
+indicator_statut <- function(territoires) {
   territoires %>%
     tidyr::pivot_longer(
-      cols = c(statut_proprietaire, statut_locataire, statut_loge_gratuit,
-               anciennete_lt2, anciennete_2_4, anciennete_5_9,
-               anciennete_10_19, anciennete_20_29, anciennete_30_plus,
-               taille_r1, taille_r2, taille_r3, taille_r4, taille_5_plus),
-      names_to = "detail",
+      cols = c(statut_proprietaire, statut_hlm, statut_locataire_prive,
+               statut_loge_gratuit),
+      names_to = "categorie",
       values_to = "effectif"
     ) %>%
     dplyr::mutate(
-      key = "statut_anciennete_taille",
+      key = "statut",
+      detail = sub("^statut_", "", categorie),
       value = effectif / logements_principales,
       unit = "%",
       n = NA_real_
@@ -373,7 +387,75 @@ indicator_statut_anciennete_taille <- function(territoires) {
     dplyr::select(code, key, detail, value, unit, n)
 }
 
-# 3. Médiane du prix au m² : une ligne poolée (detail = NA, le headline classé)
+# 3. Âge du bâti : les SIX tranches de la période d'achèvement (RP BUILD_END,
+# issue #368) en part du stock dont la période est CONNUE (la somme des six
+# tranches — le résidu « période inconnue » du RP, ~2,3 % des RP en Bretagne,
+# est un fait de la donnée, jamais une part fabriquée sur un total qui ne
+# ferme pas : la composition des âges s'affiche sur l'univers connu).
+# Indicateur de stock : n = NA. Le scalaire classé est la part du parc d'avant
+# 1971 (les trois tranches les plus anciennes — le stock d'avant la première
+# réglementation thermique, la tension DPE ; low-is-good).
+indicator_age_du_bati <- function(territoires) {
+  # le stock dont la période est connue : la somme des six tranches, calculée
+  # AVANT le pivot (les colonnes bati_* n'existent plus une fois en long) et
+  # rejointes par code — jamais un recyclage de vecteur qui mélangerait les
+  # communes
+  connu <- tibble::tibble(
+    code = territoires$code,
+    connu = territoires$bati_lt1919 + territoires$bati_1919_1945 +
+      territoires$bati_1946_1970 + territoires$bati_1971_1990 +
+      territoires$bati_1991_2005 + territoires$bati_2006_plus
+  )
+
+  territoires %>%
+    tidyr::pivot_longer(
+      cols = c(bati_lt1919, bati_1919_1945, bati_1946_1970,
+               bati_1971_1990, bati_1991_2005, bati_2006_plus),
+      names_to = "tranche",
+      values_to = "effectif"
+    ) %>%
+    dplyr::left_join(connu, by = "code") %>%
+    dplyr::mutate(
+      key = "age_du_bati",
+      detail = sub("^bati_", "", tranche),
+      value = effectif / connu,
+      unit = "%",
+      n = NA_real_
+    ) %>%
+    dplyr::select(code, key, detail, value, unit, n)
+}
+
+# 4. Type de logement : les parts maison / appartement (RP TDW, issue #368)
+# sur l'univers (maison + appartement) — la famille « autres logements de
+# métropole » (3T6, ~0,7 %) écartée comme les dépendances côté DVF : les deux
+# parts somment à 1. Indicateur de stock : n = NA. Le scalaire classé est la
+# part d'appartements (high-is-good).
+indicator_type <- function(territoires) {
+  # l'univers (maison + appartement) par code, rejoint AVANT le pivot — la
+  # famille « autres » (3T6) est écartée, les deux parts somment à 1
+  univers <- tibble::tibble(
+    code = territoires$code,
+    univers_type = territoires$type_maison + territoires$type_appartement
+  )
+
+  territoires %>%
+    tidyr::pivot_longer(
+      cols = c(type_maison, type_appartement),
+      names_to = "categorie",
+      values_to = "effectif"
+    ) %>%
+    dplyr::left_join(univers, by = "code") %>%
+    dplyr::mutate(
+      key = "type",
+      detail = sub("^type_", "", categorie),
+      value = effectif / univers_type,
+      unit = "%",
+      n = NA_real_
+    ) %>%
+    dplyr::select(code, key, detail, value, unit, n)
+}
+
+# 5. Médiane du prix au m² : une ligne poolée (detail = NA, le headline classé)
 # + une ligne par année de la fenêtre (la série d'évolution). Les valeurs et
 # les n viennent de la table des territoires (déjà supprimées : n < 10 -> NA).
 indicator_prix_m2 <- function(territoires) {
@@ -398,7 +480,7 @@ indicator_prix_m2 <- function(territoires) {
   dplyr::bind_rows(pool, annees)
 }
 
-# 4a. Part de passoires thermiques : le scalaire F/G (classé), déjà supprimé
+# 6a. Part de passoires thermiques : le scalaire F/G (classé), déjà supprimé
 # (n < 30 -> NA) ; n = le nombre d'équivalents-logements (somme des poids).
 indicator_part_passoires <- function(territoires) {
   tibble::tibble(
@@ -411,7 +493,7 @@ indicator_part_passoires <- function(territoires) {
   )
 }
 
-# 4b. Distribution des étiquettes DPE : les parts A–G, la donnée du graphique.
+# 6b. Distribution des étiquettes DPE : les parts A–G, la donnée du graphique.
 # Les parts viennent de la table des territoires (déjà supprimées si n < 30) ;
 # n est répété sur les 7 lignes.
 indicator_distribution_dpe <- function(territoires) {
@@ -436,7 +518,9 @@ indicator_distribution_dpe <- function(territoires) {
 construire_indicateurs_habitat <- function(territoires) {
   list(
     mix_logements = indicator_mix_logements(territoires),
-    statut_anciennete_taille = indicator_statut_anciennete_taille(territoires),
+    statut = indicator_statut(territoires),
+    age_du_bati = indicator_age_du_bati(territoires),
+    type = indicator_type(territoires),
     prix_m2 = indicator_prix_m2(territoires),
     part_passoires = indicator_part_passoires(territoires),
     distribution_dpe = indicator_distribution_dpe(territoires)
@@ -446,20 +530,38 @@ construire_indicateurs_habitat <- function(territoires) {
 # Les scalaires de classement du thème ----------------------------------------
 # Le scalaire classé par indicateur : la valeur elle-même pour les scalaires,
 # et pour les multi-valeurs la composante signature du classement (documenté,
-# Méthodes) :
-#   - mix_logements          -> la part de secondaires ;
-#   - statut_anciennete_taille -> la part de locataires (statut_locataire / RP) ;
+# Méthodes — l'audit ordinal de l'issue #368) :
+#   - mix_logements          -> la part de résidences principales (plus de
+#                               logements occupés, mieux — high-is-good) ;
+#   - statut                 -> la part HLM (le parc social — high-is-good) ;
+#   - age_du_bati            -> la part du parc d'avant 1971 (les trois
+#                               tranches les plus anciennes — le stock d'avant
+#                               la première réglementation thermique, la
+#                               tension DPE — low-is-good) ;
+#   - type                   -> la part d'appartements (high-is-good) ;
 #   - prix_m2                -> la médiane poolée (déjà NA si n < 10 : le rang
-#                               suit la suppression) ;
+#                               suit la suppression) — low-is-good (un prix
+#                               élevé pèse sur l'accès au logement) ;
 #   - distribution_dpe       -> la part F/G (la composante signature du
 #                               graphique — même classement que part_passoires) ;
 #   - part_passoires         -> la part F/G (héritée de la valeur).
 scalaires_habitat <- list(
   mix_logements = function(territoires) {
-    territoires$logements_secondaires / territoires$logements
+    territoires$logements_principales / territoires$logements
   },
-  statut_anciennete_taille = function(territoires) {
-    territoires$statut_locataire / territoires$logements_principales
+  statut = function(territoires) {
+    territoires$statut_hlm / territoires$logements_principales
+  },
+  age_du_bati = function(territoires) {
+    connu <- territoires$bati_lt1919 + territoires$bati_1919_1945 +
+      territoires$bati_1946_1970 + territoires$bati_1971_1990 +
+      territoires$bati_1991_2005 + territoires$bati_2006_plus
+    (territoires$bati_lt1919 + territoires$bati_1919_1945 +
+       territoires$bati_1946_1970) / connu
+  },
+  type = function(territoires) {
+    territoires$type_appartement /
+      (territoires$type_maison + territoires$type_appartement)
   },
   prix_m2 = function(territoires) {
     territoires$prix_m2_median
@@ -536,15 +638,17 @@ validations_habitat <- list(
     }
     invisible(payload)
   },
-  # statut / ancienneté / taille : chaque sous-métrique somme à 1 par territoire
+  # statut / âge du bâti / type : chaque clé SOMME à 1 par territoire (issue
+  # #368 — les quatre parts de statut et les deux parts de type partitionnent
+  # les RP ; les six tranches d'âge somment à 1 sur le stock connu)
   function(payload) {
-    tab <- payload$indicateurs[
-      payload$indicateurs$key == "statut_anciennete_taille", ]
-    tab$sous_metrique <- sub("_.*$", "", tab$detail)
-    parts <- stats::aggregate(value ~ territoire + sous_metrique, tab, sum)
-    if (any(abs(parts$value - 1) > 1e-6)) {
-      stop("Payload invalide : les parts de statut/ancienneté/taille ",
-           "ne somment pas à 1.", call. = FALSE)
+    for (cle in c("statut", "age_du_bati", "type")) {
+      tab <- payload$indicateurs[payload$indicateurs$key == cle, ]
+      parts <- stats::aggregate(value ~ territoire, tab, sum)
+      if (any(abs(parts$value - 1) > 1e-6)) {
+        stop("Payload invalide : les parts de « ", cle,
+             " » ne somment pas à 1.", call. = FALSE)
+      }
     }
     invisible(payload)
   },
@@ -624,16 +728,25 @@ theme_habitat <- function() {
     construire_indicateurs = construire_indicateurs_habitat,
     construire_apercu = construire_apercu_habitat,
     scalaires = scalaires_habitat,
-    # la désirabilité par clé (ADR-0015) : low-is-good — la part de passoires
-    # (l'indicateur de précarité énergétique), la distribution DPE (classée par
-    # la part F/G, le même fait) et le mix (classé par la part de secondaires —
-    # la tension logement, CONTEXT.md). Le prix (médiane poolée) et le
-    # statut/ancienneté/taille (part de locataires) restent high-is-good
-    # (défaut de la machinerie).
+    # la désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) —
+    # AUCUNE clé ne se repose sur le défaut high-is-good, chaque clé classée
+    # déclare SA direction :
+    #   - low-is-good : la part de passoires et la distribution DPE (le même
+    #     fait, la précarité énergétique), l'âge du bâti (classé par la part du
+    #     parc d'avant 1971 — le vieux stock est dur à isoler, la tension DPE)
+    #     et le prix au m² (un prix élevé pèse sur l'accès au logement) ;
+    #   - high-is-good : le mix (classé par la part de résidences principales —
+    #     plus de logements occupés, mieux), le statut (classé par la part HLM
+    #     — plus de logement social, mieux) et le type (classé par la part
+    #     d'appartements).
     directions = list(
+      mix_logements = "high",
+      statut = "high",
+      age_du_bati = "low",
+      type = "high",
+      prix_m2 = "low",
       part_passoires = "low",
-      distribution_dpe = "low",
-      mix_logements = "low"
+      distribution_dpe = "low"
     ),
     compute_histoires = compute_histoires_habitat,
     validations = validations_habitat,

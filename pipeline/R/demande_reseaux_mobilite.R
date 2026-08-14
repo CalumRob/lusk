@@ -27,23 +27,30 @@
 # Les fichiers longs MELODI du dossier complet (DS_RP_MENAGES_COMP,
 # DS_RP_POPULATION_PRINC) ne portent PAS les voitures — vérifié par un scan
 # complet des deux fichiers le 2026-08-06 (RP_MEASURE ∈ {DWELLINGS,
-# DWELLINGS_POPSIZE} pour le premier, {POP} pour le second). Les parts
-# « sans voiture » et « 2+ » sont le miroir de la demande : le pendant
-# quantitatif de l'offre d'accès du flagship.
+# DWELLINGS_POPSIZE} pour le premier, {POP} pour le second). Depuis l'issue
+# #368, les TROIS parties réelles (0 / 1 / 2+ voitures — C0 / C1 / C_GE2)
+# sont publiées : elles SOMMENT à 1 (la catégorie du milieu C1 était dans la
+# source et manquait au payload, qui ne publiait que sans_voiture / deux_plus).
+# Les parts sont le miroir de la demande : le pendant quantitatif de l'offre
+# d'accès du flagship. Le scalaire classé de la fiche est la part SANS voiture
+# (high-is-good — ADR-0015, la désirabilité par clé déclarée au descripteur).
 CLES_VOITURES_MOBILITE <- c(sans_voiture = "part_sans_voiture",
+                            une_voiture = "part_une_voiture",
                             deux_plus = "part_deux_plus")
 
 # calculer_voitures_communes ---------------------------------------------------
-# Les parts voitures/ménage COMMUNALES : part_sans_voiture = sans ÷ total et
-# part_deux_plus = deux-plus ÷ total, en fractions dans [0, 1] — jamais un
-# taux pour 100 (le contrat des parts). Le nombre de ménages (le total) est
+# Les parts voitures/ménage COMMUNALES : part_sans_voiture = sans ÷ total,
+# part_une_voiture = une ÷ total et part_deux_plus = deux-plus ÷ total, en
+# fractions dans [0, 1] — jamais un taux pour 100 (le contrat des parts). Les
+# trois parts somment à 1 par construction (C0 + C1 + C_GE2 = _T — la
+# dimension CARS partitionne les ménages). Le nombre de ménages (le total) est
 # porté comme POIDS : l'agrégation des niveaux est l'affaire
 # d'agreger_voitures_territoires. La garde de forme s'arrête sur un input
 # corrompu (une colonne manquante nomme le champ fautif) — jamais un succès
 # partiel silencieux. Déterministe : trié par commune.
 calculer_voitures_communes <- function(voitures) {
   requises <- c("commune", "menages_total", "menages_sans_voiture",
-                "menages_deux_plus")
+                "menages_une_voiture", "menages_deux_plus")
   manquantes <- setdiff(requises, names(voitures))
   if (length(manquantes) > 0) {
     stop("Voitures/ménage corrompu — colonne(s) requise(s) manquante(s) : ",
@@ -57,6 +64,7 @@ calculer_voitures_communes <- function(voitures) {
       commune = commune,
       menages = menages_total,
       part_sans_voiture = menages_sans_voiture / menages_total,
+      part_une_voiture = menages_une_voiture / menages_total,
       part_deux_plus = menages_deux_plus / menages_total
     ) %>%
     dplyr::arrange(commune)

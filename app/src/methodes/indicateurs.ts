@@ -298,28 +298,10 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         sourceId: 'logements',
         direction: 'plus-est-mieux',
       },
-      statut_anciennete_taille: {
-        label: 'Statut d’occupation, ancienneté et taille',
-        definition:
-          'Trois dimensions du parc de résidences principales : le statut d’occupation (propriétaire, locataire, logé gratuitement), l’ancienneté d’emménagement (de moins de 2 ans à 30 ans et plus) et la taille du logement (du studio aux 5 pièces et plus), chacune en part du parc concerné. Ce regroupement est remplacé par le découpage en trois indicateurs distincts — statut d’occupation, âge du bâti et type de logement (#367) : la clé reste documentée tant que la payload commise la porte.',
-        unite: '%',
-        source: 'INSEE — Logements (dossier complet)',
-        sourceId: 'logements',
-        direction: 'plus-est-mieux',
-      },
       statut: {
         label: 'Statut d’occupation',
         definition:
-          'La répartition des résidences principales selon leur occupation — propriétaire occupant, locataire, logé gratuitement — en part du parc concerné. Le classement lit la part des logements sociaux (HLM) : plus elle est élevée, plus le parc offre de logement locatif social, le pendant public de la tension avec le marché (prix au m²).',
-        unite: '%',
-        source: 'INSEE — Logements (dossier complet)',
-        sourceId: 'logements',
-        direction: 'plus-est-mieux',
-      },
-      type: {
-        label: 'Maisons et appartements',
-        definition:
-          'La répartition des résidences principales entre maisons et appartements, en part du parc concerné. Le classement lit la part des appartements : plus elle est élevée, plus l’offre est dense — le pendant de la tension entre l’étalement et l’intensité urbaine.',
+          'L’occupation des résidences principales, en quatre parts : propriétaire, locataire HLM (le parc social), locataire du parc privé et logé gratuitement. Le poids du logement social et la part des propriétaires lisent la tension du parc (issue #368 : l’ancienne clé à 14 modalités — occupation, ancienneté et taille confondus — est scindée, la taille n’est plus publiée).',
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
@@ -328,11 +310,20 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       age_du_bati: {
         label: 'Âge du bâti',
         definition:
-          'La répartition des résidences principales par époque d’achèvement du bâtiment (avant 1946, de 1946 à 1970, de 1971 à 1990, de 1991 à 2005, de 2006 à 2015, 2016 et après), en part du parc concerné. Le classement lit la part des logements anciens : un parc ancien est plus difficile à isoler — la tension directe avec l’état énergétique du parc (passoires thermiques, DPE).',
+          'La période d’achèvement des résidences principales, en six tranches (d’avant 1919 à 2006 et après), en part du stock dont la période est connue. Le vieux bâti est le plus dur à isoler — la part du parc d’avant 1971 (avant la première réglementation thermique) est la tension DPE de la commune. La période inconnue du recensement (~2 % des résidences principales) est un fait de la donnée, hors de l’univers publié.',
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
         direction: 'moins-est-mieux',
+      },
+      type: {
+        label: 'Type de logement',
+        definition:
+          'La répartition des résidences principales entre maisons et appartements, en part de l’univers (maison + appartement) — les autres logements de métropole (~1 %), hors de l’univers comme les dépendances côté prix. La part d’appartements signale la densité du bâti.',
+        unite: '%',
+        source: 'INSEE — Logements (dossier complet)',
+        sourceId: 'logements',
+        direction: 'plus-est-mieux',
       },
       prix_m2: {
         label: 'Médiane prix au m²',
@@ -475,16 +466,6 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
   // ---- Mobilité (docs/themes/mobilite.md, ADR-0012) ----
   mobilite: {
     indicateurs: {
-      nb_buildings: {
-        label: 'Bâtiments résidentiels',
-        definition:
-          'Le nombre de bâtiments résidentiels du territoire, comptés un à un par l’analyse d’accessibilité. Chaque bâtiment est le point de départ d’un trajet à pied ou en transports en commun : c’est sur cet ensemble que se calculent la part des bâtiments isolés et la perte de diversité. Le comptage sort de la fiche avec le suivi #367 — la clé reste documentée tant que la payload commise la porte.',
-        unite: 'bâtiments',
-        source:
-          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
-        sourceId: 'mobilite_snapshot',
-        direction: 'plus-est-mieux',
-      },
       voitures_menage: {
         label: 'Voitures par ménage',
         definition:

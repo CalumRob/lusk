@@ -236,7 +236,8 @@ construire_territoires_economie <- function(base_epci, analytiques) {
 # Les tables sont ALIGNÉES sur la référence (left_join sur les codes de
 # territoires) : un territoire sans donnée porte NA — jamais une ligne
 # manquante (la multiplicité 1 de la table déclarative l'exige).
-construire_indicateurs_economie <- function(analytiques, territoires, vintages) {
+construire_indicateurs_economie <- function(analytiques, territoires, vintages,
+                                            directions = DIRECTIONS_ECONOMIE) {
   aligner <- function(table_agregee, key, unit) {
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
       dplyr::transmute(
@@ -252,7 +253,8 @@ construire_indicateurs_economie <- function(analytiques, territoires, vintages) 
     eco_activites = aligner(analytiques$eco_territoires, "eco_activites", "%")
   )
 
-  rangs <- compute_ranks(territoires, tables, scalaires = list())
+  rangs <- compute_ranks(territoires, tables, scalaires = list(),
+                         directions = directions)
 
   assembler_indicateurs(territoires, tables, rangs, theme = "economie",
                         indicateurs_table = INDICATEURS_ECONOMIE,
@@ -356,7 +358,10 @@ construire_payload_economie <- function(analytiques, base_epci, vintages) {
   territoires <- construire_territoires_economie(base_epci, analytiques)
 
   payload <- list(
-    indicateurs = construire_indicateurs_economie(analytiques, territoires, vintages),
+    indicateurs = construire_indicateurs_economie(
+      analytiques, territoires, vintages,
+      directions = DIRECTIONS_ECONOMIE
+    ),
     # Issue #312 : la lecture résolue par (territoire, groupe) — le top-5
     # replié en paramètres, le groupe de fiche et la raison de saillance
     # portés par la résolution partagée (resoudre_histoires)
@@ -399,12 +404,15 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
 # MEMBRES_DESCRIPTEUR_ECONOMIE -------------------------------------------------
 # Les membres requis du descripteur — le contrat de FORME du thème (ce que la
 # machinerie partagée consomme : theme, manifest, vintages, construire_donnees
-# — et ce que T8 branche : construire_analytiques, publier). La même idée que
+# — et ce que T8 branche : construire_analytiques, publier). `directions`
+# est requis depuis l'audit ordinal de l'issue #368 : chaque clé classée
+# déclare SA désirabilité (ADR-0015) — un descripteur sans déclaration se
+# reposerait sur le défaut high-is-good. La même idée que
 # les contrats de manifeste des fragments (verifier_contrat_flores, ...) :
 # un descripteur incomplet échoue FORT, en nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_ECONOMIE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier", "metadata"
+  "construire_analytiques", "publier", "directions", "metadata"
 )
 
 # verifier_descripteur_economie -------------------------------------------------
@@ -421,6 +429,23 @@ verifier_descripteur_economie <- function(descripteur) {
   invisible(TRUE)
 }
 
+# DIRECTIONS_ECONOMIE ----------------------------------------------------------
+# La désirabilité par clé (ADR-0015, l'audit ordinal de l'issue #368) — AUCUNE
+# clé ne se repose sur le défaut high-is-good : le chômage est low-is-good (la
+# plus petite valeur est la meilleure — la machinerie du payload la consomme
+# dans construire_indicateurs_economie, corrigeant le défaut silencieux qui
+# classait le chômage high) ; les effectifs salariés et la part des
+# éco-activités sont high-is-good (explicites). La constante est la SOURCE
+# UNIQUE : le descripteur (theme_economie) et la machinerie de rangs
+# (construire_indicateurs_economie / construire_payload_economie) la
+# consomment — jamais un appel à theme_economie() depuis un builder (le graphe
+# targets ne peut pas suivre le cycle descriptor → builder → descriptor).
+DIRECTIONS_ECONOMIE <- list(
+  effectifs_salaries = "high",
+  chomage = "low",
+  eco_activites = "high"
+)
+
 # theme_economie ---------------------------------------------------------------
 # Le descripteur du thème Économie/Emploi : la même forme de contrat que
 # theme_demographie() / theme_habitat(), avec les pièces du thème. Le
@@ -435,6 +460,10 @@ theme_economie <- function() {
     construire_donnees = construire_donnees_economie,
     construire_analytiques = construire_analytiques_economie,
     publier = publier_economie,
+    # la désirabilité par clé — la constante DIRECTIONS_ECONOMIE (l'audit
+    # ordinal de l'issue #368 : aucune clé ne se repose sur le défaut
+    # high-is-good, le chômage est low-is-good)
+    directions = DIRECTIONS_ECONOMIE,
     # Issue #311 : les métadonnées du thème (le fichier épinglé
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits

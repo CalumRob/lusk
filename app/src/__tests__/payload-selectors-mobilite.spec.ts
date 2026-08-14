@@ -41,9 +41,9 @@ const payloadMobilite: Payload = {
   themeMetadata: { mobilite: metadonneesThemesFixtures.mobilite },
 }
 
-/** L'ordre de la fiche — le registre indicator_keys de la métadonnée Mobilité. */
+/** L'ordre de la fiche — le registre indicator_keys de la métadonnée Mobilité
+ *  (onze clés depuis l'issue #368 — `nb_buildings` a quitté le payload). */
 const ORDRE_METADONNEES = [
-  'nb_buildings',
   'voitures_menage',
   'reseaux',
   'offre_tc',
@@ -58,7 +58,7 @@ const ORDRE_METADONNEES = [
 ]
 
 describe('indicateursPourTerritoire — the Mobilité block in the metadata order', () => {
-  it('returns the 12 keys in the fiche order (the metadata indicator_keys, #318)', () => {
+  it('returns the 11 keys in the fiche order (the metadata indicator_keys, #318)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     expect(groupes.map((g) => g.key)).toEqual(ORDRE_METADONNEES)
@@ -71,15 +71,14 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
         'mobilite',
         territoire,
       ).map((g) => g.key)
-      expect(cles[0]).toBe('nb_buildings')
-      expect(cles.slice(1, 4)).toEqual(['voitures_menage', 'reseaux', 'offre_tc'])
+      expect(cles[0]).toBe('voitures_menage')
+      expect(cles.slice(1, 4)).toEqual(['reseaux', 'offre_tc', 'bornes_recharge'])
       expect(cles.slice(4, 7)).toEqual([
-        'bornes_recharge',
         'places_stationnement_velo_1000',
         'offre_cyclable',
+        'iso_alimentation',
       ])
       expect(cles.slice(7)).toEqual([
-        'iso_alimentation',
         'iso_sante',
         'iso_administration',
         'iso_ecole',
@@ -97,16 +96,19 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
   it('carries the real payload values — the 5 parts d’isolation en % de bâtiments sans accès', () => {
     const lignes = indicateursPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
-    expect(lignes[0]).toMatchObject({ value: 168, unit: 'bâtiments' })
     const grille = lignes.filter((l) => l.key.startsWith('iso_'))
     expect(grille.map((l) => formaterValeur(l))).toEqual(['100', '100', '64', '100', '100'])
   })
 
-  it('keeps the multi-detail keys as one key (voitures_menage ×2, reseaux ×6, offre_cyclable ×5)', () => {
+  it('keeps the multi-detail keys as one key (voitures_menage ×3, reseaux ×6, offre_cyclable ×5)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     const voitures = groupes.find((g) => g.key === 'voitures_menage')
-    expect(voitures?.lignes.map((l) => l.detail)).toEqual(['deux_plus', 'sans_voiture'])
+    expect(voitures?.lignes.map((l) => l.detail)).toEqual([
+      'deux_plus',
+      'sans_voiture',
+      'une_voiture',
+    ])
     const reseaux = groupes.find((g) => g.key === 'reseaux')
     expect(reseaux?.lignes.map((l) => l.detail)).toEqual([
       'b_densite',

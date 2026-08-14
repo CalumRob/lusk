@@ -26,16 +26,20 @@ test_that("MANIFEST_HABITAT : les trois fragments + la base des EPCI partagée",
   expect_equal(m$mode[m$id == "logements"], "cron")
 })
 
-test_that("INDICATEURS_HABITAT : les 5 clés, multiplicité comprise", {
+test_that("INDICATEURS_HABITAT : les 7 clés, multiplicité comprise", {
   tab <- INDICATEURS_HABITAT
   expect_named(tab, c("key", "libelle", "sources", "source_reference",
                       "multiplicite"))
-  expect_setequal(tab$key, c("mix_logements", "statut_anciennete_taille",
-                             "prix_m2", "part_passoires", "distribution_dpe"))
-  # 3 catégories ; 3 statuts + 6 anciennetés + 5 tailles ; poolé + 5 années ;
-  # scalaire ; 7 étiquettes A-G
+  expect_setequal(tab$key, c("mix_logements", "statut", "age_du_bati",
+                             "type", "prix_m2", "part_passoires",
+                             "distribution_dpe"))
+  # 3 catégories ; 4 statuts (dont le HLM) ; 6 tranches d'âge ; 2 types ;
+  # poolé + 5 années ; scalaire ; 7 étiquettes A-G — l'ancienne clé à 14
+  # modalités est SPLIT (issue #368), la taille n'est plus publiée
   expect_equal(tab$multiplicite[tab$key == "mix_logements"], 3L)
-  expect_equal(tab$multiplicite[tab$key == "statut_anciennete_taille"], 14L)
+  expect_equal(tab$multiplicite[tab$key == "statut"], 4L)
+  expect_equal(tab$multiplicite[tab$key == "age_du_bati"], 6L)
+  expect_equal(tab$multiplicite[tab$key == "type"], 2L)
   expect_equal(tab$multiplicite[tab$key == "prix_m2"], 1L + length(ANNEE_DVF))
   expect_equal(tab$multiplicite[tab$key == "part_passoires"], 1L)
   expect_equal(tab$multiplicite[tab$key == "distribution_dpe"], 7L)
@@ -43,12 +47,12 @@ test_that("INDICATEURS_HABITAT : les 5 clés, multiplicité comprise", {
 
 test_that("INDICATEURS_HABITAT : chaque clé déclare sa source de référence", {
   tab <- INDICATEURS_HABITAT
-  # la source de référence est le composant signature : RP pour les deux
-  # indicateurs de stock, DVF (le millésime le plus récent de la fenêtre) pour
-  # le prix, DPE pour l'énergie
-  expect_equal(tab$source_reference[tab$key == "mix_logements"], "logements")
-  expect_equal(tab$source_reference[tab$key == "statut_anciennete_taille"],
-               "logements")
+  # la source de référence est le composant signature : RP pour les quatre
+  # indicateurs de stock (dont le split #368), DVF (le millésime le plus
+  # récent de la fenêtre) pour le prix, DPE pour l'énergie
+  for (cle in c("mix_logements", "statut", "age_du_bati", "type")) {
+    expect_equal(tab$source_reference[tab$key == cle], "logements")
+  }
   expect_equal(tab$source_reference[tab$key == "prix_m2"], "dvf_2025_dep22")
   expect_equal(tab$source_reference[tab$key == "part_passoires"], "dpe_22")
   expect_equal(tab$source_reference[tab$key == "distribution_dpe"], "dpe_22")
@@ -75,11 +79,14 @@ test_that("theme_habitat : le descripteur porte toutes les pièces du contrat", 
   expect_identical(th$indicateurs, INDICATEURS_HABITAT)
   # l'Aperçu : le thème déclare SA table déclarative (vide — gating par thème)
   expect_identical(th$apercu, APERCU_HABITAT)
-  # toutes les clés multi-valeurs déclarent un scalaire de classement
-  expect_setequal(names(th$scalaires), c("mix_logements",
-                                         "statut_anciennete_taille",
-                                         "prix_m2", "part_passoires",
-                                         "distribution_dpe"))
+  # toutes les clés multi-valeurs déclarent un scalaire de classement — et
+  # CHAQUE clé classée déclare SA direction (issue #368 : aucun défaut
+  # silencieux high-is-good)
+  expect_setequal(names(th$scalaires), c("mix_logements", "statut",
+                                         "age_du_bati", "type", "prix_m2",
+                                         "part_passoires", "distribution_dpe"))
+  expect_setequal(names(th$directions), INDICATEURS_HABITAT$key)
+  expect_true(all(unlist(th$directions) %in% c("high", "low")))
 })
 
 test_that("vintages_habitat : une ligne par source, dates de référence DVF", {

@@ -355,7 +355,7 @@ MANIFEST_MOBILITE_BATIMENTS <- tibble::tribble(
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "batiments_residentiels",
   "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l'offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
-  "file:///pipeline/data/raw/batiments_residentiels_bretagne.csv",
+  "file:///E:/Website/Data_handling/batiments_residentiels_bretagne.csv",
   "batiments_residentiels_bretagne.csv",
   "2025-07", "2025-07-31", "2026-08-06",
   "lov2",

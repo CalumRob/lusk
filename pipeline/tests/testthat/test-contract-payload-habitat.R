@@ -17,9 +17,9 @@ test_that("le payload couvre chaque territoire du fixture", {
   expect_setequal(unique(p$territoires$territoire), territoires_attendus)
 })
 
-test_that("chaque territoire porte les 5 clés avec leur multiplicité", {
+test_that("chaque territoire porte les 7 clés avec leur multiplicité", {
   p <- payload_habitat()
-  attentes <- c(mix_logements = 3, statut_anciennete_taille = 14,
+  attentes <- c(mix_logements = 3, statut = 4, age_du_bati = 6, type = 2,
                 prix_m2 = 1L + length(ANNEE_DVF), part_passoires = 1,
                 distribution_dpe = 7)
   for (code in unique(p$indicateurs$territoire)) {
@@ -62,9 +62,10 @@ test_that("la colonne n : publiée pour DVF/DPE, NA pour les stocks", {
   expect_true(all(!is.na(tab$n[tab$key == "prix_m2"])))
   expect_true(all(!is.na(tab$n[tab$key == "part_passoires"])))
   expect_true(all(!is.na(tab$n[tab$key == "distribution_dpe"])))
-  # les indicateurs de stock n'ont pas d'échantillon
-  expect_true(all(is.na(tab$n[tab$key == "mix_logements"])))
-  expect_true(all(is.na(tab$n[tab$key == "statut_anciennete_taille"])))
+  # les indicateurs de stock n'ont pas d'échantillon (le split #368 compris)
+  for (cle in c("mix_logements", "statut", "age_du_bati", "type")) {
+    expect_true(all(is.na(tab$n[tab$key == cle])), info = cle)
+  }
 })
 
 test_that("les histoires portent le schéma de l'état énergétique du parc", {
@@ -94,8 +95,8 @@ test_that("la table de référence porte les noms réels", {
 
 test_that("chaque indicateur est estampillé depuis sa source de référence", {
   p <- payload_habitat()
-  # RP : mix et statut/ancienneté/taille
-  for (cle in c("mix_logements", "statut_anciennete_taille")) {
+  # RP : mix et le split statut / âge du bâti / type (issue #368)
+  for (cle in c("mix_logements", "statut", "age_du_bati", "type")) {
     src <- unique(p$indicateurs$vintage_source[p$indicateurs$key == cle])
     expect_equal(src, "INSEE — Logements (dossier complet)", info = cle)
     expect_equal(unique(p$indicateurs$vintage_date_publication[
