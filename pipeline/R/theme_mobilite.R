@@ -683,12 +683,16 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
 # (commune → les communes de son EPCI, ou les communes de la région sans EPCI ;
 # EPCI → tous les EPCIs bretons ; département → les départements — ADR-0021)
 # avec la MACHINERIE PARTAGÉE rang_ordinal_par_groupe (compute.R) — l'ordinal
-# directionnel « Xᵉ / Y » (ADR-0015, high-is-good par défaut : plus de mesure,
-# mieux — les réseaux, le stationnement, l'offre), les NA exclus du
-# dénominateur. `territoires` est le squelette partagé du thème (la forme de
-# construire_territoires_mobilite). Sortie longue (code × key × detail × les
-# trois rangs et leurs tailles), triée par code puis détail — déterministe.
-construire_rangs_detail <- function(table_long, territoires) {
+# directionnel « Xᵉ / Y » (ADR-0015), les NA exclus du dénominateur. Depuis
+# l'audit ordinal de l'issue #368, AUCUN détail ne se repose sur le défaut
+# high-is-good : la direction de SA clé (la déclaration DIRECTIONS_MOBILITE —
+# high-is-good par design pour les trois clés multi-mesures : plus de mesure,
+# mieux) est passée à chaque rang_ordinal_par_groupe. `territoires` est le
+# squelette partagé du thème (la forme de construire_territoires_mobilite).
+# Sortie longue (code × key × detail × les trois rangs et leurs tailles),
+# triée par code puis détail — déterministe.
+construire_rangs_detail <- function(table_long, territoires,
+                                    directions = DIRECTIONS_MOBILITE) {
   groupes <- groupes_comparaison(territoires)
   tab <- dplyr::left_join(
     territoires[c("code", "type", "epci", "departement")],
@@ -698,15 +702,27 @@ construire_rangs_detail <- function(table_long, territoires) {
 
   dplyr::bind_rows(lapply(sort(unique(tab$detail)), function(detail) {
     lignes <- tab[tab$detail == detail, ]
+    cle <- unique(lignes$key)
+    # la direction DÉCLARÉE de la clé (issue #368 — aucune clé ne se repose sur
+    # le défaut high-is-good de rang_ordinal_par_groupe) ; une clé sans
+    # déclaration est une erreur de descripteur, jamais un défaut silencieux
+    if (!cle %in% names(directions)) {
+      stop("construire_rangs_detail : la clé « ", cle,
+           " » n'a pas de direction déclarée (DIRECTIONS_MOBILITE).",
+           call. = FALSE)
+    }
     tibble::tibble(
       code = lignes$code,
-      key = unique(lignes$key),
+      key = cle,
       detail = detail,
-      rang_epci = rang_ordinal_par_groupe(lignes$value, groupes$epci),
+      rang_epci = rang_ordinal_par_groupe(lignes$value, groupes$epci,
+                                          direction = directions[[cle]]),
       rang_epci_n = taille_groupe(lignes$value, groupes$epci),
-      rang_dep = rang_ordinal_par_groupe(lignes$value, groupes$dep),
+      rang_dep = rang_ordinal_par_groupe(lignes$value, groupes$dep,
+                                         direction = directions[[cle]]),
       rang_dep_n = taille_groupe(lignes$value, groupes$dep),
-      rang_reg = rang_ordinal_par_groupe(lignes$value, groupes$reg),
+      rang_reg = rang_ordinal_par_groupe(lignes$value, groupes$reg,
+                                         direction = directions[[cle]]),
       rang_reg_n = taille_groupe(lignes$value, groupes$reg)
     )
   })) %>%
@@ -951,12 +967,15 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
 # MEMBRES_DESCRIPTEUR_MOBILITE -------------------------------------------------
 # Les membres requis du descripteur — le contrat de FORME du thème (ce que la
 # machinerie partagée consomme : theme, manifest, vintages, construire_donnees
-# — et ce que le run branche : construire_analytiques, publier). La même idée
-# que MEMBRES_DESCRIPTEUR_ECONOMIE : un descripteur incomplet échoue FORT, en
+# — et ce que le run branche : construire_analytiques, publier). `directions`
+# est requis depuis l'audit ordinal de l'issue #368 : chaque clé classée
+# déclare SA désirabilité (ADR-0015) — un descripteur sans déclaration se
+# reposerait sur le défaut high-is-good. La même idée que
+# MEMBRES_DESCRIPTEUR_ECONOMIE : un descripteur incomplet échoue FORT, en
 # nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_MOBILITE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier", "metadata"
+  "construire_analytiques", "publier", "directions", "metadata"
 )
 
 # verifier_descripteur_mobilite -------------------------------------------------
