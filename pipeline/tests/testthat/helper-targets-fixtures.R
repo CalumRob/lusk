@@ -148,6 +148,24 @@ ecrire_source_toypkg <- function(projet, scenario) {
     "    compute = compute_fake_jetable,",
     "    publish = publish_fake_jetable",
     "  )",
+    "}",
+    "# Le verrou « données réelles » du mini-graphe (issue #342) : le lecteur",
+    "# d'entrée et le vérificateur — la même forme que les verifier_*_reel du",
+    "# graphe réel (le lecteur appelé PAR SYMBOLE depuis le vérificateur, le",
+    "# CHEMIN passé en argument par la cible de fichiers, un stop() bruyant",
+    "# sur un verrou cassé). La somme des bases du fichier d'entrée du",
+    "# scénario base (1 + 2 + 3 = 6) est le verrou.",
+    "lire_entree_toy <- function(chemin) {",
+    "  brute <- read.csv(chemin, stringsAsFactors = FALSE)",
+    "  brute",
+    "}",
+    "verifier_toy <- function(entree) {",
+    "  base <- lire_entree_toy(entree)",
+    "  if (sum(base$base) != 6) {",
+    "    stop(\"Verrou toy cassé : la somme de base vaut \", sum(base$base),",
+    "         \" (attendu 6).\")",
+    "  }",
+    "  invisible(TRUE)",
     "}"
   )
   writeLines(src, file.path(projet, "toypkg", "R", "toy.R"))
@@ -181,9 +199,15 @@ editer_fonction_toypkg <- function(projet, motif, remplacement) {
 # Le mini-graphe : la même forme que le graphe réel — download (statuts) ->
 # fichiers du cache (format = "file", fraîcheur par contenu) -> construire ->
 # vintages -> compute -> publish, plus le rapport de run en target indépendant
-# réestampillé à chaque run (tar_cue mode = "always"). Les commandes appellent
-# les fonctions du thème PAR SYMBOLE (le suivi d'imports les hashe) ; le
-# manifeste et les chemins sont des variables du script (hashées par valeur).
+# réestampillé à chaque run (tar_cue mode = "always") et, depuis l'issue
+# #342, le VERROU « données réelles » (verif_toy) : un target LEAF piloté par
+# SES entrées — le vérificateur appelé PAR SYMBOLE reçoit le CHEMIN de la
+# cible de fichiers (fichiers_toy, hash de contenu) en ARGUMENT (le suivi
+# d'imports hashe son corps et, transitivement, celui de SON lecteur
+# lire_entree_toy) — la même mécanique que les verif_*_reel du graphe réel.
+# Les commandes appellent les fonctions du thème PAR SYMBOLE (le suivi
+# d'imports les hashe) ; le manifeste et les chemins sont des variables du
+# script (hashées par valeur).
 # `avec_rapport = FALSE` sert au test de skip qui n'a pas besoin du rapport.
 ecrire_mini_graphe <- function(projet, avec_rapport = TRUE) {
   rapport <- c(
@@ -205,19 +229,23 @@ ecrire_mini_graphe <- function(projet, avec_rapport = TRUE) {
     '  tar_target(fichiers_toy, { sources_toy; file.path(CACHE_RUN, manifeste$fichier) }, format = "file"),',
     "  tar_target(brut_toy, { fichiers_toy; construire_fake(cache = CACHE_RUN) }),",
     "  tar_target(vintages_toy, vintages_fake()),",
-    "  tar_target(payload_toy, compute_fake(brut_toy)),"
+    "  tar_target(payload_toy, compute_fake(brut_toy)),",
+    '  tar_target(publie_toy, publish_fake(payload_toy, file.path(SORTIE_RUN, "out.txt")), format = "file"),'
   )
   if (avec_rapport) {
+    # le verrou porte la virgule — le rapport ferme la liste. Le verrou
+    # reçoit SON entrée en ARGUMENT (la cible de fichiers, comme le graphe
+    # réel passe ses fichier_<theme>_<id> aux verifier_*_reel)
     lignes <- c(
       lignes,
-      '  tar_target(publie_toy, publish_fake(payload_toy, file.path(SORTIE_RUN, "out.txt")), format = "file"),',
+      '  tar_target(verif_toy, verifier_toy(entree = fichiers_toy)),',
       rapport
     )
   } else {
     # pas de virgule finale — R évalue un argument vide en erreur
     lignes <- c(
       lignes,
-      '  tar_target(publie_toy, publish_fake(payload_toy, file.path(SORTIE_RUN, "out.txt")), format = "file")'
+      '  tar_target(verif_toy, verifier_toy(entree = fichiers_toy))'
     )
   }
   lignes <- c(lignes, ")")

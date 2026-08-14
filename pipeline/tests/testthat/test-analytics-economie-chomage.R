@@ -409,61 +409,8 @@ test_that("persister_chomage_economie : table + rapport de suppression sous data
                "data/processed/economie")
 })
 
-# 4. Données réelles : la table et le taux sur les 1202 communes -----------------
-
-# Les tables réelles vivent sous pipeline/data/ (gitignoré) — résolues par
-# rapport au dossier des tests, comme test-analytics-economie-green.R.
-chemin_reel_chomage <- function(fichier) {
-  file.path(testthat::test_path("..", ".."),
-            "data", "processed", "economie", fichier)
-}
-
-test_that("données réelles : rp_chomage.rds couvre 1202 communes × 3 mesures, aucun doublon", {
-  chemin <- chemin_reel_chomage("rp_chomage.rds")
-  skip_sans_donnees_reelles(file.exists(chemin),
-              "la table réelle n'est pas présente (data/ est gitignoré)")
-
-  rp <- readr::read_rds(chemin)
-
-  # acceptance : 1202 communes bretonnes × les 3 mesures du contrat
-  expect_equal(length(unique(rp$commune)), 1202)
-  expect_equal(nrow(rp), 1202 * 3)
-  expect_equal(anyDuplicated(rp[c("commune", "measure")]), 0L)
-  expect_setequal(rp$measure, c("chomeurs", "actifs_occupes", "population_active"))
-  # le concept et la provenance
-  expect_true(all(rp$concept == CONCEPT_RP_CHOMAGE))
-  expect_true(all(rp$source == "rp_chomage"))
-  expect_true(all(rp$vintage == "2023"))
-  # les 1202 communes couvrent les quatre départements bretons
-  expect_setequal(unique(substr(rp$commune, 1, 2)), c("22", "29", "35", "56"))
-})
-
-test_that("données réelles : chomage_economie.rds = commune × 1 taux dans [0,1], aucune suppression", {
-  chemin_rp <- chemin_reel_chomage("rp_chomage.rds")
-  skip_sans_donnees_reelles(file.exists(chemin_rp),
-              "la table réelle n'est pas présente (data/ est gitignoré)")
-
-  res <- construire_chomage_economie(readr::read_rds(chemin_rp))
-  d <- res$table
-
-  # acceptance : 1202 communes, une ligne par commune, taux dans [0, 1]
-  expect_equal(nrow(d), 1202)
-  expect_equal(anyDuplicated(d$commune), 0L)
-  expect_true(all(d$taux_chomage >= 0 & d$taux_chomage <= 1))
-  # aucune commune sans taux calculable sur le réel (chaque commune porte ses
-  # trois mesures) — le rapport de suppression est vide
-  expect_equal(sum(is.na(d$taux_chomage)), 0)
-  expect_equal(nrow(res$suppression), 0)
-  # la cohérence structurelle 1T2 = 1 + 2 tient sur les 1202 communes — au
-  # dernier arrondi près : INSEE publie la population active (1T2) et la somme
-  # actifs occupés + chômeurs indépendamment, à 5 décimales (vérifié sur le
-  # réel : écart maximal 1e-5, relatif ~3e-7)
-  expect_equal(d$population_active,
-               d$actifs_occupes + d$chomeurs, tolerance = 1e-4)
-
-  # l'indicateur persisté existe et est exactement la table calculée
-  chemin_ind <- chemin_reel_chomage("chomage_economie.rds")
-  skip_sans_donnees_reelles(file.exists(chemin_ind),
-              "l'indicateur persisté n'est pas présent (data/ est gitignoré)")
-  expect_identical(readr::read_rds(chemin_ind), d)
-})
+# Le verrou « données réelles » (la table rp_chomage et le taux sur les 1202
+# communes — le worktree pipeline/data/, gitignoré) vit désormais dans le
+# graphe targets (verif_economie_chomage, _targets.R — le run de l'issue
+# #342) : il rejoue quand la source RP Chômage ou un lecteur change, saute
+# sinon — sans variable d'environnement à retenir.

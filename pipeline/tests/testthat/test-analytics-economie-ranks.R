@@ -115,15 +115,11 @@ fixture_chomage_rangs <- function() {
   )
 }
 
-# Les chemins réels (gitignorés ; absents hors worktree — les tests sautent
-# proprement sur une machine sans la donnée)
-chemin_reel_rangs <- function(fichier) {
-  testthat::test_path("..", "..", "data", "processed", "economie", fichier)
-}
-chemin_epci_reel <- function() {
-  testthat::test_path("..", "..", "data", "raw", "extracted",
-                      "EPCI_au_01-01-2025.xlsx")
-}
+# Le verrou « données réelles » (les rangs des quatre indicateurs sur les
+# tables réelles du worktree — pipeline/data/, gitignoré) vit désormais dans
+# le graphe targets (verif_economie_rangs, _targets.R — le run de l'issue
+# #342) : il rejoue quand une source ou un lecteur change, saute sinon — sans
+# variable d'environnement à retenir.
 
 # 1. LQ (T1) : une cellule est classée dans (activité × groupe) ---------------
 
@@ -414,118 +410,4 @@ test_that("construire_rangs_analytiques_economie attache et persiste les quatre 
   # (gate : histoires_lq_economie / m_economie / dormitory ne sont pas écrits)
   expect_false(any(grepl("histoires|m_economie|dormitory|fiche|payload",
                          list.files(sortie))))
-})
-
-# 8. Le chemin de joie RÉEL ------------------------------------------------------
-
-test_that("données réelles : les rangs LQ sur les 1202 communes, ordinaux", {
-  chemin <- chemin_reel_rangs("sirene_snapshot.rds")
-  skip_sans_donnees_reelles(file.exists(chemin),
-              "la vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
-
-  snapshot <- readRDS(chemin)
-  lq <- construire_analytique_lq_economie(snapshot)$lq
-  base_epci <- lire_epci(chemin_epci_reel())
-
-  r <- attacher_rangs_lq(lq, base_epci)
-
-  # une ligne par cellule commune × activité, les rangs attachés
-  expect_equal(nrow(r), nrow(lq))
-  expect_true(all(c("rang_epci", "rang_dep", "rang_reg") %in% names(r)))
-  # 1202 communes couvertes (0 suppression au plancher gate D)
-  expect_equal(dplyr::n_distinct(r$commune), 1202)
-  # les rangs sont des ordinaux (entiers >= 1, 1 = meilleur) ou NA. La SEULE
-  # exception : les trois îles sans EPCI (22016/29083/29155 — fix #131) portent
-  # rang_epci = NA (aucun groupe de comparaison à ce niveau), jamais un rang
-  # inventé — elles se classent parmi les communes de la région (le repli
-  # ADR-0021, rang_reg).
-  for (col in c("rang_reg")) {
-    expect_true(all(is.na(r[[col]]) | (r[[col]] >= 1 & r[[col]] == floor(r[[col]]))))
-  }
-  expect_true(all(is.na(r$rang_dep)))
-  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
-                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
-                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
-                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
-  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
-  # déterministe
-  expect_identical(r, attacher_rangs_lq(lq, base_epci))
-})
-
-test_that("données réelles : les rangs de la LQ d'emploi A88 sur les 1196 communes retenues", {
-  chemin <- chemin_reel_rangs("flores_a88.rds")
-  skip_sans_donnees_reelles(file.exists(chemin),
-              "la vraie table flores_a88 n'est pas présente (worktree sans donnée).")
-
-  flores <- readRDS(chemin)
-  lq_emploi <- calculer_lq_emploi_flores(flores, "A88")$lq
-  base_epci <- lire_epci(chemin_epci_reel())
-
-  r <- attacher_rangs_lq_emploi(lq_emploi, base_epci)
-
-  # 1196 communes (1202 − 6 supprimées au plancher gate D), rangs ordinaux.
-  # Les îles sans EPCI (fix #131) retenues au plancher portent rang_epci = NA.
-  expect_equal(dplyr::n_distinct(r$commune), 1196)
-  expect_equal(nrow(r), nrow(lq_emploi))
-  expect_true(all(is.na(r$rang_dep)))
-  expect_true(all(is.na(r$rang_reg) |
-                    (r$rang_reg >= 1 & r$rang_reg == floor(r$rang_reg))))
-  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
-                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
-                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
-                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
-  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
-})
-
-test_that("données réelles : les rangs du score vert sur les 1202 communes", {
-  chemin <- chemin_reel_rangs("sirene_snapshot.rds")
-  skip_sans_donnees_reelles(file.exists(chemin),
-              "la vraie table sirene_snapshot n'est pas présente (worktree sans donnée).")
-
-  snapshot <- readRDS(chemin)
-  eco <- construire_eco_activites_economie(snapshot, artefact_egss())$table
-  base_epci <- lire_epci(chemin_epci_reel())
-
-  r <- attacher_rangs_eco_activites(eco, base_epci)
-
-  # 1202 communes, 0 suppression (min 10 établissements), rangs ordinaux.
-  # Les îles sans EPCI (fix #131) portent rang_epci = NA, jamais inventé.
-  expect_equal(nrow(r), 1202)
-  expect_true(all(is.na(r$rang_dep)))
-  expect_true(all(is.na(r$rang_reg) |
-                    (r$rang_reg >= 1 & r$rang_reg == floor(r$rang_reg))))
-  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
-                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
-                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
-                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
-  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
-})
-
-test_that("données réelles : les rangs du chômage sur les 1202 communes", {
-  # rp_chomage.rds est produit par la normalisation chômage (source RP
-  # DS_RP_EMPLOI_LR_PRINC, téléchargée à part) — absente d'un worktree sans la
-  # donnée, le test saute proprement (comme les autres tests réels du chômage)
-  chemin_rp <- chemin_reel_rangs("rp_chomage.rds")
-  skip_sans_donnees_reelles(file.exists(chemin_rp),
-              "la vraie table rp_chomage n'est pas présente (worktree sans donnée).")
-
-  rp <- readRDS(chemin_rp)
-  chomage <- construire_chomage_economie(rp)$table
-  base_epci <- lire_epci(chemin_epci_reel())
-
-  r <- attacher_rangs_chomage(chomage, base_epci)
-
-  # 1202 communes, une ligne par commune, rangs ordinaux (le chômage est
-  # low-is-good : la plus petite valeur est 1re). Les îles sans EPCI (fix
-  # #131) portent rang_epci = NA, jamais inventé.
-  expect_equal(nrow(r), 1202)
-  expect_equal(anyDuplicated(r$commune), 0L)
-  expect_true(all(is.na(r$rang_dep)))
-  expect_true(all(is.na(r$rang_reg) |
-                    (r$rang_reg >= 1 & r$rang_reg == floor(r$rang_reg))))
-  expect_true(all(is.na(r$rang_epci[!r$commune %in% ILES_BRETAGNE]) |
-                    (r$rang_epci[!r$commune %in% ILES_BRETAGNE] >= 1 &
-                       r$rang_epci[!r$commune %in% ILES_BRETAGNE] ==
-                         floor(r$rang_epci[!r$commune %in% ILES_BRETAGNE]))))
-  expect_setequal(unique(r$commune[is.na(r$rang_epci)]), ILES_BRETAGNE)
 })
