@@ -9,7 +9,8 @@
 # rapport de run) vers public/data/ à la racine du dépôt, committé et servi
 # par l'hôte statique (Pages). L'orchestration est volontairement mince : toute
 # la logique de décision vit dans le package R (le GRAPHE targets #329,
-# detecter_changement, run-report.json) et y est testée. Le cron hebdomadaire
+# detecter_changement, executer_graphe_cron, run-report.json) et y est testée.
+# Le cron hebdomadaire
 # ne tourne que les trois thèmes légers du graphe (voir « Orchestration ») :
 # le run complet — les six thèmes incl. le payload partagé Programmes — reste
 # le contrat du graphe et devient le cron quand #338 + le budget de
@@ -40,14 +41,14 @@
 #   « manuel » sautées sans échec) et la sémantique #8/#10 du rapport aussi :
 #   le rapport de run est un target INDÉPENDANT des étapes aval, réestampillé
 #   à chaque run et écrit même quand une cible échoue (tar_option_set error =
-#   "continue"). Un échec de cible ne fait donc PAS lever tar_make : l'étape
-#   build détecte les cibles en échec (tar_errored) et en fait un exit non nul
-#   — le run reste rouge (l'étape « Signaler l'échec du build ») et la trace
-#   (le rapport, committé par la décision commit/skip) est committée comme
-#   avant. Quand le TÉLÉCHARGEMENT lui-même échoue, le DAG n'écrit aucun
-#   rapport (les rapports dépendent des sources) : l'étape build écrit alors
-#   le rapport d'échec (statuts « échec » portés par l'erreur, issue #8) — la
-#   responsabilité du câblage cron, documentée dans _targets.R.
+#   "continue"). Un échec de cible ne fait donc PAS lever tar_make : le seam
+#   executer_graphe_cron() (R, testé) détecte les cibles en échec et en fait
+#   un exit non nul — le run reste rouge (l'étape « Signaler l'échec du
+#   build ») et la trace (le rapport, committé par la décision commit/skip)
+#   est committée comme avant. Quand le TÉLÉCHARGEMENT lui-même échoue, le DAG
+#   n'écrit aucun rapport (les rapports dépendent des sources) : le seam écrit
+#   alors le rapport d'échec (statuts « échec » portés par l'erreur, issue
+#   #8) — la responsabilité du câblage cron, documentée dans _targets.R.
 #
 # - Rebuild à froid assumé : le store _targets/ (gitignoré par
 #   pipeline/.gitignore) n'est PAS caché entre deux runs du runner — chaque
@@ -158,7 +159,7 @@ jobs:
             git archive HEAD public/data | tar -x -C "$RUNNER_TEMP/commite"
           fi
 
-      - name: Build en mode cron — le graphe targets (exit capturé, le rapport s'écrit même sur échec)
+      - name: Build en mode cron — le graphe targets via executer_graphe_cron() (exit capturé, le rapport d'échec s'écrit dans le seam)
         id: build
         working-directory: pipeline
         shell: bash
@@ -176,7 +177,11 @@ jobs:
           LUSK_THEMES: "demographie,habitat,economie"
         run: |
           set +e
-          Rscript -e 'pkgload::load_all(); targets::tar_make(callr_function = NULL); err <- targets::tar_errored(); if (length(err) > 0) { rapport <- file.path("../public/data", "run-report.json"); if (!file.exists(rapport) && any(grepl("^sources_", err))) { statuts <- NULL; for (m in list(theme_demographie()$manifest, theme_habitat()$manifest, theme_economie()$manifest)) { statuts <- tryCatch(download_sources(m, cache = "data/raw", mode = "cron"), erreur_telechargement = function(e) e$statuts); if (any(statuts$status == "\u00e9chec")) break }; if (any(statuts$status == "\u00e9chec")) ecrire_rapport_run(statuts, "cron", "../public/data") }; quit(status = 1) }'
+          # toute la logique de décision vit dans le seam R testé
+          # executer_graphe_cron() (revue #386) — le YAML ne porte plus que
+          # l'appel ; le retour devient le code de sortie (0 = propre, 1 =
+          # cibles en échec), capturé ci-dessous sans arrêter l'étape
+          Rscript -e 'pkgload::load_all(); quit(status = if (executer_graphe_cron()) 0 else 1)'
           status=$?
           echo "build_exit=$status" >> "$GITHUB_OUTPUT"
           exit 0
