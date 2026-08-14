@@ -358,11 +358,11 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       distribution_dpe: {
         label: 'Distribution des étiquettes DPE (A à G)',
         definition:
-          'La répartition des étiquettes énergétiques du parc, de A à G, sur la même base que la part de passoires : c’est la visualisation de l’indicateur précédent, les parts F et G étant mises en évidence. La base mêle plusieurs régimes d’étiquetage — les réformes de 2024 et de 2026 ont rendu les diagnostics récents plus favorables, une limite de comparabilité documentée. La figure rend les étiquettes dans les couleurs officielles du DPE (A à G), jamais dans la palette du thème (#367).',
+          'La répartition des étiquettes énergétiques du parc, de A à G, sur la même base que la part de passoires : c’est la visualisation de l’indicateur précédent, les parts F et G étant mises en évidence. Une composition en sept parts — le classement lit la part des étiquettes F et G, la même valeur que la part de passoires : moins de F/G, c’est mieux. La base mêle plusieurs régimes d’étiquetage — les réformes de 2024 et de 2026 ont rendu les diagnostics récents plus favorables, une limite de comparabilité documentée. La figure rend les étiquettes dans les couleurs officielles du DPE (A à G), jamais dans la palette du thème (#367).',
         unite: '%',
         source: 'ADEME — Observatoire DPE, logements existants',
         sourceId: 'dpe_22',
-        direction: 'plus-est-mieux',
+        direction: 'moins-est-mieux',
       },
     },
     stories: [
@@ -597,22 +597,22 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       tot_loss_t: {
         label: 'Perte totale d’accès — à pied ou en transports en commun',
         definition:
-          'La lecture complémentaire de la perte de diversité : le volume total d’accès perdu quand la voiture est retirée, additionné sur l’ensemble des bâtiments du territoire et des services qu’ils atteignaient en voiture. Là où la perte de diversité compte les types de services, celle-ci compte le volume — les deux lectures se complètent sur la figure de la lecture.',
-        unite: 'types de services',
+          'La lecture complémentaire de la perte de diversité : le volume d’accès perdu quand la voiture est retirée. Pour chaque bâtiment, les services qu’il atteignait en voiture en 20 minutes et qu’il ne peut plus atteindre à pied ou en transports en commun ; la valeur publiée est la médiane de ce compte sur les bâtiments du territoire. Là où la perte de diversité compte les types de services, celle-ci compte le volume d’accès perdu — les deux lectures se complètent sur la figure de la lecture. Le classement se lit à l’envers : moins d’accès perdus, c’est mieux.',
+        unite: 'accès perdus',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
-        direction: 'plus-est-mieux',
+        direction: 'moins-est-mieux',
       },
       tot_loss_b: {
         label: 'Perte totale d’accès — à vélo',
         definition:
-          'La lecture complémentaire de la perte de diversité lue à vélo : le volume total d’accès perdu quand la voiture est retirée, en ne comptant que ce que la bicyclette préserve déjà. Comme la perte de diversité, elle se lit en regard de sa version à pied ou en transports en commun sur la figure de la lecture.',
-        unite: 'types de services',
+          'La lecture complémentaire de la perte de diversité lue à vélo : le volume d’accès perdu quand la voiture est retirée, en ne comptant que ce que la bicyclette préserve déjà — la médiane, sur les bâtiments du territoire, du nombre d’accès perdus par bâtiment. La lecture vélo est bornée pour ne jamais être pire que la lecture à pied (la même règle que la perte de diversité, ADR-0012). Comme elle, elle se lit en regard de sa version à pied ou en transports en commun sur la figure de la lecture. Le classement se lit à l’envers : moins d’accès perdus, c’est mieux.',
+        unite: 'accès perdus',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
-        direction: 'plus-est-mieux',
+        direction: 'moins-est-mieux',
       },
       iso_alimentation: {
         label: 'Part des bâtiments sans accès à l’alimentation',

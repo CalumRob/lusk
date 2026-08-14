@@ -418,12 +418,15 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
     }
     // iso_* ×5, part_passoires, chomage, div_loss_t/b, prix_m2, age_du_bati,
     // artif_par_habitant, conso_enaf_annuel, trajectoire_artif_par_habitant —
-    // plus places_stationnement_voiture_1000 (la direction « moins = mieux »
-    // verrouillée par le sourçage #369, CONTEXT.md 2026-08-12)
+    // plus places_stationnement_voiture_1000 (moins = mieux verrouillée par le
+    // sourçage #369, CONTEXT.md 2026-08-12), distribution_dpe (le classement
+    // lit la part F/G, la même valeur que part_passoires) et tot_loss_t/b (la
+    // perte totale d'accès — moins d'accès perdus, c'est mieux)
     expect(clefsMoins.sort()).toEqual(
       [
         'economie.chomage',
         'habitat.age_du_bati',
+        'habitat.distribution_dpe',
         'habitat.part_passoires',
         'habitat.prix_m2',
         'milieux.artif_par_habitant',
@@ -437,6 +440,8 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
         'mobilite.iso_ecole',
         'mobilite.iso_sante',
         'mobilite.places_stationnement_voiture_1000',
+        'mobilite.tot_loss_b',
+        'mobilite.tot_loss_t',
       ].sort(),
     )
   })
@@ -488,6 +493,22 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
     for (const clef of ['div_loss_t', 'div_loss_b', 'tot_loss_t', 'tot_loss_b']) {
       expect(THEMES_METHODES.mobilite.indicateurs[clef], `« mobilite.${clef} »`).toBeDefined()
     }
+    // tot_loss compte le VOLUME d'accès perdu (jamais des types de services) :
+    // la médiane sur les bâtiments, classée à l'envers (moins d'accès perdus = mieux)
+    for (const clef of ['tot_loss_t', 'tot_loss_b']) {
+      const totLoss = THEMES_METHODES.mobilite.indicateurs[clef]
+      expect(totLoss!.unite, `« mobilite.${clef} » sans unité de volume`).toBe('accès perdus')
+      expect(totLoss!.direction, `« mobilite.${clef} » non classée à l'envers`).toBe(
+        'moins-est-mieux',
+      )
+      expect(totLoss!.definition).toMatch(/médiane|médian/)
+    }
+    // distribution_dpe est une composition en sept parts classée sur la part
+    // F/G — la même valeur que part_passoires, jamais « plus = mieux »
+    const dpe = THEMES_METHODES.habitat.indicateurs.distribution_dpe
+    expect(dpe!.direction).toBe('moins-est-mieux')
+    expect(dpe!.definition).toMatch(/F et G|F\/G/)
+    expect(THEMES_METHODES.habitat.indicateurs.part_passoires!.direction).toBe('moins-est-mieux')
   })
 })
 
