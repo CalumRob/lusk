@@ -28,14 +28,17 @@
 #
 # Les fichiers PARTAGÉS du home public (territoires.*, vintages.*,
 # run-report.json) sont écrits par des cibles chaînées ou uniques — le DAG
-# produit la MÊME sortie que cinq run_pipeline() séquentiels (le cron) :
+# produit la MÊME sortie que six run_pipeline() séquentiels (le cron : les
+# CINQ thèmes + le payload partagé Programmes, #343) :
 #   - la référence des territoires est écrite par chaque publish ; le dernier
 #     thème de la chaîne publie_* gagne (comme le dernier appel du cron) ;
 #   - la table des vintages est FUSIONNÉE par UN target unique (fusion_vintages)
-#     qui upsert séquentiellement les cinq tables dans la table partagée sur
-#     disque, ids retirés du thème compris (retire_vintages, #243) ;
+#     qui upsert séquentiellement les tables des thèmes du run — les CINQ
+#     grappes + Programmes sur le run complet (issue #178) — dans la table
+#     partagée sur disque, ids retirés du thème compris (retire_vintages, #243) ;
 #   - run-report.json est écrit par les rapports de run chaînés, le dernier
-#     thème gagne.
+#     thème gagne (Programmes sur le run complet — le même dernier appel que
+#     le cron).
 
 library(targets)
 # Le workflow de dev : le paquet est chargé par pkgload::load_all ICI (dans
@@ -491,13 +494,14 @@ VERIFICATIONS_RUN <- list(
 )
 
 # VERIFICATIONS_PROGRAMMES -------------------------------------------------------
-# Les verrous des sources du thème Programmes (hors DAG : le payload partagé
-# programmes.json est écrit par le seam publier_programmes, jamais une grappe
-# du graphe). Câblés sur le run COMPLET SEULEMENT (LUSK_THEMES vide — le
-# cron) : le graphe télécharge alors les six sources du manifeste complet
-# (sources_programmes) et les verrous les vérifient ; un run restreint ne
-# force rien de tout cela. `args` suit la même convention que
-# VERIFICATIONS_RUN (nom du paramètre -> id du manifeste ou "epci").
+# Les verrous des sources du thème Programmes (hors DAG des CINQ thèmes : le
+# payload partagé programmes.json est publié par la chaîne programmes_publication,
+# #343 — le bloc des verrous, lui, ne fait que TÉLÉCHARGER et VÉRIFIER). Câblés
+# sur le run COMPLET SEULEMENT (LUSK_THEMES vide — le cron) : le graphe
+# télécharge alors les six sources du manifeste complet (sources_programmes) et
+# les verrous les vérifient ; un run restreint ne force rien de tout cela.
+# `args` suit la même convention que VERIFICATIONS_RUN (nom du paramètre -> id
+# du manifeste ou "epci").
 VERIFICATIONS_PROGRAMMES <- list(
   list(slug = "subventions",
        verifier = verifier_subventions_reel,
@@ -623,6 +627,70 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
   cibles
 }
 
+# programmes_publication -------------------------------------------------------
+# La publication du payload PARTAGÉ programmes (ADR-0013) dans le graphe : le
+# thème Programmes n'est pas un thème de THEMES_RUN (les CINQ thèmes du
+# payload par-thème — la porte byte-identical) mais le run COMPLET (le cron,
+# #343) publie SON payload partagé : programmes.json + les parquets par table
+# (ecrire_programmes_partage, le contrat « 404 = table absente »). Le
+# téléchargement est celui du bloc des verrous (sources_programmes — la même
+# source de vérité) ; la chaîne ajoute :
+#   - fichiers_programmes : les SIX fichiers du manifeste complet en cible
+#     format = "file" (fraîcheur PAR CONTENU, la même mécanique que
+#     fichiers_<thème>) — une source modifiée invalide le brut et la
+#     publication, sans jamais toucher au payload des cinq thèmes ;
+#   - brut_programmes : construire_donnees_programmes, appelé PAR SYMBOLE
+#     (le suivi d'imports hashe son corps et ses dépendances transitives) ;
+#   - vintages_table_programmes : vintages_programmes (la projection
+#     générique depuis le manifeste complet, SCDL comprise) — la table que la
+#     fusion PARTAGÉE des vintages upsert, au même rang que le cron séquentiel
+#     (issue #178) ;
+#   - publie_programmes : le seam publier_programmes appelé PAR SYMBOLE avec
+#     la MÊME forme d'appel que publie_theme (brut, cache, vintages, sortie —
+#     l'identité byte-identique avec run_pipeline(theme = theme_programmes())).
+#     La dépendance sur fichier_epci_extrait ordonne l'extraction du
+#     référentiel partagé que le seam lit PAR CHEMIN
+#     (cache/extracted/EPCI_au_01-01-2025.xlsx) ; sortie_analytiques garde SON
+#     défaut (dirname(cache)/processed/programmes — le même rangement que
+#     run_pipeline).
+# Câblée sur le run COMPLET SEULEMENT (LUSK_THEMES vide — le cron), le même
+# trait que les verrous VERIFICATIONS_PROGRAMMES : un run restreint ne force
+# rien de tout cela. La chaîne est LEAF : rien des CINQ thèmes n'en dépend —
+# la publication programmes ne peut pas invalider le payload des cinq thèmes.
+programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN) {
+  theme <- theme_programmes()
+  construire <- symbole_ns(theme$construire_donnees)
+  vintages_fn <- symbole_ns(theme$vintages)
+  publier_fn <- symbole_ns(theme$publier)
+  list(
+    tar_target_raw(
+      "fichiers_programmes",
+      bquote({
+        sources_programmes
+        file.path(.(cache), manifeste_programmes$fichier)
+      }),
+      format = "file"
+    ),
+    tar_target_raw(
+      "brut_programmes",
+      bquote({
+        fichiers_programmes
+        .(construire)(cache = .(cache))
+      })
+    ),
+    tar_target_raw("vintages_table_programmes", bquote(.(vintages_fn)())),
+    tar_target_raw(
+      "publie_programmes",
+      bquote({
+        fichier_epci_extrait
+        .(publier_fn)(brut_programmes, cache = .(cache),
+                      vintages = vintages_table_programmes,
+                      sortie = .(sortie))
+      })
+    )
+  )
+}
+
 # construire_fichier_epci_extrait ------------------------------------------------
 # Le référentiel partagé des EPCI EXTRAIT (extracted/EPCI_au_01-01-2025.xlsx) :
 # la base transversale que les normalisateurs lisent dans le cache (déclarée
@@ -693,6 +761,13 @@ for (t in THEMES_RUN) {
   rapports <- c(rapports, list(rapport_theme(t, precedent = precedent)))
   precedent <- as.name(paste0("rapport_", t$theme))
 }
+# Le run COMPLET (le cron, #343) : le rapport de run du thème Programmes,
+# chaîné DERNIER — le rapport final porte les statuts du thème Programmes,
+# exactement comme six run_pipeline séquentiels (le dernier thème gagne).
+if (!nzchar(selection)) {
+  rapports <- c(rapports, list(rapport_theme(theme_programmes(),
+                                             precedent = precedent)))
+}
 
 # Les verrous « données réelles » du run : par thème du graphe, plus (sur le
 # run COMPLET — LUSK_THEMES vide, le cron) les verrous du thème Programmes.
@@ -709,12 +784,18 @@ for (t in THEMES_RUN) {
     besoin_epci <- TRUE
   }
 }
+publication_programmes <- list()
 if (!nzchar(selection)) {
   # le manifeste COMPLET du thème Programmes (les six sources ANCT/DGALN +
   # SCDL) : la variable du script que les commandes du bloc résolvent (la
   # même convention que les manifeste_<thème> du graphe)
   assign("manifeste_programmes", MANIFEST_PROGRAMMES_COMPLET)
   verifications <- c(verifications, verifications_programmes())
+  # la publication du payload PARTAGÉ programmes (ADR-0013) : le run COMPLET
+  # (le cron) publie programmes.json + les parquets par table — le même rang
+  # que le SIXIÈME appel run_pipeline(theme = theme_programmes()) de l'oracle
+  # (test-targets-byte-identical). LEAF : rien des CINQ thèmes n'en dépend.
+  publication_programmes <- programmes_publication()
   if (any(vapply(VERIFICATIONS_PROGRAMMES,
                  function(v) "epci" %in% unlist(v$args), logical(1)))) {
     besoin_epci <- TRUE
@@ -724,11 +805,22 @@ if (besoin_epci) {
   verifications <- c(verifications, list(construire_fichier_epci_extrait()))
 }
 
+# La fusion PARTAGÉE des vintages : les CINQ thèmes du run — plus, sur le run
+# COMPLET (le cron, #343), le thème Programmes : la table partagée porte
+# aussi les SIX sources du module, SCDL comprise (issue #178 — l'upsert par
+# id, le même rang que six run_pipeline séquentiels).
+themes_fusion <- if (!nzchar(selection)) {
+  c(THEMES_RUN, list(programmes = theme_programmes()))
+} else {
+  THEMES_RUN
+}
+
 list(
   grappes,
   publies,
-  fusion_themes(),
+  fusion_themes(themes_fusion),
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),
-  verifications
+  verifications,
+  publication_programmes
 )

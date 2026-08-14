@@ -1,13 +1,20 @@
 # -----------------------------------------------------------------------------
-# Pipeline Démographie — run hebdomadaire automatisé (issue #7 + #11, ADR-0004)
+# Pipeline — run hebdomadaire automatisé : les TROIS thèmes légers
+# (démographie, habitat, économie) via le graphe targets (issue #7 + #11,
+# ADR-0004)
 #
 # L'automatisation qui rend la promesse « alive » littéralement vraie : chaque
 # semaine (et à la demande via workflow_dispatch), le pipeline tourne en mode
 # « cron » sur ubuntu-latest et publie le payload (parquet + JSON + vintages +
 # rapport de run) vers public/data/ à la racine du dépôt, committé et servi
 # par l'hôte statique (Pages). L'orchestration est volontairement mince : toute
-# la logique de décision vit dans le package R (run_pipeline, detecter_changement,
-# run-report.json) et y est testée.
+# la logique de décision vit dans le package R (le GRAPHE targets #329,
+# detecter_changement, executer_graphe_cron, run-report.json) et y est testée.
+# Le cron hebdomadaire
+# ne tourne que les trois thèmes légers du graphe (voir « Orchestration ») :
+# le run complet — les six thèmes incl. le payload partagé Programmes — reste
+# le contrat du graphe et devient le cron quand #338 + le budget de
+# téléchargement le permettent.
 #
 # Choix documentés :
 #
@@ -20,13 +27,43 @@
 #   arrête le run (pas de publication). Le réseau n'entre jamais dans la boucle
 #   de test.
 #
+# - Orchestration : le build invoque le GRAPHE targets (issue #329, câblé par
+#   #343) au lieu de run_pipeline() — la configuration de run est explicite :
+#   LUSK_MODE=cron, LUSK_CACHE=data/raw, LUSK_SORTIE=../public/data et
+#   LUSK_THEMES = demographie,habitat,economie : le cron hebdomadaire ne tourne
+#   que les TROIS thèmes légers du graphe. Milieux (les archives OCS-GE ~7 Go)
+#   et Mobilité (le rebuild slow-clock) sont exclus ; le run COMPLET — les six
+#   thèmes incl. le payload partagé Programmes, ADR-0013 — reste le contrat du
+#   graphe (testé byte-identique) et devient le cron quand #338 (cache du
+#   store) et le budget de téléchargement du runner le permettent. La
+#   sémantique mode cron d'ADR-0004 est préservée
+#   (le graphe la transmet à download_sources : « cron » téléchargées,
+#   « manuel » sautées sans échec) et la sémantique #8/#10 du rapport aussi :
+#   le rapport de run est un target INDÉPENDANT des étapes aval, réestampillé
+#   à chaque run et écrit même quand une cible échoue (tar_option_set error =
+#   "continue"). Un échec de cible ne fait donc PAS lever tar_make : le seam
+#   executer_graphe_cron() (R, testé) détecte les cibles en échec et en fait
+#   un exit non nul — le run reste rouge (l'étape « Signaler l'échec du
+#   build ») et la trace (le rapport, committé par la décision commit/skip)
+#   est committée comme avant. Quand le TÉLÉCHARGEMENT lui-même échoue, le DAG
+#   n'écrit aucun rapport (les rapports dépendent des sources) : le seam écrit
+#   alors le rapport d'échec (statuts « échec » portés par l'erreur, issue
+#   #8) — la responsabilité du câblage cron, documentée dans _targets.R.
+#
+# - Rebuild à froid assumé : le store _targets/ (gitignoré par
+#   pipeline/.gitignore) n'est PAS caché entre deux runs du runner — chaque
+#   run cron re-télécharge et re-construit les trois thèmes légers, le coût
+#   du présent (la même classe de run que run_pipeline sur cache vide). La
+#   décision de cache du store vit dans #338 (quand le cron devient
+#   production) ; rien ne change ici.
+#
 # - Chemins : les étapes R tournent DEPUIS pipeline/ — le .Rprofile du paquet
 #   (source("renv/activate.R")) active renv automatiquement, y compris le
 #   bootstrap renv sur un runner à cache froid. Le cache brut est donc
 #   pipeline/data/raw (gitignoré par pipeline/.gitignore) et la sortie est
 #   explicite : ../public/data, le home public du payload à la racine du dépôt
-#   (les défauts de run_pipeline(), "data/raw" et "public/data", sont relatifs
-#   au CWD du process R — on rend les chemins explicites pour lever l'ambiguïté).
+#   (les défauts du graphe, "data/raw" et "public/data", sont relatifs au CWD
+#   du process R — on rend les chemins explicites pour lever l'ambiguïté).
 #
 # - testthat/pkgload hors lock : renv.lock est en snapshot.type « explicit »
 #   avec package.dependency.fields = Imports/Depends/LinkingTo — les Suggests
@@ -56,7 +93,7 @@
 #   pour le seam d'alerte).
 # -----------------------------------------------------------------------------
 
-name: Pipeline Démographie — cron hebdomadaire
+name: Pipeline — cron hebdomadaire (trois thèmes légers via le graphe targets)
 
 on:
   schedule:
@@ -122,13 +159,29 @@ jobs:
             git archive HEAD public/data | tar -x -C "$RUNNER_TEMP/commite"
           fi
 
-      - name: Build en mode cron (exit capturé — le rapport s'écrit même sur échec)
+      - name: Build en mode cron — le graphe targets via executer_graphe_cron() (exit capturé, le rapport d'échec s'écrit dans le seam)
         id: build
         working-directory: pipeline
         shell: bash
+        env:
+          # la configuration du run que _targets.R lit (le mode cron d'ADR-0004
+          # est transmis tel quel à download_sources). LUSK_THEMES : le cron
+          # hebdomadaire = les TROIS thèmes légers du graphe — Milieux (les
+          # archives OCS-GE ~7 Go) et Mobilité (le rebuild slow-clock) exclus ;
+          # le run COMPLET (les six thèmes incl. le payload partagé Programmes)
+          # reste le contrat, testé byte-identique, et devient le cron quand
+          # #338 (cache du store) + le budget de téléchargement le permettent.
+          LUSK_MODE: cron
+          LUSK_CACHE: data/raw
+          LUSK_SORTIE: ../public/data
+          LUSK_THEMES: "demographie,habitat,economie"
         run: |
           set +e
-          Rscript -e "pkgload::load_all(); run_pipeline(mode = 'cron', cache = 'data/raw', sortie = '../public/data')"
+          # toute la logique de décision vit dans le seam R testé
+          # executer_graphe_cron() (revue #386) — le YAML ne porte plus que
+          # l'appel ; le retour devient le code de sortie (0 = propre, 1 =
+          # cibles en échec), capturé ci-dessous sans arrêter l'étape
+          Rscript -e 'pkgload::load_all(); quit(status = if (executer_graphe_cron()) 0 else 1)'
           status=$?
           echo "build_exit=$status" >> "$GITHUB_OUTPUT"
           exit 0

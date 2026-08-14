@@ -9,10 +9,11 @@
 #   - par thème : le graphe (restreint au thème via LUSK_THEMES — le même
 #     seam que le cron slow-clock utilisera) produit la sortie byte-identique
 #     à run_pipeline(theme) sur le même cache — la porte de #340, répétée ;
-#   - le run COMPLET : le graphe cinq thèmes (LUSK_THEMES vide) produit la
-#     MÊME sortie que cinq run_pipeline SÉQUENTIELS dans la même cible (l'ordre
-#     du cron) — la fusion partagée des vintages (#124, amendée #243) et la
-#     référence des territoires y sont byte-identiques, chaînes incluses.
+#   - le run COMPLET : le graphe (LUSK_THEMES vide) produit la MÊME sortie que
+#     SIX run_pipeline SÉQUENTIELS dans la même cible (l'ordre du cron : les
+#     CINQ thèmes + le payload partagé Programmes, #343) — la fusion partagée
+#     des vintages (#124, amendée #243, + #178 pour le module Programmes) et
+#     la référence des territoires y sont byte-identiques, chaînes incluses.
 #
 # Les deux sorties sont des répertoires temporAIRES — jamais le public/data du
 # dépôt. Le store _targets/ (gitignoré) est supprimé au départ : la porte est
@@ -128,6 +129,19 @@ test_that("graphe cinq thèmes vs cinq run_pipeline séquentiels : sortie compl�
     run_pipeline(theme = THEMES_RUN_TEST[[nom]], cache = "data/raw",
                  sortie = sortie_oracle)
   }
+  # Issue #343 — la résolution du run complet : le graphe publie AUSSI le
+  # payload PARTAGÉ programmes (programmes.json + les parquets par table,
+  # ADR-0013) et fusionne les SIX sources du module dans la table partagée des
+  # vintages (#178) — comme le cron qui invoque maintenant le graphe
+  # (LUSK_THEMES vide). L'oracle du run complet EST donc SIX run_pipeline
+  # séquentiels (les cinq thèmes + theme_programmes()) : le SIXIÈME appel
+  # écrit programmes.json et le rapport final, dans le même rang que la chaîne
+  # programmes du graphe (publie_programmes, rapport_programmes chaîné
+  # dernier). L'alternative « ne pas publier programmes sur la sortie
+  # par défaut » a été rejetée : le payload de production (public/data) porte
+  # programmes.json — le câblage cron #343 le publierait sinon en régression.
+  run_pipeline(theme = theme_programmes(), cache = "data/raw",
+               sortie = sortie_oracle)
 
   neutraliser_time_stamp(sortie_graphe)
   neutraliser_time_stamp(sortie_oracle)
