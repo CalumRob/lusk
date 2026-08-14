@@ -404,12 +404,15 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
 # MEMBRES_DESCRIPTEUR_ECONOMIE -------------------------------------------------
 # Les membres requis du descripteur — le contrat de FORME du thème (ce que la
 # machinerie partagée consomme : theme, manifest, vintages, construire_donnees
-# — et ce que T8 branche : construire_analytiques, publier). La même idée que
+# — et ce que T8 branche : construire_analytiques, publier). `directions`
+# est requis depuis l'audit ordinal de l'issue #368 : chaque clé classée
+# déclare SA désirabilité (ADR-0015) — un descripteur sans déclaration se
+# reposerait sur le défaut high-is-good. La même idée que
 # les contrats de manifeste des fragments (verifier_contrat_flores, ...) :
 # un descripteur incomplet échoue FORT, en nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_ECONOMIE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier", "metadata"
+  "construire_analytiques", "publier", "directions", "metadata"
 )
 
 # verifier_descripteur_economie -------------------------------------------------

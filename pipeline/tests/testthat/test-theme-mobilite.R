@@ -88,11 +88,10 @@ test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de produ
 test_that("theme_mobilite : le descripteur porte les membres requis du contrat", {
   th <- theme_mobilite()
 
-  # la forme du contrat : les membres requis (dans l'ordre) + la déclaration
-  # des directions (issue #368 — chaque clé classée déclare SA direction)
-  expect_named(th, c("theme", "manifest", "vintages", "construire_donnees",
-                     "construire_analytiques", "publier", "directions",
-                     "metadata"))
+  # la forme du contrat : les membres requis dans l'ordre — `directions`
+  # (issue #368 : chaque clé classée déclare SA direction) est un membre
+  # REQUIS, pas une option
+  expect_named(th, MEMBRES_DESCRIPTEUR_MOBILITE)
   expect_equal(th$theme, "mobilite")
   expect_identical(th$manifest, MANIFEST_MOBILITE)
   # les pièces que run_pipeline(theme = theme_mobilite()) consomme
@@ -117,6 +116,12 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
 
   # un descripteur vide échoue aussi
   expect_error(verifier_descripteur_mobilite(list()), "manquant")
+
+  # le cas nommé de l'audit ordinal (issue #368) : un descripteur SANS la
+  # déclaration des directions échoue FORT — jamais le défaut high-is-good
+  # silencieux de la machinerie
+  sans_directions <- th[setdiff(names(th), "directions")]
+  expect_error(verifier_descripteur_mobilite(sans_directions), "directions")
 })
 
 test_that("vintages_mobilite : dix sources, chacune avec SA référence et SA publication", {
@@ -2424,6 +2429,60 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_true(all(cyclable_ind$vintage_source == ref_osm))
   expect_true(all(cyclable_ind$vintage_date_reference == "2026-08-05"))
   expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
+})
+
+test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction DÉCLARÉE de SA clé (#368)", {
+  # le mécanisme de l'audit ordinal : chaque mesure est classée dans SON groupe
+  # avec la direction de SA clé (DIRECTIONS_MOBILITE — jamais le défaut
+  # high-is-good de rang_ordinal_par_groupe). Deux communes du même EPCI X,
+  # deux détails, la valeur de 22001 supérieure à celle de 22002 : avec le
+  # high déclaré, 22001 est 1re ; en basculant la clé en low (la preuve que la
+  # déclaration EST consommée), les rangs s'INVERSENT.
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+  table_long <- tidyr::crossing(
+    code = territoires$code,
+    detail = c("mesure_a", "mesure_b")
+  ) %>%
+    dplyr::mutate(
+      key = "voitures_menage",
+      # 22001 > 22002 dans le même EPCI X ; les autres codes portent des
+      # valeurs hors du groupe comparé
+      value = dplyr::case_when(
+        code == "22001" ~ 0.8,
+        code == "22002" ~ 0.2,
+        TRUE ~ 0.5
+      )
+    )
+
+  lire <- function(rangs, code, detail) {
+    rangs$rang_epci[rangs$code == code & rangs$detail == detail]
+  }
+  # la direction par défaut (DIRECTIONS_MOBILITE — high pour voitures_menage) :
+  # 22001 (0.8) est 1re de l'EPCI X
+  rang_high <- construire_rangs_detail(table_long, territoires)
+  expect_equal(lire(rang_high, "22001", "mesure_a"), 1)
+  expect_equal(lire(rang_high, "22002", "mesure_a"), 2)
+  # la direction DÉCLARÉE basculée en low : la plus PETITE valeur est 1re — les
+  # rangs s'inversent, la déclaration est consommée
+  rang_low <- construire_rangs_detail(
+    table_long, territoires, directions = list(voitures_menage = "low")
+  )
+  expect_equal(lire(rang_low, "22001", "mesure_a"), 2)
+  expect_equal(lire(rang_low, "22002", "mesure_a"), 1)
+  # une clé SANS direction déclarée est une erreur de descripteur, jamais un
+  # défaut silencieux
+  expect_error(
+    construire_rangs_detail(
+      table_long, territoires,
+      directions = list(reseaux = "high")
+    ),
+    "voitures_menage"
+  )
 })
 
 test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer la validation bruyamment", {

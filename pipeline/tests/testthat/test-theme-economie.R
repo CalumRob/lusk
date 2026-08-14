@@ -37,11 +37,10 @@ test_that("MANIFEST_ECONOMIE : les quatre fragments concaténés, une ligne par 
 test_that("theme_economie : le descripteur porte les membres requis du contrat", {
   th <- theme_economie()
 
-  # la forme du contrat : les membres requis (dans l'ordre) + la déclaration
-  # des directions (issue #368 — chaque clé classée déclare SA direction)
-  expect_named(th, c("theme", "manifest", "vintages", "construire_donnees",
-                     "construire_analytiques", "publier", "directions",
-                     "metadata"))
+  # la forme du contrat : les membres requis dans l'ordre — `directions`
+  # (issue #368 : chaque clé classée déclare SA direction) est un membre
+  # REQUIS, pas une option
+  expect_named(th, MEMBRES_DESCRIPTEUR_ECONOMIE)
   expect_equal(th$theme, "economie")
   expect_identical(th$manifest, MANIFEST_ECONOMIE)
   # les trois pièces que run_pipeline(theme = theme_economie()) consomme
@@ -67,6 +66,12 @@ test_that("verifier_descripteur_economie : un membre requis manquant échoue bru
 
   # un descripteur vide échoue aussi
   expect_error(verifier_descripteur_economie(list()), "manquant")
+
+  # le cas nommé de l'audit ordinal (issue #368) : un descripteur SANS la
+  # déclaration des directions échoue FORT — jamais le défaut high-is-good
+  # silencieux de la machinerie
+  sans_directions <- th[setdiff(names(th), "directions")]
+  expect_error(verifier_descripteur_economie(sans_directions), "directions")
 })
 
 test_that("vintages_economie : chaque source porte SA référence et SA publication", {
