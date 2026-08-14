@@ -1,0 +1,79 @@
+# -----------------------------------------------------------------------------
+# App — build du dist sur tag (docs/self-hosting.md, ADR-0006)
+#
+# Le Pi est pull-only (il ne build jamais) : c'est ce workflow qui produit le
+# bundle servi par nginx. Sur un tag v*, on build l'app sur main et on
+# committe app/dist/ — le Pi le récupère au pull suivant (le timer systemd).
+# Le tag est le déclencheur et le marqueur ; main est l'état déployé (le tag
+# est coupé à HEAD de main : « git tag vX.Y && git push --tags »).
+#
+# - Tests d'abord : la suite Vitest tourne AVANT le build ; une suite rouge
+#   arrête le run (rien n'est committé) — même discipline que pipeline-cron.
+# - app/dist est gitignoré (app/.gitignore) pour rester hors de l'arbre de
+#   développement ; le workflow force l'ajout (git add -f). Le commentaire
+#   d'app/.gitignore anticipe ce mécanisme.
+# - Vercel n'est pas concerné : il re-build app/dist depuis la source à chaque
+#   push (ADR-0010) ; le dist committé n'est consommé que par le Pi.
+# -----------------------------------------------------------------------------
+
+name: App — build dist (tag)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Un seul run à la fois : deux tags poussés coup sur coup ne se marchent pas
+# dessus (le second produira « dist inchangé »).
+concurrency:
+  group: build-dist
+  cancel-in-progress: false
+
+jobs:
+  build-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (l'état déployé)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Node (22 LTS) + cache npm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Installation (app)
+        run: npm --prefix app ci
+
+      - name: Tests (suite complète — un échec arrête le run)
+        run: npm test
+
+      - name: Build (vue-tsc + vite → app/dist, payload copié dans dist/data)
+        run: npm run build
+
+      - name: Commit du dist (skip si inchangé)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f app/dist
+          if git diff --cached --quiet; then
+            echo "dist inchangé — rien à committer"
+            exit 0
+          fi
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            message="build: dist — tag ${{ github.ref_name }}"
+          else
+            message="build: dist — dispatch manuel"
+          fi
+          git commit -m "$message"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
