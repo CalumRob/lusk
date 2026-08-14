@@ -1,0 +1,8878 @@
+[
+  {
+    "territoire": "22001",
+    "type": "commune",
+    "nom": "Allineuc",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22002",
+    "type": "commune",
+    "nom": "Andel",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22003",
+    "type": "commune",
+    "nom": "Aucaleuc",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22004",
+    "type": "commune",
+    "nom": "Bégard",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22005",
+    "type": "commune",
+    "nom": "Belle-Isle-en-Terre",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22006",
+    "type": "commune",
+    "nom": "Berhet",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22008",
+    "type": "commune",
+    "nom": "Bobital",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22009",
+    "type": "commune",
+    "nom": "Le Bodéo",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22011",
+    "type": "commune",
+    "nom": "Boqueho",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22012",
+    "type": "commune",
+    "nom": "La Bouillie",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22013",
+    "type": "commune",
+    "nom": "Bourbriac",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22014",
+    "type": "commune",
+    "nom": "Bourseul",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22015",
+    "type": "commune",
+    "nom": "Bréhand",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22016",
+    "type": "commune",
+    "nom": "Île-de-Bréhat",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "22018",
+    "type": "commune",
+    "nom": "Brélidy",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22019",
+    "type": "commune",
+    "nom": "Bringolo",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22020",
+    "type": "commune",
+    "nom": "Broons",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22021",
+    "type": "commune",
+    "nom": "Brusvily",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22023",
+    "type": "commune",
+    "nom": "Bulat-Pestivien",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22024",
+    "type": "commune",
+    "nom": "Calanhel",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22025",
+    "type": "commune",
+    "nom": "Callac",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22026",
+    "type": "commune",
+    "nom": "Calorguen",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22028",
+    "type": "commune",
+    "nom": "Camlez",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22029",
+    "type": "commune",
+    "nom": "Canihuel",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22030",
+    "type": "commune",
+    "nom": "Caouënnec-Lanvézéac",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22031",
+    "type": "commune",
+    "nom": "Carnoët",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22032",
+    "type": "commune",
+    "nom": "Caulnes",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22033",
+    "type": "commune",
+    "nom": "Caurel",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22034",
+    "type": "commune",
+    "nom": "Cavan",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22035",
+    "type": "commune",
+    "nom": "Les Champs-Géraux",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22036",
+    "type": "commune",
+    "nom": "La Chapelle-Blanche",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22037",
+    "type": "commune",
+    "nom": "La Chapelle-Neuve",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22039",
+    "type": "commune",
+    "nom": "La Chèze",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22040",
+    "type": "commune",
+    "nom": "Coadout",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22041",
+    "type": "commune",
+    "nom": "Coatascorn",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22042",
+    "type": "commune",
+    "nom": "Coatréven",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22044",
+    "type": "commune",
+    "nom": "Coëtmieux",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22045",
+    "type": "commune",
+    "nom": "Cohiniac",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22046",
+    "type": "commune",
+    "nom": "Le Mené",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22047",
+    "type": "commune",
+    "nom": "Corlay",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22048",
+    "type": "commune",
+    "nom": "Corseul",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22049",
+    "type": "commune",
+    "nom": "Créhen",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22050",
+    "type": "commune",
+    "nom": "Dinan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22052",
+    "type": "commune",
+    "nom": "Duault",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22053",
+    "type": "commune",
+    "nom": "Éréac",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22054",
+    "type": "commune",
+    "nom": "Erquy",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22055",
+    "type": "commune",
+    "nom": "Binic-Étables-sur-Mer",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22056",
+    "type": "commune",
+    "nom": "Évran",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22057",
+    "type": "commune",
+    "nom": "Le Faouët",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22059",
+    "type": "commune",
+    "nom": "Le Fœil",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22060",
+    "type": "commune",
+    "nom": "Gausson",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22061",
+    "type": "commune",
+    "nom": "Glomel",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22062",
+    "type": "commune",
+    "nom": "Gomené",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22063",
+    "type": "commune",
+    "nom": "Gommenec'h",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22064",
+    "type": "commune",
+    "nom": "Gouarec",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22065",
+    "type": "commune",
+    "nom": "Goudelin",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22067",
+    "type": "commune",
+    "nom": "Grâces",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22068",
+    "type": "commune",
+    "nom": "Grâce-Uzel",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22069",
+    "type": "commune",
+    "nom": "Guenroc",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22070",
+    "type": "commune",
+    "nom": "Guingamp",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22071",
+    "type": "commune",
+    "nom": "Guitté",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22072",
+    "type": "commune",
+    "nom": "Gurunhuel",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22073",
+    "type": "commune",
+    "nom": "La Harmoye",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22074",
+    "type": "commune",
+    "nom": "Le Haut-Corlay",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22075",
+    "type": "commune",
+    "nom": "Hémonstoir",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22076",
+    "type": "commune",
+    "nom": "Hénanbihen",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22077",
+    "type": "commune",
+    "nom": "Hénansal",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22079",
+    "type": "commune",
+    "nom": "Hénon",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22081",
+    "type": "commune",
+    "nom": "Hillion",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22082",
+    "type": "commune",
+    "nom": "Le Hinglé",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22083",
+    "type": "commune",
+    "nom": "Illifaut",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22084",
+    "type": "commune",
+    "nom": "Jugon-les-Lacs",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22085",
+    "type": "commune",
+    "nom": "Kerbors",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22086",
+    "type": "commune",
+    "nom": "Kerfot",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22087",
+    "type": "commune",
+    "nom": "Kergrist-Moëlou",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22088",
+    "type": "commune",
+    "nom": "Kerien",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22090",
+    "type": "commune",
+    "nom": "Kermaria-Sulard",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22091",
+    "type": "commune",
+    "nom": "Kermoroc'h",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22092",
+    "type": "commune",
+    "nom": "Kerpert",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22093",
+    "type": "commune",
+    "nom": "Lamballe-Armor",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22094",
+    "type": "commune",
+    "nom": "Lancieux",
+    "departement": "22",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "22095",
+    "type": "commune",
+    "nom": "Landebaëron",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22096",
+    "type": "commune",
+    "nom": "Landébia",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22097",
+    "type": "commune",
+    "nom": "La Landec",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22098",
+    "type": "commune",
+    "nom": "Landéhen",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22099",
+    "type": "commune",
+    "nom": "Lanfains",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22101",
+    "type": "commune",
+    "nom": "Langoat",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22103",
+    "type": "commune",
+    "nom": "Langrolay-sur-Rance",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22104",
+    "type": "commune",
+    "nom": "Languédias",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22105",
+    "type": "commune",
+    "nom": "Languenan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22106",
+    "type": "commune",
+    "nom": "Langueux",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22107",
+    "type": "commune",
+    "nom": "Bon Repos sur Blavet",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22108",
+    "type": "commune",
+    "nom": "Lanleff",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22109",
+    "type": "commune",
+    "nom": "Lanloup",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22110",
+    "type": "commune",
+    "nom": "Lanmérin",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22111",
+    "type": "commune",
+    "nom": "Lanmodez",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22112",
+    "type": "commune",
+    "nom": "Lannebert",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22113",
+    "type": "commune",
+    "nom": "Lannion",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22114",
+    "type": "commune",
+    "nom": "Lanrelas",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22115",
+    "type": "commune",
+    "nom": "Lanrivain",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22116",
+    "type": "commune",
+    "nom": "Lanrodec",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22117",
+    "type": "commune",
+    "nom": "Lantic",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22118",
+    "type": "commune",
+    "nom": "Lanvallay",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22119",
+    "type": "commune",
+    "nom": "Lanvellec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22121",
+    "type": "commune",
+    "nom": "Lanvollon",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22122",
+    "type": "commune",
+    "nom": "Laurenan",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22124",
+    "type": "commune",
+    "nom": "Lescouët-Gouarec",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22126",
+    "type": "commune",
+    "nom": "Le Leslay",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22127",
+    "type": "commune",
+    "nom": "Lézardrieux",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22128",
+    "type": "commune",
+    "nom": "Locarn",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22129",
+    "type": "commune",
+    "nom": "Loc-Envel",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22131",
+    "type": "commune",
+    "nom": "Loguivy-Plougras",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22132",
+    "type": "commune",
+    "nom": "Lohuec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22133",
+    "type": "commune",
+    "nom": "Loscouët-sur-Meu",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22134",
+    "type": "commune",
+    "nom": "Louannec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22135",
+    "type": "commune",
+    "nom": "Louargat",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22136",
+    "type": "commune",
+    "nom": "Loudéac",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22137",
+    "type": "commune",
+    "nom": "Maël-Carhaix",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22138",
+    "type": "commune",
+    "nom": "Maël-Pestivien",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22139",
+    "type": "commune",
+    "nom": "Magoar",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22140",
+    "type": "commune",
+    "nom": "La Malhoure",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22141",
+    "type": "commune",
+    "nom": "Mantallot",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22143",
+    "type": "commune",
+    "nom": "Matignon",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22144",
+    "type": "commune",
+    "nom": "La Méaugon",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22145",
+    "type": "commune",
+    "nom": "Mégrit",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22146",
+    "type": "commune",
+    "nom": "Mellionnec",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22147",
+    "type": "commune",
+    "nom": "Merdrignac",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22148",
+    "type": "commune",
+    "nom": "Mérillac",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22149",
+    "type": "commune",
+    "nom": "Merléac",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22150",
+    "type": "commune",
+    "nom": "Le Merzer",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22152",
+    "type": "commune",
+    "nom": "Minihy-Tréguier",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22153",
+    "type": "commune",
+    "nom": "Moncontour",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22155",
+    "type": "commune",
+    "nom": "La Motte",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22156",
+    "type": "commune",
+    "nom": "Moustéru",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22157",
+    "type": "commune",
+    "nom": "Le Moustoir",
+    "departement": "22",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "22158",
+    "type": "commune",
+    "nom": "Guerlédan",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22160",
+    "type": "commune",
+    "nom": "Noyal",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22161",
+    "type": "commune",
+    "nom": "Pabu",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22162",
+    "type": "commune",
+    "nom": "Paimpol",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22163",
+    "type": "commune",
+    "nom": "Paule",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22164",
+    "type": "commune",
+    "nom": "Pédernec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22165",
+    "type": "commune",
+    "nom": "Penguily",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22166",
+    "type": "commune",
+    "nom": "Penvénan",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22168",
+    "type": "commune",
+    "nom": "Perros-Guirec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22169",
+    "type": "commune",
+    "nom": "Peumerit-Quintin",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22170",
+    "type": "commune",
+    "nom": "Plaine-Haute",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22171",
+    "type": "commune",
+    "nom": "Plaintel",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22172",
+    "type": "commune",
+    "nom": "Plancoët",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22174",
+    "type": "commune",
+    "nom": "Pléboulle",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22175",
+    "type": "commune",
+    "nom": "Plédéliac",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22176",
+    "type": "commune",
+    "nom": "Plédran",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22177",
+    "type": "commune",
+    "nom": "Pléguien",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22178",
+    "type": "commune",
+    "nom": "Pléhédel",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22179",
+    "type": "commune",
+    "nom": "Fréhel",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22180",
+    "type": "commune",
+    "nom": "Plélan-le-Petit",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22181",
+    "type": "commune",
+    "nom": "Plélauff",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22182",
+    "type": "commune",
+    "nom": "Plélo",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22183",
+    "type": "commune",
+    "nom": "Plémet",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22184",
+    "type": "commune",
+    "nom": "Plémy",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22185",
+    "type": "commune",
+    "nom": "Plénée-Jugon",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22186",
+    "type": "commune",
+    "nom": "Pléneuf-Val-André",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22187",
+    "type": "commune",
+    "nom": "Plérin",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22188",
+    "type": "commune",
+    "nom": "Plerneuf",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22189",
+    "type": "commune",
+    "nom": "Plésidy",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22190",
+    "type": "commune",
+    "nom": "Pleslin-Trigavou",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22193",
+    "type": "commune",
+    "nom": "Plestan",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22194",
+    "type": "commune",
+    "nom": "Plestin-les-Grèves",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22195",
+    "type": "commune",
+    "nom": "Pleubian",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22196",
+    "type": "commune",
+    "nom": "Pleudaniel",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22197",
+    "type": "commune",
+    "nom": "Pleudihen-sur-Rance",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22198",
+    "type": "commune",
+    "nom": "Pleumeur-Bodou",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22199",
+    "type": "commune",
+    "nom": "Pleumeur-Gautier",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22201",
+    "type": "commune",
+    "nom": "Plévenon",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22202",
+    "type": "commune",
+    "nom": "Plévin",
+    "departement": "22",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "22203",
+    "type": "commune",
+    "nom": "Plœuc-L'Hermitage",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22204",
+    "type": "commune",
+    "nom": "Ploëzal",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22205",
+    "type": "commune",
+    "nom": "Plorec-sur-Arguenon",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22206",
+    "type": "commune",
+    "nom": "Châtelaudren-Plouagat",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22207",
+    "type": "commune",
+    "nom": "Plouaret",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22208",
+    "type": "commune",
+    "nom": "Plouasne",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22209",
+    "type": "commune",
+    "nom": "Beaussais-sur-Mer",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22210",
+    "type": "commune",
+    "nom": "Ploubazlanec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22211",
+    "type": "commune",
+    "nom": "Ploubezre",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22212",
+    "type": "commune",
+    "nom": "Plouëc-du-Trieux",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22213",
+    "type": "commune",
+    "nom": "Plouër-sur-Rance",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22214",
+    "type": "commune",
+    "nom": "Plouézec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22215",
+    "type": "commune",
+    "nom": "Ploufragan",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22216",
+    "type": "commune",
+    "nom": "Plougonver",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22217",
+    "type": "commune",
+    "nom": "Plougras",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22218",
+    "type": "commune",
+    "nom": "Plougrescant",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22219",
+    "type": "commune",
+    "nom": "Plouguenast-Langast",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22220",
+    "type": "commune",
+    "nom": "Plouguernével",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22221",
+    "type": "commune",
+    "nom": "Plouguiel",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22222",
+    "type": "commune",
+    "nom": "Plouha",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22223",
+    "type": "commune",
+    "nom": "Plouisy",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22224",
+    "type": "commune",
+    "nom": "Ploulec'h",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22225",
+    "type": "commune",
+    "nom": "Ploumagoar",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22226",
+    "type": "commune",
+    "nom": "Ploumilliau",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22227",
+    "type": "commune",
+    "nom": "Plounérin",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22228",
+    "type": "commune",
+    "nom": "Plounévez-Moëdec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22229",
+    "type": "commune",
+    "nom": "Plounévez-Quintin",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22231",
+    "type": "commune",
+    "nom": "Plourac'h",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22232",
+    "type": "commune",
+    "nom": "Plourhan",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22233",
+    "type": "commune",
+    "nom": "Plourivo",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22234",
+    "type": "commune",
+    "nom": "Plouvara",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22235",
+    "type": "commune",
+    "nom": "Plouzélambre",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22236",
+    "type": "commune",
+    "nom": "Pludual",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22237",
+    "type": "commune",
+    "nom": "Val-d'Arguenon",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22238",
+    "type": "commune",
+    "nom": "Plufur",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22239",
+    "type": "commune",
+    "nom": "Plumaudan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22240",
+    "type": "commune",
+    "nom": "Plumaugat",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22241",
+    "type": "commune",
+    "nom": "Plumieux",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22242",
+    "type": "commune",
+    "nom": "Plurien",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22243",
+    "type": "commune",
+    "nom": "Plusquellec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22244",
+    "type": "commune",
+    "nom": "Plussulien",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22245",
+    "type": "commune",
+    "nom": "Pluzunet",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22246",
+    "type": "commune",
+    "nom": "Pommeret",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22248",
+    "type": "commune",
+    "nom": "Pommerit-le-Vicomte",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22249",
+    "type": "commune",
+    "nom": "Pont-Melvez",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22250",
+    "type": "commune",
+    "nom": "Pontrieux",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22251",
+    "type": "commune",
+    "nom": "Pordic",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22254",
+    "type": "commune",
+    "nom": "Prat",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22255",
+    "type": "commune",
+    "nom": "La Prénessaye",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22256",
+    "type": "commune",
+    "nom": "Quemper-Guézennec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22257",
+    "type": "commune",
+    "nom": "Quemperven",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22258",
+    "type": "commune",
+    "nom": "Quessoy",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22259",
+    "type": "commune",
+    "nom": "Quévert",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22260",
+    "type": "commune",
+    "nom": "Le Quillio",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22261",
+    "type": "commune",
+    "nom": "Quintenic",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22262",
+    "type": "commune",
+    "nom": "Quintin",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22263",
+    "type": "commune",
+    "nom": "Le Quiou",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22264",
+    "type": "commune",
+    "nom": "La Roche-Jaudy",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22265",
+    "type": "commune",
+    "nom": "Rospez",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22266",
+    "type": "commune",
+    "nom": "Rostrenen",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22267",
+    "type": "commune",
+    "nom": "Rouillac",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22268",
+    "type": "commune",
+    "nom": "Ruca",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22269",
+    "type": "commune",
+    "nom": "Runan",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22271",
+    "type": "commune",
+    "nom": "Saint-Adrien",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22272",
+    "type": "commune",
+    "nom": "Saint-Agathon",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22273",
+    "type": "commune",
+    "nom": "Saint-Alban",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22274",
+    "type": "commune",
+    "nom": "Saint-André-des-Eaux",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22275",
+    "type": "commune",
+    "nom": "Saint-Barnabé",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22276",
+    "type": "commune",
+    "nom": "Saint-Bihy",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22277",
+    "type": "commune",
+    "nom": "Saint-Brandan",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22278",
+    "type": "commune",
+    "nom": "Saint-Brieuc",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22279",
+    "type": "commune",
+    "nom": "Saint-Caradec",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22280",
+    "type": "commune",
+    "nom": "Saint-Carné",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22281",
+    "type": "commune",
+    "nom": "Saint-Carreuc",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22282",
+    "type": "commune",
+    "nom": "Saint-Cast-le-Guildo",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22283",
+    "type": "commune",
+    "nom": "Saint-Clet",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22284",
+    "type": "commune",
+    "nom": "Saint-Connan",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22285",
+    "type": "commune",
+    "nom": "Saint-Connec",
+    "departement": "22",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "22286",
+    "type": "commune",
+    "nom": "Saint-Denoual",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22287",
+    "type": "commune",
+    "nom": "Saint-Donan",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22288",
+    "type": "commune",
+    "nom": "Saint-Étienne-du-Gué-de-l'Isle",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22289",
+    "type": "commune",
+    "nom": "Saint-Fiacre",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22291",
+    "type": "commune",
+    "nom": "Saint-Gildas",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22293",
+    "type": "commune",
+    "nom": "Saint-Gilles-les-Bois",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22294",
+    "type": "commune",
+    "nom": "Saint-Gilles-Pligeaux",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22295",
+    "type": "commune",
+    "nom": "Saint-Gilles-Vieux-Marché",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22296",
+    "type": "commune",
+    "nom": "Saint-Glen",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22299",
+    "type": "commune",
+    "nom": "Saint-Hélen",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22300",
+    "type": "commune",
+    "nom": "Saint-Hervé",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22302",
+    "type": "commune",
+    "nom": "Saint-Jacut-de-la-Mer",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22304",
+    "type": "commune",
+    "nom": "Saint-Jean-Kerdaniel",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22305",
+    "type": "commune",
+    "nom": "Saint-Jouan-de-l'Isle",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22306",
+    "type": "commune",
+    "nom": "Saint-Judoce",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22307",
+    "type": "commune",
+    "nom": "Saint-Julien",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22308",
+    "type": "commune",
+    "nom": "Saint-Juvat",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22310",
+    "type": "commune",
+    "nom": "Saint-Laurent",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22311",
+    "type": "commune",
+    "nom": "Saint-Lormel",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22312",
+    "type": "commune",
+    "nom": "Saint-Maden",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22313",
+    "type": "commune",
+    "nom": "Saint-Martin-des-Prés",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22314",
+    "type": "commune",
+    "nom": "Saint-Maudan",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22315",
+    "type": "commune",
+    "nom": "Saint-Maudez",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22316",
+    "type": "commune",
+    "nom": "Saint-Mayeux",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22317",
+    "type": "commune",
+    "nom": "Saint-Méloir-des-Bois",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22318",
+    "type": "commune",
+    "nom": "Saint-Michel-de-Plélan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22319",
+    "type": "commune",
+    "nom": "Saint-Michel-en-Grève",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22320",
+    "type": "commune",
+    "nom": "Saint-Nicodème",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22321",
+    "type": "commune",
+    "nom": "Saint-Nicolas-du-Pélem",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22322",
+    "type": "commune",
+    "nom": "Saint-Péver",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22323",
+    "type": "commune",
+    "nom": "Saint-Pôtan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22324",
+    "type": "commune",
+    "nom": "Saint-Quay-Perros",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22325",
+    "type": "commune",
+    "nom": "Saint-Quay-Portrieux",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22326",
+    "type": "commune",
+    "nom": "Saint-Rieul",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22327",
+    "type": "commune",
+    "nom": "Saint-Samson-sur-Rance",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22328",
+    "type": "commune",
+    "nom": "Saint-Servais",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22330",
+    "type": "commune",
+    "nom": "Saint-Thélo",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22331",
+    "type": "commune",
+    "nom": "Sainte-Tréphine",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22332",
+    "type": "commune",
+    "nom": "Saint-Trimoël",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22333",
+    "type": "commune",
+    "nom": "Saint-Vran",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22334",
+    "type": "commune",
+    "nom": "Saint-Igeaux",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22335",
+    "type": "commune",
+    "nom": "Senven-Léhart",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22337",
+    "type": "commune",
+    "nom": "Sévignac",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22338",
+    "type": "commune",
+    "nom": "Squiffiec",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22339",
+    "type": "commune",
+    "nom": "Taden",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22340",
+    "type": "commune",
+    "nom": "Tonquédec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22341",
+    "type": "commune",
+    "nom": "Tramain",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22342",
+    "type": "commune",
+    "nom": "Trébédan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22343",
+    "type": "commune",
+    "nom": "Trébeurden",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22344",
+    "type": "commune",
+    "nom": "Trébrivan",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22345",
+    "type": "commune",
+    "nom": "Trébry",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22346",
+    "type": "commune",
+    "nom": "Trédaniel",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22347",
+    "type": "commune",
+    "nom": "Trédarzec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22348",
+    "type": "commune",
+    "nom": "Trédias",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22349",
+    "type": "commune",
+    "nom": "Trédrez-Locquémeau",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22350",
+    "type": "commune",
+    "nom": "Tréduder",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22351",
+    "type": "commune",
+    "nom": "Treffrin",
+    "departement": "22",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "22352",
+    "type": "commune",
+    "nom": "Tréfumel",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22353",
+    "type": "commune",
+    "nom": "Trégastel",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22354",
+    "type": "commune",
+    "nom": "Tréglamus",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22356",
+    "type": "commune",
+    "nom": "Trégomeur",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22358",
+    "type": "commune",
+    "nom": "Trégonneau",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22359",
+    "type": "commune",
+    "nom": "Trégrom",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22360",
+    "type": "commune",
+    "nom": "Trégueux",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22361",
+    "type": "commune",
+    "nom": "Tréguidel",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22362",
+    "type": "commune",
+    "nom": "Tréguier",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22363",
+    "type": "commune",
+    "nom": "Trélévern",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22364",
+    "type": "commune",
+    "nom": "Trélivan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22365",
+    "type": "commune",
+    "nom": "Trémargat",
+    "departement": "22",
+    "epci": "242200715"
+  },
+  {
+    "territoire": "22366",
+    "type": "commune",
+    "nom": "Trémel",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22368",
+    "type": "commune",
+    "nom": "Tréméreuc",
+    "departement": "22",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "22369",
+    "type": "commune",
+    "nom": "Trémeur",
+    "departement": "22",
+    "epci": "200069391"
+  },
+  {
+    "territoire": "22370",
+    "type": "commune",
+    "nom": "Tréméven",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22371",
+    "type": "commune",
+    "nom": "Trémorel",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22372",
+    "type": "commune",
+    "nom": "Trémuson",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22373",
+    "type": "commune",
+    "nom": "Tréogan",
+    "departement": "22",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "22375",
+    "type": "commune",
+    "nom": "Tressignaux",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22376",
+    "type": "commune",
+    "nom": "Trévé",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22377",
+    "type": "commune",
+    "nom": "Tréveneuc",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22378",
+    "type": "commune",
+    "nom": "Trévérec",
+    "departement": "22",
+    "epci": "200069086"
+  },
+  {
+    "territoire": "22379",
+    "type": "commune",
+    "nom": "Trévou-Tréguignec",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22380",
+    "type": "commune",
+    "nom": "Trévron",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22381",
+    "type": "commune",
+    "nom": "Trézény",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22383",
+    "type": "commune",
+    "nom": "Troguéry",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22384",
+    "type": "commune",
+    "nom": "Uzel",
+    "departement": "22",
+    "epci": "200067460"
+  },
+  {
+    "territoire": "22385",
+    "type": "commune",
+    "nom": "La Vicomté-sur-Rance",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22386",
+    "type": "commune",
+    "nom": "Le Vieux-Bourg",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22387",
+    "type": "commune",
+    "nom": "Le Vieux-Marché",
+    "departement": "22",
+    "epci": "200065928"
+  },
+  {
+    "territoire": "22388",
+    "type": "commune",
+    "nom": "Vildé-Guingalan",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "22389",
+    "type": "commune",
+    "nom": "Yffiniac",
+    "departement": "22",
+    "epci": "200069409"
+  },
+  {
+    "territoire": "22390",
+    "type": "commune",
+    "nom": "Yvias",
+    "departement": "22",
+    "epci": "200067981"
+  },
+  {
+    "territoire": "22391",
+    "type": "commune",
+    "nom": "Yvignac-la-Tour",
+    "departement": "22",
+    "epci": "200068989"
+  },
+  {
+    "territoire": "29001",
+    "type": "commune",
+    "nom": "Argol",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29002",
+    "type": "commune",
+    "nom": "Arzano",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29003",
+    "type": "commune",
+    "nom": "Audierne",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29004",
+    "type": "commune",
+    "nom": "Bannalec",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29005",
+    "type": "commune",
+    "nom": "Baye",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29006",
+    "type": "commune",
+    "nom": "Bénodet",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29007",
+    "type": "commune",
+    "nom": "Berrien",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29008",
+    "type": "commune",
+    "nom": "Beuzec-Cap-Sizun",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29010",
+    "type": "commune",
+    "nom": "Bodilis",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29011",
+    "type": "commune",
+    "nom": "Bohars",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29012",
+    "type": "commune",
+    "nom": "Bolazec",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29013",
+    "type": "commune",
+    "nom": "Botmeur",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29014",
+    "type": "commune",
+    "nom": "Botsorhel",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29015",
+    "type": "commune",
+    "nom": "Bourg-Blanc",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29016",
+    "type": "commune",
+    "nom": "Brasparts",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29017",
+    "type": "commune",
+    "nom": "Brélès",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29018",
+    "type": "commune",
+    "nom": "Brennilis",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29019",
+    "type": "commune",
+    "nom": "Brest",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29020",
+    "type": "commune",
+    "nom": "Briec",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29021",
+    "type": "commune",
+    "nom": "Plounéour-Brignogan-plages",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29022",
+    "type": "commune",
+    "nom": "Camaret-sur-Mer",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29023",
+    "type": "commune",
+    "nom": "Carantec",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29024",
+    "type": "commune",
+    "nom": "Carhaix-Plouguer",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29025",
+    "type": "commune",
+    "nom": "Cast",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29026",
+    "type": "commune",
+    "nom": "Châteaulin",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29027",
+    "type": "commune",
+    "nom": "Châteauneuf-du-Faou",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29028",
+    "type": "commune",
+    "nom": "Cléden-Cap-Sizun",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29029",
+    "type": "commune",
+    "nom": "Cléden-Poher",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29030",
+    "type": "commune",
+    "nom": "Cléder",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29031",
+    "type": "commune",
+    "nom": "Clohars-Carnoët",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29032",
+    "type": "commune",
+    "nom": "Clohars-Fouesnant",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29033",
+    "type": "commune",
+    "nom": "Le Cloître-Pleyben",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29034",
+    "type": "commune",
+    "nom": "Le Cloître-Saint-Thégonnec",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29035",
+    "type": "commune",
+    "nom": "Coat-Méal",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29036",
+    "type": "commune",
+    "nom": "Collorec",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29037",
+    "type": "commune",
+    "nom": "Combrit",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29038",
+    "type": "commune",
+    "nom": "Commana",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29039",
+    "type": "commune",
+    "nom": "Concarneau",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29040",
+    "type": "commune",
+    "nom": "Le Conquet",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29041",
+    "type": "commune",
+    "nom": "Coray",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29042",
+    "type": "commune",
+    "nom": "Crozon",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29043",
+    "type": "commune",
+    "nom": "Daoulas",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29044",
+    "type": "commune",
+    "nom": "Dinéault",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29045",
+    "type": "commune",
+    "nom": "Dirinon",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29046",
+    "type": "commune",
+    "nom": "Douarnenez",
+    "departement": "29",
+    "epci": "242900645"
+  },
+  {
+    "territoire": "29047",
+    "type": "commune",
+    "nom": "Le Drennec",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29048",
+    "type": "commune",
+    "nom": "Edern",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29049",
+    "type": "commune",
+    "nom": "Elliant",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29051",
+    "type": "commune",
+    "nom": "Ergué-Gabéric",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29053",
+    "type": "commune",
+    "nom": "Le Faou",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29054",
+    "type": "commune",
+    "nom": "La Feuillée",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29055",
+    "type": "commune",
+    "nom": "Le Folgoët",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29056",
+    "type": "commune",
+    "nom": "La Forest-Landerneau",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29057",
+    "type": "commune",
+    "nom": "La Forêt-Fouesnant",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29058",
+    "type": "commune",
+    "nom": "Fouesnant",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29059",
+    "type": "commune",
+    "nom": "Garlan",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29060",
+    "type": "commune",
+    "nom": "Gouesnach",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29061",
+    "type": "commune",
+    "nom": "Gouesnou",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29062",
+    "type": "commune",
+    "nom": "Gouézec",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29063",
+    "type": "commune",
+    "nom": "Goulien",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29064",
+    "type": "commune",
+    "nom": "Goulven",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29065",
+    "type": "commune",
+    "nom": "Gourlizon",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29066",
+    "type": "commune",
+    "nom": "Guengat",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29067",
+    "type": "commune",
+    "nom": "Guerlesquin",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29068",
+    "type": "commune",
+    "nom": "Guiclan",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29069",
+    "type": "commune",
+    "nom": "Guilers",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29070",
+    "type": "commune",
+    "nom": "Guiler-sur-Goyen",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29071",
+    "type": "commune",
+    "nom": "Guilligomarc'h",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29072",
+    "type": "commune",
+    "nom": "Guilvinec",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29073",
+    "type": "commune",
+    "nom": "Guimaëc",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29074",
+    "type": "commune",
+    "nom": "Guimiliau",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29075",
+    "type": "commune",
+    "nom": "Guipavas",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29076",
+    "type": "commune",
+    "nom": "Milizac-Guipronvel",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29077",
+    "type": "commune",
+    "nom": "Guissény",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29078",
+    "type": "commune",
+    "nom": "Hanvec",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29079",
+    "type": "commune",
+    "nom": "Henvic",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29080",
+    "type": "commune",
+    "nom": "Hôpital-Camfrout",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29081",
+    "type": "commune",
+    "nom": "Huelgoat",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29082",
+    "type": "commune",
+    "nom": "Île-de-Batz",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29083",
+    "type": "commune",
+    "nom": "Île-de-Sein",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "29084",
+    "type": "commune",
+    "nom": "Île-Molène",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29085",
+    "type": "commune",
+    "nom": "Île-Tudy",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29086",
+    "type": "commune",
+    "nom": "Irvillac",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29087",
+    "type": "commune",
+    "nom": "Le Juch",
+    "departement": "29",
+    "epci": "242900645"
+  },
+  {
+    "territoire": "29089",
+    "type": "commune",
+    "nom": "Kergloff",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29090",
+    "type": "commune",
+    "nom": "Kerlaz",
+    "departement": "29",
+    "epci": "242900645"
+  },
+  {
+    "territoire": "29091",
+    "type": "commune",
+    "nom": "Kerlouan",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29093",
+    "type": "commune",
+    "nom": "Kernilis",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29094",
+    "type": "commune",
+    "nom": "Kernouës",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29095",
+    "type": "commune",
+    "nom": "Kersaint-Plabennec",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29097",
+    "type": "commune",
+    "nom": "Lampaul-Guimiliau",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29098",
+    "type": "commune",
+    "nom": "Lampaul-Plouarzel",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29099",
+    "type": "commune",
+    "nom": "Lampaul-Ploudalmézeau",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29100",
+    "type": "commune",
+    "nom": "Lanarvily",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29101",
+    "type": "commune",
+    "nom": "Landéda",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29102",
+    "type": "commune",
+    "nom": "Landeleau",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29103",
+    "type": "commune",
+    "nom": "Landerneau",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29104",
+    "type": "commune",
+    "nom": "Landévennec",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29105",
+    "type": "commune",
+    "nom": "Landivisiau",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29106",
+    "type": "commune",
+    "nom": "Landrévarzec",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29107",
+    "type": "commune",
+    "nom": "Landudal",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29108",
+    "type": "commune",
+    "nom": "Landudec",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29109",
+    "type": "commune",
+    "nom": "Landunvez",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29110",
+    "type": "commune",
+    "nom": "Langolen",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29111",
+    "type": "commune",
+    "nom": "Lanhouarneau",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29112",
+    "type": "commune",
+    "nom": "Lanildut",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29113",
+    "type": "commune",
+    "nom": "Lanmeur",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29114",
+    "type": "commune",
+    "nom": "Lannéanou",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29115",
+    "type": "commune",
+    "nom": "Lannédern",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29116",
+    "type": "commune",
+    "nom": "Lanneuffret",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29117",
+    "type": "commune",
+    "nom": "Lannilis",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29119",
+    "type": "commune",
+    "nom": "Lanrivoaré",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29120",
+    "type": "commune",
+    "nom": "Lanvéoc",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29122",
+    "type": "commune",
+    "nom": "Laz",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29123",
+    "type": "commune",
+    "nom": "Lennon",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29124",
+    "type": "commune",
+    "nom": "Lesneven",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29125",
+    "type": "commune",
+    "nom": "Leuhan",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29126",
+    "type": "commune",
+    "nom": "Loc-Brévalaire",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29128",
+    "type": "commune",
+    "nom": "Loc-Eguiner",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29130",
+    "type": "commune",
+    "nom": "Locmaria-Plouzané",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29131",
+    "type": "commune",
+    "nom": "Locmélar",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29132",
+    "type": "commune",
+    "nom": "Locquénolé",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29133",
+    "type": "commune",
+    "nom": "Locquirec",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29134",
+    "type": "commune",
+    "nom": "Locronan",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29135",
+    "type": "commune",
+    "nom": "Loctudy",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29136",
+    "type": "commune",
+    "nom": "Locunolé",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29137",
+    "type": "commune",
+    "nom": "Logonna-Daoulas",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29139",
+    "type": "commune",
+    "nom": "Lopérec",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29140",
+    "type": "commune",
+    "nom": "Loperhet",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29141",
+    "type": "commune",
+    "nom": "Loqueffret",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29142",
+    "type": "commune",
+    "nom": "Lothey",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29143",
+    "type": "commune",
+    "nom": "Mahalon",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29144",
+    "type": "commune",
+    "nom": "La Martyre",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29145",
+    "type": "commune",
+    "nom": "Confort-Meilars",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29146",
+    "type": "commune",
+    "nom": "Melgven",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29147",
+    "type": "commune",
+    "nom": "Mellac",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29148",
+    "type": "commune",
+    "nom": "Mespaul",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29150",
+    "type": "commune",
+    "nom": "Moëlan-sur-Mer",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29151",
+    "type": "commune",
+    "nom": "Morlaix",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29152",
+    "type": "commune",
+    "nom": "Motreff",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29153",
+    "type": "commune",
+    "nom": "Névez",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29155",
+    "type": "commune",
+    "nom": "Ouessant",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "29156",
+    "type": "commune",
+    "nom": "Pencran",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29158",
+    "type": "commune",
+    "nom": "Penmarch",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29159",
+    "type": "commune",
+    "nom": "Peumerit",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29160",
+    "type": "commune",
+    "nom": "Plabennec",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29161",
+    "type": "commune",
+    "nom": "Pleuven",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29162",
+    "type": "commune",
+    "nom": "Pleyben",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29163",
+    "type": "commune",
+    "nom": "Pleyber-Christ",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29165",
+    "type": "commune",
+    "nom": "Plobannalec-Lesconil",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29166",
+    "type": "commune",
+    "nom": "Ploéven",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29167",
+    "type": "commune",
+    "nom": "Plogastel-Saint-Germain",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29168",
+    "type": "commune",
+    "nom": "Plogoff",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29169",
+    "type": "commune",
+    "nom": "Plogonnec",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29170",
+    "type": "commune",
+    "nom": "Plomelin",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29171",
+    "type": "commune",
+    "nom": "Plomeur",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29172",
+    "type": "commune",
+    "nom": "Plomodiern",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29173",
+    "type": "commune",
+    "nom": "Plonéis",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29174",
+    "type": "commune",
+    "nom": "Plonéour-Lanvern",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29175",
+    "type": "commune",
+    "nom": "Plonévez-du-Faou",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29176",
+    "type": "commune",
+    "nom": "Plonévez-Porzay",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29177",
+    "type": "commune",
+    "nom": "Plouarzel",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29178",
+    "type": "commune",
+    "nom": "Ploudalmézeau",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29179",
+    "type": "commune",
+    "nom": "Ploudaniel",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29180",
+    "type": "commune",
+    "nom": "Ploudiry",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29181",
+    "type": "commune",
+    "nom": "Plouédern",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29182",
+    "type": "commune",
+    "nom": "Plouégat-Guérand",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29183",
+    "type": "commune",
+    "nom": "Plouégat-Moysan",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29184",
+    "type": "commune",
+    "nom": "Plouénan",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29185",
+    "type": "commune",
+    "nom": "Plouescat",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29186",
+    "type": "commune",
+    "nom": "Plouezoc'h",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29187",
+    "type": "commune",
+    "nom": "Plougar",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29188",
+    "type": "commune",
+    "nom": "Plougasnou",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29189",
+    "type": "commune",
+    "nom": "Plougastel-Daoulas",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29190",
+    "type": "commune",
+    "nom": "Plougonvelin",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29191",
+    "type": "commune",
+    "nom": "Plougonven",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29192",
+    "type": "commune",
+    "nom": "Plougoulm",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29193",
+    "type": "commune",
+    "nom": "Plougourvest",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29195",
+    "type": "commune",
+    "nom": "Plouguerneau",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29196",
+    "type": "commune",
+    "nom": "Plouguin",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29197",
+    "type": "commune",
+    "nom": "Plouhinec",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29198",
+    "type": "commune",
+    "nom": "Plouider",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29199",
+    "type": "commune",
+    "nom": "Plouigneau",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29201",
+    "type": "commune",
+    "nom": "Ploumoguer",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29202",
+    "type": "commune",
+    "nom": "Plounéour-Ménez",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29204",
+    "type": "commune",
+    "nom": "Plounéventer",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29205",
+    "type": "commune",
+    "nom": "Plounévézel",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29206",
+    "type": "commune",
+    "nom": "Plounévez-Lochrist",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29207",
+    "type": "commune",
+    "nom": "Plourin-lès-Morlaix",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29208",
+    "type": "commune",
+    "nom": "Plourin",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29209",
+    "type": "commune",
+    "nom": "Plouvien",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29210",
+    "type": "commune",
+    "nom": "Plouvorn",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29211",
+    "type": "commune",
+    "nom": "Plouyé",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29212",
+    "type": "commune",
+    "nom": "Plouzané",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29213",
+    "type": "commune",
+    "nom": "Plouzévédé",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29214",
+    "type": "commune",
+    "nom": "Plovan",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29215",
+    "type": "commune",
+    "nom": "Plozévet",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29216",
+    "type": "commune",
+    "nom": "Pluguffan",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29217",
+    "type": "commune",
+    "nom": "Pont-Aven",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29218",
+    "type": "commune",
+    "nom": "Pont-Croix",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29220",
+    "type": "commune",
+    "nom": "Pont-l'Abbé",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29221",
+    "type": "commune",
+    "nom": "Porspoder",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29222",
+    "type": "commune",
+    "nom": "Port-Launay",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29224",
+    "type": "commune",
+    "nom": "Pouldergat",
+    "departement": "29",
+    "epci": "242900645"
+  },
+  {
+    "territoire": "29225",
+    "type": "commune",
+    "nom": "Pouldreuzic",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29226",
+    "type": "commune",
+    "nom": "Poullan-sur-Mer",
+    "departement": "29",
+    "epci": "242900645"
+  },
+  {
+    "territoire": "29227",
+    "type": "commune",
+    "nom": "Poullaouen",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29228",
+    "type": "commune",
+    "nom": "Primelin",
+    "departement": "29",
+    "epci": "242900629"
+  },
+  {
+    "territoire": "29229",
+    "type": "commune",
+    "nom": "Quéménéven",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29230",
+    "type": "commune",
+    "nom": "Querrien",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29232",
+    "type": "commune",
+    "nom": "Quimper",
+    "departement": "29",
+    "epci": "200068120"
+  },
+  {
+    "territoire": "29233",
+    "type": "commune",
+    "nom": "Quimperlé",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29234",
+    "type": "commune",
+    "nom": "Rédené",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29235",
+    "type": "commune",
+    "nom": "Le Relecq-Kerhuon",
+    "departement": "29",
+    "epci": "242900314"
+  },
+  {
+    "territoire": "29236",
+    "type": "commune",
+    "nom": "Riec-sur-Bélon",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29237",
+    "type": "commune",
+    "nom": "La Roche-Maurice",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29238",
+    "type": "commune",
+    "nom": "Roscanvel",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29239",
+    "type": "commune",
+    "nom": "Roscoff",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29240",
+    "type": "commune",
+    "nom": "Rosnoën",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29241",
+    "type": "commune",
+    "nom": "Rosporden",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29243",
+    "type": "commune",
+    "nom": "Saint-Coulitz",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29244",
+    "type": "commune",
+    "nom": "Saint-Derrien",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29245",
+    "type": "commune",
+    "nom": "Saint-Divy",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29246",
+    "type": "commune",
+    "nom": "Saint-Eloy",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29247",
+    "type": "commune",
+    "nom": "Saint-Évarzec",
+    "departement": "29",
+    "epci": "242900660"
+  },
+  {
+    "territoire": "29248",
+    "type": "commune",
+    "nom": "Saint-Frégant",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29249",
+    "type": "commune",
+    "nom": "Saint-Goazec",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29250",
+    "type": "commune",
+    "nom": "Saint-Hernin",
+    "departement": "29",
+    "epci": "242900744"
+  },
+  {
+    "territoire": "29251",
+    "type": "commune",
+    "nom": "Saint-Jean-du-Doigt",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29252",
+    "type": "commune",
+    "nom": "Saint-Jean-Trolimon",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29254",
+    "type": "commune",
+    "nom": "Saint-Martin-des-Champs",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29255",
+    "type": "commune",
+    "nom": "Saint-Méen",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29256",
+    "type": "commune",
+    "nom": "Saint-Nic",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29257",
+    "type": "commune",
+    "nom": "Saint-Pabu",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29259",
+    "type": "commune",
+    "nom": "Saint-Pol-de-Léon",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29260",
+    "type": "commune",
+    "nom": "Saint-Renan",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29261",
+    "type": "commune",
+    "nom": "Saint-Rivoal",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29262",
+    "type": "commune",
+    "nom": "Saint-Sauveur",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29263",
+    "type": "commune",
+    "nom": "Saint-Ségal",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29264",
+    "type": "commune",
+    "nom": "Saint-Servais",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29265",
+    "type": "commune",
+    "nom": "Sainte-Sève",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29266",
+    "type": "commune",
+    "nom": "Saint-Thégonnec Loc-Eguiner",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29267",
+    "type": "commune",
+    "nom": "Saint-Thois",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29268",
+    "type": "commune",
+    "nom": "Saint-Thonan",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29269",
+    "type": "commune",
+    "nom": "Saint-Thurien",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29270",
+    "type": "commune",
+    "nom": "Saint-Urbain",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29271",
+    "type": "commune",
+    "nom": "Saint-Vougay",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29272",
+    "type": "commune",
+    "nom": "Saint-Yvi",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29273",
+    "type": "commune",
+    "nom": "Santec",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29274",
+    "type": "commune",
+    "nom": "Scaër",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29275",
+    "type": "commune",
+    "nom": "Scrignac",
+    "departement": "29",
+    "epci": "200067197"
+  },
+  {
+    "territoire": "29276",
+    "type": "commune",
+    "nom": "Sibiril",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29277",
+    "type": "commune",
+    "nom": "Sizun",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29278",
+    "type": "commune",
+    "nom": "Spézet",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29279",
+    "type": "commune",
+    "nom": "Taulé",
+    "departement": "29",
+    "epci": "242900835"
+  },
+  {
+    "territoire": "29280",
+    "type": "commune",
+    "nom": "Telgruc-sur-Mer",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "29281",
+    "type": "commune",
+    "nom": "Tourch",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29282",
+    "type": "commune",
+    "nom": "Trébabu",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29284",
+    "type": "commune",
+    "nom": "Treffiagat",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29285",
+    "type": "commune",
+    "nom": "Tréflaouénan",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29286",
+    "type": "commune",
+    "nom": "Tréflévénez",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29287",
+    "type": "commune",
+    "nom": "Tréflez",
+    "departement": "29",
+    "epci": "200067072"
+  },
+  {
+    "territoire": "29288",
+    "type": "commune",
+    "nom": "Trégarantec",
+    "departement": "29",
+    "epci": "242900793"
+  },
+  {
+    "territoire": "29289",
+    "type": "commune",
+    "nom": "Trégarvan",
+    "departement": "29",
+    "epci": "200067247"
+  },
+  {
+    "territoire": "29290",
+    "type": "commune",
+    "nom": "Tréglonou",
+    "departement": "29",
+    "epci": "242900553"
+  },
+  {
+    "territoire": "29291",
+    "type": "commune",
+    "nom": "Trégourez",
+    "departement": "29",
+    "epci": "242900561"
+  },
+  {
+    "territoire": "29292",
+    "type": "commune",
+    "nom": "Tréguennec",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29293",
+    "type": "commune",
+    "nom": "Trégunc",
+    "departement": "29",
+    "epci": "242900769"
+  },
+  {
+    "territoire": "29294",
+    "type": "commune",
+    "nom": "Le Tréhou",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29295",
+    "type": "commune",
+    "nom": "Trémaouézan",
+    "departement": "29",
+    "epci": "242900801"
+  },
+  {
+    "territoire": "29296",
+    "type": "commune",
+    "nom": "Tréméoc",
+    "departement": "29",
+    "epci": "242900702"
+  },
+  {
+    "territoire": "29297",
+    "type": "commune",
+    "nom": "Tréméven",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29298",
+    "type": "commune",
+    "nom": "Tréogat",
+    "departement": "29",
+    "epci": "242900710"
+  },
+  {
+    "territoire": "29299",
+    "type": "commune",
+    "nom": "Tréouergat",
+    "departement": "29",
+    "epci": "242900074"
+  },
+  {
+    "territoire": "29300",
+    "type": "commune",
+    "nom": "Le Trévoux",
+    "departement": "29",
+    "epci": "242900694"
+  },
+  {
+    "territoire": "29301",
+    "type": "commune",
+    "nom": "Trézilidé",
+    "departement": "29",
+    "epci": "242900751"
+  },
+  {
+    "territoire": "29302",
+    "type": "commune",
+    "nom": "Pont-de-Buis-lès-Quimerch",
+    "departement": "29",
+    "epci": "200066868"
+  },
+  {
+    "territoire": "35001",
+    "type": "commune",
+    "nom": "Acigné",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35002",
+    "type": "commune",
+    "nom": "Amanlis",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35003",
+    "type": "commune",
+    "nom": "Andouillé-Neuville",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35004",
+    "type": "commune",
+    "nom": "Val-Couesnon",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35005",
+    "type": "commune",
+    "nom": "Arbrissel",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35006",
+    "type": "commune",
+    "nom": "Argentré-du-Plessis",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35007",
+    "type": "commune",
+    "nom": "Aubigné",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35008",
+    "type": "commune",
+    "nom": "Availles-sur-Seiche",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35009",
+    "type": "commune",
+    "nom": "Baguer-Morvan",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35010",
+    "type": "commune",
+    "nom": "Baguer-Pican",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35012",
+    "type": "commune",
+    "nom": "Bain-de-Bretagne",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35013",
+    "type": "commune",
+    "nom": "Bains-sur-Oust",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35014",
+    "type": "commune",
+    "nom": "Bais",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35015",
+    "type": "commune",
+    "nom": "Balazé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35016",
+    "type": "commune",
+    "nom": "Baulon",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35017",
+    "type": "commune",
+    "nom": "La Baussaine",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35018",
+    "type": "commune",
+    "nom": "La Bazouge-du-Désert",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35019",
+    "type": "commune",
+    "nom": "Bazouges-la-Pérouse",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35021",
+    "type": "commune",
+    "nom": "Beaucé",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35022",
+    "type": "commune",
+    "nom": "Bécherel",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35023",
+    "type": "commune",
+    "nom": "Bédée",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35024",
+    "type": "commune",
+    "nom": "Betton",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35025",
+    "type": "commune",
+    "nom": "Billé",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35026",
+    "type": "commune",
+    "nom": "Bléruais",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35027",
+    "type": "commune",
+    "nom": "Boisgervilly",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35028",
+    "type": "commune",
+    "nom": "Boistrudan",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35029",
+    "type": "commune",
+    "nom": "Bonnemain",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35030",
+    "type": "commune",
+    "nom": "La Bosse-de-Bretagne",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35031",
+    "type": "commune",
+    "nom": "La Bouëxière",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35032",
+    "type": "commune",
+    "nom": "Bourgbarré",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35033",
+    "type": "commune",
+    "nom": "Bourg-des-Comptes",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35034",
+    "type": "commune",
+    "nom": "La Boussac",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35035",
+    "type": "commune",
+    "nom": "Bovel",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35037",
+    "type": "commune",
+    "nom": "Bréal-sous-Montfort",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35038",
+    "type": "commune",
+    "nom": "Bréal-sous-Vitré",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35039",
+    "type": "commune",
+    "nom": "Brécé",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35040",
+    "type": "commune",
+    "nom": "Breteil",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35041",
+    "type": "commune",
+    "nom": "Brie",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35042",
+    "type": "commune",
+    "nom": "Brielles",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35044",
+    "type": "commune",
+    "nom": "Broualan",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35045",
+    "type": "commune",
+    "nom": "Bruc-sur-Aff",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35046",
+    "type": "commune",
+    "nom": "Les Brulais",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35047",
+    "type": "commune",
+    "nom": "Bruz",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35049",
+    "type": "commune",
+    "nom": "Cancale",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35050",
+    "type": "commune",
+    "nom": "Cardroc",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35051",
+    "type": "commune",
+    "nom": "Cesson-Sévigné",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35052",
+    "type": "commune",
+    "nom": "Champeaux",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35054",
+    "type": "commune",
+    "nom": "Chanteloup",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35055",
+    "type": "commune",
+    "nom": "Chantepie",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35056",
+    "type": "commune",
+    "nom": "La Chapelle-aux-Filtzméens",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35057",
+    "type": "commune",
+    "nom": "La Chapelle-Bouëxic",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35058",
+    "type": "commune",
+    "nom": "La Chapelle-Chaussée",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35059",
+    "type": "commune",
+    "nom": "La Chapelle-des-Fougeretz",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35060",
+    "type": "commune",
+    "nom": "La Chapelle du Lou du Lac",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35061",
+    "type": "commune",
+    "nom": "La Chapelle-Erbrée",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35062",
+    "type": "commune",
+    "nom": "La Chapelle-Fleurigné",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35063",
+    "type": "commune",
+    "nom": "La Chapelle-Saint-Aubert",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35064",
+    "type": "commune",
+    "nom": "La Chapelle-de-Brain",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35065",
+    "type": "commune",
+    "nom": "La Chapelle-Thouarault",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35066",
+    "type": "commune",
+    "nom": "Chartres-de-Bretagne",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35067",
+    "type": "commune",
+    "nom": "Chasné-sur-Illet",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35068",
+    "type": "commune",
+    "nom": "Châteaubourg",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35069",
+    "type": "commune",
+    "nom": "Châteaugiron",
+    "departement": "35",
+    "epci": "243500659"
+  },
+  {
+    "territoire": "35070",
+    "type": "commune",
+    "nom": "Châteauneuf-d'Ille-et-Vilaine",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35071",
+    "type": "commune",
+    "nom": "Le Châtellier",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35072",
+    "type": "commune",
+    "nom": "Châtillon-en-Vendelais",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35075",
+    "type": "commune",
+    "nom": "Chauvigné",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35076",
+    "type": "commune",
+    "nom": "Chavagne",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35077",
+    "type": "commune",
+    "nom": "Chelun",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35078",
+    "type": "commune",
+    "nom": "Cherrueix",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35079",
+    "type": "commune",
+    "nom": "Chevaigné",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35080",
+    "type": "commune",
+    "nom": "Cintré",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35081",
+    "type": "commune",
+    "nom": "Clayes",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35082",
+    "type": "commune",
+    "nom": "Coësmes",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35084",
+    "type": "commune",
+    "nom": "Comblessac",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35085",
+    "type": "commune",
+    "nom": "Combourg",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35086",
+    "type": "commune",
+    "nom": "Combourtillé",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35087",
+    "type": "commune",
+    "nom": "Cornillé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35088",
+    "type": "commune",
+    "nom": "Corps-Nuds",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35089",
+    "type": "commune",
+    "nom": "La Couyère",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35090",
+    "type": "commune",
+    "nom": "Crevin",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35091",
+    "type": "commune",
+    "nom": "Le Crouais",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35092",
+    "type": "commune",
+    "nom": "Cuguen",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35093",
+    "type": "commune",
+    "nom": "Dinard",
+    "departement": "35",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "35094",
+    "type": "commune",
+    "nom": "Dingé",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35095",
+    "type": "commune",
+    "nom": "Dol-de-Bretagne",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35096",
+    "type": "commune",
+    "nom": "Domagné",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35097",
+    "type": "commune",
+    "nom": "Domalain",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35098",
+    "type": "commune",
+    "nom": "La Dominelais",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35099",
+    "type": "commune",
+    "nom": "Domloup",
+    "departement": "35",
+    "epci": "243500659"
+  },
+  {
+    "territoire": "35101",
+    "type": "commune",
+    "nom": "Dourdain",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35102",
+    "type": "commune",
+    "nom": "Drouges",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35103",
+    "type": "commune",
+    "nom": "Eancé",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35104",
+    "type": "commune",
+    "nom": "Epiniac",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35105",
+    "type": "commune",
+    "nom": "Erbrée",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35106",
+    "type": "commune",
+    "nom": "Ercé-en-Lamée",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35107",
+    "type": "commune",
+    "nom": "Ercé-près-Liffré",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35108",
+    "type": "commune",
+    "nom": "Essé",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35109",
+    "type": "commune",
+    "nom": "Étrelles",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35110",
+    "type": "commune",
+    "nom": "Feins",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35111",
+    "type": "commune",
+    "nom": "Le Ferré",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35114",
+    "type": "commune",
+    "nom": "Forges-la-Forêt",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35115",
+    "type": "commune",
+    "nom": "Fougères",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35116",
+    "type": "commune",
+    "nom": "La Fresnais",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35117",
+    "type": "commune",
+    "nom": "Gaël",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35118",
+    "type": "commune",
+    "nom": "Gahard",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35119",
+    "type": "commune",
+    "nom": "Gennes-sur-Seiche",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35120",
+    "type": "commune",
+    "nom": "Gévezé",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35121",
+    "type": "commune",
+    "nom": "Gosné",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35122",
+    "type": "commune",
+    "nom": "La Gouesnière",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35123",
+    "type": "commune",
+    "nom": "Goven",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35124",
+    "type": "commune",
+    "nom": "Grand-Fougeray",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35125",
+    "type": "commune",
+    "nom": "La Guerche-de-Bretagne",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35126",
+    "type": "commune",
+    "nom": "Guichen",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35127",
+    "type": "commune",
+    "nom": "Guignen",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35128",
+    "type": "commune",
+    "nom": "Guipel",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35130",
+    "type": "commune",
+    "nom": "Hédé-Bazouges",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35131",
+    "type": "commune",
+    "nom": "L'Hermitage",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35132",
+    "type": "commune",
+    "nom": "Hirel",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35133",
+    "type": "commune",
+    "nom": "Iffendic",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35134",
+    "type": "commune",
+    "nom": "Les Iffs",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35135",
+    "type": "commune",
+    "nom": "Irodouër",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35136",
+    "type": "commune",
+    "nom": "Janzé",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35137",
+    "type": "commune",
+    "nom": "Javené",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35138",
+    "type": "commune",
+    "nom": "Laignelet",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35139",
+    "type": "commune",
+    "nom": "Laillé",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35140",
+    "type": "commune",
+    "nom": "Lalleu",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35141",
+    "type": "commune",
+    "nom": "Landavran",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35142",
+    "type": "commune",
+    "nom": "Landéan",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35143",
+    "type": "commune",
+    "nom": "Landujan",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35144",
+    "type": "commune",
+    "nom": "Langan",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35145",
+    "type": "commune",
+    "nom": "Langon",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35146",
+    "type": "commune",
+    "nom": "Langouet",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35148",
+    "type": "commune",
+    "nom": "Lanrigan",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35149",
+    "type": "commune",
+    "nom": "Lassy",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35150",
+    "type": "commune",
+    "nom": "Lécousse",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35151",
+    "type": "commune",
+    "nom": "Lieuron",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35152",
+    "type": "commune",
+    "nom": "Liffré",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35153",
+    "type": "commune",
+    "nom": "Lillemer",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35154",
+    "type": "commune",
+    "nom": "Livré-sur-Changeon",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35155",
+    "type": "commune",
+    "nom": "Lohéac",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35156",
+    "type": "commune",
+    "nom": "Longaulnay",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35157",
+    "type": "commune",
+    "nom": "Le Loroux",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35159",
+    "type": "commune",
+    "nom": "Lourmais",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35160",
+    "type": "commune",
+    "nom": "Loutehel",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35161",
+    "type": "commune",
+    "nom": "Louvigné-de-Bais",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35162",
+    "type": "commune",
+    "nom": "Louvigné-du-Désert",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35163",
+    "type": "commune",
+    "nom": "Luitré-Dompierre",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35164",
+    "type": "commune",
+    "nom": "Marcillé-Raoul",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35165",
+    "type": "commune",
+    "nom": "Marcillé-Robert",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35166",
+    "type": "commune",
+    "nom": "Marpiré",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35167",
+    "type": "commune",
+    "nom": "Martigné-Ferchaud",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35168",
+    "type": "commune",
+    "nom": "Val d'Anast",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35169",
+    "type": "commune",
+    "nom": "Maxent",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35170",
+    "type": "commune",
+    "nom": "Mecé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35171",
+    "type": "commune",
+    "nom": "Médréac",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35172",
+    "type": "commune",
+    "nom": "Meillac",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35173",
+    "type": "commune",
+    "nom": "Melesse",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35174",
+    "type": "commune",
+    "nom": "Mellé",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35175",
+    "type": "commune",
+    "nom": "Mernel",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35176",
+    "type": "commune",
+    "nom": "Guipry-Messac",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35177",
+    "type": "commune",
+    "nom": "La Mézière",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35178",
+    "type": "commune",
+    "nom": "Mézières-sur-Couesnon",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35179",
+    "type": "commune",
+    "nom": "Miniac-Morvan",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35180",
+    "type": "commune",
+    "nom": "Miniac-sous-Bécherel",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35181",
+    "type": "commune",
+    "nom": "Le Minihic-sur-Rance",
+    "departement": "35",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "35183",
+    "type": "commune",
+    "nom": "Mondevert",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35184",
+    "type": "commune",
+    "nom": "Montauban-de-Bretagne",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35185",
+    "type": "commune",
+    "nom": "Montautour",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35186",
+    "type": "commune",
+    "nom": "Mont-Dol",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35187",
+    "type": "commune",
+    "nom": "Monterfil",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35188",
+    "type": "commune",
+    "nom": "Montfort-sur-Meu",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35189",
+    "type": "commune",
+    "nom": "Montgermont",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35190",
+    "type": "commune",
+    "nom": "Monthault",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35191",
+    "type": "commune",
+    "nom": "Les Portes du Coglais",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35192",
+    "type": "commune",
+    "nom": "Montreuil-des-Landes",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35193",
+    "type": "commune",
+    "nom": "Montreuil-le-Gast",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35194",
+    "type": "commune",
+    "nom": "Montreuil-sous-Pérouse",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35195",
+    "type": "commune",
+    "nom": "Montreuil-sur-Ille",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35196",
+    "type": "commune",
+    "nom": "Mordelles",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35197",
+    "type": "commune",
+    "nom": "Mouazé",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35198",
+    "type": "commune",
+    "nom": "Moulins",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35199",
+    "type": "commune",
+    "nom": "Moussé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35200",
+    "type": "commune",
+    "nom": "Moutiers",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35201",
+    "type": "commune",
+    "nom": "Muel",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35202",
+    "type": "commune",
+    "nom": "La Noë-Blanche",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35203",
+    "type": "commune",
+    "nom": "La Nouaye",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35204",
+    "type": "commune",
+    "nom": "Nouvoitou",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35205",
+    "type": "commune",
+    "nom": "Noyal-sous-Bazouges",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35206",
+    "type": "commune",
+    "nom": "Noyal-Châtillon-sur-Seiche",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35207",
+    "type": "commune",
+    "nom": "Noyal-sur-Vilaine",
+    "departement": "35",
+    "epci": "243500659"
+  },
+  {
+    "territoire": "35208",
+    "type": "commune",
+    "nom": "Orgères",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35210",
+    "type": "commune",
+    "nom": "Pacé",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35211",
+    "type": "commune",
+    "nom": "Paimpont",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35212",
+    "type": "commune",
+    "nom": "Pancé",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35214",
+    "type": "commune",
+    "nom": "Parcé",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35215",
+    "type": "commune",
+    "nom": "Parigné",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35216",
+    "type": "commune",
+    "nom": "Parthenay-de-Bretagne",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35217",
+    "type": "commune",
+    "nom": "Le Pertre",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35218",
+    "type": "commune",
+    "nom": "Le Petit-Fougeray",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35219",
+    "type": "commune",
+    "nom": "Pipriac",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35220",
+    "type": "commune",
+    "nom": "Piré-Chancé",
+    "departement": "35",
+    "epci": "243500659"
+  },
+  {
+    "territoire": "35221",
+    "type": "commune",
+    "nom": "Pléchâtel",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35222",
+    "type": "commune",
+    "nom": "Pleine-Fougères",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35223",
+    "type": "commune",
+    "nom": "Plélan-le-Grand",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35224",
+    "type": "commune",
+    "nom": "Plerguer",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35225",
+    "type": "commune",
+    "nom": "Plesder",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35226",
+    "type": "commune",
+    "nom": "Pleugueneuc",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35227",
+    "type": "commune",
+    "nom": "Pleumeleuc",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35228",
+    "type": "commune",
+    "nom": "Pleurtuit",
+    "departement": "35",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "35229",
+    "type": "commune",
+    "nom": "Pocé-les-Bois",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35230",
+    "type": "commune",
+    "nom": "Poilley",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35231",
+    "type": "commune",
+    "nom": "Poligné",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35232",
+    "type": "commune",
+    "nom": "Princé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35233",
+    "type": "commune",
+    "nom": "Québriac",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35234",
+    "type": "commune",
+    "nom": "Quédillac",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35235",
+    "type": "commune",
+    "nom": "Rannée",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35236",
+    "type": "commune",
+    "nom": "Redon",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35237",
+    "type": "commune",
+    "nom": "Renac",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35238",
+    "type": "commune",
+    "nom": "Rennes",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35239",
+    "type": "commune",
+    "nom": "Retiers",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35240",
+    "type": "commune",
+    "nom": "Le Rheu",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35241",
+    "type": "commune",
+    "nom": "La Richardais",
+    "departement": "35",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "35242",
+    "type": "commune",
+    "nom": "Rimou",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35243",
+    "type": "commune",
+    "nom": "Romagné",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35244",
+    "type": "commune",
+    "nom": "Romazy",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35245",
+    "type": "commune",
+    "nom": "Romillé",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35246",
+    "type": "commune",
+    "nom": "Roz-Landrieux",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35247",
+    "type": "commune",
+    "nom": "Roz-sur-Couesnon",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35248",
+    "type": "commune",
+    "nom": "Sains",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35249",
+    "type": "commune",
+    "nom": "Sainte-Anne-sur-Vilaine",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35250",
+    "type": "commune",
+    "nom": "Saint-Armel",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35251",
+    "type": "commune",
+    "nom": "Saint-Aubin-d'Aubigné",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35252",
+    "type": "commune",
+    "nom": "Saint-Aubin-des-Landes",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35253",
+    "type": "commune",
+    "nom": "Saint-Aubin-du-Cormier",
+    "departement": "35",
+    "epci": "243500774"
+  },
+  {
+    "territoire": "35255",
+    "type": "commune",
+    "nom": "Saint-Benoît-des-Ondes",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35256",
+    "type": "commune",
+    "nom": "Saint-Briac-sur-Mer",
+    "departement": "35",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "35257",
+    "type": "commune",
+    "nom": "Maen Roch",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35258",
+    "type": "commune",
+    "nom": "Saint-Brieuc-des-Iffs",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35259",
+    "type": "commune",
+    "nom": "Saint-Broladre",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35260",
+    "type": "commune",
+    "nom": "Saint-Christophe-des-Bois",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35261",
+    "type": "commune",
+    "nom": "Saint-Christophe-de-Valains",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35262",
+    "type": "commune",
+    "nom": "Sainte-Colombe",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35263",
+    "type": "commune",
+    "nom": "Saint-Coulomb",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35264",
+    "type": "commune",
+    "nom": "Saint-Didier",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35265",
+    "type": "commune",
+    "nom": "Saint-Domineuc",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35266",
+    "type": "commune",
+    "nom": "Saint-Erblon",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35268",
+    "type": "commune",
+    "nom": "Saint-Ganton",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35270",
+    "type": "commune",
+    "nom": "Saint-Georges-de-Gréhaigne",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35271",
+    "type": "commune",
+    "nom": "Saint-Georges-de-Reintembault",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35272",
+    "type": "commune",
+    "nom": "Saint-Germain-du-Pinel",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35273",
+    "type": "commune",
+    "nom": "Saint-Germain-en-Coglès",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35274",
+    "type": "commune",
+    "nom": "Saint-Germain-sur-Ille",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35275",
+    "type": "commune",
+    "nom": "Saint-Gilles",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35276",
+    "type": "commune",
+    "nom": "Saint-Gondran",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35277",
+    "type": "commune",
+    "nom": "Saint-Gonlay",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35278",
+    "type": "commune",
+    "nom": "Saint-Grégoire",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35279",
+    "type": "commune",
+    "nom": "Saint-Guinoux",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35280",
+    "type": "commune",
+    "nom": "Saint-Hilaire-des-Landes",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35281",
+    "type": "commune",
+    "nom": "Saint-Jacques-de-la-Lande",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35282",
+    "type": "commune",
+    "nom": "Rives-du-Couesnon",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35283",
+    "type": "commune",
+    "nom": "Saint-Jean-sur-Vilaine",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35284",
+    "type": "commune",
+    "nom": "Saint-Jouan-des-Guérets",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35285",
+    "type": "commune",
+    "nom": "Saint-Just",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35286",
+    "type": "commune",
+    "nom": "Saint-Léger-des-Prés",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35287",
+    "type": "commune",
+    "nom": "Saint-Lunaire",
+    "departement": "35",
+    "epci": "243500725"
+  },
+  {
+    "territoire": "35288",
+    "type": "commune",
+    "nom": "Saint-Malo",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35289",
+    "type": "commune",
+    "nom": "Saint-Malo-de-Phily",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35290",
+    "type": "commune",
+    "nom": "Saint-Malon-sur-Mel",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35291",
+    "type": "commune",
+    "nom": "Saint-Marcan",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35292",
+    "type": "commune",
+    "nom": "Saint-Marc-le-Blanc",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35294",
+    "type": "commune",
+    "nom": "Sainte-Marie",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35295",
+    "type": "commune",
+    "nom": "Saint-Maugan",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35296",
+    "type": "commune",
+    "nom": "Saint-Médard-sur-Ille",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35297",
+    "type": "commune",
+    "nom": "Saint-Méen-le-Grand",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35299",
+    "type": "commune",
+    "nom": "Saint-Méloir-des-Ondes",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35300",
+    "type": "commune",
+    "nom": "Saint-M'Hervé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35302",
+    "type": "commune",
+    "nom": "Saint-Onen-la-Chapelle",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35304",
+    "type": "commune",
+    "nom": "Saint-Ouen-des-Alleux",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35305",
+    "type": "commune",
+    "nom": "Saint-Péran",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35306",
+    "type": "commune",
+    "nom": "Saint-Père-Marc-en-Poulet",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35307",
+    "type": "commune",
+    "nom": "Saint-Pern",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35308",
+    "type": "commune",
+    "nom": "Mesnil-Roc'h",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35309",
+    "type": "commune",
+    "nom": "Saint-Rémy-du-Plain",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35310",
+    "type": "commune",
+    "nom": "Saint-Sauveur-des-Landes",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35311",
+    "type": "commune",
+    "nom": "Saint-Séglin",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35312",
+    "type": "commune",
+    "nom": "Saint-Senoux",
+    "departement": "35",
+    "epci": "200043990"
+  },
+  {
+    "territoire": "35314",
+    "type": "commune",
+    "nom": "Saint-Suliac",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35315",
+    "type": "commune",
+    "nom": "Saint-Sulpice-la-Forêt",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35316",
+    "type": "commune",
+    "nom": "Saint-Sulpice-des-Landes",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35317",
+    "type": "commune",
+    "nom": "Saint-Symphorien",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35318",
+    "type": "commune",
+    "nom": "Saint-Thual",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35319",
+    "type": "commune",
+    "nom": "Saint-Thurial",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35320",
+    "type": "commune",
+    "nom": "Saint-Uniac",
+    "departement": "35",
+    "epci": "200038990"
+  },
+  {
+    "territoire": "35321",
+    "type": "commune",
+    "nom": "Saulnières",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35322",
+    "type": "commune",
+    "nom": "Le Sel-de-Bretagne",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35324",
+    "type": "commune",
+    "nom": "La Selle-en-Luitré",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35325",
+    "type": "commune",
+    "nom": "La Selle-Guerchaise",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35326",
+    "type": "commune",
+    "nom": "Sens-de-Bretagne",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35327",
+    "type": "commune",
+    "nom": "Servon-sur-Vilaine",
+    "departement": "35",
+    "epci": "243500659"
+  },
+  {
+    "territoire": "35328",
+    "type": "commune",
+    "nom": "Sixt-sur-Aff",
+    "departement": "35",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "35329",
+    "type": "commune",
+    "nom": "Sougeal",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35330",
+    "type": "commune",
+    "nom": "Taillis",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35331",
+    "type": "commune",
+    "nom": "Talensac",
+    "departement": "35",
+    "epci": "243500550"
+  },
+  {
+    "territoire": "35332",
+    "type": "commune",
+    "nom": "Teillay",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35333",
+    "type": "commune",
+    "nom": "Le Theil-de-Bretagne",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35334",
+    "type": "commune",
+    "nom": "Thorigné-Fouillard",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35335",
+    "type": "commune",
+    "nom": "Thourie",
+    "departement": "35",
+    "epci": "243500634"
+  },
+  {
+    "territoire": "35336",
+    "type": "commune",
+    "nom": "Le Tiercent",
+    "departement": "35",
+    "epci": "200070688"
+  },
+  {
+    "territoire": "35337",
+    "type": "commune",
+    "nom": "Tinténiac",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35338",
+    "type": "commune",
+    "nom": "Torcé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35339",
+    "type": "commune",
+    "nom": "Trans-la-Forêt",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35340",
+    "type": "commune",
+    "nom": "Treffendel",
+    "departement": "35",
+    "epci": "243500618"
+  },
+  {
+    "territoire": "35342",
+    "type": "commune",
+    "nom": "Trémeheuc",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35343",
+    "type": "commune",
+    "nom": "Tresbœuf",
+    "departement": "35",
+    "epci": "200070662"
+  },
+  {
+    "territoire": "35345",
+    "type": "commune",
+    "nom": "Trévérien",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35346",
+    "type": "commune",
+    "nom": "Trimer",
+    "departement": "35",
+    "epci": "243500733"
+  },
+  {
+    "territoire": "35347",
+    "type": "commune",
+    "nom": "Val-d'Izé",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35350",
+    "type": "commune",
+    "nom": "Vergéal",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35351",
+    "type": "commune",
+    "nom": "Le Verger",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35352",
+    "type": "commune",
+    "nom": "Vern-sur-Seiche",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35353",
+    "type": "commune",
+    "nom": "Vezin-le-Coquet",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "35354",
+    "type": "commune",
+    "nom": "Vieux-Viel",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35355",
+    "type": "commune",
+    "nom": "Vieux-Vy-sur-Couesnon",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35356",
+    "type": "commune",
+    "nom": "Vignoc",
+    "departement": "35",
+    "epci": "243500667"
+  },
+  {
+    "territoire": "35357",
+    "type": "commune",
+    "nom": "Villamée",
+    "departement": "35",
+    "epci": "200072452"
+  },
+  {
+    "territoire": "35358",
+    "type": "commune",
+    "nom": "La Ville-ès-Nonais",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35359",
+    "type": "commune",
+    "nom": "Visseiche",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35360",
+    "type": "commune",
+    "nom": "Vitré",
+    "departement": "35",
+    "epci": "200039022"
+  },
+  {
+    "territoire": "35361",
+    "type": "commune",
+    "nom": "Le Vivier-sur-Mer",
+    "departement": "35",
+    "epci": "200070670"
+  },
+  {
+    "territoire": "35362",
+    "type": "commune",
+    "nom": "Le Tronchet",
+    "departement": "35",
+    "epci": "243500782"
+  },
+  {
+    "territoire": "35363",
+    "type": "commune",
+    "nom": "Pont-Péan",
+    "departement": "35",
+    "epci": "243500139"
+  },
+  {
+    "territoire": "56001",
+    "type": "commune",
+    "nom": "Allaire",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56002",
+    "type": "commune",
+    "nom": "Ambon",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56003",
+    "type": "commune",
+    "nom": "Arradon",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56004",
+    "type": "commune",
+    "nom": "Arzal",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56005",
+    "type": "commune",
+    "nom": "Arzon",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56006",
+    "type": "commune",
+    "nom": "Augan",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56007",
+    "type": "commune",
+    "nom": "Auray",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56008",
+    "type": "commune",
+    "nom": "Baden",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56009",
+    "type": "commune",
+    "nom": "Bangor",
+    "departement": "56",
+    "epci": "245600465"
+  },
+  {
+    "territoire": "56010",
+    "type": "commune",
+    "nom": "Baud",
+    "departement": "56",
+    "epci": "200096675"
+  },
+  {
+    "territoire": "56011",
+    "type": "commune",
+    "nom": "Béganne",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56012",
+    "type": "commune",
+    "nom": "Beignon",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56013",
+    "type": "commune",
+    "nom": "Belz",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56014",
+    "type": "commune",
+    "nom": "Berné",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56015",
+    "type": "commune",
+    "nom": "Berric",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56017",
+    "type": "commune",
+    "nom": "Bignan",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56018",
+    "type": "commune",
+    "nom": "Billiers",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56019",
+    "type": "commune",
+    "nom": "Billio",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56020",
+    "type": "commune",
+    "nom": "Bohal",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56021",
+    "type": "commune",
+    "nom": "Brandérion",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56022",
+    "type": "commune",
+    "nom": "Brandivy",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56023",
+    "type": "commune",
+    "nom": "Brech",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56024",
+    "type": "commune",
+    "nom": "Bréhan",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56025",
+    "type": "commune",
+    "nom": "Brignac",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56026",
+    "type": "commune",
+    "nom": "Bubry",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56027",
+    "type": "commune",
+    "nom": "Buléon",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56028",
+    "type": "commune",
+    "nom": "Caden",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56029",
+    "type": "commune",
+    "nom": "Calan",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56030",
+    "type": "commune",
+    "nom": "Camoël",
+    "departement": "56",
+    "epci": "244400610"
+  },
+  {
+    "territoire": "56031",
+    "type": "commune",
+    "nom": "Camors",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56032",
+    "type": "commune",
+    "nom": "Campénéac",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56033",
+    "type": "commune",
+    "nom": "Carentoir",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56034",
+    "type": "commune",
+    "nom": "Carnac",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56035",
+    "type": "commune",
+    "nom": "Caro",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56036",
+    "type": "commune",
+    "nom": "Caudan",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56039",
+    "type": "commune",
+    "nom": "La Chapelle-Neuve",
+    "departement": "56",
+    "epci": "200096675"
+  },
+  {
+    "territoire": "56040",
+    "type": "commune",
+    "nom": "Cléguer",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56041",
+    "type": "commune",
+    "nom": "Cléguérec",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56042",
+    "type": "commune",
+    "nom": "Colpo",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56043",
+    "type": "commune",
+    "nom": "Concoret",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56044",
+    "type": "commune",
+    "nom": "Cournon",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56045",
+    "type": "commune",
+    "nom": "Le Cours",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56046",
+    "type": "commune",
+    "nom": "Crach",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56047",
+    "type": "commune",
+    "nom": "Crédin",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56048",
+    "type": "commune",
+    "nom": "Le Croisty",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56050",
+    "type": "commune",
+    "nom": "La Croix-Helléan",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56051",
+    "type": "commune",
+    "nom": "Cruguel",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56052",
+    "type": "commune",
+    "nom": "Damgan",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56053",
+    "type": "commune",
+    "nom": "Elven",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56054",
+    "type": "commune",
+    "nom": "Erdeven",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56055",
+    "type": "commune",
+    "nom": "Étel",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56056",
+    "type": "commune",
+    "nom": "Évriguet",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56057",
+    "type": "commune",
+    "nom": "Le Faouët",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56058",
+    "type": "commune",
+    "nom": "Férel",
+    "departement": "56",
+    "epci": "244400610"
+  },
+  {
+    "territoire": "56060",
+    "type": "commune",
+    "nom": "Les Fougerêts",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56061",
+    "type": "commune",
+    "nom": "La Gacilly",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56062",
+    "type": "commune",
+    "nom": "Gâvres",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56063",
+    "type": "commune",
+    "nom": "Gestel",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56065",
+    "type": "commune",
+    "nom": "Gourhel",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56066",
+    "type": "commune",
+    "nom": "Gourin",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56067",
+    "type": "commune",
+    "nom": "Grand-Champ",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56068",
+    "type": "commune",
+    "nom": "La Grée-Saint-Laurent",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56069",
+    "type": "commune",
+    "nom": "Groix",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56070",
+    "type": "commune",
+    "nom": "Guégon",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56071",
+    "type": "commune",
+    "nom": "Guéhenno",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56072",
+    "type": "commune",
+    "nom": "Gueltas",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56073",
+    "type": "commune",
+    "nom": "Guémené-sur-Scorff",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56074",
+    "type": "commune",
+    "nom": "Guénin",
+    "departement": "56",
+    "epci": "200096675"
+  },
+  {
+    "territoire": "56075",
+    "type": "commune",
+    "nom": "Guer",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56076",
+    "type": "commune",
+    "nom": "Guern",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56077",
+    "type": "commune",
+    "nom": "Le Guerno",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56078",
+    "type": "commune",
+    "nom": "Guidel",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56079",
+    "type": "commune",
+    "nom": "Guillac",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56080",
+    "type": "commune",
+    "nom": "Guilliers",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56081",
+    "type": "commune",
+    "nom": "Guiscriff",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56082",
+    "type": "commune",
+    "nom": "Helléan",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56083",
+    "type": "commune",
+    "nom": "Hennebont",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56084",
+    "type": "commune",
+    "nom": "Le Hézo",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56085",
+    "type": "commune",
+    "nom": "Hœdic",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56086",
+    "type": "commune",
+    "nom": "Île-d'Houat",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56087",
+    "type": "commune",
+    "nom": "Île-aux-Moines",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56088",
+    "type": "commune",
+    "nom": "Île-d'Arz",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56089",
+    "type": "commune",
+    "nom": "Inguiniel",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56090",
+    "type": "commune",
+    "nom": "Inzinzac-Lochrist",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56091",
+    "type": "commune",
+    "nom": "Josselin",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56092",
+    "type": "commune",
+    "nom": "Kerfourn",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56093",
+    "type": "commune",
+    "nom": "Kergrist",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56094",
+    "type": "commune",
+    "nom": "Kervignac",
+    "departement": "56",
+    "epci": "245600440"
+  },
+  {
+    "territoire": "56096",
+    "type": "commune",
+    "nom": "Landaul",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56097",
+    "type": "commune",
+    "nom": "Landévant",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56098",
+    "type": "commune",
+    "nom": "Lanester",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56099",
+    "type": "commune",
+    "nom": "Langoëlan",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56100",
+    "type": "commune",
+    "nom": "Langonnet",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56101",
+    "type": "commune",
+    "nom": "Languidic",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56102",
+    "type": "commune",
+    "nom": "Forges de Lanouée",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56103",
+    "type": "commune",
+    "nom": "Lantillac",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56104",
+    "type": "commune",
+    "nom": "Lanvaudan",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56105",
+    "type": "commune",
+    "nom": "Lanvénégen",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56106",
+    "type": "commune",
+    "nom": "Larmor-Baden",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56107",
+    "type": "commune",
+    "nom": "Larmor-Plage",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56108",
+    "type": "commune",
+    "nom": "Larré",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56109",
+    "type": "commune",
+    "nom": "Lauzach",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56110",
+    "type": "commune",
+    "nom": "Lignol",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56111",
+    "type": "commune",
+    "nom": "Limerzel",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56112",
+    "type": "commune",
+    "nom": "Lizio",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56113",
+    "type": "commune",
+    "nom": "Locmalo",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56114",
+    "type": "commune",
+    "nom": "Locmaria",
+    "departement": "56",
+    "epci": "245600465"
+  },
+  {
+    "territoire": "56115",
+    "type": "commune",
+    "nom": "Locmaria-Grand-Champ",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56116",
+    "type": "commune",
+    "nom": "Locmariaquer",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56117",
+    "type": "commune",
+    "nom": "Locminé",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56118",
+    "type": "commune",
+    "nom": "Locmiquélic",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56119",
+    "type": "commune",
+    "nom": "Locoal-Mendon",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56120",
+    "type": "commune",
+    "nom": "Locqueltas",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56121",
+    "type": "commune",
+    "nom": "Lorient",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56122",
+    "type": "commune",
+    "nom": "Loyat",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56123",
+    "type": "commune",
+    "nom": "Malansac",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56124",
+    "type": "commune",
+    "nom": "Malestroit",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56125",
+    "type": "commune",
+    "nom": "Malguénac",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56126",
+    "type": "commune",
+    "nom": "Marzan",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56127",
+    "type": "commune",
+    "nom": "Mauron",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56128",
+    "type": "commune",
+    "nom": "Melrand",
+    "departement": "56",
+    "epci": "200096675"
+  },
+  {
+    "territoire": "56129",
+    "type": "commune",
+    "nom": "Ménéac",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56130",
+    "type": "commune",
+    "nom": "Merlevenez",
+    "departement": "56",
+    "epci": "245600440"
+  },
+  {
+    "territoire": "56131",
+    "type": "commune",
+    "nom": "Meslan",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56132",
+    "type": "commune",
+    "nom": "Meucon",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56133",
+    "type": "commune",
+    "nom": "Missiriac",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56134",
+    "type": "commune",
+    "nom": "Mohon",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56135",
+    "type": "commune",
+    "nom": "Molac",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56136",
+    "type": "commune",
+    "nom": "Monteneuf",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56137",
+    "type": "commune",
+    "nom": "Monterblanc",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56139",
+    "type": "commune",
+    "nom": "Montertelot",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56140",
+    "type": "commune",
+    "nom": "Moréac",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56141",
+    "type": "commune",
+    "nom": "Moustoir-Ac",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56143",
+    "type": "commune",
+    "nom": "Muzillac",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56144",
+    "type": "commune",
+    "nom": "Évellys",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56145",
+    "type": "commune",
+    "nom": "Néant-sur-Yvel",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56146",
+    "type": "commune",
+    "nom": "Neulliac",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56147",
+    "type": "commune",
+    "nom": "Nivillac",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56148",
+    "type": "commune",
+    "nom": "Nostang",
+    "departement": "56",
+    "epci": "245600440"
+  },
+  {
+    "territoire": "56149",
+    "type": "commune",
+    "nom": "Noyal-Muzillac",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56151",
+    "type": "commune",
+    "nom": "Noyal-Pontivy",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56152",
+    "type": "commune",
+    "nom": "Le Palais",
+    "departement": "56",
+    "epci": "245600465"
+  },
+  {
+    "territoire": "56153",
+    "type": "commune",
+    "nom": "Péaule",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56154",
+    "type": "commune",
+    "nom": "Peillac",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56155",
+    "type": "commune",
+    "nom": "Pénestin",
+    "departement": "56",
+    "epci": "244400610"
+  },
+  {
+    "territoire": "56156",
+    "type": "commune",
+    "nom": "Persquen",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56157",
+    "type": "commune",
+    "nom": "Plaudren",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56158",
+    "type": "commune",
+    "nom": "Plescop",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56159",
+    "type": "commune",
+    "nom": "Pleucadeuc",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56160",
+    "type": "commune",
+    "nom": "Pleugriffet",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56161",
+    "type": "commune",
+    "nom": "Ploemel",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56162",
+    "type": "commune",
+    "nom": "Ploemeur",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56163",
+    "type": "commune",
+    "nom": "Ploërdut",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56164",
+    "type": "commune",
+    "nom": "Ploeren",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56165",
+    "type": "commune",
+    "nom": "Ploërmel",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56166",
+    "type": "commune",
+    "nom": "Plouay",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56167",
+    "type": "commune",
+    "nom": "Plougoumelen",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56168",
+    "type": "commune",
+    "nom": "Plouharnel",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56169",
+    "type": "commune",
+    "nom": "Plouhinec",
+    "departement": "56",
+    "epci": "245600440"
+  },
+  {
+    "territoire": "56170",
+    "type": "commune",
+    "nom": "Plouray",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56171",
+    "type": "commune",
+    "nom": "Pluherlin",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56172",
+    "type": "commune",
+    "nom": "Plumelec",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56173",
+    "type": "commune",
+    "nom": "Pluméliau-Bieuzy",
+    "departement": "56",
+    "epci": "200096675"
+  },
+  {
+    "territoire": "56174",
+    "type": "commune",
+    "nom": "Plumelin",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56175",
+    "type": "commune",
+    "nom": "Plumergat",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56176",
+    "type": "commune",
+    "nom": "Pluneret",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56177",
+    "type": "commune",
+    "nom": "Pluvigner",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56178",
+    "type": "commune",
+    "nom": "Pontivy",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56179",
+    "type": "commune",
+    "nom": "Pont-Scorff",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56180",
+    "type": "commune",
+    "nom": "Porcaro",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56181",
+    "type": "commune",
+    "nom": "Port-Louis",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56182",
+    "type": "commune",
+    "nom": "Priziac",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56184",
+    "type": "commune",
+    "nom": "Questembert",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56185",
+    "type": "commune",
+    "nom": "Quéven",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56186",
+    "type": "commune",
+    "nom": "Quiberon",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56188",
+    "type": "commune",
+    "nom": "Quistinic",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56189",
+    "type": "commune",
+    "nom": "Radenac",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56190",
+    "type": "commune",
+    "nom": "Réguiny",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56191",
+    "type": "commune",
+    "nom": "Réminiac",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56193",
+    "type": "commune",
+    "nom": "Riantec",
+    "departement": "56",
+    "epci": "200042174"
+  },
+  {
+    "territoire": "56194",
+    "type": "commune",
+    "nom": "Rieux",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56195",
+    "type": "commune",
+    "nom": "La Roche-Bernard",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56196",
+    "type": "commune",
+    "nom": "Rochefort-en-Terre",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56197",
+    "type": "commune",
+    "nom": "Val d'Oust",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56198",
+    "type": "commune",
+    "nom": "Rohan",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56199",
+    "type": "commune",
+    "nom": "Roudouallec",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56200",
+    "type": "commune",
+    "nom": "Ruffiac",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56201",
+    "type": "commune",
+    "nom": "Le Saint",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56202",
+    "type": "commune",
+    "nom": "Saint-Abraham",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56203",
+    "type": "commune",
+    "nom": "Saint-Aignan",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56204",
+    "type": "commune",
+    "nom": "Saint-Allouestre",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56205",
+    "type": "commune",
+    "nom": "Saint-Armel",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56206",
+    "type": "commune",
+    "nom": "Saint-Avé",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56207",
+    "type": "commune",
+    "nom": "Saint-Barthélemy",
+    "departement": "56",
+    "epci": "200096675"
+  },
+  {
+    "territoire": "56208",
+    "type": "commune",
+    "nom": "Saint-Brieuc-de-Mauron",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56209",
+    "type": "commune",
+    "nom": "Sainte-Brigitte",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56210",
+    "type": "commune",
+    "nom": "Saint-Caradec-Trégomel",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56211",
+    "type": "commune",
+    "nom": "Saint-Congard",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56212",
+    "type": "commune",
+    "nom": "Saint-Dolay",
+    "departement": "56",
+    "epci": "200027027"
+  },
+  {
+    "territoire": "56213",
+    "type": "commune",
+    "nom": "Saint-Gérand-Croixanvec",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56214",
+    "type": "commune",
+    "nom": "Saint-Gildas-de-Rhuys",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56215",
+    "type": "commune",
+    "nom": "Saint-Gonnery",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56216",
+    "type": "commune",
+    "nom": "Saint-Gorgon",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56218",
+    "type": "commune",
+    "nom": "Saint-Gravé",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56219",
+    "type": "commune",
+    "nom": "Saint-Guyomard",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56220",
+    "type": "commune",
+    "nom": "Sainte-Hélène",
+    "departement": "56",
+    "epci": "245600440"
+  },
+  {
+    "territoire": "56221",
+    "type": "commune",
+    "nom": "Saint-Jacut-les-Pins",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56222",
+    "type": "commune",
+    "nom": "Saint-Jean-Brévelay",
+    "departement": "56",
+    "epci": "200096683"
+  },
+  {
+    "territoire": "56223",
+    "type": "commune",
+    "nom": "Saint-Jean-la-Poterie",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56224",
+    "type": "commune",
+    "nom": "Saint-Laurent-sur-Oust",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56225",
+    "type": "commune",
+    "nom": "Saint-Léry",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56226",
+    "type": "commune",
+    "nom": "Saint-Malo-de-Beignon",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56227",
+    "type": "commune",
+    "nom": "Saint-Malo-des-Trois-Fontaines",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56228",
+    "type": "commune",
+    "nom": "Saint-Marcel",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56229",
+    "type": "commune",
+    "nom": "Saint-Martin-sur-Oust",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56230",
+    "type": "commune",
+    "nom": "Saint-Nicolas-du-Tertre",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56231",
+    "type": "commune",
+    "nom": "Saint-Nolff",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56232",
+    "type": "commune",
+    "nom": "Saint-Perreux",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56233",
+    "type": "commune",
+    "nom": "Saint-Philibert",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56234",
+    "type": "commune",
+    "nom": "Saint-Pierre-Quiberon",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56236",
+    "type": "commune",
+    "nom": "Saint-Servant",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56237",
+    "type": "commune",
+    "nom": "Saint-Thuriau",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56238",
+    "type": "commune",
+    "nom": "Saint-Tugdual",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "56239",
+    "type": "commune",
+    "nom": "Saint-Vincent-sur-Oust",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56240",
+    "type": "commune",
+    "nom": "Sarzeau",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56241",
+    "type": "commune",
+    "nom": "Sauzon",
+    "departement": "56",
+    "epci": "245600465"
+  },
+  {
+    "territoire": "56242",
+    "type": "commune",
+    "nom": "Séglien",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56243",
+    "type": "commune",
+    "nom": "Séné",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56244",
+    "type": "commune",
+    "nom": "Sérent",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56245",
+    "type": "commune",
+    "nom": "Silfiac",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56246",
+    "type": "commune",
+    "nom": "Le Sourn",
+    "departement": "56",
+    "epci": "245614433"
+  },
+  {
+    "territoire": "56247",
+    "type": "commune",
+    "nom": "Sulniac",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56248",
+    "type": "commune",
+    "nom": "Surzur",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56249",
+    "type": "commune",
+    "nom": "Taupont",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56250",
+    "type": "commune",
+    "nom": "Théhillac",
+    "departement": "56",
+    "epci": "243500741"
+  },
+  {
+    "territoire": "56251",
+    "type": "commune",
+    "nom": "Theix-Noyalo",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56252",
+    "type": "commune",
+    "nom": "Le Tour-du-Parc",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56253",
+    "type": "commune",
+    "nom": "Tréal",
+    "departement": "56",
+    "epci": "200066785"
+  },
+  {
+    "territoire": "56254",
+    "type": "commune",
+    "nom": "Trédion",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56255",
+    "type": "commune",
+    "nom": "Treffléan",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56256",
+    "type": "commune",
+    "nom": "Tréhorenteuc",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56257",
+    "type": "commune",
+    "nom": "La Trinité-Porhoët",
+    "departement": "56",
+    "epci": "200066777"
+  },
+  {
+    "territoire": "56258",
+    "type": "commune",
+    "nom": "La Trinité-sur-Mer",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56259",
+    "type": "commune",
+    "nom": "La Trinité-Surzur",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56260",
+    "type": "commune",
+    "nom": "Vannes",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56261",
+    "type": "commune",
+    "nom": "La Vraie-Croix",
+    "departement": "56",
+    "epci": "245614383"
+  },
+  {
+    "territoire": "56262",
+    "type": "commune",
+    "nom": "Le Bono",
+    "departement": "56",
+    "epci": "200067932"
+  },
+  {
+    "territoire": "56263",
+    "type": "commune",
+    "nom": "Sainte-Anne-d'Auray",
+    "departement": "56",
+    "epci": "200043123"
+  },
+  {
+    "territoire": "56264",
+    "type": "commune",
+    "nom": "Kernascléden",
+    "departement": "56",
+    "epci": "245614417"
+  },
+  {
+    "territoire": "200027027",
+    "type": "epci",
+    "nom": "Communauté de communes Arc Sud Bretagne",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200038990",
+    "type": "epci",
+    "nom": "Communauté de communes de Saint-Méen Montauban",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200039022",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Vitré Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200042174",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Lorient Agglomération",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200043123",
+    "type": "epci",
+    "nom": "Communauté de communes Auray Quiberon Terre Atlantique",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200043990",
+    "type": "epci",
+    "nom": "Communauté de communes Vallons de Haute-Bretagne Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200065928",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Lannion-Trégor Communauté",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200066777",
+    "type": "epci",
+    "nom": "Ploërmel Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200066785",
+    "type": "epci",
+    "nom": "Communauté de communes de l'Oust à Brocéliande",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200066868",
+    "type": "epci",
+    "nom": "Communauté de communes Presqu'île de Crozon-Aulne maritime",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "200067072",
+    "type": "epci",
+    "nom": "Communauté de communes Haut-Léon Communauté",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "200067197",
+    "type": "epci",
+    "nom": "Communauté de communes Monts d'Arrée Communauté",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "200067247",
+    "type": "epci",
+    "nom": "Communauté de communes Pleyben-Châteaulin-Porzay",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "200067460",
+    "type": "epci",
+    "nom": "Communauté de communes Loudéac Communauté - Bretagne Centre",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200067932",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Golfe du Morbihan - Vannes Agglomération",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200067981",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Guingamp-Paimpol Agglomération de l'Armor à l'Argoat",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200068120",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Quimper Bretagne Occidentale",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "200068989",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Dinan Agglomération",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200069086",
+    "type": "epci",
+    "nom": "Communauté de communes Leff Armor Communauté",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200069391",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Lamballe Terre et Mer",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200069409",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Saint-Brieuc Armor Agglomération",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "200070662",
+    "type": "epci",
+    "nom": "Communauté de communes Bretagne porte de Loire Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200070670",
+    "type": "epci",
+    "nom": "Communauté de communes du Pays de Dol et de la Baie du Mont Saint-Michel",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200070688",
+    "type": "epci",
+    "nom": "Communauté de communes Couesnon Marches de Bretagne",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200072452",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Fougères Agglomération",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "200096675",
+    "type": "epci",
+    "nom": "Communauté de communes Baud Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "200096683",
+    "type": "epci",
+    "nom": "Communauté de communes Centre Morbihan Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "242200715",
+    "type": "epci",
+    "nom": "Communauté de communes du Kreiz-Breizh (CCKB)",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "242900074",
+    "type": "epci",
+    "nom": "Communauté de communes du Pays d'Iroise",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900314",
+    "type": "epci",
+    "nom": "Brest Métropole",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900553",
+    "type": "epci",
+    "nom": "Communauté de communes du Pays des Abers",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900561",
+    "type": "epci",
+    "nom": "Communauté de communes de Haute Cornouaille",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900629",
+    "type": "epci",
+    "nom": "Communauté de communes Cap Sizun - Pointe du Raz",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900645",
+    "type": "epci",
+    "nom": "Communauté de communes Douarnenez Communauté",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900660",
+    "type": "epci",
+    "nom": "Communauté de communes du Pays Fouesnantais",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900694",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Quimperlé Communauté",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900702",
+    "type": "epci",
+    "nom": "Communauté de communes du Pays Bigouden Sud",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900710",
+    "type": "epci",
+    "nom": "Communauté de communes du Haut Pays Bigouden",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900744",
+    "type": "epci",
+    "nom": "Communauté de communes Poher communauté",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900751",
+    "type": "epci",
+    "nom": "Communauté de communes du Pays de Landivisiau",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900769",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Concarneau Cornouaille Agglomération",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900793",
+    "type": "epci",
+    "nom": "Communauté de communes Communauté Lesneven Côte des Légendes",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900801",
+    "type": "epci",
+    "nom": "Communauté d'agglomération du Pays de Landerneau-Daoulas",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "242900835",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Morlaix Communauté",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "243500139",
+    "type": "epci",
+    "nom": "Rennes Métropole",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500550",
+    "type": "epci",
+    "nom": "Communauté de communes Montfort Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500618",
+    "type": "epci",
+    "nom": "Communauté de communes Brocéliande Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500634",
+    "type": "epci",
+    "nom": "Communauté de communes Roche aux Fées Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500659",
+    "type": "epci",
+    "nom": "Communauté de communes Pays de Châteaugiron Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500667",
+    "type": "epci",
+    "nom": "Communauté de communes Val d'Ille-Aubigné",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500725",
+    "type": "epci",
+    "nom": "Communauté de communes Côte d'Émeraude",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500733",
+    "type": "epci",
+    "nom": "Communauté de communes Bretagne Romantique",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500741",
+    "type": "epci",
+    "nom": "Communauté d'agglomération Redon Agglomération",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500774",
+    "type": "epci",
+    "nom": "Communauté de communes Liffré-Cormier Communauté",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "243500782",
+    "type": "epci",
+    "nom": "Communauté d'agglomération du Pays de Saint Malo Agglomération",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "244400610",
+    "type": "epci",
+    "nom": "Communauté d'agglomération de la Presqu'île de Guérande Atlantique (Cap Atlantique)",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "245600440",
+    "type": "epci",
+    "nom": "Blavet Bellevue Océan Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "245600465",
+    "type": "epci",
+    "nom": "Communauté de communes de Belle-Île-en-Mer",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "245614383",
+    "type": "epci",
+    "nom": "Communauté de communes Questembert Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "245614417",
+    "type": "epci",
+    "nom": "Communauté de communes Roi Morvan Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "245614433",
+    "type": "epci",
+    "nom": "Communauté de communes Pontivy Communauté",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "22",
+    "type": "departement",
+    "nom": "Côtes-d'Armor",
+    "departement": "22",
+    "epci": null
+  },
+  {
+    "territoire": "29",
+    "type": "departement",
+    "nom": "Finistère",
+    "departement": "29",
+    "epci": null
+  },
+  {
+    "territoire": "35",
+    "type": "departement",
+    "nom": "Ille-et-Vilaine",
+    "departement": "35",
+    "epci": null
+  },
+  {
+    "territoire": "56",
+    "type": "departement",
+    "nom": "Morbihan",
+    "departement": "56",
+    "epci": null
+  },
+  {
+    "territoire": "53",
+    "type": "region",
+    "nom": "Bretagne",
+    "departement": null,
+    "epci": null
+  }
+]

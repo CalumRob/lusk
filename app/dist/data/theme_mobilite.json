@@ -1,0 +1,137 @@
+{
+  "theme": "mobilite",
+  "label": "Mobilité",
+  "subgroups": [
+    {
+      "key": "acces-aux-services",
+      "label": "L’accès aux services",
+      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l’offre de transport qui le permet.",
+      "indicators": [
+        "voitures_menage",
+        "reseaux",
+        "offre_tc",
+        "bornes_recharge",
+        "places_stationnement_velo_1000",
+        "offre_cyclable",
+        "iso_alimentation",
+        "iso_sante",
+        "iso_administration",
+        "iso_ecole",
+        "iso_banque"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "offre_cyclable"
+      },
+      "reading": {
+        "story_key": "vingt-minutes-sans-voiture",
+        "params": [
+          "div_loss_t",
+          "pct_iso_full_t",
+          "classification_saillance"
+        ],
+        "template": [
+          {
+            "type": "text",
+            "content": "Sans voiture, "
+          },
+          {
+            "type": "param",
+            "key": "div_loss_t"
+          },
+          {
+            "type": "text",
+            "content": " types de services disparaissent de l’accès quotidien de "
+          },
+          {
+            "type": "territoire"
+          },
+          {
+            "type": "text",
+            "content": ". "
+          },
+          {
+            "type": "link",
+            "href": "/methodologie#mobilite",
+            "children": [
+              {
+                "type": "text",
+                "content": "Sources et méthodes"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "indicator_keys": [
+    "voitures_menage",
+    "reseaux",
+    "offre_tc",
+    "bornes_recharge",
+    "places_stationnement_velo_1000",
+    "offre_cyclable",
+    "iso_alimentation",
+    "iso_sante",
+    "iso_administration",
+    "iso_ecole",
+    "iso_banque"
+  ],
+  "story_keys": [
+    "vingt-minutes-sans-voiture",
+    "ce-que-le-velo-preserve"
+  ],
+  "sources": {
+    "voitures_menage": "rp_logement_princ",
+    "reseaux": "amenagements_cyclables",
+    "offre_tc": "korrigo",
+    "bornes_recharge": "bornes-recharges",
+    "places_stationnement_velo_1000": "stationnement-velo",
+    "offre_cyclable": "osm_reseaux",
+    "iso_alimentation": "mobilite_snapshot",
+    "iso_sante": "mobilite_snapshot",
+    "iso_administration": "mobilite_snapshot",
+    "iso_ecole": "mobilite_snapshot",
+    "iso_banque": "mobilite_snapshot"
+  },
+  "indicator_labels": {
+    "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+    "iso_sante": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+    "iso_administration": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+    "iso_ecole": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+    "iso_banque": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+    "voitures_menage": "Voitures par ménage",
+    "reseaux": "Réseaux à pied / vélo / voiture",
+    "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
+    "bornes_recharge": "Bornes de recharge pour véhicules électriques",
+    "places_stationnement_velo_1000": "Places de stationnement vélo pour 1 000 hab.",
+    "offre_cyclable": "L’offre cyclable"
+  },
+  "detail_labels": {
+    "reseaux": {
+      "t_longueur": "Longueur — à pied ou en transports en commun",
+      "t_densite": "Densité — à pied ou en transports en commun",
+      "b_longueur": "Longueur — à vélo",
+      "b_densite": "Densité — à vélo",
+      "c_longueur": "Longueur — en voiture",
+      "c_densite": "Densité — en voiture"
+    },
+    "voitures_menage": {
+      "sans_voiture": "Ménages sans voiture",
+      "une_voiture": "Ménages avec 1 voiture",
+      "deux_plus": "Ménages avec 2 voitures ou plus"
+    },
+    "offre_cyclable": {
+      "protege_longueur": "Longueur protégée",
+      "protege_km_1000": "Protégé",
+      "partage_longueur": "Longueur partagée",
+      "partage_km_1000": "Partagé",
+      "total_longueur": "Longueur totale"
+    }
+  },
+  "param_labels": {
+    "div_loss_t": "Types de services perdus à pied ou en transports en commun",
+    "pct_iso_full_t": "Part des bâtiments perdant tout accès",
+    "classification_saillance": "Classification de saillance"
+  }
+}
