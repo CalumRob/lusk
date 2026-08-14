@@ -29,7 +29,7 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # reste intact.
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest(callr_function = NULL)
+  manifeste <- targets::tar_manifest()
   noms <- manifeste$name
 
   # les cinq grappes : la MÊME famille de targets par thème, nommée depuis le
@@ -62,7 +62,7 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   # ne le lit jamais).
   withr::local_envvar(LUSK_THEMES = "")
 
-  manifeste <- targets::tar_manifest(callr_function = NULL)
+  manifeste <- targets::tar_manifest()
   commande <- function(nom) manifeste$command[manifeste$name == nom]
 
   # publier : Économie et Mobilité publient PAR leur seam (theme$publier),
@@ -107,7 +107,7 @@ test_that("les étapes de données d'un thème ne dépendent jamais de celles d'
   # régression ci-dessous.
   store_structure <- tempfile("graphe-structure-")
 
-  reseau <- targets::tar_network(callr_function = NULL, store = store_structure)
+  reseau <- targets::tar_network(store = store_structure)
   aretes <- reseau$edges
   partages <- c("fusion_vintages", "geometrie")
 
@@ -151,7 +151,7 @@ test_that("la vérification de structure lit un store isolé — jamais la meta 
   withr::local_envvar(LUSK_THEMES = "")
 
   # 1) le VRAI graphe : la structure se lit avec un store isolé
-  reseau <- targets::tar_network(callr_function = NULL,
+  reseau <- targets::tar_network(
                                  store = tempfile("graphe-structure-"))
   expect_true(nrow(reseau$edges) > 0)
 
@@ -165,7 +165,7 @@ test_that("la vérification de structure lit un store isolé — jamais la meta 
   withr::local_dir(projet)
   on.exit(unlink(projet, recursive = TRUE), add = TRUE)
 
-  reseau2 <- targets::tar_network(callr_function = NULL,
+  reseau2 <- targets::tar_network(
                                   store = tempfile("graphe-structure-"))
   expect_true(nrow(reseau2$edges) > 0)
   expect_identical(readBin(file.path(projet, "_targets", "meta", "meta"),

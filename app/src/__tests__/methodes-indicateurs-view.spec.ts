@@ -153,13 +153,50 @@ describe('MethodologieView — Méthodes · <thème> (les blocs d\u2019indicateu
     }
   })
 
-  it('documente la Story de la région « Ce que la Bretagne abrite » dans le bloc économie', async () => {
+  it('ne documente plus la Story de la région « Ce que la Bretagne abrite » (retirée du contrat, #367)', async () => {
     const wrapper = await monter('economie')
 
     const bloc = wrapper.find('section#indicateurs article#economie')
     const texte = bloc.text()
-    expect(texte).toContain('Ce que la Bretagne abrite')
-    expect(texte).toContain('les cinq types d’établissements les plus présents')
+    expect(texte).not.toContain('Ce que la Bretagne abrite')
+    // la Story unique reste documentée — et porte la mention du retrait
+    expect(texte).toContain('Ce que la commune abrite')
+  })
+
+  it('rend la table « Le sens des classements » par thème — chaque indicateur et sa direction', async () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      const table = bloc.find('.groupe-ordinalite .table-ordinalite')
+      expect(table.exists(), `« ${theme} » sans table ordinale`).toBe(true)
+      expect(bloc.find('.groupe-ordinalite .ordinalite-intro').text()).toMatch(/1er est toujours bon/)
+
+      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        const ligne = table.find(`.ligne-ordinalite[data-clef="${clef}"]`)
+        expect(ligne.exists(), `ligne « ${theme}.${clef} » absente`).toBe(true)
+        expect(ligne.text()).toContain(indicateur.label)
+        expect(ligne.text(), `direction « ${theme}.${clef} »`).toContain(
+          indicateur.direction === 'plus-est-mieux' ? 'plus = mieux' : 'moins = mieux',
+        )
+      }
+    }
+  })
+
+  it('chaque bloc d\u2019indicateur porte le sens de son classement dans ses métadonnées', async () => {
+    for (const theme of THEMES_CONSTRUITS) {
+      const wrapper = await monter(theme)
+
+      const bloc = wrapper.find(`section#indicateurs article#${theme}`)
+      for (const [clef, indicateur] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        const blocIndicateur = bloc.find(`.bloc-indicateur[data-clef="${clef}"]`)
+        const meta = blocIndicateur.find('.meta-direction')
+        expect(meta.exists(), `« ${theme}.${clef} » sans sens du classement`).toBe(true)
+        expect(meta.text()).toContain(
+          indicateur.direction === 'plus-est-mieux' ? 'plus = mieux' : 'moins = mieux',
+        )
+      }
+    }
   })
 
   it('documente l\u2019horloge lente dans le bloc mobilité — fait de première classe (ADR-0012)', async () => {

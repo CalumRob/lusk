@@ -369,6 +369,33 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     url: 'https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv',
     themes: ['mobilite'],
   },
+  // Le stationnement voiture (#369, triage 2026-08-12) : les PLACES ESTIMÉES
+  // depuis la surface des aires OSM (amenity=parking — ways fermés + relations,
+  // jamais les nodes sans déduplication, jamais capacity), divisée par les
+  // facteurs documentés (25 m²/place en parc de surface, ~11,5 m²/place en
+  // voirie). Le même extrait Geofabrik que les réseaux (ADR-0001) — le
+  // dénominateur du ratio stationnement vélo ÷ voiture. La ligne vintages
+  // arrive avec la publication pipeline (#369) : dégradation gracieuse
+  // jusqu'alors (faits éditoriaux rendus, dates jamais inventées).
+  'osm_parkings': {
+    nom: 'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+    libelle: 'Extrait 2026-08',
+    editeur: 'OpenStreetMap',
+    url: 'https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf',
+    themes: ['mobilite'],
+  },
+  // Les stations-service (BPE B316) — le dénominateur du ratio bornes
+  // électriques ÷ stations-service (#369, triage 2026-08-12) : la source
+  // officielle INSEE (définition : stations ayant vendu ≥ 500 000 L l'année
+  // précédente). La ligne vintages arrive avec la publication pipeline
+  // (#369) : dégradation gracieuse jusqu'alors.
+  'bpe_b316': {
+    nom: 'INSEE — BPE : stations-service (B316)',
+    libelle: 'Millésime 2024',
+    editeur: 'INSEE',
+    url: 'https://www.insee.fr/fr/metadonnees/source/operation/S2216/bases-donnees-ligne',
+    themes: ['mobilite'],
+  },
 
   // ---- Milieux (docs/themes/milieux.md — l'axe terre, ADR-0014) ----
   // L'ordre du manifeste (manifest_milieux.R) : la source CONSOENAF (l'horloge

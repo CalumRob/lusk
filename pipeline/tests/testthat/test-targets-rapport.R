@@ -47,6 +47,15 @@ test_that("le rapport de run survit à l'échec d'une étape aval (error = conti
     NA
   )
 
+  # Issue #343 — le câblage du run rouge : avec error = "continue", le
+  # tar_make ne lève PAS (le graphe ne s'arrête pas sur une cible en échec) —
+  # la cible en échec reste DÉTECTABLE par tar_errored(), que l'étape build du
+  # workflow cron traduit en run rouge (build_exit), pendant que le rapport,
+  # lui, est écrit (la sémantique #8 que le cron exploite : une trace même sur
+  # échec).
+  erreurs <- targets::tar_errored()
+  expect_true("payload_toy" %in% erreurs)
+
   apres <- lire_rapport(projet)
   expect_false(is.null(apres))              # le rapport existe toujours
   expect_false(identical(avant, apres))     # et porte le run échoué

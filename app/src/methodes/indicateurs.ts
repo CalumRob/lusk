@@ -10,12 +10,27 @@
  * sources (sources.ts) — l'ancre de la table. La langue est publique : jamais
  * de gates, de noms de code, de noms d'artefacts.
  *
- * Les Stories suivent le modèle du jour (CONTEXT.md, 2026-08-06) : l'Économie
- * est un thème à Story unique — « Ce que la commune abrite » (top-5 du LQ),
- * plus la Story de structure de la région « Ce que la Bretagne abrite » ; la
- * lecture « Le matin, la commune se vide » est en pause (statut 'en-pause'),
- * documentée comme note Méthodes mais non publiée. La payload commise porte la
- * forme reshapée (issue #131, 2026-08-06) : le registre suit les clés publiées.
+ * Les Stories suivent le modèle du jour (CONTEXT.md, 2026-08-06, amendé
+ * 2026-08-12 — follow-up #308) : l'Économie est un thème à Story unique —
+ * « Ce que la commune abrite » (top-5 du LQ). La Story de structure de la
+ * région « Ce que la Bretagne abrite » est RETIRÉE du contrat de la fiche
+ * (#367 — la fiche de la région ne la référence plus) et du registre : un
+ * thème n'est documenté que pour ce que sa fiche montre. La lecture « Le
+ * matin, la commune se vide » est en pause (statut 'en-pause'), documentée
+ * comme note Méthodes mais non publiée.
+ *
+ * Depuis le suivi #367, le registre documente aussi la DIRECTION du
+ * classement de chaque indicateur (ADR-0015 — « 1er est toujours bon ») : le
+ * sens public « plus = mieux » / « moins = mieux » que la table « Le sens des
+ * classements » de la page affiche par indicateur. Les indicateurs re-través
+ * y sont documentés — voitures en trois parts (0/1/2+, la part sans voiture
+ * en tête), le découpage statut / âge du bâti / type qui remplace
+ * statut_anciennete_taille, le stationnement voiture pour 1 000 habitants,
+ * les deux ratios (bornes électriques ÷ stations-service, places vélo ÷
+ * places voiture) et les lectures perte de diversité / perte totale (div_loss,
+ * tot_loss). Les clés nouvelles sont documentées avant leur publication dans
+ * la payload (les décisions sont verrouillées, #367) ; les clés anciennes
+ * restent documentées tant que la payload commise les porte.
  */
 
 import { slugifierAncre } from '@/methodes/ancres'
@@ -25,6 +40,22 @@ import { datasetDeSource } from '@/methodes/sources'
 export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
 
 export type ThemeConstruit = (typeof THEMES_CONSTRUITS)[number]
+
+/**
+ * La direction du classement d'un indicateur (ADR-0015) : quel bout du rang
+ * est le bon. Le pipeline déclare la désirabilité de chaque clé et corrige le
+ * rang (« 1er est toujours bon ») ; le registre documente ici le sens pour le
+ * lecteur de Méthodes — le vocabulaire public du glyphe de la fiche (#367) :
+ * 'plus-est-mieux' = plus la valeur est élevée, meilleur est le rang (▲) ;
+ * 'moins-est-mieux' = plus elle est basse, meilleur est le rang (▼).
+ */
+export type DirectionRang = 'plus-est-mieux' | 'moins-est-mieux'
+
+/** Le libellé public de la direction — « plus = mieux » / « moins = mieux ». */
+export const LIBELLES_DIRECTION: Record<DirectionRang, string> = {
+  'plus-est-mieux': 'plus = mieux',
+  'moins-est-mieux': 'moins = mieux',
+}
 
 /** La documentation éditoriale d'un indicateur — la moitié « ce que ça mesure » du registre. */
 export interface IndicateurMethodes {
@@ -38,6 +69,11 @@ export interface IndicateurMethodes {
   source: string
   /** L'id de l'entrée du registre des sources (l'ancre de la table) — null si absente. */
   sourceId: string | null
+  /**
+   * La direction du classement (ADR-0015) — quel bout du rang est le bon,
+   * jamais silencieuse : chaque indicateur porte son sens.
+   */
+  direction: DirectionRang
 }
 
 /** Une lecture d'une Story — une classification publiée et son explication factuelle. */
@@ -183,6 +219,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: 'hab/km²',
         source: 'INSEE — Série historique du recensement',
         sourceId: 'serie_historique',
+        direction: 'plus-est-mieux',
       },
       structure_age: {
         label: 'Structure par âge',
@@ -191,6 +228,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: '%',
         source: 'INSEE — Population par sexe et âge (PRINC)',
         sourceId: 'age_detail',
+        direction: 'plus-est-mieux',
       },
       evolution_1968: {
         label: 'Évolution de la population depuis 1968',
@@ -199,6 +237,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: '%',
         source: 'INSEE — Série historique du recensement',
         sourceId: 'serie_historique',
+        direction: 'plus-est-mieux',
       },
       taille_menages: {
         label: 'Taille moyenne des ménages',
@@ -207,6 +246,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: 'pers./ménage',
         source: 'INSEE — Ménages (dossier complet)',
         sourceId: 'menages',
+        direction: 'plus-est-mieux',
       },
     },
     stories: [
@@ -252,10 +292,11 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       mix_logements: {
         label: 'Mix de logements',
         definition:
-          'La répartition du parc de logements entre résidences principales, résidences secondaires et logements vacants, en part du parc total. Le poids des résidences secondaires et des logements vacants signale la tension entre le bâti et son occupation.',
+          'La répartition du parc de logements entre résidences principales, résidences secondaires et logements vacants, en part du parc total. Le poids des résidences secondaires et des logements vacants signale la tension entre le bâti et son occupation. Le classement lit la part des résidences principales.',
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
+        direction: 'plus-est-mieux',
       },
       statut: {
         label: 'Statut d’occupation',
@@ -264,6 +305,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
+        direction: 'plus-est-mieux',
       },
       age_du_bati: {
         label: 'Âge du bâti',
@@ -272,6 +314,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
+        direction: 'moins-est-mieux',
       },
       type: {
         label: 'Type de logement',
@@ -280,33 +323,37 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: '%',
         source: 'INSEE — Logements (dossier complet)',
         sourceId: 'logements',
+        direction: 'plus-est-mieux',
       },
       prix_m2: {
         label: 'Médiane prix au m²',
         definition:
-          'Le prix médian déclaré au mètre carré des ventes de maisons et d’appartements, sur les cinq dernières années. La médiane, plutôt que la moyenne, n’est pas tirée par les ventes extrêmes ; chaque année de la période est publiée à part pour suivre l’évolution. L’indicateur n’est pas publié quand les ventes sont trop peu nombreuses pour être représentatives.',
+          'Le prix médian déclaré au mètre carré des ventes de maisons et d’appartements, sur les cinq dernières années. La médiane, plutôt que la moyenne, n’est pas tirée par les ventes extrêmes ; chaque année de la période est publiée à part pour suivre l’évolution. L’indicateur n’est pas publié quand les ventes sont trop peu nombreuses pour être représentatives. Le classement se lit à l’envers : un prix plus bas, c’est mieux pour l’accès au logement.',
         unite: '€/m²',
         source: 'Étalab — DVF géolocalisées',
         // Le jeu DVF (ADR-0022 : l'en-tête #source-dvf) — le sourceId épingle
         // une ligne du jeu, la matrice et le lien « Source » résolvent l'en-tête
         sourceId: 'dvf_2021_dep22',
+        direction: 'moins-est-mieux',
       },
       part_passoires: {
         label: 'Part de passoires thermiques',
         definition:
-          'La part des logements dont l’étiquette énergétique du diagnostic de performance énergétique (DPE) est F ou G — les passoires thermiques. La part est calculée sur la base des DPE recensés, jamais sur le parc entier : cette base surreprésente les logements vendus ou loués, une limite documentée. L’indicateur n’est pas publié quand la base compte moins de 30 logements.',
+          'La part des logements dont l’étiquette énergétique du diagnostic de performance énergétique (DPE) est F ou G — les passoires thermiques. La part est calculée sur la base des DPE recensés, jamais sur le parc entier : cette base surreprésente les logements vendus ou loués, une limite documentée. L’indicateur n’est pas publié quand la base compte moins de 30 logements. Le classement se lit à l’envers : moins de passoires, c’est mieux.',
         unite: '%',
         source: 'ADEME — Observatoire DPE, logements existants',
         // Le jeu DPE (ADR-0022 : l'en-tête #source-dpe), la même forme que DVF
         sourceId: 'dpe_22',
+        direction: 'moins-est-mieux',
       },
       distribution_dpe: {
         label: 'Distribution des étiquettes DPE (A à G)',
         definition:
-          'La répartition des étiquettes énergétiques du parc, de A à G, sur la même base que la part de passoires : c’est la visualisation de l’indicateur précédent, les parts F et G étant mises en évidence. La base mêle plusieurs régimes d’étiquetage — les réformes de 2024 et de 2026 ont rendu les diagnostics récents plus favorables, une limite de comparabilité documentée.',
+          'La répartition des étiquettes énergétiques du parc, de A à G, sur la même base que la part de passoires : c’est la visualisation de l’indicateur précédent, les parts F et G étant mises en évidence. Une composition en sept parts — le classement lit la part des étiquettes F et G, la même valeur que la part de passoires : moins de F/G, c’est mieux. La base mêle plusieurs régimes d’étiquetage — les réformes de 2024 et de 2026 ont rendu les diagnostics récents plus favorables, une limite de comparabilité documentée. La figure rend les étiquettes dans les couleurs officielles du DPE (A à G), jamais dans la palette du thème (#367).',
         unite: '%',
         source: 'ADEME — Observatoire DPE, logements existants',
         sourceId: 'dpe_22',
+        direction: 'moins-est-mieux',
       },
     },
     stories: [
@@ -356,6 +403,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: 'salariés',
         source: 'INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)',
         sourceId: 'flores_a88',
+        direction: 'plus-est-mieux',
       },
       eco_activites: {
         label: 'Part des éco-activités',
@@ -364,14 +412,16 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: '%',
         source: 'data.bretagne.bzh — Base SIRENE — Région Bretagne',
         sourceId: 'sirene_snapshot',
+        direction: 'plus-est-mieux',
       },
       chomage: {
         label: 'Chômage au sens du recensement',
         definition:
-          'La part de la population active résidente de 15 à 64 ans au chômage. Le chômage est ici mesuré au sens du recensement : ce n’est ni la mesure BIT de l’enquête Emploi, ni la mesure administrative de France Travail. Le recensement lissant la collecte sur cinq années, la valeur publiée est une moyenne sur la période, pas un point conjoncturel.',
+          'La part de la population active résidente de 15 à 64 ans au chômage. Le chômage est ici mesuré au sens du recensement : ce n’est ni la mesure BIT de l’enquête Emploi, ni la mesure administrative de France Travail. Le recensement lissant la collecte sur cinq années, la valeur publiée est une moyenne sur la période, pas un point conjoncturel. Le classement se lit à l’envers : un chômage plus bas, c’est mieux.',
         unite: '%',
         source: 'INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)',
         sourceId: 'rp_chomage',
+        direction: 'moins-est-mieux',
       },
     },
     stories: [
@@ -380,15 +430,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         titre: 'Ce que la commune abrite',
         statut: 'publiee',
         definition:
-          'La Story de l’Économie, la seule du thème (le thème est à Story unique) : elle lit les cinq activités où le territoire est le plus spécialisé — les cinq premiers rangs du location quotient, calculé sur les établissements actifs et comparé à la moyenne bretonne. Un quotient supérieur à 1 signale une activité surreprésentée dans le tissu productif local. Le titre est volontairement neutre sur la matière — « abrite », héberge : la mesure porte sur les établissements, jamais sur les emplois ni sur les personnes ; c’est le label « Spécialisation des établissements » qui porte cette précision. Publiée pour les communes, les EPCI et les départements ; la région, dont le quotient est dégénéré, a sa propre Story de structure (« Ce que la Bretagne abrite »).',
-        lectures: [],
-      },
-      {
-        clef: 'ce-que-la-bretagne-abrite',
-        titre: 'Ce que la Bretagne abrite',
-        statut: 'publiee',
-        definition:
-          'La Story de la région : comme la région est sa propre référence, son location quotient vaut 1 pour toutes les activités — la lecture de spécialisation n’a pas de sens. Elle lit à la place la structure du tissu productif breton : les cinq types d’établissements les plus présents, par nombre d’établissements actifs, avec leur part du parc breton. Elle se lit comme une liste de structure, pas comme un classement de spécialisation.',
+          'La Story de l’Économie, la seule du thème (le thème est à Story unique) : elle lit les cinq activités où le territoire est le plus spécialisé — les cinq premiers rangs du location quotient, calculé sur les établissements actifs et comparé à la moyenne bretonne. Un quotient supérieur à 1 signale une activité surreprésentée dans le tissu productif local. Le titre est volontairement neutre sur la matière — « abrite », héberge : la mesure porte sur les établissements, jamais sur les emplois ni sur les personnes ; c’est le label « Spécialisation des établissements » qui porte cette précision. Publiée pour les communes, les EPCI et les départements. La région, dont le quotient est dégénéré, n’a pas de Story de spécialisation — sa lecture de structure est retirée du contrat de la fiche (#367) : son onglet Économie rend ses indicateurs.',
         lectures: [],
       },
       {
@@ -427,20 +469,22 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       voitures_menage: {
         label: 'Voitures par ménage',
         definition:
-          'La motorisation des ménages du territoire : la part des ménages sans voiture, la part des ménages avec une voiture et la part des ménages avec deux voitures ou plus, issues du recensement — les trois parts somment à 1. C’est le pendant de la demande — ce qu’on peut atteindre à pied ou en transports en commun d’un côté, combien de voitures on possède de l’autre ; la part sans voiture est la lecture classée.',
+          'La motorisation des ménages du territoire en trois parts réelles, issues du recensement : les ménages sans voiture, les ménages à une voiture et les ménages à deux voitures ou plus — les trois parts totalisent 100 % des ménages. La part des ménages sans voiture est lue en tête de la figure : c’est elle que le classement lit (plus elle est élevée, moins le territoire dépend de la voiture). C’est le pendant de la demande — ce qu’on peut atteindre à pied ou en transports en commun d’un côté, combien de voitures on possède de l’autre.',
         unite: '%',
         source:
           'INSEE \u2014 Recensement de la population, exploitations principales (Logements) \u2014 tableau LOG T12 \u00ab \u00c9quipement automobile des m\u00e9nages \u00bb (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)',
         sourceId: 'rp_logement_princ',
+        direction: 'plus-est-mieux',
       },
       reseaux: {
         label: 'Réseaux à pied, à vélo et en voiture',
         definition:
-          'La longueur (en kilomètres) et la densité (en kilomètres par kilomètre carré) des réseaux routier, cyclable et piéton du territoire, relevés dans la cartographie participative OpenStreetMap. Trois modes sont distingués — à pied, à vélo, en voiture — chacun avec sa longueur et sa densité.',
+          'La longueur (en kilomètres) et la densité (en kilomètres par kilomètre carré) des réseaux routier, cyclable et piéton du territoire, relevés dans la cartographie participative OpenStreetMap. Trois modes sont distingués — à pied, à vélo, en voiture — chacun avec sa longueur et sa densité. Le classement lit le détail vélo.',
         unite: 'km',
         source:
           'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
         sourceId: 'osm_reseaux',
+        direction: 'plus-est-mieux',
       },
       offre_tc: {
         label: 'Offre de transports en commun',
@@ -450,6 +494,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source:
           'Bretagne Mobilit\u00e9 \u2014 Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ r\u00e9seaux : BreizhGo TER/car/maritime + les r\u00e9seaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kic\u00e9o\u2026)',
         sourceId: 'korrigo',
+        direction: 'plus-est-mieux',
       },
       bornes_recharge: {
         label: 'Bornes de recharge pour véhicules électriques',
@@ -459,6 +504,16 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source:
           'Etalab / data.bretagne.bzh \u2014 Fichier consolid\u00e9 des Bornes de Recharge pour V\u00e9hicules \u00c9lectriques (IRVE), sch\u00e9ma 2.2.0',
         sourceId: 'bornes-recharges',
+        direction: 'plus-est-mieux',
+      },
+      bornes_ev_par_station_service: {
+        label: 'Bornes de recharge pour 1 station-service',
+        definition:
+          'Le rapport entre l’offre de recharge électrique et l’offre de carburant du territoire : le nombre de bornes IRVE pour une station-service (la source officielle BPE B316 — les stations ayant vendu 500 000 litres ou plus l’année précédente). Le classement lit le rapport : plus il y a de bornes par station-service, mieux le territoire prépare la bascule vers l’électrique. Le rapport n’est publié que là où le territoire compte au moins une station-service.',
+        unite: 'bornes / station-service',
+        source: 'INSEE — BPE : stations-service (B316)',
+        sourceId: 'bpe_b316',
+        direction: 'plus-est-mieux',
       },
       places_stationnement_velo_1000: {
         label: 'Places de stationnement vélo pour 1 000 habitants',
@@ -468,6 +523,27 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source:
           'Ecolab \u2014 Nombre de places de stationnement v\u00e9lo pour 1 000 hab. (hub d\u2019indicateurs territoriaux de transition \u00e9cologique ; source OSM : Base Nationale du Stationnement Cyclable)',
         sourceId: 'stationnement-velo',
+        direction: 'plus-est-mieux',
+      },
+      places_stationnement_voiture_1000: {
+        label: 'Places de stationnement voiture pour 1 000 habitants',
+        definition:
+          'Le nombre de places de stationnement voiture rapporté à 1 000 habitants, estimé depuis les aires de stationnement de la cartographie participative OpenStreetMap (amenity=parking — les surfaces, jamais le champ capacity, porté par une minorité des aires), divisé par des facteurs documentés : 25 m² par place en parc de surface, environ 11,5 m² par place en voirie. Une estimation, jamais un inventaire — l’espace que la voiture stationnée prend dans l’espace public. Le classement se lit à l’envers : moins de places par habitant, c’est mieux — la part de l’espace public que la voiture occupe.',
+        unite: 'places / 1 000 hab',
+        source:
+          'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+        sourceId: 'osm_parkings',
+        direction: 'moins-est-mieux',
+      },
+      stationnement_velo_par_voiture: {
+        label: 'Places de stationnement vélo pour 1 place voiture',
+        definition:
+          'Le rapport entre l’offre de stationnement des deux modes : le nombre de places vélo (la base nationale du stationnement cyclable) pour une place voiture (l’estimation des aires de stationnement OpenStreetMap). Le classement lit le rapport : plus il y a de places vélo par place voiture, mieux l’espace public est partagé entre les modes.',
+        unite: 'places vélo / place voiture',
+        source:
+          'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+        sourceId: 'osm_parkings',
+        direction: 'plus-est-mieux',
       },
       offre_cyclable: {
         label: 'L’offre cyclable',
@@ -477,51 +553,97 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source:
           'Geovelo \u2014 Am\u00e9nagements cyclables France M\u00e9tropolitaine (sch\u00e9ma national v0.3.5, ODbL \u2014 \u00a9 OpenStreetMap contributors, ADR-0001)',
         sourceId: 'amenagements_cyclables',
+        direction: 'plus-est-mieux',
+      },
+      div_loss_t: {
+        label: 'Perte de diversité — à pied ou en transports en commun',
+        definition:
+          'La valeur que la lecture « Vingt minutes sans voiture » rend : le nombre de types de services qui sortent de la portée quotidienne du territoire quand la voiture est retirée — ce qu’on atteint en voiture en 20 minutes, moins ce qu’on atteint encore à pied ou en transports en commun. Un compte, jamais un indice. Le classement se lit à l’envers : moins de services perdus, c’est mieux.',
+        unite: 'types de services',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
+      },
+      div_loss_b: {
+        label: 'Perte de diversité — à vélo',
+        definition:
+          'La même perte lue à vélo : les types de services qui sortent de la portée quotidienne du territoire quand la voiture est retirée, en ne comptant que ce que la bicyclette préserve déjà au-delà de la marche et des transports en commun. La lecture vélo est bornée pour ne jamais être pire que la lecture à pied. Le classement se lit à l’envers : moins de services perdus, c’est mieux.',
+        unite: 'types de services',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
+      },
+      tot_loss_t: {
+        label: 'Perte totale d’accès — à pied ou en transports en commun',
+        definition:
+          'La lecture complémentaire de la perte de diversité : le volume d’accès perdu quand la voiture est retirée. Pour chaque bâtiment, les services qu’il atteignait en voiture en 20 minutes et qu’il ne peut plus atteindre à pied ou en transports en commun ; la valeur publiée est la médiane de ce compte sur les bâtiments du territoire. Là où la perte de diversité compte les types de services, celle-ci compte le volume d’accès perdu — les deux lectures se complètent sur la figure de la lecture. Le classement se lit à l’envers : moins d’accès perdus, c’est mieux.',
+        unite: 'accès perdus',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
+      },
+      tot_loss_b: {
+        label: 'Perte totale d’accès — à vélo',
+        definition:
+          'La lecture complémentaire de la perte de diversité lue à vélo : le volume d’accès perdu quand la voiture est retirée, en ne comptant que ce que la bicyclette préserve déjà — la médiane, sur les bâtiments du territoire, du nombre d’accès perdus par bâtiment. La lecture vélo est bornée pour ne jamais être pire que la lecture à pied (la même règle que la perte de diversité, ADR-0012). Comme elle, elle se lit en regard de sa version à pied ou en transports en commun sur la figure de la lecture. Le classement se lit à l’envers : moins d’accès perdus, c’est mieux.',
+        unite: 'accès perdus',
+        source:
+          'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
+        sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
       },
       iso_alimentation: {
         label: 'Part des bâtiments sans accès à l’alimentation',
         definition:
-          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun commerce alimentaire à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun commerce alimentaire à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée. Le classement se lit à l’envers : moins de bâtiments isolés, c’est mieux.',
         unite: '%',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
       },
       iso_sante: {
         label: 'Part des bâtiments sans accès à la santé',
         definition:
-          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun service de santé à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun service de santé à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée. Le classement se lit à l’envers : moins de bâtiments isolés, c’est mieux.',
         unite: '%',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
       },
       iso_administration: {
         label: 'Part des bâtiments sans accès aux services administratifs',
         definition:
-          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun service administratif à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucun service administratif à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée. Le classement se lit à l’envers : moins de bâtiments isolés, c’est mieux.',
         unite: '%',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
       },
       iso_ecole: {
         label: 'Part des bâtiments sans accès à l’école',
         definition:
-          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucune école à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucune école à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée. Le classement se lit à l’envers : moins de bâtiments isolés, c’est mieux.',
         unite: '%',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
       },
       iso_banque: {
         label: 'Part des bâtiments sans accès à la banque',
         definition:
-          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucune banque à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée.',
+          'La part des bâtiments résidentiels du territoire d’où l’on ne peut atteindre aucune banque à pied ou en transports en commun en 20 minutes. La lecture en manque est volontaire : un territoire agit sur ce que ses bâtiments n’ont pas à portée. Le classement se lit à l’envers : moins de bâtiments isolés, c’est mieux.',
         unite: '%',
         source:
           'Lusk \u2014 analyse d\u2019accessibilit\u00e9 \u00ab Vingt minutes sans voiture \u00bb (analyse port\u00e9e, BPE 2024 \u00b7 OSM 02-2026 \u00b7 BDNB 2025-07)',
         sourceId: 'mobilite_snapshot',
+        direction: 'moins-est-mieux',
       },
     },
     stories: [
@@ -610,15 +732,26 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         // ligne vintage exacte — l'état M3 du département 22)
         source: 'IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)',
         sourceId: 'ocsge_artificialisation_22_2025',
+        direction: 'moins-est-mieux',
       },
       conso_enaf_annuel: {
         label: 'Consommation d\u2019ENAF \u2014 série annuelle',
         definition:
-          'La consommation d\u2019espaces naturels, agricoles et forestiers, année par année depuis 2011 — une ligne par année (2011, 2012, \u2026 2024), en hectares, pour suivre l\u2019évolution du rythme de consommation du territoire. Le seul signal ANNUEL du thème : l\u2019état OCS-GE est triennal, cette série garde la fraîcheur d\u2019un flux chaque année. Le fichier Cerema distribue ces consommations en mètres carrés alors que son dictionnaire les annonce en hectares : le pipeline convertit explicitement (÷ 10 000) et le teste — la conversion n\u2019est jamais silencieusement trustée (docs/research/zan-rennes.md). La série partage le classement de la part de surface consommée du territoire.',
+          'La consommation d\u2019espaces naturels, agricoles et forestiers, année par année depuis 2011 — une ligne par année (2011, 2012, \u2026 2024), en hectares, pour suivre l\u2019évolution du rythme de consommation du territoire. Le seul signal ANNUEL du thème : l\u2019état OCS-GE est triennal, cette série garde la fraîcheur d\u2019un flux chaque année. Le fichier Cerema distribue ces consommations en mètres carrés alors que son dictionnaire les annonce en hectares : le pipeline convertit explicitement (÷ 10 000) et le teste — la conversion n\u2019est jamais silencieusement trustée (docs/research/zan-rennes.md). La série partage le classement de la part de surface consommée du territoire ; le classement se lit à l\u2019envers : moins on consomme, c\u2019est mieux.',
         unite: 'ha',
         source:
           'Cerema \u2014 Consommation d\u2019espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) \u2014 le dictionnaire Cerema annonce les consommations \u00aben hectares \u00bb, le fichier les distribue en m\u00e8tres carr\u00e9s : le pipeline convertit explicitement (\u00f7 10 000) et le teste, jamais silencieusement (docs/research/zan-rennes.md)',
         sourceId: 'consoenaf',
+        direction: 'moins-est-mieux',
+      },
+      trajectoire_artif_par_habitant: {
+        label: 'Trajectoire par habitant',
+        definition:
+          'La valeur que la lecture « Se densifier, s\u2019\u00e9taler, ou s\u2019en aller » rend : le rapport entre l\u2019\u00e9tat artificialis\u00e9 par habitant \u00e0 l\u2019\u00e9tat final et \u00e0 l\u2019\u00e9tat initial (M3/M2, les mill\u00e9simes OCS-GE du territoire). Un rapport inf\u00e9rieur \u00e0 1 signale une pression fonci\u00e8re par personne qui s\u2019all\u00e8ge \u2014 la densification ; sup\u00e9rieur \u00e0 1, l\u2019\u00e9talement. Le classement se lit \u00e0 l\u2019envers : une trajectoire qui baisse, c\u2019est mieux.',
+        unite: '',
+        source: 'IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)',
+        sourceId: 'ocsge_artificialisation_22_2025',
+        direction: 'moins-est-mieux',
       },
     },
     stories: [
