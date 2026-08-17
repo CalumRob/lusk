@@ -97,6 +97,14 @@ const SEXES_ATTENDUS: readonly ['F', 'M'] = ['F', 'M']
  * - tout le reste (un seul sexe, un sexe en double, un mélange sexué /
  *   non-sexué, plusieurs lignes non-sexuées) : une violation de contrat, qui
  *   échoue fort au lieu d'inventer une valeur partielle.
+ *
+ * Avant de sommer, les métadonnées PARTAGÉES (rangs, tailles de groupe, unité,
+ * sceau de vintage) doivent s'accorder entre F et M : l'agrégat HÉRITE de la
+ * moitié des métadonnées (on copie F). Une divergence (un rang, une unité, un
+ * vintage différents) rendrait la ligne sommée au ventre menteur — elle
+ * porterait les métadonnées de F tandis que M en dit une autre. On refuse fort
+ * un couple de sexes dont les métadonnées divergent, plutôt que de copier F en
+ * silence (révision revue, issue #390).
  */
 function resoudreGroupeSexe(
   territoire: string,
@@ -139,6 +147,33 @@ function resoudreGroupeSexe(
 
   const base = sexuees.find((l) => l.sex === 'F')!
   const autre = sexuees.find((l) => l.sex === 'M')!
+
+  // Les métadonnées PARTAGÉES doivent s'accorder entre F et M : l'agrégat
+  // somme les deux parts, mais il HÉRITE des métadonnées d'une seule ligne (on
+  // copie F). Si les deux lignes divergent sur un rang, une taille de groupe,
+  // l'unité ou le sceau de vintage, copier la moitié des métadonnées produirait
+  // une ligne au ventre menteur — la somme porterait les métadonnées de F alors
+  // que M en dit une autre. On refuse fort un couple dont les métadonnées
+  // divergent, plutôt que de publier une valeur sournoise.
+  const CHAMPS_PARTAGES: (keyof Indicateur)[] = [
+    'rang_epci', 'rang_dep', 'rang_reg',
+    'rang_epci_n', 'rang_dep_n', 'rang_reg_n',
+    'unit',
+    'vintage_source', 'vintage_version',
+    'vintage_date_reference', 'vintage_date_publication',
+  ]
+  for (const champ of CHAMPS_PARTAGES) {
+    if (base[champ] !== autre[champ]) {
+      throw new Error(
+        `${prefixe} : métadonnées de pair divergent sur « ${champ} » ` +
+          `(F = ${formaterChampPartage(base[champ])}, ` +
+          `M = ${formaterChampPartage(autre[champ])}) — ` +
+          `un groupe de sexes dont les métadonnées divergent est malformé ` +
+          `(jamais une somme qui copie la moitié des métadonnées)`,
+      )
+    }
+  }
+
   // une part inconnue rend la somme inconnue — jamais une somme partielle
   const valeur =
     base.value === null || base.value === undefined || autre.value === null || autre.value === undefined
@@ -146,6 +181,11 @@ function resoudreGroupeSexe(
       : base.value + autre.value
 
   return { ...base, value: valeur, sex: null }
+}
+
+/** Rend une métadonnée de pair pour le message d'erreur (null → « null »). */
+function formaterChampPartage(valeur: unknown): string {
+  return valeur === null || valeur === undefined ? 'null' : String(valeur)
 }
 
 /**

@@ -225,6 +225,61 @@ describe('indicateurParTerritoire — sex aggregation (issue #390)', () => {
       indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
     ).toThrow(/représentation du sexe mixte/)
   })
+
+  /**
+   * Révision revue (issue #390) : l'agrégat HÉRITE des métadonnées d'une seule
+   * ligne (on copie F). Si F et M divergent sur un rang, une taille de groupe,
+   * l'unité ou le sceau de vintage, copier la moitié des métadonnées produirait
+   * une ligne au ventre menteur. On refuse fort, plutôt que de publier une
+   * valeur sournoise — jamais une somme qui copie F en silence.
+   */
+  it('throws when the F and M unit disagree (malformed pair — never copies F metadata)', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), unit: 'pts' }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('throws when the F and M shared ranks disagree', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), rang_epci: 2 }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('throws when the F and M group-size columns disagree', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), rang_epci_n: 3 }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('throws when the F and M vintage metadata disagree', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = {
+      ...ligneStructure('T1', '<15', 'M', 0.12),
+      vintage_source: 'autre source',
+      vintage_date_reference: '2024-01-01',
+    }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('still sums when the shared ranks are both null (the honest no-group case)', () => {
+    const f = { ...ligneStructure('T1', '<15', 'F', 0.18), rang_dep: null, rang_dep_n: null }
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), rang_dep: null, rang_dep_n: null }
+
+    const ligne = indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15').get('T1')
+    expect(ligne?.value).toBeCloseTo(0.3)
+  })
 })
 
 describe('valeurHistoireParTerritoire — the story-scalar join (ADR-0019)', () => {
