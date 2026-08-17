@@ -157,6 +157,37 @@ describe('FigureCompacte — composition DPE dans les couleurs officielles A→G
     expect(aria).toContain('A 5%')
     expect(aria).toContain('G 15%')
   })
+
+  it('rend un libellé vide (jamais la clé brute) si labelsDetail est absent', () => {
+    const wrapper = mount(FigureCompacte, {
+      props: {
+        famille: 'composition',
+        clef: 'distribution_dpe',
+        lignes: lignes('habitat', 'distribution_dpe', '22001'),
+        libelle: 'distribution_dpe',
+        labelsDetail: undefined,
+        theme: 'habitat',
+      },
+    })
+    const libelles = wrapper.findAll('.dpe-libelle').map((l) => l.text())
+    expect(libelles).toHaveLength(7)
+    // la lettre A–G est rendue à part ; le libellé doit être vide, pas la clé brute
+    for (const texte of libelles) expect(texte).toBe('')
+  })
+
+  it('clé la couleur de texte de la lettre (C/D sombres), jamais sur la position CSS — un jeu partiel rend correctement', () => {
+    const wrapper = monter('composition', 'distribution_dpe', 'habitat')
+    const lettres = wrapper.findAll('.dpe-lettre')
+    expect(lettres).toHaveLength(7)
+    // C et D (jaune/orange) portent un texte sombre inline, appliqué depuis la lettre
+    const styleC = lettres.find((l) => l.attributes('data-etiquette') === 'C')!.attributes('style') ?? ''
+    const styleD = lettres.find((l) => l.attributes('data-etiquette') === 'D')!.attributes('style') ?? ''
+    expect(styleC.toLowerCase()).toContain('#1a1a1a')
+    expect(styleD.toLowerCase()).toContain('#1a1a1a')
+    // A (vert) garde un texte blanc
+    const styleA = lettres.find((l) => l.attributes('data-etiquette') === 'A')!.attributes('style') ?? ''
+    expect(styleA.toLowerCase()).toContain('#ffffff')
+  })
 })
 
 describe('FigureCompacte — composition pyramide des âges sexuée (structure_age, #390)', () => {
@@ -212,6 +243,23 @@ describe('FigureCompacte — trajectoire (artif_par_habitant)', () => {
     const points = wrapper.findAll('.point')
     expect(points.length).toBeGreaterThan(1)
     expect(points[points.length - 1].classes()).toContain('point--courant')
+  })
+
+  it('rend une année vide (jamais la clé brute) si labelsDetail est absent', () => {
+    const wrapper = mount(FigureCompacte, {
+      props: {
+        famille: 'trajectory',
+        clef: 'artif_par_habitant',
+        lignes: lignes('milieux', 'artif_par_habitant', '22001'),
+        libelle: 'artif_par_habitant',
+        labelsDetail: undefined,
+        theme: 'milieux',
+      },
+    })
+    const annees = wrapper.findAll('.point-annee').map((a) => a.text())
+    expect(annees.length).toBeGreaterThan(0)
+    // sans métadonnée, l'année ne rend pas la clé brute (« 2021 » / « M2 »)
+    for (const annee of annees) expect(annee).toBe('')
   })
 })
 

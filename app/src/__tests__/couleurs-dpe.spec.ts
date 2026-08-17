@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { COULEURS_DPE, ORDRE_DPE, couleurDpe } from '../fiche/couleursDpe'
+import {
+  COULEURS_DPE,
+  ORDRE_DPE,
+  couleurDpe,
+  couleurTexteDpe,
+} from '../fiche/couleursDpe'
 
 /**
  * Les couleurs officielles DPE (nouvelle échelle 2021) — la source unique de
@@ -26,5 +31,17 @@ describe('couleursDpe — la référence officielle A→G', () => {
     expect(couleurDpe('H')).toBeNull()
     expect(couleurDpe('')).toBeNull()
     expect(couleurDpe('A')).toBe('#008659')
+  })
+})
+
+describe('couleursDpe — le contraste de texte clé sur la LETTRE (A–G)', () => {
+  it('donne un texte sombre aux étiquettes claires (C jaune, D orange), blanc aux autres', () => {
+    expect(couleurTexteDpe('C')).toBe('#1a1a1a')
+    expect(couleurTexteDpe('D')).toBe('#1a1a1a')
+    expect(couleurTexteDpe('A')).toBe('#ffffff')
+    expect(couleurTexteDpe('B')).toBe('#ffffff')
+    expect(couleurTexteDpe('E')).toBe('#ffffff')
+    expect(couleurTexteDpe('F')).toBe('#ffffff')
+    expect(couleurTexteDpe('G')).toBe('#ffffff')
   })
 })

@@ -84,6 +84,13 @@ describe('pyramideAge — détection de la forme sexuée (estPyramideSexuee)', (
     lignes[lignes.length - 1] = { ...lignes[0], sex: 'F' } as Indicateur
     expect(estPyramideSexuee(lignes)).toBe(false)
   })
+
+  it('rejette une tranche hors du contrat ORDRE_AGE (les sept fixes) — repli honnête', () => {
+    const lignes = lignesSexuees()
+    // une tranche « 0-4 » hors ORDRE_AGE casse la forme sexuée
+    lignes[0] = { ...lignes[0], detail: '0-4' } as Indicateur
+    expect(estPyramideSexuee(lignes)).toBe(false)
+  })
 })
 
 describe('pyramideAge — convention des codes sexe (INSEE : F = femmes, M = hommes)', () => {
@@ -120,5 +127,13 @@ describe('pyramideAge — bandes du pyramid à deux côtés (bandesPyramideSexue
     })
     expect(bandes[0].libelle).toBe('Moins de 15 ans')
     expect(bandes[6].libelle).toBe('80 ans et plus')
+  })
+
+  it('rend un libellé vide (jamais la clé brute) quand labelsDetail est absent', () => {
+    const bandes = bandesPyramideSexuee(lignesSexuees())
+    expect(bandes[0].libelle).toBe('')
+    expect(bandes[6].libelle).toBe('')
+    // la clé brute « <15 » / « 80+ » ne doit jamais apparaître comme libellé
+    for (const b of bandes) expect(b.libelle).not.toMatch(/^<|\+$/)
   })
 })
