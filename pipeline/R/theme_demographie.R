@@ -242,17 +242,64 @@ pivoter_age <- function(long) {
   # reste sur la part TOTALE des moins de 20 ans (issue #390 : inchangé). C'est
   # un agrégat INDÉPENDANT des 14 parts par sexe : il chevauche les tranches
   # « <15 » et « 15-24 », il n'en est pas la somme.
-  moins20 <- long %>%
+  y_lt20_source <- long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
       SEX == "_T", TIME_PERIOD == 2023, OBS_STATUS == "A",
       AGE == "Y_LT20"
     ) %>%
-    dplyr::select(GEO, AGE, OBS_VALUE) %>%
-    tidyr::pivot_wider(id_cols = GEO, names_from = AGE, values_from = OBS_VALUE)
+    dplyr::select(GEO, AGE, OBS_VALUE)
 
-  # La même garde pour le scalaire de rang : sans Y_LT20 (sexe total), le rang
-  # « moins de 20 ans » n'existe pas — mieux vaut le dire que renommer dans le vide.
+  # La garde de complétude PAR COMMUNE (révision revue, issue #390) : la garde
+  # historique ci-dessous ne regardait que la présence GLOBALE de la colonne
+  # « Y_LT20 ». Or, comme pour les 14 couples âge×sexe, le pivot produit une
+  # colonne dès qu'UNE commune porte la ligne — une commune qui perd SA ligne
+  # Y_LT20 (fichier localement troué, statut non « A » sur sa seule ligne) voit
+  # sa cellule devenir NA, tandis que la colonne persiste grâce aux autres
+  # communes. Pire : une commune qui en porte DEUX (doublon d'inclusion K/W mal
+  # nettoyé) ferait de la colonne une liste, et la cellule de CETTE commune
+  # échapperait à tout test de valeur finie. Le rang « moins de 20 ans » de
+  # CETTE commune n'existerait pas — mieux vaut le dire nommément que publier
+  # un scalaire estropié. On exige donc que CHAQUE GEO retenu pour la donnée
+  # d'âge (ceux de bandes_sexe, qui ont passé la garde des 14 couples) porte
+  # EXACTEMENT UNE ligne Y_LT20 valide — SEX = « _T », 2023, OBS_STATUS = « A »,
+  # valeur non NA — et on nomme la (les) commune(s) fautive(s) (sans ligne /
+  # lignes en double / valeur manquante).
+  geos_age <- bandes_sexe$GEO
+
+  compte_y_lt20 <- y_lt20_source %>%
+    dplyr::group_by(GEO) %>%
+    dplyr::summarise(
+      n = dplyr::n(),
+      na = sum(is.na(OBS_VALUE)),
+      .groups = "drop"
+    )
+
+  geos_sans      <- setdiff(geos_age, compte_y_lt20$GEO)   # aucune ligne Y_LT20
+  geos_dupliques <- compte_y_lt20$GEO[compte_y_lt20$n > 1]  # lignes en trop
+  geos_na        <- compte_y_lt20$GEO[compte_y_lt20$na > 0]  # valeur manquante
+
+  if (length(geos_sans) > 0 || length(geos_dupliques) > 0 ||
+      length(geos_na) > 0) {
+    defauts <- c(
+      if (length(geos_sans) > 0)
+        paste0("sans ligne : ", paste(geos_sans, collapse = ", ")),
+      if (length(geos_dupliques) > 0)
+        paste0("lignes en double : ", paste(geos_dupliques, collapse = ", ")),
+      if (length(geos_na) > 0)
+        paste0("valeur manquante : ", paste(geos_na, collapse = ", "))
+    )
+    stop("Source PRINC incomplète : l'agrégat des moins de 20 ans (AGE = ",
+         "« Y_LT20 », SEX = « _T », 2023, OBS_STATUS = « A ») doit compter ",
+         "exactement une ligne valide par commune retenue — ",
+         paste(defauts, collapse = " ; "), ".", call. = FALSE)
+  }
+
+  # La garde globale (défensive) : la colonne doit exister quel que soit le
+  # découpage — elle l'est dès lors que chaque GEO retenu a sa ligne, mais mieux
+  # vaut le dire que renommer dans le vide si la source entière perd l'agrégat.
+  moins20 <- y_lt20_source %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = AGE, values_from = OBS_VALUE)
   if (!"Y_LT20" %in% names(moins20)) {
     stop("Source PRINC incomplète : l'agrégat des moins de 20 ans (AGE = ",
          "« Y_LT20 », SEX = « _T ») est absent — le rang scalaire de la ",

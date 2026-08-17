@@ -180,6 +180,77 @@ test_that("pivoter_age : l'agrégat des moins de 20 ans absent -> erreur (le ran
   expect_error(pivoter_age(sans_lt20), "moins de 20 ans")
 })
 
+# La garde de complétude PAR COMMUNE de l'agrégat Y_LT20 (révision revue,
+# issue #390) : la garde historique ne regardait que la présence GLOBALE de la
+# colonne. Or, comme pour les 14 couples, le pivot produit une colonne dès
+# qu'UNE commune porte la ligne — une commune qui perd SA ligne (ou en porte
+# DEUX, ou une ligne à valeur NA) voit sa cellule devenir NA / liste, tandis
+# que la colonne persiste. Le rang « moins de 20 ans » de CETTE commune
+# n'existerait pas. Ces cas se testent entièrement sur la mini-fixture
+# synthétique — aucune donnée réelle requise.
+
+test_that("pivoter_age : une commune sans SA ligne Y_LT20 (les autres l'ont) -> erreur nommée", {
+  # 29001 perd sa ligne Y_LT20, MAIS 22001 la porte. La colonne Y_LT20 existe
+  # donc GLOBALEMENT — la garde historique la laissait passer, et le rang de
+  # 29001 se publiait estropié. La garde PAR COMMUNE doit nommer 29001.
+  sans_une_lt20 <- age_mini[!(age_mini$GEO == "29001" & age_mini$AGE == "Y_LT20"), ]
+
+  expect_error(pivoter_age(sans_une_lt20), "incompl")
+  expect_error(pivoter_age(sans_une_lt20), "moins de 20 ans")
+  expect_error(pivoter_age(sans_une_lt20), "29001")
+})
+
+test_that("pivoter_age : une commune avec une ligne Y_LT20 en double -> erreur nommée", {
+  # 29001 porte DEUX lignes Y_LT20 (doublon d'inclusion K/W mal nettoyé) — le
+  # pivot en ferait une colonne-liste ; la garde PAR COMMUNE doit nommer 29001.
+  doubline_lt20 <- dplyr::bind_rows(
+    age_mini,
+    tibble::tribble(
+      ~GEO, ~GEO_OBJECT, ~SEX, ~AGE, ~OBS_STATUS, ~TIME_PERIOD, ~OBS_VALUE,
+      "29001", "COM", "_T", "Y_LT20", "A", 2023, 999
+    )
+  )
+
+  expect_error(pivoter_age(doubline_lt20), "lignes en double")
+  expect_error(pivoter_age(doubline_lt20), "29001")
+})
+
+test_that("pivoter_age : une commune avec une ligne Y_LT20 à valeur manquante (NA) -> erreur nommée", {
+  # 29001 porte sa ligne, mais sa valeur est NA (statut « A » mais mesure
+  # indisponible) — la cellule NA échapperait à tout test de valeur finie.
+  na_lt20 <- age_mini
+  na_lt20$OBS_VALUE[na_lt20$GEO == "29001" & na_lt20$AGE == "Y_LT20"] <- NA
+
+  expect_error(pivoter_age(na_lt20), "valeur manquante")
+  expect_error(pivoter_age(na_lt20), "29001")
+})
+
+test_that("pivoter_age : deux communes fautives (l'une sans ligne, l'autre en double) -> les deux nommées", {
+  # 22001 perd sa ligne Y_LT20 (sans ligne), 29001 en porte deux (doublon) :
+  # la garde PAR COMMUNE les liste toutes les deux, jamais seulement la première.
+  deux_fautives <- age_mini %>%
+    dplyr::filter(!(GEO == "22001" & AGE == "Y_LT20")) %>%
+    dplyr::bind_rows(
+      tibble::tribble(
+        ~GEO, ~GEO_OBJECT, ~SEX, ~AGE, ~OBS_STATUS, ~TIME_PERIOD, ~OBS_VALUE,
+        "29001", "COM", "_T", "Y_LT20", "A", 2023, 999
+      )
+    )
+
+  expect_error(pivoter_age(deux_fautives), "22001")
+  expect_error(pivoter_age(deux_fautives), "29001")
+})
+
+test_that("pivoter_age : chaque GEO retenu a EXACTEMENT une ligne Y_LT20 valide -> aucune erreur", {
+  # témoin : la mini-fixture porte une et une seule ligne Y_LT20 (valeur non
+  # NA) par commune — la garde PAR COMMUNE ne doit rien dire, et age_lt20
+  # doit être récupéré commune par commune.
+  a <- pivoter_age(age_mini)
+
+  expect_equal(a$age_lt20[a$GEO == "22001"], 500)
+  expect_equal(a$age_lt20[a$GEO == "29001"], 700)
+})
+
 test_that("assembler_communes : la forme du contrat, Bretagne seulement", {
   brut <- assembler_communes(
     pivoter_serie(serie_mini),
