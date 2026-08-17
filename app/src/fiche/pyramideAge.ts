@@ -71,7 +71,7 @@ export interface BandePyramide {
  * Les bandes du pyramid à deux côtés, ordonnées jeune-en-bas (ORDRE_AGE). Les
  * largeurs sont rapportées au max des DEUX sexes (échelle commune) pour que la
  * forme soit lisible. `labelsDetail` vient de la métadonnée (jamais une clé
- * brute) ; une tranche sans libellé rend sa clé.
+ * brute) ; une tranche sans libellé rend un libellé vide, jamais sa clé brute.
  */
 export function bandesPyramideSexuee(
   lignes: Indicateur[],
