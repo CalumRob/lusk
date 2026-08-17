@@ -117,6 +117,44 @@ test_that("pivoter_age : les 7 tranches × 2 sexes + l'agrégat moins de 20 ans"
   expect_equal(a$age_80_plus_M[a$GEO == "29001"], 98)
 })
 
+# La garde de complétude de la SOURCE (issue #390) ------------------------------
+# Le pivot ne fabrique une colonne que pour les couples (AGE, SEX) réellement
+# OBSERVÉS : si la source réelle perd une tranche ou un sexe, la colonne manque
+# tout simplement. Sans garde, la pyramide se publierait amputée (ou pire,
+# échouerait plus tard sur un message d'outil illisible). Ces cas se testent
+# entièrement sur la mini-fixture synthétique — aucune donnée réelle requise.
+
+test_that("pivoter_age : un SEXE manquant sur une tranche -> erreur nommée", {
+  # la source perd les hommes de 80 ans et plus
+  tronquee <- age_mini[!(age_mini$SEX == "M" & age_mini$AGE == "Y_GE80"), ]
+
+  expect_error(pivoter_age(tronquee), "Source PRINC incompl")
+  expect_error(pivoter_age(tronquee), "Y_GE80_M")
+})
+
+test_that("pivoter_age : une TRANCHE entièrement absente (ses deux sexes) -> erreur nommée", {
+  tronquee <- age_mini[age_mini$AGE != "Y55T64", ]
+
+  expect_error(pivoter_age(tronquee), "Y55T64_F")
+  expect_error(pivoter_age(tronquee), "Y55T64_M")
+})
+
+test_that("pivoter_age : une tranche écartée par son statut (OBS_STATUS != « A ») -> erreur, jamais un trou muet", {
+  # le piège réaliste : la donnée EXISTE dans le fichier mais son statut la
+  # rend inutilisable — le filtre la retire, la colonne disparaît. La garde
+  # doit parler, pas laisser publier une pyramide à six étages.
+  provisoire <- age_mini
+  provisoire$OBS_STATUS[provisoire$AGE == "Y25T39"] <- "P"
+
+  expect_error(pivoter_age(provisoire), "Y25T39_F")
+})
+
+test_that("pivoter_age : l'agrégat des moins de 20 ans absent -> erreur (le rang scalaire en dépend)", {
+  sans_lt20 <- age_mini[age_mini$AGE != "Y_LT20", ]
+
+  expect_error(pivoter_age(sans_lt20), "moins de 20 ans")
+})
+
 test_that("assembler_communes : la forme du contrat, Bretagne seulement", {
   brut <- assembler_communes(
     pivoter_serie(serie_mini),

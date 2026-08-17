@@ -90,6 +90,36 @@ INDICATEURS_DEMOGRAPHIE <- tibble::tibble(
   multiplicite = c(1L, 14L, 1L, 1L)
 )
 
+# Le contrat FIXE de la structure par âge (issue #390) -------------------------
+# LA source de vérité des tranches et des sexes : le pivot des sources, le
+# constructeur d'indicateur ET la validation lisent ces mêmes vecteurs. Les
+# tranches attendues sont DÉCLARÉES, jamais dérivées de ce que la donnée porte —
+# c'est exactement ce qui permet d'attraper une tranche entièrement absente
+# (ses deux sexes manquants), qu'une attente dérivée laisserait passer sans un
+# mot, publiant une pyramide avec un étage en moins.
+
+# Les codes AGE de la source PRINC, dans l'ordre du contrat.
+AGE_CODES_STRUCTURE <- c("Y_LT15", "Y15T24", "Y25T39", "Y40T54", "Y55T64",
+                         "Y65T79", "Y_GE80")
+
+# Les sept tranches d'âge publiées (la colonne `detail` du payload).
+TRANCHES_STRUCTURE_AGE <- c("<15", "15-24", "25-39", "40-54", "55-64",
+                            "65-79", "80+")
+
+# Les racines de colonnes de la table des territoires, tranche par tranche.
+COLS_STRUCTURE_AGE <- c("age_lt15", "age_15_24", "age_25_39", "age_40_54",
+                        "age_55_64", "age_65_79", "age_80_plus")
+
+# Les deux sexes du contrat — jamais « _T » (le total se lit en sommant F + M).
+SEXES_STRUCTURE_AGE <- c("F", "M")
+
+# Les 14 colonnes par sexe (age_<tranche>_<sexe>), F d'abord puis M.
+COLS_STRUCTURE_AGE_SEXE <- paste0(
+  rep(COLS_STRUCTURE_AGE, times = length(SEXES_STRUCTURE_AGE)),
+  "_",
+  rep(SEXES_STRUCTURE_AGE, each = length(COLS_STRUCTURE_AGE))
+)
+
 # La construction des données du thème -----------------------------------------
 # L'acte « trouver la donnée » : décompresse le cache brut, lit les fichiers
 # longs INSEE + la base des EPCI, et produit la table des communes bretonnes
@@ -160,15 +190,40 @@ pivoter_age <- function(long) {
   bandes_sexe <- long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
-      SEX %in% c("F", "M"), TIME_PERIOD == 2023, OBS_STATUS == "A",
-      AGE %in% c("Y_LT15", "Y15T24", "Y25T39", "Y40T54", "Y55T64",
-                 "Y65T79", "Y_GE80")
+      SEX %in% SEXES_STRUCTURE_AGE, TIME_PERIOD == 2023, OBS_STATUS == "A",
+      AGE %in% AGE_CODES_STRUCTURE
     ) %>%
     dplyr::select(GEO, SEX, AGE, OBS_VALUE) %>%
     tidyr::pivot_wider(id_cols = GEO, names_from = c(AGE, SEX),
                        values_from = OBS_VALUE)
+
+  # La garde de complétude de la SOURCE (issue #390) : le pivot ne fabrique une
+  # colonne que pour les couples (AGE, SEX) réellement OBSERVÉS. Si la source
+  # réelle perd une tranche ou un sexe (fichier tronqué, code AGE renommé d'un
+  # millésime à l'autre, statut OBS_STATUS != "A" sur une tranche entière), la
+  # colonne manque tout simplement — et sans cette garde, `dplyr::rename` plus
+  # bas échouerait avec un message d'outil illisible, ou pire, un `any_of`
+  # complaisant laisserait passer une pyramide amputée. On exige donc les 14
+  # couples ATTENDUS (le contrat, pas l'observé) et on nomme précisément ce qui
+  # manque.
+  attendues <- paste0(
+    rep(AGE_CODES_STRUCTURE, times = length(SEXES_STRUCTURE_AGE)),
+    "_",
+    rep(SEXES_STRUCTURE_AGE, each = length(AGE_CODES_STRUCTURE))
+  )
+  manquantes <- setdiff(attendues, names(bandes_sexe))
+  if (length(manquantes) > 0) {
+    stop("Source PRINC incomplète : la structure par âge attend ",
+         length(attendues), " couples âge×sexe (",
+         length(AGE_CODES_STRUCTURE), " tranches × ",
+         length(SEXES_STRUCTURE_AGE), " sexes) ; manquent : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+
   # agrégat moins de 20 ans (sexe total _T) — le rang scalaire de structure_age
-  # reste sur la part totale des moins de 20 ans (issue #390 : inchangé).
+  # reste sur la part TOTALE des moins de 20 ans (issue #390 : inchangé). C'est
+  # un agrégat INDÉPENDANT des 14 parts par sexe : il chevauche les tranches
+  # « <15 » et « 15-24 », il n'en est pas la somme.
   moins20 <- long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
@@ -176,29 +231,40 @@ pivoter_age <- function(long) {
       AGE == "Y_LT20"
     ) %>%
     dplyr::select(GEO, AGE, OBS_VALUE) %>%
-    tidyr::pivot_wider(id_cols = GEO, names_from = AGE, values_from = OBS_VALUE) %>%
-    dplyr::rename(age_lt20 = Y_LT20)
+    tidyr::pivot_wider(id_cols = GEO, names_from = AGE, values_from = OBS_VALUE)
 
-  bandes_sexe %>%
-    dplyr::rename(
-      age_lt15_F = Y_LT15_F, age_15_24_F = Y15T24_F, age_25_39_F = Y25T39_F,
-      age_40_54_F = Y40T54_F, age_55_64_F = Y55T64_F, age_65_79_F = Y65T79_F,
-      age_80_plus_F = Y_GE80_F,
-      age_lt15_M = Y_LT15_M, age_15_24_M = Y15T24_M, age_25_39_M = Y25T39_M,
-      age_40_54_M = Y40T54_M, age_55_64_M = Y55T64_M, age_65_79_M = Y65T79_M,
-      age_80_plus_M = Y_GE80_M
-    ) %>%
-    dplyr::mutate(
-      # totaux par tranche (F + M) — consommateurs non éclatés
-      age_lt15 = age_lt15_F + age_lt15_M,
-      age_15_24 = age_15_24_F + age_15_24_M,
-      age_25_39 = age_25_39_F + age_25_39_M,
-      age_40_54 = age_40_54_F + age_40_54_M,
-      age_55_64 = age_55_64_F + age_55_64_M,
-      age_65_79 = age_65_79_F + age_65_79_M,
-      age_80_plus = age_80_plus_F + age_80_plus_M
-    ) %>%
-    dplyr::left_join(moins20, by = "GEO")
+  # La même garde pour le scalaire de rang : sans Y_LT20 (sexe total), le rang
+  # « moins de 20 ans » n'existe pas — mieux vaut le dire que renommer dans le vide.
+  if (!"Y_LT20" %in% names(moins20)) {
+    stop("Source PRINC incomplète : l'agrégat des moins de 20 ans (AGE = ",
+         "« Y_LT20 », SEX = « _T ») est absent — le rang scalaire de la ",
+         "structure par âge en dépend.", call. = FALSE)
+  }
+  moins20 <- dplyr::rename(moins20, age_lt20 = Y_LT20)
+
+  # Y_LT15_F -> age_lt15_F, ... : le renommage dérive des MÊMES vecteurs du
+  # contrat que la garde ci-dessus (une seule source de vérité, jamais deux
+  # listes de 14 noms à garder synchrones à la main).
+  renommage <- stats::setNames(
+    paste0(
+      rep(AGE_CODES_STRUCTURE, times = length(SEXES_STRUCTURE_AGE)), "_",
+      rep(SEXES_STRUCTURE_AGE, each = length(AGE_CODES_STRUCTURE))
+    ),
+    COLS_STRUCTURE_AGE_SEXE
+  )
+
+  age <- bandes_sexe %>%
+    dplyr::rename(dplyr::all_of(renommage))
+
+  # totaux par tranche (F + M) — les consommateurs qui n'éclatent pas par sexe
+  # (l'aperçu part 65+, la somme des tranches = population)
+  for (i in seq_along(COLS_STRUCTURE_AGE)) {
+    age[[COLS_STRUCTURE_AGE[i]]] <-
+      age[[paste0(COLS_STRUCTURE_AGE[i], "_F")]] +
+      age[[paste0(COLS_STRUCTURE_AGE[i], "_M")]]
+  }
+
+  dplyr::left_join(age, moins20, by = "GEO")
 }
 
 # assembler_communes ----------------------------------------------------------
@@ -318,24 +384,24 @@ agreger_territoires_demographie <- function(communes, squelette) {
     dplyr::mutate(dplyr::across(c(departement, epci), as.character))
 
   mesures <- dplyr::bind_rows(
-    dplyr::select(base, "code", dplyr::any_of(COLONNES_DEMOGRAPHIE)),
+    dplyr::select(base, "code", dplyr::all_of(COLONNES_DEMOGRAPHIE)),
     base %>%
       dplyr::group_by(epci) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::any_of(COLONNES_DEMOGRAPHIE), sum),
+        dplyr::across(dplyr::all_of(COLONNES_DEMOGRAPHIE), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = epci),
     base %>%
       dplyr::group_by(departement) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::any_of(COLONNES_DEMOGRAPHIE), sum),
+        dplyr::across(dplyr::all_of(COLONNES_DEMOGRAPHIE), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = departement),
     base %>%
       dplyr::summarise(
-        dplyr::across(dplyr::any_of(COLONNES_DEMOGRAPHIE), sum),
+        dplyr::across(dplyr::all_of(COLONNES_DEMOGRAPHIE), sum),
         .groups = "drop"
       ) %>%
       dplyr::mutate(code = "53")
@@ -377,19 +443,16 @@ indicator_structure_age <- function(territoires) {
   # porte une ligne par (tranche, sexe), le `detail` restant la tranche d'âge et
   # `sex` le sexe. Chaque part est la part de la population totale (population),
   # donc les 14 parts somment à 1 par territoire.
-  bandes <- c(
-    "age_lt15_F", "age_15_24_F", "age_25_39_F", "age_40_54_F",
-    "age_55_64_F", "age_65_79_F", "age_80_plus_F",
-    "age_lt15_M", "age_15_24_M", "age_25_39_M", "age_40_54_M",
-    "age_55_64_M", "age_65_79_M", "age_80_plus_M"
+  # le lookup dérive des vecteurs du contrat (COLS_STRUCTURE_AGE_SEXE /
+  # TRANCHES_STRUCTURE_AGE / SEXES_STRUCTURE_AGE) : une seule source de vérité
+  lookup <- tibble::tibble(
+    col = COLS_STRUCTURE_AGE_SEXE,
+    detail = rep(TRANCHES_STRUCTURE_AGE, times = length(SEXES_STRUCTURE_AGE)),
+    sex = rep(SEXES_STRUCTURE_AGE, each = length(TRANCHES_STRUCTURE_AGE))
   )
-  libelles <- c("<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+",
-                "<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+")
-  sexes <- c(rep("F", 7), rep("M", 7))
-  lookup <- tibble::tibble(col = bandes, detail = libelles, sex = sexes)
 
   territoires %>%
-    tidyr::pivot_longer(cols = dplyr::all_of(bandes),
+    tidyr::pivot_longer(cols = dplyr::all_of(COLS_STRUCTURE_AGE_SEXE),
                         names_to = "col", values_to = "effectif") %>%
     dplyr::left_join(lookup, by = "col") %>%
     dplyr::mutate(
@@ -501,9 +564,14 @@ compute_histoires_demographie <- function(territoires) {
 # Les vérifications de valeur propres à Démographie (point 7) : le thème les
 # déclare, validate_payload() les exécute après ses vérifications génériques.
 # Un thème suivant déclare les siennes dans son module.
+#
+# La liste est NOMMÉE : validate_payload l'itère par valeur (les noms ne changent
+# rien à l'exécution), mais un nom rend chaque garde adressable — les tests
+# peuvent viser LA validation du contrat âge×sexe sans passer par les gardes
+# génériques qui, elles, parlent souvent les premières.
 validations_demographie <- list(
   # densité : finie et positive partout
-  function(payload) {
+  densite_positive = function(payload) {
     dens <- payload$indicateurs$value[payload$indicateurs$key == "densite"]
     if (any(!is.finite(dens) | dens <= 0)) {
       stop("Payload invalide : densité non finie ou non positive.", call. = FALSE)
@@ -511,7 +579,7 @@ validations_demographie <- list(
     invisible(payload)
   },
   # structure par âge : les parts somment à 1 par territoire
-  function(payload) {
+  parts_age_somment_a_1 = function(payload) {
     parts <- stats::aggregate(
       value ~ territoire,
       payload$indicateurs[payload$indicateurs$key == "structure_age", ],
@@ -523,28 +591,69 @@ validations_demographie <- list(
     invisible(payload)
   },
   # structure par âge (issue #390) : le produit cartésien tranche × sexe doit
-  # être COMPLET et SANS DOUBLON — 7 tranches (detail) × {F, M} = 14 paires par
-  # territoire. Une paire manquante (source tronquée) ou en double (payload
-  # corrompu) casse la pyramide ; on la refuse fort.
-  function(payload) {
+  # être COMPLET, SANS DOUBLON et SANS INTRUS — les SEPT tranches DÉCLARÉES
+  # (TRANCHES_STRUCTURE_AGE) × {F, M} = 14 paires par territoire.
+  #
+  # Les tranches attendues sont le CONTRAT, jamais une dérivation de ce que le
+  # payload porte : c'est ce qui permet d'attraper une tranche entièrement
+  # absente (ses deux sexes manquants d'un coup) — une attente dérivée de
+  # l'observé la trouverait « cohérente » et publierait une pyramide amputée
+  # d'un étage, sans un mot.
+  contrat_age_sexe = function(payload) {
     sa <- payload$indicateurs[payload$indicateurs$key == "structure_age", ]
     if (nrow(sa) == 0) return(invisible(payload))
-    bandes <- c("<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+")
-    sexes <- c("F", "M")
-    paires_attendues <- sort(paste(rep(bandes, each = length(sexes)),
-                                   rep(sexes, length(bandes))))
+
+    # la colonne `sex` est le contrat : son absence est une dérive de schéma
+    if (!"sex" %in% names(sa)) {
+      stop("Payload invalide : structure_age n'a pas de colonne `sex` — la ",
+           "structure par âge est éclatée par sexe (F / M).", call. = FALSE)
+    }
+
+    # 1. tout sexe hors {F, M} — y compris NA (représentation mixte sexe/null,
+    # un payload à moitié migré) et « _T » (le total n'est pas une ligne)
+    invalides <- unique(sa$sex[is.na(sa$sex) | !(sa$sex %in% SEXES_STRUCTURE_AGE)])
+    if (length(invalides) > 0) {
+      stop("Payload invalide : structure_age porte un sexe hors contrat (",
+           paste(ifelse(is.na(invalides), "NA", invalides), collapse = ", "),
+           ") — attendus : ", paste(SEXES_STRUCTURE_AGE, collapse = ", "), ".",
+           call. = FALSE)
+    }
+
+    # 2. toute tranche hors des sept déclarées
+    intruses <- setdiff(unique(sa$detail), TRANCHES_STRUCTURE_AGE)
+    if (length(intruses) > 0) {
+      stop("Payload invalide : structure_age porte une tranche hors contrat (",
+           paste(intruses, collapse = ", "), ") — attendues : ",
+           paste(TRANCHES_STRUCTURE_AGE, collapse = ", "), ".", call. = FALSE)
+    }
+
+    # 3. le produit cartésien FIXE, par territoire : chaque paire exactement une
+    # fois, et le compte exact (aucune ligne en trop)
+    paires_attendues <- paste(
+      rep(TRANCHES_STRUCTURE_AGE, times = length(SEXES_STRUCTURE_AGE)),
+      rep(SEXES_STRUCTURE_AGE, each = length(TRANCHES_STRUCTURE_AGE))
+    )
+    attendu <- length(paires_attendues)
     for (code in unique(sa$territoire)) {
       lignes <- sa[sa$territoire == code, ]
-      paires <- sort(paste(lignes$detail, lignes$sex))
+      paires <- paste(lignes$detail, lignes$sex)
       if (any(duplicated(paires))) {
         stop("Payload invalide : structure_age a des paires âge×sexe en double ",
-             "pour ", code, ".", call. = FALSE)
+             "pour ", code, " (",
+             paste(unique(paires[duplicated(paires)]), collapse = ", "), ").",
+             call. = FALSE)
       }
       manquantes <- setdiff(paires_attendues, paires)
       if (length(manquantes) > 0) {
         stop("Payload invalide : structure_age a des paires âge×sexe manquantes ",
              "pour ", code, " (", paste(manquantes, collapse = ", "), ").",
              call. = FALSE)
+      }
+      if (nrow(lignes) != attendu) {
+        stop("Payload invalide : structure_age a ", nrow(lignes),
+             " lignes au lieu de ", attendu, " pour ", code, " (",
+             length(TRANCHES_STRUCTURE_AGE), " tranches × ",
+             length(SEXES_STRUCTURE_AGE), " sexes).", call. = FALSE)
       }
     }
     invisible(payload)
