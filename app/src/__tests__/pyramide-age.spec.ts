@@ -21,6 +21,23 @@ function lignesSexuees(territoire = '22001'): Indicateur[] {
   return couples
 }
 
+/**
+ * Mêmes 14 lignes, mais avec des valeurs DISTINCTES selon le sexe pour prouver
+ * le sens du mapping : hommes (M) gardent la valeur de base, femmes (F) la
+ * moitié. Base '<15' = 0.3 → hommes 0.3 (30 %), femmes 0.15 (15 %).
+ */
+function lignesSexueesDistinctes(territoire = '22001'): Indicateur[] {
+  const base = lignesLegacy(territoire)
+  const couples: Indicateur[] = []
+  for (const sex of ['F', 'M'] as const) {
+    for (const l of base) {
+      const valeur = sex === 'F' ? (l.value ?? 0) / 2 : (l.value ?? 0)
+      couples.push({ ...l, sex, value: valeur } as Indicateur)
+    }
+  }
+  return couples
+}
+
 describe('pyramideAge — détection de la forme sexuée (estPyramideSexuee)', () => {
   it('rejette le payload legacy à sept lignes totales (sans sexe) — repli segmenté, pas de pyramide', () => {
     expect(estPyramideSexuee(lignesLegacy())).toBe(false)
@@ -33,6 +50,34 @@ describe('pyramideAge — détection de la forme sexuée (estPyramideSexuee)', (
 
   it('accepte la forme complète sept tranches × F+M avec sexe explicite (#390)', () => {
     expect(estPyramideSexuee(lignesSexuees())).toBe(true)
+  })
+
+  it('exige exactement 14 lignes (ni 13 ni 15)', () => {
+    expect(estPyramideSexuee(lignesSexuees().slice(0, 13))).toBe(false)
+    expect(estPyramideSexuee([...lignesSexuees(), { ...lignesSexuees()[0] } as Indicateur])).toBe(false)
+  })
+
+  it('rejette une paire (detail, sex) en double', () => {
+    const doublon = [...lignesSexuees(), { ...lignesSexuees()[0] } as Indicateur]
+    expect(estPyramideSexuee(doublon)).toBe(false)
+  })
+
+  it('rejette une forme incomplète (deux lignes F pour la même tranche)', () => {
+    const lignes = lignesSexuees()
+    // remplace la dernière (M, '80+') par une seconde F '<15' → F en double, M incomplet
+    lignes[lignes.length - 1] = { ...lignes[0], sex: 'F' } as Indicateur
+    expect(estPyramideSexuee(lignes)).toBe(false)
+  })
+})
+
+describe('pyramideAge — convention des codes sexe (INSEE : F = femmes, M = hommes)', () => {
+  it('mappe F → côté femmes et M → côté hommes, jamais l’inverse', () => {
+    const bandes = bandesPyramideSexuee(lignesSexueesDistinctes())
+    // base '<15' : 0.3 (%) ; hommes (M) = 0.3 → 30, femmes (F) = 0.15 → 15
+    expect(bandes[0].valeurHommes).toBeCloseTo(0.3, 6)
+    expect(bandes[0].valeurFemmes).toBeCloseTo(0.15, 6)
+    expect(bandes[0].texteHommes).toBe('30')
+    expect(bandes[0].texteFemmes).toBe('15')
   })
 })
 

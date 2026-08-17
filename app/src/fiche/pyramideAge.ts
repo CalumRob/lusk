@@ -35,11 +35,18 @@ export type IndicateurAvecSexe = Indicateur & { sex?: 'F' | 'M' | null }
  * faux — on ne doit jamais présenter un chart à un côté comme une pyramide.
  */
 export function estPyramideSexuee(lignes: Indicateur[]): boolean {
+  // forme exacte : sept tranches × F + M = 14 lignes, ni plus ni moins
+  if (lignes.length !== 14) return false
   const sexuees = lignes as IndicateurAvecSexe[]
+  const paires = new Set<string>()
   const bandesParSexe: Record<'F' | 'M', Set<string>> = { F: new Set(), M: new Set() }
   for (const l of sexuees) {
     if (l.detail == null) return false
     if (l.sex !== 'F' && l.sex !== 'M') return false
+    // une même paire (detail, sex) ne doit apparaître qu'une fois — pas de doublon
+    const cle = `${l.sex}|${l.detail}`
+    if (paires.has(cle)) return false
+    paires.add(cle)
     bandesParSexe[l.sex].add(l.detail)
   }
   // sept bandes par sexe, et les mêmes sept des deux côtés
@@ -84,10 +91,11 @@ export function bandesPyramideSexuee(
   )
   return ORDRE_AGE.map((tranche) => {
     const entree = parTrancheSexe.get(tranche)
-    const h = entree?.F?.value ?? null
-    const f = entree?.M?.value ?? null
-    const texteHommes = h == null ? '—' : (formaterValeur(entree!.F!) ?? '—')
-    const texteFemmes = f == null ? '—' : (formaterValeur(entree!.M!) ?? '—')
+    // convention INSEE : M = hommes (barre gauche), F = femmes (barre droite)
+    const h = entree?.M?.value ?? null
+    const f = entree?.F?.value ?? null
+    const texteHommes = h == null ? '—' : (formaterValeur(entree!.M!) ?? '—')
+    const texteFemmes = f == null ? '—' : (formaterValeur(entree!.F!) ?? '—')
     return {
       tranche,
       libelle: labelsDetail?.[tranche] ?? tranche,
