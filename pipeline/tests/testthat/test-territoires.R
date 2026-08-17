@@ -69,6 +69,16 @@ test_that("un EPCI à cheval sur deux départements prend la pluralité de popul
     age_25_39 = c(200, 400), age_40_54 = c(200, 400),
     age_55_64 = c(150, 200), age_65_79 = c(100, 200),
     age_80_plus = c(50, 100), age_lt20 = c(300, 500),
+    # les tranches par sexe (issue #390) : F + M = la tranche totale — le
+    # schéma COMPLET du thème, exigé par all_of(COLONNES_DEMOGRAPHIE)
+    age_lt15_F = c(100, 200), age_15_24_F = c(50, 150),
+    age_25_39_F = c(100, 200), age_40_54_F = c(100, 200),
+    age_55_64_F = c(75, 100), age_65_79_F = c(50, 100),
+    age_80_plus_F = c(25, 50),
+    age_lt15_M = c(100, 200), age_15_24_M = c(50, 150),
+    age_25_39_M = c(100, 200), age_40_54_M = c(100, 200),
+    age_55_64_M = c(75, 100), age_65_79_M = c(50, 100),
+    age_80_plus_M = c(25, 50),
     population_menages = c(980, 1950), menages = c(420, 900)
   )
   bt <- build_territoires(mini)
@@ -94,6 +104,15 @@ test_that("un EPCI à cheval ex æquo prend le plus petit département (règle v
     age_25_39 = c(200, 200), age_40_54 = c(200, 200),
     age_55_64 = c(150, 150), age_65_79 = c(100, 100),
     age_80_plus = c(50, 50), age_lt20 = c(300, 300),
+    # les tranches par sexe (issue #390) : F + M = la tranche totale
+    age_lt15_F = c(100, 100), age_15_24_F = c(50, 50),
+    age_25_39_F = c(100, 100), age_40_54_F = c(100, 100),
+    age_55_64_F = c(75, 75), age_65_79_F = c(50, 50),
+    age_80_plus_F = c(25, 25),
+    age_lt15_M = c(100, 100), age_15_24_M = c(50, 50),
+    age_25_39_M = c(100, 100), age_40_54_M = c(100, 100),
+    age_55_64_M = c(75, 75), age_65_79_M = c(50, 50),
+    age_80_plus_M = c(25, 25),
     population_menages = c(980, 980), menages = c(420, 420)
   )
   bt <- build_territoires(mini)

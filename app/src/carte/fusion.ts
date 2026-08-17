@@ -45,6 +45,21 @@ export interface ValeurLigne {
  * The rows that feed one choropleth: the theme's indicator with `detail ===
  * null` (one value per territory) — or, when `detail` is given (a grouped
  * multi-detail layer, ADR-0019), that detail's rows. Returns territoire → row.
+ *
+ * Issue #390 — the sex dimension: a sex-split indicator (structure_age) publishes
+ * one row per (territoire × detail × sex). The carte stays GROUPED BY `key +
+ * detail`, never by sex: the F **and** M rows of one age band collapse into ONE
+ * territory value — their sum — keeping the shared rank / unit / vintage carried
+ * by the indicator rows. A non-sex (legacy) detail has exactly one row per
+ * territoire and passes through untouched.
+ *
+ * Malformed sex groups THROW rather than produce a number. Half a pyramid summed
+ * into a choropleth is indistinguishable from a real value on screen: a band
+ * with only F would paint a territory as if a third of its people did not exist.
+ * So an incomplete ({F} or {M} alone), duplicated ({F, F}) or mixed
+ * (sexed + unsexed) group is a contract violation, not a value. A group whose
+ * shape is valid but whose share is unknown (a null value) yields `null` — the
+ * neutral no-data colour — never a partial sum.
  */
 export function indicateurParTerritoire(
   lignes: readonly Indicateur[],
@@ -52,13 +67,125 @@ export function indicateurParTerritoire(
   indicateur: string,
   detail: string | null = null,
 ): Map<string, Indicateur> {
-  const parTerritoire = new Map<string, Indicateur>()
+  const groupes = new Map<string, Indicateur[]>()
   for (const ligne of lignes) {
-    if (ligne.theme === theme && ligne.key === indicateur && ligne.detail === detail) {
-      parTerritoire.set(ligne.territoire, ligne)
-    }
+    if (ligne.theme !== theme || ligne.key !== indicateur || ligne.detail !== detail) continue
+    const groupe = groupes.get(ligne.territoire)
+    if (groupe) groupe.push(ligne)
+    else groupes.set(ligne.territoire, [ligne])
+  }
+
+  const parTerritoire = new Map<string, Indicateur>()
+  for (const [territoire, groupe] of groupes) {
+    parTerritoire.set(territoire, resoudreGroupeSexe(territoire, groupe, indicateur))
   }
   return parTerritoire
+}
+
+/** Les deux sexes du contrat éclaté par sexe (issue #390) — jamais un total. */
+const SEXES_ATTENDUS: readonly ['F', 'M'] = ['F', 'M']
+
+/**
+ * Résout les lignes d'un même (territoire × key × detail) en UNE ligne de
+ * territoire (issue #390).
+ *
+ * - une seule ligne sans sexe : le cas historique, rendue telle quelle ;
+ * - exactement {F, M} : l'agrégat — la somme des deux parts, `sex: null` (c'est
+ *   un agrégat, plus une ligne de sexe). Si l'une des deux parts est inconnue
+ *   (null), la somme est INCONNUE (null) : on ne publie pas la moitié d'une
+ *   pyramide comme si c'était le tout ;
+ * - tout le reste (un seul sexe, un sexe en double, un mélange sexué /
+ *   non-sexué, plusieurs lignes non-sexuées) : une violation de contrat, qui
+ *   échoue fort au lieu d'inventer une valeur partielle.
+ *
+ * Avant de sommer, les métadonnées PARTAGÉES (rangs, tailles de groupe, unité,
+ * sceau de vintage) doivent s'accorder entre F et M : l'agrégat HÉRITE de la
+ * moitié des métadonnées (on copie F). Une divergence (un rang, une unité, un
+ * vintage différents) rendrait la ligne sommée au ventre menteur — elle
+ * porterait les métadonnées de F tandis que M en dit une autre. On refuse fort
+ * un couple de sexes dont les métadonnées divergent, plutôt que de copier F en
+ * silence (révision revue, issue #390).
+ */
+function resoudreGroupeSexe(
+  territoire: string,
+  groupe: readonly Indicateur[],
+  indicateur: string,
+): Indicateur {
+  const prefixe = `carte : indicateur « ${indicateur} » de « ${territoire} »`
+  const sexuees = groupe.filter((l) => l.sex !== null && l.sex !== undefined)
+  const sansSexe = groupe.filter((l) => l.sex === null || l.sex === undefined)
+
+  // le cas historique : une ligne, pas de sexe
+  if (sexuees.length === 0) {
+    if (sansSexe.length > 1) {
+      throw new Error(
+        `${prefixe} : ${sansSexe.length} lignes sans sexe pour un même détail — ` +
+          `un détail non éclaté par sexe a exactement une ligne par territoire`,
+      )
+    }
+    return sansSexe[0]!
+  }
+
+  if (sansSexe.length > 0) {
+    throw new Error(
+      `${prefixe} : représentation du sexe mixte — ${sexuees.length} ligne(s) sexuée(s) ` +
+        `et ${sansSexe.length} ligne(s) sans sexe pour un même détail`,
+    )
+  }
+
+  // le contrat : exactement une ligne F et une ligne M
+  for (const sexe of SEXES_ATTENDUS) {
+    const compte = sexuees.filter((l) => l.sex === sexe).length
+    if (compte !== 1) {
+      throw new Error(
+        `${prefixe} : groupe de sexes incomplet ou en double — ${compte} ligne(s) ` +
+          `de sexe « ${sexe} » au lieu d'une seule (attendu : ` +
+          `${SEXES_ATTENDUS.join(' + ')}, jamais un sexe seul)`,
+      )
+    }
+  }
+
+  const base = sexuees.find((l) => l.sex === 'F')!
+  const autre = sexuees.find((l) => l.sex === 'M')!
+
+  // Les métadonnées PARTAGÉES doivent s'accorder entre F et M : l'agrégat
+  // somme les deux parts, mais il HÉRITE des métadonnées d'une seule ligne (on
+  // copie F). Si les deux lignes divergent sur un rang, une taille de groupe,
+  // l'unité ou le sceau de vintage, copier la moitié des métadonnées produirait
+  // une ligne au ventre menteur — la somme porterait les métadonnées de F alors
+  // que M en dit une autre. On refuse fort un couple dont les métadonnées
+  // divergent, plutôt que de publier une valeur sournoise.
+  const CHAMPS_PARTAGES: (keyof Indicateur)[] = [
+    'rang_epci', 'rang_dep', 'rang_reg',
+    'rang_epci_n', 'rang_dep_n', 'rang_reg_n',
+    'unit',
+    'vintage_source', 'vintage_version',
+    'vintage_date_reference', 'vintage_date_publication',
+  ]
+  for (const champ of CHAMPS_PARTAGES) {
+    if (base[champ] !== autre[champ]) {
+      throw new Error(
+        `${prefixe} : métadonnées de pair divergent sur « ${champ} » ` +
+          `(F = ${formaterChampPartage(base[champ])}, ` +
+          `M = ${formaterChampPartage(autre[champ])}) — ` +
+          `un groupe de sexes dont les métadonnées divergent est malformé ` +
+          `(jamais une somme qui copie la moitié des métadonnées)`,
+      )
+    }
+  }
+
+  // une part inconnue rend la somme inconnue — jamais une somme partielle
+  const valeur =
+    base.value === null || base.value === undefined || autre.value === null || autre.value === undefined
+      ? null
+      : base.value + autre.value
+
+  return { ...base, value: valeur, sex: null }
+}
+
+/** Rend une métadonnée de pair pour le message d'erreur (null → « null »). */
+function formaterChampPartage(valeur: unknown): string {
+  return valeur === null || valeur === undefined ? 'null' : String(valeur)
 }
 
 /**

@@ -149,11 +149,13 @@ describe('IndicatorFigure — the structure_age breakdown (multi-detail)', () =>
 
     const premiere = wrapper.findAll('.tranche')[0]
     expect(premiere.find('.tranche-libelle').text()).toBe('Moins de 15 ans')
-    expect(premiere.find('.tranche-valeur').text()).toBe('30')
+    // issue #390 : les tranches sont éclatées par sexe ; ce test lit la première
+    // ligne par détail (F), part = 0.18 → « 18 »
+    expect(premiere.find('.tranche-valeur').text()).toBe('18')
 
     const derniere = wrapper.findAll('.tranche')[6]
     expect(derniere.find('.tranche-libelle').text()).toBe('80 ans et plus')
-    expect(derniere.find('.tranche-valeur').text()).toBe('5')
+    expect(derniere.find('.tranche-valeur').text()).toBe('3')
   })
 
   it('carries no single rank chip — the breakdown has 7 rows, no one rank', () => {
@@ -178,6 +180,6 @@ describe('IndicatorFigure — the structure_age breakdown (multi-detail)', () =>
 
     const barre = wrapper.find('.barre-segmentee')
     expect(barre.attributes('aria-label')).toContain('Structure par âge')
-    expect(barre.attributes('aria-label')).toContain('Moins de 15 ans 30')
+    expect(barre.attributes('aria-label')).toContain('Moins de 15 ans 18')
   })
 })
