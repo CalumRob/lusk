@@ -4,11 +4,27 @@ import { bandesPyramideSexuee, estPyramideSexuee } from '../fiche/pyramideAge'
 import { indicateursDemographieFixture } from '../payload/fixtures'
 import type { Indicateur } from '../payload/types'
 
-/** Le payload legacy : sept lignes totales, une par tranche, SANS dimension sexe. */
+/**
+ * Le payload legacy : sept lignes totales, une par tranche, SANS dimension
+ * sexe. Synthétisé indépendamment du fixture (qui, après #390, est sexué pour
+ * 22001) — sert à tester le repli honnête, sans dépendre de la forme du
+ * fixture.
+ */
+const TRANCHES_LEGACY: ReadonlyArray<readonly [string, number]> = [
+  ['<15', 0.3],
+  ['15-24', 0.15],
+  ['25-39', 0.2],
+  ['40-54', 0.15],
+  ['55-64', 0.05],
+  ['65-79', 0.1],
+  ['80+', 0.05],
+]
+
 function lignesLegacy(territoire = '22001'): Indicateur[] {
-  return indicateursDemographieFixture.filter(
-    (l) => l.territoire === territoire && l.key === 'structure_age',
-  )
+  const modele = indicateursDemographieFixture.find(
+    (l) => l.territoire === territoire && l.key === 'structure_age' && l.detail === '<15',
+  )!
+  return TRANCHES_LEGACY.map(([detail, value]) => ({ ...modele, detail, value, sex: undefined }))
 }
 
 /** Le payload sexué complet (#390) : sept tranches × F et M. */

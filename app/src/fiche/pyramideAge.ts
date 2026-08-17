@@ -13,19 +13,16 @@ import { formaterValeur } from '@/payload/selectors'
  * honnête (corps hérité, IndicatorFigure), jamais sur une pyramide unilatérale.
  *
  * Ce module porte la détection de la forme sexuée complète et le calcul des
- * bandes du pyramid à deux côtés. Le champ `sex` est ajouté au contrat par
- * #390 (sept tranches × F+M = 14 lignes par territoire) ; cet issue ne
- * l'invente PAS sur le type Indicateur (compatibilité de contrat) — on le lit
- * en option pour être prêt dès que #390 arrive.
+ * bandes du pyramid à deux côtés. Le champ `sex` (F | M) fait partie du contrat
+ * Indicateur depuis #390 (sept tranches × F+M = 14 lignes par territoire) ; on
+ * le consomme directement ici — une ligne sans `sex` explicite « F » / « M »
+ * n'est pas une pyramide, c'est la décomposition héritée.
  */
 
 /** L'ordre d'âge canonique du contrat — jeune en premier, pour empiler jeune-en-bas. */
 export const ORDRE_AGE = ['<15', '15-24', '25-39', '40-54', '55-64', '65-79', '80+'] as const
 
 export type TrancheAge = (typeof ORDRE_AGE)[number]
-
-/** Une ligne structure_age qui PEUT porter la dimension sexe (ajoutée par #390). */
-export type IndicateurAvecSexe = Indicateur & { sex?: 'F' | 'M' | null }
 
 /**
  * Vrai UNIQUEMENT pour la forme sexuée complète qui justifie un vrai pyramid
@@ -37,7 +34,7 @@ export type IndicateurAvecSexe = Indicateur & { sex?: 'F' | 'M' | null }
 export function estPyramideSexuee(lignes: Indicateur[]): boolean {
   // forme exacte : sept tranches × F + M = 14 lignes, ni plus ni moins
   if (lignes.length !== 14) return false
-  const sexuees = lignes as IndicateurAvecSexe[]
+  const sexuees = lignes
   const paires = new Set<string>()
   const bandesParSexe: Record<'F' | 'M', Set<string>> = { F: new Set(), M: new Set() }
   for (const l of sexuees) {
@@ -77,7 +74,7 @@ export function bandesPyramideSexuee(
   lignes: Indicateur[],
   labelsDetail?: Record<string, string>,
 ): BandePyramide[] {
-  const sexuees = lignes as IndicateurAvecSexe[]
+  const sexuees = lignes
   const parTrancheSexe = new Map<string, { F?: Indicateur; M?: Indicateur }>()
   for (const l of sexuees) {
     if (l.detail == null) continue

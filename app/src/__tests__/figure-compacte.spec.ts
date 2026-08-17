@@ -33,13 +33,35 @@ function lignes(theme: Theme, clef: string, territoire = '22001'): Indicateur[] 
 }
 
 /**
- * Le payload sexué complet (issue #390) : les sept tranches legacy dupliquées
- * en F et M (14 lignes), chaque ligne portant un `sex` explicite. Sert à
- * exercer le vrai pyramid à deux côtés sans toucher au contrat (le champ `sex`
- * n'est pas déclaré sur Indicateur ici).
+ * Le payload legacy : sept lignes totales, une par tranche, SANS dimension
+ * sexe. Synthétisé indépendamment du fixture (qui, après #390, est sexué pour
+ * 22001) pour tester le repli honnête vers le corps hérité segmenté.
+ */
+const TRANCHES_LEGACY: ReadonlyArray<readonly [string, number]> = [
+  ['<15', 0.3],
+  ['15-24', 0.15],
+  ['25-39', 0.2],
+  ['40-54', 0.15],
+  ['55-64', 0.05],
+  ['65-79', 0.1],
+  ['80+', 0.05],
+]
+
+function lignesLegacy(territoire = '22001'): Indicateur[] {
+  const modele = indicateursDemographieFixture.find(
+    (l) => l.territoire === territoire && l.key === 'structure_age' && l.detail === '<15',
+  )!
+  return TRANCHES_LEGACY.map(([detail, value]) => ({ ...modele, detail, value, sex: undefined }))
+}
+
+/**
+ * Le payload sexué complet (#390) : les sept tranches legacy dupliquées en F et
+ * M (14 lignes), chaque ligne portant un `sex` explicite. Sert à exercer le
+ * vrai pyramid à deux côtés — dérivé du payload legacy synthétique, jamais du
+ * fixture sexué.
  */
 function lignesSexuees(territoire = '22001'): Indicateur[] {
-  const base = lignes('demographie', 'structure_age', territoire)
+  const base = lignesLegacy(territoire)
   const couples: Indicateur[] = []
   for (const sex of ['F', 'M'] as const) {
     for (const l of base) couples.push({ ...l, sex } as Indicateur)
@@ -76,7 +98,9 @@ describe('FigureCompacte — sélection observable de la famille', () => {
   })
 
   it('route composition/structure_age (payload legacy 7 lignes, sans sexe) vers le corps hérité segmenté, jamais une pyramide à un côté (#390)', () => {
-    const wrapper = monter('composition', 'structure_age', 'demographie')
+    const wrapper = monter('composition', 'structure_age', 'demographie', '22001', {
+      lignes: lignesLegacy(),
+    })
     expect(wrapper.find('.figure-pyramide-age').exists()).toBe(false)
     expect(wrapper.find('.barre-segmentee').exists()).toBe(true)
     expect(wrapper.find('.figure-indicateur').attributes('data-clef')).toBe('structure_age')
