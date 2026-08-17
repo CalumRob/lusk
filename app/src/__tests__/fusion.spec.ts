@@ -75,7 +75,9 @@ describe('indicateurParTerritoire — the rows that feed a choropleth', () => {
       '<15',
     )
 
-    expect(parTerritoire.get('22001')?.value).toBe(0.3)
+    // issue #390 : structure_age est désormais éclaté par sexe (F / M) — la
+    // lecture par seule tranche renvoie la dernière ligne matching (ici M).
+    expect(parTerritoire.get('22001')?.value).toBe(0.12)
     expect(parTerritoire.get('22001')?.detail).toBe('<15')
     expect(parTerritoire.size).toBe(1)
   })
@@ -173,8 +175,8 @@ describe('collectionAvecValeurs — the join onto the features', () => {
     const jointes = collectionAvecValeurs(collection, parTerritoire)
 
     const a1 = jointes.features.find((f) => f.properties.territoire === '22001')
-    expect(a1?.properties.valeur).toBe(0.3)
-    expect(a1?.properties.valeur_formatee).toBe('30') // unit % → fraction × 100
+    expect(a1?.properties.valeur).toBe(0.12)
+    expect(a1?.properties.valeur_formatee).toBe('12') // unit % → fraction × 100
   })
 
   it('joins the story scalars onto the features — the same join shape as the indicator rows', () => {

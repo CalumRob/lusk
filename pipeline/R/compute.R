@@ -327,7 +327,7 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
 
   lignes %>%
     dplyr::select(dplyr::any_of(c(
-      "territoire", "type", "theme", "key", "detail", "value", "unit",
+      "territoire", "type", "theme", "key", "detail", "sex", "value", "unit",
       "rang_epci", "rang_dep", "rang_reg",
       "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
@@ -405,11 +405,15 @@ validate_payload <- function(payload,
   ind <- payload$indicateurs
   ref <- payload$territoires
 
-  # 1. pas de ligne en double (territoire × key × detail)
-  dups <- duplicated(ind[c("territoire", "key", "detail")])
+  # 1. pas de ligne en double (territoire × key × detail × sex) — issue #390 :
+  # structure_age porte désormais une colonne `sex` (F / M), donc la clé
+  # d'unicité inclut `sex` quand il est présent (sinon l'ancienne clé).
+  cles_dup <- c("territoire", "key", "detail")
+  if ("sex" %in% names(ind)) cles_dup <- c(cles_dup, "sex")
+  dups <- duplicated(ind[cles_dup])
   if (any(dups)) {
-    stop("Payload invalide : lignes en double (territoire × key × detail).",
-         call. = FALSE)
+    stop("Payload invalide : lignes en double (territoire × key × detail",
+         if ("sex" %in% names(ind)) " × sex" else "", ").", call. = FALSE)
   }
 
   # 2. la table des indicateurs du thème fait foi : chaque clé du payload y est

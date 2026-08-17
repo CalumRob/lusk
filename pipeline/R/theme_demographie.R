@@ -84,7 +84,10 @@ INDICATEURS_DEMOGRAPHIE <- tibble::tibble(
   ),
   source_reference = c("serie_historique", "age_detail",
                        "serie_historique", "menages"),
-  multiplicite = c(1L, 7L, 1L, 1L)
+  # structure_age : 7 tranches × 2 sexes (F / M) = 14 lignes par territoire
+  # (issue #390). La multiplicité devient 14 — la validation générique la
+  # vérifie, et le schéma générique porte désormais la colonne `sex`.
+  multiplicite = c(1L, 14L, 1L, 1L)
 )
 
 # La construction des données du thème -----------------------------------------
@@ -147,23 +150,55 @@ pivoter_menages <- function(long) {
 }
 
 # pivoter_age -----------------------------------------------------------------
-# Population par sexe et âge (PRINC) : les 7 tranches exhaustives + l'agrégat
-# moins de 20 ans (Y_LT20), sexe total (_T), recensement 2023, statut A.
+# Population par sexe et âge (PRINC) : les 7 tranches exhaustives, déclinées par
+# sexe (F / M), plus l'agrégat moins de 20 ans (Y_LT20, sexe total _T) qui sert
+# au rang scalaire. Issue #390 : la pyramide réelle a besoin des parts par sexe,
+# donc on RETIENT F et M (le filtre historique ne gardait que _T) et on dérive
+# les totaux (F + M) pour les consommateurs qui n'éclatent pas par sexe
+# (l'aperçu part 65+, la somme des tranches = population).
 pivoter_age <- function(long) {
-  long %>%
+  bandes_sexe <- long %>%
+    dplyr::filter(
+      GEO_OBJECT == "COM",
+      SEX %in% c("F", "M"), TIME_PERIOD == 2023, OBS_STATUS == "A",
+      AGE %in% c("Y_LT15", "Y15T24", "Y25T39", "Y40T54", "Y55T64",
+                 "Y65T79", "Y_GE80")
+    ) %>%
+    dplyr::select(GEO, SEX, AGE, OBS_VALUE) %>%
+    tidyr::pivot_wider(id_cols = GEO, names_from = c(AGE, SEX),
+                       values_from = OBS_VALUE)
+  # agrégat moins de 20 ans (sexe total _T) — le rang scalaire de structure_age
+  # reste sur la part totale des moins de 20 ans (issue #390 : inchangé).
+  moins20 <- long %>%
     dplyr::filter(
       GEO_OBJECT == "COM",
       SEX == "_T", TIME_PERIOD == 2023, OBS_STATUS == "A",
-      AGE %in% c("Y_LT15", "Y15T24", "Y25T39", "Y40T54", "Y55T64",
-                 "Y65T79", "Y_GE80", "Y_LT20")
+      AGE == "Y_LT20"
     ) %>%
     dplyr::select(GEO, AGE, OBS_VALUE) %>%
     tidyr::pivot_wider(id_cols = GEO, names_from = AGE, values_from = OBS_VALUE) %>%
+    dplyr::rename(age_lt20 = Y_LT20)
+
+  bandes_sexe %>%
     dplyr::rename(
-      age_lt15 = Y_LT15, age_15_24 = Y15T24, age_25_39 = Y25T39,
-      age_40_54 = Y40T54, age_55_64 = Y55T64, age_65_79 = Y65T79,
-      age_80_plus = Y_GE80, age_lt20 = Y_LT20
-    )
+      age_lt15_F = Y_LT15_F, age_15_24_F = Y15T24_F, age_25_39_F = Y25T39_F,
+      age_40_54_F = Y40T54_F, age_55_64_F = Y55T64_F, age_65_79_F = Y65T79_F,
+      age_80_plus_F = Y_GE80_F,
+      age_lt15_M = Y_LT15_M, age_15_24_M = Y15T24_M, age_25_39_M = Y25T39_M,
+      age_40_54_M = Y40T54_M, age_55_64_M = Y55T64_M, age_65_79_M = Y65T79_M,
+      age_80_plus_M = Y_GE80_M
+    ) %>%
+    dplyr::mutate(
+      # totaux par tranche (F + M) — consommateurs non éclatés
+      age_lt15 = age_lt15_F + age_lt15_M,
+      age_15_24 = age_15_24_F + age_15_24_M,
+      age_25_39 = age_25_39_F + age_25_39_M,
+      age_40_54 = age_40_54_F + age_40_54_M,
+      age_55_64 = age_55_64_F + age_55_64_M,
+      age_65_79 = age_65_79_F + age_65_79_M,
+      age_80_plus = age_80_plus_F + age_80_plus_M
+    ) %>%
+    dplyr::left_join(moins20, by = "GEO")
 }
 
 # assembler_communes ----------------------------------------------------------
@@ -184,6 +219,10 @@ assembler_communes <- function(serie, menages, age, epci) {
                   superficie_km2, naissances, deces,
                   age_lt15, age_15_24, age_25_39, age_40_54,
                   age_55_64, age_65_79, age_80_plus, age_lt20,
+                  age_lt15_F, age_15_24_F, age_25_39_F, age_40_54_F,
+                  age_55_64_F, age_65_79_F, age_80_plus_F,
+                  age_lt15_M, age_15_24_M, age_25_39_M, age_40_54_M,
+                  age_55_64_M, age_65_79_M, age_80_plus_M,
                   population_menages, menages)
 }
 
@@ -263,6 +302,10 @@ COLONNES_DEMOGRAPHIE <- c(
   "superficie_km2", "naissances", "deces",
   "age_lt15", "age_15_24", "age_25_39", "age_40_54",
   "age_55_64", "age_65_79", "age_80_plus", "age_lt20",
+  "age_lt15_F", "age_15_24_F", "age_25_39_F", "age_40_54_F",
+  "age_55_64_F", "age_65_79_F", "age_80_plus_F",
+  "age_lt15_M", "age_15_24_M", "age_25_39_M", "age_40_54_M",
+  "age_55_64_M", "age_65_79_M", "age_80_plus_M",
   "population_menages", "menages"
 )
 
@@ -275,24 +318,24 @@ agreger_territoires_demographie <- function(communes, squelette) {
     dplyr::mutate(dplyr::across(c(departement, epci), as.character))
 
   mesures <- dplyr::bind_rows(
-    base[c("code", COLONNES_DEMOGRAPHIE)],
+    dplyr::select(base, "code", dplyr::any_of(COLONNES_DEMOGRAPHIE)),
     base %>%
       dplyr::group_by(epci) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(COLONNES_DEMOGRAPHIE), sum),
+        dplyr::across(dplyr::any_of(COLONNES_DEMOGRAPHIE), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = epci),
     base %>%
       dplyr::group_by(departement) %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(COLONNES_DEMOGRAPHIE), sum),
+        dplyr::across(dplyr::any_of(COLONNES_DEMOGRAPHIE), sum),
         .groups = "drop"
       ) %>%
       dplyr::rename(code = departement),
     base %>%
       dplyr::summarise(
-        dplyr::across(dplyr::all_of(COLONNES_DEMOGRAPHIE), sum),
+        dplyr::across(dplyr::any_of(COLONNES_DEMOGRAPHIE), sum),
         .groups = "drop"
       ) %>%
       dplyr::mutate(code = "53")
@@ -330,25 +373,31 @@ indicator_densite <- function(territoires) {
 }
 
 indicator_structure_age <- function(territoires) {
+  # 7 tranches exhaustives × 2 sexes (F / M) — issue #390 : la pyramide réelle
+  # porte une ligne par (tranche, sexe), le `detail` restant la tranche d'âge et
+  # `sex` le sexe. Chaque part est la part de la population totale (population),
+  # donc les 14 parts somment à 1 par territoire.
+  bandes <- c(
+    "age_lt15_F", "age_15_24_F", "age_25_39_F", "age_40_54_F",
+    "age_55_64_F", "age_65_79_F", "age_80_plus_F",
+    "age_lt15_M", "age_15_24_M", "age_25_39_M", "age_40_54_M",
+    "age_55_64_M", "age_65_79_M", "age_80_plus_M"
+  )
+  libelles <- c("<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+",
+                "<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+")
+  sexes <- c(rep("F", 7), rep("M", 7))
+  lookup <- tibble::tibble(col = bandes, detail = libelles, sex = sexes)
+
   territoires %>%
-    tidyr::pivot_longer(
-      cols = c(age_lt15, age_15_24, age_25_39, age_40_54,
-               age_55_64, age_65_79, age_80_plus),
-      names_to = "bande",
-      values_to = "effectif"
-    ) %>%
+    tidyr::pivot_longer(cols = dplyr::all_of(bandes),
+                        names_to = "col", values_to = "effectif") %>%
+    dplyr::left_join(lookup, by = "col") %>%
     dplyr::mutate(
       key = "structure_age",
-      detail = dplyr::recode(
-        bande,
-        age_lt15 = "<15", age_15_24 = "15-24", age_25_39 = "25-39",
-        age_40_54 = "40-54", age_55_64 = "55-64", age_65_79 = "65-79",
-        age_80_plus = "80+"
-      ),
       value = effectif / population,
       unit = "%"
     ) %>%
-    dplyr::select(code, key, detail, value, unit)
+    dplyr::select(code, key, detail, sex, value, unit)
 }
 
 indicator_evolution <- function(territoires) {
@@ -470,6 +519,33 @@ validations_demographie <- list(
     )
     if (any(abs(parts$value - 1) > 1e-6)) {
       stop("Payload invalide : les parts d'âge ne somment pas à 1.", call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # structure par âge (issue #390) : le produit cartésien tranche × sexe doit
+  # être COMPLET et SANS DOUBLON — 7 tranches (detail) × {F, M} = 14 paires par
+  # territoire. Une paire manquante (source tronquée) ou en double (payload
+  # corrompu) casse la pyramide ; on la refuse fort.
+  function(payload) {
+    sa <- payload$indicateurs[payload$indicateurs$key == "structure_age", ]
+    if (nrow(sa) == 0) return(invisible(payload))
+    bandes <- c("<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+")
+    sexes <- c("F", "M")
+    paires_attendues <- sort(paste(rep(bandes, each = length(sexes)),
+                                   rep(sexes, length(bandes))))
+    for (code in unique(sa$territoire)) {
+      lignes <- sa[sa$territoire == code, ]
+      paires <- sort(paste(lignes$detail, lignes$sex))
+      if (any(duplicated(paires))) {
+        stop("Payload invalide : structure_age a des paires âge×sexe en double ",
+             "pour ", code, ".", call. = FALSE)
+      }
+      manquantes <- setdiff(paires_attendues, paires)
+      if (length(manquantes) > 0) {
+        stop("Payload invalide : structure_age a des paires âge×sexe manquantes ",
+             "pour ", code, " (", paste(manquantes, collapse = ", "), ").",
+             call. = FALSE)
+      }
     }
     invisible(payload)
   }

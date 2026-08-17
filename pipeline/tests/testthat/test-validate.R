@@ -47,7 +47,7 @@ test_that("validate_payload : une clé d'indicateur absente -> erreur", {
 
 test_that("compute_payload valide à la sortie : un fixture cassé échoue fort", {
   fx <- load_fixture()
-  fx$age_lt15[1] <- fx$age_lt15[1] + 500  # les tranches ne somment plus
+  fx$age_lt15_F[1] <- fx$age_lt15_F[1] + 500  # les parts d'âge ne somment plus à 1
   expect_error(compute_payload(fx), "somment pas")
 })
 

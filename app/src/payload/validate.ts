@@ -43,6 +43,7 @@ import type {
   Theme,
   ThemeMetadata,
   Vintage,
+  Sexe,
 } from './types'
 import {
   CLES_HISTOIRES_PAR_THEME,
@@ -193,6 +194,23 @@ function lireTheme(ligne: LigneBrute, fichier: string, i: number): Theme {
     fichier,
     i,
     `« theme » doit être l'un de ${THEMES_CANONIQUES.join(' | ')}, reçu « ${String(valeur)} »`,
+  )
+  return valeur
+}
+
+/**
+ * Le sexe d'une ligne d'indicateur (issue #390) : « F », « M », ou null (ligne
+ * non éclatée par sexe — le comportement historique). Toute autre valeur est
+ * une dérive de contrat.
+ */
+function lireSexe(ligne: LigneBrute, fichier: string, i: number): Sexe | null {
+  const valeur = ligne['sex']
+  if (valeur === null || valeur === undefined) return null
+  exiger(
+    valeur === 'F' || valeur === 'M',
+    fichier,
+    i,
+    `« sex » doit être « F », « M » ou null, reçu « ${String(valeur)} »`,
   )
   return valeur
 }
@@ -422,8 +440,13 @@ export function validerIndicateurs(
     const detail = ligne['detail']
     exiger(detail === null || estChaine(detail), fichier, ligneIndexee, '« detail » doit être une chaîne ou null')
 
-    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}`
-    exiger(!vus.has(cle), fichier, ligneIndexee, `ligne en double (territoire × key × detail) pour « ${key} » de « ${territoire} »`)
+    const sex = lireSexe(ligne, fichier, ligneIndexee)
+
+    // Unicité : territoire × key × detail × sex (issue #390 — la dimension sexe
+    // entre dans la clé pour que les lignes F et M d'une même tranche soient
+    // distinctes, jamais un doublon).
+    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}`
+    exiger(!vus.has(cle), fichier, ligneIndexee, `ligne en double (territoire × key × detail × sex) pour « ${key} » de « ${territoire} »`)
     vus.add(cle)
 
     const value = ligne['value']
@@ -479,6 +502,7 @@ export function validerIndicateurs(
       theme,
       key,
       detail,
+      sex,
       value,
       unit,
       rang_epci,
@@ -493,6 +517,47 @@ export function validerIndicateurs(
       vintage_date_publication,
     }
   })
+
+  // Issue #390 — intégrité des indicateurs éclatés par sexe : chaque groupe
+  // (territoire × key) qui porte un « sexe » doit exposer le PRODUIT CARTÉSIEN
+  // complet des détails × {F, M} — ni paire manquante (source tronquée), ni
+  // doublon (déjà attrapé par la clé d'unicité ci-dessus). Une pyramide sans
+  // une tranche ou un sexe est une donnée corrompue, pas une figure vide.
+  verifierPairesSexe(result, fichier)
+  return result
+}
+
+/**
+ * Vérifie que les indicateurs portant un sexe forment le produit cartésien
+ * complet (détail × {F, M}) par (territoire × key). Les doublons sont déjà
+ * refusés par la clé d'unicité ; ici on attrape les paires MANQUANTES.
+ */
+function verifierPairesSexe(indicateurs: Indicateur[], fichier: string): void {
+  const SEXES: Sexe[] = ['F', 'M']
+  const groupes = new Map<string, { territoire: string; key: string; lignes: Indicateur[] }>()
+  for (const l of indicateurs) {
+    if (l.sex === null || l.sex === undefined) continue
+    const cle = `${l.territoire}\u0000${l.key}`
+    if (!groupes.has(cle)) {
+      groupes.set(cle, { territoire: l.territoire, key: l.key, lignes: [] })
+    }
+    groupes.get(cle)!.lignes.push(l)
+  }
+  for (const [cle, groupe] of groupes) {
+    const details = [...new Set(groupe.lignes.map((l) => l.detail as string))]
+    const paires = new Set(groupe.lignes.map((l) => `${l.detail}\u0000${l.sex}`))
+    for (const detail of details) {
+      for (const sex of SEXES) {
+        if (!paires.has(`${detail}\u0000${sex}`)) {
+          throw erreur(
+            fichier,
+            0,
+            `indicateur « ${groupe.key} » de « ${groupe.territoire} » : paire âge×sexe manquante (détail « ${detail} » × sexe « ${sex} »)`,
+          )
+        }
+      }
+    }
+  }
 }
 
 /** La raison de saillance attendue pour chaque story (le miroir R du registre). */
