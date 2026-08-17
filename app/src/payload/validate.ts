@@ -87,6 +87,33 @@ const STATUTS_SOURCE: readonly StatutRun['status'][] = [
 
 const MODES_SOURCE: readonly StatutRun['mode'][] = ['cron', 'manuel']
 
+/**
+ * Les deux sexes du contrat éclaté par sexe (issue #390) — jamais « _T » (le
+ * total n'est pas une ligne : il se lit en sommant F + M).
+ */
+export const SEXES_INDICATEUR: readonly Sexe[] = ['F', 'M']
+
+/**
+ * Les SEPT tranches d'âge FIXES de la structure par âge (issue #390) — le
+ * contrat, pas une observation. La validation exige exactement ces sept
+ * tranches × {F, M} = 14 lignes par territoire : les tranches attendues ne sont
+ * JAMAIS dérivées de ce que le payload porte, sinon une tranche entièrement
+ * absente (les deux sexes manquants) passerait inaperçue et la pyramide se
+ * dessinerait avec un étage en moins, sans un mot.
+ */
+export const TRANCHES_STRUCTURE_AGE: readonly string[] = [
+  '<15',
+  '15-24',
+  '25-39',
+  '40-54',
+  '55-64',
+  '65-79',
+  '80+',
+]
+
+/** La clé de l'indicateur éclaté par sexe dont le contrat est FIXE (issue #390). */
+const CLE_STRUCTURE_AGE = 'structure_age'
+
 /** Les story_keys du thème Milieux (issue #174, ADR-0014) — la Story unique « Se densifier, s'étaler, ou s'en aller ». */
 const CLES_HISTOIRES_MILIEUX = ['se-densifier-setaler-ou-sen-aller'] as const
 
@@ -518,45 +545,195 @@ export function validerIndicateurs(
     }
   })
 
-  // Issue #390 — intégrité des indicateurs éclatés par sexe : chaque groupe
-  // (territoire × key) qui porte un « sexe » doit exposer le PRODUIT CARTÉSIEN
-  // complet des détails × {F, M} — ni paire manquante (source tronquée), ni
-  // doublon (déjà attrapé par la clé d'unicité ci-dessus). Une pyramide sans
-  // une tranche ou un sexe est une donnée corrompue, pas une figure vide.
-  verifierPairesSexe(result, fichier)
+  // Issue #390 — intégrité de la dimension sexe. Deux niveaux :
+  //   1. GÉNÉRIQUE : un groupe (territoire × key) ne mélange jamais des lignes
+  //      sexuées et des lignes sans sexe — une clé est éclatée par sexe ou elle
+  //      ne l'est pas ; la représentation mixte est un payload à moitié migré.
+  //   2. FIXE pour la structure par âge : les SEPT tranches DÉCLARÉES du contrat
+  //      × {F, M} = 14 lignes par territoire (ou, tant que le pipeline n'a pas
+  //      republié, les sept tranches sans sexe — le repli hérité, strict lui
+  //      aussi). Les tranches attendues sont le contrat, jamais une dérivation
+  //      de ce qui est présent.
+  verifierDimensionSexe(result, fichier)
   return result
 }
 
 /**
- * Vérifie que les indicateurs portant un sexe forment le produit cartésien
- * complet (détail × {F, M}) par (territoire × key). Les doublons sont déjà
- * refusés par la clé d'unicité ; ici on attrape les paires MANQUANTES.
+ * Vérifie la dimension sexe des indicateurs (issue #390), par groupe
+ * (territoire × key) :
+ *
+ * - aucune représentation MIXTE (des lignes sexuées ET des lignes sans sexe
+ *   dans le même groupe) — c'est un payload à moitié migré, pas une donnée ;
+ * - pour la structure par âge, le contrat FIXE : les sept tranches déclarées ×
+ *   {F, M}, chacune exactement une fois. Une tranche entièrement absente, un
+ *   sexe manquant, une tranche inconnue ou une paire en double échouent fort ;
+ * - pour toute AUTRE clé éclatée par sexe, le produit cartésien des détails
+ *   observés × {F, M} doit être complet (garde de complétude minimale, faute de
+ *   contrat déclaré pour cette clé).
  */
-function verifierPairesSexe(indicateurs: Indicateur[], fichier: string): void {
-  const SEXES: Sexe[] = ['F', 'M']
+function verifierDimensionSexe(indicateurs: Indicateur[], fichier: string): void {
   const groupes = new Map<string, { territoire: string; key: string; lignes: Indicateur[] }>()
   for (const l of indicateurs) {
-    if (l.sex === null || l.sex === undefined) continue
     const cle = `${l.territoire}\u0000${l.key}`
-    if (!groupes.has(cle)) {
-      groupes.set(cle, { territoire: l.territoire, key: l.key, lignes: [] })
-    }
-    groupes.get(cle)!.lignes.push(l)
+    const groupe = groupes.get(cle)
+    if (groupe) groupe.lignes.push(l)
+    else groupes.set(cle, { territoire: l.territoire, key: l.key, lignes: [l] })
   }
-  for (const [, groupe] of groupes) {
-    const details = [...new Set(groupe.lignes.map((l) => l.detail as string))]
-    const paires = new Set(groupe.lignes.map((l) => `${l.detail}\u0000${l.sex}`))
-    for (const detail of details) {
-      for (const sex of SEXES) {
+
+  for (const { territoire, key, lignes } of groupes.values()) {
+    // La structure par âge a son contrat FIXE, déclaré — il se vérifie en entier
+    // (tranches attendues comprises), pas seulement sur la dimension sexe.
+    if (key === CLE_STRUCTURE_AGE) {
+      verifierStructureAge(territoire, lignes, fichier)
+      continue
+    }
+
+    const sexuees = lignes.filter((l) => l.sex !== null && l.sex !== undefined)
+    const sansSexe = lignes.filter((l) => l.sex === null || l.sex === undefined)
+
+    if (sexuees.length === 0) continue
+
+    if (sansSexe.length > 0) {
+      throw erreur(
+        fichier,
+        0,
+        `indicateur « ${key} » de « ${territoire} » : représentation du sexe mixte — ` +
+          `${sexuees.length} ligne(s) sexuée(s) et ${sansSexe.length} ligne(s) sans sexe ` +
+          `dans le même groupe (une clé est éclatée par sexe, ou elle ne l'est pas)`,
+      )
+    }
+
+    const paires = new Set(sexuees.map((l) => `${l.detail}\u0000${l.sex}`))
+    for (const detail of new Set(sexuees.map((l) => l.detail))) {
+      for (const sex of SEXES_INDICATEUR) {
         if (!paires.has(`${detail}\u0000${sex}`)) {
           throw erreur(
             fichier,
             0,
-            `indicateur « ${groupe.key} » de « ${groupe.territoire} » : paire âge×sexe manquante (détail « ${detail} » × sexe « ${sex} »)`,
+            `indicateur « ${key} » de « ${territoire} » : paire détail×sexe manquante ` +
+              `(détail « ${detail} » × sexe « ${sex} »)`,
           )
         }
       }
     }
+  }
+}
+
+/**
+ * Le contrat de la structure par âge (issue #390). Les tranches attendues sont
+ * TOUJOURS les sept tranches déclarées (TRANCHES_STRUCTURE_AGE) — jamais une
+ * dérivation de ce que le payload porte : c'est ce qui permet d'attraper une
+ * tranche ENTIÈREMENT absente (ses deux sexes manquants), qu'une validation
+ * dérivée laisserait passer sans un mot.
+ *
+ * Deux formes sont acceptées, et rien d'autre :
+ *
+ * 1. la forme ÉCLATÉE PAR SEXE (le contrat #390) — les sept tranches × {F, M},
+ *    chacune exactement une fois : 14 lignes par territoire ;
+ * 2. la forme HÉRITÉE (pré-#390) — les sept tranches, aucune sexuée : 7 lignes
+ *    par territoire. Le payload committé est encore dans cette forme : le
+ *    pipeline ne l'a pas republié (cela demande la source réelle complète). Le
+ *    repli hérité est celui que l'issue #390 prévoit explicitement, « jusqu'à ce
+ *    que cette issue atterrisse ». Il reste STRICT sur les sept tranches : une
+ *    tranche manquante ou en double échoue dans cette forme aussi.
+ *
+ * Dès qu'UNE ligne porte un sexe, la forme #390 s'applique en entier — une
+ * représentation mixte (des lignes sexuées ET des lignes sans sexe) est un
+ * payload à moitié migré, refusé.
+ */
+function verifierStructureAge(
+  territoire: string,
+  lignes: readonly Indicateur[],
+  fichier: string,
+): void {
+  const prefixe = `indicateur « ${CLE_STRUCTURE_AGE} » de « ${territoire} »`
+  const sexuees = lignes.filter((l) => l.sex !== null && l.sex !== undefined)
+  const sansSexe = lignes.filter((l) => l.sex === null || l.sex === undefined)
+
+  // Les tranches du contrat, dans les deux formes : une tranche hors contrat est
+  // une dérive, pas un étage bonus.
+  for (const ligne of lignes) {
+    if (!TRANCHES_STRUCTURE_AGE.includes(ligne.detail as string)) {
+      throw erreur(
+        fichier,
+        0,
+        `${prefixe} : tranche d'âge hors contrat « ${String(ligne.detail)} » ` +
+          `(attendues : ${TRANCHES_STRUCTURE_AGE.join(', ')})`,
+      )
+    }
+  }
+
+  // Forme HÉRITÉE (pré-#390) : les sept tranches, aucune sexuée — strict sur les
+  // tranches (manquante / en double), le sexe n'est simplement pas encore publié.
+  if (sexuees.length === 0) {
+    verifierCartesienStructureAge(prefixe, lignes, [null], fichier)
+    return
+  }
+
+  // Représentation MIXTE : refusée — une clé est éclatée par sexe, ou elle ne
+  // l'est pas.
+  if (sansSexe.length > 0) {
+    throw erreur(
+      fichier,
+      0,
+      `${prefixe} : représentation du sexe mixte — ${sexuees.length} ligne(s) sexuée(s) ` +
+        `et ${sansSexe.length} ligne(s) sans sexe (la structure par âge est éclatée ` +
+        `par sexe « F » / « M », ou elle ne l'est pas)`,
+    )
+  }
+
+  // Forme ÉCLATÉE PAR SEXE (le contrat #390) : 7 tranches × {F, M} = 14 lignes.
+  verifierCartesienStructureAge(prefixe, lignes, SEXES_INDICATEUR, fichier)
+}
+
+/**
+ * Le produit cartésien FIXE tranches × sexes de la structure par âge : chaque
+ * paire attendue exactement une fois, et aucune ligne en trop. `sexes` vaut
+ * {F, M} (le contrat #390) ou [null] (la forme héritée, sans sexe publié).
+ */
+function verifierCartesienStructureAge(
+  prefixe: string,
+  lignes: readonly Indicateur[],
+  sexes: readonly (Sexe | null)[],
+  fichier: string,
+): void {
+  const comptes = new Map<string, number>()
+  for (const ligne of lignes) {
+    const paire = `${ligne.detail}\u0000${ligne.sex ?? ''}`
+    comptes.set(paire, (comptes.get(paire) ?? 0) + 1)
+  }
+
+  const attendu = TRANCHES_STRUCTURE_AGE.length * sexes.length
+  const forme =
+    sexes.length === 1
+      ? `${TRANCHES_STRUCTURE_AGE.length} tranches (forme héritée, sans sexe)`
+      : `${TRANCHES_STRUCTURE_AGE.length} tranches × ${sexes.length} sexes`
+
+  for (const detail of TRANCHES_STRUCTURE_AGE) {
+    for (const sex of sexes) {
+      const compte = comptes.get(`${detail}\u0000${sex ?? ''}`) ?? 0
+      const paire = sex === null ? `tranche « ${detail} »` : `tranche « ${detail} » × sexe « ${sex} »`
+      if (compte === 0) {
+        throw erreur(
+          fichier,
+          0,
+          `${prefixe} : ${paire} manquante — le contrat est ${forme} = ` +
+            `${attendu} lignes par territoire`,
+        )
+      }
+      if (compte > 1) {
+        throw erreur(fichier, 0, `${prefixe} : ${paire} en double (${compte} lignes)`)
+      }
+    }
+  }
+
+  // La ceinture après les bretelles : aucune ligne en trop.
+  if (lignes.length !== attendu) {
+    throw erreur(
+      fichier,
+      0,
+      `${prefixe} : ${lignes.length} lignes au lieu de ${attendu} (${forme})`,
+    )
   }
 }
 
