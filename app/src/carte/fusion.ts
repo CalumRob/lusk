@@ -48,11 +48,18 @@ export interface ValeurLigne {
  *
  * Issue #390 — the sex dimension: a sex-split indicator (structure_age) publishes
  * one row per (territoire × detail × sex). The carte stays GROUPED BY `key +
- * detail`, never by sex: when several matching rows share a territoire they are
- * the F / M sexes of the same age band, so they collapse into ONE territory
- * value — the sum of the non-null sex shares — keeping the shared rank / unit /
- * vintage carried by the indicator rows. A non-sex (legacy) detail has exactly
- * one row per territoire and passes through untouched.
+ * detail`, never by sex: the F **and** M rows of one age band collapse into ONE
+ * territory value — their sum — keeping the shared rank / unit / vintage carried
+ * by the indicator rows. A non-sex (legacy) detail has exactly one row per
+ * territoire and passes through untouched.
+ *
+ * Malformed sex groups THROW rather than produce a number. Half a pyramid summed
+ * into a choropleth is indistinguishable from a real value on screen: a band
+ * with only F would paint a territory as if a third of its people did not exist.
+ * So an incomplete ({F} or {M} alone), duplicated ({F, F}) or mixed
+ * (sexed + unsexed) group is a contract violation, not a value. A group whose
+ * shape is valid but whose share is unknown (a null value) yields `null` — the
+ * neutral no-data colour — never a partial sum.
  */
 export function indicateurParTerritoire(
   lignes: readonly Indicateur[],
@@ -60,26 +67,84 @@ export function indicateurParTerritoire(
   indicateur: string,
   detail: string | null = null,
 ): Map<string, Indicateur> {
-  const parTerritoire = new Map<string, Indicateur>()
+  const groupes = new Map<string, Indicateur[]>()
   for (const ligne of lignes) {
     if (ligne.theme !== theme || ligne.key !== indicateur || ligne.detail !== detail) continue
-    const existante = parTerritoire.get(ligne.territoire)
-    parTerritoire.set(ligne.territoire, existante ? combinerSexes(existante, ligne) : ligne)
+    const groupe = groupes.get(ligne.territoire)
+    if (groupe) groupe.push(ligne)
+    else groupes.set(ligne.territoire, [ligne])
+  }
+
+  const parTerritoire = new Map<string, Indicateur>()
+  for (const [territoire, groupe] of groupes) {
+    parTerritoire.set(territoire, resoudreGroupeSexe(territoire, groupe, indicateur))
   }
   return parTerritoire
 }
 
+/** Les deux sexes du contrat éclaté par sexe (issue #390) — jamais un total. */
+const SEXES_ATTENDUS: readonly ['F', 'M'] = ['F', 'M']
+
 /**
- * Combine les lignes éclatées par sexe (F / M) d'un même groupe (territoire ×
- * key × detail) en UNE valeur de territoire — la somme des parts NON-NULLES des
- * sexes — en préservant le rang / unité / vintage partagés des lignes
- * d'indicateur (issue #390). La ligne résultante porte `sex: null` : c'est un
- * agrégat, plus une ligne de sexe. Idempotent sur un agrégat déjà formé (cas de
- * 3+ sexes) : `base.value` y est déjà la somme partielle.
+ * Résout les lignes d'un même (territoire × key × detail) en UNE ligne de
+ * territoire (issue #390).
+ *
+ * - une seule ligne sans sexe : le cas historique, rendue telle quelle ;
+ * - exactement {F, M} : l'agrégat — la somme des deux parts, `sex: null` (c'est
+ *   un agrégat, plus une ligne de sexe). Si l'une des deux parts est inconnue
+ *   (null), la somme est INCONNUE (null) : on ne publie pas la moitié d'une
+ *   pyramide comme si c'était le tout ;
+ * - tout le reste (un seul sexe, un sexe en double, un mélange sexué /
+ *   non-sexué, plusieurs lignes non-sexuées) : une violation de contrat, qui
+ *   échoue fort au lieu d'inventer une valeur partielle.
  */
-function combinerSexes(base: Indicateur, ajout: Indicateur): Indicateur {
-  const parts = [base.value, ajout.value].filter((v): v is number => v !== null && v !== undefined)
-  const valeur = parts.length > 0 ? parts.reduce((acc, v) => acc + v, 0) : null
+function resoudreGroupeSexe(
+  territoire: string,
+  groupe: readonly Indicateur[],
+  indicateur: string,
+): Indicateur {
+  const prefixe = `carte : indicateur « ${indicateur} » de « ${territoire} »`
+  const sexuees = groupe.filter((l) => l.sex !== null && l.sex !== undefined)
+  const sansSexe = groupe.filter((l) => l.sex === null || l.sex === undefined)
+
+  // le cas historique : une ligne, pas de sexe
+  if (sexuees.length === 0) {
+    if (sansSexe.length > 1) {
+      throw new Error(
+        `${prefixe} : ${sansSexe.length} lignes sans sexe pour un même détail — ` +
+          `un détail non éclaté par sexe a exactement une ligne par territoire`,
+      )
+    }
+    return sansSexe[0]!
+  }
+
+  if (sansSexe.length > 0) {
+    throw new Error(
+      `${prefixe} : représentation du sexe mixte — ${sexuees.length} ligne(s) sexuée(s) ` +
+        `et ${sansSexe.length} ligne(s) sans sexe pour un même détail`,
+    )
+  }
+
+  // le contrat : exactement une ligne F et une ligne M
+  for (const sexe of SEXES_ATTENDUS) {
+    const compte = sexuees.filter((l) => l.sex === sexe).length
+    if (compte !== 1) {
+      throw new Error(
+        `${prefixe} : groupe de sexes incomplet ou en double — ${compte} ligne(s) ` +
+          `de sexe « ${sexe} » au lieu d'une seule (attendu : ` +
+          `${SEXES_ATTENDUS.join(' + ')}, jamais un sexe seul)`,
+      )
+    }
+  }
+
+  const base = sexuees.find((l) => l.sex === 'F')!
+  const autre = sexuees.find((l) => l.sex === 'M')!
+  // une part inconnue rend la somme inconnue — jamais une somme partielle
+  const valeur =
+    base.value === null || base.value === undefined || autre.value === null || autre.value === undefined
+      ? null
+      : base.value + autre.value
+
   return { ...base, value: valeur, sex: null }
 }
 

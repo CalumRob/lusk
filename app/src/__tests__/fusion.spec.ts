@@ -181,11 +181,49 @@ describe('indicateurParTerritoire — sex aggregation (issue #390)', () => {
     expect(parTerritoire.get('T1')?.value).toBeNull()
   })
 
-  it('sums only the non-null sex when one sex is missing', () => {
+  /**
+   * Le cœur de la garde (issue #390) : une somme PARTIELLE est indiscernable
+   * d'une vraie valeur à l'écran. Une part inconnue rend la somme inconnue ; une
+   * FORME invalide (un sexe seul, un sexe en double, un mélange sexué /
+   * non-sexué) échoue fort — jamais une valeur inventée.
+   */
+  it('yields null — never the partial sum — when one sex’s share is unknown', () => {
     const lignes = [ligneStructure('T1', '<15', 'F', 0.18), ligneStructure('T1', '<15', 'M', null)]
     const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
 
-    expect(parTerritoire.get('T1')?.value).toBeCloseTo(0.18)
+    // jadis : 0.18 — la moitié d'une pyramide publiée comme si c'était le tout
+    expect(parTerritoire.get('T1')?.value).toBeNull()
+  })
+
+  it('throws when a sex is missing entirely (one-sided band is never summed)', () => {
+    const lignes = [ligneStructure('T1', '<15', 'F', 0.18)]
+
+    expect(() =>
+      indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
+    ).toThrow(/groupe de sexes incomplet ou en double/)
+  })
+
+  it('throws when a sex is duplicated ({F, F} is not {F, M})', () => {
+    const lignes = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'F', 0.12),
+    ]
+
+    expect(() =>
+      indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
+    ).toThrow(/groupe de sexes incomplet ou en double/)
+  })
+
+  it('throws on a mixed sexed / unsexed group (a half-migrated payload)', () => {
+    const lignes: Indicateur[] = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'M', 0.12),
+      { ...ligneStructure('T1', '<15', 'F', 0.3), sex: null },
+    ]
+
+    expect(() =>
+      indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
+    ).toThrow(/représentation du sexe mixte/)
   })
 })
 
