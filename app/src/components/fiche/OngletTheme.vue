@@ -19,7 +19,7 @@ import { RouterLink } from 'vue-router'
 import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
-import FigureOffreCyclable from '@/components/fiche/FigureOffreCyclable.vue'
+import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
@@ -230,21 +230,15 @@ const lignesReseaux = computed(
             class="figure-compacte"
             :data-famille="groupe.figureCompacte.famille"
           >
-            <FigureOffreCyclable
-              v-if="groupe.figureCompacte.clef === 'offre_cyclable'"
+            <!-- Le renderer partagé de la grammaire (#371) : un seul sélecteur
+                 de corps par famille, sans branche par thème. -->
+            <FigureCompacte
+              :famille="groupe.figureCompacte.famille"
               :clef="groupe.figureCompacte.clef"
               :lignes="groupe.figureCompacte.lignes"
+              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
+              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :reseaux="lignesReseaux"
-              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
-              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
-              :theme="theme"
-            />
-            <IndicatorFigure
-              v-else
-              :clef="groupe.figureCompacte.clef"
-              :lignes="groupe.figureCompacte.lignes"
-              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
-              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
