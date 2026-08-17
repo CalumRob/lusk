@@ -27,6 +27,7 @@ import FigureCompositionDpe from './FigureCompositionDpe.vue'
 import FigureCompositionPyramide from './FigureCompositionPyramide.vue'
 import FigureTrajectoire from './FigureTrajectoire.vue'
 import IndicatorFigure from './IndicatorFigure.vue'
+import { estPyramideSexuee } from '@/fiche/pyramideAge'
 
 const props = defineProps<{
   famille: FamilleFigure
@@ -53,7 +54,13 @@ const corps = computed<Corps>(() => {
   if (props.famille === 'scalar' && props.clef === 'offre_cyclable') return 'offre-cyclable'
   if (props.famille === 'composition') {
     if (props.clef === 'distribution_dpe') return 'composition-dpe'
-    if (props.clef === 'structure_age') return 'composition-pyramide'
+    // structure_age n'est un vrai pyramid hommes/femmes QUE si le payload porte
+    // la dimension sexe (issue bloquante #390). Sans elle (les sept lignes
+    // totales legacy, sans sexe), on rend la décomposition segmentée/liste
+    // honnête (corps hérité) — jamais une pyramide à un seul côté trompeuse.
+    if (props.clef === 'structure_age') {
+      return estPyramideSexuee(props.lignes) ? 'composition-pyramide' : 'heritier'
+    }
   }
   if (props.famille === 'trajectory') return 'trajectoire'
   return 'heritier'

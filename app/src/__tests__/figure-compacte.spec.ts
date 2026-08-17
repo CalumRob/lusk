@@ -32,13 +32,34 @@ function lignes(theme: Theme, clef: string, territoire = '22001'): Indicateur[] 
   return fixtures[theme].filter((l) => l.territoire === territoire && l.key === clef)
 }
 
-function monter(famille: FamilleFigure, clef: string, theme: Theme, territoire = '22001', extra: Partial<{ reseaux: Indicateur[] }> = {}) {
+/**
+ * Le payload sexué complet (issue #390) : les sept tranches legacy dupliquées
+ * en F et M (14 lignes), chaque ligne portant un `sex` explicite. Sert à
+ * exercer le vrai pyramid à deux côtés sans toucher au contrat (le champ `sex`
+ * n'est pas déclaré sur Indicateur ici).
+ */
+function lignesSexuees(territoire = '22001'): Indicateur[] {
+  const base = lignes('demographie', 'structure_age', territoire)
+  const couples: Indicateur[] = []
+  for (const sex of ['F', 'M'] as const) {
+    for (const l of base) couples.push({ ...l, sex } as Indicateur)
+  }
+  return couples
+}
+
+function monter(
+  famille: FamilleFigure,
+  clef: string,
+  theme: Theme,
+  territoire = '22001',
+  extra: Partial<{ reseaux: Indicateur[]; lignes: Indicateur[] }> = {},
+) {
   const detail = (metadonneesThemesFixtures[theme]?.detail_labels[clef]) ?? undefined
   return mount(FigureCompacte, {
     props: {
       famille,
       clef,
-      lignes: lignes(theme, clef, territoire),
+      lignes: extra.lignes ?? lignes(theme, clef, territoire),
       libelle: clef,
       labelsDetail: detail,
       theme,
@@ -54,8 +75,17 @@ describe('FigureCompacte — sélection observable de la famille', () => {
     expect(wrapper.find('.figure-indicateur').attributes('data-clef')).toBe('distribution_dpe')
   })
 
-  it('route composition/structure_age vers le corps pyramide', () => {
+  it('route composition/structure_age (payload legacy 7 lignes, sans sexe) vers le corps hérité segmenté, jamais une pyramide à un côté (#390)', () => {
     const wrapper = monter('composition', 'structure_age', 'demographie')
+    expect(wrapper.find('.figure-pyramide-age').exists()).toBe(false)
+    expect(wrapper.find('.barre-segmentee').exists()).toBe(true)
+    expect(wrapper.find('.figure-indicateur').attributes('data-clef')).toBe('structure_age')
+  })
+
+  it('route composition/structure_age (payload sexué #390) vers le corps pyramide deux côtés', () => {
+    const wrapper = monter('composition', 'structure_age', 'demographie', '22001', {
+      lignes: lignesSexuees(),
+    })
     expect(wrapper.find('.figure-pyramide-age').exists()).toBe(true)
     expect(wrapper.find('.figure-indicateur').attributes('data-clef')).toBe('structure_age')
   })
@@ -105,22 +135,36 @@ describe('FigureCompacte — composition DPE dans les couleurs officielles A→G
   })
 })
 
-describe('FigureCompacte — composition pyramide des âges (structure_age)', () => {
-  it('rend sept bandes d’âge empilées (jeune en bas), libellés + valeurs', () => {
-    const wrapper = monter('composition', 'structure_age', 'demographie')
+describe('FigureCompacte — composition pyramide des âges sexuée (structure_age, #390)', () => {
+  it('rend sept bandes d’âge à deux côtés (hommes + femmes), empilées jeune-en-bas', () => {
+    const wrapper = monter('composition', 'structure_age', 'demographie', '22001', {
+      lignes: lignesSexuees(),
+    })
+    expect(wrapper.find('.figure-pyramide-age').exists()).toBe(true)
     const bandes = wrapper.findAll('.bande-age')
     expect(bandes).toHaveLength(7)
-    expect(wrapper.find('.figure-pyramide-age').exists()).toBe(true)
+    // une barre hommes ET une barre femmes par tranche
+    expect(wrapper.findAll('.bande-age-barre--hommes')).toHaveLength(7)
+    expect(wrapper.findAll('.bande-age-barre--femmes')).toHaveLength(7)
     const libelles = wrapper.findAll('.bande-age-libelle').map((l) => l.text())
     expect(libelles[0]).toBe('Moins de 15 ans')
     expect(libelles[6]).toBe('80 ans et plus')
-    const valeurs = wrapper.findAll('.bande-age-valeur').map((v) => v.text())
-    expect(valeurs[0]).toBe('30')
-    expect(valeurs[6]).toBe('5')
+  })
+
+  it('porte une lecture accessible hommes / femmes par tranche', () => {
+    const wrapper = monter('composition', 'structure_age', 'demographie', '22001', {
+      lignes: lignesSexuees(),
+    })
+    const aria = wrapper.find('.pyramide-age').attributes('aria-label') ?? ''
+    expect(aria).toContain('Hommes')
+    expect(aria).toContain('Femmes')
+    expect(aria).toContain('Moins de 15 ans')
   })
 
   it('n’a PAS de puce de rang (composition multi-détail, comportement hérité)', () => {
-    const wrapper = monter('composition', 'structure_age', 'demographie')
+    const wrapper = monter('composition', 'structure_age', 'demographie', '22001', {
+      lignes: lignesSexuees(),
+    })
     expect(wrapper.find('.puce-rang').exists()).toBe(false)
   })
 })

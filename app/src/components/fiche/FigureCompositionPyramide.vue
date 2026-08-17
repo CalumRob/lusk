@@ -1,19 +1,26 @@
 <script setup lang="ts">
 /**
  * FigureCompositionPyramide — la figure de composition « structure_age »
- * (Démographie, famille composition, issue #371) : la structure par âge rendue
- * en bandes horizontales empilées sur l'axe d'âge (jeune en bas), la lecture
- * « pyramide ». Le payload Démographie ne porte PAS de dimension sexe — une
- * série unique par tranche — donc la figure est une pyramide à un seul côté,
- * honnête sur les données (#371 : « un vrai pyramid à deux côtés homme/femme
- * si les lignes le permettent »). Une série homme/femme exigerait un champ
- * payload absent — documenté, jamais inventé. Sans puce de rang (composition
- * multi-détail, comportement hérité conservé).
+ * (Démographie, famille composition, issue #371) : la VRAIE pyramide des âges
+ * à DEUX côtés, hommes à gauche / femmes à droite, empilée sur l'axe d'âge
+ * (jeune en bas).
+ *
+ * Cette figure n'est atteinte QUE lorsque le payload porte la forme sexuée
+ * complète (sept tranches × F et M, chaque ligne avec un `sex` explicite) —
+ * c'est le contrat ajouté par l'issue bloquante #390. Avant #390, le payload
+ * legacy ne porte PAS de dimension sexe (une série totale par tranche) : la
+ * grammaire fait alors repli sur la décomposition segmentée/liste honnête
+ * (corps hérité, IndicatorFigure) et INTERDIT de présenter un chart à un seul
+ * côté comme une pyramide. Une série homme/femme exigerait un champ payload
+ * absent avant #390 — documenté ici, jamais inventé.
+ *
+ * Sans puce de rang (composition multi-détail, comportement hérité conservé).
  */
 import { computed } from 'vue'
 
-import { formaterValeur, formaterVintage } from '@/payload/selectors'
+import { formaterVintage } from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
+import { bandesPyramideSexuee } from '@/fiche/pyramideAge'
 
 const props = defineProps<{
   clef: string
@@ -23,35 +30,12 @@ const props = defineProps<{
   theme: Theme
 }>()
 
-/** L'ordre d'âge canonique du contrat — jeune en premier, pour empiler jeune-en-bas. */
-const ORDRE_AGE = ['<15', '15-24', '25-39', '40-54', '55-64', '65-79', '80+']
-
-interface Bande {
-  tranche: string
-  libelle: string
-  texte: string
-  largeur: number
-}
-
-const bandes = computed<Bande[]>(() => {
-  const parTranche = new Map<string, Indicateur>()
-  for (const ligne of props.lignes) {
-    if (ligne.detail) parTranche.set(ligne.detail, ligne)
-  }
-  const connues = ORDRE_AGE.map((tranche) => parTranche.get(tranche)).filter(
-    (l): l is Indicateur => l !== undefined,
-  )
-  const max = Math.max(1, ...connues.map((l) => l.value ?? 0))
-  return connues.map((ligne) => ({
-    tranche: ligne.detail ?? '',
-    libelle: props.labelsDetail?.[ligne.detail ?? ''] ?? ligne.detail ?? '',
-    texte: formaterValeur(ligne) ?? '—',
-    largeur: ((ligne.value ?? 0) / max) * 100,
-  }))
-})
+const bandes = computed(() => bandesPyramideSexuee(props.lignes, props.labelsDetail))
 
 const aria = computed(() =>
-  `${props.libelle} : ${bandes.value.map((b) => `${b.libelle} ${b.texte}`).join(' · ')}`,
+  `${props.libelle} (Hommes / Femmes) : ${bandes.value
+    .map((b) => `${b.libelle} ${b.texteHommes} · ${b.texteFemmes}`)
+    .join(' · ')}`,
 )
 
 const premiere = computed(() => props.lignes[0] ?? null)
@@ -60,11 +44,24 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
 <template>
   <figure class="figure-indicateur figure-pyramide-age" :data-clef="clef">
+    <div class="legende-pyramide" aria-hidden="true">
+      <span class="legende-pyramide-hommes">Hommes</span>
+      <span class="legende-pyramide-femmes">Femmes</span>
+    </div>
+
     <div class="pyramide-age" role="img" :aria-label="aria">
       <div v-for="bande in bandes" :key="bande.tranche" class="bande-age">
+        <span
+          class="bande-age-barre bande-age-barre--hommes"
+          :style="{ width: `${bande.largeurHommes}%` }"
+          :title="`Hommes — ${bande.libelle} : ${bande.texteHommes}`"
+        />
         <span class="bande-age-libelle">{{ bande.libelle }}</span>
-        <span class="bande-age-barre" :style="{ width: `${bande.largeur}%` }" />
-        <span class="bande-age-valeur">{{ bande.texte }}</span>
+        <span
+          class="bande-age-barre bande-age-barre--femmes"
+          :style="{ width: `${bande.largeurFemmes}%` }"
+          :title="`Femmes — ${bande.libelle} : ${bande.texteFemmes}`"
+        />
       </div>
     </div>
 
@@ -74,6 +71,41 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </template>
 
 <style scoped>
+/* La forme sexuée n'existe qu'après l'issue #390 ; ces teintes distinctes et
+   accessibles séparent les deux côtés sans emprunter la rampe de thème. */
+.pyramide-age {
+  --couleur-hommes: #3e7c8c;
+  --couleur-femmes: #b5567f;
+}
+
+.legende-pyramide {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  color: var(--text-secondary);
+}
+
+.legende-pyramide-hommes::before,
+.legende-pyramide-femmes::after {
+  content: '';
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin: 0 0.35em;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+.legende-pyramide-hommes::before {
+  background: var(--couleur-hommes);
+}
+
+.legende-pyramide-femmes::after {
+  background: var(--couleur-femmes);
+}
+
 .pyramide-age {
   display: flex;
   flex-direction: column-reverse; /* jeune en bas, comme une pyramide des âges */
@@ -82,7 +114,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
 .bande-age {
   display: grid;
-  grid-template-columns: 7.5em 1fr auto;
+  grid-template-columns: 1fr auto 1fr; /* hommes | âge | femmes */
   align-items: center;
   gap: var(--space-2);
 }
@@ -91,19 +123,22 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-secondary);
+  text-align: center;
 }
 
 .bande-age-barre {
   height: 10px;
   border-radius: var(--radius-full);
-  background: var(--couleur-strong, var(--brand-500));
 }
 
-.bande-age-valeur {
-  font-family: var(--font-sans);
-  font-weight: var(--text-numeric-weight);
-  font-variant-numeric: var(--text-numeric-variant);
-  color: var(--text-primary);
+.bande-age-barre--hommes {
+  justify-self: end; /* s'étire vers l'axe central depuis la gauche */
+  background: var(--couleur-hommes);
+}
+
+.bande-age-barre--femmes {
+  justify-self: start; /* s'étire vers l'axe central depuis la droite */
+  background: var(--couleur-femmes);
 }
 
 .estampille-vintage {
