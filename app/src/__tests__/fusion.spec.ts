@@ -14,7 +14,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { HistoireMilieux, Payload } from '../payload/types'
+import type { HistoireMilieux, Indicateur, Payload } from '../payload/types'
 
 /**
  * The indicator-join onto the masks (ADR-0008): the map reads the territoire
@@ -75,9 +75,210 @@ describe('indicateurParTerritoire — the rows that feed a choropleth', () => {
       '<15',
     )
 
-    expect(parTerritoire.get('22001')?.value).toBe(0.3)
+    // issue #390 : structure_age est désormais éclaté par sexe (F / M). La carte
+    // reste groupée par key + detail (jamais par sexe) : les parts F (0.18) et
+    // M (0.12) de la tranche <15 se combinent en UNE valeur de territoire (0.30).
+    expect(parTerritoire.get('22001')?.value).toBeCloseTo(0.3)
     expect(parTerritoire.get('22001')?.detail).toBe('<15')
+    expect(parTerritoire.get('22001')?.sex).toBeNull()
     expect(parTerritoire.size).toBe(1)
+  })
+})
+
+/**
+ * Issue #390 — the sex aggregation seam (structure_age éclaté F / M). The carte
+ * stays grouped by key + detail : the F / M rows of one tranche collapse into
+ * ONE territory value (sum of the non-null sex shares), preserving the shared
+ * rank / unit / vintage from the indicator rows. A legacy single-row detail is
+ * untouched.
+ */
+describe('indicateurParTerritoire — sex aggregation (issue #390)', () => {
+  const vintage = {
+    vintage_source: 'INSEE — Population par sexe et âge',
+    vintage_version: '2023',
+    vintage_date_reference: '2023-01-01',
+    vintage_date_publication: '2026-06-30',
+  }
+
+  function ligneStructure(
+    territoire: string,
+    detail: string,
+    sex: 'F' | 'M',
+    value: number | null,
+  ): Indicateur {
+    return {
+      territoire,
+      type: 'commune',
+      theme: 'demographie',
+      key: 'structure_age',
+      detail,
+      sex,
+      value,
+      unit: '%',
+      rang_epci: 1,
+      rang_epci_n: 2,
+      rang_dep: null,
+      rang_dep_n: null,
+      rang_reg: null,
+      rang_reg_n: null,
+      ...vintage,
+    }
+  }
+
+  it('sums the non-null F+M shares of a sex-split tranche into one territory value', () => {
+    const lignes = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'M', 0.12),
+    ]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
+
+    expect(parTerritoire.get('T1')?.value).toBeCloseTo(0.3)
+    expect(parTerritoire.get('T1')?.sex).toBeNull()
+  })
+
+  it('preserves the shared rank / unit / vintage from the indicator rows', () => {
+    const lignes = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'M', 0.12),
+    ]
+    const ligne = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15').get('T1')
+
+    expect(ligne?.unit).toBe('%')
+    expect(ligne?.rang_epci).toBe(1)
+    expect(ligne?.rang_epci_n).toBe(2)
+    expect(ligne?.vintage_source).toBe('INSEE — Population par sexe et âge')
+  })
+
+  it('leaves a legacy single-row detail (non sex) untouched', () => {
+    const lignes: Indicateur[] = [
+      {
+        territoire: 'T1',
+        type: 'commune',
+        theme: 'demographie',
+        key: 'densite',
+        detail: null,
+        value: 200,
+        unit: 'hab/km²',
+        rang_epci: 1,
+        rang_epci_n: 2,
+        rang_dep: null,
+        rang_dep_n: null,
+        rang_reg: null,
+        rang_reg_n: null,
+        ...vintage,
+      },
+    ]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'densite')
+
+    expect(parTerritoire.get('T1')?.value).toBe(200)
+    expect(parTerritoire.get('T1')?.sex).toBeUndefined()
+  })
+
+  it('returns null (never 0) when both sexes are null', () => {
+    const lignes = [ligneStructure('T1', '<15', 'F', null), ligneStructure('T1', '<15', 'M', null)]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
+
+    expect(parTerritoire.get('T1')?.value).toBeNull()
+  })
+
+  /**
+   * Le cœur de la garde (issue #390) : une somme PARTIELLE est indiscernable
+   * d'une vraie valeur à l'écran. Une part inconnue rend la somme inconnue ; une
+   * FORME invalide (un sexe seul, un sexe en double, un mélange sexué /
+   * non-sexué) échoue fort — jamais une valeur inventée.
+   */
+  it('yields null — never the partial sum — when one sex’s share is unknown', () => {
+    const lignes = [ligneStructure('T1', '<15', 'F', 0.18), ligneStructure('T1', '<15', 'M', null)]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
+
+    // jadis : 0.18 — la moitié d'une pyramide publiée comme si c'était le tout
+    expect(parTerritoire.get('T1')?.value).toBeNull()
+  })
+
+  it('throws when a sex is missing entirely (one-sided band is never summed)', () => {
+    const lignes = [ligneStructure('T1', '<15', 'F', 0.18)]
+
+    expect(() =>
+      indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
+    ).toThrow(/groupe de sexes incomplet ou en double/)
+  })
+
+  it('throws when a sex is duplicated ({F, F} is not {F, M})', () => {
+    const lignes = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'F', 0.12),
+    ]
+
+    expect(() =>
+      indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
+    ).toThrow(/groupe de sexes incomplet ou en double/)
+  })
+
+  it('throws on a mixed sexed / unsexed group (a half-migrated payload)', () => {
+    const lignes: Indicateur[] = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'M', 0.12),
+      { ...ligneStructure('T1', '<15', 'F', 0.3), sex: null },
+    ]
+
+    expect(() =>
+      indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15'),
+    ).toThrow(/représentation du sexe mixte/)
+  })
+
+  /**
+   * Révision revue (issue #390) : l'agrégat HÉRITE des métadonnées d'une seule
+   * ligne (on copie F). Si F et M divergent sur un rang, une taille de groupe,
+   * l'unité ou le sceau de vintage, copier la moitié des métadonnées produirait
+   * une ligne au ventre menteur. On refuse fort, plutôt que de publier une
+   * valeur sournoise — jamais une somme qui copie F en silence.
+   */
+  it('throws when the F and M unit disagree (malformed pair — never copies F metadata)', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), unit: 'pts' }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('throws when the F and M shared ranks disagree', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), rang_epci: 2 }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('throws when the F and M group-size columns disagree', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), rang_epci_n: 3 }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('throws when the F and M vintage metadata disagree', () => {
+    const f = ligneStructure('T1', '<15', 'F', 0.18)
+    const m = {
+      ...ligneStructure('T1', '<15', 'M', 0.12),
+      vintage_source: 'autre source',
+      vintage_date_reference: '2024-01-01',
+    }
+
+    expect(() =>
+      indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15'),
+    ).toThrow(/métadonnées de pair divergent/)
+  })
+
+  it('still sums when the shared ranks are both null (the honest no-group case)', () => {
+    const f = { ...ligneStructure('T1', '<15', 'F', 0.18), rang_dep: null, rang_dep_n: null }
+    const m = { ...ligneStructure('T1', '<15', 'M', 0.12), rang_dep: null, rang_dep_n: null }
+
+    const ligne = indicateurParTerritoire([f, m], 'demographie', 'structure_age', '<15').get('T1')
+    expect(ligne?.value).toBeCloseTo(0.3)
   })
 })
 
@@ -172,8 +373,10 @@ describe('collectionAvecValeurs — the join onto the features', () => {
     )
     const jointes = collectionAvecValeurs(collection, parTerritoire)
 
+    // issue #390 : la tranche <15 éclatée F (0.18) + M (0.12) se combine en
+    // 0.30 → '30' (unit % → fraction × 100).
     const a1 = jointes.features.find((f) => f.properties.territoire === '22001')
-    expect(a1?.properties.valeur).toBe(0.3)
+    expect(a1?.properties.valeur).toBeCloseTo(0.3)
     expect(a1?.properties.valeur_formatee).toBe('30') // unit % → fraction × 100
   })
 

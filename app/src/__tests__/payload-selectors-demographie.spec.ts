@@ -46,11 +46,12 @@ describe('indicateursPourTerritoire — the standard block in contract order', (
     const lignes = indicateursPourTerritoire(payloadDemographie, 'demographie', '22001')
 
     expect(lignes[0]).toMatchObject({ key: 'densite' })
-    expect(lignes[1]).toMatchObject({ key: 'structure_age', detail: '<15' })
-    expect(lignes[7]).toMatchObject({ key: 'structure_age', detail: '80+' })
-    expect(lignes[8]).toMatchObject({ key: 'evolution_1968' })
-    expect(lignes[9]).toMatchObject({ key: 'taille_menages' })
-    expect(lignes).toHaveLength(10)
+    expect(lignes[1]).toMatchObject({ key: 'structure_age', detail: '<15', sex: 'F' })
+    // 14 lignes structure_age (7 tranches × 2 sexes) ; la dernière est 80+ / M
+    expect(lignes[14]).toMatchObject({ key: 'structure_age', detail: '80+', sex: 'M' })
+    expect(lignes[15]).toMatchObject({ key: 'evolution_1968' })
+    expect(lignes[16]).toMatchObject({ key: 'taille_menages' })
+    expect(lignes).toHaveLength(17)
   })
 
   it('never leaks another territory or theme into the block', () => {
@@ -70,7 +71,8 @@ describe('indicateursGroupeesPourTerritoire — one figure per indicator key', (
       'evolution_1968',
       'taille_menages',
     ])
-    expect(groupes[1].lignes).toHaveLength(7)
+    // 7 tranches × 2 sexes (issue #390)
+    expect(groupes[1].lignes).toHaveLength(14)
   })
 })
 
@@ -131,12 +133,12 @@ describe('formaterValeur — the display value, French', () => {
     expect(formaterValeur(ligne('densite')!)).toBe('200')
   })
 
-  it('multiplies a "%" fraction by 100 (0.3 → "30")', () => {
+  it('multiplies a "%" fraction by 100 (0.18 → "18" for the F tranche)', () => {
     const tranche = indicateursDemographieFixture.find(
-      (l) => l.territoire === '22001' && l.key === 'structure_age' && l.detail === '<15',
+      (l) => l.territoire === '22001' && l.key === 'structure_age' && l.detail === '<15' && l.sex === 'F',
     )!
 
-    expect(formaterValeur(tranche)).toBe('30')
+    expect(formaterValeur(tranche)).toBe('18')
   })
 
   it('keeps the minus sign of a negative evolution', () => {

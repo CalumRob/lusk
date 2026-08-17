@@ -279,6 +279,140 @@ describe('parsePayload — rejects contract drift, loudly', () => {
   })
 })
 
+/**
+ * Le contrat de la structure par âge (issue #390) : SEPT tranches d'âge FIXES ×
+ * exactement {F, M} par territoire — 14 lignes. Les tranches attendues sont le
+ * contrat déclaré, jamais une dérivation de ce que le payload porte : c'est
+ * précisément ce qui permet d'attraper une tranche ENTIÈREMENT absente (ses deux
+ * sexes manquants), qu'une validation dérivée laisserait passer sans un mot.
+ */
+describe('parsePayload — le contrat âge×sexe de la structure par âge (issue #390)', () => {
+  type Indicateurs = typeof indicateursDemographieFixture
+  type LigneIndicateur = Indicateurs[number] & { sex?: string | null }
+
+  /** Les lignes structure_age du fixture (14, pour 22001). */
+  function lignesStructureAge(indicateurs: Indicateurs): LigneIndicateur[] {
+    return (indicateurs as LigneIndicateur[]).filter((l) => l.key === 'structure_age')
+  }
+
+  function copieFixture(): Indicateurs {
+    return JSON.parse(JSON.stringify(indicateursDemographieFixture)) as Indicateurs
+  }
+
+  it('accepte la forme complète — 7 tranches × {F, M} = 14 lignes par territoire', () => {
+    const payload = parsePayload(documentsBruts())
+
+    const lignes = lignesStructureAge(payload.indicateurs as unknown as Indicateurs)
+    expect(lignes).toHaveLength(14)
+    expect(new Set(lignes.map((l) => l.detail))).toEqual(
+      new Set(['<15', '15-24', '25-39', '40-54', '55-64', '65-79', '80+']),
+    )
+    // chaque tranche porte EXACTEMENT F et M
+    for (const tranche of ['<15', '15-24', '25-39', '40-54', '55-64', '65-79', '80+']) {
+      const sexes = lignes.filter((l) => l.detail === tranche).map((l) => l.sex)
+      expect(sexes.sort(), tranche).toEqual(['F', 'M'])
+    }
+  })
+
+  it('refuse une TRANCHE entièrement absente (ses deux sexes manquants) — le trou qu’une validation dérivée rate', () => {
+    // on retire les DEUX lignes de « 55-64 » : les tranches présentes restent
+    // cohérentes par paires, donc seule une attente FIXE peut voir le trou
+    const indicateurs = copieFixture().filter(
+      (l) => !(l.key === 'structure_age' && l.detail === '55-64'),
+    ) as Indicateurs
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/55-64/)
+    expect(erreur.message).toMatch(/manquante/i)
+  })
+
+  it('refuse un SEXE manquant sur une tranche (une pyramide à un seul côté)', () => {
+    const indicateurs = copieFixture().filter(
+      (l) =>
+        !(l.key === 'structure_age' && l.detail === '<15' && (l as LigneIndicateur).sex === 'M'),
+    ) as Indicateurs
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/manquante/i)
+    expect(erreur.message).toMatch(/« M »/)
+  })
+
+  it('refuse une représentation MIXTE sexe / null (un payload à moitié migré)', () => {
+    const indicateurs = copieFixture()
+    const ligne = lignesStructureAge(indicateurs).find((l) => l.detail === '<15' && l.sex === 'F')!
+    ligne.sex = null
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/mixte/i)
+  })
+
+  it('refuse un sexe INVALIDE (jamais « _T », jamais autre chose que F / M)', () => {
+    const indicateurs = copieFixture()
+    const ligne = lignesStructureAge(indicateurs).find((l) => l.detail === '<15' && l.sex === 'F')!
+    // « _T » est hors du type publié : c'est exactement la dérive qu'un payload
+    // réel peut porter et que la validation doit refuser au lieu de la croire
+    ;(ligne as { sex: string | null }).sex = '_T'
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/sex/)
+    expect(erreur.message).toMatch(/_T/)
+  })
+
+  it('refuse une paire âge×sexe EN DOUBLE (la même tranche, le même sexe, deux fois)', () => {
+    const indicateurs = copieFixture()
+    const ligne = lignesStructureAge(indicateurs).find((l) => l.detail === '<15' && l.sex === 'F')!
+    ;(indicateurs as LigneIndicateur[]).push({ ...ligne })
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/double/i)
+  })
+
+  it('refuse une tranche HORS CONTRAT (« 90+ » n’est pas un étage bonus)', () => {
+    const indicateurs = copieFixture()
+    for (const ligne of lignesStructureAge(indicateurs)) {
+      if (ligne.detail === '80+') ligne.detail = '90+'
+    }
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/hors contrat/i)
+    expect(erreur.message).toMatch(/90\+/)
+  })
+
+  /**
+   * Le repli HÉRITÉ (pré-#390) que l'issue #390 prévoit explicitement : le
+   * payload committé porte encore 7 lignes sans sexe (le pipeline ne l'a pas
+   * republié). Cette forme est acceptée telle quelle — mais elle reste STRICTE
+   * sur les sept tranches : la dérive de schéma y est détectée comme ailleurs.
+   */
+  it('accepte la forme héritée (7 tranches, aucune sexuée) — le repli d’avant la republication', () => {
+    // on retire les 7 lignes « M » et on dé-sexue les 7 « F » → la forme pré-#390
+    const sansM = copieFixture().filter(
+      (l) => !(l.key === 'structure_age' && (l as LigneIndicateur).sex === 'M'),
+    ) as Indicateurs
+    for (const ligne of lignesStructureAge(sansM)) delete ligne.sex
+
+    const payload = parsePayload(documentsBruts({ indicateurs: sansM }))
+
+    const publiees = lignesStructureAge(payload.indicateurs as unknown as Indicateurs)
+    expect(publiees).toHaveLength(7)
+    expect(publiees.every((l) => l.sex === null)).toBe(true)
+  })
+
+  it('refuse une tranche manquante DANS la forme héritée aussi (jamais un angle mort)', () => {
+    const sansM = copieFixture().filter(
+      (l) => !(l.key === 'structure_age' && (l as LigneIndicateur).sex === 'M'),
+    ) as Indicateurs
+    for (const ligne of lignesStructureAge(sansM)) delete ligne.sex
+    const tronquee = sansM.filter(
+      (l) => !(l.key === 'structure_age' && l.detail === '25-39'),
+    ) as Indicateurs
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs: tronquee }))
+    expect(erreur.message).toMatch(/25-39/)
+    expect(erreur.message).toMatch(/manquante/i)
+  })
+})
+
 describe('parsePayload — the shared vintages table', () => {
   it('carries the validated vintages on the payload', () => {
     const payload = parsePayload(documentsBruts())

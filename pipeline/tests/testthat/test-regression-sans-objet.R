@@ -47,18 +47,26 @@ ILES_BRETAGNE <- c("22016", "29083", "29155")
 # plausibles : chaque île porte des mesures valides (le payload doit les
 # calculer, jamais les supprimer).
 iles_demographie <- function() {
+  # les îles portent désormais les colonnes par sexe (F / M) comme le fixture
+  # principal — issue #390 : la structure par âge est 7 tranches × 2 sexes.
   tibble::tribble(
     ~code, ~nom, ~departement, ~epci, ~nom_epci,
     ~population, ~population_1968, ~population_precedente, ~superficie_km2,
     ~naissances, ~deces,
     ~age_lt15, ~age_15_24, ~age_25_39, ~age_40_54, ~age_55_64, ~age_65_79,
     ~age_80_plus, ~age_lt20, ~population_menages, ~menages,
+    ~age_lt15_F, ~age_15_24_F, ~age_25_39_F, ~age_40_54_F, ~age_55_64_F,
+    ~age_65_79_F, ~age_80_plus_F, ~age_lt15_M, ~age_15_24_M, ~age_25_39_M,
+    ~age_40_54_M, ~age_55_64_M, ~age_65_79_M, ~age_80_plus_M,
     "22016", "Île-de-Bréhat", "22", "ZZZZZZZZZ", "Sans objet",
     350, 300, 340, 3.1, 2, 4, 40, 30, 50, 60, 80, 50, 40, 70, 340, 180,
+    20, 15, 25, 30, 40, 25, 20, 20, 15, 25, 30, 40, 25, 20,
     "29083", "Île-de-Sein", "29", "ZZZZZZZZZ", "Sans objet",
     260, 300, 270, 0.6, 1, 4, 25, 20, 35, 40, 60, 45, 35, 45, 255, 140,
+    13, 10, 18, 20, 30, 23, 18, 12, 10, 17, 20, 30, 22, 17,
     "29155", "Ouessant", "29", "ZZZZZZZZZ", "Sans objet",
-    820, 900, 830, 15.6, 5, 12, 90, 70, 120, 140, 180, 130, 90, 160, 800, 420
+    820, 900, 830, 15.6, 5, 12, 90, 70, 120, 140, 180, 130, 90, 160, 800, 420,
+    45, 35, 60, 70, 90, 65, 45, 45, 35, 60, 70, 90, 65, 45
   )
 }
 

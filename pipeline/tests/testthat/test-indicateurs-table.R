@@ -12,7 +12,8 @@ test_that("INDICATEURS_DEMOGRAPHIE : les 4 indicateurs du thème, multiplicité 
   expect_named(tab, c("key", "libelle", "sources", "source_reference", "multiplicite"))
   expect_equal(tab$key,
                c("densite", "structure_age", "evolution_1968", "taille_menages"))
-  expect_equal(tab$multiplicite, c(1L, 7L, 1L, 1L))
+  # structure_age : 7 tranches × 2 sexes (issue #390)
+  expect_equal(tab$multiplicite, c(1L, 14L, 1L, 1L))
 })
 
 test_that("INDICATEURS_DEMOGRAPHIE : chaque clé déclare sa source de référence", {

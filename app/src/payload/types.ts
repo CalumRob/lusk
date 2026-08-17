@@ -30,6 +30,14 @@ export type Theme = (typeof THEMES_CANONIQUES)[number]
 
 export type TerritoireType = 'commune' | 'epci' | 'departement' | 'region'
 
+/**
+ * The sex dimension of an indicator's rows (issue #390): « F » (femmes) or
+ * « M » (hommes). Only the sex-split indicators (e.g. structure_age, the real
+ * pyramid) carry it; null/undefined = the row is not sex-split (the historical
+ * scalar / total rows).
+ */
+export type Sexe = 'F' | 'M'
+
 /** The rank-in-context columns of the indicateurs table (ADR-0015, ADR-0021). */
 export type ColonneRang = 'rang_epci' | 'rang_dep' | 'rang_reg'
 
@@ -59,13 +67,15 @@ export interface VintageStamp {
   vintage_date_publication: string
 }
 
-/** One facts row per (territoire × key × detail). */
+/** One facts row per (territoire × key × detail × sex). */
 export interface Indicateur extends VintageStamp {
   territoire: string
   type: TerritoireType
   theme: Theme
   key: string
   detail: string | null
+  /** The sex dimension (issue #390) — carried by the sex-split indicators (structure_age). */
+  sex?: Sexe | null
   value: number | null
   unit: string
   /**
