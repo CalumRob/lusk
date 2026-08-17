@@ -10,7 +10,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Histoire, Payload } from '../payload/types'
+import type { Histoire, Indicateur, Payload } from '../payload/types'
 
 /**
  * The popup's KPI rows (ui-elements.md §Map shell): name + the ACTIVE layer's
@@ -180,6 +180,25 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
     const kpis = kpisPourPopup(payload, '22001', 'demographie', coucheTrancheMoin15)
 
     expect(kpis[0]).toEqual({ libelle: 'Moins de 15 ans', valeur: '30', unite: '%', rang: "1er/2 de l'EPCI" })
+  })
+
+  it('aggregates the F+M sex shares of a grouped structure_age detail into one popup value (issue #390 regression)', () => {
+    const lignes: Indicateur[] = [
+      { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '40-54', sex: 'F', value: 0.09, unit: '%', rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2026-06-30' },
+      { territoire: '22001', type: 'commune', theme: 'demographie', key: 'structure_age', detail: '40-54', sex: 'M', value: 0.06, unit: '%', rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2026-06-30' },
+    ]
+    const payload = { ...payloadAvecApercu(), indicateurs: lignes }
+    const couche: Couche = { ...coucheTrancheMoin15, detail: '40-54', libelle: '40 à 54 ans' }
+
+    // issue #390 : la carte reste groupée par key + detail (jamais par sexe) ;
+    // les parts F (0.09) et M (0.06) se combinent en 0.15 → '15', le rang
+    // partagé (1er/2 de l'EPCI) étant conservé.
+    expect(kpisPourPopup(payload, '22001', 'demographie', couche)[0]).toEqual({
+      libelle: '40 à 54 ans',
+      valeur: '15',
+      unite: '%',
+      rang: "1er/2 de l'EPCI",
+    })
   })
 
   it('an EPCI row shows its régional rank when it has no EPCI rank (rang_epci null)', () => {

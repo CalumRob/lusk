@@ -14,7 +14,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { HistoireMilieux, Payload } from '../payload/types'
+import type { HistoireMilieux, Indicateur, Payload } from '../payload/types'
 
 /**
  * The indicator-join onto the masks (ADR-0008): the map reads the territoire
@@ -75,11 +75,117 @@ describe('indicateurParTerritoire — the rows that feed a choropleth', () => {
       '<15',
     )
 
-    // issue #390 : structure_age est désormais éclaté par sexe (F / M) — la
-    // lecture par seule tranche renvoie la dernière ligne matching (ici M).
-    expect(parTerritoire.get('22001')?.value).toBe(0.12)
+    // issue #390 : structure_age est désormais éclaté par sexe (F / M). La carte
+    // reste groupée par key + detail (jamais par sexe) : les parts F (0.18) et
+    // M (0.12) de la tranche <15 se combinent en UNE valeur de territoire (0.30).
+    expect(parTerritoire.get('22001')?.value).toBeCloseTo(0.3)
     expect(parTerritoire.get('22001')?.detail).toBe('<15')
+    expect(parTerritoire.get('22001')?.sex).toBeNull()
     expect(parTerritoire.size).toBe(1)
+  })
+})
+
+/**
+ * Issue #390 — the sex aggregation seam (structure_age éclaté F / M). The carte
+ * stays grouped by key + detail : the F / M rows of one tranche collapse into
+ * ONE territory value (sum of the non-null sex shares), preserving the shared
+ * rank / unit / vintage from the indicator rows. A legacy single-row detail is
+ * untouched.
+ */
+describe('indicateurParTerritoire — sex aggregation (issue #390)', () => {
+  const vintage = {
+    vintage_source: 'INSEE — Population par sexe et âge',
+    vintage_version: '2023',
+    vintage_date_reference: '2023-01-01',
+    vintage_date_publication: '2026-06-30',
+  }
+
+  function ligneStructure(
+    territoire: string,
+    detail: string,
+    sex: 'F' | 'M',
+    value: number | null,
+  ): Indicateur {
+    return {
+      territoire,
+      type: 'commune',
+      theme: 'demographie',
+      key: 'structure_age',
+      detail,
+      sex,
+      value,
+      unit: '%',
+      rang_epci: 1,
+      rang_epci_n: 2,
+      rang_dep: null,
+      rang_dep_n: null,
+      rang_reg: null,
+      rang_reg_n: null,
+      ...vintage,
+    }
+  }
+
+  it('sums the non-null F+M shares of a sex-split tranche into one territory value', () => {
+    const lignes = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'M', 0.12),
+    ]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
+
+    expect(parTerritoire.get('T1')?.value).toBeCloseTo(0.3)
+    expect(parTerritoire.get('T1')?.sex).toBeNull()
+  })
+
+  it('preserves the shared rank / unit / vintage from the indicator rows', () => {
+    const lignes = [
+      ligneStructure('T1', '<15', 'F', 0.18),
+      ligneStructure('T1', '<15', 'M', 0.12),
+    ]
+    const ligne = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15').get('T1')
+
+    expect(ligne?.unit).toBe('%')
+    expect(ligne?.rang_epci).toBe(1)
+    expect(ligne?.rang_epci_n).toBe(2)
+    expect(ligne?.vintage_source).toBe('INSEE — Population par sexe et âge')
+  })
+
+  it('leaves a legacy single-row detail (non sex) untouched', () => {
+    const lignes: Indicateur[] = [
+      {
+        territoire: 'T1',
+        type: 'commune',
+        theme: 'demographie',
+        key: 'densite',
+        detail: null,
+        value: 200,
+        unit: 'hab/km²',
+        rang_epci: 1,
+        rang_epci_n: 2,
+        rang_dep: null,
+        rang_dep_n: null,
+        rang_reg: null,
+        rang_reg_n: null,
+        ...vintage,
+      },
+    ]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'densite')
+
+    expect(parTerritoire.get('T1')?.value).toBe(200)
+    expect(parTerritoire.get('T1')?.sex).toBeUndefined()
+  })
+
+  it('returns null (never 0) when both sexes are null', () => {
+    const lignes = [ligneStructure('T1', '<15', 'F', null), ligneStructure('T1', '<15', 'M', null)]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
+
+    expect(parTerritoire.get('T1')?.value).toBeNull()
+  })
+
+  it('sums only the non-null sex when one sex is missing', () => {
+    const lignes = [ligneStructure('T1', '<15', 'F', 0.18), ligneStructure('T1', '<15', 'M', null)]
+    const parTerritoire = indicateurParTerritoire(lignes, 'demographie', 'structure_age', '<15')
+
+    expect(parTerritoire.get('T1')?.value).toBeCloseTo(0.18)
   })
 })
 
@@ -174,9 +280,11 @@ describe('collectionAvecValeurs — the join onto the features', () => {
     )
     const jointes = collectionAvecValeurs(collection, parTerritoire)
 
+    // issue #390 : la tranche <15 éclatée F (0.18) + M (0.12) se combine en
+    // 0.30 → '30' (unit % → fraction × 100).
     const a1 = jointes.features.find((f) => f.properties.territoire === '22001')
-    expect(a1?.properties.valeur).toBe(0.12)
-    expect(a1?.properties.valeur_formatee).toBe('12') // unit % → fraction × 100
+    expect(a1?.properties.valeur).toBeCloseTo(0.3)
+    expect(a1?.properties.valeur_formatee).toBe('30') // unit % → fraction × 100
   })
 
   it('joins the story scalars onto the features — the same join shape as the indicator rows', () => {

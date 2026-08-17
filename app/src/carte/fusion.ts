@@ -45,6 +45,14 @@ export interface ValeurLigne {
  * The rows that feed one choropleth: the theme's indicator with `detail ===
  * null` (one value per territory) — or, when `detail` is given (a grouped
  * multi-detail layer, ADR-0019), that detail's rows. Returns territoire → row.
+ *
+ * Issue #390 — the sex dimension: a sex-split indicator (structure_age) publishes
+ * one row per (territoire × detail × sex). The carte stays GROUPED BY `key +
+ * detail`, never by sex: when several matching rows share a territoire they are
+ * the F / M sexes of the same age band, so they collapse into ONE territory
+ * value — the sum of the non-null sex shares — keeping the shared rank / unit /
+ * vintage carried by the indicator rows. A non-sex (legacy) detail has exactly
+ * one row per territoire and passes through untouched.
  */
 export function indicateurParTerritoire(
   lignes: readonly Indicateur[],
@@ -54,11 +62,25 @@ export function indicateurParTerritoire(
 ): Map<string, Indicateur> {
   const parTerritoire = new Map<string, Indicateur>()
   for (const ligne of lignes) {
-    if (ligne.theme === theme && ligne.key === indicateur && ligne.detail === detail) {
-      parTerritoire.set(ligne.territoire, ligne)
-    }
+    if (ligne.theme !== theme || ligne.key !== indicateur || ligne.detail !== detail) continue
+    const existante = parTerritoire.get(ligne.territoire)
+    parTerritoire.set(ligne.territoire, existante ? combinerSexes(existante, ligne) : ligne)
   }
   return parTerritoire
+}
+
+/**
+ * Combine les lignes éclatées par sexe (F / M) d'un même groupe (territoire ×
+ * key × detail) en UNE valeur de territoire — la somme des parts NON-NULLES des
+ * sexes — en préservant le rang / unité / vintage partagés des lignes
+ * d'indicateur (issue #390). La ligne résultante porte `sex: null` : c'est un
+ * agrégat, plus une ligne de sexe. Idempotent sur un agrégat déjà formé (cas de
+ * 3+ sexes) : `base.value` y est déjà la somme partielle.
+ */
+function combinerSexes(base: Indicateur, ajout: Indicateur): Indicateur {
+  const parts = [base.value, ajout.value].filter((v): v is number => v !== null && v !== undefined)
+  const valeur = parts.length > 0 ? parts.reduce((acc, v) => acc + v, 0) : null
+  return { ...base, value: valeur, sex: null }
 }
 
 /**
