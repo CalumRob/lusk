@@ -224,7 +224,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       structure_age: {
         label: 'Structure par âge',
         definition:
-          'La répartition de la population en sept tranches d’âge, de moins de 15 ans à 80 ans et plus. Chaque tranche est exprimée en part de la population totale, ce qui rend les territoires comparables quelle que soit leur taille.',
+          'La répartition de la population en sept tranches d’âge, de moins de 15 ans à 80 ans et plus, déclinée pour les femmes et pour les hommes : quatorze parts par territoire, une par croisement d’une tranche et d’un sexe. Chaque part est rapportée à la population totale du territoire — jamais au seul effectif de son sexe : les quatorze parts totalisent donc 100 %, et les deux versants se lisent à la même échelle, comme les deux côtés d’une pyramide des âges. Le classement, lui, ne porte sur aucune tranche en particulier : il compare la part des moins de 20 ans dans la population totale. Cette part est une mesure à part, fournie telle quelle par le recensement ; elle recoupe les deux premières tranches sans se confondre avec elles, et ne se déduit donc pas de leur somme.',
         unite: '%',
         source: 'INSEE — Population par sexe et âge (PRINC)',
         sourceId: 'age_detail',
