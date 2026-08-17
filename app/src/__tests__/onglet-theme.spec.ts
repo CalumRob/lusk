@@ -99,6 +99,15 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
     expect(texte.text()).toContain('2,56 (migratoire)')
   })
 
+  it('porte la voix récit (serif) sur la phrase de lecture, jamais la voix corps Manrope', async () => {
+    const wrapper = await monter('22001')
+
+    const texte = wrapper.find('.lecture-texte')
+    expect(texte.exists()).toBe(true)
+    // la classe utilitaire globale .voix-recit pose la famille serif (Newsreader)
+    expect(texte.classes()).toContain('voix-recit')
+  })
+
   it('renders the template link node as a RouterLink to the Méthodes anchor', async () => {
     const wrapper = await monter('22001')
 

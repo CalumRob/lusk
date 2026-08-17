@@ -98,8 +98,8 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     const wrapper = await monter('22001')
 
     const alimentation = wrapper.find('.figure-indicateur[data-clef="iso_alimentation"]')
-    // 22001 : 27e/38 dans son EPCI (rang ordinal directionnel — ADR-0015)
-    expect(alimentation.find('.puce-rang').text()).toBe("27e/38 de l'EPCI")
+    // 22001 : 27e/38 dans son EPCI — iso_alimentation : moins = mieux → glyphe ▼ (#371)
+    expect(alimentation.find('.puce-rang').text()).toBe("▼ 27e/38 de l'EPCI")
     const grille = wrapper
       .findAll('.figure-indicateur')
       .filter((f) =>
@@ -260,9 +260,10 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
       'OpenStreetMap — réseaux routier/cyclable/piéton',
     )
     expect(figure.findAll('.puce-rang')).toHaveLength(2)
+    // offre_cyclable : plus = mieux → glyphe ▲ sur chaque détail (#371)
     expect(figure.findAll('.puce-rang').map((p) => p.text())).toEqual([
-      "20e/38 de l'EPCI",
-      "10e/38 de l'EPCI",
+      "▲ 20e/38 de l'EPCI",
+      "▲ 10e/38 de l'EPCI",
     ])
   })
 

@@ -109,6 +109,39 @@ html.tiroir-verrouille {
 }
 
 /* --------------------------------------------------------------------------
+   Voix de lecture — la voix récit (serif, Newsreader) de la fiche, opposée à
+   la voix corps (Manrope). La lecture narrative (le « one-liner » de fiche,
+   DESIGN.md §9) la porte ; jamais la voix corps. Utilitaire global pour que
+   la voix soit testable sans dépendre du CSS scoped.
+   -------------------------------------------------------------------------- */
+.voix-recit {
+  font-family: var(--font-serif);
+}
+
+/* --------------------------------------------------------------------------
+   Coquille de carte des figures de grille (DESIGN.md §9) — carte discrète
+   --surface-primary, bord fin, rayon doux. Partagée par tous les corps de
+   figure via la classe utilitaire ; chaque corps ajoute sa mise en page.
+   L'accent de position du rang scalaire (fort / faible) se lit sur le bord
+   gauche, en rampe de thème, jamais en couleur de statut.
+   -------------------------------------------------------------------------- */
+.carte-figure {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--surface-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.carte-figure--accent-fort {
+  border-left: 3px solid var(--couleur-strong, var(--brand-700));
+}
+
+.carte-figure--accent-faible {
+  border-left: 3px solid color-mix(in oklab, var(--couleur-strong, var(--brand-700)) 35%, transparent);
+}
+
+/* --------------------------------------------------------------------------
    Page scaffolding — used by placeholder views now, real views later.
    Content column: 1200px max (DESIGN.md §4), 16px mobile margin.
    -------------------------------------------------------------------------- */

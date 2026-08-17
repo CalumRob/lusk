@@ -19,7 +19,7 @@ import { RouterLink } from 'vue-router'
 import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
-import FigureOffreCyclable from '@/components/fiche/FigureOffreCyclable.vue'
+import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
@@ -144,7 +144,7 @@ const lignesReseaux = computed(
              resolved row's values, the reading's compact figure and its
              exhaustive source. -->
         <div v-if="groupe.lecture" class="sous-groupe-lecture">
-          <p class="lecture-texte">
+          <p class="lecture-texte voix-recit">
             <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
               <NoeudLecture
                 :noeud="noeud"
@@ -230,22 +230,18 @@ const lignesReseaux = computed(
             class="figure-compacte"
             :data-famille="groupe.figureCompacte.famille"
           >
-            <FigureOffreCyclable
-              v-if="groupe.figureCompacte.clef === 'offre_cyclable'"
+            <!-- Le renderer partagé de la grammaire (#371) : un seul sélecteur
+                 de corps par famille, sans branche par thème. -->
+            <FigureCompacte
+              :famille="groupe.figureCompacte.famille"
               :clef="groupe.figureCompacte.clef"
               :lignes="groupe.figureCompacte.lignes"
+              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
+              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :reseaux="lignesReseaux"
-              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
-              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
-            />
-            <IndicatorFigure
-              v-else
-              :clef="groupe.figureCompacte.clef"
-              :lignes="groupe.figureCompacte.lignes"
-              :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
-              :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
+              :theme="theme"
             />
           </div>
           <IndicatorFigure
@@ -257,6 +253,7 @@ const lignesReseaux = computed(
             :labels-detail="labelsDetailPour(figure.key)"
             :large="figureLarge(figure.key)"
             :signe="figureSigne(figure.key)"
+            :theme="theme"
           />
         </div>
       </section>
@@ -330,9 +327,15 @@ const lignesReseaux = computed(
   box-shadow: var(--shadow-subtle);
 }
 
+/* La phrase de lecture porte la voix récit (serif) — la classe utilitaire
+   globale `.voix-recit` pose la famille, jamais la voix corps Manrope
+   (DESIGN.md §9). On ne pose PAS font-family ici pour ne pas écraser
+   `.voix-recit` (qui doit l'emporter). */
 .lecture-texte {
   margin: 0;
-  font: var(--text-body-lg);
+  font-size: 1.125rem;
+  font-weight: 400;
+  line-height: 1.6;
   color: var(--text-primary);
 }
 

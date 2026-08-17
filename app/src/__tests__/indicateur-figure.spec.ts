@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import IndicatorFigure from '../components/fiche/IndicatorFigure.vue'
 import { indicateursDemographieFixture, metadonneesThemesFixtures } from '../payload/fixtures'
-import type { Indicateur } from '../payload/types'
+import type { Indicateur, Theme } from '../payload/types'
 
 /**
  * IndicatorFigure - the fiche's indicator number (ui-elements.md
@@ -28,12 +28,14 @@ function monter(props: Partial<{
   labelsDetail: Record<string, string>
   signe: boolean
   large: boolean
+  theme: Theme
 }>) {
   const wrapper = mount(IndicatorFigure, {
     props: {
       clef: 'densite',
       lignes: [],
       libelle: 'Densité de population',
+      theme: 'demographie',
       ...props,
     },
   })
@@ -64,16 +66,39 @@ describe('IndicatorFigure — the single-value figure', () => {
     expect(wrapper.find('.figure-indicateur-libelle').text()).toBe('Densité de population')
   })
 
-  it('renders the rank-in-context chip when a rank exists', () => {
+  it('renders the rank-in-context chip with its direction glyph and accessible phrase', () => {
     const wrapper = monter({ clef: 'densite', lignes: [ligne('densite')] })
 
-    expect(wrapper.find('.puce-rang').text()).toBe("1er/2 de l'EPCI")
+    const puce = wrapper.find('.puce-rang')
+    // le glyphe ▲ (plus = mieux) accompagne le rang, jamais sans texte accessible
+    expect(puce.text()).toBe("▲ 1er/2 de l'EPCI")
+    // le nom accessible fiable : role="img" + aria-label portent la phrase
+    // complète (un span générique nu avec aria-label ne le porterait pas) ;
+    // le glyphe est purement décoratif (aria-hidden).
+    expect(puce.attributes('role')).toBe('img')
+    expect(puce.attributes('title')).toBe("1er/2 de l'EPCI — plus = mieux")
+    expect(puce.attributes('aria-label')).toBe("1er/2 de l'EPCI — plus = mieux")
+    expect(puce.find('.puce-rang-glyphe').attributes('aria-hidden')).toBe('true')
   })
 
   it('renders no chip when every rank is null (the région ranks nowhere)', () => {
     const wrapper = monter({ clef: 'densite', lignes: [ligne('densite', null, '53')] })
 
     expect(wrapper.find('.puce-rang').exists()).toBe(false)
+  })
+
+  it('wears the quiet position accent on the card edge — top third strong, bottom third none', () => {
+    // 22001 : 1er/2 de l'EPCI → tiers supérieur → liseré fort sur la carte
+    const fort = monter({ clef: 'densite', lignes: [ligne('densite')] })
+    expect(fort.find('.figure-indicateur').classes()).toContain('carte-figure--accent-fort')
+    // le chip reste une encre neutre — aucun graisse/opacité lié à l'accent
+    expect(fort.find('.puce-rang').classes()).not.toContain('puce-rang--fort')
+    expect(fort.find('.puce-rang').classes()).not.toContain('puce-rang--faible')
+
+    // 22002 : 2e/2 de l'EPCI → tiers inférieur → aucun liseré
+    const aucun = monter({ clef: 'densite', lignes: [ligne('densite', null, '22002')] })
+    expect(aucun.find('.figure-indicateur').classes()).not.toContain('carte-figure--accent-fort')
+    expect(aucun.find('.figure-indicateur').classes()).not.toContain('carte-figure--accent-faible')
   })
 
   it('always renders the vintage stamp — source, both dates, never optional', () => {

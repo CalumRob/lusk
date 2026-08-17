@@ -13,14 +13,20 @@
  */
 import { computed } from 'vue'
 
+import PuceRang from '@/components/fiche/PuceRang.vue'
 import {
+  detailsRangEnContexte,
   formaterNombreFR,
   formaterValeur,
   formaterVintage,
-  rangEnContexte,
   ratioOffreCyclable,
 } from '@/payload/selectors'
-import type { Indicateur } from '@/payload/types'
+import type { Indicateur, Theme } from '@/payload/types'
+import {
+  directionIndicateur,
+  puceRangDirection,
+} from '@/fiche/figureGrammaire'
+import type { PuceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = defineProps<{
   clef: string
@@ -30,6 +36,8 @@ const props = defineProps<{
   reseaux: Indicateur[]
   libelle: string
   labelsDetail?: Record<string, string>
+  /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
+  theme: Theme
 }>()
 
 /** Le headline — le ratio total ÷ réseau c, app-side depuis les lignes du payload. */
@@ -65,12 +73,23 @@ const segments = computed<Segment[]>(() => {
 
 const vintage = computed(() => (props.lignes[0] ? formaterVintage(props.lignes[0]) : null))
 
-const rangProtege = computed(() => (protege.value ? rangEnContexte(protege.value) : null))
-const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value) : null))
+/** La direction du classement — dérivée du registre Méthodes (#367). */
+const direction = computed(() => directionIndicateur(props.theme, props.clef))
+
+/** La puce de rang directionnelle d'une ligne — glyphe + phrase accessible. */
+function pucePour(ligne: Indicateur | null): PuceRangDirection | null {
+  if (!ligne || !direction.value) return null
+  const details = detailsRangEnContexte(ligne)
+  if (!details) return null
+  return puceRangDirection(details.libelle, direction.value)
+}
+
+const puceProtege = computed(() => pucePour(protege.value))
+const pucePartage = computed(() => pucePour(partage.value))
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-offre-cyclable" :data-clef="clef">
+  <figure class="figure-indicateur figure-offre-cyclable carte-figure" :data-clef="clef">
     <div class="figure-offre-cyclable-tete">
       <span class="valeur-numerique">{{ pourcentage ?? '—' }}</span>
       <span class="valeur-unite">de l’infrastructure routière</span>
@@ -97,7 +116,7 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
         </span>
         <span class="tranche-valeur">{{ formaterValeur(protege) ?? '—' }}</span>
         <span class="tranche-unite">{{ protege.unit }}</span>
-        <span v-if="rangProtege" class="puce-rang">{{ rangProtege }}</span>
+        <PuceRang v-if="puceProtege" :puce="puceProtege" />
       </li>
       <li v-if="partage" class="tranche">
         <span class="tranche-libelle">
@@ -105,7 +124,7 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
         </span>
         <span class="tranche-valeur">{{ formaterValeur(partage) ?? '—' }}</span>
         <span class="tranche-unite">{{ partage.unit }}</span>
-        <span v-if="rangPartage" class="puce-rang">{{ rangPartage }}</span>
+        <PuceRang v-if="pucePartage" :puce="pucePartage" />
       </li>
     </ul>
 
@@ -191,17 +210,6 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-tertiary);
-}
-
-.puce-rang {
-  align-self: flex-start;
-  margin: var(--space-1) 0 0;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--couleur-soft, var(--surface-tertiary));
-  color: var(--couleur-strong, var(--brand-700));
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
 }
 
 .estampille-vintage {

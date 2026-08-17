@@ -94,7 +94,8 @@ describe('OngletTheme — the two metadata subgroups (3 indicateurs)', () => {
     const wrapper = await monter('22001')
 
     const effectifs = wrapper.find('.figure-indicateur[data-clef="effectifs_salaries"]')
-    expect(effectifs.find('.puce-rang').text()).toBe("29e/38 de l'EPCI")
+    // effectifs_salaries : plus = mieux → glyphe ▲ (issue #371)
+    expect(effectifs.find('.puce-rang').text()).toBe("▲ 29e/38 de l'EPCI")
   })
 })
 
