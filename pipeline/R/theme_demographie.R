@@ -198,14 +198,14 @@ pivoter_age <- function(long) {
                        values_from = OBS_VALUE)
 
   # La garde de complétude de la SOURCE (issue #390) : le pivot ne fabrique une
-  # colonne que pour les couples (AGE, SEX) réellement OBSERVÉS. Si la source
-  # réelle perd une tranche ou un sexe (fichier tronqué, code AGE renommé d'un
-  # millésime à l'autre, statut OBS_STATUS != "A" sur une tranche entière), la
-  # colonne manque tout simplement — et sans cette garde, `dplyr::rename` plus
-  # bas échouerait avec un message d'outil illisible, ou pire, un `any_of`
-  # complaisant laisserait passer une pyramide amputée. On exige donc les 14
-  # couples ATTENDUS (le contrat, pas l'observé) et on nomme précisément ce qui
-  # manque.
+  # colonne que pour les couples (AGE, SEX) réellement OBSERVÉS *quelque part*.
+  # Si la source réelle perd une tranche ou un sexe (fichier tronqué, code AGE
+  # renommé d'un millésime à l'autre, statut OBS_STATUS != "A" sur une tranche
+  # entière), la colonne manque tout simplement — et sans cette garde,
+  # `dplyr::rename` plus bas échouerait avec un message d'outil illisible, ou
+  # pire, un `any_of` complaisant laisserait passer une pyramide amputée. On
+  # exige donc les 14 couples ATTENDUS (le contrat, pas l'observé) et on nomme
+  # précisément ce qui manque.
   attendues <- paste0(
     rep(AGE_CODES_STRUCTURE, times = length(SEXES_STRUCTURE_AGE)),
     "_",
@@ -218,6 +218,24 @@ pivoter_age <- function(long) {
          length(AGE_CODES_STRUCTURE), " tranches × ",
          length(SEXES_STRUCTURE_AGE), " sexes) ; manquent : ",
          paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # Garde de complétude PAR COMMUNE (révision revue, issue #390) : la garde
+  # ci-dessus ne voit que les colonnes manquantes GLOBALEMENT. Or le pivot
+  # produit une colonne dès qu'UNE commune porte le couple — une commune qui
+  # perd UNE paire (fichier localement troué, code AGE mal décodé pour ELLE
+  # seule, statut non « A » sur sa seule ligne) voit sa cellule devenir NA,
+  # tandis que la colonne persiste grâce aux autres communes. La pyramide de
+  # CETTE commune se publierait alors à un étage troué, sans un mot. On exige
+  # donc que CHAQUE GEO porte les 14 couples, sans aucune cellule NA, et on
+  # nomme la (les) commune(s) estropiée(s).
+  incompletes <- bandes_sexe %>%
+    dplyr::filter(dplyr::if_any(dplyr::all_of(attendues), is.na)) %>%
+    dplyr::pull(GEO)
+  if (length(incompletes) > 0) {
+    stop("Source PRINC incomplète : la structure par âge a des couples âge×sexe ",
+         "manquants (cellule NA) pour ", length(incompletes), " commune(s) : ",
+         paste(incompletes, collapse = ", "), ".", call. = FALSE)
   }
 
   # agrégat moins de 20 ans (sexe total _T) — le rang scalaire de structure_age

@@ -139,6 +139,31 @@ test_that("pivoter_age : une TRANCHE entièrement absente (ses deux sexes) -> er
   expect_error(pivoter_age(tronquee), "Y55T64_M")
 })
 
+test_that("pivoter_age : une commune sans UNE paire (les autres communes la portent) -> erreur nommée", {
+  # piège de revue (révision issue #390) : 29001 perd Y_GE80_F, MAIS 22001 le
+  # porte toujours. La colonne Y_GE80_F existe donc GLOBALEMENT — la garde
+  # historique (colonnes manquantes) la laissait passer, et la pyramide de
+  # 29001 se publiait à un étage troué, pour elle seule. La garde PAR COMMUNE
+  # doit nommer 29001 (la cellule NA), jamais inventer une part.
+  estropiee <- age_mini[!(age_mini$GEO == "29001" & age_mini$SEX == "F" &
+                           age_mini$AGE == "Y_GE80"), ]
+
+  expect_error(pivoter_age(estropiee), "incompl")
+  expect_error(pivoter_age(estropiee), "29001")
+})
+
+test_that("pivoter_age : deux communes dont une sans UNE paire différente -> les deux nommées", {
+  # 22001 perd Y_LT15_M, 29001 perd Y_GE80_F : deux trous, deux communes, la
+  # garde PAR COMMUNE les liste toutes les deux (pas seulement la première).
+  estropiee <- age_mini[
+    !(age_mini$GEO == "22001" & age_mini$SEX == "M" & age_mini$AGE == "Y_LT15") &
+      !(age_mini$GEO == "29001" & age_mini$SEX == "F" & age_mini$AGE == "Y_GE80"),
+  ]
+
+  expect_error(pivoter_age(estropiee), "22001")
+  expect_error(pivoter_age(estropiee), "29001")
+})
+
 test_that("pivoter_age : une tranche écartée par son statut (OBS_STATUS != « A ») -> erreur, jamais un trou muet", {
   # le piège réaliste : la donnée EXISTE dans le fichier mais son statut la
   # rend inutilisable — le filtre la retire, la colonne disparaît. La garde
