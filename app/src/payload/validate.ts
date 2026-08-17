@@ -427,7 +427,7 @@ export function validerIndicateurs(
   const reference = indexerReference(territoires)
   const vus = new Set<string>()
 
-  return lignes.map((ligne, i) => {
+  const result = lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
     exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque ligne doit être un objet')
     verifierReference(ligne, reference, fichier, ligneIndexee)
@@ -543,7 +543,7 @@ function verifierPairesSexe(indicateurs: Indicateur[], fichier: string): void {
     }
     groupes.get(cle)!.lignes.push(l)
   }
-  for (const [cle, groupe] of groupes) {
+  for (const [, groupe] of groupes) {
     const details = [...new Set(groupe.lignes.map((l) => l.detail as string))]
     const paires = new Set(groupe.lignes.map((l) => `${l.detail}\u0000${l.sex}`))
     for (const detail of details) {
