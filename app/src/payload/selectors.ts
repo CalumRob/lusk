@@ -529,6 +529,31 @@ export function rangEnContexte(indicateur: Indicateur): string | null {
   return null
 }
 
+/** The structured rank-in-context facts of the nearest available comparison
+ *  group — the numeric rank + group size + the formatted chip. The grammar
+ *  seam (#371) reads these to dress the chip with its direction glyph and its
+ *  quiet rank-position accent; the iteration mirrors rangEnContexte (nearest
+ *  group first), the facts it returns are the ones the chip needs. */
+export interface DetailsRang {
+  /** The ordinal position (1 = best, ADR-0015). */
+  rang: number
+  /** The group size of the chosen level (« / Y »), or null when absent. */
+  taille: number | null
+  /** The formatted chip, e.g. « 3e/41 de l'EPCI ». */
+  libelle: string
+}
+
+export function detailsRangEnContexte(indicateur: Indicateur): DetailsRang | null {
+  for (const colonne of COLONNES_RANG) {
+    const rang = indicateur[colonne]
+    if (rang === null) continue
+    const taille = indicateur[TAILLE_RANG[colonne]]
+    const libelle = formaterRang(rang, taille, colonne)
+    if (libelle !== null) return { rang, taille, libelle }
+  }
+  return null
+}
+
 /** French number: comma decimal separator, thin-space thousands, zeros trimmed. */
 export function formaterNombreFR(x: number, decimalesMax: number): string {
   const fixe = x.toFixed(decimalesMax)

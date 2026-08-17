@@ -13,8 +13,13 @@
  */
 import { computed } from 'vue'
 
-import { formaterValeur, formaterVintage, rangEnContexte } from '@/payload/selectors'
-import type { Indicateur } from '@/payload/types'
+import { detailsRangEnContexte, formaterValeur, formaterVintage } from '@/payload/selectors'
+import type { Indicateur, Theme } from '@/payload/types'
+import {
+  accentPositionRang,
+  directionIndicateur,
+  puceRangDirection,
+} from '@/fiche/figureGrammaire'
 
 const props = defineProps<{
   clef: string
@@ -23,6 +28,8 @@ const props = defineProps<{
   labelsDetail?: Record<string, string>
   signe?: boolean
   large?: boolean
+  /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
+  theme: Theme
 }>()
 
 const premiere = computed(() => props.lignes[0] ?? null)
@@ -51,7 +58,28 @@ const valeur = computed(() => {
 
 const unite = computed(() => premiere.value?.unit ?? '')
 
-const rang = computed(() => (premiere.value ? rangEnContexte(premiere.value) : null))
+const detailsRang = computed(() =>
+  premiere.value ? detailsRangEnContexte(premiere.value) : null,
+)
+
+/** La direction du classement — dérivée du registre Méthodes, jamais dupliquée
+ *  app-side (#367). null = pas de glyphe (un indicateur hors registre). */
+const direction = computed(() => directionIndicateur(props.theme, props.clef))
+
+/** La puce de rang directionnelle — glyphe + phrase accessible (#367). */
+const puce = computed(() =>
+  detailsRang.value && direction.value
+    ? puceRangDirection(detailsRang.value.libelle, direction.value)
+    : null,
+)
+
+/** L'accent discret de position du rang : tiers supérieur « fort », médian
+ *  « faible », inférieur muet — encre neutre, sans couleur de statut (#371). */
+const accent = computed(() =>
+  detailsRang.value
+    ? accentPositionRang(detailsRang.value.rang, detailsRang.value.taille)
+    : null,
+)
 
 const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value) : null))
 
@@ -115,7 +143,16 @@ const segments = computed<Segment[]>(() => {
     </div>
 
     <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
-    <p v-if="rang && !multi" class="puce-rang">{{ rang }}</p>
+    <p
+      v-if="puce && !multi"
+      class="puce-rang"
+      :class="accent ? `puce-rang--${accent}` : null"
+      :title="puce.phrase"
+      :aria-label="puce.phrase"
+    >
+      <span class="puce-rang-glyphe" aria-hidden="true">{{ puce.glyphe + ' ' }}</span>
+      <span class="puce-rang-texte">{{ puce.rang }}</span>
+    </p>
     <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
   </figure>
 </template>
@@ -170,6 +207,23 @@ const segments = computed<Segment[]>(() => {
   color: var(--couleur-strong, var(--brand-700));
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
+}
+
+/* Le glyphe de direction — purement visuel, l'aria-label porte la phrase (#367). */
+.puce-rang-glyphe {
+  margin-right: 0.3em;
+  font-weight: 700;
+}
+
+/* L'accent discret de position du rang scalaire (#371) : encre neutre, aucune
+   couleur de statut — le tiers supérieur se densifie, le médian s'atténue,
+   l'inférieur reste sans accent. */
+.puce-rang--fort {
+  font-weight: 700;
+}
+
+.puce-rang--faible {
+  opacity: 0.6;
 }
 
 .estampille-vintage {

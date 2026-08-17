@@ -14,13 +14,18 @@
 import { computed } from 'vue'
 
 import {
+  detailsRangEnContexte,
   formaterNombreFR,
   formaterValeur,
   formaterVintage,
-  rangEnContexte,
   ratioOffreCyclable,
 } from '@/payload/selectors'
-import type { Indicateur } from '@/payload/types'
+import type { Indicateur, Theme } from '@/payload/types'
+import {
+  accentPositionRang,
+  directionIndicateur,
+  puceRangDirection,
+} from '@/fiche/figureGrammaire'
 
 const props = defineProps<{
   clef: string
@@ -30,6 +35,8 @@ const props = defineProps<{
   reseaux: Indicateur[]
   libelle: string
   labelsDetail?: Record<string, string>
+  /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
+  theme: Theme
 }>()
 
 /** Le headline — le ratio total ÷ réseau c, app-side depuis les lignes du payload. */
@@ -65,8 +72,22 @@ const segments = computed<Segment[]>(() => {
 
 const vintage = computed(() => (props.lignes[0] ? formaterVintage(props.lignes[0]) : null))
 
-const rangProtege = computed(() => (protege.value ? rangEnContexte(protege.value) : null))
-const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value) : null))
+/** La direction du classement — dérivée du registre Méthodes (#367). */
+const direction = computed(() => directionIndicateur(props.theme, props.clef))
+
+/** La puce de rang directionnelle d'une ligne — glyphe + phrase accessible. */
+function pucePour(ligne: Indicateur | null) {
+  if (!ligne || !direction.value) return null
+  const details = detailsRangEnContexte(ligne)
+  if (!details) return null
+  return {
+    ...puceRangDirection(details.libelle, direction.value),
+    accent: accentPositionRang(details.rang, details.taille),
+  }
+}
+
+const puceProtege = computed(() => pucePour(protege.value))
+const pucePartage = computed(() => pucePour(partage.value))
 </script>
 
 <template>
@@ -97,7 +118,16 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
         </span>
         <span class="tranche-valeur">{{ formaterValeur(protege) ?? '—' }}</span>
         <span class="tranche-unite">{{ protege.unit }}</span>
-        <span v-if="rangProtege" class="puce-rang">{{ rangProtege }}</span>
+        <span
+          v-if="puceProtege"
+          class="puce-rang"
+          :class="puceProtege.accent ? `puce-rang--${puceProtege.accent}` : null"
+          :title="puceProtege.phrase"
+          :aria-label="puceProtege.phrase"
+        >
+          <span class="puce-rang-glyphe" aria-hidden="true">{{ puceProtege.glyphe + ' ' }}</span>
+          <span class="puce-rang-texte">{{ puceProtege.rang }}</span>
+        </span>
       </li>
       <li v-if="partage" class="tranche">
         <span class="tranche-libelle">
@@ -105,7 +135,16 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
         </span>
         <span class="tranche-valeur">{{ formaterValeur(partage) ?? '—' }}</span>
         <span class="tranche-unite">{{ partage.unit }}</span>
-        <span v-if="rangPartage" class="puce-rang">{{ rangPartage }}</span>
+        <span
+          v-if="pucePartage"
+          class="puce-rang"
+          :class="pucePartage.accent ? `puce-rang--${pucePartage.accent}` : null"
+          :title="pucePartage.phrase"
+          :aria-label="pucePartage.phrase"
+        >
+          <span class="puce-rang-glyphe" aria-hidden="true">{{ pucePartage.glyphe + ' ' }}</span>
+          <span class="puce-rang-texte">{{ pucePartage.rang }}</span>
+        </span>
       </li>
     </ul>
 
@@ -202,6 +241,19 @@ const rangPartage = computed(() => (partage.value ? rangEnContexte(partage.value
   color: var(--couleur-strong, var(--brand-700));
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
+}
+
+.puce-rang-glyphe {
+  margin-right: 0.3em;
+  font-weight: 700;
+}
+
+.puce-rang--fort {
+  font-weight: 700;
+}
+
+.puce-rang--faible {
+  opacity: 0.6;
 }
 
 .estampille-vintage {

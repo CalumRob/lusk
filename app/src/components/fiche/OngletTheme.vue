@@ -237,6 +237,7 @@ const lignesReseaux = computed(
               :reseaux="lignesReseaux"
               :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
               :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
+              :theme="theme"
             />
             <IndicatorFigure
               v-else
@@ -246,6 +247,7 @@ const lignesReseaux = computed(
               :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
+              :theme="theme"
             />
           </div>
           <IndicatorFigure
@@ -257,6 +259,7 @@ const lignesReseaux = computed(
             :labels-detail="labelsDetailPour(figure.key)"
             :large="figureLarge(figure.key)"
             :signe="figureSigne(figure.key)"
+            :theme="theme"
           />
         </div>
       </section>
