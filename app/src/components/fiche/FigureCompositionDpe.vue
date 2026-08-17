@@ -13,7 +13,7 @@ import { computed } from 'vue'
 
 import { formaterValeur, formaterVintage } from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
-import { ORDRE_DPE, couleurDpe } from '@/fiche/couleursDpe'
+import { ORDRE_DPE, couleurDpe, couleurTexteDpe } from '@/fiche/couleursDpe'
 
 const props = defineProps<{
   clef: string
@@ -42,7 +42,7 @@ const parts = computed<Part[]>(() => {
     .filter((ligne): ligne is Indicateur => ligne !== undefined)
     .map((ligne) => ({
       etiquette: ligne.detail ?? '',
-      libelle: props.labelsDetail?.[ligne.detail ?? ''] ?? ligne.detail ?? '',
+      libelle: props.labelsDetail?.[ligne.detail ?? ''] ?? '',
       texte: formaterValeur(ligne) ?? '—',
       unite: ligne.unit,
       largeur: total > 0 ? ((ligne.value ?? 0) / total) * 100 : 0,
@@ -59,7 +59,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-composition-dpe" :data-clef="clef">
+  <figure class="figure-indicateur figure-composition-dpe carte-figure" :data-clef="clef">
     <div
       v-if="parts.length > 0"
       class="barre-segmentee barre-dpe"
@@ -78,7 +78,12 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
     <ul v-if="parts.length > 0" class="liste-dpe">
       <li v-for="part in parts" :key="part.etiquette" class="dpe-part">
-        <span class="dpe-lettre" :data-etiquette="part.etiquette" :style="{ background: part.couleur }">{{ part.etiquette }}</span>
+        <span
+          class="dpe-lettre"
+          :data-etiquette="part.etiquette"
+          :style="{ background: part.couleur, color: couleurTexteDpe(part.etiquette) }"
+          >{{ part.etiquette }}</span
+        >
         <span class="dpe-libelle">{{ part.libelle }}</span>
         <span class="dpe-valeur">{{ part.texte }}{{ part.unite }}</span>
       </li>
@@ -119,18 +124,15 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
   width: 1.4em;
   text-align: center;
   border-radius: var(--radius-sm);
-  color: #fff;
   font-family: var(--font-sans);
   font-weight: 700;
   font-size: 0.75rem;
   line-height: 1.4;
 }
 
-/* C (jaune) et D (orange) — texte sombre pour le contraste (WCAG 2.2). */
-.dpe-part:nth-child(3) .dpe-lettre,
-.dpe-part:nth-child(4) .dpe-lettre {
-  color: #1a1a1a;
-}
+/* Le contraste de texte est clé sur la LETTRE (A–G), jamais sur la position
+   CSS : C (jaune) et D (orange) portent un texte sombre, appliqué en ligne
+   depuis couleurTexteDpe — un jeu partiel A–G rend donc correctement. */
 
 .dpe-libelle {
   font: var(--text-caption);

@@ -28,3 +28,11 @@ export const COULEURS_DPE: Readonly<Record<EtiquetteDpe, string>> = {
 export function couleurDpe(etiquette: string): string | null {
   return (COULEURS_DPE as Record<string, string>)[etiquette] ?? null
 }
+
+/** La couleur de texte lisible sur l'étiquette (contraste WCAG 2.2) — clé sur
+ *  la LETTRE (A–G), jamais sur la position : les étiquettes claires (C jaune,
+ *  D orange) portent un texte sombre, les autres (A/B/E/F/G) un texte blanc.
+ *  Un jeu partiel A–G rend donc son contraste correctement. */
+export function couleurTexteDpe(etiquette: string): string {
+  return etiquette === 'C' || etiquette === 'D' ? '#1a1a1a' : '#ffffff'
+}

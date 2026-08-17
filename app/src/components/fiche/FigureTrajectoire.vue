@@ -37,7 +37,9 @@ const points = computed<Point[]>(() => {
     .map((p) => p.ligne)
   const autres = avecValeur.filter((l) => !Number.isFinite(Number(l.detail)))
   return [...numeriques, ...autres].map((ligne) => ({
-    annee: props.labelsDetail?.[ligne.detail ?? ''] ?? (ligne.detail as string),
+    // le libellé de millésime vient de la métadonnée (jamais une clé brute) ;
+    // sans labelsDetail le point rend son année vide, jamais sa clé (« M2 »).
+    annee: props.labelsDetail?.[ligne.detail ?? ''] ?? '',
     texte: formaterValeur(ligne) ?? '—',
     valeur: ligne.value ?? 0,
   }))
@@ -67,7 +69,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-trajectoire" :data-clef="clef">
+  <figure class="figure-indicateur figure-trajectoire carte-figure" :data-clef="clef">
     <svg
       v-if="chemin"
       class="trajectoire-ligne"

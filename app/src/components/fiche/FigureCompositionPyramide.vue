@@ -43,7 +43,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-pyramide-age" :data-clef="clef">
+  <figure class="figure-indicateur figure-pyramide-age carte-figure" :data-clef="clef">
     <div class="legende-pyramide" aria-hidden="true">
       <span class="legende-pyramide-hommes">Hommes</span>
       <span class="legende-pyramide-femmes">Femmes</span>

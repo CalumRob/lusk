@@ -144,7 +144,7 @@ const lignesReseaux = computed(
              resolved row's values, the reading's compact figure and its
              exhaustive source. -->
         <div v-if="groupe.lecture" class="sous-groupe-lecture">
-          <p class="lecture-texte">
+          <p class="lecture-texte voix-recit">
             <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
               <NoeudLecture
                 :noeud="noeud"
@@ -327,9 +327,15 @@ const lignesReseaux = computed(
   box-shadow: var(--shadow-subtle);
 }
 
+/* La phrase de lecture porte la voix récit (serif) — la classe utilitaire
+   globale `.voix-recit` pose la famille, jamais la voix corps Manrope
+   (DESIGN.md §9). On ne pose PAS font-family ici pour ne pas écraser
+   `.voix-recit` (qui doit l'emporter). */
 .lecture-texte {
   margin: 0;
-  font: var(--text-body-lg);
+  font-size: 1.125rem;
+  font-weight: 400;
+  line-height: 1.6;
   color: var(--text-primary);
 }
 

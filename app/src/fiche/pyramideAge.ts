@@ -39,6 +39,9 @@ export function estPyramideSexuee(lignes: Indicateur[]): boolean {
   const bandesParSexe: Record<'F' | 'M', Set<string>> = { F: new Set(), M: new Set() }
   for (const l of sexuees) {
     if (l.detail == null) return false
+    // une tranche hors du contrat ORDRE_AGE (les sept fixes) n'est pas une
+    // pyramide — on refuse toute forme sexuée qui s'en écarte.
+    if (!ORDRE_AGE.includes(l.detail as TrancheAge)) return false
     if (l.sex !== 'F' && l.sex !== 'M') return false
     // une même paire (detail, sex) ne doit apparaître qu'une fois — pas de doublon
     const cle = `${l.sex}|${l.detail}`
@@ -95,7 +98,9 @@ export function bandesPyramideSexuee(
     const texteFemmes = f == null ? '—' : (formaterValeur(entree!.F!) ?? '—')
     return {
       tranche,
-      libelle: labelsDetail?.[tranche] ?? tranche,
+      // le libellé vient de la métadonnée (jamais une clé brute) ; sans
+      // labelsDetail la tranche rend son libellé vide, jamais sa clé (« <15 »).
+      libelle: labelsDetail?.[tranche] ?? '',
       valeurHommes: h,
       texteHommes,
       largeurHommes: h == null ? 0 : (h / max) * 100,

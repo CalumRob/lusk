@@ -13,6 +13,7 @@
  */
 import { computed } from 'vue'
 
+import PuceRang from '@/components/fiche/PuceRang.vue'
 import {
   detailsRangEnContexte,
   formaterNombreFR,
@@ -22,10 +23,10 @@ import {
 } from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
 import {
-  accentPositionRang,
   directionIndicateur,
   puceRangDirection,
 } from '@/fiche/figureGrammaire'
+import type { PuceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = defineProps<{
   clef: string
@@ -76,14 +77,11 @@ const vintage = computed(() => (props.lignes[0] ? formaterVintage(props.lignes[0
 const direction = computed(() => directionIndicateur(props.theme, props.clef))
 
 /** La puce de rang directionnelle d'une ligne — glyphe + phrase accessible. */
-function pucePour(ligne: Indicateur | null) {
+function pucePour(ligne: Indicateur | null): PuceRangDirection | null {
   if (!ligne || !direction.value) return null
   const details = detailsRangEnContexte(ligne)
   if (!details) return null
-  return {
-    ...puceRangDirection(details.libelle, direction.value),
-    accent: accentPositionRang(details.rang, details.taille),
-  }
+  return puceRangDirection(details.libelle, direction.value)
 }
 
 const puceProtege = computed(() => pucePour(protege.value))
@@ -91,7 +89,7 @@ const pucePartage = computed(() => pucePour(partage.value))
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-offre-cyclable" :data-clef="clef">
+  <figure class="figure-indicateur figure-offre-cyclable carte-figure" :data-clef="clef">
     <div class="figure-offre-cyclable-tete">
       <span class="valeur-numerique">{{ pourcentage ?? '—' }}</span>
       <span class="valeur-unite">de l’infrastructure routière</span>
@@ -118,16 +116,7 @@ const pucePartage = computed(() => pucePour(partage.value))
         </span>
         <span class="tranche-valeur">{{ formaterValeur(protege) ?? '—' }}</span>
         <span class="tranche-unite">{{ protege.unit }}</span>
-        <span
-          v-if="puceProtege"
-          class="puce-rang"
-          :class="puceProtege.accent ? `puce-rang--${puceProtege.accent}` : null"
-          :title="puceProtege.phrase"
-          :aria-label="puceProtege.phrase"
-        >
-          <span class="puce-rang-glyphe" aria-hidden="true">{{ puceProtege.glyphe + ' ' }}</span>
-          <span class="puce-rang-texte">{{ puceProtege.rang }}</span>
-        </span>
+        <PuceRang v-if="puceProtege" :puce="puceProtege" />
       </li>
       <li v-if="partage" class="tranche">
         <span class="tranche-libelle">
@@ -135,16 +124,7 @@ const pucePartage = computed(() => pucePour(partage.value))
         </span>
         <span class="tranche-valeur">{{ formaterValeur(partage) ?? '—' }}</span>
         <span class="tranche-unite">{{ partage.unit }}</span>
-        <span
-          v-if="pucePartage"
-          class="puce-rang"
-          :class="pucePartage.accent ? `puce-rang--${pucePartage.accent}` : null"
-          :title="pucePartage.phrase"
-          :aria-label="pucePartage.phrase"
-        >
-          <span class="puce-rang-glyphe" aria-hidden="true">{{ pucePartage.glyphe + ' ' }}</span>
-          <span class="puce-rang-texte">{{ pucePartage.rang }}</span>
-        </span>
+        <PuceRang v-if="pucePartage" :puce="pucePartage" />
       </li>
     </ul>
 
@@ -230,30 +210,6 @@ const pucePartage = computed(() => pucePour(partage.value))
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-tertiary);
-}
-
-.puce-rang {
-  align-self: flex-start;
-  margin: var(--space-1) 0 0;
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--couleur-soft, var(--surface-tertiary));
-  color: var(--couleur-strong, var(--brand-700));
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-}
-
-.puce-rang-glyphe {
-  margin-right: 0.3em;
-  font-weight: 700;
-}
-
-.puce-rang--fort {
-  font-weight: 700;
-}
-
-.puce-rang--faible {
-  opacity: 0.6;
 }
 
 .estampille-vintage {
