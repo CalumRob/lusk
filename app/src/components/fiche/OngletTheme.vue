@@ -149,70 +149,73 @@ const lignesReseaux = computed(
              exhaustive source. -->
         <div v-if="groupe.lecture" class="sous-groupe-lecture">
           <div class="lecture-ligne">
-          <p class="lecture-texte voix-recit">
-            <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
-              <NoeudLecture
-                :noeud="noeud"
-                :parametres="groupe.lecture.parametres"
-                :nom-territoire="nomTerritoire"
+            <p class="lecture-texte voix-recit">
+              <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
+                <NoeudLecture
+                  :noeud="noeud"
+                  :parametres="groupe.lecture.parametres"
+                  :nom-territoire="nomTerritoire"
+                />
+              </template>
+            </p>
+
+            <div class="lecture-figure">
+              <p
+                v-if="
+                  descriptionNuageComputed &&
+                  (groupe.figureLecture?.genre === 'soldes' ||
+                    groupe.figureLecture?.genre === 'distribution')
+                "
+                class="lecture-contexte"
+              >
+                {{ descriptionNuageComputed.prepositionCourant }}
+                <span class="lecture-courant">{{ descriptionNuageComputed.nomCourant }}</span>
+                et {{ descriptionNuageComputed.groupe }}
+                <RouterLink
+                  v-if="descriptionNuageComputed.conteneur"
+                  class="lecture-conteneur"
+                  :to="{
+                    name: 'territoire',
+                    params: {
+                      type: descriptionNuageComputed.conteneur.type,
+                      id: descriptionNuageComputed.conteneur.code,
+                    },
+                  }"
+                >
+                  {{ descriptionNuageComputed.conteneur.nom }}
+                </RouterLink>
+              </p>
+
+              <GraphiqueSoldes
+                v-if="groupe.figureLecture?.genre === 'soldes'"
+                :taux-naturel="groupe.figureLecture.tauxNaturel"
+                :taux-migratoire="groupe.figureLecture.tauxMigratoire"
+                :classification="groupe.figureLecture.classification"
+                :nom="groupe.figureLecture.nom"
+                :nuage="groupe.figureLecture.nuage"
               />
-            </template>
-          </p>
+              <GraphiqueDistributionMobilite
+                v-else-if="groupe.figureLecture?.genre === 'distribution'"
+                :distribution="groupe.figureLecture.distribution"
+                :mediane="groupe.figureLecture.mediane"
+                :mediane-velo="groupe.figureLecture.medianeVelo"
+                :modes="groupe.figureLecture.modes"
+                :nom="groupe.figureLecture.nom"
+                :nuage="groupe.figureLecture.nuage"
+              />
 
-          <p
-            v-if="
-              descriptionNuageComputed &&
-              (groupe.figureLecture?.genre === 'soldes' ||
-                groupe.figureLecture?.genre === 'distribution')
-            "
-            class="lecture-contexte"
-          >
-            {{ descriptionNuageComputed.prepositionCourant }}
-            <span class="lecture-courant">{{ descriptionNuageComputed.nomCourant }}</span>
-            et {{ descriptionNuageComputed.groupe }}
-            <RouterLink
-              v-if="descriptionNuageComputed.conteneur"
-              class="lecture-conteneur"
-              :to="{
-                name: 'territoire',
-                params: {
-                  type: descriptionNuageComputed.conteneur.type,
-                  id: descriptionNuageComputed.conteneur.code,
-                },
-              }"
-            >
-              {{ descriptionNuageComputed.conteneur.nom }}
-            </RouterLink>
-          </p>
-
-          <GraphiqueSoldes
-            v-if="groupe.figureLecture?.genre === 'soldes'"
-            :taux-naturel="groupe.figureLecture.tauxNaturel"
-            :taux-migratoire="groupe.figureLecture.tauxMigratoire"
-            :classification="groupe.figureLecture.classification"
-            :nom="groupe.figureLecture.nom"
-            :nuage="groupe.figureLecture.nuage"
-          />
-          <GraphiqueDistributionMobilite
-            v-else-if="groupe.figureLecture?.genre === 'distribution'"
-            :distribution="groupe.figureLecture.distribution"
-            :mediane="groupe.figureLecture.mediane"
-            :mediane-velo="groupe.figureLecture.medianeVelo"
-            :nom="groupe.figureLecture.nom"
-            :nuage="groupe.figureLecture.nuage"
-          />
-
-          <FigureListeLQ v-if="groupe.lignesLQ.length" :lignes="groupe.lignesLQ" />
-          <GraphiqueQuadrantMilieux
-            v-if="groupe.figureLecture?.genre === 'quadrant'"
-            :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
-            :delta-m2-par-habitant="groupe.figureLecture.deltaM2ParHabitant"
-            :classification="groupe.figureLecture.classification"
-            :nom="groupe.figureLecture.nom"
-            :periode-pop="groupe.figureLecture.periodePop"
-            :periode-artif="groupe.figureLecture.periodeArtif"
-            :nuage="groupe.figureLecture.nuage"
-          />
+              <FigureListeLQ v-if="groupe.lignesLQ.length" :lignes="groupe.lignesLQ" />
+              <GraphiqueQuadrantMilieux
+                v-if="groupe.figureLecture?.genre === 'quadrant'"
+                :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
+                :delta-m2-par-habitant="groupe.figureLecture.deltaM2ParHabitant"
+                :classification="groupe.figureLecture.classification"
+                :nom="groupe.figureLecture.nom"
+                :periode-pop="groupe.figureLecture.periodePop"
+                :periode-artif="groupe.figureLecture.periodeArtif"
+                :nuage="groupe.figureLecture.nuage"
+              />
+            </div>
           </div>
 
           <p v-if="groupe.source" class="lecture-source">
@@ -336,7 +339,14 @@ const lignesReseaux = computed(
   box-shadow: var(--shadow-subtle);
 }
 
-.lecture-ligne { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 200px); gap: var(--space-4); align-items: start; }
+.lecture-ligne {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 200px);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.lecture-figure { min-width: 0; }
 
 /* La phrase de lecture porte la voix récit (serif) — la classe utilitaire
    globale `.voix-recit` pose la famille, jamais la voix corps Manrope

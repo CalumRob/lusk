@@ -31,6 +31,7 @@ const props = defineProps<{
   distribution: DistributionMobilite
   mediane: number
   medianeVelo: number
+  modes: { t: string; b: string }
   nom: string
   nuage: PointNuageMobilite[]
 }>()
@@ -101,9 +102,9 @@ const libelleAccesible = computed(() => {
     .filter((s): s is string => s !== null)
     .join(' · ')
   return (
-    `${props.nom} — médiane ${formaterNombreFR(props.mediane, 0)} (à pied ou en transports en commun), ` +
-    `médiane vélo ${formaterNombreFR(props.medianeVelo, 0)} ` +
-    `à pied ou en transports en commun à 20 minutes. Distribution : ${distribution}. ` +
+    `${props.nom} — médiane ${formaterNombreFR(props.mediane, 0)} (${props.modes.t}), ` +
+    `médiane ${props.modes.b} ${formaterNombreFR(props.medianeVelo, 0)}. ` +
+    `Distribution : ${distribution}. ` +
     `Contexte : ${props.nuage.map((p) => `${p.nom} (${formaterNombreFR(p.divLoss, 0)})`).join(', ') || 'aucun'}.`
   )
 })
@@ -200,7 +201,7 @@ function optionGraphique(): echarts.EChartsCoreOption {
           symbol: 'none',
           lineStyle: { color: couleurDistribution, width: 1.5, type: 'dashed' },
           label: {
-            formatter: `médiane ${formaterNombreFR(props.mediane, 0)}`,
+            formatter: `${props.modes.t} — ${formaterNombreFR(props.mediane, 0)}`,
             fontSize: 10,
             color: couleurTexte,
           },
@@ -210,7 +211,7 @@ function optionGraphique(): echarts.EChartsCoreOption {
               xAxis: props.medianeVelo,
               lineStyle: { color: couleurNuage, width: 1.5, type: 'dashed' },
               label: {
-                formatter: `médiane vélo ${formaterNombreFR(props.medianeVelo, 0)}`,
+                formatter: `${props.modes.b} — ${formaterNombreFR(props.medianeVelo, 0)}`,
                 color: couleurTexte,
               },
             },
