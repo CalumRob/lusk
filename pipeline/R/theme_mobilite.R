@@ -113,9 +113,11 @@ construire_donnees_mobilite <- function(cache = "data/raw",
   )
   if (is.null(sources)) {
     sources <- construire_sources_offre_mobilite(cache)
-    sources$parkings_osm <- lire_parkings_osm(file.path(cache, fichier_source("osm_reseaux")))
-    sources$stations_service <- normaliser_bpe_b316(
-      lire_bpe_b316(file.path(cache, fichier_source("bpe_b316"))))
+    if (is.null(sources$parkings_osm))
+      sources$parkings_osm <- lire_parkings_osm(file.path(cache, fichier_source("osm_reseaux")))
+    if (is.null(sources$stations_service))
+      sources$stations_service <- normaliser_bpe_b316(
+        lire_bpe_b316(file.path(cache, fichier_source("bpe_b316"))))
   }
 
   readr::write_rds(table, sortie)
@@ -133,7 +135,7 @@ construire_donnees_mobilite <- function(cache = "data/raw",
     # matière du run report, portée par le seam d'entrée du run quand
     # l'orchestrateur le fournit (NULL pour les autres thèmes)
     couverture = amenagements$couverture
-  ), sources)
+  ), sources[setdiff(names(sources), c("parkings_osm", "stations_service"))])
 }
 
 # vintages_mobilite ------------------------------------------------------------
@@ -454,7 +456,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("voitures_menage", "reseaux",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
-          "places_stationnement_voiture_1000", "bornes_fuel", "tot_loss",
+           "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
+           "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
           "offre_cyclable",
           names(CLES_ISOLATION_MOBILITE)),
   libelle = c(
@@ -463,9 +466,11 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "Part des bâtiments près d’un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
-    "Places de stationnement voiture pour 1 000 hab.",
-    "Bornes de recharge par station-service",
-    "Perte totale d’accès",
+     "Places de stationnement voiture pour 1 000 hab.",
+     "Bornes de recharge par station-service",
+     "Places de stationnement vélo pour 1 place voiture",
+     "Perte totale d’accès — à pied ou en transports en commun",
+     "Perte totale d’accès — à vélo",
     "L’offre cyclable",
     "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
     "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
@@ -479,17 +484,17 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
     "stationnement-velo",
-    "osm_reseaux", "bpe_b316", "mobilite_snapshot",
+     "osm_reseaux", "bpe_b316", "osm_reseaux", "mobilite_snapshot", "mobilite_snapshot",
     c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
     "mobilite_snapshot", "mobilite_snapshot"
   ),
-  source_reference = c("rp_logement_princ",
-                       "amenagements_cyclables",
+   source_reference = c("rp_logement_princ", "amenagements_cyclables",
                         "korrigo", "bornes-recharges", "stationnement-velo",
-                        "osm_reseaux", "bpe_b316", "mobilite_snapshot", "osm_reseaux",
-                       rep("mobilite_snapshot", 5)),
-  multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 2L, 5L, rep(1L, 5))
+                        "osm_reseaux", "bpe_b316", "osm_reseaux",
+                        "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
+                        rep("mobilite_snapshot", 5)),
+   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5))
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -587,7 +592,13 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     ,places_stationnement_voiture_1000 = aligner(
       sous_bloc("places_stationnement_voiture_1000"),
       "places_stationnement_voiture_1000", "places / 1 000 hab")
-    ,bornes_fuel = aligner(sous_bloc("bornes_fuel"), "bornes_fuel", "bornes / station")
+     ,bornes_ev_par_station_service = aligner(
+       analytiques$offre_territoires %>% dplyr::filter(key == "bornes_ev_par_station_service") %>%
+         dplyr::select(dplyr::any_of(c("code", "value", "rider"))),
+       "bornes_ev_par_station_service", "bornes / station")
+     ,stationnement_velo_par_voiture = aligner(
+       sous_bloc("stationnement_velo_par_voiture"),
+       "stationnement_velo_par_voiture", "places vélo / place voiture")
   )
   rangs <- compute_ranks(territoires, tables, scalaires = list(),
                          directions = directions)
@@ -641,11 +652,11 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
       partage_longueur = "km", partage_km_1000 = "km / 1 000 hab",
       total_longueur = "km")
   )
-  tot_loss <- aligner_detail(
-    analytiques$tot_loss_territoires %>% tidyr::pivot_longer(
-      c(tot_loss_t, tot_loss_b), names_to = "detail", values_to = "value") %>%
-      dplyr::mutate(detail = sub("tot_loss_", "", detail), key = "tot_loss"),
-    "tot_loss", c(t = "services perdus", b = "services perdus"))
+  tot_loss <- analytiques$tot_loss_territoires %>% tidyr::pivot_longer(
+    c(tot_loss_t, tot_loss_b), names_to = "key", values_to = "value") %>%
+    dplyr::mutate(detail = NA_character_, unit = "accès perdus") %>%
+    dplyr::select(code, key, detail, value, unit) %>%
+    dplyr::filter(key %in% c("tot_loss_t", "tot_loss_b"))
 
   # le rang PAR DÉTAIL : chaque mesure est classée dans SON groupe de
   # comparaison (le percentile partagé de compute.R, jamais re-forké)
@@ -662,8 +673,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   )
   rangs_tot_loss <- construire_rangs_detail(
     analytiques$tot_loss_territoires %>% tidyr::pivot_longer(
-      c(tot_loss_t, tot_loss_b), names_to = "detail", values_to = "value") %>%
-      dplyr::transmute(code, key = "tot_loss", detail = sub("tot_loss_", "", detail), value),
+      c(tot_loss_t, tot_loss_b), names_to = "key", values_to = "value") %>%
+      dplyr::transmute(code, key, detail = NA_character_, value),
     territoires)
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
@@ -695,7 +706,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tables$bornes_recharge,
     tables$places_stationnement_velo_1000,
     tables$places_stationnement_voiture_1000,
-    tables$bornes_fuel,
+    tables$bornes_ev_par_station_service,
+    tables$stationnement_velo_par_voiture,
     tot_loss,
     dplyr::bind_rows(isolation),
     voitures,
@@ -934,7 +946,7 @@ validations_mobilite <- list(
   function(payload) {
     keys <- payload$indicateurs$key
     p <- payload$indicateurs$value[keys == "places_stationnement_voiture_1000"]
-    r <- payload$indicateurs$value[keys == "bornes_fuel"]
+    r <- payload$indicateurs$value[keys == "bornes_ev_par_station_service"]
     if (any(!is.na(c(p, r)) & c(p, r) < 0))
       stop("Payload invalide : stationnement voiture ou ratio EV/fuel négatif.", call. = FALSE)
     invisible(payload)
@@ -1068,8 +1080,10 @@ DIRECTIONS_MOBILITE <- list(
   bornes_recharge = "high",
   places_stationnement_velo_1000 = "high",
   places_stationnement_voiture_1000 = "low",
-  bornes_fuel = "high",
-  tot_loss = "low",
+  bornes_ev_par_station_service = "high",
+  stationnement_velo_par_voiture = "high",
+  tot_loss_t = "low",
+  tot_loss_b = "low",
   offre_cyclable = "high",
   div_loss_t = "low",
   div_loss_b = "low",
