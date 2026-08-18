@@ -123,7 +123,9 @@ export type FigureLecture =
       genre: 'distribution'
       distribution: DistributionMobilite
       mediane: number
-       medianeVelo: number
+      medianeVelo: number
+      /** Mode labels resolved from the payload classification vocabulary. */
+      modes: { t: string; b: string }
       nom: string
       nuage: PointNuageMobilite[]
     }
@@ -352,7 +354,8 @@ export function figureLecturePour(
   const histoire = lecture.histoire
   const nom = trouverTerritoire(payload, territoire)?.nom ?? territoire
   const metadata = payload.themeMetadata?.[histoire.theme]
-  const classificationLabel = (value: string) => metadata?.classification_labels?.[value] ?? ''
+  const classificationLabel = (value: string) =>
+    metadata?.classification_labels?.[value] ?? 'classification indisponible'
 
   if (lecture.story_key === 'trajectoire-demographique') {
     const h = histoire as HistoireDemographie
@@ -366,13 +369,20 @@ export function figureLecturePour(
     }
   }
 
-  if (lecture.story_key === 'vingt-minutes-sans-voiture') {
+  if (lecture.story_key === 'vingt-minutes-sans-voiture' || lecture.story_key === 'ce-que-le-velo-preserve') {
     const h = histoire as HistoireMobilite
+    // Mobility metadata predates classification_labels. Keep the fallback
+    // honest and human-readable; raw t/b keys must never reach a chart.
+    const modes = {
+      t: metadata?.classification_labels?.t ?? 'à pied ou en transports en commun',
+      b: metadata?.classification_labels?.b ?? 'à vélo',
+    }
     return {
       genre: 'distribution',
       distribution: distributionDe(h),
       mediane: h.div_loss_t,
       medianeVelo: h.div_loss_b,
+      modes,
       nom,
       nuage: nuageMobilite(payload, territoire) ?? [],
     }
@@ -411,13 +421,16 @@ export interface LigneLQ {
 }
 
 export function lignesLQPour(lecture: LectureSousGroupe): LigneLQ[] {
-  if (lecture.histoire.theme !== 'economie') return []
+  // Only the commune/EPCI/département specialisation story owns LQ. The
+  // regional presence story has different matter (part of the parc), and
+  // must not acquire an invented list merely because its theme is économie.
+  if (lecture.story_key !== 'ce-que-la-commune-abrite') return []
   const h = lecture.histoire
   const lignes: LigneLQ[] = []
   for (let rang = 1; rang <= 5; rang += 1) {
     const activite = h[`top${rang}_activity_label` as keyof typeof h] as string | null
     if (!activite) continue
-    lignes.push({ rang, activite, lq: h[`top${rang}_lq` as keyof typeof h] as number | null })
+    lignes.push({ rang, activite, lq: h[`top${rang}_lq` as keyof typeof h] as unknown as number | null })
   }
   return lignes
 }

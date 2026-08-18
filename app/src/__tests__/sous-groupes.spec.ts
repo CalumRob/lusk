@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   figureLecturePour,
+  lignesLQPour,
   sourceLecture,
   sousGroupesPourTerritoire,
 } from '../fiche/sousGroupes'
@@ -329,7 +330,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
       genre: 'soldes',
       tauxNaturel: 5.982905982905983,
       tauxMigratoire: 2.564102564102564,
-      classification: 'attire-renouvelle',
+      classification: 'classification indisponible',
       nom: 'Commune A1',
     })
     expect(figure?.nuage).toHaveLength(2)
@@ -352,7 +353,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     expect(figure.nuage).toHaveLength(2)
   })
 
-  it('rend AUCUNE figure pour la lecture vélo (la distribution est la matière du défaut)', () => {
+  it('rend la même distribution pour la lecture vélo, avec les deux marques de mode', () => {
     const payload = payloadDe(
       indicateursMobiliteFixture,
       histoiresMobiliteFixture,
@@ -362,7 +363,13 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     const lecture = lectureDe(sousGroupes[0])
 
     expect(lecture?.story_key).toBe('ce-que-le-velo-preserve')
-    expect(lecture ? figureLecturePour(payload, '22002', lecture) : null).toBeNull()
+    const figure = lecture ? figureLecturePour(payload, '22002', lecture) : null
+    expect(figure).toMatchObject({
+      genre: 'distribution',
+      mediane: 24,
+      medianeVelo: 13,
+      modes: { t: 'à pied ou en transports en commun', b: 'à vélo' },
+    })
   })
 
   it('rend le quadrant Milieux (les deux forces + la fenêtre des états) quand les états existent', () => {
@@ -379,7 +386,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
       genre: 'quadrant',
       tauxVariationPopulation: 14.4927536231884,
       deltaM2ParHabitant: 300,
-      classification: 'grandir-en-setalant',
+      classification: "grandit en s'étalant",
       periodePop: '2017-2023',
       periodeArtif: '2021-2025',
       nom: 'Commune A1',
@@ -401,6 +408,18 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
         lecture,
       ),
     ).toBeNull()
+  })
+})
+
+describe('lignesLQPour — la liste appartient à la spécialisation communale', () => {
+  it('ne fabrique pas de LQ pour la lecture régionale de présence', () => {
+    const sousGroupes = sousGroupesDe(
+      'economie',
+      '53',
+      histoiresEconomieFixture,
+      indicateursEconomieFixture,
+    )
+    expect(lignesLQPour(lectureDe(sousGroupes[1])!)).toEqual([])
   })
 })
 
