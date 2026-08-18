@@ -216,23 +216,21 @@ test_that("histoires : ce-que-la-commune-abrite top-5 par niveau, LQ même-éche
   expect_false("56001" %in% abrite$territoire)
 })
 
-test_that("histoires : la région (53) porte ce-que-la-bretagne-abrite, jamais de Story LQ", {
+test_that("histoires : la région (53) ne porte PLUS de lecture de structure (#370)", {
+  # issue #370 : `ce-que-la-bretagne-abrite` a QUITTÉ la fiche — la région
+  # (sa LQ dégénérée, tous les ratios ≡ 1) ne porte plus AUCUNE ligne
+  # d'Histoire Économie : son onglet rend les indicateurs du bloc seuls. La
+  # matière de structure régionale reste un artefact analytique
+  # (calculer_presence_bretagne — data/processed/economie), jamais un payload.
   histoires <- construire_histoires_economie_payload(fixture_lq_territoires(),
                                                      base_epci_histoires)
 
-  # la région n'a AUCUNE ligne de Story LQ (sa LQ est dégénérée)
+  # la région n'a AUCUNE ligne de Story LQ (sa LQ est dégénérée)…
   expect_false("53" %in% histoires$territoire[
     histoires$story_key == "ce-que-la-commune-abrite"])
-  # ...et porte la lecture de structure : top-5 par présence, n + part du parc
-  bretagne <- histoires[histoires$story_key == "ce-que-la-bretagne-abrite", ]
-  expect_equal(nrow(bretagne), 3)  # 3 activités du parc < top_n → toutes
-  expect_true(all(bretagne$territoire == "53"))
-  expect_true(all(bretagne$type == "region"))
-  expect_true(all(is.na(bretagne$lq)))
-  # parc retenu : 01.11Z = 12 · 47.11Z = 6 · 86.10Z = 12 · total = 30
-  expect_equal(bretagne$activity_code, c("01.11Z", "86.10Z", "47.11Z"))
-  expect_equal(bretagne$n, c(12, 12, 6))
-  expect_equal(bretagne$part_parc, c(12 / 30, 12 / 30, 6 / 30))
+  # …et plus AUCUNE lecture de structure (la story est retirée du contrat)
+  expect_false("ce-que-la-bretagne-abrite" %in% histoires$story_key)
+  expect_false("53" %in% histoires$territoire)
 })
 
 test_that("histoires : une commune sans EPCI (île) n'agrège à AUCUN niveau EPCI", {
@@ -289,12 +287,9 @@ test_that("replier_top5_en_lecture : le top-5 devient une lecture par (territoir
   # colonnes au-delà de ses activités réelles restent NA
   expect_true(is.na(h22001$top5_activity_code))
   expect_true(is.na(h22001$top5_lq))
-  # les paramètres de la lecture régionale : la part du parc (jamais la LQ)
-  h53 <- lectures[lectures$territoire == "53", ]
-  expect_equal(h53$top1_activity_code, "01.11Z")
-  expect_true(is.na(h53$top1_lq))
-  expect_equal(h53$top1_part_parc, 12 / 30)
-  expect_equal(h53$top1_n, 12)
+  # issue #370 : la région n'a plus AUCUNE lecture (la story de structure est
+  # retirée de la fiche) — le repli ne porte plus de ligne 53
+  expect_false("53" %in% lectures$territoire)
 })
 
 test_that("replier_top5_en_lecture : la matière passe par la résolution partagée (groupe + saillance)", {
@@ -312,8 +307,6 @@ test_that("replier_top5_en_lecture : la matière passe par la résolution partag
   expect_true(all(resolues$salience_reason == "defaut"))
   expect_true(all(resolues$groupe[
     resolues$story_key == "ce-que-la-commune-abrite"] == "sante-et-taille"))
-  expect_equal(resolues$groupe[
-    resolues$story_key == "ce-que-la-bretagne-abrite"], "structure-verte")
   # la matière du top-5 survit à la résolution
   expect_equal(
     resolues$top1_activity_code[resolues$territoire == "22001"],

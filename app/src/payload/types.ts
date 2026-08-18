@@ -462,14 +462,16 @@ export interface Payload {
  * on both sides.
  */
 
-/** The six figure families of the shared figure grammar (parent #308). */
+/** The eight figure families of the shared figure grammar (ADR-0023, #370). */
 export const FAMILLES_FIGURE = [
   'scalar',
   'composition',
   'distribution',
   'trajectory',
   'relationship',
-  'profile',
+  'list',
+  'pyramid',
+  'comparison-bars',
 ] as const
 
 export type FamilleFigure = (typeof FAMILLES_FIGURE)[number]
@@ -495,7 +497,7 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
   mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
   demographie: ['trajectoire-demographique'],
   habitat: ['etat-energetique-du-parc'],
-  economie: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+  economie: ['ce-que-la-commune-abrite'],
   milieux: ['se-densifier-setaler-ou-sen-aller'],
 }
 
@@ -522,12 +524,9 @@ export const GROUPES_PAR_STORY: Record<Theme, Record<string, string>> = {
     'vingt-minutes-sans-voiture': 'acces-aux-services',
     'ce-que-le-velo-preserve': 'acces-aux-services',
   },
-  demographie: { 'trajectoire-demographique': 'etat-et-dynamique' },
-  habitat: { 'etat-energetique-du-parc': 'etat-du-parc' },
-  economie: {
-    'ce-que-la-commune-abrite': 'sante-et-taille',
-    'ce-que-la-bretagne-abrite': 'structure-verte',
-  },
+  demographie: { 'trajectoire-demographique': 'trajectoire-demographique' },
+  habitat: { 'etat-energetique-du-parc': 'etat-energetique-du-parc' },
+  economie: { 'ce-que-la-commune-abrite': 'sante-et-taille' },
   milieux: { 'se-densifier-setaler-ou-sen-aller': 'artificialisation' },
 }
 
@@ -582,14 +581,15 @@ export interface LectureSousGroupe {
   template: NoeudTexteRiche[]
 }
 
-/** One subgroup of the fiche — a stable place with indicators, a figure and a reading. */
+/** One subgroup of the fiche — a stable place with indicators, a figure and an optional reading. */
 export interface SousGroupeMetadata {
   key: string
   label: string
   framing: string
   indicators: string[]
   figure: FigureSousGroupe
-  reading: LectureSousGroupe
+  /** Absent for an honest indicator-only subgroup (e.g. structure-verte). */
+  reading?: LectureSousGroupe
 }
 
 /**

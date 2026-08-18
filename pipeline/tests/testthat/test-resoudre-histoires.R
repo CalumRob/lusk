@@ -44,7 +44,10 @@ test_that("Démographie : chaque lecture résolue porte son groupe et « defaut 
     "periode", "solde_naturel", "solde_migratoire",
     "taux_solde_naturel", "taux_solde_migratoire", "classification"
   ))
-  expect_true(all(h$groupe == "etat-et-dynamique"))
+  # issue #370 : la lecture vit dans le sous-groupe « trajectoire-demographique »
+  # (la décomposition) — jamais dans « etat-de-la-population » qui ne déclare
+  # pas de lecture
+  expect_true(all(h$groupe == "trajectoire-demographique"))
   expect_true(all(h$salience_reason == "defaut"))
   expect_true(all(h$story_key == "trajectoire-demographique"))
   # une lecture par (territoire, groupe) — jamais deux
@@ -59,7 +62,9 @@ test_that("Habitat : chaque lecture résolue porte son groupe et « defaut »", 
   p <- compute_payload(load_fixture_habitat(), theme = theme_habitat())
   h <- p$histoires
 
-  expect_true(all(h$groupe == "etat-du-parc"))
+  # issue #370 : la lecture vit dans le sous-groupe « etat-energetique-du-parc »
+  # (la décomposition) — jamais dans « composition-du-parc » ni « marche »
+  expect_true(all(h$groupe == "etat-energetique-du-parc"))
   expect_true(all(h$salience_reason == "defaut"))
   expect_false(any(duplicated(h[c("territoire", "groupe")])))
   expect_setequal(unique(h$story_key), "etat-energetique-du-parc")
@@ -141,10 +146,11 @@ test_that("Mobilité : la lecture résolue garde la matière du défaut quand el
   expect_equal(resolue$salience_reason, "defaut")
 })
 
-test_that("Économie : chaque lecture résolue porte son groupe (les deux lectures)", {
-  # la lecture « ce que la commune abrite » vit dans le groupe sante-et-taille,
-  # la lecture régionale « ce que la Bretagne abrite » dans structure-verte —
-  # le groupe est EXPLICITE, l'app n'infère plus la relation (US10, #308)
+test_that("Économie : chaque lecture résolue porte son groupe (la story unique #370)", {
+  # issue #370 : `ce-que-la-bretagne-abrite` a QUITTÉ la fiche — la seule story
+  # d'Économie est la lecture de spécialisation « ce que la commune abrite »,
+  # qui vit dans le groupe sante-et-taille (le groupe est EXPLICITE, l'app
+  # n'infère plus la relation — US10, #308)
   communes <- tibble::tibble(
     territoire = c("22001", "200000001", "22"),
     type = c("commune", "epci", "departement"),
@@ -155,25 +161,11 @@ test_that("Économie : chaque lecture résolue porte son groupe (les deux lectur
     top2_activity_code = NA_character_, top2_activity_label = NA_character_,
     top2_lq = NA_real_, top2_n = NA_real_, top2_part_parc = NA_real_
   )
-  region <- tibble::tibble(
-    territoire = "53",
-    type = "region",
-    theme = "economie",
-    story_key = "ce-que-la-bretagne-abrite",
-    top1_activity_code = "A01.11Z", top1_activity_label = "Cultures de céréales",
-    top1_lq = NA_real_, top1_n = 120, top1_part_parc = 0.08,
-    top2_activity_code = NA_character_, top2_activity_label = NA_character_,
-    top2_lq = NA_real_, top2_n = NA_real_, top2_part_parc = NA_real_
-  )
-  resolues <- resoudre_histoires(dplyr::bind_rows(communes, region), "economie")
+  resolues <- resoudre_histoires(communes, "economie")
 
   expect_equal(
     resolues$groupe[resolues$story_key == "ce-que-la-commune-abrite"],
     rep("sante-et-taille", 3)
-  )
-  expect_equal(
-    resolues$groupe[resolues$story_key == "ce-que-la-bretagne-abrite"],
-    "structure-verte"
   )
   expect_true(all(resolues$salience_reason == "defaut"))
   expect_false(any(duplicated(resolues[c("territoire", "groupe")])))
@@ -185,6 +177,15 @@ test_that("une story candidate inconnue du registre échoue FORT", {
     story_key = "story-fantome"
   )
   expect_error(resoudre_histoires(mauvaises, "demographie"),
+               "inconnue.*registre")
+
+  # issue #370 : `ce-que-la-bretagne-abrite` est retirée du registre — une
+  # candidate qui la porte est désormais hors contrat, comme toute story inconnue
+  bretagne <- tibble::tibble(
+    territoire = "53", type = "region", theme = "economie",
+    story_key = "ce-que-la-bretagne-abrite"
+  )
+  expect_error(resoudre_histoires(bretagne, "economie"),
                "inconnue.*registre")
 })
 

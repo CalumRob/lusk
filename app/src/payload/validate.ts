@@ -1819,8 +1819,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   }
 
   // 6. les sous-groupes — l'ordre de la fiche (le premier est le premier
-  //    rendu) ; chaque sous-groupe porte ses indicateurs, sa figure et sa
-  //    lecture résolue
+  //    rendu) ; chaque sous-groupe porte ses indicateurs et sa figure. La
+  //    lecture est optionnelle : un slot indicateur-only reste silencieux,
+  //    jamais une histoire inventée (#370).
   const subgroupsBrut = meta['subgroups']
   exiger(Array.isArray(subgroupsBrut) && subgroupsBrut.length > 0, fichier, 0, '« subgroups » doit être un tableau non vide')
   const clesGroupes = new Set<string>()
@@ -1877,8 +1878,19 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     )
 
     // la lecture résolue — le lien explicite vers l'histoire du sous-groupe
-    // (parent #308 : l'app n'infère jamais la relation depuis les noms)
+    // (parent #308 : l'app n'infère jamais la relation depuis les noms). Un
+    // sous-groupe sans lecture est valide : il ne lie aucune story et ne
+    // déclare aucun paramètre/template.
     const readingBrut = groupe['reading']
+    if (readingBrut === undefined || readingBrut === null) {
+      return {
+        key: cle,
+        label: libelle,
+        framing,
+        indicators,
+        figure: { family, indicator: indicateurFigure },
+      }
+    }
     exiger(estObjet(readingBrut), fichier, ligneIndexee, `« ${cle} » : la lecture (reading) est absente ou non-objet`)
     const reading = readingBrut as LigneBrute
     const story_key = lireChaine(reading, 'story_key', fichier, ligneIndexee)
@@ -1913,8 +1925,8 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   })
 
   // 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
-  //    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
-  //    sous-groupe — rien d'orphelin, rien de partagé (l'identité
+  //    EXACTEMENT un sous-groupe, chaque histoire non-candidate est lue par
+  //    EXACTEMENT un sous-groupe — rien d'orphelin, rien de partagé (l'identité
   //    (territoire × groupe) unique du parent #308). Une story déclarée au
   //    registre sans sous-groupe qui la lit est LÉGITIME quand le registre de
   //    résolution la déclare candidate de saillance (ADR-0002) du groupe d'un

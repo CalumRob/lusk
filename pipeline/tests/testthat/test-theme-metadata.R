@@ -101,28 +101,29 @@ test_that("valider_theme_metadata : une figure invalide est rejetée", {
 })
 
 test_that("valider_theme_metadata : un texte riche invalide est rejeté", {
-  # type de nœud inconnu (le HTML n'est pas un type)
+  # type de nœud inconnu (le HTML n'est pas un type) — la lecture vit dans le
+  # sous-groupe 2 (trajectoire-demographique) de la fixture #370
   meta <- lire_metadata("theme-demographie-valide.json")
-  meta$subgroups[[1]]$reading$template[[1]]$type <- "html"
+  meta$subgroups[[2]]$reading$template[[1]]$type <- "html"
   expect_error(valider_theme_metadata(meta), "HTML")
 
   # HTML brut dans un nœud text
   meta <- lire_metadata("theme-demographie-valide.json")
-  meta$subgroups[[1]]$reading$template[[1]]$content <- "<strong>gras</strong>"
+  meta$subgroups[[2]]$reading$template[[1]]$content <- "<strong>gras</strong>"
   expect_error(valider_theme_metadata(meta), "HTML")
 
   # lien sans href
   meta <- lire_metadata("theme-demographie-valide.json")
-  template <- meta$subgroups[[1]]$reading$template
+  template <- meta$subgroups[[2]]$reading$template
   lien_idx <- which(vapply(template, function(n) identical(n$type, "link"), logical(1L)))
-  meta$subgroups[[1]]$reading$template[[lien_idx]]$href <- NULL
+  meta$subgroups[[2]]$reading$template[[lien_idx]]$href <- NULL
   expect_error(valider_theme_metadata(meta), "lien")
 
   # paramètre non déclaré dans reading.params
   meta <- lire_metadata("theme-demographie-valide.json")
-  template <- meta$subgroups[[1]]$reading$template
+  template <- meta$subgroups[[2]]$reading$template
   param_idx <- which(vapply(template, function(n) identical(n$type, "param"), logical(1L)))[1]
-  meta$subgroups[[1]]$reading$template[[param_idx]]$key <- "fantome"
+  meta$subgroups[[2]]$reading$template[[param_idx]]$key <- "fantome"
   expect_error(valider_theme_metadata(meta), "param")
 })
 
@@ -136,23 +137,16 @@ test_that("valider_theme_metadata : une référence cross-thème est rejetée", 
 test_that("valider_theme_metadata : un lien d'histoire inconnu est rejeté", {
   # la lecture d'un sous-groupe pointe une story non déclarée dans story_keys
   meta <- lire_metadata("theme-demographie-valide.json")
-  meta$subgroups[[1]]$reading$story_key <- "histoire-inconnue"
+  meta$subgroups[[2]]$reading$story_key <- "histoire-inconnue"
   expect_error(valider_theme_metadata(meta), "inconnu")
 
-  # une story déclarée sans sous-groupe qui la lit (orpheline)
+  # une story déclarée sans sous-groupe qui la lit (orpheline) — #370 : la
+  # lecture retirée du seul sous-groupe qui la lisait, la story n'est plus
+  # liée et n'est pas une candidate de saillance déclarée (ADR-0002)
   meta <- lire_metadata("theme-economie-valide.json")
-  meta$subgroups <- meta$subgroups[1]
-  meta$indicator_keys <- meta$subgroups[[1]]$indicators
-  meta$sources <- meta$sources[names(meta$sources) %in% meta$indicator_keys]
-  # les libellés suivent le registre resserré (la bijection indicator_labels)
-  meta$indicator_labels <- meta$indicator_labels[
-    names(meta$indicator_labels) %in% meta$indicator_keys
-  ]
-  # les libellés de paramètres suivent l'union des lectures restantes
-  params_restants <- unlist(meta$subgroups[[1]]$reading$params, use.names = FALSE)
-  meta$param_labels <- meta$param_labels[
-    names(meta$param_labels) %in% params_restants
-  ]
+  meta$subgroups[[1]]$reading <- NULL
+  # les libellés de paramètres suivent l'union des lectures restantes (vide)
+  meta$param_labels <- list()
   expect_error(valider_theme_metadata(meta), "orpheline")
 })
 
@@ -364,4 +358,96 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
     expect_true(all(vapply(directions, function(d) d %in% c("high", "low"),
                            logical(1L))), info = theme)
   }
+})
+
+# La décomposition des sous-groupes (issue #370, parent #367) : les CINQ thèmes
+# déclarent leurs sous-groupes en ordre de fiche — Mobilité ×4, Démographie ×2,
+# Habitat ×3, Économie ×2, Milieux ×1 (douze sous-groupes : le « 13 » des
+# tickets #367/#370 est une coquille de comptage, la décomposition énumérée
+# fait foi). Le fichier épinglé est le contrat : les clés exactes, l'ordre,
+# les libellés et l'appartenance des indicateurs — la parité registres ↔
+# sous-groupes (chaque indicateur dans EXACTEMENT un sous-groupe, chaque story
+# lue par EXACTEMENT un sous-groupe ou candidate déclarée) reste vérifiée par
+# valider_theme_metadata. `structure-verte` ne déclare AUCUNE lecture — le
+# sous-groupe silencieux de la grammaire (#370).
+test_that("sous-groupes : la décomposition #370 — douze sous-groupes, ordre de fiche exact, familles des huit", {
+  attendu <- list(
+    mobilite = list(
+      c("acces-aux-services", "partage-de-lespace-public",
+        "motorisation", "offre-transports-commun"),
+      c("comparison-bars", "composition", "composition", "scalar")
+    ),
+    demographie = list(
+      c("etat-de-la-population", "trajectoire-demographique"),
+      c("pyramid", "trajectory")
+    ),
+    habitat = list(
+      c("composition-du-parc", "etat-energetique-du-parc", "marche"),
+      c("composition", "composition", "trajectory")
+    ),
+    economie = list(
+      c("sante-et-taille", "structure-verte"),
+      c("scalar", "scalar")
+    ),
+    milieux = list(
+      c("artificialisation"),
+      c("comparison-bars")
+    )
+  )
+  familles_contractuelles <- c(
+    "scalar", "composition", "trajectory", "distribution",
+    "relationship", "list", "pyramid", "comparison-bars"
+  )
+  expect_identical(FAMILLES_FIGURE, familles_contractuelles)
+
+  for (theme in names(attendu)) {
+    meta <- lire_theme_metadata(theme)
+    cles <- vapply(meta$subgroups, function(g) g$key, character(1L))
+    familles <- vapply(meta$subgroups, function(g) g$figure$family, character(1L))
+    expect_identical(cles, attendu[[theme]][[1L]], info = theme)
+    expect_identical(familles, attendu[[theme]][[2L]], info = theme)
+    # chaque famille déclarée est l'une des huit de la grammaire (ADR-0023)
+    expect_true(all(familles %in% FAMILLES_FIGURE), info = theme)
+    # le registre des sous-groupes et la résolution restent en parité : le
+    # groupe de chaque story résolue est un sous-groupe déclaré
+    registre <- STORIES_RESOLUES_PAR_THEME[[theme]]
+    expect_true(all(registre$groupe %in% cles), info = theme)
+    expect_no_error(valider_theme_metadata(meta))
+  }
+})
+
+test_that("sous-groupes : structure-verte ne déclare AUCUNE lecture — le sous-groupe silencieux (#370)", {
+  meta <- lire_theme_metadata("economie")
+  structure_verte <- meta$subgroups[[2L]]
+  expect_identical(structure_verte$key, "structure-verte")
+  expect_null(structure_verte$reading)
+  # la bijection des histoires reste vraie : l'unique story d'Économie est lue
+  # par EXACTEMENT un sous-groupe (sante-et-taille), rien d'orphelin
+  expect_no_error(valider_theme_metadata(meta))
+  # ce-que-la-bretagne-abrite a QUITTÉ le registre de la fiche (#370) — la
+  # région ne porte plus de lecture de structure, la story est retirée du
+  # contrat des deux côtés
+  expect_identical(unlist(meta$story_keys, use.names = FALSE),
+                   "ce-que-la-commune-abrite")
+  expect_identical(CLES_HISTOIRES_PAR_THEME$economie,
+                   "ce-que-la-commune-abrite")
+  expect_identical(STORIES_RESOLUES_PAR_THEME$economie$story_key,
+                   "ce-que-la-commune-abrite")
+})
+
+test_that("valider_theme_metadata : un sous-groupe sans lecture valide (le sous-groupe silencieux, #370)", {
+  meta <- lire_metadata("theme-economie-valide.json")
+  expect_null(meta$subgroups[[2L]]$reading)
+  expect_no_error(valider_theme_metadata(meta))
+})
+
+test_that("valider_theme_metadata : la famille de figure hors des huit styles prédéfinis est rejetée (#370)", {
+  # la grammaire fermée (ADR-0023) : les huit familles seulement — `profile`
+  # (la famille d'avant la grammaire) comme `camembert` sont hors contrat
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$subgroups[[1L]]$figure$family <- "profile"
+  expect_error(valider_theme_metadata(meta), "hors contrat")
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$subgroups[[1L]]$figure$family <- "camembert"
+  expect_error(valider_theme_metadata(meta), "hors contrat")
 })

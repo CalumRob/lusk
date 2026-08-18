@@ -8,7 +8,7 @@
       "framing": "La consommation de la terre par l’urbanisation : l’état artificialisé et le flux annuel.",
       "indicators": ["artif_par_habitant", "conso_enaf_annuel"],
       "figure": {
-        "family": "trajectory",
+        "family": "comparison-bars",
         "indicator": "artif_par_habitant"
       },
       "reading": {

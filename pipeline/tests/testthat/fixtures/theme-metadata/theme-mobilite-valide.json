@@ -5,14 +5,8 @@
     {
       "key": "acces-aux-services",
       "label": "L’accès aux services",
-      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l’offre de transport qui le permet.",
+      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.",
       "indicators": [
-        "voitures_menage",
-        "reseaux",
-        "offre_tc",
-        "bornes_recharge",
-        "places_stationnement_velo_1000",
-        "offre_cyclable",
         "iso_alimentation",
         "iso_sante",
         "iso_administration",
@@ -20,8 +14,8 @@
         "iso_banque"
       ],
       "figure": {
-        "family": "scalar",
-        "indicator": "offre_cyclable"
+        "family": "comparison-bars",
+        "indicator": "iso_alimentation"
       },
       "reading": {
         "story_key": "vingt-minutes-sans-voiture",
@@ -36,6 +30,45 @@
             { "type": "text", "content": "Sources et méthodes" }
           ] }
         ]
+      }
+    },
+    {
+      "key": "partage-de-lespace-public",
+      "label": "Le partage de l’espace public",
+      "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
+      "indicators": [
+        "reseaux",
+        "places_stationnement_velo_1000",
+        "offre_cyclable"
+      ],
+      "figure": {
+        "family": "composition",
+        "indicator": "offre_cyclable"
+      }
+    },
+    {
+      "key": "motorisation",
+      "label": "La motorisation",
+      "framing": "L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.",
+      "indicators": [
+        "voitures_menage",
+        "bornes_recharge"
+      ],
+      "figure": {
+        "family": "composition",
+        "indicator": "voitures_menage"
+      }
+    },
+    {
+      "key": "offre-transports-commun",
+      "label": "L’offre de transports en commun",
+      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt de transports en commun.",
+      "indicators": [
+        "offre_tc"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "offre_tc"
       }
     }
   ],
