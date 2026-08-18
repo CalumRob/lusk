@@ -252,14 +252,17 @@ lire_bpe_b316 <- function(chemin) {
 # MELODI and the labelled CSV), but never turn an absent observation into zero.
 normaliser_bpe_b316 <- function(x) {
   code <- intersect(c("GEO", "CODGEO", "code_insee", "GEO_CODE"), names(x))[1]
-  value <- intersect(c("OBS_VALUE", "VALUE", "value", "COUNT", "count"), names(x))[1]
-  type <- intersect(c("FACILITY_TYPE", "TYPEQU", "type", "BPE"), names(x))[1]
+  # Actual BPE exports use FACILITIES (the facility family) and NB_EQUIP (the
+  # count); long MELODI exports use OBS_VALUE.  Do not mistake a missing
+  # observation for zero.
+  value <- intersect(c("NB_EQUIP", "OBS_VALUE", "VALUE", "value", "COUNT", "count"), names(x))[1]
+  type <- intersect(c("FACILITIES", "FACILITY_TYPE", "TYPEQU", "type", "BPE"), names(x))[1]
   if (is.na(code) || is.na(value)) stop("BPE B316 : GEO et OBS_VALUE requis.", call. = FALSE)
-  if (!is.na(type)) x <- x[is.na(x[[type]]) | x[[type]] %in% c("B316", "316", "STATION-SERVICE", "Station-service"), , drop = FALSE]
+  if (!is.na(type)) x <- x[is.na(x[[type]]) | toupper(as.character(x[[type]])) %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE"), , drop = FALSE]
   z <- tibble::tibble(commune = as.character(x[[code]]), fuel = suppressWarnings(as.numeric(x[[value]])))
   if (any(is.na(z$fuel) & !is.na(x[[value]]))) stop("BPE B316 : valeur non numérique.", call. = FALSE)
   z <- z[grepl("^[0-9]{5}$", z$commune) & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE, ]
-  z %>% dplyr::group_by(commune) %>% dplyr::summarise(fuel = sum(fuel), .groups = "drop") %>% dplyr::arrange(commune)
+  z %>% dplyr::group_by(commune) %>% dplyr::summarise(fuel = if (all(is.na(fuel))) NA_real_ else sum(fuel, na.rm = TRUE), .groups = "drop") %>% dplyr::arrange(commune)
 }
 
 # lire_amenagements_cyclables ----------------------------------------------------

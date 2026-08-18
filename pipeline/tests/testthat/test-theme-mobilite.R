@@ -27,13 +27,13 @@ test_that("MANIFEST_MOBILITE : les dix sources du thème, les 11 colonnes standa
   # fragment korrigo) et la couche bâtiments porte elle-même code_commune_insee
   # (plus de jointure spatiale aux polygones communaux).
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 10L)
+  expect_equal(nrow(m), 11L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     "amenagements_cyclables", "communes_limites", "korrigo",
                     "batiments_residentiels", "bornes-recharges",
-                    "stationnement-velo", "cog_passage"))
+                   "stationnement-velo", "bpe_b316", "cog_passage"))
 
   # les 11 colonnes standard du manifeste (SIRENE / Flores / RP / Habitat)
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
@@ -128,14 +128,14 @@ test_that("vintages_mobilite : dix sources, chacune avec SA référence et SA pu
   v <- vintages_mobilite()
 
   # dix sources (issues #139+#140+#222), la forme du contrat — jamais alignées
-  expect_equal(nrow(v), 10L)
+  expect_equal(nrow(v), 11L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     "amenagements_cyclables", "communes_limites", "korrigo",
                     "batiments_residentiels", "bornes-recharges",
-                    "stationnement-velo", "cog_passage"))
+                   "stationnement-velo", "bpe_b316", "cog_passage"))
 
   # le snapshot porté : SA référence (l'instantané) et SA publication (le portage)
   snap <- v[v$id == "mobilite_snapshot", ]
@@ -257,7 +257,7 @@ test_that("normaliser_snapshot_mobilite : normalise la forme du snapshot porté"
     code_departement_insee = "29",
     code_insee = "29011",
     nom_commune = "Bohars",
-    nb_buildings = "1113",
+     nb_buildings = "1113", med_tot_loss_t = "2", med_tot_loss_b = "1",
     share_food_t = "0.95",
     unique_dep_1 = "Alimentation"
   )
@@ -292,7 +292,7 @@ test_that("normaliser_snapshot_mobilite : un input corrompu s'arrête bruyamment
   mauvaise_id <- tibble::tibble(
     code_insee = "ABC", nom_commune = "Bohars",
     code_departement_insee = "29", raison_sociale = "Brest Métropole",
-    nb_buildings = "1113"
+     nb_buildings = "1113", med_tot_loss_t = "2", med_tot_loss_b = "1"
   )
   expect_error(normaliser_snapshot_mobilite(mauvaise_id), "code_insee")
 
@@ -300,7 +300,7 @@ test_that("normaliser_snapshot_mobilite : un input corrompu s'arrête bruyamment
   expect_error(normaliser_snapshot_mobilite(tibble::tibble(
     code_insee = character(), nom_commune = character(),
     code_departement_insee = character(), raison_sociale = character(),
-    nb_buildings = character()
+     nb_buildings = character(), med_tot_loss_t = numeric(), med_tot_loss_b = numeric()
   )), "aucune ligne")
 })
 
@@ -361,7 +361,10 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
     },
     construire_sources_offre_mobilite = function(cache) {
       appels$sources <- cache
-      list(korrigo = tibble::tibble(stop_id = "AR1"),
+     list(parkings_osm = sf::st_sf(osm_id = "p1", amenity = "parking",
+                                  geometry = sf::st_sfc(sf::st_polygon(list(rbind(c(0,0), c(1,0), c(1,1), c(0,1), c(0,0))))), crs = 2154),
+          stations_service = tibble::tibble(commune = "29011", fuel = 1),
+          korrigo = tibble::tibble(stop_id = "AR1"),
            batiments_residentiels = tibble::tibble(commune = "29011"),
            bornes_recharges = tibble::tibble(code_insee_commune = "29011"),
            stationnement_velo = tibble::tibble(geocode_commune = "29011"))
@@ -377,10 +380,10 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
   # NULL quand l'orchestrateur est mocké sans couverture), dans l'ordre du
   # contrat
   expect_named(donnees,
-               c("mobilite_snapshot", "voitures_communes",
-                 "communes_limites", "lignes_osm", "amenagements_cyclables",
-                 "couverture",
-                 "korrigo", "batiments_residentiels",
+                c("mobilite_snapshot", "voitures_communes",
+                  "communes_limites", "lignes_osm", "parkings_osm",
+                  "stations_service", "amenagements_cyclables", "couverture",
+                  "korrigo", "batiments_residentiels",
                  "bornes_recharges", "stationnement_velo"))
   expect_identical(donnees$mobilite_snapshot, table_snapshot)
   # le lecteur du snapshot reçoit le chemin du fichier porté dans le cache
@@ -513,6 +516,14 @@ fixture_snapshot_analytique_mobilite <- function() {
   base$dens_div_t_max_dep <- 20
   base$dens_div_t_min_reg <- 5
   base$dens_div_t_max_reg <- 20
+  base$med_tot_loss_t <- c(4, 6, 8, 10)
+  base$med_tot_loss_b <- c(5, 5, 7, 12)
+  base$med_tot_loss_t_epci <- 5
+  base$med_tot_loss_b_epci <- 5
+  base$med_tot_loss_t_dep <- 6
+  base$med_tot_loss_b_dep <- 6
+  base$med_tot_loss_t_reg <- 6
+  base$med_tot_loss_b_reg <- 6
   base
 }
 
@@ -1748,7 +1759,7 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # thème — le snapshot + les quatre de l'étage demande/réseaux (#139) + les
   # quatre du sous-bloc (#140) + la table de passage COG partagée (#222/#227))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX")
+   expect_error(verifier_contrat_manifest_mobilite(defectueux), "ONZE")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE
@@ -2182,10 +2193,14 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retir�
   # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
   # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
-  expect_equal(nrow(ind), 11L)
+   expect_equal(nrow(ind), 16L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
-                             "places_stationnement_velo_1000",
+                              "places_stationnement_velo_1000",
+                              "places_stationnement_voiture_1000",
+                              "bornes_ev_par_station_service",
+                              "stationnement_velo_par_voiture",
+                              "tot_loss_t", "tot_loss_b",
                              "offre_cyclable",
                              "iso_alimentation", "iso_sante",
                              "iso_administration", "iso_ecole", "iso_banque"))

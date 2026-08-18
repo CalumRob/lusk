@@ -471,11 +471,27 @@ MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "bpe_b316", "INSEE — Base permanente des équipements, B316 stations-service",
-  "https://www.insee.fr/fr/statistiques/3568638", "bpe_b316.csv", "2024",
+  "https://www.insee.fr/fr/statistiques/8229329", "bpe_b316_2024.csv", "2024",
   "2024-01-01", "2026-08-18", "lov2",
   "BPE 2024, type d’équipement B316 (FACILITIES) : dénombré par commune pour le dénominateur stations-service du ratio EV/fuel. Les absences restent NA.",
   "manuel", "fichier"
 )
+
+verifier_contrat_mobilite_bpe_b316 <- function(fragment) {
+  manquer <- function(champ, detail) stop(sprintf(
+    "Contrat Mobilité BPE B316 violé — %s : %s.", champ, detail), call. = FALSE)
+  if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) manquer("forme", "une source")
+  if (fragment$id != "bpe_b316") manquer("id", "id attendu : bpe_b316")
+  if (fragment$fichier != "bpe_b316_2024.csv") manquer("fichier", "export BPE B316 2024")
+  if (fragment$vintage != "2024") manquer("vintage", "millésime 2024")
+  if (fragment$licence != "lov2") manquer("licence", "lov2")
+  if (fragment$mode != "manuel" || fragment$type != "fichier") manquer("mode/type", "manuel/fichier")
+  if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
+      !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
+      as.Date(fragment$date_publication) < as.Date(fragment$date_reference))
+    manquer("dates", "référence/publication ISO cohérentes")
+  invisible(TRUE)
+}
 
 # MANIFEST_MOBILITE_COG_PASSAGE ------------------------------------------------
 # Le fragment COG PASSAGE (issue #222, ticket #227) : la table de passage
@@ -1007,9 +1023,7 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
     manifest[manifest$id == "bornes-recharges", ])
   verifier_contrat_mobilite_stationnement_velo(
     manifest[manifest$id == "stationnement-velo", ])
-  bpe <- manifest[manifest$id == "bpe_b316", ]
-  if (nrow(bpe) != 1L || bpe$fichier != "bpe_b316.csv" || bpe$vintage != "2024")
-    manquer("bpe_b316", "le contrat BPE B316 2024 est requis")
+  verifier_contrat_mobilite_bpe_b316(manifest[manifest$id == "bpe_b316", ])
   verifier_contrat_mobilite_cog_passage(
     manifest[manifest$id == "cog_passage", ])
 

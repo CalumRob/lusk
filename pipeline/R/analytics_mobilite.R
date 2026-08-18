@@ -535,29 +535,38 @@ calculer_stationnement_voiture_communes <- function(parkings, lignes, limites) {
   if (!"osm_id" %in% names(parkings)) parkings$osm_id <- seq_len(nrow(parkings))
   parkings <- parkings[!duplicated(parkings$osm_id), ]
   parkings <- sf::st_transform(parkings, sf::st_crs(limites))
-  pol <- sf::st_join(parkings, limites["code_insee"], left = FALSE)
+  # Attribute once, at the representative point: a large polygon crossing a
+  # commune boundary must not be counted once per intersected commune.
+  points <- sf::st_point_on_surface(parkings)
+  points$parking_area <- as.numeric(sf::st_area(parkings))
+  pol <- sf::st_join(points, limites["code_insee"], left = FALSE)
   parking_tag <- if ("parking" %in% names(pol)) tolower(as.character(pol$parking)) else rep(NA_character_, nrow(pol))
   kind <- ifelse(!is.na(parking_tag) & parking_tag == "street_side", "street_side", "lot")
   areas <- tibble::tibble(commune = pol$code_insee,
-                           places = as.numeric(sf::st_area(pol)) /
+                            places = pol$parking_area /
                              ifelse(kind == "street_side", 11.5, 25))
-  lane_cols <- grep("(^|_)(parking(:lane|:(left|right|both))|parking_(lane|left|right|both))", names(lignes), value = TRUE)
+  lignes <- lignes[!is.na(lignes$highway) & nzchar(as.character(lignes$highway)), ]
+  lane_cols <- grep("^(parking:lane:(left|right|both)|parking:(left|right|both)|parking_lane_(left|right|both))$",
+                    names(lignes), value = TRUE)
   linear <- tibble::tibble(commune = character(), places = numeric())
   if (length(lane_cols) > 0) {
-    tagged <- apply(sf::st_drop_geometry(lignes[, lane_cols, drop = FALSE]), 1,
-      function(x) sum(vapply(x, function(v) {
-        v <- tolower(as.character(v)); !is.na(v) && nzchar(v) &&
-          !v %in% c("no", "none", "0")
-      }, logical(1)) * ifelse(tolower(as.character(x)) == "both", 2, 1))
+      tagged <- apply(sf::st_drop_geometry(lignes[, lane_cols, drop = FALSE]), 1,
+      function(x) sum(vapply(seq_along(x), function(j) {
+        v <- x[[j]]
+         v <- tolower(as.character(v)); !is.na(v) && nzchar(v) &&
+           !v %in% c("no", "no_parking", "no_stopping", "separate", "none", "0")
+       }, logical(1)) * ifelse(grepl("both", lane_cols) | tolower(as.character(x)) == "both", 2, 1))
     )
     tagged <- which(tagged > 0)
     if (length(tagged) > 0) {
       ln <- sf::st_join(lignes[tagged > 0, ], limites["code_insee"], left = FALSE)
       lane_count <- apply(sf::st_drop_geometry(ln[, lane_cols, drop = FALSE]), 1,
-        function(x) sum(vapply(x, function(v) {
+        function(x) sum(vapply(seq_along(x), function(j) {
+          v <- x[[j]]
           v <- tolower(as.character(v)); !is.na(v) && nzchar(v) &&
-            !v %in% c("no", "none", "0")
-        }, logical(1)) * ifelse(tolower(as.character(x)) == "both", 2, 1)))
+            !v %in% c("no", "no_parking", "no_stopping", "separate", "none", "0")
+        }, logical(1)) * ifelse(grepl("both", lane_cols) | tolower(as.character(x)) == "both", 2, 1)))
+      ln <- sf::st_transform(ln, sf::st_crs(limites))
       linear <- tibble::tibble(commune = ln$code_insee,
                                 places = as.numeric(sf::st_length(ln)) *
                                   (lane_count * 2.3) / 11.5)
@@ -594,26 +603,39 @@ agreger_stationnement_voiture_territoires <- function(voiture_communes,
   surface_candidate <- candidats$places * 2 /
     (candidats$places_voiture * FACTEUR_PLACE_VOITURE_M2[["lot"]])
   comparable <- stats::complete.cases(places_candidate, surface_candidate)
-  attr(out, "velo_voiture_comparison") <- list(
-    decided = "places",
-    n = sum(comparable),
-    spearman = if (sum(comparable) > 1) stats::cor(places_candidate[comparable],
-      surface_candidate[comparable], method = "spearman") else NA_real_,
-    rank_stable = if (sum(comparable) > 1) identical(order(places_candidate[comparable]),
-      order(surface_candidate[comparable])) else NA
-  )
-  out
+  # The readable ratio is places vélo / places voiture.  Aggregate its two
+  # counts before dividing; never average commune ratios.
+  ratio_ctx <- velo_communes %>% dplyr::select(commune, places_velo = places) %>%
+    dplyr::inner_join(voiture_communes %>% dplyr::select(commune, places_voiture), by = "commune") %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+  ratio_agg <- function(group = NULL) {
+    x <- ratio_ctx
+    if (!is.null(group)) x <- x %>% dplyr::filter(!is.na(.data[[group]]))
+    if (is.null(group)) {
+      x %>% dplyr::summarise(code = "53", pv = sum(places_velo), pc = sum(places_voiture))
+    } else {
+      x %>% dplyr::group_by(code = .data[[group]]) %>%
+        dplyr::summarise(pv = sum(places_velo), pc = sum(places_voiture), .groups = "drop")
+    }
+  }
+  ratio <- dplyr::bind_rows(
+    ratio_ctx %>% dplyr::transmute(code = commune, pv = places_velo, pc = places_voiture),
+    ratio_agg("EPCI"), ratio_agg("DEP"), ratio_agg()
+  ) %>% dplyr::transmute(code, key = "stationnement_velo_par_voiture",
+                         detail = NA_character_, value = dplyr::if_else(pc > 0, pv / pc, NA_real_))
+  dplyr::bind_rows(out, ratio)
 }
 
 calculer_ratios_mobilite <- function(bornes, fuel, velo, voiture) {
+  # fuel is a count table; callers must not pass a table already joined to it.
   x <- bornes %>% dplyr::full_join(fuel, by = "code") %>%
     dplyr::full_join(velo, by = "code") %>% dplyr::full_join(voiture, by = "code") %>%
     dplyr::mutate(
-      ev_fuel = dplyr::if_else(!is.na(fuel) & fuel > 0, bornes / fuel, NA_real_),
+      bornes_ev_par_station_service = dplyr::if_else(!is.na(fuel) & fuel > 0, bornes / fuel, NA_real_),
       rider = dplyr::case_when(is.na(fuel) ~ "Donnée stations-service indisponible",
         fuel > 0 ~ NA_character_, bornes > 0 ~
         "Aucune station-service sur le territoire", TRUE ~ "Aucune borne ni station-service"),
-      velo_voiture = dplyr::if_else(places_voiture > 0, places_velo / places_voiture, NA_real_))
+      stationnement_velo_par_voiture = dplyr::if_else(places_voiture > 0, places_velo / places_voiture, NA_real_))
     x
 }
 
@@ -850,12 +872,14 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
     rr <- dplyr::bind_rows(ctx_r %>% dplyr::transmute(code = commune, bornes, fuel = fuel_value),
                            agg("EPCI"), agg("DEP"),
                            ctx_r %>% dplyr::summarise(code = "53", bornes = sum(bornes), fuel = if (all(is.na(fuel_value))) NA_real_ else sum(fuel_value, na.rm = TRUE)))
-    ratios <- calculer_ratios_mobilite(rr, rr %>% dplyr::select(code, fuel),
+     ratios <- calculer_ratios_mobilite(rr %>% dplyr::select(code, bornes),
+       rr %>% dplyr::select(code, fuel),
       tibble::tibble(code = rr$code, places_velo = NA_real_),
       tibble::tibble(code = rr$code, places_voiture = NA_real_)) %>%
-      dplyr::transmute(code, key = "bornes_fuel", detail = NA_character_, value = ev_fuel, rider)
+       dplyr::transmute(code, key = "bornes_ev_par_station_service", detail = NA_character_,
+                        value = bornes_ev_par_station_service, rider)
   }
   dplyr::bind_rows(offre_tc, bornes, velo, cyclable, voiture, ratios) %>%
-    dplyr::select(code, key, detail, value) %>%
+    dplyr::select(code, key, detail, value, dplyr::any_of("rider")) %>%
     dplyr::arrange(code, key, detail)
 }
