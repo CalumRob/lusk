@@ -7,12 +7,19 @@ test_that("tot_loss is required and bike loss is clamped", {
 
 test_that("BPE B316 preserves absent communes and counts only B316", {
   x <- normaliser_bpe_b316(data.frame(GEO = c("29001", "29001", "35001"),
-    FACILITY_TYPE = c("B316", "B999", "B316"), OBS_VALUE = c("2", "99", "0")))
+    FACILITIES = c("B316", "B316", "B316"), NB_EQUIP = c("2", "0", "0")))
   expect_equal(x$commune, c("29001", "35001"))
   expect_equal(x$fuel, c(2, 0))
   expect_equal(calculer_ratios_mobilite(data.frame(code = "29001", bornes = 0),
     x[x$commune == "29001", c("commune", "fuel")] |> dplyr::rename(code = commune),
     data.frame(code = "29001", places_velo = 1), data.frame(code = "29001", places_voiture = 1))$bornes_ev_par_station_service, 0)
+})
+
+test_that("BPE B316 rejects non-canonical legacy source shapes", {
+  expect_error(normaliser_bpe_b316(data.frame(
+    GEO = "29001", FACILITY_TYPE = "B316", OBS_VALUE = "2")),
+    "GEO/FACILITIES/NB_EQUIP")
+  expect_error(lire_bpe_b316(file.path(tempdir(), "bpe24.parquet")), "BPE25.parquet")
 })
 
 test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {

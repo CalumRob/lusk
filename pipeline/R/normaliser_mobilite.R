@@ -244,7 +244,7 @@ lire_parkings_osm <- function(chemin_pbf) {
 }
 
 lire_bpe_b316 <- function(chemin) {
-  if (!grepl("\\.parquet$", chemin, ignore.case = TRUE))
+  if (basename(chemin) != "BPE25.parquet")
     stop("BPE 2025 : l'entrée doit être le fichier BPE25.parquet officiel.", call. = FALSE)
   brut <- nanoparquet::read_parquet(chemin)
   selectionner_bpe_b316_2025(brut)
@@ -291,33 +291,21 @@ verifier_contenu_bpe_b316 <- function(x) {
   invisible(TRUE)
 }
 
-# BPE B316 is a FACILITIES count.  Accept the two official export shapes (long
-# MELODI and the labelled CSV), but never turn an absent observation into zero.
+# BPE B316 is a FACILITIES count.  The only accepted normalized shape is the
+# canonical GEO/FACILITIES/NB_EQUIP contract; legacy MELODI aliases are not
+# interchangeable with the geolocalized BPE25 detail file.
 normaliser_bpe_b316 <- function(x) {
   if (all(c("DEPCOM", "TYPEQU") %in% names(x)))
     x <- selectionner_bpe_b316_2025(x)
-  code <- intersect(c("GEO", "CODGEO", "code_insee", "GEO_CODE"), names(x))[1]
-  # Actual BPE exports use FACILITIES (the facility family) and NB_EQUIP (the
-  # count); long MELODI exports use OBS_VALUE.  Do not mistake a missing
-  # observation for zero.
-  value <- intersect(c("NB_EQUIP", "OBS_VALUE", "VALUE", "value", "COUNT", "count"), names(x))[1]
-  type <- intersect(c("FACILITIES", "FACILITY_TYPE", "TYPEQU", "type", "BPE"), names(x))[1]
-  if (is.na(code) || is.na(value)) stop("BPE B316 : GEO et NB_EQUIP requis.", call. = FALSE)
-  if (is.na(type)) stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
-  if (!is.na(type)) {
-    if (any(is.na(x[[type]]) | !nzchar(trimws(as.character(x[[type]])))))
-      stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
-    x <- x[toupper(trimws(as.character(x[[type]]))) %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE"), , drop = FALSE]
-  }
-  z <- tibble::tibble(commune = as.character(x[[code]]), fuel = suppressWarnings(as.numeric(x[[value]])))
-  if (any(is.na(z$fuel) & !is.na(x[[value]]))) stop("BPE B316 : valeur non numérique.", call. = FALSE)
-  valide <- grepl("^[0-9]{5}$", z$commune) & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE
-  invalide <- !grepl("^[0-9]{5}$|^2[AB][0-9]{3}$", z$commune)
-  if (any(invalide)) stop("BPE B316 : code commune invalide.", call. = FALSE)
-  valide <- !invalide & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE
-  z <- z[valide, ]
-  if (!nrow(z) || any(z$fuel < 0, na.rm = TRUE)) stop("BPE B316 : aucune ligne utilisable ou compte négatif.", call. = FALSE)
-  z %>% dplyr::group_by(commune) %>% dplyr::summarise(fuel = if (all(is.na(fuel))) NA_real_ else sum(fuel, na.rm = TRUE), .groups = "drop") %>% dplyr::arrange(commune)
+  requis <- c("GEO", "FACILITIES", "NB_EQUIP")
+  if (!all(requis %in% names(x)))
+    stop("BPE B316 : GEO/FACILITIES/NB_EQUIP requis.", call. = FALSE)
+  verifier_contenu_bpe_b316(x)
+  tibble::as_tibble(x) %>%
+    dplyr::transmute(commune = as.character(GEO), fuel = as.numeric(NB_EQUIP)) %>%
+    dplyr::group_by(commune) %>%
+    dplyr::summarise(fuel = sum(fuel), .groups = "drop") %>%
+    dplyr::arrange(commune)
 }
 
 # lire_amenagements_cyclables ----------------------------------------------------
