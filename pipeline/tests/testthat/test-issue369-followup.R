@@ -20,7 +20,10 @@ test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {
     GEO = c("29001", "29002"), FACILITIES = c("B316", "B316"),
     NB_EQUIP = c("2", "0")))
   expect_equal(x, tibble::tibble(commune = c("29001", "29002"), fuel = c(2, 0)))
-  expect_match(MANIFEST_MOBILITE_BPE_B316$url, "^https://api\\.insee\\.fr/melodi/file/BPE/BPE_2024_CSV_FR$")
+  expect_identical(MANIFEST_MOBILITE_BPE_B316$url,
+                   "https://api.insee.fr/melodi/file/DS_BPE_EVOLUTION/DS_BPE_EVOLUTION_2025_CSV_FR")
+  expect_identical(MANIFEST_MOBILITE_BPE_B316$fichier, "DS_BPE_EVOLUTION_2025_CSV_FR.zip")
+  expect_identical(MANIFEST_MOBILITE_BPE_B316$vintage, "2025")
   expect_silent(verifier_contrat_mobilite_bpe_b316(
     MANIFEST_MOBILITE_BPE_B316,
     tibble::tibble(GEO = "29001", FACILITIES = "B316", NB_EQUIP = "2")))
@@ -37,6 +40,37 @@ test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {
   expect_error(verifier_contenu_bpe_b316(tibble::tibble(
     GEO = "29001", FACILITIES = "B316", NB_EQUIP = "-1")),
     "non négatif")
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(
+    GEO = "29001", FACILITIES = NA_character_, NB_EQUIP = "1")),
+    "manquant")
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(
+    GEO = "29X01", FACILITIES = "B316", NB_EQUIP = "1")),
+    "invalide")
+})
+
+test_that("BPE Evolution selects only 2025 commune B316 FACILITIES", {
+  brut <- tibble::tribble(
+    ~GEO, ~GEO_OBJECT, ~FACILITY_TYPE, ~BPE_MEASURE, ~TIME_PERIOD, ~OBS_VALUE,
+    "29001", "COM", "B316", "FACILITIES", "2024", "99",
+    "29001", "COM", "B316", "FACILITIES", "2025", "2",
+    "29001", "COM", "B999", "FACILITIES", "2025", "50",
+    "29002", "EPCI", "B316", "FACILITIES", "2025", "10",
+    "29003", "COM", "B316", "OTHER", "2025", "8"
+  )
+  expect_equal(selectionner_bpe_b316_2025(brut), tibble::tibble(
+    GEO = "29001", FACILITIES = "B316", NB_EQUIP = "2"))
+  expect_error(selectionner_bpe_b316_2025(brut[1, , drop = FALSE]), "aucune observation")
+})
+
+test_that("BPE Evolution rejects malformed canonical observations", {
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(
+    GEO = "29001", FACILITIES = "B316", NB_EQUIP = "abc")), "non négatif")
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(
+    GEO = "29001", FACILITIES = "B316", NB_EQUIP = "-1")), "non négatif")
+  expect_error(selectionner_bpe_b316_2025(tibble::tibble(
+    GEO = "29001", GEO_OBJECT = "COM", FACILITY_TYPE = "B316",
+    BPE_MEASURE = "FACILITIES", TIME_PERIOD = "2024", OBS_VALUE = "1")),
+    "aucune observation")
 })
 
 test_that("mixed unavailable BPE values remain unavailable during aggregation", {

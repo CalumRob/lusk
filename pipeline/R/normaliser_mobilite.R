@@ -244,10 +244,33 @@ lire_parkings_osm <- function(chemin_pbf) {
 }
 
 lire_bpe_b316 <- function(chemin) {
-  x <- readr::read_delim(chemin, delim = ";", col_types = readr::cols(.default = readr::col_character()),
-                         show_col_types = FALSE, progress = FALSE)
-  verifier_contenu_bpe_b316(x)
-  x
+  if (grepl("\\.zip$", chemin, ignore.case = TRUE)) {
+    extrait <- file.path(dirname(chemin), "extracted_bpe_evolution_2025")
+    if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
+    suppressWarnings(utils::unzip(chemin, exdir = extrait, overwrite = FALSE))
+    chemin <- file.path(extrait, "DS_BPE_EVOLUTION_2025_data.csv")
+  }
+  brut <- readr::read_delim(chemin, delim = ";",
+                            col_types = readr::cols(.default = readr::col_character()),
+                            show_col_types = FALSE, progress = FALSE)
+  selectionner_bpe_b316_2025(brut)
+}
+
+# The Evolution export is a long table: its commune-level contract is selected
+# explicitly, rather than inferred from a code or silently taking another year.
+selectionner_bpe_b316_2025 <- function(x) {
+  requis <- c("GEO", "GEO_OBJECT", "FACILITY_TYPE", "BPE_MEASURE",
+              "TIME_PERIOD", "OBS_VALUE")
+  manquantes <- setdiff(requis, names(x))
+  if (length(manquantes)) stop("BPE Evolution 2025 : colonne(s) manquante(s) : ",
+                               paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  y <- x[x$TIME_PERIOD == "2025" & x$GEO_OBJECT == "COM" &
+           x$FACILITY_TYPE == "B316" & x$BPE_MEASURE == "FACILITIES", , drop = FALSE]
+  if (!nrow(y)) stop("BPE Evolution 2025 : aucune observation communale B316 pour 2025.", call. = FALSE)
+  y <- y[, c("GEO", "FACILITY_TYPE", "OBS_VALUE"), drop = FALSE]
+  names(y) <- c("GEO", "FACILITIES", "NB_EQUIP")
+  verifier_contenu_bpe_b316(y)
+  y
 }
 
 verifier_contenu_bpe_b316 <- function(x) {
@@ -257,11 +280,18 @@ verifier_contenu_bpe_b316 <- function(x) {
   geo <- as.character(x$GEO)
   type <- toupper(trimws(as.character(x$FACILITIES)))
   valeur <- suppressWarnings(as.numeric(x$NB_EQUIP))
-  valide_geo <- grepl("^[0-9]{5}$", geo) & substr(geo, 1, 2) %in% DEPT_BRETAGNE
+  # COG commune codes include Corsica's 2A/2B form; they are valid source
+  # identities even though they are outside the Breton extraction.
+  valide_code <- grepl("^[0-9]{5}$|^2[AB][0-9]{3}$", geo)
+  valide_geo <- valide_code & substr(geo, 1, 2) %in% DEPT_BRETAGNE
   b316 <- type %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE")
+  if (any(is.na(type) | !nzchar(type)))
+    stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
+  if (any(b316 & !valide_code))
+    stop("BPE B316 : code commune invalide pour B316.", call. = FALSE)
   if (!any(b316 & valide_geo))
     stop("BPE B316 : aucune ligne B316 utilisable.", call. = FALSE)
-  if (any(b316 & (!valide_geo | is.na(valeur) | valeur < 0)))
+  if (any(b316 & (is.na(valeur) | valeur < 0)))
     stop("BPE B316 : GEO breton et NB_EQUIP numérique non négatif requis pour B316.", call. = FALSE)
   invisible(TRUE)
 }
@@ -275,11 +305,19 @@ normaliser_bpe_b316 <- function(x) {
   # observation for zero.
   value <- intersect(c("NB_EQUIP", "OBS_VALUE", "VALUE", "value", "COUNT", "count"), names(x))[1]
   type <- intersect(c("FACILITIES", "FACILITY_TYPE", "TYPEQU", "type", "BPE"), names(x))[1]
-  if (is.na(code) || is.na(value)) stop("BPE B316 : GEO et OBS_VALUE requis.", call. = FALSE)
-  if (!is.na(type)) x <- x[!is.na(x[[type]]) & toupper(as.character(x[[type]])) %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE"), , drop = FALSE]
+  if (is.na(code) || is.na(value)) stop("BPE B316 : GEO et NB_EQUIP requis.", call. = FALSE)
+  if (!is.na(type)) {
+    if (any(is.na(x[[type]]) | !nzchar(trimws(as.character(x[[type]])))))
+      stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
+    x <- x[toupper(trimws(as.character(x[[type]]))) %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE"), , drop = FALSE]
+  }
   z <- tibble::tibble(commune = as.character(x[[code]]), fuel = suppressWarnings(as.numeric(x[[value]])))
   if (any(is.na(z$fuel) & !is.na(x[[value]]))) stop("BPE B316 : valeur non numérique.", call. = FALSE)
-  z <- z[grepl("^[0-9]{5}$", z$commune) & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE, ]
+  valide <- grepl("^[0-9]{5}$", z$commune) & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE
+  invalide <- !grepl("^[0-9]{5}$|^2[AB][0-9]{3}$", z$commune)
+  if (any(invalide)) stop("BPE B316 : code commune invalide.", call. = FALSE)
+  valide <- !invalide & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE
+  z <- z[valide, ]
   if (!nrow(z) || any(z$fuel < 0, na.rm = TRUE)) stop("BPE B316 : aucune ligne utilisable ou compte négatif.", call. = FALSE)
   z %>% dplyr::group_by(commune) %>% dplyr::summarise(fuel = if (all(is.na(fuel))) NA_real_ else sum(fuel, na.rm = TRUE), .groups = "drop") %>% dplyr::arrange(commune)
 }

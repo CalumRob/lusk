@@ -69,7 +69,7 @@
 # VINTAGE_MOBILITE_SNAPSHOT -----------------------------------------------------
 # Le millésime du snapshot porté : l'analyse a été figée le 2026-02-28 (la
 # date de génération du fichier de production — ses données de référence sont
-# BPE 2024 · OSM 02-2026 · BDNB 2025-07). La RÉFÉRENCE du vintage est CETTE
+# BPE Evolution 2025 · OSM 02-2026 · BDNB 2025-07). La RÉFÉRENCE du vintage est CETTE
 # date d'instantané (ce que « l'analyse du 28 février 2026 » veut dire) ; la
 # PUBLICATION est la date du portage dans le pipeline (2026-08-06 — le jour où
 # le snapshot est devenu la source du thème). Les deux dates sont la vérité de
@@ -90,7 +90,7 @@ MANIFEST_MOBILITE_SNAPSHOT <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "mobilite_snapshot",
-  "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
+  "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE Evolution 2025 · OSM 02-2026 · BDNB 2025-07)",
    "data/raw/bretagne_mobility_super_dashboard_gravity.csv",
   "bretagne_mobility_super_dashboard_gravity.csv",
   VINTAGE_MOBILITE_SNAPSHOT,
@@ -102,7 +102,7 @@ MANIFEST_MOBILITE_SNAPSHOT <- tibble::tribble(
     "voiture » (le flagship, docs/adr/0012) : le fichier de production ",
     "bretagne_mobility_super_dashboard_gravity.csv (1 200 communes × 2 061 ",
     "colonnes, les niveaux _epci/_dep/_reg inclus), figé le 2026-02-28 — les ",
-    "données de référence BPE 2024 · OSM 02-2026 · BDNB 2025-07, calcul par ",
+    "données de référence BPE Evolution 2025 · OSM 02-2026 · BDNB 2025-07, calcul par ",
     "bâtiment (1,2 M de bâtiments résidentiels, routage R5, cap 20 minutes). ",
     "JAMAIS l'artefact non-production indicateurs_summarized_communes.csv : il ",
     "a montré des deltas vélo NÉGATIFS (le contrat refuse tout autre nom de ",
@@ -470,10 +470,10 @@ MANIFEST_MOBILITE_STATIONNEMENT_VELO <- tibble::tribble(
 MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
-  "bpe_b316", "INSEE — Base permanente des équipements, B316 stations-service",
-  "https://api.insee.fr/melodi/file/BPE/BPE_2024_CSV_FR", "bpe_b316_2024.csv", "2024",
-  "2024-01-01", "2026-08-18", "lov2",
-  "BPE 2024, type d’équipement B316 (FACILITIES) : dénombré par commune pour le dénominateur stations-service du ratio EV/fuel. Les absences restent NA.",
+  "bpe_b316", "INSEE — Base permanente des équipements, jeu DS_BPE_EVOLUTION, observations B316 stations-service",
+  "https://api.insee.fr/melodi/file/DS_BPE_EVOLUTION/DS_BPE_EVOLUTION_2025_CSV_FR", "DS_BPE_EVOLUTION_2025_CSV_FR.zip", "2025",
+  "2025-01-01", "2026-08-18", "lov2",
+  "Le jeu INSEE DS_BPE_EVOLUTION (export CSV FR, fichier téléchargé directement depuis le catalogue INSEE) est filtré sur TIME_PERIOD = 2025, GEO_OBJECT = COM, FACILITY_TYPE = B316 et BPE_MEASURE = FACILITIES. FACILITY_TYPE devient FACILITIES et OBS_VALUE devient NB_EQUIP dans la table canonique ; les communes absentes restent indisponibles, tandis qu'une observation zéro reste zéro. Licence Ouverte 2.0 (INSEE).",
   "manuel", "fichier"
 )
 
@@ -482,10 +482,10 @@ verifier_contrat_mobilite_bpe_b316 <- function(fragment, contenu = NULL) {
     "Contrat Mobilité BPE B316 violé — %s : %s.", champ, detail), call. = FALSE)
   if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) manquer("forme", "une source")
   if (fragment$id != "bpe_b316") manquer("id", "id attendu : bpe_b316")
-  if (fragment$fichier != "bpe_b316_2024.csv") manquer("fichier", "export BPE B316 2024")
-  if (fragment$vintage != "2024") manquer("vintage", "millésime 2024")
-  if (!grepl("^https://api\\.insee\\.fr/melodi/file/BPE/BPE_[0-9]{4}_CSV_FR$", fragment$url))
-    manquer("url", "export CSV BPE INSEE, pas une page HTML ni un chemin local")
+  if (fragment$fichier != "DS_BPE_EVOLUTION_2025_CSV_FR.zip") manquer("fichier", "export DS_BPE_EVOLUTION 2025")
+  if (fragment$vintage != "2025") manquer("vintage", "millésime 2025")
+  if (fragment$url != "https://api.insee.fr/melodi/file/DS_BPE_EVOLUTION/DS_BPE_EVOLUTION_2025_CSV_FR")
+    manquer("url", "artefact CSV INSEE téléchargeable, pas une page HTML ni un chemin local")
   if (fragment$licence != "lov2") manquer("licence", "lov2")
   if (fragment$mode != "manuel" || fragment$type != "fichier") manquer("mode/type", "manuel/fichier")
   if (!is.null(contenu)) {
