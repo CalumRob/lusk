@@ -16,6 +16,7 @@
       },
       "reading": {
         "story_key": "ce-que-la-commune-abrite",
+        "figure": { "family": "list", "indicator": "lq" },
         "params": [
           "rang",
           "activity_label",

@@ -406,14 +406,17 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
 })
 
 describe('lignesLQPour — la liste appartient à la spécialisation communale', () => {
-  it('ne fabrique pas de LQ pour la lecture régionale de présence', () => {
+  it('ne fabrique pas de LQ quand la lecture optionnelle est absente', () => {
     const sousGroupes = sousGroupesDe(
       'economie',
       '53',
       histoiresEconomieFixture,
       indicateursEconomieFixture,
     )
-    expect(lignesLQPour(lectureDe(sousGroupes[1])!)).toEqual([])
+    const lecture = lectureDe(sousGroupes[1])
+
+    expect(lecture).toBeNull()
+    expect(lecture ? lignesLQPour(lecture) : []).toEqual([])
   })
 })
 
