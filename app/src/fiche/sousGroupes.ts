@@ -72,6 +72,8 @@ export interface LectureSousGroupe {
    * pct_iso_full_t, by contract) never kills the reading.
    */
   parametres: Record<string, string>
+  /** Optional payload-declared reading family (e.g. the LQ list). */
+  figure?: { family: FamilleFigure; indicator: string }
 }
 
 /** One fiche subgroup, rendered — the shared anatomy of all five themes. */
@@ -246,6 +248,7 @@ function lecturePour(
   groupe: string,
   template: NoeudTexteRiche[],
   metadata: ThemeMetadata,
+  figure?: LectureSousGroupe['figure'],
 ): { lecture: LectureSousGroupe | null; indisponible: boolean } {
   const histoire = payload.histoires.find(
     (h) => h.theme === theme && h.territoire === territoire && h.groupe === groupe,
@@ -262,7 +265,7 @@ function lecturePour(
   // sous-groupe déclare le lien canonique dans la métadonnée, la ligne porte
   // la sélection effective (la saillance vélo remplace le défaut, même groupe).
   return {
-    lecture: { story_key: histoire.story_key, histoire, template, parametres },
+    lecture: { story_key: histoire.story_key, histoire, template, parametres, ...(figure ? { figure } : {}) },
     indisponible: false,
   }
 }
@@ -310,6 +313,7 @@ export function sousGroupesPourTerritoire(
       sousGroupe.key,
       sousGroupe.reading.template,
       metadata,
+      sousGroupe.reading.figure,
     )
 
     return {
@@ -355,16 +359,17 @@ export function figureLecturePour(
   const histoire = lecture.histoire
   const nom = trouverTerritoire(payload, territoire)?.nom ?? territoire
   const metadata = payload.themeMetadata?.[histoire.theme]
-  const classificationLabel = (value: string) =>
-    metadata?.classification_labels?.[value] ?? 'classification indisponible'
+  const classificationLabel = (value: string) => metadata?.classification_labels?.[value] ?? null
 
   if (lecture.story_key === 'trajectoire-demographique') {
     const h = histoire as HistoireDemographie
+    const classification = classificationLabel(h.classification)
+    if (classification === null) return null
     return {
       genre: 'soldes',
       tauxNaturel: h.taux_solde_naturel,
       tauxMigratoire: h.taux_solde_migratoire,
-      classification: classificationLabel(h.classification),
+      classification,
       nom,
       nuage: nuageComparaison(payload, territoire) ?? [],
     }
@@ -396,11 +401,13 @@ export function figureLecturePour(
     if (h.artif_m2_par_habitant === null || h.artif_m3_par_habitant === null) return null
     if (h.taux_variation_population === null) return null
     if (h.periode_artif === null) return null
+    const classification = classificationLabel(h.classification)
+    if (classification === null) return null
     return {
       genre: 'quadrant',
       tauxVariationPopulation: h.taux_variation_population,
       deltaM2ParHabitant: h.artif_m3_par_habitant - h.artif_m2_par_habitant,
-      classification: classificationLabel(h.classification),
+      classification,
       nom,
       periodePop: h.periode_pop,
       periodeArtif: h.periode_artif,
@@ -433,7 +440,7 @@ export function lignesLQPour(lecture: LectureSousGroupe): LigneLQ[] {
   // Only the commune/EPCI/département specialisation story owns LQ. The
   // regional presence story has different matter (part of the parc), and
   // must not acquire an invented list merely because its theme is économie.
-  if (!lecture.template.some((node) => node.type === 'param' && node.key === 'lq')) return []
+  if (lecture.figure?.family !== 'list' || lecture.figure.indicator !== 'lq') return []
   const h = lecture.histoire
   const lignes: LigneLQ[] = []
   for (let rang = 1; rang <= 5; rang += 1) {

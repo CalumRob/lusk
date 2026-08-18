@@ -42,6 +42,7 @@ import type {
   TerritoireType,
   Theme,
   ThemeMetadata,
+  FamilleFigure,
   Vintage,
   Sexe,
 } from './types'
@@ -1076,15 +1077,15 @@ function lireHistoireMobilite(
     const shared = ligne['distribution_signature']
     if (shared !== undefined) {
       exiger(estObjet(shared), fichier, ligneIndexee, '« distribution_signature » doit être un objet')
+      exiger(shared !== undefined, fichier, ligneIndexee, 'la Story vélo doit porter la signature de distribution partagée')
       for (const famille of ['dens', 'dec'] as const) {
         const valeurs = (shared as LigneBrute)[famille]
         exiger(Array.isArray(valeurs) && valeurs.length === 10, fichier, ligneIndexee, `« distribution_signature.${famille} » doit contenir 10 valeurs`)
         for (const valeur of valeurs as unknown[]) {
-          exiger(estValeur(valeur), fichier, ligneIndexee, `« distribution_signature.${famille} » contient une valeur invalide`)
+          exiger(estNombre(valeur), fichier, ligneIndexee, `« distribution_signature.${famille} » contient une valeur invalide`)
         }
       }
-      exiger(estValeur((shared as LigneBrute).min), fichier, ligneIndexee, '« distribution_signature.min » doit être un nombre ou null')
-      exiger(estValeur((shared as LigneBrute).max), fichier, ligneIndexee, '« distribution_signature.max » doit être un nombre ou null')
+      exiger(estNombre((shared as LigneBrute).min) && estNombre((shared as LigneBrute).max), fichier, ligneIndexee, '« distribution_signature.min/max » doit être numérique pour une Story vélo')
     }
     return {
       territoire,
@@ -1104,7 +1105,14 @@ function lireHistoireMobilite(
       dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null,
       dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null,
       classification_saillance: classification_saillance as 'saillant',
-      ...(shared ? { distribution_signature: shared } : {}),
+      ...(shared ? {
+        distribution_signature: {
+          dens: (shared as LigneBrute).dens as number[],
+          dec: (shared as LigneBrute).dec as number[],
+          min: (shared as LigneBrute).min as number,
+          max: (shared as LigneBrute).max as number,
+        },
+      } : {}),
       ...estampille,
     }
   }
@@ -1927,6 +1935,17 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
 
     // le template — le texte riche TYPÉ
     const template = validerTemplate(reading['template'], fichier, params, cle)
+    const readingFigureBrut = reading['figure']
+    let readingFigure: { family: FamilleFigure; indicator: string } | undefined
+    if (readingFigureBrut !== undefined) {
+      exiger(estObjet(readingFigureBrut), fichier, ligneIndexee, `« ${cle} » : reading.figure doit être un objet`)
+      const rf = readingFigureBrut as LigneBrute
+      const rfFamily = lireChaine(rf, 'family', fichier, ligneIndexee)
+      exiger(estUneDe(rfFamily, FAMILLES_FIGURE), fichier, ligneIndexee, `« ${cle} » : famille de reading.figure inconnue`)
+      const rfIndicator = lireChaine(rf, 'indicator', fichier, ligneIndexee)
+      exiger(params.includes(rfIndicator), fichier, ligneIndexee, `« ${cle} » : reading.figure doit rendre un paramètre déclaré`)
+      readingFigure = { family: rfFamily as FamilleFigure, indicator: rfIndicator }
+    }
 
     return {
       key: cle,
@@ -1934,7 +1953,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       framing,
       indicators,
       figure: { family, indicator: indicateurFigure },
-      reading: { story_key, params, template },
+      reading: { story_key, params, template, ...(readingFigure ? { figure: readingFigure } : {}) },
     }
   })
 

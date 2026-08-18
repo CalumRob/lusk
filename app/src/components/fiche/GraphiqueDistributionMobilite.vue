@@ -287,6 +287,6 @@ onBeforeUnmount(() => {
 
 .graphique-distribution-mobilite-canvas {
   width: 100%;
-  height: 180px;
+  height: var(--figure-compact-height);
 }
 </style>

@@ -792,6 +792,10 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     dplyr::arrange(territoire)
 
   velo <- div %>%
+    # The resolved payload has one row per (territoire, groupe).  The vélo
+    # reading therefore carries the default reading's shared distribution
+    # explicitly; it must never rely on a second default row at app runtime.
+    dplyr::left_join(signature, by = "code") %>%
     dplyr::left_join(saillance, by = "code") %>%
     dplyr::filter(classification == "saillant") %>%
     dplyr::mutate(
@@ -802,7 +806,18 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     dplyr::rename(territoire = code,
                   classification_saillance = classification) %>%
     dplyr::select(territoire, type, theme, story_key,
-                  div_loss_t, div_loss_b, delta, classification_saillance) %>%
+                  div_loss_t, div_loss_b, delta, classification_saillance,
+                  dens_min, dens_max, dplyr::all_of(paste0("dens_", 1:10)),
+                  dplyr::all_of(paste0("dec_", 1:10))) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(distribution_signature = list(list(
+      dens = c(dplyr::c_across(dplyr::all_of(paste0("dens_", 1:10)))),
+      dec = c(dplyr::c_across(dplyr::all_of(paste0("dec_", 1:10)))),
+      min = dens_min,
+      max = dens_max
+    ))) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(-dplyr::all_of(c("dens_min", "dens_max", paste0("dens_", 1:10), paste0("dec_", 1:10)))) %>%
     dplyr::arrange(territoire)
 
   dplyr::bind_rows(vingt, velo) %>%

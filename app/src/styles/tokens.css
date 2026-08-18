@@ -184,6 +184,9 @@
   /* Grid & shell */
   --content-max-width: 1200px; /* page content max width */
   --figure-compact-max-height: 200px;
+  --figure-compact-width-min: 180px;
+  --figure-compact-width-max: 200px;
+  --figure-compact-height: 180px;
   --figure-rank-width: 1.5rem;
   --header-max-width: 1400px;  /* header / full-bleed max */
   --grid-columns: 12;

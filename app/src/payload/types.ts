@@ -586,6 +586,7 @@ export interface LectureSousGroupe {
   story_key: string
   params: string[]
   template: NoeudTexteRiche[]
+  figure?: FigureSousGroupe
 }
 
 /** One subgroup of the fiche — a stable place with indicators, a figure and an optional reading. */

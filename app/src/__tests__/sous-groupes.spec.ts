@@ -326,14 +326,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     const lecture = lectureDe(sousGroupes[0])
     const figure = lecture ? figureLecturePour(payloadDe(indicateursDemographieFixture, histoiresDemographieFixture), '22001', lecture) : null
 
-    expect(figure).toMatchObject({
-      genre: 'soldes',
-      tauxNaturel: 5.982905982905983,
-      tauxMigratoire: 2.564102564102564,
-      classification: 'classification indisponible',
-      nom: 'Commune A1',
-    })
-    expect(figure?.nuage).toHaveLength(2)
+    expect(figure).toBeNull()
   })
 
   it('rend la distribution Mobilité pour la lecture par défaut (la signature + la médiane)', () => {

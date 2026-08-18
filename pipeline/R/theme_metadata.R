@@ -491,6 +491,15 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
 
       # le template — le texte riche TYPÉ
       valider_template(groupe$reading$template, params, cle, manquer)
+
+    if (!is.null(groupe$reading$figure)) {
+      rf <- groupe$reading$figure
+      if (!est_liste(rf) || is.null(rf$family) || !rf$family %in% FAMILLES_FIGURE ||
+          is.null(rf$indicator) || !est_chaine_non_vide(rf$indicator) ||
+          !rf$indicator %in% params) {
+         manquer("lecture", paste0("« ", cle, " » : reading.figure est invalide"))
+       }
+      }
     }
   }
 

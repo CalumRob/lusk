@@ -1299,6 +1299,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         figure: { family: 'scalar', indicator: 'effectifs_salaries' },
         reading: {
           story_key: 'ce-que-la-commune-abrite',
+          figure: { family: 'list', indicator: 'lq' },
           params: ['rang', 'activity_label', 'lq', 'n'],
           template: [
             { type: 'text', content: 'La commune se spécialise dans ' },

@@ -20,7 +20,7 @@ import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistribut
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
-import FigureListeLQ from '@/components/fiche/FigureListeLQ.vue'
+import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
@@ -204,8 +204,9 @@ const lignesReseaux = computed(
                 :nuage="groupe.figureLecture.nuage"
               />
 
-              <FigureListeLQ
+              <FigureLectureRenderer
                 v-if="groupe.lignesLQ.length"
+                :famille="groupe.lecture?.figure?.family ?? 'list'"
                 :lignes="groupe.lignesLQ"
                 :labels="{ rang: metadata!.param_labels.rang, activite: metadata!.param_labels.activity_label, lq: metadata!.param_labels.lq }"
               />
@@ -345,7 +346,7 @@ const lignesReseaux = computed(
 
 .lecture-ligne {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 200px);
+  grid-template-columns: minmax(0, 1fr) minmax(var(--figure-compact-width-min), var(--figure-compact-width-max));
   gap: var(--space-4);
   align-items: start;
 }
