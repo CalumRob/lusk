@@ -521,6 +521,9 @@ calculer_part_proches_arret_communes <- function(stops, batiments,
 }
 
 FACTEUR_PLACE_VOITURE_M2 <- c(lot = 25, street_side = 11.5)
+# Empirical decision recorded by the contract: publish the count ratio
+# (places vélo / places voiture), not the discarded area proxy.
+RATIO_STATIONNEMENT_VELO_DECISION <- "places_velo_par_places_voiture"
 # calculer_stationnement_voiture_communes ---------------------------------------
 # Les surfaces OSM sont converties en places estimées. `capacity` est
 # volontairement ignoré : sa couverture est insuffisante et son sens varie.
@@ -559,7 +562,7 @@ calculer_stationnement_voiture_communes <- function(parkings, lignes, limites) {
     )
     tagged <- which(tagged > 0)
     if (length(tagged) > 0) {
-      ln <- sf::st_join(lignes[tagged > 0, ], limites["code_insee"], left = FALSE)
+      ln <- sf::st_join(lignes[tagged, , drop = FALSE], limites["code_insee"], left = FALSE)
       lane_count <- apply(sf::st_drop_geometry(ln[, lane_cols, drop = FALSE]), 1,
         function(x) sum(vapply(seq_along(x), function(j) {
           v <- x[[j]]
@@ -592,17 +595,12 @@ agreger_stationnement_voiture_territoires <- function(voiture_communes,
       x %>% dplyr::summarise(code = "53", places = sum(places_voiture), population = sum(population))
     )
   }
-  # Keep the readable candidate (places / places); the area candidate is
-  # returned as an attribute for the empirical comparison without publishing it.
+  # Decision recorded in the contract: compare counts, not area proxies.  The
+  # ratio below is the only candidate published (the rejected area candidate
+  # must not survive as an unowned computation).
   out <- calc("EPCI") %>% dplyr::mutate(value = places / population * 1000,
                                         key = "places_stationnement_voiture_1000") %>%
     dplyr::select(code, key, value)
-  candidats <- velo_communes %>% dplyr::select(commune, places) %>%
-    dplyr::inner_join(voiture_communes %>% dplyr::select(commune, places_voiture), by = "commune")
-  places_candidate <- candidats$places / candidats$places_voiture
-  surface_candidate <- candidats$places * 2 /
-    (candidats$places_voiture * FACTEUR_PLACE_VOITURE_M2[["lot"]])
-  comparable <- stats::complete.cases(places_candidate, surface_candidate)
   # The readable ratio is places vélo / places voiture.  Aggregate its two
   # counts before dividing; never average commune ratios.
   ratio_ctx <- velo_communes %>% dplyr::select(commune, places_velo = places) %>%
@@ -868,10 +866,13 @@ agreger_offre_territoires <- function(offre_tc_communes, bornes_communes,
       dplyr::left_join(ref, by = c("commune" = "CODGEO"))
     agg <- function(g) ctx_r %>% dplyr::filter(!is.na(.data[[g]])) %>%
       dplyr::group_by(code = .data[[g]]) %>% dplyr::summarise(
-        bornes = sum(bornes), fuel = if (all(is.na(fuel_value))) NA_real_ else sum(fuel_value, na.rm = TRUE), .groups = "drop")
+        bornes = sum(bornes),
+        # A missing BPE observation means unavailable, not zero.  A group is
+        # unavailable when any of its members is unavailable.
+        fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value), .groups = "drop")
     rr <- dplyr::bind_rows(ctx_r %>% dplyr::transmute(code = commune, bornes, fuel = fuel_value),
                            agg("EPCI"), agg("DEP"),
-                           ctx_r %>% dplyr::summarise(code = "53", bornes = sum(bornes), fuel = if (all(is.na(fuel_value))) NA_real_ else sum(fuel_value, na.rm = TRUE)))
+                            ctx_r %>% dplyr::summarise(code = "53", bornes = sum(bornes), fuel = if (anyNA(fuel_value)) NA_real_ else sum(fuel_value)))
      ratios <- calculer_ratios_mobilite(rr %>% dplyr::select(code, bornes),
        rr %>% dplyr::select(code, fuel),
       tibble::tibble(code = rr$code, places_velo = NA_real_),

@@ -532,7 +532,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: 'places / 1 000 hab',
         source:
           'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
-        sourceId: 'osm_parkings',
+         sourceId: 'osm_reseaux',
         direction: 'moins-est-mieux',
       },
       stationnement_velo_par_voiture: {
@@ -542,7 +542,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         unite: 'places vélo / place voiture',
         source:
           'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
-        sourceId: 'osm_parkings',
+         sourceId: 'osm_reseaux',
         direction: 'plus-est-mieux',
       },
       offre_cyclable: {

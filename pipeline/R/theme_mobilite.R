@@ -325,14 +325,23 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     donnees$amenagements_cyclables,
     stationnement_velo_communes[c("commune", "population")]
   )
-  stationnement_voiture_communes <- calculer_stationnement_voiture_communes(
-    donnees$parkings_osm, donnees$lignes_osm, donnees$communes_limites)
-  fuel_communes <- calculer_fuel_communes(donnees$stations_service)
-  offre_territoires <- agreger_offre_territoires(
-    offre_tc_communes, bornes_communes, stationnement_velo_communes,
-    base_epci, offre_cyclable_communes, stationnement_voiture_communes,
-    fuel_communes
-  )
+  stationnement_voiture_communes <- NULL
+  if (all(c("parkings_osm", "lignes_osm", "communes_limites") %in% names(donnees))) {
+    stationnement_voiture_communes <- calculer_stationnement_voiture_communes(
+      donnees$parkings_osm, donnees$lignes_osm, donnees$communes_limites)
+  }
+  fuel_communes <- if ("stations_service" %in% names(donnees))
+    calculer_fuel_communes(donnees$stations_service) else NULL
+  if (is.null(stationnement_voiture_communes) && is.null(fuel_communes)) {
+    offre_territoires <- agreger_offre_territoires(
+      offre_tc_communes, bornes_communes, stationnement_velo_communes,
+      base_epci, offre_cyclable_communes)
+  } else {
+    offre_territoires <- agreger_offre_territoires(
+      offre_tc_communes, bornes_communes, stationnement_velo_communes,
+      base_epci, offre_cyclable_communes, stationnement_voiture_communes,
+      fuel_communes)
+  }
 
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
   readr::write_rds(mobilite_communes, file.path(sortie, "mobilite_communes.rds"))
@@ -750,9 +759,15 @@ construire_rangs_detail <- function(table_long, territoires,
     by = "code"
   )
 
-  dplyr::bind_rows(lapply(sort(unique(tab$detail)), function(detail) {
-    lignes <- tab[tab$detail == detail, ]
-    cle <- unique(lignes$key)
+  groupes_detail <- unique(tab[c("key", "detail")])
+  groupes_detail <- groupes_detail[order(groupes_detail$key,
+                                         groupes_detail$detail,
+                                         na.last = TRUE), , drop = FALSE]
+  dplyr::bind_rows(lapply(seq_len(nrow(groupes_detail)), function(i) {
+    cle <- groupes_detail$key[[i]]
+    detail <- groupes_detail$detail[[i]]
+    lignes <- tab[tab$key == cle & (is.na(tab$detail) == is.na(detail)) &
+                    (is.na(detail) | tab$detail == detail), , drop = FALSE]
     # la direction DÉCLARÉE de la clé (issue #368 — aucune clé ne se repose sur
     # le défaut high-is-good de rang_ordinal_par_groupe) ; une clé sans
     # déclaration est une erreur de descripteur, jamais un défaut silencieux

@@ -480,6 +480,9 @@ export function validerIndicateurs(
     const value = ligne['value']
     exiger(estValeur(value), fichier, ligneIndexee, '« value » doit être un nombre ou null')
     const unit = lireChaine(ligne, 'unit', fichier, ligneIndexee)
+    const rider = ligne['rider']
+    exiger(rider === null || rider === undefined || estChaine(rider), fichier, ligneIndexee,
+      '« rider » doit être une chaîne ou null')
 
     const rang_epci = lireRang(ligne, 'rang_epci', fichier, ligneIndexee)
     const rang_dep = lireRang(ligne, 'rang_dep', fichier, ligneIndexee)
@@ -533,6 +536,7 @@ export function validerIndicateurs(
       sex,
       value,
       unit,
+      rider: rider === undefined ? null : rider,
       rang_epci,
       rang_dep,
       rang_reg,

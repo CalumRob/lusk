@@ -471,7 +471,7 @@ MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "bpe_b316", "INSEE — Base permanente des équipements, B316 stations-service",
-  "https://www.insee.fr/fr/statistiques/8229329", "bpe_b316_2024.csv", "2024",
+  "file:///E:/Website/Data_handling/bpe_b316_2024.csv", "bpe_b316_2024.csv", "2024",
   "2024-01-01", "2026-08-18", "lov2",
   "BPE 2024, type d’équipement B316 (FACILITIES) : dénombré par commune pour le dénominateur stations-service du ratio EV/fuel. Les absences restent NA.",
   "manuel", "fichier"

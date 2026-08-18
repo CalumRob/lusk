@@ -692,14 +692,15 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   # l'étage demande/réseaux (issue #139) + le sous-bloc (issue #140) + la
   # figure « L'offre cyclable » (issue #231)
   expect_named(res, c("mobilite_communes", "nb_buildings_territoires",
-                      "isolation_territoires", "div_loss_territoires",
+                        "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
                       "nuage_territoires", "isolation_rangs",
                       "voitures_communes", "voitures_territoires",
                       "reseaux_communes", "reseaux_territoires",
                       "offre_tc_communes", "bornes_communes",
                       "stationnement_velo_communes",
-                      "offre_cyclable_communes", "offre_territoires"))
+                       "offre_cyclable_communes", "offre_territoires",
+                       "tot_loss_territoires"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -916,7 +917,6 @@ test_that("construire_saillance_territoires : la classification de chaque territ
     calculer_div_loss_communes(fixture_snapshot_analytique_mobilite()),
     fixture_snapshot_analytique_mobilite(), base_epci_mini_analytique()
   )
-
   sa <- construire_saillance_territoires(div)
 
   # une ligne par territoire, la forme (code, delta, classification)
@@ -1064,8 +1064,10 @@ analytiques_mobilite_fixture <- function() {
   div <- agreger_div_loss_territoires(
     calculer_div_loss_communes(snap), snap, base
   )
+  tot <- agreger_tot_loss_territoires(calculer_tot_loss_communes(snap), snap, base)
   list(
     div_loss_territoires = div,
+    tot_loss_territoires = tot,
     saillance_territoires = construire_saillance_territoires(div),
     densite_territoires = construire_signature_densite(snap, base),
     nuage_territoires = construire_nuage_territoires(div, base),
@@ -2332,6 +2334,9 @@ fixture_indicateurs_mobilite <- function() {
     ) %>%
       dplyr::mutate(key = "offre_cyclable", value = 1)
   )
+  tot_loss_territoires <- tibble::tibble(
+    code = codes, tot_loss_t = seq_along(codes),
+    tot_loss_b = pmax(seq_along(codes) - 1, 0))
 
   list(
     nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
@@ -2339,7 +2344,8 @@ fixture_indicateurs_mobilite <- function() {
     isolation_rangs = isolation_rangs,
     voitures_territoires = voitures_territoires,
     reseaux_territoires = reseaux_territoires,
-    offre_territoires = offre_territoires
+    offre_territoires = offre_territoires,
+    tot_loss_territoires = tot_loss_territoires
   )
 }
 
@@ -2361,11 +2367,13 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_setequal(unique(ind$key), c(
     "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
+    "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
     "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque"
   ))
-  expect_equal(nrow(ind), 9 * 22)
+  expect_equal(nrow(ind), 243)
   expect_false("nb_buildings" %in% ind$key)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)

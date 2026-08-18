@@ -78,6 +78,8 @@ export interface Indicateur extends VintageStamp {
   sex?: Sexe | null
   value: number | null
   unit: string
+  /** Contextual explanation for an unavailable value (pipeline-owned fact). */
+  rider?: string | null
   /**
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no
