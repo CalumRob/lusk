@@ -132,7 +132,7 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
     expect(graphique.props()).toMatchObject({
       tauxNaturel: 5.982905982905983,
       tauxMigratoire: 2.564102564102564,
-      classification: 'attire-renouvelle',
+      classification: 'attire et se renouvelle',
       nom: 'Commune A1',
     })
     expect(graphique.props('nuage')).toHaveLength(2)

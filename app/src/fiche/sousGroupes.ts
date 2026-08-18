@@ -371,15 +371,12 @@ export function figureLecturePour(
 
   if (lecture.story_key === 'vingt-minutes-sans-voiture' || lecture.story_key === 'ce-que-le-velo-preserve') {
     const h = histoire as HistoireMobilite
-    // Mobility metadata predates classification_labels. Keep the fallback
-    // honest and human-readable; raw t/b keys must never reach a chart.
-    const modes = {
-      t: metadata?.classification_labels?.t ?? 'à pied ou en transports en commun',
-      b: metadata?.classification_labels?.b ?? 'à vélo',
-    }
+    // Mode wording is resolved from the payload's shared reseaux vocabulary;
+    // classification_labels describes reading values, not transport modes.
+    const modes = modesDepuisMetadata(metadata)
     return {
       genre: 'distribution',
-      distribution: distributionDe(h),
+      distribution: distributionPourLecture(payload, h),
       mediane: h.div_loss_t,
       medianeVelo: h.div_loss_b,
       modes,
@@ -411,6 +408,25 @@ export function figureLecturePour(
   }
 
   return null
+}
+
+/** The vélo row shares the default row's payload-owned distribution signature. */
+function distributionPourLecture(payload: Payload, histoire: HistoireMobilite): DistributionMobilite {
+  const distribution = distributionDe(histoire)
+  if (distribution.dec.some((v) => v !== null) || distribution.dens.some((v) => v !== null)) return distribution
+  const defaut = payload.histoires.find(
+    (candidate): candidate is HistoireMobilite =>
+      candidate.theme === 'mobilite' && candidate.territoire === histoire.territoire &&
+      candidate.story_key === 'vingt-minutes-sans-voiture',
+  )
+  return defaut ? distributionDe(defaut) : distribution
+}
+
+/** Mode labels come from the payload's established `reseaux` vocabulary. */
+function modesDepuisMetadata(metadata: ThemeMetadata | undefined): { t: string; b: string } {
+  const details = metadata?.detail_labels.reseaux
+  const mode = (libelle: string | undefined) => libelle?.replace(/^[^—]+—\s*/, '') ?? ''
+  return { t: mode(details?.t_densite), b: mode(details?.b_densite) }
 }
 
 /** The five payload-owned LQ rows become a compact reading figure. */

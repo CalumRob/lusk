@@ -131,7 +131,7 @@ describe('OngletTheme — the reading slot (le template + le graphe quadrant)', 
     expect(graphique.props()).toMatchObject({
       tauxVariationPopulation: 14.4927536231884,
       deltaM2ParHabitant: 300,
-      classification: 'grandir-en-setalant',
+      classification: "grandit en s'étalant",
       nom: 'Commune A1',
       periodePop: '2017-2023',
       periodeArtif: '2021-2025',

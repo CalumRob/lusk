@@ -2,13 +2,13 @@
 import { formaterNombreFR } from '@/payload/selectors'
 import type { LigneLQ } from '@/fiche/sousGroupes'
 
-defineProps<{ lignes: LigneLQ[] }>()
+defineProps<{ lignes: LigneLQ[]; labels?: { rang?: string; activite?: string; lq?: string } }>()
 </script>
 
 <template>
-  <figure class="figure-liste-lq carte-figure" aria-label="Top 5 des spécialisations des établissements">
-    <figcaption>Top 5 des spécialisations</figcaption>
-    <div class="entetes" aria-hidden="true"><span>Rang</span><span>Activité</span><span>LQ</span></div>
+  <figure class="figure-liste-lq carte-figure" :aria-label="`Top 5 — ${labels?.activite ?? 'Activité'} / ${labels?.lq ?? 'LQ'}`">
+    <figcaption>Top 5 — {{ labels?.activite ?? 'Activité' }}</figcaption>
+    <div class="entetes" aria-hidden="true"><span>{{ labels?.rang ?? 'Rang' }}</span><span>{{ labels?.activite ?? 'Activité' }}</span><span>{{ labels?.lq ?? 'LQ' }}</span></div>
     <ol>
       <li v-for="ligne in lignes" :key="ligne.rang">
         <span class="rang">{{ ligne.rang }}</span>

@@ -354,9 +354,16 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
   })
 
   it('rend la même distribution pour la lecture vélo, avec les deux marques de mode', () => {
+    const histoireDefaut = histoiresMobiliteFixture.find(
+      (h) => h.territoire === '22001' && h.story_key === 'vingt-minutes-sans-voiture',
+    )!
+    const histoires = [
+      ...histoiresMobiliteFixture,
+      { ...histoireDefaut, territoire: '22002', div_loss_t: 42, div_loss_b: 42, delta: 0 },
+    ]
     const payload = payloadDe(
       indicateursMobiliteFixture,
-      histoiresMobiliteFixture,
+      histoires,
       { mobilite: metadonneesThemesFixtures.mobilite },
     )
     const sousGroupes = sousGroupesPourTerritoire(payload, 'mobilite', '22002')
@@ -370,6 +377,9 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
       medianeVelo: 13,
       modes: { t: 'à pied ou en transports en commun', b: 'à vélo' },
     })
+    if (figure?.genre !== 'distribution') throw new Error('figure attendue')
+    expect(figure.distribution.dec.filter((point) => point !== null)).toHaveLength(10)
+    expect(figure.distribution.dens.filter((point) => point !== null)).toHaveLength(10)
   })
 
   it('rend le quadrant Milieux (les deux forces + la fenêtre des états) quand les états existent', () => {
