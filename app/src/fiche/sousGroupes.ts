@@ -306,15 +306,19 @@ export function sousGroupesPourTerritoire(
         ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure }
         : null
 
-    const { lecture, indisponible } = lecturePour(
-      payload,
-      theme,
-      territoire,
-      sousGroupe.key,
-      sousGroupe.reading.template,
-      metadata,
-      sousGroupe.reading.figure,
-    )
+    // A subgroup may deliberately have no reading (the silent, indicator-only
+    // state). Do not turn that absence into copy or a fake Story.
+    const { lecture, indisponible } = sousGroupe.reading
+      ? lecturePour(
+          payload,
+          theme,
+          territoire,
+          sousGroupe.key,
+          sousGroupe.reading.template,
+          metadata,
+          sousGroupe.reading.figure,
+        )
+      : { lecture: null, indisponible: false }
 
     return {
       key: sousGroupe.key,

@@ -494,5 +494,13 @@
     "licence": "lov2",
     "date_reference": "2026-08-05",
     "date_publication": "2026-08-05"
+  },
+  {
+    "id": "bpe_b316",
+    "source": "INSEE — Base permanente des équipements, B316 stations-service",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-01-01",
+    "date_publication": "2026-08-18"
   }
 ]

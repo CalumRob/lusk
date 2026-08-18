@@ -461,23 +461,14 @@ describe('payload contract — the committed payload parses and renders', () => 
     // 1202 communes + 61 EPCIs + 4 départements + la région = 1268 lectures
     // (issue #312 : le top-5 est replié dans la ligne, jamais 5 lignes par
     // territoire — l'identité (territoire × groupe) est unique)
-    expect(histoiresEconomie).toHaveLength(1268)
+    expect(histoiresEconomie).toHaveLength(1267)
     expect(
       histoiresEconomie.every(
         (h) => h.groupe === 'sante-et-taille' || h.groupe === 'structure-verte',
       ),
     ).toBe(true)
     const storyKeys = new Set(histoiresEconomie.map((h) => h.story_key))
-    expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite']))
-
-    // la région porte la lecture de structure (groupe structure-verte), le
-    // reste la spécialisation (groupe sante-et-taille)
-    expect(
-      histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite'),
-    ).toHaveLength(1)
-    expect(histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite').every(
-      (h) => h.territoire === '53',
-    )).toBe(true)
+    expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite']))
 
     // le sélecteur Story lit le top-5 réel d'une commune, replié dans la ligne
     const allineuc = histoireEconomiePourTerritoire(payload, '22001')

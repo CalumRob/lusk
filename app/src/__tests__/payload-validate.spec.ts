@@ -440,14 +440,9 @@ describe('parsePayload — the Économie contract (issue #120, forme RÉSOLUE #3
       story_key: 'ce-que-la-commune-abrite',
       salience_reason: 'defaut',
     })
-    // la région porte la lecture de structure dédiée (groupe structure-verte)
-    const region = payload.histoires.filter((h) => h.territoire === '53')
-    expect(region).toHaveLength(1)
-    expect(region[0]).toMatchObject({
-      theme: 'economie',
-      groupe: 'structure-verte',
-      story_key: 'ce-que-la-bretagne-abrite',
-    })
+    // la structure verte est un sous-groupe indicateur silencieux ; la région
+    // ne porte donc aucune lecture Économie.
+    expect(payload.histoires.filter((h) => h.territoire === '53')).toHaveLength(0)
   })
 
   it('rejects an Économie histoire with an unknown story_key (drift must be loud)', () => {
@@ -493,14 +488,6 @@ describe('parsePayload — the Économie contract (issue #120, forme RÉSOLUE #3
 
     const erreur = attendErreurValidation(documentsEconomie({ histoires }))
     expect(erreur.message).toMatch(/top1_lq/)
-  })
-
-  it('rejects a ce-que-la-bretagne-abrite row without its part du parc (the reading IS the structure)', () => {
-    const histoires = JSON.parse(JSON.stringify(histoiresEconomieFixture)) as typeof histoiresEconomieFixture
-    ;(histoires[3] as { top1_part_parc: number | null }).top1_part_parc = null
-
-    const erreur = attendErreurValidation(documentsEconomie({ histoires }))
-    expect(erreur.message).toMatch(/top1_part_parc/)
   })
 
   it('rejects a Story vintage malformed like an indicator one (two ISO dates + source/version)', () => {

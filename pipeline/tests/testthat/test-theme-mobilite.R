@@ -65,22 +65,15 @@ test_that("MANIFEST_MOBILITE : les dix sources du thème, les 11 colonnes standa
                                      "stationnement-velo")] == "cron"))
 })
 
-test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de production (cache froid, #381)", {
+test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de production (chemin repo-relatif)", {
   m <- MANIFEST_MOBILITE
   bat <- m[m$id == "batiments_residentiels", ]
 
-  # l'URL file:// de la couche bâtiments est le chemin ABSOLU du fichier de
-  # production — la même famille que le snapshot (ligne 94), JAMAIS un chemin
-  # relatif à la racine du lecteur (« file:///pipeline/data/raw/... » ne se
-  # résout pas : le téléchargement échouait bruyamment sur un cache froid,
-  # #381). Le fichier est porté à la main (mode « manuel ») : le cron ne le
+   # Le fichier de production est porté à la main (mode « manuel ») : le cron
+   # ne le télécharge pas. Son chemin de cache est repo-relatif et portable ; le
   # touche jamais, la garde de contenu (verifier_fichier) couvre le reste.
-  expect_equal(bat$url,
-               "file:///E:/Website/Data_handling/batiments_residentiels_bretagne.csv")
-  # la même famille que le snapshot voisin : un chemin ABSOLU sous le dossier
-  # de production, jamais un chemin qui part de la racine du lecteur
-  expect_true(startsWith(bat$url, "file:///E:/"))
-  expect_false(startsWith(bat$url, "file:///pipeline"))
+   expect_equal(bat$url, "data/raw/batiments_residentiels_bretagne.csv")
+   expect_false(grepl("^[A-Za-z]:|^file:///", bat$url))
   expect_equal(bat$mode, "manuel")
   expect_equal(bat$type, "fichier")
 })

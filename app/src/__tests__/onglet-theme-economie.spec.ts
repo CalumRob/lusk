@@ -68,7 +68,7 @@ describe('OngletTheme — the two metadata subgroups (3 indicateurs)', () => {
     expect(wrapper.findAll('.figure-compacte')).toHaveLength(2)
     expect(
       wrapper.findAll('.figure-compacte').map((f) => f.attributes('data-famille')),
-    ).toEqual(['scalar', 'profile'])
+    ).toEqual(['scalar', 'scalar'])
   })
 
   it('renders the 3 French labels and a vintage stamp per figure', async () => {
@@ -124,23 +124,21 @@ describe('OngletTheme — the reading slot (la Story, jamais un indicateur)', ()
     expect(source.text()).toContain('réf. 31 mars 2026')
   })
 
-  it('keeps the second subgroup silent for a commune — the région-only presence reading', async () => {
+  it('keeps the indicator-only second subgroup silent for a commune', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.sous-groupe[data-groupe="structure-verte"] .sous-groupe-lecture').exists()).toBe(false)
   })
 
-  it('gives the région (53) its presence reading in structure-verte — no lecture in sante-et-taille', async () => {
+  it('keeps the region silent too — the retired regional reading is not rendered', async () => {
     const wrapper = await monter('53')
 
     expect(
       wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .sous-groupe-lecture').exists(),
     ).toBe(false)
-    const texte = wrapper.find('.sous-groupe[data-groupe="structure-verte"] .lecture-texte')
-    expect(texte.exists()).toBe(true)
-    expect(texte.text()).toBe(
-      "La Bretagne abrite surtout Location de terrains et d'autres biens immobiliers (16,5 du parc). Méthodes",
-    )
+    expect(
+      wrapper.find('.sous-groupe[data-groupe="structure-verte"] .sous-groupe-lecture').exists(),
+    ).toBe(false)
   })
 })
 

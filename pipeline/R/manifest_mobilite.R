@@ -81,17 +81,17 @@ DATE_PUBLICATION_MOBILITE_SNAPSHOT <- "2026-08-06"
 # MANIFEST_MOBILITE_SNAPSHOT ----------------------------------------------------
 # Le fragment SNAPSHOT (issue #137) : les 11 colonnes standard du manifeste (la
 # même forme que SIRENE / Flores / RP / Habitat), une ligne : la source portée.
-# `url` pointe le fichier de production original (une URL file:// — la source
-# n'a pas de point de publication public ; le mode « manuel » fait que le cron
-# ne la touche jamais, et le fichier est toujours présent dans le cache du
-# worktree). Le fragment est VALIDÉ par verifier_contrat_mobilite_snapshot (la
+# `url` reprend le chemin de cache repo-relatif du fichier de production (la
+# source n'a pas de point de publication public ; le mode « manuel » fait que
+# le cron ne la touche jamais). Le fragment est VALIDÉ par
+# verifier_contrat_mobilite_snapshot (la
 # garde du « jamais cette base » du PRD #136).
 MANIFEST_MOBILITE_SNAPSHOT <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "mobilite_snapshot",
   "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
-  "file:///E:/Website/Data_handling/bretagne_mobility_super_dashboard_gravity.csv",
+   "data/raw/bretagne_mobility_super_dashboard_gravity.csv",
   "bretagne_mobility_super_dashboard_gravity.csv",
   VINTAGE_MOBILITE_SNAPSHOT,
   DATE_REFERENCE_MOBILITE_SNAPSHOT,
@@ -355,7 +355,7 @@ MANIFEST_MOBILITE_BATIMENTS <- tibble::tribble(
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "batiments_residentiels",
   "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l'offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
-  "file:///E:/Website/Data_handling/batiments_residentiels_bretagne.csv",
+   "data/raw/batiments_residentiels_bretagne.csv",
   "batiments_residentiels_bretagne.csv",
   "2025-07", "2025-07-31", "2026-08-06",
   "lov2",

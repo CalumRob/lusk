@@ -255,7 +255,7 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
     })
   })
 
-  it('résout la lecture de présence de la région (structure-verte, n + part du parc)', () => {
+  it('la structure verte reste silencieuse quand la métadonnée ne déclare aucune lecture', () => {
     const sousGroupes = sousGroupesDe(
       'economie',
       '53',
@@ -264,11 +264,8 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
     )
 
     expect(lectureDe(sousGroupes[0])).toBeNull()
-    expect(lectureDe(sousGroupes[1])?.story_key).toBe('ce-que-la-bretagne-abrite')
-    expect(lectureDe(sousGroupes[1])?.parametres).toEqual({
-      activity_label: "Location de terrains et d'autres biens immobiliers",
-      part_parc: '16,5',
-    })
+    expect(lectureDe(sousGroupes[1])).toBeNull()
+    expect(sousGroupes[1].lectureIndisponible).toBe(false)
   })
 
   it('rend une lecture null pour un territoire sans ligne (la donnée absente — jamais inventée)', () => {

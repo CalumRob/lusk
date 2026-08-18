@@ -475,9 +475,8 @@ export const indicateursEconomieFixture: Indicateur[] = [
 /**
  * The two Économie Stories (issue #120, RÉSOLUES par #312) — UNE lecture par
  * (territoire, groupe) : « ce que la commune abrite » (la spécialisation LQ,
- * communes/EPCIs/départements — groupe sante-et-taille) et « ce que la
- * Bretagne abrite » (la lecture de structure de la région, groupe
- * structure-verte). Le top-5 est replié dans la ligne (top1_*..top5_* — le
+ * communes/EPCIs/départements — groupe sante-et-taille). La structure verte est
+ * un sous-groupe indicateur silencieux, sans lecture. Le top-5 est replié dans la ligne (top1_*..top5_* — le
  * rang est l'index). Labels et nombres réels du payload reshapé — jamais codés
  * en dur.
  */
@@ -510,16 +509,6 @@ export const histoiresEconomieFixture: Histoire[] = [
     top3_activity_code: '08.91Z', top3_activity_label: "Extraction des minéraux chimiques et d'engrais minéraux", top3_lq: 5.51753307681677, top3_n: 1, top3_part_parc: null,
     top4_activity_code: '14.20Z', top4_activity_label: "Fabrication d'articles en fourrure", top4_lq: 5.51753307681677, top4_n: 1, top4_part_parc: null,
     top5_activity_code: '25.94Z', top5_activity_label: 'Fabrication de vis et de boulons', top5_lq: 5.51753307681677, top5_n: 1, top5_part_parc: null,
-    ...vintageSirene,
-  },
-  // la région 53 — la lecture de structure (story_key dédié, LQ dégénérée)
-  {
-    territoire: '53', type: 'region', theme: 'economie', groupe: 'structure-verte', story_key: 'ce-que-la-bretagne-abrite', salience_reason: 'defaut',
-    top1_activity_code: '68.20B', top1_activity_label: "Location de terrains et d'autres biens immobiliers", top1_lq: null, top1_n: 124881, top1_part_parc: 0.16462751477456836,
-    top2_activity_code: '68.20A', top2_activity_label: 'Location de logements', top2_lq: null, top2_n: 71660, top2_part_parc: 0.09446759482023341,
-    top3_activity_code: '94.99Z', top3_activity_label: 'Autres organisations fonctionnant par adhésion volontaire', top3_lq: null, top3_n: 30531, top3_part_parc: 0.04024825756986528,
-    top4_activity_code: '70.10Z', top4_activity_label: 'Activités des sièges sociaux', top4_lq: null, top4_n: 16207, top4_part_parc: 0.02136528480674746,
-    top5_activity_code: '47.99A', top5_activity_label: 'Vente à domicile', top5_lq: null, top5_n: 13826, top5_part_parc: 0.0182264717552965,
     ...vintageSirene,
   },
 ]
@@ -1320,27 +1309,11 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         label: 'La structure verte',
         framing: 'La place des établissements verts dans le tissu productif.',
         indicators: ['eco_activites'],
-        figure: { family: 'profile', indicator: 'eco_activites' },
-        reading: {
-          story_key: 'ce-que-la-bretagne-abrite',
-          params: ['activity_label', 'part_parc', 'n'],
-          template: [
-            { type: 'text', content: 'La Bretagne abrite surtout ' },
-            { type: 'param', key: 'activity_label' },
-            { type: 'text', content: ' (' },
-            { type: 'param', key: 'part_parc' },
-            { type: 'text', content: ' du parc). ' },
-            {
-              type: 'link',
-              href: '/methodologie#economie',
-              children: [{ type: 'text', content: 'Méthodes' }],
-            },
-          ],
-        },
+         figure: { family: 'scalar', indicator: 'eco_activites' },
       },
     ],
     indicator_keys: ['effectifs_salaries', 'chomage', 'eco_activites'],
-    story_keys: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+     story_keys: ['ce-que-la-commune-abrite'],
     sources: {
       effectifs_salaries: 'flores_a88',
       chomage: 'rp_chomage',
@@ -1357,7 +1330,6 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       activity_label: 'Activité dominante',
       lq: 'Location quotient (LQ)',
       n: 'Nombre d’établissements',
-      part_parc: 'Part du parc breton',
     },
   },
   milieux: {
