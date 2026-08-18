@@ -149,22 +149,21 @@ export interface HistoireHabitat extends LectureResolueBase {
 /**
  * The Économie Story row (issue #120, RESOLVED by #312) — ONE row per
  * (territoire, groupe), the top-5 folded into flat params (top1_*..top5_*:
- * the reading content — the LQ for the specialisation reading, the parc share
- * for the région's presence reading; the rank is the index, never a column).
+ * the reading content — the LQ for the specialisation reading; the rank is the
+ * index, never a column).
  * A territory with fewer than five activities carries only its real ones (no
  * padding — the columns beyond stay null). Discriminated by `story_key` :
  * « ce que la commune abrite » (communes/EPCIs/départements, groupe
- * sante-et-taille) et « ce que la Bretagne abrite » (la région, groupe
- * structure-verte). The activity label comes ALWAYS from the payload, never
+ * sante-et-taille). The activity label comes ALWAYS from the payload, never
  * hard-coded. Each row wears its vintage stamp (issue #74).
  */
 export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
   theme: 'economie'
-  story_key: 'ce-que-la-commune-abrite' | 'ce-que-la-bretagne-abrite'
+  story_key: 'ce-que-la-commune-abrite'
   /** La matière de la lecture — le top-5 replié (le rang est l'index). */
   top1_activity_code: string | null
   top1_activity_label: string | null
-  /** La spécialisation (LQ) — null pour la lecture de présence. */
+  /** La spécialisation (LQ). */
   top1_lq: number | null
   top1_n: number | null
   /** La part du parc breton — null pour la lecture de spécialisation. */

@@ -749,7 +749,6 @@ const RAISON_PAR_STORY: Record<string, RaisonSaillance> = {
   'trajectoire-demographique': 'defaut',
   'etat-energetique-du-parc': 'defaut',
   'ce-que-la-commune-abrite': 'defaut',
-  'ce-que-la-bretagne-abrite': 'defaut',
   'se-densifier-setaler-ou-sen-aller': 'defaut',
 }
 
@@ -885,10 +884,9 @@ function lireHistoireEconomie(
   fichier: string,
 ): Histoire {
   const { territoire, type, story_key, groupe, salience_reason } = entete
-  const estPresence = story_key === 'ce-que-la-bretagne-abrite'
 
   // Le top-5 replié : chaque rang porte code + label (+ LQ pour la lecture de
-  // spécialisation, + part du parc pour la présence régionale). Le premier
+  // spécialisation). Le premier
   // rang EXISTE toujours (une lecture sans sa première activité est une
   // dérive) ; un territoire à moins de cinq activités porte NA au-delà (jamais
   // de padding). Le label vient TOUJOURS du payload — jamais codé en dur.
@@ -919,15 +917,10 @@ function lireHistoireEconomie(
     exiger(estValeur(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre ou null`)
     exiger(estValeur(n), fichier, ligneIndexee, `« ${prefixe}_n » doit être un nombre ou null`)
     exiger(estValeur(part_parc), fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être un nombre ou null`)
-    // la matière de la lecture : la LQ pour la spécialisation (jamais la part
-    // du parc), la part du parc pour la présence régionale (jamais la LQ)
-    if (estPresence) {
-      exiger(lq === null, fichier, ligneIndexee, `« ${prefixe}_lq » doit être null pour ce-que-la-bretagne-abrite`)
-      exiger(estNombre(part_parc), fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être un nombre pour ce-que-la-bretagne-abrite`)
-    } else {
-      exiger(estNombre(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre pour ce-que-la-commune-abrite`)
-      exiger(part_parc === null, fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être null pour ce-que-la-commune-abrite`)
-    }
+    // la matière de la lecture : la LQ pour la spécialisation ; la part du parc
+    // régionale a quitté le contrat de fiche.
+    exiger(estNombre(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre pour ce-que-la-commune-abrite`)
+    exiger(part_parc === null, fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être null pour ce-que-la-commune-abrite`)
     exiger(estNombre(n), fichier, ligneIndexee, `« ${prefixe}_n » doit être un nombre`)
     top[`${prefixe}_activity_code`] = code
     top[`${prefixe}_activity_label`] = label
@@ -968,33 +961,19 @@ function lireHistoireEconomie(
   // la matière est vérifiée rang par rang (top1_* non vide, lq/part_parc/n
   // par lecture) — le resserrage des types plats se fait ici, comme les
   // formes discriminées des autres thèmes
-  const lecture = estPresence
-    ? {
-        territoire,
-        type,
-        theme: 'economie' as const,
-        groupe,
-        story_key: 'ce-que-la-bretagne-abrite' as const,
-        salience_reason,
-        ...top,
-        vintage_source,
-        vintage_version,
-        vintage_date_reference,
-        vintage_date_publication,
-      }
-    : {
-        territoire,
-        type,
-        theme: 'economie' as const,
-        groupe,
-        story_key: 'ce-que-la-commune-abrite' as const,
-        salience_reason,
-        ...top,
-        vintage_source,
-        vintage_version,
-        vintage_date_reference,
-        vintage_date_publication,
-      }
+  const lecture = {
+    territoire,
+    type,
+    theme: 'economie' as const,
+    groupe,
+    story_key: 'ce-que-la-commune-abrite' as const,
+    salience_reason,
+    ...top,
+    vintage_source,
+    vintage_version,
+    vintage_date_reference,
+    vintage_date_publication,
+  }
   return lecture as HistoireEconomie
 }
 
