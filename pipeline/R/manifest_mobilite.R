@@ -471,21 +471,26 @@ MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "bpe_b316", "INSEE — Base permanente des équipements, B316 stations-service",
-  "file:///E:/Website/Data_handling/bpe_b316_2024.csv", "bpe_b316_2024.csv", "2024",
+  "https://api.insee.fr/melodi/file/BPE/BPE_2024_CSV_FR", "bpe_b316_2024.csv", "2024",
   "2024-01-01", "2026-08-18", "lov2",
   "BPE 2024, type d’équipement B316 (FACILITIES) : dénombré par commune pour le dénominateur stations-service du ratio EV/fuel. Les absences restent NA.",
   "manuel", "fichier"
 )
 
-verifier_contrat_mobilite_bpe_b316 <- function(fragment) {
+verifier_contrat_mobilite_bpe_b316 <- function(fragment, contenu = NULL) {
   manquer <- function(champ, detail) stop(sprintf(
     "Contrat Mobilité BPE B316 violé — %s : %s.", champ, detail), call. = FALSE)
   if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) manquer("forme", "une source")
   if (fragment$id != "bpe_b316") manquer("id", "id attendu : bpe_b316")
   if (fragment$fichier != "bpe_b316_2024.csv") manquer("fichier", "export BPE B316 2024")
   if (fragment$vintage != "2024") manquer("vintage", "millésime 2024")
+  if (!grepl("^https://api\\.insee\\.fr/melodi/file/BPE/BPE_[0-9]{4}_CSV_FR$", fragment$url))
+    manquer("url", "export CSV BPE INSEE, pas une page HTML ni un chemin local")
   if (fragment$licence != "lov2") manquer("licence", "lov2")
   if (fragment$mode != "manuel" || fragment$type != "fichier") manquer("mode/type", "manuel/fichier")
+  if (!is.null(contenu) &&
+      (!is.data.frame(contenu) || !all(c("GEO", "FACILITIES", "NB_EQUIP") %in% names(contenu))))
+    manquer("contenu", "le CSV doit porter GEO, FACILITIES et NB_EQUIP")
   if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
       !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
       as.Date(fragment$date_publication) < as.Date(fragment$date_reference))

@@ -20,7 +20,13 @@ test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {
     GEO = c("29001", "29002"), FACILITIES = c("B316", "B316"),
     NB_EQUIP = c("2", "0")))
   expect_equal(x, tibble::tibble(commune = c("29001", "29002"), fuel = c(2, 0)))
-  expect_match(MANIFEST_MOBILITE_BPE_B316$url, "^file:///E:/Website/Data_handling/bpe_b316_2024\\.csv$")
+  expect_match(MANIFEST_MOBILITE_BPE_B316$url, "^https://api\\.insee\\.fr/melodi/file/BPE/BPE_2024_CSV_FR$")
+  expect_silent(verifier_contrat_mobilite_bpe_b316(
+    MANIFEST_MOBILITE_BPE_B316,
+    tibble::tibble(GEO = "29001", FACILITIES = "B316", NB_EQUIP = "2")))
+  expect_error(verifier_contrat_mobilite_bpe_b316(
+    MANIFEST_MOBILITE_BPE_B316, tibble::tibble(GEO = "29001", OBS_VALUE = "2")),
+    "GEO, FACILITIES et NB_EQUIP")
 })
 
 test_that("mixed unavailable BPE values remain unavailable during aggregation", {

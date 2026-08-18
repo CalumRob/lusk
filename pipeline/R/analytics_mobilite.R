@@ -583,10 +583,13 @@ calculer_stationnement_voiture_communes <- function(parkings, lignes, limites) {
 agreger_stationnement_voiture_territoires <- function(voiture_communes,
                                                        velo_communes, base_epci) {
   ref <- base_epci[c("CODGEO", "EPCI", "DEP")]
-  ctx <- voiture_communes %>% dplyr::left_join(velo_communes[c("commune", "population")], by = "commune") %>%
+  ctx <- tibble::tibble(commune = sort(unique(as.character(ref$CODGEO)))) %>%
+    dplyr::left_join(voiture_communes, by = "commune") %>%
+    dplyr::mutate(places_voiture = dplyr::coalesce(places_voiture, 0)) %>%
+    dplyr::left_join(velo_communes[c("commune", "population")], by = "commune") %>%
     dplyr::left_join(ref, by = c("commune" = "CODGEO"))
-  calc <- function(g, include_islands = TRUE) {
-    x <- ctx %>% dplyr::filter(include_islands | !is.na(.data[[g]]))
+  calc <- function(g) {
+    x <- ctx
     dplyr::bind_rows(
       x %>% dplyr::transmute(code = commune, places = places_voiture),
       x %>% dplyr::filter(!is.na(EPCI)) %>% dplyr::group_by(code = EPCI) %>%
@@ -603,8 +606,10 @@ agreger_stationnement_voiture_territoires <- function(voiture_communes,
     dplyr::select(code, key, value)
   # The readable ratio is places vélo / places voiture.  Aggregate its two
   # counts before dividing; never average commune ratios.
-  ratio_ctx <- velo_communes %>% dplyr::select(commune, places_velo = places) %>%
-    dplyr::inner_join(voiture_communes %>% dplyr::select(commune, places_voiture), by = "commune") %>%
+  ratio_ctx <- tibble::tibble(commune = sort(unique(as.character(ref$CODGEO)))) %>%
+    dplyr::left_join(velo_communes %>% dplyr::select(commune, places_velo = places), by = "commune") %>%
+    dplyr::left_join(voiture_communes %>% dplyr::select(commune, places_voiture), by = "commune") %>%
+    dplyr::mutate(places_voiture = dplyr::coalesce(places_voiture, 0)) %>%
     dplyr::left_join(ref, by = c("commune" = "CODGEO"))
   ratio_agg <- function(group = NULL) {
     x <- ratio_ctx
@@ -632,8 +637,8 @@ calculer_ratios_mobilite <- function(bornes, fuel, velo, voiture) {
       bornes_ev_par_station_service = dplyr::if_else(!is.na(fuel) & fuel > 0, bornes / fuel, NA_real_),
       rider = dplyr::case_when(is.na(fuel) ~ "Donnée stations-service indisponible",
         fuel > 0 ~ NA_character_, bornes > 0 ~
-        "Aucune station-service sur le territoire", TRUE ~ "Aucune borne ni station-service"),
-      stationnement_velo_par_voiture = dplyr::if_else(places_voiture > 0, places_velo / places_voiture, NA_real_))
+        "Aucune station-service sur le territoire", TRUE ~ "Aucune borne ni station-service")
+      )
     x
 }
 

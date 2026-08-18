@@ -90,8 +90,8 @@ describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () =>
       ...new Set(Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id)),
     ]
     expect(jeux.map((j) => j.id)).toEqual(attendus)
-    // les deux jeux de #369 (osm_parkings, bpe_b316) montent le compte de 24 à 26
-    expect(jeux.length).toBe(26)
+    // osm_reseaux porte le stationnement ; BPE ajoute un seul jeu.
+    expect(jeux.length).toBe(25)
   })
 
   it('porte les faits éditoriaux du jeu sur l\u2019en-tête (nom, éditeur, URL, thèmes)', () => {
