@@ -25,7 +25,7 @@
       },
       "reading": {
         "story_key": "vingt-minutes-sans-voiture",
-        "params": ["div_loss_t", "pct_iso_full_t", "classification_saillance"],
+      "params": ["div_loss_t", "div_loss_b", "tot_loss_t", "tot_loss_b", "pct_iso_full_t", "classification_saillance"],
         "template": [
           { "type": "text", "content": "Sans voiture, " },
           { "type": "param", "key": "div_loss_t" },
@@ -103,7 +103,10 @@
   },
   "param_labels": {
     "div_loss_t": "Types de services perdus à pied ou en transports en commun",
+    "div_loss_b": "Types de services perdus à vélo",
     "pct_iso_full_t": "Part des bâtiments perdant tout accès",
-    "classification_saillance": "Classification de saillance"
+    "classification_saillance": "Classification de saillance",
+    "tot_loss_t": "Volume de services perdus à pied ou en transports en commun",
+    "tot_loss_b": "Volume de services perdus à vélo"
   }
 }

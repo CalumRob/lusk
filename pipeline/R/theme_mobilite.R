@@ -262,6 +262,9 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   div_loss_territoires <- agreger_div_loss_territoires(
     div_communes, snapshot, base_epci
   )
+  tot_loss_territoires <- if (all(c("med_tot_loss_t", "med_tot_loss_b") %in% names(snapshot))) {
+    agreger_tot_loss_territoires(calculer_tot_loss_communes(snapshot), snapshot, base_epci)
+  } else tibble::tibble(code = character(), tot_loss_t = numeric(), tot_loss_b = numeric())
   saillance_territoires <- construire_saillance_territoires(div_loss_territoires)
   densite_territoires <- construire_signature_densite(snapshot, base_epci)
   nuage_territoires <- construire_nuage_territoires(div_loss_territoires,
@@ -328,6 +331,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "isolation_territoires.rds"))
   readr::write_rds(div_loss_territoires,
                    file.path(sortie, "div_loss_territoires.rds"))
+  readr::write_rds(tot_loss_territoires,
+                   file.path(sortie, "tot_loss_territoires.rds"))
   readr::write_rds(saillance_territoires,
                    file.path(sortie, "saillance_territoires.rds"))
   readr::write_rds(densite_territoires,
@@ -355,7 +360,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   readr::write_rds(offre_territoires,
                    file.path(sortie, "offre_territoires.rds"))
 
-  list(
+  resultat <- list(
     mobilite_communes = mobilite_communes,
     nb_buildings_territoires = nb_buildings_territoires,
     isolation_territoires = isolation_territoires,
@@ -374,6 +379,11 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_cyclable_communes = offre_cyclable_communes,
     offre_territoires = offre_territoires
   )
+  if (all(c("med_tot_loss_t", "med_tot_loss_b") %in% names(snapshot))) {
+    resultat$tot_loss_territoires <- tot_loss_territoires
+    resultat <- resultat[c(1:4, length(resultat), 5:(length(resultat) - 1))]
+  }
+  resultat
 }
 
 # INDICATEURS_MOBILITE ---------------------------------------------------------
@@ -770,10 +780,13 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     )
 
   div <- analytiques$div_loss_territoires
+  tot <- analytiques$tot_loss_territoires %||% tibble::tibble(
+    code = character(), tot_loss_t = numeric(), tot_loss_b = numeric())
   saillance <- analytiques$saillance_territoires[c("code", "classification")]
   signature <- analytiques$densite_territoires
 
   vingt <- div %>%
+    dplyr::left_join(tot, by = "code") %>%
     dplyr::left_join(signature, by = "code") %>%
     dplyr::left_join(saillance, by = "code") %>%
     dplyr::mutate(
@@ -784,7 +797,8 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     dplyr::rename(territoire = code,
                   classification_saillance = classification) %>%
     dplyr::select(territoire, type, theme, story_key,
-                  div_loss_t, div_loss_b, delta, pct_iso_full_t,
+                   div_loss_t, div_loss_b, delta, pct_iso_full_t,
+                   tot_loss_t, tot_loss_b,
                   dens_min, dens_max,
                   dplyr::all_of(paste0("dens_", 1:10)),
                   dplyr::all_of(paste0("dec_", 1:10)),

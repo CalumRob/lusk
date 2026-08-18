@@ -171,6 +171,44 @@ calculer_div_loss_communes <- function(snapshot) {
     dplyr::arrange(commune)
 }
 
+# calculer_tot_loss_communes ----------------------------------------------------
+# La perte de VOLUME provient du même snapshot que div_loss. Le clamp est fait
+# avant toute agrégation : le vélo ne peut pas perdre plus que le mode pied/TC.
+calculer_tot_loss_communes <- function(snapshot) {
+  requis <- c("commune", "med_tot_loss_t", "med_tot_loss_b")
+  manquantes <- setdiff(requis, names(snapshot))
+  if (length(manquantes) > 0) stop("Snapshot Mobilité : colonne(s) tot_loss manquante(s) : ",
+                                   paste(manquantes, collapse = ", "), call. = FALSE)
+  snapshot %>% dplyr::transmute(
+    commune, tot_loss_t = med_tot_loss_t,
+    tot_loss_b = ensure_mode_neutrality(med_tot_loss_t, med_tot_loss_b)
+  ) %>% dplyr::arrange(commune)
+}
+
+# agreger_tot_loss_territoires --------------------------------------------------
+agreger_tot_loss_territoires <- function(tot_communes, snapshot, base_epci) {
+  ctx <- snapshot %>% dplyr::left_join(tot_communes, by = "commune") %>%
+    dplyr::left_join(base_epci[c("CODGEO", "EPCI", "DEP")], by = c("commune" = "CODGEO"))
+  niveau <- function(groupe, tcol, bcol) ctx %>% dplyr::filter(!is.na(.data[[groupe]])) %>%
+    dplyr::group_by(code = .data[[groupe]]) %>% dplyr::summarise(
+      fichier_t = valeur_fichier_niveau(.data[[tcol]]),
+      fichier_b = valeur_fichier_niveau(.data[[bcol]]),
+      recalcul_t = mediane_ponderee(tot_loss_t, nb_buildings),
+      recalcul_b = mediane_ponderee(tot_loss_b, nb_buildings), .groups = "drop") %>%
+    dplyr::transmute(code, tot_loss_t = dplyr::coalesce(fichier_t, recalcul_t),
+                     tot_loss_b = dplyr::coalesce(fichier_b, recalcul_b))
+  epci <- niveau("EPCI", "med_tot_loss_t_epci", "med_tot_loss_b_epci")
+  dep <- ctx %>% dplyr::group_by(code = DEP) %>% dplyr::summarise(
+    tot_loss_t = valeur_fichier_niveau(med_tot_loss_t_dep),
+    tot_loss_b = valeur_fichier_niveau(med_tot_loss_b_dep), .groups = "drop")
+  reg <- ctx %>% dplyr::summarise(code = "53",
+    tot_loss_t = valeur_fichier_niveau(med_tot_loss_t_reg),
+    tot_loss_b = valeur_fichier_niveau(med_tot_loss_b_reg))
+  dplyr::bind_rows(tot_communes %>% dplyr::rename(code = commune), epci, dep, reg) %>%
+    dplyr::mutate(tot_loss_b = ensure_mode_neutrality(tot_loss_t, tot_loss_b)) %>%
+    dplyr::arrange(code)
+}
+
 # agreger_div_loss_territoires -------------------------------------------------
 # div_loss_t/b aux QUATRE niveaux de territoire. Les niveaux agrégés portent la
 # valeur du FICHIER (la médiane de la base bâtiment par bâtiment, la même pour
@@ -518,6 +556,83 @@ calculer_part_proches_arret_communes <- function(stops, batiments,
     ) %>%
     dplyr::mutate(part_proche = n_proches / n_batiments) %>%
     dplyr::arrange(commune)
+}
+
+# FACTEUR_PLACE_VOITURE_M2 <- c(lot = 25, street_side = 11.5)
+# calculer_stationnement_voiture_communes ---------------------------------------
+# Les surfaces OSM sont converties en places estimées. `capacity` est
+# volontairement ignoré : sa couverture est insuffisante et son sens varie.
+# Les objets fermés sont dédupliqués par osm_id (ways/relations compris) ; les
+# lignes ne contribuent que par leurs côtés parking:lane explicitement tagués.
+calculer_stationnement_voiture_communes <- function(parkings, lignes, limites) {
+  if (!inherits(parkings, "sf") || !inherits(lignes, "sf") || !inherits(limites, "sf"))
+    stop("Stationnement voiture : parkings, lignes et limites doivent être sf.", call. = FALSE)
+  if (!"code_insee" %in% names(limites)) stop("Stationnement voiture : limites sans code_insee.", call. = FALSE)
+  if (!"osm_id" %in% names(parkings)) parkings$osm_id <- seq_len(nrow(parkings))
+  parkings <- parkings[!duplicated(parkings$osm_id), ]
+  parkings <- sf::st_transform(parkings, sf::st_crs(limites))
+  pol <- sf::st_join(parkings, limites["code_insee"], left = FALSE)
+  parking_tag <- if ("parking" %in% names(pol)) as.character(pol$parking) else rep(NA_character_, nrow(pol))
+  kind <- ifelse(!is.na(parking_tag) & parking_tag == "street_side", "street_side", "lot")
+  areas <- tibble::tibble(commune = pol$code_insee,
+                           places = as.numeric(sf::st_area(pol)) /
+                             ifelse(kind == "street_side", 11.5, 25))
+  lane_cols <- grep("(^|_)parking(:|_)lane|parking_lane", names(lignes), value = TRUE)
+  linear <- tibble::tibble(commune = character(), places = numeric())
+  if (length(lane_cols) > 0) {
+    tagged <- apply(sf::st_drop_geometry(lignes[, lane_cols, drop = FALSE]), 1,
+      function(x) sum(!is.na(x) & nzchar(as.character(x)) &
+                        !tolower(as.character(x)) %in% c("no", "none", "0")))
+    tagged <- which(tagged > 0)
+    if (length(tagged) > 0) {
+      ln <- sf::st_join(lignes[tagged, ], limites["code_insee"], left = FALSE)
+      linear <- tibble::tibble(commune = ln$code_insee,
+                               places = as.numeric(sf::st_length(ln)) *
+                                 (apply(sf::st_drop_geometry(ln[, lane_cols, drop = FALSE]), 1,
+                                   function(x) sum(!is.na(x) & nzchar(as.character(x)) &
+                                     !tolower(as.character(x)) %in% c("no", "none", "0"))) * 2.3) / 11.5)
+    }
+  }
+  dplyr::bind_rows(areas, linear) %>% dplyr::group_by(commune) %>%
+    dplyr::summarise(places_voiture = sum(places), .groups = "drop") %>%
+    dplyr::arrange(commune)
+}
+
+agreger_stationnement_voiture_territoires <- function(voiture_communes,
+                                                       velo_communes, base_epci) {
+  ref <- base_epci[c("CODGEO", "EPCI", "DEP")]
+  ctx <- voiture_communes %>% dplyr::left_join(velo_communes[c("commune", "population")], by = "commune") %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+  calc <- function(g, include_islands = TRUE) {
+    x <- ctx %>% dplyr::filter(include_islands | !is.na(.data[[g]]))
+    dplyr::bind_rows(
+      x %>% dplyr::transmute(code = commune, places = places_voiture),
+      x %>% dplyr::filter(!is.na(EPCI)) %>% dplyr::group_by(code = EPCI) %>%
+        dplyr::summarise(places = sum(places_voiture), population = sum(population), .groups = "drop"),
+      x %>% dplyr::group_by(code = DEP) %>% dplyr::summarise(places = sum(places_voiture), population = sum(population), .groups = "drop"),
+      x %>% dplyr::summarise(code = "53", places = sum(places_voiture), population = sum(population))
+    )
+  }
+  # Keep the readable candidate (places / places); the area candidate is
+  # returned as an attribute for the empirical comparison without publishing it.
+  out <- calc("EPCI") %>% dplyr::mutate(value = places / population * 1000,
+                                        key = "places_stationnement_voiture_1000") %>%
+    dplyr::select(code, key, value)
+  attr(out, "velo_voiture_candidates") <- list(
+    places = velo_communes$places / voiture_communes$places_voiture,
+    surface = velo_communes$places * 2 / (voiture_communes$places_voiture * 25))
+  out
+}
+
+calculer_ratios_mobilite <- function(bornes, fuel, velo, voiture) {
+  x <- bornes %>% dplyr::full_join(fuel, by = "code") %>%
+    dplyr::full_join(velo, by = "code") %>% dplyr::full_join(voiture, by = "code") %>%
+    dplyr::mutate(
+      ev_fuel = dplyr::if_else(!is.na(fuel) & fuel > 0, bornes / fuel, NA_real_),
+      rider = dplyr::case_when(fuel > 0 ~ NA_character_, bornes > 0 ~
+        "Aucune station-service sur le territoire", TRUE ~ "Aucune borne ni station-service"),
+      velo_voiture = dplyr::if_else(places_voiture > 0, places_velo / places_voiture, NA_real_))
+  x
 }
 
 # calculer_bornes_communes ------------------------------------------------------
