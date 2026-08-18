@@ -401,7 +401,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires
   )
-  resultat
 }
 
 # INDICATEURS_MOBILITE ---------------------------------------------------------
@@ -839,12 +838,9 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     )
 
   div <- analytiques$div_loss_territoires
-<<<<<<< HEAD
-=======
   tot <- analytiques$tot_loss_territoires
   if (is.null(tot) || !all(c("tot_loss_t", "tot_loss_b") %in% names(tot)))
     stop("compute_histoires_mobilite : tot_loss absent des analytiques.", call. = FALSE)
->>>>>>> 1920af8 (fix(mobilite): wire parking fuel and total-loss payloads (#369))
   saillance <- analytiques$saillance_territoires[c("code", "classification")]
   signature <- analytiques$densite_territoires
 

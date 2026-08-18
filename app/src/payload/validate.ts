@@ -1079,17 +1079,21 @@ function lireHistoireMobilite(
       'une Story « ce-que-le-velo-preserve » sans saillance « saillant »',
     )
     const shared = ligne['distribution_signature']
+    exiger(shared !== undefined, fichier, ligneIndexee, 'la Story vélo doit porter la signature de distribution partagée')
     if (shared !== undefined) {
       exiger(estObjet(shared), fichier, ligneIndexee, '« distribution_signature » doit être un objet')
-      exiger(shared !== undefined, fichier, ligneIndexee, 'la Story vélo doit porter la signature de distribution partagée')
       for (const famille of ['dens', 'dec'] as const) {
         const valeurs = (shared as LigneBrute)[famille]
         exiger(Array.isArray(valeurs) && valeurs.length === 10, fichier, ligneIndexee, `« distribution_signature.${famille} » doit contenir 10 valeurs`)
         for (const valeur of valeurs as unknown[]) {
           exiger(estNombre(valeur), fichier, ligneIndexee, `« distribution_signature.${famille} » contient une valeur invalide`)
         }
+        if (famille === 'dens') exiger((valeurs as number[]).some((valeur) => valeur > 0), fichier, ligneIndexee, '« distribution_signature.dens » doit être exploitable')
       }
       exiger(estNombre((shared as LigneBrute).min) && estNombre((shared as LigneBrute).max), fichier, ligneIndexee, '« distribution_signature.min/max » doit être numérique pour une Story vélo')
+      const minimum = (shared as LigneBrute).min as number
+      const maximum = (shared as LigneBrute).max as number
+      exiger(maximum >= minimum, fichier, ligneIndexee, '« distribution_signature » doit avoir un intervalle valide')
     }
     return {
       territoire,

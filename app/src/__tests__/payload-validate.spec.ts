@@ -573,6 +573,14 @@ describe('parsePayload — the Mobilité contract (issue #142, RÉSOLU #312)', (
     expect(erreur.message).toMatch(/saillant/)
   })
 
+  it('rejects a vélo Story without its shared distribution signature', () => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    const velo = histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite
+    delete velo.distribution_signature
+    const erreur = attendErreurValidation(documentsMobilite({ histoires }))
+    expect(erreur.message).toMatch(/distribution_signature/)
+  })
+
   it('rejects an unknown saillance classification', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
     ;(histoires[0] as { classification_saillance: string }).classification_saillance = 'super'

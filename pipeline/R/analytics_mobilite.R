@@ -171,6 +171,43 @@ calculer_div_loss_communes <- function(snapshot) {
     dplyr::arrange(commune)
 }
 
+# La perte de volume suit le même snapshot que la perte de diversité. Le clamp
+# est appliqué avant agrégation : le vélo ne peut pas perdre davantage que le
+# mode pied/TC.
+calculer_tot_loss_communes <- function(snapshot) {
+  requis <- c("commune", "med_tot_loss_t", "med_tot_loss_b")
+  manquantes <- setdiff(requis, names(snapshot))
+  if (length(manquantes) > 0) stop("Snapshot Mobilité : colonne(s) tot_loss manquante(s) : ",
+                                   paste(manquantes, collapse = ", "), call. = FALSE)
+  snapshot %>% dplyr::transmute(
+    commune, tot_loss_t = med_tot_loss_t,
+    tot_loss_b = ensure_mode_neutrality(med_tot_loss_t, med_tot_loss_b)
+  ) %>% dplyr::arrange(commune)
+}
+
+agreger_tot_loss_territoires <- function(tot_communes, snapshot, base_epci) {
+  ctx <- snapshot %>% dplyr::left_join(tot_communes, by = "commune") %>%
+    dplyr::left_join(base_epci[c("CODGEO", "EPCI", "DEP")], by = c("commune" = "CODGEO"))
+  niveau <- function(groupe, tcol, bcol) ctx %>% dplyr::filter(!is.na(.data[[groupe]])) %>%
+    dplyr::group_by(code = .data[[groupe]]) %>% dplyr::summarise(
+      fichier_t = valeur_fichier_niveau(.data[[tcol]]),
+      fichier_b = valeur_fichier_niveau(.data[[bcol]]),
+      recalcul_t = mediane_ponderee(tot_loss_t, nb_buildings),
+      recalcul_b = mediane_ponderee(tot_loss_b, nb_buildings), .groups = "drop") %>%
+    dplyr::transmute(code, tot_loss_t = dplyr::coalesce(fichier_t, recalcul_t),
+                     tot_loss_b = dplyr::coalesce(fichier_b, recalcul_b))
+  epci <- niveau("EPCI", "med_tot_loss_t_epci", "med_tot_loss_b_epci")
+  dep <- ctx %>% dplyr::group_by(code = DEP) %>% dplyr::summarise(
+    tot_loss_t = valeur_fichier_niveau(med_tot_loss_t_dep),
+    tot_loss_b = valeur_fichier_niveau(med_tot_loss_b_dep), .groups = "drop")
+  reg <- ctx %>% dplyr::summarise(code = "53",
+    tot_loss_t = valeur_fichier_niveau(med_tot_loss_t_reg),
+    tot_loss_b = valeur_fichier_niveau(med_tot_loss_b_reg))
+  dplyr::bind_rows(tot_communes %>% dplyr::rename(code = commune), epci, dep, reg) %>%
+    dplyr::mutate(tot_loss_b = ensure_mode_neutrality(tot_loss_t, tot_loss_b)) %>%
+    dplyr::arrange(code)
+}
+
 # agreger_div_loss_territoires -------------------------------------------------
 # div_loss_t/b aux QUATRE niveaux de territoire. Les niveaux agrégés portent la
 # valeur du FICHIER (la médiane de la base bâtiment par bâtiment, la même pour
@@ -591,7 +628,8 @@ agreger_stationnement_voiture_territoires <- function(voiture_communes,
   calc <- function(g) {
     x <- ctx
     dplyr::bind_rows(
-      x %>% dplyr::transmute(code = commune, places = places_voiture),
+      x %>% dplyr::transmute(code = commune, places = places_voiture,
+                              population = population),
       x %>% dplyr::filter(!is.na(EPCI)) %>% dplyr::group_by(code = EPCI) %>%
         dplyr::summarise(places = sum(places_voiture), population = sum(population), .groups = "drop"),
       x %>% dplyr::group_by(code = DEP) %>% dplyr::summarise(places = sum(places_voiture), population = sum(population), .groups = "drop"),

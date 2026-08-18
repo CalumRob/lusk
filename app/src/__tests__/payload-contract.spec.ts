@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
-import type { Payload } from '../payload/types'
+import type { HistoireMobilite, Payload } from '../payload/types'
 import {
   apercuPourTerritoire,
   formaterRang,
@@ -519,6 +519,12 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(velo).toHaveLength(139)
     expect(velo.every((h) => h.salience_reason === 'delta-velo-saillant')).toBe(true)
     expect(velo.every((h) => h.classification_saillance === 'saillant')).toBe(true)
+    expect(velo.every((h) => {
+      const signature = (h as HistoireMobilite).distribution_signature
+      return signature?.dens.length === 10 && signature.dens.some((value) => value !== null && value > 0) &&
+        signature.dec.length === 10 && signature.max >= signature.min
+    })).toBe(true)
+    expect(new Set(histoiresMobilite.map((h) => `${h.territoire}|${h.groupe}`)).size).toBe(1266)
   })
 
   it('carries the real Mobilité Story matter — div_loss_t, la signature et l’estampille snapshot', async () => {

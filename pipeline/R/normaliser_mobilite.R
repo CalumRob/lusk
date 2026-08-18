@@ -254,6 +254,15 @@ verifier_contenu_bpe_b316 <- function(x) {
   attendues <- c("GEO", "FACILITIES", "NB_EQUIP")
   if (!is.data.frame(x) || !all(attendues %in% names(x)) || nrow(x) == 0L)
     stop("BPE B316 : le CSV doit contenir des lignes GEO/FACILITIES/NB_EQUIP.", call. = FALSE)
+  geo <- as.character(x$GEO)
+  type <- toupper(trimws(as.character(x$FACILITIES)))
+  valeur <- suppressWarnings(as.numeric(x$NB_EQUIP))
+  valide_geo <- grepl("^[0-9]{5}$", geo) & substr(geo, 1, 2) %in% DEPT_BRETAGNE
+  b316 <- type %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE")
+  if (!any(b316 & valide_geo))
+    stop("BPE B316 : aucune ligne B316 utilisable.", call. = FALSE)
+  if (any(b316 & (!valide_geo | is.na(valeur) | valeur < 0)))
+    stop("BPE B316 : GEO breton et NB_EQUIP numérique non négatif requis pour B316.", call. = FALSE)
   invisible(TRUE)
 }
 
@@ -271,6 +280,7 @@ normaliser_bpe_b316 <- function(x) {
   z <- tibble::tibble(commune = as.character(x[[code]]), fuel = suppressWarnings(as.numeric(x[[value]])))
   if (any(is.na(z$fuel) & !is.na(x[[value]]))) stop("BPE B316 : valeur non numérique.", call. = FALSE)
   z <- z[grepl("^[0-9]{5}$", z$commune) & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE, ]
+  if (!nrow(z) || any(z$fuel < 0, na.rm = TRUE)) stop("BPE B316 : aucune ligne utilisable ou compte négatif.", call. = FALSE)
   z %>% dplyr::group_by(commune) %>% dplyr::summarise(fuel = if (all(is.na(fuel))) NA_real_ else sum(fuel, na.rm = TRUE), .groups = "drop") %>% dplyr::arrange(commune)
 }
 

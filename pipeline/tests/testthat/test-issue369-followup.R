@@ -31,6 +31,12 @@ test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {
     tibble::tibble(GEO = "29001", FACILITIES = "B316", NB_EQUIP = "2")))
   expect_error(verifier_contenu_bpe_b316(tibble::tibble(GEO = "29001", NB_EQUIP = "2")),
                "GEO/FACILITIES/NB_EQUIP")
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(
+    GEO = "29001", FACILITIES = "B999", NB_EQUIP = "2")),
+    "aucune ligne B316")
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(
+    GEO = "29001", FACILITIES = "B316", NB_EQUIP = "-1")),
+    "non négatif")
 })
 
 test_that("mixed unavailable BPE values remain unavailable during aggregation", {
@@ -105,4 +111,15 @@ test_that("street-side parking uses both legacy and lane tags", {
     sf::st_linestring(rbind(c(1, 80), c(11, 80))), crs = 2154))
   out <- calculer_stationnement_voiture_communes(parking, lines, lim)
   expect_equal(out$places_voiture, 100 + 10 * 2 * 2.3 / 11.5)
+})
+
+test_that("parking per 1000 inhabitants keeps population through aggregation", {
+  base <- tibble::tribble(~CODGEO, ~EPCI, ~DEP,
+                          "29001", "200000001", "29")
+  voiture <- tibble::tibble(commune = "29001", places_voiture = 25)
+  velo <- tibble::tibble(commune = "29001", places = 10, population = 1000)
+  out <- agreger_stationnement_voiture_territoires(voiture, velo, base)
+  ratio <- out[out$key == "places_stationnement_voiture_1000" & out$code == "29001", ]
+  expect_equal(ratio$value, 25)
+  expect_true(is.finite(ratio$value))
 })
