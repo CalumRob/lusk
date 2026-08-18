@@ -123,6 +123,7 @@ export type FigureLecture =
       genre: 'distribution'
       distribution: DistributionMobilite
       mediane: number
+       medianeVelo: number
       nom: string
       nuage: PointNuageMobilite[]
     }
@@ -350,6 +351,8 @@ export function figureLecturePour(
 ): FigureLecture | null {
   const histoire = lecture.histoire
   const nom = trouverTerritoire(payload, territoire)?.nom ?? territoire
+  const metadata = payload.themeMetadata?.[histoire.theme]
+  const classificationLabel = (value: string) => metadata?.classification_labels?.[value] ?? ''
 
   if (lecture.story_key === 'trajectoire-demographique') {
     const h = histoire as HistoireDemographie
@@ -357,7 +360,7 @@ export function figureLecturePour(
       genre: 'soldes',
       tauxNaturel: h.taux_solde_naturel,
       tauxMigratoire: h.taux_solde_migratoire,
-      classification: h.classification,
+      classification: classificationLabel(h.classification),
       nom,
       nuage: nuageComparaison(payload, territoire) ?? [],
     }
@@ -369,6 +372,7 @@ export function figureLecturePour(
       genre: 'distribution',
       distribution: distributionDe(h),
       mediane: h.div_loss_t,
+      medianeVelo: h.div_loss_b,
       nom,
       nuage: nuageMobilite(payload, territoire) ?? [],
     }
@@ -388,7 +392,7 @@ export function figureLecturePour(
       genre: 'quadrant',
       tauxVariationPopulation: h.taux_variation_population,
       deltaM2ParHabitant: h.artif_m3_par_habitant - h.artif_m2_par_habitant,
-      classification: h.classification,
+      classification: classificationLabel(h.classification),
       nom,
       periodePop: h.periode_pop,
       periodeArtif: h.periode_artif,
@@ -397,6 +401,25 @@ export function figureLecturePour(
   }
 
   return null
+}
+
+/** The five payload-owned LQ rows become a compact reading figure. */
+export interface LigneLQ {
+  rang: number
+  activite: string
+  lq: number | null
+}
+
+export function lignesLQPour(lecture: LectureSousGroupe): LigneLQ[] {
+  if (lecture.histoire.theme !== 'economie') return []
+  const h = lecture.histoire
+  const lignes: LigneLQ[] = []
+  for (let rang = 1; rang <= 5; rang += 1) {
+    const activite = h[`top${rang}_activity_label` as keyof typeof h] as string | null
+    if (!activite) continue
+    lignes.push({ rang, activite, lq: h[`top${rang}_lq` as keyof typeof h] as number | null })
+  }
+  return lignes
 }
 
 /**

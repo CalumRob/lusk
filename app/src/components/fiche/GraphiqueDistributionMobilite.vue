@@ -30,6 +30,7 @@ import type { PointNuageMobilite } from '@/payload/selectors'
 const props = defineProps<{
   distribution: DistributionMobilite
   mediane: number
+  medianeVelo: number
   nom: string
   nuage: PointNuageMobilite[]
 }>()
@@ -100,7 +101,8 @@ const libelleAccesible = computed(() => {
     .filter((s): s is string => s !== null)
     .join(' · ')
   return (
-    `${props.nom} — médiane ${formaterNombreFR(props.mediane, 0)} types de services perdus ` +
+    `${props.nom} — médiane ${formaterNombreFR(props.mediane, 0)} (à pied ou en transports en commun), ` +
+    `médiane vélo ${formaterNombreFR(props.medianeVelo, 0)} ` +
     `à pied ou en transports en commun à 20 minutes. Distribution : ${distribution}. ` +
     `Contexte : ${props.nuage.map((p) => `${p.nom} (${formaterNombreFR(p.divLoss, 0)})`).join(', ') || 'aucun'}.`
   )
@@ -192,7 +194,7 @@ function optionGraphique(): echarts.EChartsCoreOption {
         showSymbol: false,
         lineStyle: { color: couleurDistribution, width: 2 },
         areaStyle: { color: couleurDistribution, opacity: 0.16 },
-        // the median — the reading itself (div_loss_t) marked on the shared scale
+        // Both readings stay on one shared distribution, including the vélo story.
         markLine: {
           silent: true,
           symbol: 'none',
@@ -202,7 +204,17 @@ function optionGraphique(): echarts.EChartsCoreOption {
             fontSize: 10,
             color: couleurTexte,
           },
-          data: [{ xAxis: props.mediane }],
+          data: [
+            { xAxis: props.mediane },
+            {
+              xAxis: props.medianeVelo,
+              lineStyle: { color: couleurNuage, width: 1.5, type: 'dashed' },
+              label: {
+                formatter: `médiane vélo ${formaterNombreFR(props.medianeVelo, 0)}`,
+                color: couleurTexte,
+              },
+            },
+          ],
         },
       },
       {
@@ -274,6 +286,6 @@ onBeforeUnmount(() => {
 
 .graphique-distribution-mobilite-canvas {
   width: 100%;
-  height: 280px;
+  height: 180px;
 }
 </style>

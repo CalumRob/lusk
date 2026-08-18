@@ -291,6 +291,6 @@ onBeforeUnmount(() => {
 
 .graphique-quadrant-milieux-canvas {
   width: 100%;
-  height: 280px;
+  height: 180px;
 }
 </style>
