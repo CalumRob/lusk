@@ -19,7 +19,7 @@ test_that("BPE B316 rejects non-canonical legacy source shapes", {
   expect_error(normaliser_bpe_b316(data.frame(
     GEO = "29001", FACILITY_TYPE = "B316", OBS_VALUE = "2")),
     "GEO/FACILITIES/NB_EQUIP")
-  expect_error(lire_bpe_b316(file.path(tempdir(), "bpe24.parquet")), "BPE25.parquet")
+  expect_error(lire_bpe_b316(file.path(tempdir(), "wrong-source.parquet")), "BPE25.parquet")
 })
 
 test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {
