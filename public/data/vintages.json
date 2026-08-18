@@ -497,10 +497,10 @@
   },
   {
     "id": "bpe_b316",
-    "source": "INSEE — Base permanente des équipements, B316 stations-service",
-    "version": "2024",
+    "source": "INSEE — Base permanente des équipements BPE25 géolocalisée, filtre B316 stations-service",
+    "version": "2025",
     "licence": "lov2",
-    "date_reference": "2024-01-01",
-    "date_publication": "2026-08-18"
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-08-04"
   }
 ]

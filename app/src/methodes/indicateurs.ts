@@ -511,7 +511,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         definition:
           'Le rapport entre l’offre de recharge électrique et l’offre de carburant du territoire : le nombre de bornes IRVE pour une station-service (la source officielle BPE B316 — les stations ayant vendu 500 000 litres ou plus l’année précédente). Le classement lit le rapport : plus il y a de bornes par station-service, mieux le territoire prépare la bascule vers l’électrique. Le rapport n’est publié que là où le territoire compte au moins une station-service.',
         unite: 'bornes / station-service',
-        source: 'INSEE — BPE : stations-service (B316)',
+        source: 'INSEE — BPE25 géolocalisée : stations-service (B316)',
         sourceId: 'bpe_b316',
         direction: 'plus-est-mieux',
       },

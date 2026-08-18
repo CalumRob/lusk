@@ -244,31 +244,26 @@ lire_parkings_osm <- function(chemin_pbf) {
 }
 
 lire_bpe_b316 <- function(chemin) {
-  if (grepl("\\.zip$", chemin, ignore.case = TRUE)) {
-    extrait <- file.path(dirname(chemin), "extracted_bpe_evolution_2025")
-    if (!dir.exists(extrait)) dir.create(extrait, recursive = TRUE)
-    suppressWarnings(utils::unzip(chemin, exdir = extrait, overwrite = FALSE))
-    chemin <- file.path(extrait, "DS_BPE_EVOLUTION_2025_data.csv")
-  }
-  brut <- readr::read_delim(chemin, delim = ";",
-                            col_types = readr::cols(.default = readr::col_character()),
-                            show_col_types = FALSE, progress = FALSE)
+  if (!grepl("\\.parquet$", chemin, ignore.case = TRUE))
+    stop("BPE 2025 : l'entrée doit être le fichier BPE25.parquet officiel.", call. = FALSE)
+  brut <- nanoparquet::read_parquet(chemin)
   selectionner_bpe_b316_2025(brut)
 }
 
-# The Evolution export is a long table: its commune-level contract is selected
-# explicitly, rather than inferred from a code or silently taking another year.
+# BPE25 is an equipment-row file: one retained B316 row is one station.
 selectionner_bpe_b316_2025 <- function(x) {
-  requis <- c("GEO", "GEO_OBJECT", "FACILITY_TYPE", "BPE_MEASURE",
-              "TIME_PERIOD", "OBS_VALUE")
+  requis <- c("DEPCOM", "TYPEQU")
   manquantes <- setdiff(requis, names(x))
-  if (length(manquantes)) stop("BPE Evolution 2025 : colonne(s) manquante(s) : ",
+  if (length(manquantes)) stop("BPE25 : colonne(s) manquante(s) : ",
                                paste(manquantes, collapse = ", "), ".", call. = FALSE)
-  y <- x[x$TIME_PERIOD == "2025" & x$GEO_OBJECT == "COM" &
-           x$FACILITY_TYPE == "B316" & x$BPE_MEASURE == "FACILITIES", , drop = FALSE]
-  if (!nrow(y)) stop("BPE Evolution 2025 : aucune observation communale B316 pour 2025.", call. = FALSE)
-  y <- y[, c("GEO", "FACILITY_TYPE", "OBS_VALUE"), drop = FALSE]
-  names(y) <- c("GEO", "FACILITIES", "NB_EQUIP")
+  type <- toupper(trimws(as.character(x$TYPEQU)))
+  if (any(is.na(type) | !nzchar(type)))
+    stop("BPE25 : TYPEQU ne doit pas être manquant.", call. = FALSE)
+  if ("GEO_OBJECT" %in% names(x)) x <- x[as.character(x$GEO_OBJECT) == "COM", , drop = FALSE]
+  type <- toupper(trimws(as.character(x$TYPEQU)))
+  y <- x[type == "B316", , drop = FALSE]
+  if (!nrow(y)) stop("BPE25 : aucune observation communale B316 pour 2025.", call. = FALSE)
+  y <- tibble::tibble(GEO = as.character(y$DEPCOM), FACILITIES = "B316", NB_EQUIP = 1)
   verifier_contenu_bpe_b316(y)
   y
 }
@@ -276,7 +271,7 @@ selectionner_bpe_b316_2025 <- function(x) {
 verifier_contenu_bpe_b316 <- function(x) {
   attendues <- c("GEO", "FACILITIES", "NB_EQUIP")
   if (!is.data.frame(x) || !all(attendues %in% names(x)) || nrow(x) == 0L)
-    stop("BPE B316 : le CSV doit contenir des lignes GEO/FACILITIES/NB_EQUIP.", call. = FALSE)
+    stop("BPE B316 : la table doit contenir des lignes GEO/FACILITIES/NB_EQUIP.", call. = FALSE)
   geo <- as.character(x$GEO)
   type <- toupper(trimws(as.character(x$FACILITIES)))
   valeur <- suppressWarnings(as.numeric(x$NB_EQUIP))
@@ -299,6 +294,8 @@ verifier_contenu_bpe_b316 <- function(x) {
 # BPE B316 is a FACILITIES count.  Accept the two official export shapes (long
 # MELODI and the labelled CSV), but never turn an absent observation into zero.
 normaliser_bpe_b316 <- function(x) {
+  if (all(c("DEPCOM", "TYPEQU") %in% names(x)))
+    x <- selectionner_bpe_b316_2025(x)
   code <- intersect(c("GEO", "CODGEO", "code_insee", "GEO_CODE"), names(x))[1]
   # Actual BPE exports use FACILITIES (the facility family) and NB_EQUIP (the
   # count); long MELODI exports use OBS_VALUE.  Do not mistake a missing
@@ -306,6 +303,7 @@ normaliser_bpe_b316 <- function(x) {
   value <- intersect(c("NB_EQUIP", "OBS_VALUE", "VALUE", "value", "COUNT", "count"), names(x))[1]
   type <- intersect(c("FACILITIES", "FACILITY_TYPE", "TYPEQU", "type", "BPE"), names(x))[1]
   if (is.na(code) || is.na(value)) stop("BPE B316 : GEO et NB_EQUIP requis.", call. = FALSE)
+  if (is.na(type)) stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
   if (!is.na(type)) {
     if (any(is.na(x[[type]]) | !nzchar(trimws(as.character(x[[type]])))))
       stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
