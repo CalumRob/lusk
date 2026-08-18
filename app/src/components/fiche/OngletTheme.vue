@@ -204,7 +204,11 @@ const lignesReseaux = computed(
                 :nuage="groupe.figureLecture.nuage"
               />
 
-              <FigureListeLQ v-if="groupe.lignesLQ.length" :lignes="groupe.lignesLQ" />
+              <FigureListeLQ
+                v-if="groupe.lignesLQ.length"
+                :lignes="groupe.lignesLQ"
+                :labels="{ rang: metadata?.param_labels.rang, activite: metadata?.param_labels.activity_label, lq: metadata?.param_labels.lq }"
+              />
               <GraphiqueQuadrantMilieux
                 v-if="groupe.figureLecture?.genre === 'quadrant'"
                 :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
