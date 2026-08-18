@@ -7,6 +7,15 @@
       "label": "L’accès aux services",
       "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.",
       "indicators": [
+        "voitures_menage",
+        "reseaux",
+        "offre_tc",
+        "bornes_recharge",
+        "places_stationnement_velo_1000",
+        "places_stationnement_voiture_1000",
+        "bornes_fuel",
+        "tot_loss",
+        "offre_cyclable",
         "iso_alimentation",
         "iso_sante",
         "iso_administration",
@@ -78,6 +87,9 @@
     "offre_tc",
     "bornes_recharge",
     "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000",
+    "bornes_fuel",
+    "tot_loss",
     "offre_cyclable",
     "iso_alimentation",
     "iso_sante",
@@ -92,6 +104,9 @@
     "offre_tc": "korrigo",
     "bornes_recharge": "bornes-recharges",
     "places_stationnement_velo_1000": "stationnement-velo",
+    "places_stationnement_voiture_1000": "osm_reseaux",
+    "bornes_fuel": "bpe_b316",
+    "tot_loss": "mobilite_snapshot",
     "offre_cyclable": "osm_reseaux",
     "iso_alimentation": "mobilite_snapshot",
     "iso_sante": "mobilite_snapshot",
@@ -110,9 +125,16 @@
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
     "bornes_recharge": "Bornes de recharge pour véhicules électriques",
     "places_stationnement_velo_1000": "Places de stationnement vélo pour 1 000 hab.",
+    "places_stationnement_voiture_1000": "Places de stationnement voiture pour 1 000 hab.",
+    "bornes_fuel": "Bornes de recharge par station-service",
+    "tot_loss": "Perte totale d’accès",
     "offre_cyclable": "L’offre cyclable"
   },
   "detail_labels": {
+    "tot_loss": {
+      "t": "Perte à pied ou en transports en commun",
+      "b": "Perte à vélo"
+    },
     "reseaux": {
       "t_longueur": "Longueur — à pied ou en transports en commun",
       "t_densite": "Densité — à pied ou en transports en commun",
