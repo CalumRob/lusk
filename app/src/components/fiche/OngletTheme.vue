@@ -20,11 +20,13 @@ import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistribut
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
+import FigureListeLQ from '@/components/fiche/FigureListeLQ.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
 import {
   figureLecturePour,
+  lignesLQPour,
   sourceLecture,
   sousGroupesPourTerritoire,
 } from '@/fiche/sousGroupes'
@@ -42,6 +44,7 @@ const props = defineProps<{
 interface SousGroupeRenduComplet extends SousGroupeRendu {
   figureLecture: FigureLecture | null
   source: string | null
+  lignesLQ: ReturnType<typeof lignesLQPour>
 }
 
 // The theme's published label rides in the metadata (theme_<theme>.json) — the
@@ -61,6 +64,7 @@ const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
       ? figureLecturePour(props.payload, props.territoire, groupe.lecture)
       : null,
     source: groupe.lecture ? sourceLecture(props.payload, groupe.lecture) : null,
+    lignesLQ: groupe.lecture ? lignesLQPour(groupe.lecture) : [],
   })),
 )
 
@@ -144,6 +148,7 @@ const lignesReseaux = computed(
              resolved row's values, the reading's compact figure and its
              exhaustive source. -->
         <div v-if="groupe.lecture" class="sous-groupe-lecture">
+          <div class="lecture-ligne">
           <p class="lecture-texte voix-recit">
             <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
               <NoeudLecture
@@ -192,11 +197,14 @@ const lignesReseaux = computed(
             v-else-if="groupe.figureLecture?.genre === 'distribution'"
             :distribution="groupe.figureLecture.distribution"
             :mediane="groupe.figureLecture.mediane"
+            :mediane-velo="groupe.figureLecture.medianeVelo"
             :nom="groupe.figureLecture.nom"
             :nuage="groupe.figureLecture.nuage"
           />
+
+          <FigureListeLQ v-if="groupe.lignesLQ.length" :lignes="groupe.lignesLQ" />
           <GraphiqueQuadrantMilieux
-            v-else-if="groupe.figureLecture?.genre === 'quadrant'"
+            v-if="groupe.figureLecture?.genre === 'quadrant'"
             :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
             :delta-m2-par-habitant="groupe.figureLecture.deltaM2ParHabitant"
             :classification="groupe.figureLecture.classification"
@@ -205,6 +213,7 @@ const lignesReseaux = computed(
             :periode-artif="groupe.figureLecture.periodeArtif"
             :nuage="groupe.figureLecture.nuage"
           />
+          </div>
 
           <p v-if="groupe.source" class="lecture-source">
             <span class="lecture-etiquette">Source</span>
@@ -327,6 +336,8 @@ const lignesReseaux = computed(
   box-shadow: var(--shadow-subtle);
 }
 
+.lecture-ligne { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 200px); gap: var(--space-4); align-items: start; }
+
 /* La phrase de lecture porte la voix récit (serif) — la classe utilitaire
    globale `.voix-recit` pose la famille, jamais la voix corps Manrope
    (DESIGN.md §9). On ne pose PAS font-family ici pour ne pas écraser
@@ -338,6 +349,8 @@ const lignesReseaux = computed(
   line-height: 1.6;
   color: var(--text-primary);
 }
+
+@media (max-width: 640px) { .lecture-ligne { grid-template-columns: 1fr; } }
 
 .lecture-texte .noeud-gras {
   color: var(--couleur-strong);
