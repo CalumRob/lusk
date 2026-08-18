@@ -1073,6 +1073,19 @@ function lireHistoireMobilite(
       ligneIndexee,
       'une Story « ce-que-le-velo-preserve » sans saillance « saillant »',
     )
+    const shared = ligne['distribution_signature']
+    if (shared !== undefined) {
+      exiger(estObjet(shared), fichier, ligneIndexee, '« distribution_signature » doit être un objet')
+      for (const famille of ['dens', 'dec'] as const) {
+        const valeurs = (shared as LigneBrute)[famille]
+        exiger(Array.isArray(valeurs) && valeurs.length === 10, fichier, ligneIndexee, `« distribution_signature.${famille} » doit contenir 10 valeurs`)
+        for (const valeur of valeurs as unknown[]) {
+          exiger(estValeur(valeur), fichier, ligneIndexee, `« distribution_signature.${famille} » contient une valeur invalide`)
+        }
+      }
+      exiger(estValeur((shared as LigneBrute).min), fichier, ligneIndexee, '« distribution_signature.min » doit être un nombre ou null')
+      exiger(estValeur((shared as LigneBrute).max), fichier, ligneIndexee, '« distribution_signature.max » doit être un nombre ou null')
+    }
     return {
       territoire,
       type,
@@ -1091,6 +1104,7 @@ function lireHistoireMobilite(
       dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null,
       dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null,
       classification_saillance: classification_saillance as 'saillant',
+      ...(shared ? { distribution_signature: shared } : {}),
       ...estampille,
     }
   }

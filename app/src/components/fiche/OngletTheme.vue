@@ -207,7 +207,7 @@ const lignesReseaux = computed(
               <FigureListeLQ
                 v-if="groupe.lignesLQ.length"
                 :lignes="groupe.lignesLQ"
-                :labels="{ rang: metadata?.param_labels.rang, activite: metadata?.param_labels.activity_label, lq: metadata?.param_labels.lq }"
+                :labels="{ rang: metadata!.param_labels.rang, activite: metadata!.param_labels.activity_label, lq: metadata!.param_labels.lq }"
               />
               <GraphiqueQuadrantMilieux
                 v-if="groupe.figureLecture?.genre === 'quadrant'"

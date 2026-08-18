@@ -354,13 +354,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
   })
 
   it('rend la même distribution pour la lecture vélo, avec les deux marques de mode', () => {
-    const histoireDefaut = histoiresMobiliteFixture.find(
-      (h) => h.territoire === '22001' && h.story_key === 'vingt-minutes-sans-voiture',
-    )!
-    const histoires = [
-      ...histoiresMobiliteFixture,
-      { ...histoireDefaut, territoire: '22002', div_loss_t: 42, div_loss_b: 42, delta: 0 },
-    ]
+    const histoires = histoiresMobiliteFixture
     const payload = payloadDe(
       indicateursMobiliteFixture,
       histoires,

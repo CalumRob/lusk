@@ -326,6 +326,7 @@ export function sousGroupesPourTerritoire(
 
 /** The Mobilité distribution signature, from the row's flat bins. */
 function distributionDe(histoire: HistoireMobilite): DistributionMobilite {
+  if (histoire.distribution_signature) return histoire.distribution_signature
   return {
     dens: [
       histoire.dens_1, histoire.dens_2, histoire.dens_3, histoire.dens_4, histoire.dens_5,
@@ -376,7 +377,7 @@ export function figureLecturePour(
     const modes = modesDepuisMetadata(metadata)
     return {
       genre: 'distribution',
-      distribution: distributionPourLecture(payload, h),
+      distribution: distributionPourLecture(h),
       mediane: h.div_loss_t,
       medianeVelo: h.div_loss_b,
       modes,
@@ -410,16 +411,8 @@ export function figureLecturePour(
   return null
 }
 
-/** The vélo row shares the default row's payload-owned distribution signature. */
-function distributionPourLecture(payload: Payload, histoire: HistoireMobilite): DistributionMobilite {
-  const distribution = distributionDe(histoire)
-  if (distribution.dec.some((v) => v !== null) || distribution.dens.some((v) => v !== null)) return distribution
-  const defaut = payload.histoires.find(
-    (candidate): candidate is HistoireMobilite =>
-      candidate.theme === 'mobilite' && candidate.territoire === histoire.territoire &&
-      candidate.story_key === 'vingt-minutes-sans-voiture',
-  )
-  return defaut ? distributionDe(defaut) : distribution
+function distributionPourLecture(histoire: HistoireMobilite): DistributionMobilite {
+  return distributionDe(histoire)
 }
 
 /** Mode labels come from the payload's established `reseaux` vocabulary. */
@@ -440,7 +433,7 @@ export function lignesLQPour(lecture: LectureSousGroupe): LigneLQ[] {
   // Only the commune/EPCI/département specialisation story owns LQ. The
   // regional presence story has different matter (part of the parc), and
   // must not acquire an invented list merely because its theme is économie.
-  if (lecture.story_key !== 'ce-que-la-commune-abrite') return []
+  if (!lecture.template.some((node) => node.type === 'param' && node.key === 'lq')) return []
   const h = lecture.histoire
   const lignes: LigneLQ[] = []
   for (let rang = 1; rang <= 5; rang += 1) {
