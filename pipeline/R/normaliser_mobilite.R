@@ -16,7 +16,7 @@
 # la normalisation bruyamment — jamais un succès partiel silencieux.
 COLONNES_REQUISES_MOBILITE <- c(
   "code_insee", "nom_commune", "code_departement_insee", "raison_sociale",
-  "nb_buildings"
+  "nb_buildings", "med_tot_loss_t", "med_tot_loss_b"
 )
 
 # MOTIF_NUMERIQUES_MOBILITE -----------------------------------------------------
@@ -231,6 +231,35 @@ lire_lignes_osm <- function(chemin_pbf) {
          call. = FALSE)
   }
   lignes
+}
+
+# Parking fermé (ways + relations) shares the Geofabrik extract with networks.
+# Nodes and non-parking features are deliberately not admitted to the contract.
+lire_parkings_osm <- function(chemin_pbf) {
+  x <- osmextract::oe_read(chemin_pbf, layer = "multipolygons", quiet = TRUE)
+  if (!"amenity" %in% names(x)) stop("OSM parkings : colonne amenity absente.", call. = FALSE)
+  x <- x[as.character(x$amenity) == "parking", , drop = FALSE]
+  if (!"osm_id" %in% names(x)) stop("OSM parkings : osm_id absent.", call. = FALSE)
+  x[!duplicated(as.character(x$osm_id)), , drop = FALSE]
+}
+
+lire_bpe_b316 <- function(chemin) {
+  readr::read_delim(chemin, delim = ";", col_types = readr::cols(.default = readr::col_character()),
+                    show_col_types = FALSE, progress = FALSE)
+}
+
+# BPE B316 is a FACILITIES count.  Accept the two official export shapes (long
+# MELODI and the labelled CSV), but never turn an absent observation into zero.
+normaliser_bpe_b316 <- function(x) {
+  code <- intersect(c("GEO", "CODGEO", "code_insee", "GEO_CODE"), names(x))[1]
+  value <- intersect(c("OBS_VALUE", "VALUE", "value", "COUNT", "count"), names(x))[1]
+  type <- intersect(c("FACILITY_TYPE", "TYPEQU", "type", "BPE"), names(x))[1]
+  if (is.na(code) || is.na(value)) stop("BPE B316 : GEO et OBS_VALUE requis.", call. = FALSE)
+  if (!is.na(type)) x <- x[is.na(x[[type]]) | x[[type]] %in% c("B316", "316", "STATION-SERVICE", "Station-service"), , drop = FALSE]
+  z <- tibble::tibble(commune = as.character(x[[code]]), fuel = suppressWarnings(as.numeric(x[[value]])))
+  if (any(is.na(z$fuel) & !is.na(x[[value]]))) stop("BPE B316 : valeur non numérique.", call. = FALSE)
+  z <- z[grepl("^[0-9]{5}$", z$commune) & substr(z$commune, 1, 2) %in% DEPT_BRETAGNE, ]
+  z %>% dplyr::group_by(commune) %>% dplyr::summarise(fuel = sum(fuel), .groups = "drop") %>% dplyr::arrange(commune)
 }
 
 # lire_amenagements_cyclables ----------------------------------------------------

@@ -467,6 +467,16 @@ MANIFEST_MOBILITE_STATIONNEMENT_VELO <- tibble::tribble(
   "cron", "fichier"
 )
 
+MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "bpe_b316", "INSEE — Base permanente des équipements, B316 stations-service",
+  "https://www.insee.fr/fr/statistiques/3568638", "bpe_b316.csv", "2024",
+  "2024-01-01", "2026-08-18", "lov2",
+  "BPE 2024, type d’équipement B316 (FACILITIES) : dénombré par commune pour le dénominateur stations-service du ratio EV/fuel. Les absences restent NA.",
+  "manuel", "fichier"
+)
+
 # MANIFEST_MOBILITE_COG_PASSAGE ------------------------------------------------
 # Le fragment COG PASSAGE (issue #222, ticket #227) : la table de passage
 # annuelle INSEE 2022 → 2025 — le composant PARTAGÉ (le même pattern que la
@@ -538,6 +548,7 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_BATIMENTS,
   MANIFEST_MOBILITE_BORNES,
   MANIFEST_MOBILITE_STATIONNEMENT_VELO,
+  MANIFEST_MOBILITE_BPE_B316,
   MANIFEST_MOBILITE_COG_PASSAGE
 )
 
@@ -968,18 +979,18 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 10L) {
-    manquer("forme", paste0("le manifeste concaténé porte DIX sources (le ",
+  if (nrow(manifest) != 11L) {
+    manquer("forme", paste0("le manifeste concaténé porte ONZE sources (le ",
                             "snapshot + les quatre de l'étage demande/réseaux ",
                             "(#139) + les quatre du sous-bloc (#140) + la ",
-                            "table de passage COG partagée (#222/#227)), pas ",
+                             "BPE B316 et la table de passage COG partagée), pas ",
                             nrow(manifest)))
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                 "amenagements_cyclables", "communes_limites", "korrigo",
                 "batiments_residentiels", "bornes-recharges",
-                "stationnement-velo", "cog_passage")
+                "stationnement-velo", "bpe_b316", "cog_passage")
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -996,6 +1007,9 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
     manifest[manifest$id == "bornes-recharges", ])
   verifier_contrat_mobilite_stationnement_velo(
     manifest[manifest$id == "stationnement-velo", ])
+  bpe <- manifest[manifest$id == "bpe_b316", ]
+  if (nrow(bpe) != 1L || bpe$fichier != "bpe_b316.csv" || bpe$vintage != "2024")
+    manquer("bpe_b316", "le contrat BPE B316 2024 est requis")
   verifier_contrat_mobilite_cog_passage(
     manifest[manifest$id == "cog_passage", ])
 
