@@ -244,8 +244,17 @@ lire_parkings_osm <- function(chemin_pbf) {
 }
 
 lire_bpe_b316 <- function(chemin) {
-  readr::read_delim(chemin, delim = ";", col_types = readr::cols(.default = readr::col_character()),
-                    show_col_types = FALSE, progress = FALSE)
+  x <- readr::read_delim(chemin, delim = ";", col_types = readr::cols(.default = readr::col_character()),
+                         show_col_types = FALSE, progress = FALSE)
+  verifier_contenu_bpe_b316(x)
+  x
+}
+
+verifier_contenu_bpe_b316 <- function(x) {
+  attendues <- c("GEO", "FACILITIES", "NB_EQUIP")
+  if (!is.data.frame(x) || !all(attendues %in% names(x)) || nrow(x) == 0L)
+    stop("BPE B316 : le CSV doit contenir des lignes GEO/FACILITIES/NB_EQUIP.", call. = FALSE)
+  invisible(TRUE)
 }
 
 # BPE B316 is a FACILITIES count.  Accept the two official export shapes (long

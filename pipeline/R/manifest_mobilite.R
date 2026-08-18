@@ -488,9 +488,9 @@ verifier_contrat_mobilite_bpe_b316 <- function(fragment, contenu = NULL) {
     manquer("url", "export CSV BPE INSEE, pas une page HTML ni un chemin local")
   if (fragment$licence != "lov2") manquer("licence", "lov2")
   if (fragment$mode != "manuel" || fragment$type != "fichier") manquer("mode/type", "manuel/fichier")
-  if (!is.null(contenu) &&
-      (!is.data.frame(contenu) || !all(c("GEO", "FACILITIES", "NB_EQUIP") %in% names(contenu))))
-    manquer("contenu", "le CSV doit porter GEO, FACILITIES et NB_EQUIP")
+  if (!is.null(contenu)) {
+    tryCatch(verifier_contenu_bpe_b316(contenu), error = function(e) manquer("contenu", conditionMessage(e)))
+  }
   if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
       !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
       as.Date(fragment$date_publication) < as.Date(fragment$date_reference))

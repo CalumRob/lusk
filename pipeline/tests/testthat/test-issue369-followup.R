@@ -26,7 +26,11 @@ test_that("BPE B316 protects the canonical FACILITIES/NB_EQUIP export shape", {
     tibble::tibble(GEO = "29001", FACILITIES = "B316", NB_EQUIP = "2")))
   expect_error(verifier_contrat_mobilite_bpe_b316(
     MANIFEST_MOBILITE_BPE_B316, tibble::tibble(GEO = "29001", OBS_VALUE = "2")),
-    "GEO, FACILITIES et NB_EQUIP")
+    "GEO/FACILITIES/NB_EQUIP")
+  expect_silent(verifier_contenu_bpe_b316(
+    tibble::tibble(GEO = "29001", FACILITIES = "B316", NB_EQUIP = "2")))
+  expect_error(verifier_contenu_bpe_b316(tibble::tibble(GEO = "29001", NB_EQUIP = "2")),
+               "GEO/FACILITIES/NB_EQUIP")
 })
 
 test_that("mixed unavailable BPE values remain unavailable during aggregation", {
