@@ -560,12 +560,22 @@ describe('parsePayload — the Mobilité contract (issue #142, RÉSOLU #312)', (
     expect(erreur.message).toMatch(/saillant/)
   })
 
-  it('rejects a vélo Story without its shared distribution signature', () => {
+  it('rejects a vélo Story without its flat distribution signature', () => {
     const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
     const velo = histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite
-    delete velo.distribution_signature
+    velo.dens_1 = null
     const erreur = attendErreurValidation(documentsMobilite({ histoires }))
-    expect(erreur.message).toMatch(/distribution_signature/)
+    expect(erreur.message).toMatch(/dens_1/)
+  })
+
+  it.each([
+    ['nonnumeric', (velo: HistoireMobilite) => { velo.dec_4 = 'bad' as unknown as number }],
+    ['unusable', (velo: HistoireMobilite) => { velo.dens_1 = 0; velo.dens_2 = 0; velo.dens_3 = 0; velo.dens_4 = 0; velo.dens_5 = 0; velo.dens_6 = 0; velo.dens_7 = 0; velo.dens_8 = 0; velo.dens_9 = 0; velo.dens_10 = 0 }],
+    ['invalid range', (velo: HistoireMobilite) => { velo.dens_max = 1; velo.dens_min = 2 }],
+  ])('rejects a vélo Story with a %s flat signature', (_, mutate) => {
+    const histoires = JSON.parse(JSON.stringify(histoiresMobiliteFixture)) as typeof histoiresMobiliteFixture
+    mutate(histoires.find((h) => h.story_key === 'ce-que-le-velo-preserve') as HistoireMobilite)
+    expect(() => parsePayload(documentsMobilite({ histoires }))).toThrow()
   })
 
   it('rejects an unknown saillance classification', () => {

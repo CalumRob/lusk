@@ -239,13 +239,6 @@ export interface HistoireMobilite extends LectureResolueBase, VintageStamp {
   dec_9: number | null
   dec_10: number | null
   classification_saillance: string
-  /** Shared chart matter carried on a resolved vélo row (one row per territory). */
-  distribution_signature?: {
-    dens: (number | null)[]
-    dec: (number | null)[]
-    min: number | null
-    max: number | null
-  }
 }
 
 /**

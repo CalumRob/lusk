@@ -511,9 +511,14 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(velo.every((h) => h.salience_reason === 'delta-velo-saillant')).toBe(true)
     expect(velo.every((h) => h.classification_saillance === 'saillant')).toBe(true)
     expect(velo.every((h) => {
-      const signature = (h as HistoireMobilite).distribution_signature
-      return signature?.dens.length === 10 && signature.dens.some((value) => value !== null && value > 0) &&
-        signature.dec.length === 10 && signature.max >= signature.min
+      const signature = h as HistoireMobilite
+      const dens = [signature.dens_1, signature.dens_2, signature.dens_3, signature.dens_4, signature.dens_5,
+        signature.dens_6, signature.dens_7, signature.dens_8, signature.dens_9, signature.dens_10]
+      const dec = [signature.dec_1, signature.dec_2, signature.dec_3, signature.dec_4, signature.dec_5,
+        signature.dec_6, signature.dec_7, signature.dec_8, signature.dec_9, signature.dec_10]
+      return dens.every((value) => typeof value === 'number') && dens.some((value) => value > 0) &&
+        dec.every((value) => typeof value === 'number') && signature.dens_max !== null && signature.dens_min !== null &&
+        signature.dens_max >= signature.dens_min
     })).toBe(true)
     expect(new Set(histoiresMobilite.map((h) => `${h.territoire}|${h.groupe}`)).size).toBe(1266)
   })

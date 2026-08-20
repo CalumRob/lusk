@@ -1129,8 +1129,21 @@ test_that("compute_histoires_mobilite : « Ce que le vélo préserve » ne se d�
   # classification (la même colonne que les lignes de défaut — la forme du
   # contrat, jamais un doublon de vocabulaire)
   expect_true(all(c("territoire", "type", "theme", "story_key",
-                    "div_loss_t", "div_loss_b", "delta",
-                    "classification_saillance") %in% names(velo)))
+                     "div_loss_t", "div_loss_b", "delta",
+                     "classification_saillance", "dens_min", "dens_max",
+                     paste0("dens_", 1:10), paste0("dec_", 1:10)) %in% names(velo)))
+  expect_false(any(vapply(velo, is.list, logical(1))))
+  expect_true(all(vapply(velo[paste0("dens_", 1:10)], is.numeric, logical(1))))
+  expect_true(all(vapply(velo[paste0("dec_", 1:10)], is.numeric, logical(1))))
+  expect_true(all(velo$dens_min <= velo$dens_max))
+  expect_true(all(rowSums(velo[paste0("dens_", 1:10)] > 0) > 0))
+  chemin <- tempfile(fileext = ".parquet")
+  on.exit(unlink(chemin), add = TRUE)
+  nanoparquet::write_parquet(velo, chemin)
+  retour <- nanoparquet::read_parquet(chemin)
+  expect_false(any(vapply(retour, is.list, logical(1))))
+  expect_equal(as.data.frame(retour[paste0("dens_", 1:10)]),
+               as.data.frame(velo[paste0("dens_", 1:10)]))
   expect_true(all(velo$classification_saillance == "saillant"))
   expect_false("classification" %in% names(histoires))
   expect_true(all(velo$theme == "mobilite"))
