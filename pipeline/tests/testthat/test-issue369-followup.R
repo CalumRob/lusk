@@ -60,6 +60,7 @@ test_that("BPE25 counts geolocalized B316 equipment rows by commune", {
     ~DEPCOM, ~GEO_OBJECT, ~TYPEQU,
     "29001", "COM", "B316",
     "29001", "COM", "B316",
+    "75001", "COM", "B316",
     "29001", "COM", "B999",
     "200000001", "EPCI", "B316"
   )
@@ -67,6 +68,7 @@ test_that("BPE25 counts geolocalized B316 equipment rows by commune", {
     GEO = c("29001", "29001"), FACILITIES = c("B316", "B316"), NB_EQUIP = c(1, 1)))
   expect_equal(normaliser_bpe_b316(brut)$fuel, 2)
   expect_error(selectionner_bpe_b316_2025(brut[3, , drop = FALSE]), "aucune observation")
+  expect_error(selectionner_bpe_b316_2025(brut[5, , drop = FALSE]), "aucune observation")
 })
 
 test_that("BPE25 rejects malformed equipment observations", {
@@ -78,6 +80,9 @@ test_that("BPE25 rejects malformed equipment observations", {
     DEPCOM = "29001", TYPEQU = NA_character_)), "TYPEQU")
   expect_error(selectionner_bpe_b316_2025(tibble::tibble(
     DEPCOM = "29X01", TYPEQU = "B316")), "invalide")
+  expect_error(selectionner_bpe_b316_2025(tibble::tibble(
+    DEPCOM = "200000001", GEO_OBJECT = "EPCI", TYPEQU = "B316")),
+    "aucune observation")
 })
 
 test_that("mixed unavailable BPE values remain unavailable during aggregation", {
