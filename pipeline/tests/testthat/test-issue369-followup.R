@@ -100,6 +100,40 @@ test_that("mixed unavailable BPE values remain unavailable during aggregation", 
   expect_true(is.na(ratio$value))
 })
 
+test_that("B316 fuel counts aggregate before division through every territory level", {
+  ref <- tibble::tribble(
+    ~CODGEO, ~EPCI, ~DEP,
+    "29001", "200000001", "29",
+    "29002", "200000001", "29",
+    "35001", "200000002", "35"
+  )
+  bornes <- tibble::tibble(
+    code = c("29001", "29002", "35001"), bornes = c(4, 6, 10))
+  fuel <- tibble::tibble(
+    code = c("29001", "29002", "35001"), fuel = c(1, 3, 5))
+
+  out <- agreger_offre_territoires(
+    offre_tc_communes = tibble::tibble(commune = ref$CODGEO,
+                                       n_batiments = 1, part_proche = 1),
+    bornes_communes = bornes %>% dplyr::rename(commune = code,
+                                                nb_bornes = bornes),
+    velo_communes = tibble::tibble(commune = ref$CODGEO,
+                                   places = 1, population = 100,
+                                   places_1000 = 10),
+    base_epci = ref,
+    fuel_communes = fuel
+  )
+  ratio <- out[out$key == "bornes_ev_par_station_service", ]
+  lire <- function(code) ratio$value[ratio$code == code]
+
+  # Counts are summed before division: the EPCI is 10 / (1 + 3), not
+  # the mean of its commune ratios (4 and 2).
+  expect_equal(lire("29001"), 4)
+  expect_equal(lire("200000001"), 2.5)
+  expect_equal(lire("29"), 2.5)
+  expect_equal(lire("53"), 20 / 9)
+})
+
 test_that("the durable parking comparison decision publishes only the count ratio", {
   expect_identical(RATIO_STATIONNEMENT_VELO_DECISION,
                    "places_velo_par_places_voiture")
