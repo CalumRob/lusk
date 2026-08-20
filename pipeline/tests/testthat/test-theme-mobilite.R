@@ -2447,6 +2447,26 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
 })
 
+test_that("construire_indicateurs_mobilite : un territoire absent du snapshot garde ses deux clés tot_loss", {
+  fx <- fixture_indicateurs_mobilite()
+  fx$tot_loss_territoires <- dplyr::filter(fx$tot_loss_territoires, code != "29002")
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+
+  ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
+  absent <- ind[ind$territoire == "29002" &
+                  ind$key %in% c("tot_loss_t", "tot_loss_b"), ]
+
+  expect_setequal(absent$key, c("tot_loss_t", "tot_loss_b"))
+  expect_true(all(is.na(absent$value)))
+  expect_false(any(is.na(ind$key)))
+  expect_equal(nrow(absent), 2)
+})
+
 test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction DÉCLARÉE de SA clé (#368)", {
   # le mécanisme de l'audit ordinal : chaque mesure est classée dans SON groupe
   # avec la direction de SA clé (DIRECTIONS_MOBILITE — jamais le défaut

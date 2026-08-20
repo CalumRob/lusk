@@ -840,7 +840,9 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
                  "Mobilité e2e — le stationnement vélo par commune")
   verifier_egale(nrow(analytiques$offre_cyclable_communes), 1202L,
                  "Mobilité e2e — l'offre cyclable par commune")
-  verifier_egale(nrow(analytiques$offre_territoires), 10142L,
+  # 10 142 lignes avant #369 + trois familles complètes ajoutées par #369
+  # (1 268 territoires chacune) = 13 946 lignes.
+  verifier_egale(nrow(analytiques$offre_territoires), 13946L,
                  "Mobilité e2e — l'offre par territoire")
 
   offre <- analytiques$offre_territoires
