@@ -280,10 +280,11 @@ selectionner_bpe_b316_2025 <- function(x) {
   y <- x[type == "B316", , drop = FALSE]
   if (!nrow(y)) stop("BPE25 : aucune observation communale B316 pour 2025.", call. = FALSE)
   depcom <- as.character(y$DEPCOM)
-  if (any(!grepl("^[0-9]{5}$", depcom)))
-    stop("BPE25 : code commune invalide pour B316.", call. = FALSE)
   y <- y[substr(depcom, 1, 2) %in% DEPT_BRETAGNE, , drop = FALSE]
   if (!nrow(y)) stop("BPE25 : aucune observation communale B316 pour 2025.", call. = FALSE)
+  depcom <- as.character(y$DEPCOM)
+  if (any(!grepl("^[0-9]{5}$", depcom)))
+    stop("BPE25 : code commune invalide pour B316.", call. = FALSE)
   y <- tibble::tibble(GEO = as.character(y$DEPCOM), FACILITIES = "B316", NB_EQUIP = 1)
   verifier_contenu_bpe_b316(y)
   y
