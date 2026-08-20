@@ -235,12 +235,28 @@ lire_lignes_osm <- function(chemin_pbf) {
 
 # Parking fermé (ways + relations) shares the Geofabrik extract with networks.
 # Nodes and non-parking features are deliberately not admitted to the contract.
+normaliser_parkings_osm <- function(x) {
+  if (!"amenity" %in% names(x)) stop("OSM parkings : colonne amenity absente.", call. = FALSE)
+  # Do not let NA in the GDAL attribute vector select an NA feature row.
+  # The OSM multipolygon driver can append one such geometry-collection row;
+  # it is not a parking feature and has no polygonal area to attribute.
+  amenity <- as.character(x$amenity)
+  x <- x[!is.na(amenity) & amenity == "parking", , drop = FALSE]
+  if (!"osm_id" %in% names(x)) stop("OSM parkings : osm_id absent.", call. = FALSE)
+  x <- x[!duplicated(as.character(x$osm_id)), , drop = FALSE]
+  # The OSM multipolygon layer contains a small number of invalid relations
+  # (usually duplicate edges between member ways).  Repair at ingestion, before
+  # any area or commune attribution operation.  st_make_valid preserves the
+  # polygonal area and can legitimately return POLYGON for a MULTIPOLYGON.
+  x <- sf::st_make_valid(x)
+  if (any(!sf::st_is_valid(x)))
+    stop("OSM parkings : géométrie invalide après réparation.", call. = FALSE)
+  x
+}
+
 lire_parkings_osm <- function(chemin_pbf) {
   x <- osmextract::oe_read(chemin_pbf, layer = "multipolygons", quiet = TRUE)
-  if (!"amenity" %in% names(x)) stop("OSM parkings : colonne amenity absente.", call. = FALSE)
-  x <- x[as.character(x$amenity) == "parking", , drop = FALSE]
-  if (!"osm_id" %in% names(x)) stop("OSM parkings : osm_id absent.", call. = FALSE)
-  x[!duplicated(as.character(x$osm_id)), , drop = FALSE]
+  normaliser_parkings_osm(x)
 }
 
 lire_bpe_b316 <- function(chemin) {

@@ -154,6 +154,34 @@ test_that("street-side parking uses both legacy and lane tags", {
   expect_equal(out$places_voiture, 100 + 10 * 2 * 2.3 / 11.5)
 })
 
+test_that("invalid closed parking geometry is repaired before attribution", {
+  skip_if_not_installed("sf")
+  # A self-crossing closed way is the minimal form of the OSM defect seen in
+  # the Bretagne extract (duplicate/overlapping member edges are repaired by
+  # the same GEOS operation).
+  parking <- sf::st_sf(
+    osm_id = "invalid-way",
+    amenity = "parking",
+    parking = "surface",
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(1, 1), c(5, 5), c(1, 5), c(5, 1), c(1, 1)
+    ))), crs = 2154)
+  )
+  limites <- sf::st_sf(
+    code_insee = "29001",
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(0, 0), c(10, 0), c(10, 10), c(0, 10), c(0, 0)
+    ))), crs = 2154)
+  )
+  expect_false(sf::st_is_valid(parking))
+  repaired <- normaliser_parkings_osm(parking)
+  expect_true(all(sf::st_is_valid(repaired)))
+  lignes <- sf::st_sf(highway = character(), geometry = sf::st_sfc(crs = 2154))
+  out <- calculer_stationnement_voiture_communes(repaired, lignes, limites)
+  expect_equal(out$commune, "29001")
+  expect_equal(out$places_voiture, as.numeric(sf::st_area(repaired)) / 25)
+})
+
 test_that("parking per 1000 inhabitants keeps population through aggregation", {
   base <- tibble::tribble(~CODGEO, ~EPCI, ~DEP,
                           "29001", "200000001", "29")
