@@ -512,7 +512,8 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(velo.every((h) => h.classification_saillance === 'saillant')).toBe(true)
     expect(velo.every((h) => {
       const signature = (h as HistoireMobilite).distribution_signature
-      return signature?.dens.length === 10 && signature.dens.some((value) => value !== null && value > 0) &&
+      if (!signature || signature.min === null || signature.max === null) return false
+      return signature.dens.length === 10 && signature.dens.some((value) => value !== null && value > 0) &&
         signature.dec.length === 10 && signature.max >= signature.min
     })).toBe(true)
     expect(new Set(histoiresMobilite.map((h) => `${h.territoire}|${h.groupe}`)).size).toBe(1266)

@@ -883,7 +883,7 @@ function lireHistoireEconomie(
   ligneIndexee: number,
   fichier: string,
 ): Histoire {
-  const { territoire, type, story_key, groupe, salience_reason } = entete
+  const { territoire, type, groupe, salience_reason } = entete
 
   // Le top-5 replié : chaque rang porte code + label (+ LQ pour la lecture de
   // spécialisation). Le premier
