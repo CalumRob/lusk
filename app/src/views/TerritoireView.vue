@@ -21,6 +21,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import ApercuOnglet from '@/components/fiche/ApercuOnglet.vue'
 import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
+import FicheHeaderPrototype from '@/components/fiche/FicheHeaderPrototype.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
@@ -193,6 +194,11 @@ watch(
             <span class="puce-type">{{ nomType }}</span>
             <ContexteSwitcher :echelons="echelons" />
           </div>
+          <FicheHeaderPrototype
+            v-if="payload"
+            :payload="payload"
+            :territoire="String(route.params.id)"
+          />
         </div>
       </template>
       </div>
