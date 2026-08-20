@@ -46,7 +46,7 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     }
   })
 
-  it('déclare 26 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
+  it('déclare 25 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
     const idsJeux = new Set(
       Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
     )
@@ -104,13 +104,12 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
       date_publication: '2026-08-04',
     })
     expect(SOURCES_METHODES.bpe_b316).toMatchObject({
-      dataset: 'bpe_b316',
       url: 'https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet',
       libelle: 'Millésime 2025',
     })
   })
 
-  it('déclare 58 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369)', () => {
+  it('déclare 57 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369)', () => {
     expect(Object.keys(SOURCES_METHODES).length).toBe(57)
   })
 

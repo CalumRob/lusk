@@ -385,7 +385,6 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // précédente). La ligne vintages arrive avec la publication pipeline
   // (#369) : dégradation gracieuse jusqu'alors.
   'bpe_b316': {
-    dataset: 'bpe_b316',
     nom: 'INSEE — BPE25 géolocalisée : stations-service (B316)',
     libelle: 'Millésime 2025',
     editeur: 'INSEE',
