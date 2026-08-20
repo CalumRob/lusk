@@ -7,6 +7,7 @@ import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import MethodologieView from '../views/MethodologieView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
+import PrototypeReperesScalairesView from '../views/PrototypeReperesScalairesView.vue'
 
 /**
  * The site map (site-map.md, /, /carte, /communes, /epcis, /departements,
@@ -70,6 +71,12 @@ export const routes = [
     name: 'a-propos',
     component: AProposView,
     meta: { title: 'À propos' },
+  },
+  {
+    path: '/prototype/reperes-scalaires',
+    name: 'prototype-reperes-scalaires',
+    component: PrototypeReperesScalairesView,
+    meta: { title: 'Prototype Repères scalaires' },
   },
 ] as const
 

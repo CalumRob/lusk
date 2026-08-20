@@ -29,6 +29,11 @@ lusk/
 - **`app/`** — a Vue application that renders the fiche payload: the map, search, territory pages, charts, and the Méthodes page. The app renders; the pipeline computes.
 - **Automation** — the light themes refresh on a schedule (GitHub Actions); the flagship Mobilité analysis rebuilds on a slower clock. A vintage table is the seam that makes the freshness promise honest.
 
+## Throwaway UI prototype (#399)
+
+From `app/`, run `npm run dev`, then open `/prototype/reperes-scalaires?variant=atlas`.
+Use `variant=atlas`, `variant=focus`, or `variant=tableau` (and the development-only floating switcher / arrow keys) to compare the three scalar Repères directions. This is a visual prototype only and must not be treated as production code.
+
 The data is **open**: the bulk under Licence Ouverte, with OSM-derived layers under ODbL (attribution "© OpenStreetMap contributors"). The code is **public**; there are **no accounts**.
 
 ## v1 scope
