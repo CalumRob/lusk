@@ -8,6 +8,7 @@ type Fact = { territoire: string; type: string; key: string; value: number | nul
 type Territory = { territoire: string; nom: string; type: string; departement?: string; epci?: string }
 type Row = Omit<Fact, 'value'> & { value: number; nom: string }
 type Variant = 'atlas' | 'focus' | 'tableau'
+type DistributionBin = { from: number; to: number; count: number }
 
 const route = useRoute()
 const router = useRouter()
@@ -29,7 +30,10 @@ const rows = computed<Row[]>(() => {
 const values = computed(() => rows.value.map((row) => row.value))
 const stats = computed(() => {
   const sorted = [...values.value].sort((a, b) => a - b)
-  const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0
+  const middle = Math.floor(sorted.length / 2)
+  const median = sorted.length === 0 ? 0 : sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle]
   const low = sorted[0] ?? 0
   const high = sorted.at(-1) ?? 0
   return {
@@ -39,6 +43,18 @@ const stats = computed(() => {
     lowCount: sorted.filter((value) => value === low).length,
     highCount: sorted.filter((value) => value === high).length,
   }
+})
+const highRows = computed(() => rows.value.filter((row) => row.value === stats.value.high))
+const lowRows = computed(() => rows.value.filter((row) => row.value === stats.value.low))
+const distributionBins = computed<DistributionBin[]>(() => {
+  const sorted = [...values.value].sort((a, b) => a - b)
+  if (!sorted.length) return []
+  const binCount = Math.min(12, sorted.length)
+  return Array.from({ length: binCount }, (_, index) => {
+    const start = Math.floor(index * sorted.length / binCount)
+    const end = Math.floor((index + 1) * sorted.length / binCount)
+    return { from: sorted[start], to: sorted[Math.max(start, end - 1)], count: end - start }
+  })
 })
 const middleRows = computed(() => {
   const median = stats.value.median
@@ -57,6 +73,8 @@ function cycle(direction: number) {
   goTo(variants[(index + direction + variants.length) % variants.length])
 }
 function onKeydown(event: KeyboardEvent) {
+  const target = event.target as HTMLElement | null
+  if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return
   if (event.key === 'ArrowRight') cycle(1)
   if (event.key === 'ArrowLeft') cycle(-1)
 }
@@ -110,10 +128,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <div class="atlas-grid">
           <article class="card distribution-card">
             <p class="eyebrow">Distribution</p><h2>Une échelle très étirée</h2>
-            <div class="bars"><i v-for="row in rows.slice(0, 28)" :key="row.territoire" :style="{ height: `${Math.max(8, Math.min(100, row.value / stats.high * 100))}%` }" :title="`${row.nom} · ${format(row.value)}`" /></div>
-            <div class="axis"><span>0</span><span>médiane {{ format(stats.median) }}</span><span>{{ format(stats.high) }}</span></div>
+            <div class="bars"><i v-for="bin in distributionBins" :key="`${bin.from}-${bin.to}`" :style="{ height: `${Math.max(8, bin.count / Math.max(...distributionBins.map((item) => item.count)) * 100)}%` }" :title="`${bin.count} communes · ${format(bin.from)}–${format(bin.to)} hab./km²`" /></div>
+            <div class="axis"><span>{{ format(distributionBins[0]?.from ?? 0) }}</span><span>médiane {{ format(stats.median) }}</span><span>{{ format(distributionBins.at(-1)?.to ?? 0) }}</span></div>
           </article>
-          <article class="card extremes-card"><p class="eyebrow">Extrêmes neutres</p><h2>Valeurs les plus hautes</h2><p><b>{{ stats.highCount }} commune{{ stats.highCount > 1 ? 's' : '' }}</b> partagent la valeur maximale : {{ format(stats.high) }} hab./km².</p><h2>Valeurs les plus basses</h2><p><b>{{ stats.lowCount }} commune{{ stats.lowCount > 1 ? 's' : '' }}</b> partagent la valeur minimale : {{ format(stats.low) }} hab./km².</p></article>
+          <article class="card extremes-card"><p class="eyebrow">Extrêmes neutres</p><h2>Valeurs les plus hautes</h2><p v-if="highRows.length === 1"><b><RouterLink :to="`/territoire/commune/${highRows[0].territoire}`">{{ highRows[0].nom }}</RouterLink></b> · {{ format(stats.high) }} hab./km².</p><p v-else><b>{{ highRows.length }} communes</b> partagent la valeur maximale : {{ format(stats.high) }} hab./km².</p><h2>Valeurs les plus basses</h2><p v-if="lowRows.length === 1"><b><RouterLink :to="`/territoire/commune/${lowRows[0].territoire}`">{{ lowRows[0].nom }}</RouterLink></b> · {{ format(stats.low) }} hab./km².</p><p v-else><b>{{ lowRows.length }} communes</b> partagent la valeur minimale : {{ format(stats.low) }} hab./km².</p></article>
         </div>
         <article class="card table-card"><div class="section-head"><div><p class="eyebrow">Repères dans les communes</p><h2>Les valeurs les plus élevées</h2></div><span>Classement indicatif</span></div><table><tbody><tr v-for="row in tableRows.slice(0, 8)" :key="row.territoire"><td><RouterLink :to="`/territoire/commune/${row.territoire}`">{{ row.nom }}</RouterLink></td><td>{{ format(row.value) }} hab./km²</td></tr></tbody></table></article>
       </section>
@@ -121,14 +139,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <!-- Direction B: a quiet statistical dashboard with the median as anchor. -->
       <section v-else-if="variant === 'focus'" class="focus-layout">
         <article class="focus-card"><p class="eyebrow">Repère central</p><h2>La densité médiane des communes</h2><div class="focus-number">{{ format(stats.median) }} <small>hab./km²</small></div><p>Une commune située à {{ format(stats.median * 2.4) }} hab./km² est à <b>2,4 fois la médiane</b> : une comparaison de ratio adaptée à une densité.</p><div class="range"><span>plus bas<br><b>{{ format(stats.low) }}</b></span><div><i :style="{ left: `${Math.min(94, stats.median / stats.high * 100)}%` }" /></div><span>plus haut<br><b>{{ format(stats.high) }}</b></span></div></article>
-        <div class="focus-side"><article class="stat-block"><span>Valeur la plus haute</span><strong>{{ format(stats.high) }}</strong><small>{{ stats.highCount }} égalité{{ stats.highCount > 1 ? 's' : '' }}</small></article><article class="stat-block"><span>Valeur la plus basse</span><strong>{{ format(stats.low) }}</strong><small>{{ stats.lowCount }} égalité{{ stats.lowCount > 1 ? 's' : '' }}</small></article></div>
+        <div class="focus-side"><article class="stat-block"><span>Valeur la plus haute</span><strong>{{ format(stats.high) }}</strong><small v-if="highRows.length > 1">{{ highRows.length }} communes à égalité</small><RouterLink v-else :to="`/territoire/commune/${highRows[0].territoire}`">{{ highRows[0].nom }}</RouterLink></article><article class="stat-block"><span>Valeur la plus basse</span><strong>{{ format(stats.low) }}</strong><small v-if="lowRows.length > 1">{{ lowRows.length }} communes à égalité</small><RouterLink v-else :to="`/territoire/commune/${lowRows[0].territoire}`">{{ lowRows[0].nom }}</RouterLink></article></div>
         <article class="card quiet-table"><div class="section-head"><div><p class="eyebrow">Densités proches du centre</p><h2>Autour de la médiane</h2></div><span>{{ middleRows.length }} communes affichées</span></div><div class="row-list"><RouterLink v-for="row in middleRows" :key="row.territoire" :to="`/territoire/commune/${row.territoire}`"><span>{{ row.nom }}</span><b>{{ format(row.value) }}</b><em>{{ (row.value / stats.median).toFixed(1).replace('.', ',') }}×</em></RouterLink></div></article>
       </section>
 
       <!-- Direction C: territory table first; the distribution is a compact side rail. -->
       <section v-else class="tableau-layout">
         <article class="table-intro"><p class="eyebrow">Vue tableau · lecture exacte</p><h2>Chaque commune, une valeur</h2><p>Le tableau devient le point d’entrée. La médiane reste visible pour situer chaque ligne dans la distribution.</p><div class="mini-median"><span>Médiane</span><strong>{{ format(stats.median) }}</strong><span>hab./km²</span></div></article>
-        <aside class="distribution-rail"><p class="eyebrow">Distribution</p><div v-for="(label, index) in ['plus bas', 'quart inférieur', 'médiane', 'quart supérieur', 'plus haut']" :key="label" class="rail-row"><span>{{ label }}</span><i><b :style="{ width: `${20 + index * 17}%` }" /></i></div><hr><p><b>{{ stats.highCount }}</b> égalité{{ stats.highCount > 1 ? 's' : '' }} au maximum · <b>{{ stats.lowCount }}</b> au minimum</p></aside>
+        <aside class="distribution-rail"><p class="eyebrow">Distribution · 12 quantiles</p><div v-for="bin in distributionBins" :key="`${bin.from}-${bin.to}`" class="rail-row"><span>{{ format(bin.from) }}–{{ format(bin.to) }}</span><i><b :style="{ width: `${bin.count / Math.max(...distributionBins.map((item) => item.count)) * 100}%` }" /></i><small>{{ bin.count }} communes</small></div><hr><p><b>{{ highRows.length }}</b> extrême{{ highRows.length > 1 ? 's' : '' }} haut · <b>{{ lowRows.length }}</b> bas</p></aside>
         <article class="card full-table"><div class="section-head"><div><p class="eyebrow">Communes · densité décroissante</p><h2>Repères exacts</h2></div><span>{{ rows.length }} lignes publiées</span></div><table><thead><tr><th>Commune</th><th>Valeur</th><th>Écart à la médiane</th></tr></thead><tbody><tr v-for="row in tableRows" :key="row.territoire"><td><RouterLink :to="`/territoire/commune/${row.territoire}`">{{ row.nom }}</RouterLink></td><td><b>{{ format(row.value) }}</b> hab./km²</td><td>{{ row.value >= stats.median ? '+' : '' }}{{ format(row.value - stats.median) }}</td></tr></tbody></table></article>
       </section>
     </template>
