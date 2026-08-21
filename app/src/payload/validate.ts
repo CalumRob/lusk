@@ -42,7 +42,14 @@ import type {
   TerritoireType,
   Theme,
   ThemeMetadata,
-  IndicatorPageMetadata,
+  IndicatorPageMetadataBase,
+  TrajectoryMetadata,
+  CompositionMetadata,
+  DistributionMetadata,
+  RelationshipMetadata,
+  ListMetadata,
+  PyramidMetadata,
+  ComparisonBarsMetadata,
   FamilleFigure,
   Vintage,
   Sexe,
@@ -471,12 +478,15 @@ export function validerIndicateurs(
     const detail = ligne['detail']
     exiger(detail === null || estChaine(detail), fichier, ligneIndexee, '« detail » doit être une chaîne ou null')
 
+    const dimension = ligne['dimension']
+    exiger(dimension === undefined || dimension === null || estChaineNonVide(dimension), fichier, ligneIndexee, '« dimension » doit être une chaîne non vide ou null')
+
     const sex = lireSexe(ligne, fichier, ligneIndexee)
 
     // Unicité : territoire × key × detail × sex (issue #390 — la dimension sexe
     // entre dans la clé pour que les lignes F et M d'une même tranche soient
     // distinctes, jamais un doublon).
-    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}`
+    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}\u0000${dimension ?? ''}`
     exiger(!vus.has(cle), fichier, ligneIndexee, `ligne en double (territoire × key × detail × sex) pour « ${key} » de « ${territoire} »`)
     vus.add(cle)
 
@@ -537,6 +547,7 @@ export function validerIndicateurs(
       key,
       detail,
       sex,
+      dimension: dimension === undefined ? null : dimension,
       value,
       unit,
       rider: rider === undefined ? null : rider,
@@ -2037,7 +2048,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-       const family = page['family'] === undefined ? 'scalar' : page['family']
+        const family = (page['family'] === undefined ? 'scalar' : page['family']) as FamilleFigure
        exiger(estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
        const comparison = page['comparison']
        if (comparison !== undefined) {
@@ -2053,9 +2064,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
          exiger(comparison['direction'] === undefined || comparison['direction'] === 'high' || comparison['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.comparison.direction » est invalide`)
          if (comparison['labels'] !== undefined) exiger(estObjet(comparison['labels']) && Object.values(comparison['labels'] as LigneBrute).every((value) => estChaineNonVide(value)), fichier, 0, `« indicator_pages.${key}.comparison.labels » est invalide`)
        }
-       const validatedPage = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources } as IndicatorPageMetadata
-       if (page['family'] !== undefined) validatedPage.family = family as IndicatorPageMetadata['family']
-       if (comparison !== undefined) validatedPage.comparison = comparison as IndicatorPageMetadata['comparison']
+        const base: IndicatorPageMetadataBase = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
        const extensionFields: Record<string, string[]> = { trajectory: ['endpoints'], composition: ['parts'], distribution: ['signature', 'summary'], list: ['categories'], pyramid: ['dimensions'], 'comparison-bars': ['series'] }
        const extensionKey = family === 'comparison-bars' ? 'comparison-bars' : family
        const extension = page[extensionKey]
@@ -2063,13 +2072,23 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
          if (candidate !== extensionKey && page[candidate] !== undefined) exiger(false, fichier, 0, `« indicator_pages.${key}.${candidate} » ne correspond pas à la famille déclarée`)
        }
        if (family !== 'scalar') exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
-       if (extension !== undefined) {
+        if (extension !== undefined) {
          exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
          for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
          if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
-         ;(validatedPage as unknown as Record<string, unknown>)[family === 'comparison-bars' ? 'comparisonBars' : family] = extension
-       }
-       indicator_pages[key] = validatedPage
+        }
+        const assertNever = (value: never): never => { throw new Error(`Famille de figure non implémentée : ${String(value)}`) }
+        switch (family) {
+          case 'scalar': indicator_pages[key] = page['family'] === undefined ? base : { ...base, family: 'scalar' }; break
+          case 'trajectory': indicator_pages[key] = { ...base, family, trajectory: extension as unknown as TrajectoryMetadata }; break
+          case 'composition': indicator_pages[key] = { ...base, family, composition: extension as unknown as CompositionMetadata }; break
+          case 'distribution': indicator_pages[key] = { ...base, family, distribution: extension as unknown as DistributionMetadata }; break
+          case 'relationship': indicator_pages[key] = { ...base, family, relationship: extension as unknown as RelationshipMetadata }; break
+          case 'list': indicator_pages[key] = { ...base, family, list: extension as unknown as ListMetadata }; break
+          case 'pyramid': indicator_pages[key] = { ...base, family, pyramid: extension as unknown as PyramidMetadata }; break
+          case 'comparison-bars': indicator_pages[key] = { ...base, family, comparisonBars: extension as unknown as ComparisonBarsMetadata }; break
+          default: assertNever(family)
+        }
     }
   }
 

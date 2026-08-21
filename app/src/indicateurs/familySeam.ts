@@ -41,6 +41,10 @@ export type FamilyDispatch = {
   }
 }[FamilyName]
 
+function assertNever(value: never): never {
+  throw new Error(`Famille de figure non implémentée : ${String(value)}`)
+}
+
 /** Explicit registry: pyramid and comparison-bars share composition mechanics,
  * but retain their own family identity and renderer extension point. */
 export const familyRegistry = Object.freeze({
@@ -90,7 +94,7 @@ function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensio
 
 export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
-  const rows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension))
+  const rows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
   const territories = input.territories ?? []
   const common = { facet, resolvedUrl: facet.url, selected }
@@ -102,6 +106,8 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
     case 'relationship': return { ...common, family: 'relationship', renderer: 'relationship', rendererIdentity: familyRegistry.relationship, representation: { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }, status: statusFor(facet, rows, page.relationship === undefined) }
     case 'pyramid': return { ...common, family: 'pyramid', renderer: 'pyramid', rendererIdentity: familyRegistry.pyramid, representation: { kind: 'pyramid', rows, territories, parts: rows, extension: page.pyramid }, status: statusFor(facet, rows, page.pyramid === undefined) }
     case 'comparison-bars': return { ...common, family: 'comparison-bars', renderer: 'comparison-bars', rendererIdentity: familyRegistry['comparison-bars'], representation: { kind: 'comparison-bars', rows, territories, parts: rows, extension: page.comparisonBars }, status: statusFor(facet, rows, page.comparisonBars === undefined) }
-    default: return { ...common, family: 'scalar', renderer: 'scalar', rendererIdentity: familyRegistry.scalar, representation: { kind: 'scalar', rows, territories }, status: statusFor(facet, rows, false) }
+    case undefined:
+    case 'scalar': return { ...common, family: 'scalar', renderer: 'scalar', rendererIdentity: familyRegistry.scalar, representation: { kind: 'scalar', rows, territories }, status: statusFor(facet, rows, false) }
   }
+  return assertNever(page)
 }

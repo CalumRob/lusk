@@ -67,7 +67,7 @@ export interface VintageStamp {
   vintage_date_publication: string
 }
 
-/** One facts row per (territoire × key × detail × sex). */
+/** One facts row per (territoire × key × detail × sex × dimension). */
 export interface Indicateur extends VintageStamp {
   territoire: string
   type: TerritoireType
@@ -76,6 +76,8 @@ export interface Indicateur extends VintageStamp {
   detail: string | null
   /** The sex dimension (issue #390) — carried by the sex-split indicators (structure_age). */
   sex?: Sexe | null
+  /** Optional analytical dimension for multi-axis indicator facts. */
+  dimension?: string | null
   value: number | null
   unit: string
   /** Contextual explanation for an unavailable value (pipeline-owned fact). */
