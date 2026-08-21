@@ -7,6 +7,7 @@ import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import MethodologieView from '../views/MethodologieView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
+import IndicateurView from '../views/IndicateurView.vue'
 
 /**
  * The site map (site-map.md, /, /carte, /communes, /epcis, /departements,
@@ -70,6 +71,13 @@ export const routes = [
     name: 'a-propos',
     component: AProposView,
     meta: { title: 'À propos' },
+  },
+  {
+    path: '/indicateurs/:theme/:indicator',
+    name: 'indicateur',
+    component: IndicateurView,
+    props: true,
+    meta: { title: 'Indicateur' },
   },
 ] as const
 

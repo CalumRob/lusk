@@ -1992,6 +1992,19 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     )
   }
 
+  let scalar_page: ThemeMetadata['scalar_page']
+  if (meta['scalar_page'] !== undefined) {
+    exiger(estObjet(meta['scalar_page']), fichier, 0, '« scalar_page » doit être un objet')
+    const page = meta['scalar_page'] as LigneBrute
+    const texte = ['indicator', 'label', 'definition', 'unit', 'calculation', 'direction', 'caveats', 'vintage']
+    for (const champ of texte) { const valeur = page[champ]; exiger(estChaine(valeur) && valeur.length > 0, fichier, 0, `« scalar_page.${champ} » doit être une chaîne non vide`) }
+    const indicator = page['indicator'] as string
+    exiger(indicator_keys.includes(indicator), fichier, 0, '« scalar_page.indicator » doit être un indicateur publié du thème')
+    const levels = page['levels']; exiger(Array.isArray(levels) && levels.length > 0 && levels.every((x) => x === 'commune' || x === 'epci' || x === 'departement'), fichier, 0, '« scalar_page.levels » doit déclarer des niveaux comparables')
+    const sourcesBrut = page['sources']; exiger(Array.isArray(sourcesBrut) && sourcesBrut.length > 0, fichier, 0, '« scalar_page.sources » doit déclarer les sources')
+    scalar_page = { indicator, detail: page['detail'] === undefined ? null : page['detail'] as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as string, caveats: page['caveats'] as string, vintage: page['vintage'] as string, levels: levels as NonNullable<ThemeMetadata['scalar_page']>['levels'], sources: (sourcesBrut as unknown[]).map((s) => { exiger(estObjet(s), fichier, 0, '« scalar_page.sources » contient une source invalide'); const source = s as LigneBrute; for (const c of ['dataset','publisher','url','licence','vintage']) exiger(estChaine(source[c]) && (source[c] as string).length > 0, fichier, 0, `source.${c} doit être renseignée`); return source as never }) }
+  }
+
   return {
     theme,
     label,
@@ -2003,6 +2016,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     detail_labels,
     param_labels,
     classification_labels,
+    scalar_page,
   }
 }
 

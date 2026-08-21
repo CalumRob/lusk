@@ -22,6 +22,7 @@ describe('router — route table', () => {
       '/territoire/:type/:id',
       '/methodologie',
       '/a-propos',
+      '/indicateurs/:theme/:indicator',
     ])
   })
 
@@ -47,6 +48,7 @@ describe('router — navigation resolves to the French placeholder views', () =>
     '/territoire/commune/35000',
     '/methodologie',
     '/a-propos',
+    '/indicateurs/demographie/densite',
   ])('resolves "%s" to a registered component', async (path) => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push(path)

@@ -523,6 +523,34 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
   }
 
+  # Page d'indicateur scalaire (#401) : optional for legacy descriptors, but
+  # once declared it is a complete, self-contained publication contract.
+  if (!is.null(metadata$scalar_page)) {
+    page <- metadata$scalar_page
+    champs <- c("indicator", "label", "definition", "unit", "calculation",
+                "direction", "caveats", "vintage")
+    if (!is.list(page) || any(!vapply(champs, function(x)
+      est_chaine_non_vide(page[[x]]), logical(1)))) {
+      manquer("scalar_page", "le descripteur scalaire est incomplet")
+    }
+    if (!page$indicator %in% cles_indicateurs) {
+      manquer("scalar_page.indicator", "l'indicateur n'appartient pas au registre")
+    }
+    if (is.null(page$levels) || length(page$levels) == 0L ||
+        any(!page$levels %in% c("commune", "epci", "departement"))) {
+      manquer("scalar_page.levels", "les niveaux comparables sont invalides")
+    }
+    if (is.null(page$sources) || !is.list(page$sources) || length(page$sources) == 0L) {
+      manquer("scalar_page.sources", "aucune source complète n'est déclarée")
+    }
+    for (source in page$sources) {
+      if (!is.list(source) || any(!vapply(c("dataset", "publisher", "url", "licence", "vintage"),
+          function(x) est_chaine_non_vide(source[[x]]), logical(1)))) {
+        manquer("scalar_page.sources", "une source est incomplète")
+      }
+    }
+  }
+
   # 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
   #    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
   #    sous-groupe — rien d'orphelin, rien de partagé (l'identité

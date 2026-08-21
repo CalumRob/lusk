@@ -1182,6 +1182,14 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       'vide-meurt': 'se vide et se meurt',
       'vide-renouvelle': 'se vide, mais se renouvelle',
     },
+    scalar_page: {
+      indicator: 'densite', detail: null, label: 'Densité de population',
+      definition: 'Nombre d’habitants par kilomètre carré.', unit: 'hab./km²',
+      calculation: 'Population municipale divisée par la superficie.', direction: 'Descriptif',
+      caveats: 'La superficie est celle du territoire.', vintage: 'RP 2023',
+      levels: ['commune', 'epci', 'departement'],
+      sources: [{ dataset: 'Série historique', publisher: 'INSEE', url: 'https://www.insee.fr', licence: 'Licence ouverte', vintage: 'RP 2023' }],
+    },
   },
   habitat: {
     theme: 'habitat',

@@ -660,4 +660,28 @@ export interface ThemeMetadata {
    * verifierPariteLibelles load guard.
    */
   classification_labels?: Record<string, string>
+  /** Optional page descriptor: only published entries are eligible for /indicateurs. */
+  scalar_page?: ScalarPageMetadata
+}
+
+export interface SourceRecord {
+  dataset: string
+  publisher: string
+  url: string
+  licence: string
+  vintage: string
+}
+
+export interface ScalarPageMetadata {
+  indicator: string
+  detail?: string | null
+  label: string
+  definition: string
+  unit: string
+  calculation: string
+  direction: string
+  caveats: string
+  vintage: string
+  levels: TerritoireType[]
+  sources: SourceRecord[]
 }
