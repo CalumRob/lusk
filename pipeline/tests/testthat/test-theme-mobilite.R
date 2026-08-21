@@ -27,13 +27,13 @@ test_that("MANIFEST_MOBILITE : les dix sources du thème, les 11 colonnes standa
   # fragment korrigo) et la couche bâtiments porte elle-même code_commune_insee
   # (plus de jointure spatiale aux polygones communaux).
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 10L)
+  expect_equal(nrow(m), 11L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     "amenagements_cyclables", "communes_limites", "korrigo",
                     "batiments_residentiels", "bornes-recharges",
-                    "stationnement-velo", "cog_passage"))
+                   "stationnement-velo", "bpe_b316", "cog_passage"))
 
   # les 11 colonnes standard du manifeste (SIRENE / Flores / RP / Habitat)
   expect_true(all(c("id", "source", "url", "fichier", "vintage",
@@ -65,22 +65,15 @@ test_that("MANIFEST_MOBILITE : les dix sources du thème, les 11 colonnes standa
                                      "stationnement-velo")] == "cron"))
 })
 
-test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de production (cache froid, #381)", {
+test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de production (chemin repo-relatif)", {
   m <- MANIFEST_MOBILITE
   bat <- m[m$id == "batiments_residentiels", ]
 
-  # l'URL file:// de la couche bâtiments est le chemin ABSOLU du fichier de
-  # production — la même famille que le snapshot (ligne 94), JAMAIS un chemin
-  # relatif à la racine du lecteur (« file:///pipeline/data/raw/... » ne se
-  # résout pas : le téléchargement échouait bruyamment sur un cache froid,
-  # #381). Le fichier est porté à la main (mode « manuel ») : le cron ne le
+   # Le fichier de production est porté à la main (mode « manuel ») : le cron
+   # ne le télécharge pas. Son chemin de cache est repo-relatif et portable ; le
   # touche jamais, la garde de contenu (verifier_fichier) couvre le reste.
-  expect_equal(bat$url,
-               "file:///E:/Website/Data_handling/batiments_residentiels_bretagne.csv")
-  # la même famille que le snapshot voisin : un chemin ABSOLU sous le dossier
-  # de production, jamais un chemin qui part de la racine du lecteur
-  expect_true(startsWith(bat$url, "file:///E:/"))
-  expect_false(startsWith(bat$url, "file:///pipeline"))
+   expect_equal(bat$url, "data/raw/batiments_residentiels_bretagne.csv")
+   expect_false(grepl("^[A-Za-z]:|^file:///", bat$url))
   expect_equal(bat$mode, "manuel")
   expect_equal(bat$type, "fichier")
 })
@@ -128,14 +121,14 @@ test_that("vintages_mobilite : dix sources, chacune avec SA référence et SA pu
   v <- vintages_mobilite()
 
   # dix sources (issues #139+#140+#222), la forme du contrat — jamais alignées
-  expect_equal(nrow(v), 10L)
+  expect_equal(nrow(v), 11L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                     "amenagements_cyclables", "communes_limites", "korrigo",
                     "batiments_residentiels", "bornes-recharges",
-                    "stationnement-velo", "cog_passage"))
+                   "stationnement-velo", "bpe_b316", "cog_passage"))
 
   # le snapshot porté : SA référence (l'instantané) et SA publication (le portage)
   snap <- v[v$id == "mobilite_snapshot", ]
@@ -257,7 +250,7 @@ test_that("normaliser_snapshot_mobilite : normalise la forme du snapshot porté"
     code_departement_insee = "29",
     code_insee = "29011",
     nom_commune = "Bohars",
-    nb_buildings = "1113",
+     nb_buildings = "1113", med_tot_loss_t = "2", med_tot_loss_b = "1",
     share_food_t = "0.95",
     unique_dep_1 = "Alimentation"
   )
@@ -292,7 +285,7 @@ test_that("normaliser_snapshot_mobilite : un input corrompu s'arrête bruyamment
   mauvaise_id <- tibble::tibble(
     code_insee = "ABC", nom_commune = "Bohars",
     code_departement_insee = "29", raison_sociale = "Brest Métropole",
-    nb_buildings = "1113"
+     nb_buildings = "1113", med_tot_loss_t = "2", med_tot_loss_b = "1"
   )
   expect_error(normaliser_snapshot_mobilite(mauvaise_id), "code_insee")
 
@@ -300,7 +293,7 @@ test_that("normaliser_snapshot_mobilite : un input corrompu s'arrête bruyamment
   expect_error(normaliser_snapshot_mobilite(tibble::tibble(
     code_insee = character(), nom_commune = character(),
     code_departement_insee = character(), raison_sociale = character(),
-    nb_buildings = character()
+     nb_buildings = character(), med_tot_loss_t = numeric(), med_tot_loss_b = numeric()
   )), "aucune ligne")
 })
 
@@ -361,7 +354,10 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
     },
     construire_sources_offre_mobilite = function(cache) {
       appels$sources <- cache
-      list(korrigo = tibble::tibble(stop_id = "AR1"),
+     list(parkings_osm = sf::st_sf(osm_id = "p1", amenity = "parking",
+                                  geometry = sf::st_sfc(sf::st_polygon(list(rbind(c(0,0), c(1,0), c(1,1), c(0,1), c(0,0))))), crs = 2154),
+          stations_service = tibble::tibble(commune = "29011", fuel = 1),
+          korrigo = tibble::tibble(stop_id = "AR1"),
            batiments_residentiels = tibble::tibble(commune = "29011"),
            bornes_recharges = tibble::tibble(code_insee_commune = "29011"),
            stationnement_velo = tibble::tibble(geocode_commune = "29011"))
@@ -377,10 +373,10 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
   # NULL quand l'orchestrateur est mocké sans couverture), dans l'ordre du
   # contrat
   expect_named(donnees,
-               c("mobilite_snapshot", "voitures_communes",
-                 "communes_limites", "lignes_osm", "amenagements_cyclables",
-                 "couverture",
-                 "korrigo", "batiments_residentiels",
+                c("mobilite_snapshot", "voitures_communes",
+                  "communes_limites", "lignes_osm", "parkings_osm",
+                  "stations_service", "amenagements_cyclables", "couverture",
+                  "korrigo", "batiments_residentiels",
                  "bornes_recharges", "stationnement_velo"))
   expect_identical(donnees$mobilite_snapshot, table_snapshot)
   # le lecteur du snapshot reçoit le chemin du fichier porté dans le cache
@@ -513,6 +509,14 @@ fixture_snapshot_analytique_mobilite <- function() {
   base$dens_div_t_max_dep <- 20
   base$dens_div_t_min_reg <- 5
   base$dens_div_t_max_reg <- 20
+  base$med_tot_loss_t <- c(4, 6, 8, 10)
+  base$med_tot_loss_b <- c(5, 5, 7, 12)
+  base$med_tot_loss_t_epci <- 5
+  base$med_tot_loss_b_epci <- 5
+  base$med_tot_loss_t_dep <- 6
+  base$med_tot_loss_b_dep <- 6
+  base$med_tot_loss_t_reg <- 6
+  base$med_tot_loss_b_reg <- 6
   base
 }
 
@@ -681,14 +685,15 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   # l'étage demande/réseaux (issue #139) + le sous-bloc (issue #140) + la
   # figure « L'offre cyclable » (issue #231)
   expect_named(res, c("mobilite_communes", "nb_buildings_territoires",
-                      "isolation_territoires", "div_loss_territoires",
+                        "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
                       "nuage_territoires", "isolation_rangs",
                       "voitures_communes", "voitures_territoires",
                       "reseaux_communes", "reseaux_territoires",
                       "offre_tc_communes", "bornes_communes",
                       "stationnement_velo_communes",
-                      "offre_cyclable_communes", "offre_territoires"))
+                       "offre_cyclable_communes", "offre_territoires",
+                       "tot_loss_territoires"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -905,7 +910,6 @@ test_that("construire_saillance_territoires : la classification de chaque territ
     calculer_div_loss_communes(fixture_snapshot_analytique_mobilite()),
     fixture_snapshot_analytique_mobilite(), base_epci_mini_analytique()
   )
-
   sa <- construire_saillance_territoires(div)
 
   # une ligne par territoire, la forme (code, delta, classification)
@@ -1053,8 +1057,10 @@ analytiques_mobilite_fixture <- function() {
   div <- agreger_div_loss_territoires(
     calculer_div_loss_communes(snap), snap, base
   )
+  tot <- agreger_tot_loss_territoires(calculer_tot_loss_communes(snap), snap, base)
   list(
     div_loss_territoires = div,
+    tot_loss_territoires = tot,
     saillance_territoires = construire_saillance_territoires(div),
     densite_territoires = construire_signature_densite(snap, base),
     nuage_territoires = construire_nuage_territoires(div, base),
@@ -1123,8 +1129,21 @@ test_that("compute_histoires_mobilite : « Ce que le vélo préserve » ne se d�
   # classification (la même colonne que les lignes de défaut — la forme du
   # contrat, jamais un doublon de vocabulaire)
   expect_true(all(c("territoire", "type", "theme", "story_key",
-                    "div_loss_t", "div_loss_b", "delta",
-                    "classification_saillance") %in% names(velo)))
+                     "div_loss_t", "div_loss_b", "delta",
+                     "classification_saillance", "dens_min", "dens_max",
+                     paste0("dens_", 1:10), paste0("dec_", 1:10)) %in% names(velo)))
+  expect_false(any(vapply(velo, is.list, logical(1))))
+  expect_true(all(vapply(velo[paste0("dens_", 1:10)], is.numeric, logical(1))))
+  expect_true(all(vapply(velo[paste0("dec_", 1:10)], is.numeric, logical(1))))
+  expect_true(all(velo$dens_min <= velo$dens_max))
+  expect_true(all(rowSums(velo[paste0("dens_", 1:10)] > 0) > 0))
+  chemin <- tempfile(fileext = ".parquet")
+  on.exit(unlink(chemin), add = TRUE)
+  nanoparquet::write_parquet(velo, chemin)
+  retour <- nanoparquet::read_parquet(chemin)
+  expect_false(any(vapply(retour, is.list, logical(1))))
+  expect_equal(as.data.frame(retour[paste0("dens_", 1:10)]),
+               as.data.frame(velo[paste0("dens_", 1:10)]))
   expect_true(all(velo$classification_saillance == "saillant"))
   expect_false("classification" %in% names(histoires))
   expect_true(all(velo$theme == "mobilite"))
@@ -1748,7 +1767,7 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # thème — le snapshot + les quatre de l'étage demande/réseaux (#139) + les
   # quatre du sous-bloc (#140) + la table de passage COG partagée (#222/#227))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX")
+   expect_error(verifier_contrat_manifest_mobilite(defectueux), "ONZE")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE
@@ -2182,10 +2201,14 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retir�
   # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
   # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
-  expect_equal(nrow(ind), 11L)
+   expect_equal(nrow(ind), 16L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
-                             "places_stationnement_velo_1000",
+                              "places_stationnement_velo_1000",
+                              "places_stationnement_voiture_1000",
+                              "bornes_ev_par_station_service",
+                              "stationnement_velo_par_voiture",
+                              "tot_loss_t", "tot_loss_b",
                              "offre_cyclable",
                              "iso_alimentation", "iso_sante",
                              "iso_administration", "iso_ecole", "iso_banque"))
@@ -2317,6 +2340,9 @@ fixture_indicateurs_mobilite <- function() {
     ) %>%
       dplyr::mutate(key = "offre_cyclable", value = 1)
   )
+  tot_loss_territoires <- tibble::tibble(
+    code = codes, tot_loss_t = seq_along(codes),
+    tot_loss_b = pmax(seq_along(codes) - 1, 0))
 
   list(
     nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
@@ -2324,7 +2350,8 @@ fixture_indicateurs_mobilite <- function() {
     isolation_rangs = isolation_rangs,
     voitures_territoires = voitures_territoires,
     reseaux_territoires = reseaux_territoires,
-    offre_territoires = offre_territoires
+    offre_territoires = offre_territoires,
+    tot_loss_territoires = tot_loss_territoires
   )
 }
 
@@ -2346,11 +2373,13 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_setequal(unique(ind$key), c(
     "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
+    "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
     "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque"
   ))
-  expect_equal(nrow(ind), 9 * 22)
+  expect_equal(nrow(ind), 243)
   expect_false("nb_buildings" %in% ind$key)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
@@ -2429,6 +2458,26 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_true(all(cyclable_ind$vintage_source == ref_osm))
   expect_true(all(cyclable_ind$vintage_date_reference == "2026-08-05"))
   expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
+})
+
+test_that("construire_indicateurs_mobilite : un territoire absent du snapshot garde ses deux clés tot_loss", {
+  fx <- fixture_indicateurs_mobilite()
+  fx$tot_loss_territoires <- dplyr::filter(fx$tot_loss_territoires, code != "29002")
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+
+  ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
+  absent <- ind[ind$territoire == "29002" &
+                  ind$key %in% c("tot_loss_t", "tot_loss_b"), ]
+
+  expect_setequal(absent$key, c("tot_loss_t", "tot_loss_b"))
+  expect_true(all(is.na(absent$value)))
+  expect_false(any(is.na(ind$key)))
+  expect_equal(nrow(absent), 2)
 })
 
 test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction DÉCLARÉE de SA clé (#368)", {

@@ -123,19 +123,8 @@ describe('histoireEconomiePourTerritoire — the resolved reading, top-5 replié
     })
   })
 
-  it('gives the région its presence Story (ce-que-la-bretagne-abrite), lq dégénérée', () => {
-    const histoire = histoireEconomiePourTerritoire(payloadEconomie, '53')
-
-    expect(histoire).not.toBeNull()
-    expect(histoire?.groupe).toBe('structure-verte')
-    expect(histoire?.story_key).toBe('ce-que-la-bretagne-abrite')
-    expect(histoire?.top1_lq).toBeNull()
-    expect(histoire?.top2_lq).toBeNull()
-    expect(histoire).toMatchObject({
-      top1_activity_label: "Location de terrains et d'autres biens immobiliers",
-      top1_n: 124881,
-      top1_part_parc: 0.16462751477456836,
-    })
+  it('returns no Économie Story for the region after the regional reading was retired', () => {
+    expect(histoireEconomiePourTerritoire(payloadEconomie, '53')).toBeNull()
   })
 
   it('is deterministic — two calls return the same row', () => {

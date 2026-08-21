@@ -19,13 +19,19 @@
 # métadonnées — jamais « programmes ».
 THEMES_METADATA <- c("mobilite", "demographie", "habitat", "economie", "milieux")
 
-# La petite grammaire partagée des figures (parent #308) : scalar (une valeur),
-# composition (des parts qui somment), distribution (une signature de
-# répartition), trajectory (une évolution), relationship (une relation entre
-# deux forces), profile (un classement). Des identifiants de contrat, en
-# anglais — les labels français vivent dans les métadonnées.
-FAMILLES_FIGURE <- c("scalar", "composition", "distribution", "trajectory",
-                     "relationship", "profile")
+# La petite grammaire partagée des figures (parent #308, ADR-0023) : la
+# grammaire FERMÉE des huit familles prédéfinies — scalar (une valeur),
+# composition (des parts qui somment, mode-colored quand les parts sont des
+# modes), trajectory (une évolution), distribution (une signature de
+# répartition), relationship (une relation entre deux forces — le nuage),
+# list (un classement ordonné — le top-5 LQ), pyramid (la pyramide des âges),
+# comparison-bars (des barres de comparaison — les états M2→M3, les barres
+# iso_* avec la médiane). Des identifiants de contrat, en anglais — les labels
+# français vivent dans les métadonnées. `profile` (le classement d'avant la
+# grammaire) est RETIRÉ : toute famille hors des huit est rejetée par les
+# validateurs (R + TS — le miroir exact de l'app, jamais une dérive).
+FAMILLES_FIGURE <- c("scalar", "composition", "trajectory", "distribution",
+                     "relationship", "list", "pyramid", "comparison-bars")
 
 # Les types de nœuds du texte riche TYPÉ — une liste fermée : le HTML brut
 # n'est pas un type, un contenu text avec des chevrons est rejeté.
@@ -40,7 +46,10 @@ CLES_HISTOIRES_PAR_THEME <- list(
   mobilite = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
   demographie = "trajectoire-demographique",
   habitat = "etat-energetique-du-parc",
-  economie = c("ce-que-la-commune-abrite", "ce-que-la-bretagne-abrite"),
+  # Issue #370 : `ce-que-la-bretagne-abrite` QUITTE la fiche (la lecture
+  # régionale débranchée — le sous-groupe structure-verte ne déclare plus de
+  # lecture, le registre ne porte que ce que la fiche lit).
+  economie = "ce-que-la-commune-abrite",
   milieux = "se-densifier-setaler-ou-sen-aller"
 )
 
@@ -61,16 +70,20 @@ CLES_HISTOIRES_PAR_THEME <- list(
 # il ne publie jamais le pool.
 #
 # Les groupes des thèmes du contrat #309 (les fixtures theme-<theme>-valide.json)
-# font foi : « etat-et-dynamique » (Démographie), « sante-et-taille » +
-# « structure-verte » (Économie). Pour les thèmes sans fixture encore publiée
-# (Habitat, Milieux, Mobilité), le groupe est LE slot de lecture du thème — un
-# nom de fiche stable que les métadonnées publiées (#311) reprendront.
+# font foi — amendés par la décomposition #370 : « trajectoire-demographique »
+# (Démographie — la lecture vit dans le sous-groupe du même nom, jamais dans
+# « etat-de-la-population » qui ne déclare pas de lecture), « etat-energetique-
+# du-parc » (Habitat — la lecture vit dans le sous-groupe du même nom, jamais
+# dans « composition-du-parc » ni « marche »), « sante-et-taille » (Économie —
+# l'unique lecture, `ce-que-la-bretagne-abrite` retirée, #370). Pour les thèmes
+# sans fixture encore publiée (Mobilité, Milieux), le groupe est LE slot de
+# lecture du thème — un nom de fiche stable que les métadonnées publiées
+# (#311) reprennent.
 # Mobilité est le SEUL pool (ADR-0002) : « vingt-minutes-sans-voiture » est le
 # défaut de chaque territoire, « ce-que-le-velo-preserve » le remplace là où
 # le delta est réel (raison « delta-velo-saillant »). Économie n'a pas de pool :
-# ses deux stories vivent dans DEUX groupes distincts (la lecture de
-# spécialisation des communes/EPCIs/départements, la lecture de structure de
-# la région).
+# sa story vit dans SON groupe (la lecture de spécialisation des
+# communes/EPCIs/départements).
 STORIES_RESOLUES_PAR_THEME <- list(
   mobilite = tibble::tibble(
     story_key = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
@@ -80,21 +93,21 @@ STORIES_RESOLUES_PAR_THEME <- list(
   ),
   demographie = tibble::tibble(
     story_key = "trajectoire-demographique",
-    groupe = "etat-et-dynamique",
+    groupe = "trajectoire-demographique",
     ordre = 1L,
     salience_reason = NA_character_
   ),
   habitat = tibble::tibble(
     story_key = "etat-energetique-du-parc",
-    groupe = "etat-du-parc",
+    groupe = "etat-energetique-du-parc",
     ordre = 1L,
     salience_reason = NA_character_
   ),
   economie = tibble::tibble(
-    story_key = c("ce-que-la-commune-abrite", "ce-que-la-bretagne-abrite"),
-    groupe = c("sante-et-taille", "structure-verte"),
-    ordre = c(1L, 1L),
-    salience_reason = c(NA_character_, NA_character_)
+    story_key = "ce-que-la-commune-abrite",
+    groupe = "sante-et-taille",
+    ordre = 1L,
+    salience_reason = NA_character_
   ),
   milieux = tibble::tibble(
     story_key = "se-densifier-setaler-ou-sen-aller",
@@ -434,39 +447,60 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
 
     # la lecture résolue — le lien explicite vers l'histoire du sous-groupe
-    # (parent #308 : l'app n'infère jamais la relation depuis les noms)
-    if (!est_liste(groupe$reading)) {
-      manquer("lecture",
-              paste0("« ", cle, " » : la lecture (reading) est absente ou non-objet"))
-    }
-    story <- groupe$reading$story_key
-    if (is.null(story) || !est_chaine_non_vide(story)) {
-      manquer("lecture",
-              paste0("« ", cle, " » : le lien d'histoire (story_key) est absent ou vide"))
-    }
-    if (!story %in% cles_histoires) {
-      manquer("lecture", paste0(
-        "« ", cle, " » : lien d'histoire inconnu « ", story,
-        " » — la story doit être déclarée dans story_keys"))
-    }
-    histoires_groupes[[story]] <- compter(histoires_groupes, story)
-
-    # les paramètres de lecture — les valeurs d'histoire que le template peut
-    # lire (le lien résolu : la matière de la lecture, jamais inventée)
-    params <- if (is.null(groupe$reading$params)) {
-      character(0L)
+    # (parent #308 : l'app n'infère jamais la relation depuis les noms).
+    # Issue #370 : la lecture est OPTIONNELLE — un sous-groupe peut ne déclarer
+    # aucune lecture (structure-verte, la « structure verte » d'Économie, rend
+    # ses indicateurs en silence). Un sous-groupe sans lecture ne lie aucune
+    # story, ne déclare aucun paramètre ni template : le slot est honnêtement
+    # silencieux — jamais une lecture inventée ni une story forcée.
+    if (is.null(groupe$reading)) {
+      story <- NULL
+      params <- character(0L)
+      # la bijection « chaque histoire est lue par EXACTEMENT un sous-groupe »
+      # reste vraie : un sous-groupe sans lecture ne compte aucune histoire
     } else {
-      unlist(groupe$reading$params, use.names = FALSE)
-    }
-    if (any(!nzchar(params)) || anyDuplicated(params)) {
-      manquer("lecture",
-              paste0("« ", cle, " » : un paramètre de lecture est vide ou en double"))
-    }
-    nouveaux_params <- params[!params %in% params_uniques]
-    params_uniques <- c(params_uniques, nouveaux_params)
+      if (!est_liste(groupe$reading)) {
+        manquer("lecture",
+                paste0("« ", cle, " » : la lecture (reading) est absente ou non-objet"))
+      }
+      story <- groupe$reading$story_key
+      if (is.null(story) || !est_chaine_non_vide(story)) {
+        manquer("lecture",
+                paste0("« ", cle, " » : le lien d'histoire (story_key) est absent ou vide"))
+      }
+      if (!story %in% cles_histoires) {
+        manquer("lecture", paste0(
+          "« ", cle, " » : lien d'histoire inconnu « ", story,
+          " » — la story doit être déclarée dans story_keys"))
+      }
+      histoires_groupes[[story]] <- compter(histoires_groupes, story)
 
-    # le template — le texte riche TYPÉ
-    valider_template(groupe$reading$template, params, cle, manquer)
+      # les paramètres de lecture — les valeurs d'histoire que le template peut
+      # lire (le lien résolu : la matière de la lecture, jamais inventée)
+      params <- if (is.null(groupe$reading$params)) {
+        character(0L)
+      } else {
+        unlist(groupe$reading$params, use.names = FALSE)
+      }
+      if (any(!nzchar(params)) || anyDuplicated(params)) {
+        manquer("lecture",
+                paste0("« ", cle, " » : un paramètre de lecture est vide ou en double"))
+      }
+      nouveaux_params <- params[!params %in% params_uniques]
+      params_uniques <- c(params_uniques, nouveaux_params)
+
+      # le template — le texte riche TYPÉ
+      valider_template(groupe$reading$template, params, cle, manquer)
+
+    if (!is.null(groupe$reading$figure)) {
+      rf <- groupe$reading$figure
+      if (!est_liste(rf) || is.null(rf$family) || !rf$family %in% FAMILLES_FIGURE ||
+          is.null(rf$indicator) || !est_chaine_non_vide(rf$indicator) ||
+          !rf$indicator %in% params) {
+         manquer("lecture", paste0("« ", cle, " » : reading.figure est invalide"))
+       }
+      }
+    }
   }
 
   # 6bis. les libellés des paramètres de lecture (issue #318) — la carte du

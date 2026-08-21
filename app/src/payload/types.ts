@@ -78,6 +78,8 @@ export interface Indicateur extends VintageStamp {
   sex?: Sexe | null
   value: number | null
   unit: string
+  /** Contextual explanation for an unavailable value (pipeline-owned fact). */
+  rider?: string | null
   /**
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no
@@ -147,22 +149,21 @@ export interface HistoireHabitat extends LectureResolueBase {
 /**
  * The Économie Story row (issue #120, RESOLVED by #312) — ONE row per
  * (territoire, groupe), the top-5 folded into flat params (top1_*..top5_*:
- * the reading content — the LQ for the specialisation reading, the parc share
- * for the région's presence reading; the rank is the index, never a column).
+ * the reading content — the LQ for the specialisation reading; the rank is the
+ * index, never a column).
  * A territory with fewer than five activities carries only its real ones (no
  * padding — the columns beyond stay null). Discriminated by `story_key` :
  * « ce que la commune abrite » (communes/EPCIs/départements, groupe
- * sante-et-taille) et « ce que la Bretagne abrite » (la région, groupe
- * structure-verte). The activity label comes ALWAYS from the payload, never
+ * sante-et-taille). The activity label comes ALWAYS from the payload, never
  * hard-coded. Each row wears its vintage stamp (issue #74).
  */
 export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
   theme: 'economie'
-  story_key: 'ce-que-la-commune-abrite' | 'ce-que-la-bretagne-abrite'
+  story_key: 'ce-que-la-commune-abrite'
   /** La matière de la lecture — le top-5 replié (le rang est l'index). */
   top1_activity_code: string | null
   top1_activity_label: string | null
-  /** La spécialisation (LQ) — null pour la lecture de présence. */
+  /** La spécialisation (LQ). */
   top1_lq: number | null
   top1_n: number | null
   /** La part du parc breton — null pour la lecture de spécialisation. */
@@ -201,8 +202,8 @@ export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
  * distribution signature (dens_1..10 + dec_1..10 + min/max — the
  * building-level density of div_loss_t, NEVER the matrix, lesson of issue
  * #131) and the saillance classification. When the vélo reading fires, the
- * signature columns are null on its row (the distribution is the default
- * reading's matter — the same chart, the same plot, ADR-0012). Each row
+ * signature columns carry the flattened distribution for the vélo story too
+ * (the current contract keeps the signature available on vélo rows). Each row
  * carries the snapshot's vintage stamp (issue #74).
  */
 export interface HistoireMobilite extends LectureResolueBase, VintageStamp {
@@ -462,14 +463,16 @@ export interface Payload {
  * on both sides.
  */
 
-/** The six figure families of the shared figure grammar (parent #308). */
+/** The eight figure families of the shared figure grammar (ADR-0023, #370). */
 export const FAMILLES_FIGURE = [
   'scalar',
   'composition',
   'distribution',
   'trajectory',
   'relationship',
-  'profile',
+  'list',
+  'pyramid',
+  'comparison-bars',
 ] as const
 
 export type FamilleFigure = (typeof FAMILLES_FIGURE)[number]
@@ -495,7 +498,7 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
   mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
   demographie: ['trajectoire-demographique'],
   habitat: ['etat-energetique-du-parc'],
-  economie: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+  economie: ['ce-que-la-commune-abrite'],
   milieux: ['se-densifier-setaler-ou-sen-aller'],
 }
 
@@ -522,12 +525,9 @@ export const GROUPES_PAR_STORY: Record<Theme, Record<string, string>> = {
     'vingt-minutes-sans-voiture': 'acces-aux-services',
     'ce-que-le-velo-preserve': 'acces-aux-services',
   },
-  demographie: { 'trajectoire-demographique': 'etat-et-dynamique' },
-  habitat: { 'etat-energetique-du-parc': 'etat-du-parc' },
-  economie: {
-    'ce-que-la-commune-abrite': 'sante-et-taille',
-    'ce-que-la-bretagne-abrite': 'structure-verte',
-  },
+  demographie: { 'trajectoire-demographique': 'trajectoire-demographique' },
+  habitat: { 'etat-energetique-du-parc': 'etat-energetique-du-parc' },
+  economie: { 'ce-que-la-commune-abrite': 'sante-et-taille' },
   milieux: { 'se-densifier-setaler-ou-sen-aller': 'artificialisation' },
 }
 
@@ -580,16 +580,18 @@ export interface LectureSousGroupe {
   story_key: string
   params: string[]
   template: NoeudTexteRiche[]
+  figure?: FigureSousGroupe
 }
 
-/** One subgroup of the fiche — a stable place with indicators, a figure and a reading. */
+/** One subgroup of the fiche — a stable place with indicators, a figure and an optional reading. */
 export interface SousGroupeMetadata {
   key: string
   label: string
   framing: string
   indicators: string[]
   figure: FigureSousGroupe
-  reading: LectureSousGroupe
+  /** Absent for an honest indicator-only subgroup (e.g. structure-verte). */
+  reading?: LectureSousGroupe
 }
 
 /**

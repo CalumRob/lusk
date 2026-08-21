@@ -126,15 +126,15 @@ export const indicateursDemographieFixture: Indicateur[] = [
  * × 1000, population moyenne = (pop_prec + pop) / 2).
  */
 export const histoiresDemographieFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
-  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
-  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
-  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
-  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
-  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
-  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
-  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
-  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
+  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
+  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
+  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
+  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
+  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
 ]
 
 /**
@@ -390,7 +390,7 @@ export const histoiresHabitatFixture: Histoire[] = [
     type: 'commune',
     theme: 'habitat',
     story_key: 'etat-energetique-du-parc',
-    groupe: 'etat-du-parc',
+    groupe: 'etat-energetique-du-parc',
     salience_reason: 'defaut',
     classification: 'parc-performant',
     part_passoires: 0.13333333333333333,
@@ -402,7 +402,7 @@ export const histoiresHabitatFixture: Histoire[] = [
     type: 'region',
     theme: 'habitat',
     story_key: 'etat-energetique-du-parc',
-    groupe: 'etat-du-parc',
+    groupe: 'etat-energetique-du-parc',
     salience_reason: 'defaut',
     classification: 'parc-intermediaire',
     part_passoires: 0.08704730274243572,
@@ -475,9 +475,8 @@ export const indicateursEconomieFixture: Indicateur[] = [
 /**
  * The two Économie Stories (issue #120, RÉSOLUES par #312) — UNE lecture par
  * (territoire, groupe) : « ce que la commune abrite » (la spécialisation LQ,
- * communes/EPCIs/départements — groupe sante-et-taille) et « ce que la
- * Bretagne abrite » (la lecture de structure de la région, groupe
- * structure-verte). Le top-5 est replié dans la ligne (top1_*..top5_* — le
+ * communes/EPCIs/départements — groupe sante-et-taille). La structure verte est
+ * un sous-groupe indicateur silencieux, sans lecture. Le top-5 est replié dans la ligne (top1_*..top5_* — le
  * rang est l'index). Labels et nombres réels du payload reshapé — jamais codés
  * en dur.
  */
@@ -510,16 +509,6 @@ export const histoiresEconomieFixture: Histoire[] = [
     top3_activity_code: '08.91Z', top3_activity_label: "Extraction des minéraux chimiques et d'engrais minéraux", top3_lq: 5.51753307681677, top3_n: 1, top3_part_parc: null,
     top4_activity_code: '14.20Z', top4_activity_label: "Fabrication d'articles en fourrure", top4_lq: 5.51753307681677, top4_n: 1, top4_part_parc: null,
     top5_activity_code: '25.94Z', top5_activity_label: 'Fabrication de vis et de boulons', top5_lq: 5.51753307681677, top5_n: 1, top5_part_parc: null,
-    ...vintageSirene,
-  },
-  // la région 53 — la lecture de structure (story_key dédié, LQ dégénérée)
-  {
-    territoire: '53', type: 'region', theme: 'economie', groupe: 'structure-verte', story_key: 'ce-que-la-bretagne-abrite', salience_reason: 'defaut',
-    top1_activity_code: '68.20B', top1_activity_label: "Location de terrains et d'autres biens immobiliers", top1_lq: null, top1_n: 124881, top1_part_parc: 0.16462751477456836,
-    top2_activity_code: '68.20A', top2_activity_label: 'Location de logements', top2_lq: null, top2_n: 71660, top2_part_parc: 0.09446759482023341,
-    top3_activity_code: '94.99Z', top3_activity_label: 'Autres organisations fonctionnant par adhésion volontaire', top3_lq: null, top3_n: 30531, top3_part_parc: 0.04024825756986528,
-    top4_activity_code: '70.10Z', top4_activity_label: 'Activités des sièges sociaux', top4_lq: null, top4_n: 16207, top4_part_parc: 0.02136528480674746,
-    top5_activity_code: '47.99A', top5_activity_label: 'Vente à domicile', top5_lq: null, top5_n: 13826, top5_part_parc: 0.0182264717552965,
     ...vintageSirene,
   },
 ]
@@ -726,7 +715,7 @@ export const histoiresMobiliteFixture: Histoire[] = [
   { territoire: '200000001', type: 'epci', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 35, div_loss_b: 33, delta: 2, pct_iso_full_t: 0.140000000000000, dens_min: 4, dens_max: 52, dens_1: 0.00159400000000000, dens_2: 0.0135920000000000, dens_3: 0.0227140000000000, dens_4: 0.0121260000000000, dens_5: 0.0130840000000000, dens_6: 0.0150800000000000, dens_7: 0.0482170000000000, dens_8: 0.0293260000000000, dens_9: 0.0299690000000000, dens_10: 0.00200800000000000, dec_1: 13, dec_2: 17, dec_3: 27, dec_4: 33, dec_5: 35, dec_6: 37, dec_7: 39, dec_8: 43, dec_9: 47, dec_10: 52, classification_saillance: 'non-saillant', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
   { territoire: '22', type: 'departement', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 33, div_loss_b: 28, delta: 5, pct_iso_full_t: 0.110000000000000, dens_min: 0, dens_max: 53, dens_1: 0.000664000000000000, dens_2: 0.00899900000000000, dens_3: 0.0158810000000000, dens_4: 0.0145150000000000, dens_5: 0.0204750000000000, dens_6: 0.0219920000000000, dens_7: 0.0232280000000000, dens_8: 0.0283190000000000, dens_9: 0.0251220000000000, dens_10: 0.00512300000000000, dec_1: 11, dec_2: 17, dec_3: 23, dec_4: 28, dec_5: 33, dec_6: 37, dec_7: 41, dec_8: 44, dec_9: 48, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
   { territoire: '53', type: 'region', theme: 'mobilite', story_key: 'vingt-minutes-sans-voiture', groupe: 'acces-aux-services', salience_reason: 'defaut', div_loss_t: 29, div_loss_b: 22, delta: 7, pct_iso_full_t: 0.100000000000000, dens_min: 0, dens_max: 53, dens_1: 0.00314500000000000, dens_2: 0.0165130000000000, dens_3: 0.0167950000000000, dens_4: 0.0184880000000000, dens_5: 0.0190630000000000, dens_6: 0.0197990000000000, dens_7: 0.0230430000000000, dens_8: 0.0254610000000000, dens_9: 0.0214220000000000, dens_10: 0.00464500000000000, dec_1: 7, dec_2: 13, dec_3: 19, dec_4: 24, dec_5: 29, dec_6: 34, dec_7: 38, dec_8: 42, dec_9: 47, dec_10: 53, classification_saillance: 'notable', vintage_source: "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)", vintage_version: "2026-02", vintage_date_reference: "2026-02-28", vintage_date_publication: "2026-08-06" },
-  { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', groupe: 'acces-aux-services', salience_reason: 'delta-velo-saillant', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: null, dens_min: null, dens_max: null, dens_1: null, dens_2: null, dens_3: null, dens_4: null, dens_5: null, dens_6: null, dens_7: null, dens_8: null, dens_9: null, dens_10: null, dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null, dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
+  { territoire: '22002', type: 'commune', theme: 'mobilite', story_key: 'ce-que-le-velo-preserve', groupe: 'acces-aux-services', salience_reason: 'delta-velo-saillant', div_loss_t: 24, div_loss_b: 13, delta: 11, pct_iso_full_t: null, dens_min: 28, dens_max: 47, dens_1: 0.005915, dens_2: 0.014869, dens_3: 0.031563, dens_4: 0.057715, dens_5: 0.098847, dens_6: 0.091683, dens_7: 0.044188, dens_8: 0.032073, dens_9: 0.045624, dens_10: 0.041252, dec_1: 33.7, dec_2: 35, dec_3: 37, dec_4: 37, dec_5: 38, dec_6: 39, dec_7: 40, dec_8: 44, dec_9: 46, dec_10: 47, classification_saillance: 'saillant', ...vintageSnapshotMobilite },
 ]
 
 /** Le vintage CONSOENAF — le tampon de SA source de référence (manifest #171). */
@@ -1116,7 +1105,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     label: 'Démographie',
     subgroups: [
       {
-        key: 'etat-et-dynamique',
+        key: 'trajectoire-demographique',
         label: 'État et dynamique de la population',
         framing: 'La population de la commune : sa taille, sa densité, son évolution depuis 1968 et la structure de ses ménages.',
         indicators: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
@@ -1197,7 +1186,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     label: 'Habitat',
     subgroups: [
       {
-        key: 'etat-du-parc',
+        key: 'etat-energetique-du-parc',
         label: 'L\u2019état du parc',
         framing: 'Le parc de logements de la commune : sa composition, son statut, son âge, son type, son prix et son efficacité énergétique.',
         indicators: ['mix_logements', 'statut', 'age_du_bati', 'type', 'prix_m2', 'part_passoires', 'distribution_dpe'],
@@ -1308,6 +1297,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         figure: { family: 'scalar', indicator: 'effectifs_salaries' },
         reading: {
           story_key: 'ce-que-la-commune-abrite',
+          figure: { family: 'list', indicator: 'lq' },
           params: ['rang', 'activity_label', 'lq', 'n'],
           template: [
             { type: 'text', content: 'La commune se spécialise dans ' },
@@ -1328,27 +1318,11 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
         label: 'La structure verte',
         framing: 'La place des établissements verts dans le tissu productif.',
         indicators: ['eco_activites'],
-        figure: { family: 'profile', indicator: 'eco_activites' },
-        reading: {
-          story_key: 'ce-que-la-bretagne-abrite',
-          params: ['activity_label', 'part_parc', 'n'],
-          template: [
-            { type: 'text', content: 'La Bretagne abrite surtout ' },
-            { type: 'param', key: 'activity_label' },
-            { type: 'text', content: ' (' },
-            { type: 'param', key: 'part_parc' },
-            { type: 'text', content: ' du parc). ' },
-            {
-              type: 'link',
-              href: '/methodologie#economie',
-              children: [{ type: 'text', content: 'Méthodes' }],
-            },
-          ],
-        },
+         figure: { family: 'scalar', indicator: 'eco_activites' },
       },
     ],
     indicator_keys: ['effectifs_salaries', 'chomage', 'eco_activites'],
-    story_keys: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+     story_keys: ['ce-que-la-commune-abrite'],
     sources: {
       effectifs_salaries: 'flores_a88',
       chomage: 'rp_chomage',
@@ -1365,7 +1339,6 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       activity_label: 'Activité dominante',
       lq: 'Location quotient (LQ)',
       n: 'Nombre d’établissements',
-      part_parc: 'Part du parc breton',
     },
   },
   milieux: {

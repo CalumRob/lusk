@@ -25,6 +25,16 @@ function copieBrute(theme: Theme): ThemeMetadata {
   return JSON.parse(JSON.stringify(metadonneesThemesFixtures[theme])) as ThemeMetadata
 }
 
+type SousGroupe = ThemeMetadata['subgroups'][number]
+type Lecture = NonNullable<SousGroupe['reading']>
+
+function lectureDe(groupe: SousGroupe): Lecture {
+  const lecture = groupe.reading
+  expect(lecture).toBeDefined()
+  if (!lecture) throw new Error(`Le sous-groupe « ${groupe.key} » doit porter une lecture`)
+  return lecture
+}
+
 function attendErreur(theme: Theme, muter: (meta: ThemeMetadata) => void): PayloadError {
   const meta = copieBrute(theme)
   muter(meta)
@@ -52,7 +62,7 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
       // une fois, jamais deux lectures pour le même slot
       const indicateurs = meta.subgroups.flatMap((g) => g.indicators)
       expect(new Set(indicateurs).size).toBe(meta.indicator_keys.length)
-      const liees = meta.subgroups.map((g) => g.reading.story_key)
+      const liees = meta.subgroups.flatMap((g) => g.reading ? [g.reading.story_key] : [])
       expect(new Set(liees).size).toBe(liees.length)
       for (const cle of liees) expect(meta.story_keys).toContain(cle)
       // chaque story du registre est liée OU candidate de saillance déclarée
@@ -142,20 +152,21 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette un texte riche invalide', () => {
     // type de nœud inconnu (le HTML n'est pas un type)
     let erreur = attendErreur('demographie', (meta) => {
-      meta.subgroups[0].reading.template[0].type = 'html' as ThemeMetadata['subgroups'][number]['reading']['template'][number]['type']
+      const lecture = lectureDe(meta.subgroups[0])
+      lecture.template[0].type = 'html' as Lecture['template'][number]['type']
     })
     expect(erreur.message).toMatch(/HTML/i)
 
     // HTML brut dans un nœud text
     erreur = attendErreur('demographie', (meta) => {
-      const noeud = meta.subgroups[0].reading.template.find((n) => n.type === 'text')
+      const noeud = lectureDe(meta.subgroups[0]).template.find((n) => n.type === 'text')
       if (noeud && noeud.type === 'text') noeud.content = '<strong>gras</strong>'
     })
     expect(erreur.message).toMatch(/HTML/i)
 
     // lien sans href
     erreur = attendErreur('demographie', (meta) => {
-      const lien = meta.subgroups[0].reading.template.find((n) => n.type === 'link')
+      const lien = lectureDe(meta.subgroups[0]).template.find((n) => n.type === 'link')
       if (lien && lien.type === 'link') {
         delete (lien as unknown as Record<string, unknown>).href
       }
@@ -164,7 +175,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
 
     // paramètre non déclaré dans reading.params
     erreur = attendErreur('demographie', (meta) => {
-      const param = meta.subgroups[0].reading.template.find((n) => n.type === 'param')
+      const param = lectureDe(meta.subgroups[0]).template.find((n) => n.type === 'param')
       if (param && param.type === 'param') param.key = 'fantome'
     })
     expect(erreur.message).toMatch(/param/i)
@@ -181,14 +192,14 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
   it('rejette un lien d\u2019histoire inconnu', () => {
     // la lecture d'un sous-groupe pointe une story non déclarée dans story_keys
     let erreur = attendErreur('demographie', (meta) => {
-      meta.subgroups[0].reading.story_key = 'histoire-inconnue'
+      lectureDe(meta.subgroups[0]).story_key = 'histoire-inconnue'
     })
     expect(erreur.message).toMatch(/inconnu/i)
 
     // une story déclarée sans sous-groupe qui la lit (orpheline)
     erreur = attendErreur('economie', (meta) => {
-      meta.subgroups = meta.subgroups.slice(0, 1)
-      meta.indicator_keys = [...meta.subgroups[0].indicators]
+      meta.subgroups[0].reading = undefined
+      meta.indicator_keys = meta.subgroups.flatMap((g) => g.indicators)
       meta.sources = Object.fromEntries(
         Object.entries(meta.sources).filter(([cle]) => meta.indicator_keys.includes(cle)),
       )
@@ -196,7 +207,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
       meta.indicator_labels = Object.fromEntries(
         Object.entries(meta.indicator_labels).filter(([cle]) => meta.indicator_keys.includes(cle)),
       )
-      const params = new Set(meta.subgroups.flatMap((g) => g.reading.params))
+      const params = new Set(meta.subgroups.flatMap((g) => g.reading?.params ?? []))
       meta.param_labels = Object.fromEntries(
         Object.entries(meta.param_labels).filter(([cle]) => params.has(cle)),
       )
@@ -283,7 +294,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
         for (const libelle of Object.values(carte)) expect(libelle.length).toBeGreaterThan(0)
       }
       // param_labels : la bijection exacte avec l'union des reading.params
-      const params = [...new Set(meta.subgroups.flatMap((g) => g.reading.params))]
+      const params = [...new Set(meta.subgroups.flatMap((g) => g.reading?.params ?? []))]
       expect(Object.keys(meta.param_labels).sort()).toEqual([...params].sort())
     }
   })
@@ -317,7 +328,7 @@ describe('validerThemeMetadata — la 4e carte, les libellés des classification
     for (const theme of Object.keys(metadonneesThemesFixtures) as Theme[]) {
       const meta = validerThemeMetadata(metadonneesThemesFixtures[theme], `theme_${theme}.json`)
       const referenceClassification = meta.subgroups.some((g) =>
-        g.reading.params.includes('classification'),
+        g.reading?.params.includes('classification') ?? false,
       )
       if (referenceClassification) {
         const carte = meta.classification_labels

@@ -81,17 +81,17 @@ DATE_PUBLICATION_MOBILITE_SNAPSHOT <- "2026-08-06"
 # MANIFEST_MOBILITE_SNAPSHOT ----------------------------------------------------
 # Le fragment SNAPSHOT (issue #137) : les 11 colonnes standard du manifeste (la
 # même forme que SIRENE / Flores / RP / Habitat), une ligne : la source portée.
-# `url` pointe le fichier de production original (une URL file:// — la source
-# n'a pas de point de publication public ; le mode « manuel » fait que le cron
-# ne la touche jamais, et le fichier est toujours présent dans le cache du
-# worktree). Le fragment est VALIDÉ par verifier_contrat_mobilite_snapshot (la
+# `url` reprend le chemin de cache repo-relatif du fichier de production (la
+# source n'a pas de point de publication public ; le mode « manuel » fait que
+# le cron ne la touche jamais). Le fragment est VALIDÉ par
+# verifier_contrat_mobilite_snapshot (la
 # garde du « jamais cette base » du PRD #136).
 MANIFEST_MOBILITE_SNAPSHOT <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "mobilite_snapshot",
   "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
-  "file:///E:/Website/Data_handling/bretagne_mobility_super_dashboard_gravity.csv",
+   "data/raw/bretagne_mobility_super_dashboard_gravity.csv",
   "bretagne_mobility_super_dashboard_gravity.csv",
   VINTAGE_MOBILITE_SNAPSHOT,
   DATE_REFERENCE_MOBILITE_SNAPSHOT,
@@ -355,7 +355,7 @@ MANIFEST_MOBILITE_BATIMENTS <- tibble::tribble(
   ~date_publication, ~licence, ~note, ~mode, ~type,
   "batiments_residentiels",
   "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l'offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
-  "file:///E:/Website/Data_handling/batiments_residentiels_bretagne.csv",
+   "data/raw/batiments_residentiels_bretagne.csv",
   "batiments_residentiels_bretagne.csv",
   "2025-07", "2025-07-31", "2026-08-06",
   "lov2",
@@ -467,6 +467,37 @@ MANIFEST_MOBILITE_STATIONNEMENT_VELO <- tibble::tribble(
   "cron", "fichier"
 )
 
+MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "bpe_b316", "INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service",
+  "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet", "BPE25.parquet", "2025",
+  "2025-01-01", "2026-08-04", "lov2",
+  "Le fichier détail géolocalisé BPE 2025 est lu directement en Parquet. Chaque ligne d'équipement TYPEQU = B316 et DEPCOM valide compte pour une station-service ; les lignes agrégées/non communales sont exclues. Les lignes sont comptées par commune puis normalisées en FACILITIES/NB_EQUIP. Les communes absentes restent indisponibles, tandis qu'une observation valide de zéro reste zéro. Données diffusées en géographie au 1er janvier 2025. Licence Ouverte 2.0 (INSEE).",
+  "manuel", "fichier"
+)
+
+verifier_contrat_mobilite_bpe_b316 <- function(fragment, contenu = NULL) {
+  manquer <- function(champ, detail) stop(sprintf(
+    "Contrat Mobilité BPE B316 violé — %s : %s.", champ, detail), call. = FALSE)
+  if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) manquer("forme", "une source")
+  if (fragment$id != "bpe_b316") manquer("id", "id attendu : bpe_b316")
+  if (fragment$fichier != "BPE25.parquet") manquer("fichier", "fichier détail BPE25 Parquet")
+  if (fragment$vintage != "2025") manquer("vintage", "millésime 2025")
+  if (fragment$url != "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet")
+    manquer("url", "artefact Parquet BPE25 téléchargeable, pas une page HTML ni un chemin local")
+  if (fragment$licence != "lov2") manquer("licence", "lov2")
+  if (fragment$mode != "manuel" || fragment$type != "fichier") manquer("mode/type", "manuel/fichier")
+  if (!is.null(contenu)) {
+    tryCatch(verifier_contenu_bpe_b316(contenu), error = function(e) manquer("contenu", conditionMessage(e)))
+  }
+  if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
+      !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
+      as.Date(fragment$date_publication) < as.Date(fragment$date_reference))
+    manquer("dates", "référence/publication ISO cohérentes")
+  invisible(TRUE)
+}
+
 # MANIFEST_MOBILITE_COG_PASSAGE ------------------------------------------------
 # Le fragment COG PASSAGE (issue #222, ticket #227) : la table de passage
 # annuelle INSEE 2022 → 2025 — le composant PARTAGÉ (le même pattern que la
@@ -538,6 +569,7 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_BATIMENTS,
   MANIFEST_MOBILITE_BORNES,
   MANIFEST_MOBILITE_STATIONNEMENT_VELO,
+  MANIFEST_MOBILITE_BPE_B316,
   MANIFEST_MOBILITE_COG_PASSAGE
 )
 
@@ -968,18 +1000,18 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 10L) {
-    manquer("forme", paste0("le manifeste concaténé porte DIX sources (le ",
+  if (nrow(manifest) != 11L) {
+    manquer("forme", paste0("le manifeste concaténé porte ONZE sources (le ",
                             "snapshot + les quatre de l'étage demande/réseaux ",
                             "(#139) + les quatre du sous-bloc (#140) + la ",
-                            "table de passage COG partagée (#222/#227)), pas ",
+                             "BPE B316 et la table de passage COG partagée), pas ",
                             nrow(manifest)))
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                 "amenagements_cyclables", "communes_limites", "korrigo",
                 "batiments_residentiels", "bornes-recharges",
-                "stationnement-velo", "cog_passage")
+                "stationnement-velo", "bpe_b316", "cog_passage")
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -996,6 +1028,7 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
     manifest[manifest$id == "bornes-recharges", ])
   verifier_contrat_mobilite_stationnement_velo(
     manifest[manifest$id == "stationnement-velo", ])
+  verifier_contrat_mobilite_bpe_b316(manifest[manifest$id == "bpe_b316", ])
   verifier_contrat_mobilite_cog_passage(
     manifest[manifest$id == "cog_passage", ])
 
