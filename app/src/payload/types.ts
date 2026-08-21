@@ -661,7 +661,10 @@ export interface ThemeMetadata {
    */
   classification_labels?: Record<string, string>
   /** Optional page descriptor: only published entries are eligible for /indicateurs. */
-  scalar_page?: ScalarPageMetadata
+  /** Per-concept publication descriptors; the indicator key is the authority. */
+  indicator_pages?: Record<string, ScalarPageMetadata>
+  /** Reusable provenance records, referenced by indicator_pages.sources. */
+  source_records?: Record<string, SourceRecord>
 }
 
 export interface SourceRecord {
@@ -670,6 +673,7 @@ export interface SourceRecord {
   url: string
   licence: string
   vintage: string
+  freshness: string
 }
 
 export interface ScalarPageMetadata {
@@ -683,5 +687,5 @@ export interface ScalarPageMetadata {
   caveats: string
   vintage: string
   levels: TerritoireType[]
-  sources: SourceRecord[]
+  sources: string[]
 }
