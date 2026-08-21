@@ -1,4 +1,5 @@
 import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata } from '@/payload/types'
+import { normalizeComparisonFacet } from './familySeam'
 
 export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
 export type DirectionIndicateur = 'high' | 'low'
@@ -55,14 +56,15 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
 export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeMetadata, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string, indicator?: string): ModeleExploration {
   const page = metadata.indicator_pages?.[indicator ?? facts[0]?.key ?? '']
   if (!page) throw new Error(`Indicateur non publié pour le thème « ${metadata.theme} »`)
+  const facet = normalizeComparisonFacet(page, requested)
   const supported = page.levels.filter((level): level is NiveauIndicateur => niveaux.includes(level as NiveauIndicateur))
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.key === page.indicator && fact.detail === (page.detail ?? null) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const all = facts.filter((fact) => fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
   const values = all.map((row) => row.value).sort((a, b) => a - b)
   const median = values.length % 2 ? values[(values.length - 1) / 2] : values.length ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 : null
-  const ranked = [...all].sort((a, b) => page.direction === 'low' ? a.value - b.value : b.value - a.value)
+  const ranked = [...all].sort((a, b) => facet.direction === 'low' ? a.value - b.value : b.value - a.value)
   const ranks = new Map<string, number>()
   ranked.forEach((row, index) => ranks.set(row.territoire.territoire, index && row.value === ranked[index - 1].value ? ranks.get(ranked[index - 1].territoire.territoire)! : index + 1))
   const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: `/territoire/${row.territoire.type}/${row.territoire.territoire}?theme=${metadata.theme}`, highlighted: row.territoire.territoire === requested.territoire })
@@ -79,5 +81,5 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
   const density = estimerDensite(values)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: facet.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
 }

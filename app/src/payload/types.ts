@@ -664,7 +664,7 @@ export interface ThemeMetadata {
   classification_labels?: Record<string, string>
   /** Optional page descriptor: only published entries are eligible for /indicateurs. */
   /** Per-concept publication descriptors; the indicator key is the authority. */
-  indicator_pages?: Record<string, ScalarPageMetadata>
+  indicator_pages?: Record<string, IndicatorPageMetadata>
   /** Reusable provenance records, referenced by indicator_pages.sources. */
   source_records?: Record<string, SourceRecord>
   /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
@@ -703,7 +703,10 @@ export interface SourceClock {
   trigger?: string
 }
 
-export interface ScalarPageMetadata {
+/** Shared page contract. `family` is optional for the legacy scalar payload;
+ * the resolver treats its absence as `scalar`, so #401 metadata remains byte
+ * for byte compatible while new family descriptors are discriminated. */
+export interface IndicatorPageMetadataBase {
   indicator: string
   detail?: string | null
   label: string
@@ -714,4 +717,16 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
+  family?: FamilleFigure
+  /** Payload-declared comparison facet dimensions. */
+  comparison?: { indicator?: string; detail?: string | null; sex?: Sexe | null; dimension?: string | null; direction?: 'high' | 'low'; unit?: string; labels?: Record<string, string> }
 }
+
+export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
+export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory' }
+export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition' }
+export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution' }
+export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list' }
+export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship' }
+export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata
+export type IndicatorPageMetadata = IndicatorPageFamilyMetadata

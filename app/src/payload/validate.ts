@@ -42,6 +42,7 @@ import type {
   TerritoireType,
   Theme,
   ThemeMetadata,
+  IndicatorPageMetadata,
   FamilleFigure,
   Vintage,
   Sexe,
@@ -2034,7 +2035,17 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources }
+       const family = page['family'] === undefined ? 'scalar' : page['family']
+       exiger(estUneDe(family, FAMILLES_FIGURE.filter((value) => value !== 'pyramid' && value !== 'comparison-bars')), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
+       const comparison = page['comparison']
+       if (comparison !== undefined) {
+         exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
+         exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, 0, `« indicator_pages.${key}.comparison.sex » est invalide`)
+         exiger(comparison['direction'] === undefined || comparison['direction'] === 'high' || comparison['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.comparison.direction » est invalide`)
+       }
+       const validatedPage = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources } as IndicatorPageMetadata
+       if (page['family'] !== undefined) validatedPage.family = family as IndicatorPageMetadata['family']
+       indicator_pages[key] = validatedPage
     }
   }
 

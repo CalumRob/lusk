@@ -616,6 +616,21 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!is.null(detail) && (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[detail]]))) {
       manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
     }
+    # Family descriptors are an additive seam: omitted means the #401 scalar
+    # contract. The six page families are deliberately mirrored by TS.
+    famille <- if (is.null(page$family)) "scalar" else page$family
+    if (!est_chaine_non_vide(famille) || !famille %in% c("scalar", "trajectory",
+        "composition", "distribution", "list", "relationship")) {
+      manquer("indicator_pages.family", paste0("famille hors contrat « ", famille, " »"))
+    }
+    if (!is.null(page$comparison)) {
+      comparison <- page$comparison
+      if (!is.list(comparison)) manquer("indicator_pages.comparison", "la facette doit être un objet")
+      if (!is.null(comparison$indicator) && !est_chaine_non_vide(comparison$indicator)) manquer("indicator_pages.comparison.indicator", "l'indicateur est invalide")
+      if (!is.null(comparison$sex) && !comparison$sex %in% c("F", "M")) manquer("indicator_pages.comparison.sex", "le sexe doit être F ou M")
+      if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
+      if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
+    }
     }
   }
 
