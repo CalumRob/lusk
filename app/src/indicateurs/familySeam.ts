@@ -14,6 +14,8 @@ export interface ComparisonFacet {
   dimension: string | null
   direction: 'high' | 'low'
   unit: string
+  /** The single public label used by comparison surfaces and map layers. */
+  label: string
   labels: Record<string, string>
   url: string
   valid: boolean
@@ -41,7 +43,7 @@ export type FamilyDispatch = {
 
 /** Explicit registry: pyramid and comparison-bars share composition mechanics,
  * but retain their own family identity and renderer extension point. */
-export const familyRegistry: Readonly<Record<FamilyName, FamilyRendererIdentity>> = Object.freeze({
+export const familyRegistry = Object.freeze({
   scalar: { family: 'scalar', component: 'ScalarFamilyRenderer', semantics: 'scalar' },
   trajectory: { family: 'trajectory', component: 'TrajectoryFamilyRenderer', semantics: 'trajectory' },
   composition: { family: 'composition', component: 'CompositionFamilyRenderer', semantics: 'composition' },
@@ -50,7 +52,7 @@ export const familyRegistry: Readonly<Record<FamilyName, FamilyRendererIdentity>
   relationship: { family: 'relationship', component: 'RelationshipFamilyRenderer', semantics: 'relationship' },
   pyramid: { family: 'pyramid', component: 'PyramidFamilyRenderer', semantics: 'composition' },
   'comparison-bars': { family: 'comparison-bars', component: 'ComparisonBarsFamilyRenderer', semantics: 'composition' },
-})
+}) satisfies Readonly<Record<FamilyName, FamilyRendererIdentity>>
 
 function queryValue(value: unknown): { value: string | null; present: boolean; malformed: boolean } {
   if (value === undefined) return { value: null, present: false, malformed: false }
@@ -78,37 +80,28 @@ export function normalizeComparisonFacet(page: IndicatorPageMetadata, requested:
   if (detail.value !== null) params.set('detail', detail.value)
   if (sex.value !== null) params.set('sex', sex.value)
   if (dimension.value !== null) params.set('dimension', dimension.value)
-  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, labels: comparison.labels ?? {}, url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
+  const labels = comparison.labels ?? {}
+  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, label: detail.value !== null && labels[detail.value] ? labels[detail.value] : page.label, labels, url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
 }
 
-function representation(page: IndicatorPageMetadata, rows: readonly Indicateur[], territories: readonly Territoire[]): FamilyRepresentation {
-  switch (page.family) {
-    case 'trajectory': return { kind: 'trajectory', rows, territories, endpoints: rows, extension: page.trajectory }
-    case 'composition': return { kind: 'composition', rows, territories, parts: rows, extension: page.composition }
-    case 'distribution': return { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }
-    case 'list': return { kind: 'list', rows, territories, entries: rows, extension: page.list }
-    case 'relationship': return { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }
-    case 'pyramid': return { kind: 'pyramid', rows, territories, parts: rows, extension: page.pyramid }
-    case 'comparison-bars': return { kind: 'comparison-bars', rows, territories, parts: rows, extension: page.comparisonBars }
-    default: return { kind: 'scalar', rows, territories }
-  }
+function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensionMissing: boolean): FamilyStatus {
+  return !facet.valid || extensionMissing ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
 }
 
 export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
-  const family = page.family ?? 'scalar'
-  const renderer = familyRegistry[family]
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
   const rows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension))
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
-  const extensionMissing = page.family !== undefined && page.family !== 'scalar' && (
-    (page.family === 'trajectory' && !page.trajectory) ||
-    (page.family === 'composition' && !page.composition) ||
-    (page.family === 'distribution' && !page.distribution) ||
-    (page.family === 'list' && !page.list) ||
-    (page.family === 'relationship' && !page.relationship) ||
-    (page.family === 'pyramid' && !page.pyramid) ||
-    (page.family === 'comparison-bars' && !page.comparisonBars)
-  )
-  const status: FamilyStatus = !facet.valid || extensionMissing ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
-  return { family, renderer: family, rendererIdentity: renderer, facet, resolvedUrl: facet.url, representation: representation(page, rows, input.territories ?? []), selected, status } as FamilyDispatch
+  const territories = input.territories ?? []
+  const common = { facet, resolvedUrl: facet.url, selected }
+  switch (page.family) {
+    case 'trajectory': return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: rows, extension: page.trajectory }, status: statusFor(facet, rows, page.trajectory === undefined) }
+    case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: rows, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
+    case 'distribution': return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
+    case 'list': return { ...common, family: 'list', renderer: 'list', rendererIdentity: familyRegistry.list, representation: { kind: 'list', rows, territories, entries: rows, extension: page.list }, status: statusFor(facet, rows, page.list === undefined) }
+    case 'relationship': return { ...common, family: 'relationship', renderer: 'relationship', rendererIdentity: familyRegistry.relationship, representation: { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }, status: statusFor(facet, rows, page.relationship === undefined) }
+    case 'pyramid': return { ...common, family: 'pyramid', renderer: 'pyramid', rendererIdentity: familyRegistry.pyramid, representation: { kind: 'pyramid', rows, territories, parts: rows, extension: page.pyramid }, status: statusFor(facet, rows, page.pyramid === undefined) }
+    case 'comparison-bars': return { ...common, family: 'comparison-bars', renderer: 'comparison-bars', rendererIdentity: familyRegistry['comparison-bars'], representation: { kind: 'comparison-bars', rows, territories, parts: rows, extension: page.comparisonBars }, status: statusFor(facet, rows, page.comparisonBars === undefined) }
+    default: return { ...common, family: 'scalar', renderer: 'scalar', rendererIdentity: familyRegistry.scalar, representation: { kind: 'scalar', rows, territories }, status: statusFor(facet, rows, false) }
+  }
 }

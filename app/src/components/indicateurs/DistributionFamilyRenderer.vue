@@ -1,2 +1,2 @@
-<script setup lang="ts">import type { FamilyDispatch } from '@/indicateurs/familySeam'; defineProps<{ dispatch: FamilyDispatch }>()</script>
+<script setup lang="ts">import type { FamilyDispatch } from '@/indicateurs/familySeam'; defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'distribution' }> }>()</script>
 <template><div class="family-renderer" data-renderer="distribution" :data-state="dispatch.status" aria-label="Repères de distribution"><p>Distribution · {{ dispatch.representation.rows.length }} observations · {{ dispatch.facet.unit }}</p></div></template>

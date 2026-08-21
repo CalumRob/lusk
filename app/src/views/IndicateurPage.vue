@@ -59,7 +59,7 @@ const payloadCarte = computed(() => {
   return payloadPourCarte(payload.value, familyDispatch.value!.facet, niveau, departement, epci)
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
-const couche = computed<Couche | null>(() => page.value && familyDispatch.value ? ({ source: 'indicateur', clef: familyDispatch.value.facet.indicator, detail: familyDispatch.value.facet.detail, libelle: familyDispatch.value.facet.labels[familyDispatch.value.facet.detail ?? ''] ?? page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
+const couche = computed<Couche | null>(() => page.value && familyDispatch.value ? ({ source: 'indicateur', clef: familyDispatch.value.facet.indicator, detail: familyDispatch.value.facet.detail, libelle: familyDispatch.value.facet.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
 const niveauMasque = computed<NiveauMasque>(() => model.value?.state.niveau === 'epci' ? 'epcis' : model.value?.state.niveau === 'departement' ? 'departements' : 'communes')
 const territoireCible = computed(() => payload.value.territoires.find((t) => t.territoire === route.query.territoire && t.type === model.value?.state.niveau) ?? null)
 function normalizedQuery(extra: Record<string, string | undefined> = {}) { const next = { ...route.query, ...extra }; if (next.niveau !== 'commune') { delete next.departement; delete next.epci }; if (payload.value.territoires.length > 0) { if (next.departement !== validScope.value.departement) delete next.departement; if (next.epci !== validScope.value.epci) delete next.epci }; return next }

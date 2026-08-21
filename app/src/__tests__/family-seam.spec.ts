@@ -1,14 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { dispatchIndicatorFamily, normalizeComparisonFacet } from '../indicateurs/familySeam'
+import type { FamilyDispatch, FamilyName } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur } from '../payload/types'
+
+type DispatchFor<F extends FamilyName> = Extract<FamilyDispatch, { family: F }>
+type Assert<T extends true> = T
+type FamilyAlignment = Assert<DispatchFor<'trajectory'>['representation']['kind'] extends 'trajectory' ? true : false>
+const familyAlignment: FamilyAlignment = true
 
 describe('seam des familles de Repères', () => {
   it('normalise une facette URL et conserve la facette scalaire', () => {
     const page = metadonneesThemesFixtures.demographie.indicator_pages!.densite
     const facet = normalizeComparisonFacet(page, { detail: 'stale', sex: 'X', dimension: 'total' })
-    expect(facet).toMatchObject({ indicator: 'densite', detail: null, sex: null, direction: 'high', unit: 'hab./km²' })
+    expect(facet).toMatchObject({ indicator: 'densite', detail: null, sex: null, label: 'Densité de population', direction: 'high', unit: 'hab./km²' })
     expect(facet.url).toBe('')
+  })
+
+  it('publishes the resolved detail label for map and comparison surfaces', () => {
+    const page = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, comparison: { details: ['total'], detail: 'total', labels: { total: 'Population totale' } } }
+    expect(normalizeComparisonFacet(page, {}).label).toBe('Population totale')
+    expect(familyAlignment).toBe(true)
   })
 
   it.each([
