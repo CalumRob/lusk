@@ -660,10 +660,12 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   stations <- donnees$stations_service
   verifier_egale(names(stations), c("commune", "fuel"),
                  "Mobilité e2e — la forme normalisée de BPE B316")
-  verifier_egale(nrow(stations), 349L,
+  verifier_egale(nrow(stations), 1202L,
+                 "Mobilité e2e — les communes couvertes par BPE")
+  verifier_egale(sum(stations$fuel > 0), 349L,
                  "Mobilité e2e — les communes avec B316")
-  verifier_egale(dplyr::n_distinct(stations$commune), 349L,
-                 "Mobilité e2e — les communes B316 distinctes")
+  verifier_egale(dplyr::n_distinct(stations$commune), 1202L,
+                 "Mobilité e2e — les communes BPE distinctes")
   verifier_egale(sum(stations$fuel), 567L,
                  "Mobilité e2e — le total des équipements B316")
   verifier_vrai(all(!is.na(stations$commune) & !is.na(stations$fuel) &

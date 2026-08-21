@@ -60,16 +60,50 @@ test_that("BPE25 counts geolocalized B316 equipment rows by commune", {
     ~DEPCOM, ~GEO_OBJECT, ~TYPEQU,
     "29001", "COM", "B316",
     "29001", "COM", "B316",
+    "29002", "COM", "B999",
     "75001", "COM", "B316",
     "2A004", "COM", "B316",
     "29001", "COM", "B999",
     "200000001", "EPCI", "B316"
   )
   expect_equal(selectionner_bpe_b316_2025(brut), tibble::tibble(
-    GEO = c("29001", "29001"), FACILITIES = c("B316", "B316"), NB_EQUIP = c(1, 1)))
-  expect_equal(normaliser_bpe_b316(brut)$fuel, 2)
+    GEO = c("29002", "29001", "29001"),
+    FACILITIES = c("B316", "B316", "B316"), NB_EQUIP = c(0, 1, 1)))
+  expect_equal(normaliser_bpe_b316(brut)$fuel, c(2, 0))
   expect_error(selectionner_bpe_b316_2025(brut[3, , drop = FALSE]), "aucune observation")
   expect_error(selectionner_bpe_b316_2025(brut[6, , drop = FALSE]), "aucune observation")
+})
+
+test_that("BPE25 coverage turns non-B316 equipment into observed fuel zero", {
+  brut <- tibble::tribble(
+    ~DEPCOM, ~GEO_OBJECT, ~TYPEQU,
+    "29001", "COM", "B999",
+    "29002", "COM", "B316",
+    "29002", "COM", "B316"
+  )
+  selected <- selectionner_bpe_b316_2025(brut)
+  expect_equal(normaliser_bpe_b316(selected), tibble::tibble(
+    commune = c("29001", "29002"), fuel = c(0, 2)))
+  expect_false("29003" %in% normaliser_bpe_b316(selected)$commune)
+})
+
+test_that("complete BPE coverage sums zero and positive members before parent ratio", {
+  ref <- tibble::tribble(~CODGEO, ~EPCI, ~DEP,
+                         "29001", "200000001", "29",
+                         "29002", "200000001", "29")
+  out <- agreger_offre_territoires(
+    offre_tc_communes = tibble::tibble(commune = ref$CODGEO,
+                                       n_batiments = 1, part_proche = 1),
+    bornes_communes = tibble::tibble(commune = ref$CODGEO, nb_bornes = c(2, 4)),
+    velo_communes = tibble::tibble(commune = ref$CODGEO, places = 1,
+                                   population = 100, places_1000 = 10),
+    base_epci = ref,
+    fuel_communes = calculer_fuel_communes(tibble::tibble(
+      commune = ref$CODGEO, fuel = c(0, 2)))
+  )
+  ratio <- out$value[out$key == "bornes_ev_par_station_service" &
+                     out$code == "200000001"]
+  expect_equal(ratio, 3)
 })
 
 test_that("BPE25 rejects malformed equipment observations", {

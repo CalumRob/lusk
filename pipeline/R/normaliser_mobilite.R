@@ -266,26 +266,42 @@ lire_bpe_b316 <- function(chemin) {
   selectionner_bpe_b316_2025(brut)
 }
 
-# BPE25 is an equipment-row file: one retained B316 row is one station.
+# BPE25 is an equipment-row file: one retained B316 row is one station.  The
+# file has no GEO_OBJECT column, so DEPCOM is the authoritative commune-grain
+# key for the downloaded detail extract.  Coverage must be established before
+# filtering B316: a commune represented by another equipment type is observed
+# with zero stations-service, not unavailable.
 selectionner_bpe_b316_2025 <- function(x) {
   requis <- c("DEPCOM", "TYPEQU")
   manquantes <- setdiff(requis, names(x))
   if (length(manquantes)) stop("BPE25 : colonne(s) manquante(s) : ",
                                paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  depcom <- as.character(x$DEPCOM)
+  breton <- substr(depcom, 1, 2) %in% DEPT_BRETAGNE
+  if (any(breton & !grepl("^[0-9]{5}$", depcom)))
+    stop("BPE25 : code commune breton invalide.", call. = FALSE)
   type <- toupper(trimws(as.character(x$TYPEQU)))
-  if (any(is.na(type) | !nzchar(type)))
-    stop("BPE25 : TYPEQU ne doit pas être manquant.", call. = FALSE)
-  if ("GEO_OBJECT" %in% names(x)) x <- x[as.character(x$GEO_OBJECT) == "COM", , drop = FALSE]
-  type <- toupper(trimws(as.character(x$TYPEQU)))
-  y <- x[type == "B316", , drop = FALSE]
+  if (any(breton & (is.na(type) | !nzchar(type))))
+    stop("BPE25 : TYPEQU ne doit pas être manquant pour une commune bretonne.", call. = FALSE)
+
+  # In fixture/commune-grain inputs GEO_OBJECT is explicit.  The official
+  # geolocalized BPE25 detail has no such column; there, every valid Breton
+  # DEPCOM row is a commune-grain observation.
+  commune <- breton
+  if ("GEO_OBJECT" %in% names(x))
+    commune <- commune & toupper(trimws(as.character(x$GEO_OBJECT))) == "COM"
+  couverture <- unique(depcom[commune])
+  y <- x[commune & type == "B316", , drop = FALSE]
   if (!nrow(y)) stop("BPE25 : aucune observation communale B316 pour 2025.", call. = FALSE)
-  depcom <- as.character(y$DEPCOM)
-  y <- y[substr(depcom, 1, 2) %in% DEPT_BRETAGNE, , drop = FALSE]
-  if (!nrow(y)) stop("BPE25 : aucune observation communale B316 pour 2025.", call. = FALSE)
-  depcom <- as.character(y$DEPCOM)
-  if (any(!grepl("^[0-9]{5}$", depcom)))
-    stop("BPE25 : code commune invalide pour B316.", call. = FALSE)
-  y <- tibble::tibble(GEO = as.character(y$DEPCOM), FACILITIES = "B316", NB_EQUIP = 1)
+  # Keep one row per equipment (the BPE detail grain), and add one explicit
+  # zero row only for covered communes with no B316 equipment.  The next seam
+  # aggregates these rows into the canonical commune count.
+  b316_communes <- unique(as.character(y$DEPCOM))
+  zeros <- setdiff(couverture, b316_communes)
+  y <- dplyr::bind_rows(
+    tibble::tibble(GEO = zeros, FACILITIES = "B316", NB_EQUIP = 0),
+    tibble::tibble(GEO = as.character(y$DEPCOM), FACILITIES = "B316", NB_EQUIP = 1)
+  )
   verifier_contenu_bpe_b316(y)
   y
 }
