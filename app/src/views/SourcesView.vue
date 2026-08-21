@@ -35,13 +35,16 @@ const sources = computed(() => payload.value ? sourceRecords(payload.value).filt
           <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a>
         </header>
         <p v-if="source.caveat" class="source-record__caveat">{{ source.caveat }}</p>
+        <p v-if="source.replie" class="source-record__summary">
+          {{ source.vintage ?? '—' }} · {{ source.freshness ?? '—' }} · {{ source.licence ?? '—' }}
+        </p>
         <section v-if="source.clocks.length" class="source-record__clocks" aria-label="Horloges de mise à jour">
           <h3>Horloges de mise à jour</h3>
           <dl><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl>
         </section>
         <h3>Millésimes et fraîcheur</h3>
         <ul class="source-record__vintages">
-          <li v-for="vintage in source.vintages" :id="ancreSource(vintage.id)" :key="vintage.id">
+          <li v-for="vintage in source.vintages" v-if="!source.replie" :id="ancreSource(vintage.id)" :key="vintage.id">
             <strong>{{ vintage.label }}</strong>
             <span>Version : {{ vintage.version ?? '—' }}</span>
             <span>Licence : {{ vintage.licence ?? '—' }}</span>

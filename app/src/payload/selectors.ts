@@ -810,28 +810,53 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
     })
   }
 
-  const published = new Set(payload.indicateurs.map((line) => `${line.theme}:${line.key}`))
+  const metadataConsumers: Array<{ theme: Theme; key: string; primary: string; secondary: string[] }> = []
+  const canonicalThemes = new Set<Theme>()
+  for (const [theme, metadata] of Object.entries(payload.themeMetadata ?? {})) {
+    if (!metadata?.source_records) continue
+    canonicalThemes.add(theme as Theme)
+    for (const [key, primary] of Object.entries(metadata?.sources ?? {})) {
+      metadataConsumers.push({ theme: theme as Theme, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })
+    }
+  }
+  // Old fixtures and pre-migration payloads have no source_records metadata;
+  // this adapter is deliberately the only remaining static fallback.
+  if (options.includeUnpublished || metadataConsumers.length === 0) {
+    const fallbackThemes = options.includeUnpublished
+      ? (Object.keys(THEMES_METHODES) as Theme[]).filter((theme) => !canonicalThemes.has(theme))
+      : []
+    for (const theme of fallbackThemes) {
+      for (const [key, documentation] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        if (documentation.sourceId) metadataConsumers.push({ theme, key, primary: documentation.sourceId, secondary: [] })
+      }
+    }
+    if (metadataConsumers.length === 0 && !options.includeUnpublished) {
+      for (const line of payload.indicateurs) {
+        const documentation = THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]
+        if (documentation?.sourceId) metadataConsumers.push({ theme: line.theme, key: line.key, primary: documentation.sourceId, secondary: [] })
+      }
+    }
+  }
   for (const record of records.values()) {
     const seenConsumers = new Set<string>()
-    for (const line of payload.indicateurs) {
-      if (!published.has(`${line.theme}:${line.key}`)) continue
-      const metadata = payload.themeMetadata?.[line.theme]
-      const page = metadata?.indicator_pages?.[line.key]
+    for (const consumer of metadataConsumers) {
+      const metadata = payload.themeMetadata?.[consumer.theme]
+      const page = metadata?.indicator_pages?.[consumer.key]
       const sourceIds = new Set([
-        metadata?.sources[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.sourceId,
-        ...(page?.sources ?? []),
+        consumer.primary,
+        ...consumer.secondary,
       ].filter((sourceId): sourceId is string => Boolean(sourceId)))
       if (![...sourceIds].some((sourceId) => datasetDeSource(sourceId) === record.id)) continue
-      const consumerId = `${line.theme}:${line.key}`
+      const consumerId = `${consumer.theme}:${consumer.key}`
       if (seenConsumers.has(consumerId)) continue
       seenConsumers.add(consumerId)
       record.consumers.push({
-        key: line.key,
-        label: metadata?.indicator_labels[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.label ?? line.key,
-        theme: line.theme,
-        caveat: page?.caveats ?? metadata?.indicator_caveats?.[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.caveat ?? null,
+        key: consumer.key,
+        label: metadata?.indicator_labels[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
+        theme: consumer.theme,
+        caveat: page?.caveats ?? metadata?.indicator_caveats?.[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.caveat ?? null,
       })
-      if (!record.themes.includes(line.theme)) record.themes.push(line.theme)
+      if (!record.themes.includes(consumer.theme)) record.themes.push(consumer.theme)
     }
     const first = record.vintages[0]
     record.replie = record.vintages.length <= 1 || record.vintages.every((vintage) => vintage.licence === first?.licence && vintage.datePublication === first?.datePublication)

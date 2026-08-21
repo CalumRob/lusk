@@ -42,8 +42,8 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
   it('consomme les vintages propres à source_records sans les reconstruire depuis le registre', () => {
     const metadata = {
       demographie: {
-        sources: { densite: 'serie_historique' },
-        indicator_labels: { densite: 'Densité de population' },
+        sources: { densite: 'serie_historique', taille_menages: 'menages' },
+        indicator_labels: { densite: 'Densité de population', taille_menages: 'Taille moyenne des ménages' },
         indicator_pages: { densite: { sources: ['serie_historique', 'menages'] } },
         source_records: {
           serie_historique: {
