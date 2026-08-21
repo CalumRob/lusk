@@ -28,12 +28,14 @@
 # nommant l'artefact ET la règle de jointure.
 #
 # Décisions documentées (Méthodes) :
-#   - les libellés A17 officiels ne sont PAS portés par le XLS (la feuille ne
-#     porte que des codes) : ils sont transcrits de la documentation INSEE du
-#     vocabulaire A17 (« Activité (NAF rév2) en nomenclature agrégée
-#     (17 postes) ») et épinglés dans VOCABULAIRE_NA17_OFFICIEL — le
-#     vérificateur refuse toute ligne dont le libellé s'écarte du libellé
-#     officiel de son code ;
+#   - les libellés A17 officiels ne sont PAS portés par table_NAF2-NA.xls (la
+#     feuille ne porte que des codes) : ils sont transcrits du fichier officiel
+#     niv_agreg_naf_rev_2.xls (feuille « A 17 », colonne « Intitulé ») et
+#     épinglés dans VOCABULAIRE_NA17_OFFICIEL — transcription VERBATIM, y
+#     compris les deux doubles espaces typographiques de la source («
+#     Industries extractives,  énergie… », « …et  de produits… »), jamais
+#     normalisés en silence ; le vérificateur refuse toute ligne dont le
+#     libellé s'écarte du libellé officiel de son code ;
 #   - « 00.00Z » (inconnue) n'est pas une activité NAF officielle : son absence
 #     de la table est ATTENDUE — son exclusion est le travail du consommateur
 #     (ticket #427), pas de l'artefact ;
@@ -48,24 +50,27 @@ NAF_A17_ARTEFACT_FICHIER <- "table_naf2_na17.csv"
 
 # VOCABULAIRE_NA17_OFFICIEL ------------------------------------------------------
 # Le vocabulaire FERMÉ des 17 postes de la nomenclature agrégée A 17 : le code
-# officiel → son libellé officiel français (documentation INSEE du vocabulaire
-# A17). Le vérificateur y valide les codes ET les libellés de la table épinglée.
+# officiel → son libellé officiel français, transcrit VERBATIM du fichier
+# INSEE niv_agreg_naf_rev_2.xls (feuille « A 17 », colonne « Intitulé ») —
+# y compris les deux doubles espaces typographiques de la source (DE, C1),
+# documentés, jamais normalisés en silence. Le vérificateur y valide les codes
+# ET les libellés de la table épinglée.
 VOCABULAIRE_NA17_OFFICIEL <- c(
   "AZ" = "Agriculture, sylviculture et pêche",
-  "C1" = "Fabrication de denrées alimentaires, de boissons et de produits à base de tabac",
+  "C1" = "Fabrication de denrées alimentaires, de boissons et  de produits à base de tabac",
   "C2" = "Cokéfaction et raffinage",
-  "C3" = "Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines",
+  "C3" = "Fabrication d'équipements électriques, électroniques, informatiques ; fabrication de machines",
   "C4" = "Fabrication de matériels de transport",
   "C5" = "Fabrication d'autres produits industriels",
-  "DE" = "Industries extractives, énergie, eau, gestion des déchets et dépollution",
+  "DE" = "Industries extractives,  énergie, eau, gestion des déchets et dépollution",
   "FZ" = "Construction",
-  "GZ" = "Commerce, réparation d'automobiles et de motocycles",
+  "GZ" = "Commerce ; réparation d'automobiles et de motocycles",
   "HZ" = "Transports et entreposage",
   "IZ" = "Hébergement et restauration",
   "JZ" = "Information et communication",
   "KZ" = "Activités financières et d'assurance",
   "LZ" = "Activités immobilières",
-  "MN" = "Activités scientifiques et techniques, services administratifs et de soutien",
+  "MN" = "Activités scientifiques et techniques ; services administratifs et de soutien",
   "OQ" = "Administration publique, enseignement, santé humaine et action sociale",
   "RU" = "Autres activités de services"
 )
@@ -124,12 +129,14 @@ artefact_naf_a17 <- function() {
       "Règle de jointure : l'APET SIRENE est « NN.NN(L) » ; la jointure au ",
       "grain sous-classe est EXACTE — sous_classe = activity_code, le code ",
       "A17 remonte à la sous-classe entière. Les libellés A17 officiels ne ",
-      "sont pas portés par le XLS : transcrits de la documentation INSEE du ",
-      "vocabulaire A17 (17 postes), verrouillés dans ",
-      "VOCABULAIRE_NA17_OFFICIEL. « 00.00Z » (inconnue) n'est pas une ",
-      "activité NAF officielle : son absence de la table est ATTENDUE — son ",
-      "exclusion est le travail du consommateur (#427), pas de l'artefact. ",
-      "Millésime : la nomenclature agrégée NA, 2008 (page INSEE mise à jour ",
+      "sont pas portés par table_NAF2-NA.xls : transcrits VERBATIM du fichier ",
+      "officiel niv_agreg_naf_rev_2.xls (feuille « A 17 », colonne ",
+      "« Intitulé »), verrouillés dans VOCABULAIRE_NA17_OFFICIEL — y compris ",
+      "les deux doubles espaces typographiques de la source (DE, C1), ",
+      "documentés, jamais normalisés en silence. « 00.00Z » (inconnue) n'est ",
+      "pas une activité NAF officielle : son absence de la table est ",
+      "ATTENDUE — son exclusion est le travail du consommateur (#427), pas ",
+      "de l'artefact. Millésime : la nomenclature agrégée NA, 2008 (page INSEE mise à jour ",
       "le 06/07/2016) ; la NAF rév. 2 est en vigueur jusqu'à fin 2026 — la ",
       "NAF 2025 (janvier 2027) exigera un NOUVEL artefact versionné, jamais ",
       "une réécriture silencieuse de celui-ci."
