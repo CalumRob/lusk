@@ -27,5 +27,6 @@ describe('publishedSources — autorité dataset-centric publiée', () => {
     const serie = publishedSources(payload).find((source) => source.id === 'serie_historique')!
     expect(serie.consumers.map((consumer) => consumer.key)).toEqual(['densite', 'evolution_1968'])
     expect(publishedSources(payload).some((source) => source.consumers.some((consumer) => consumer.key === 'le-matin-la-commune-se-vide'))).toBe(false)
+    expect(publishedSources(payload).find((source) => source.id === 'flores_a88')?.consumers).toEqual([])
   })
 })

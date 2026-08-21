@@ -50,6 +50,10 @@ function clocks(themes: readonly Theme[]): string[] {
 export function publishedSources(payload: Payload): PublishedSourceRecord[] {
   const vintages = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
   const consumers = indicateursParDataset()
+  // Méthodes may document a decision before its payload is published.  The
+  // Sources route is a published surface: prose alone must never promote a
+  // planned indicator into a consumer (parity contract).
+  const publies = new Set(payload.indicateurs.map((ligne) => `${ligne.theme}:${ligne.key}`))
   const result: PublishedSourceRecord[] = []
 
   for (const [id, source] of Object.entries(SOURCES_METHODES)) {
@@ -81,12 +85,14 @@ export function publishedSources(payload: Payload): PublishedSourceRecord[] {
   }
 
   for (const record of result) {
-    record.consumers = (consumers.get(record.id) ?? []).map((consumer) => ({
+    record.consumers = (consumers.get(record.id) ?? [])
+      .filter((consumer) => publies.has(`${consumer.theme}:${consumer.clef}`))
+      .map((consumer) => ({
       key: consumer.clef,
       label: consumer.label,
       theme: consumer.theme,
       caveat: THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES].indicateurs[consumer.clef]?.caveat ?? null,
-    }))
+      }))
   }
   return result
 }
