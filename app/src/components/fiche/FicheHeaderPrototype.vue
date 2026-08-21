@@ -26,7 +26,11 @@ const variant = computed<HeaderVariant>(() => {
     : 'anchors'
 })
 
-const facts = computed(() => apercuPourTerritoire(props.payload, props.territoire))
+const facts = computed(() =>
+  apercuPourTerritoire(props.payload, props.territoire).filter(
+    (fact) => fact.key === 'population' || fact.key === 'densite',
+  ),
+)
 const population = computed(() => facts.value.find((fact) => fact.key === 'population'))
 const densite = computed(() => facts.value.find((fact) => fact.key === 'densite'))
 const territoire = computed(() => props.payload.territoires.find((item) => item.territoire === props.territoire))
