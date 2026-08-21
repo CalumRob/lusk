@@ -531,11 +531,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     for (indicator_key in names(metadata$indicator_pages)) {
       page <- metadata$indicator_pages[[indicator_key]]
+      if (!is.null(page$vintage)) manquer("indicator_pages.vintage", "la fraîcheur vient des source_records, pas de la page")
       if (!indicator_key %in% cles_indicateurs) {
         manquer("indicator_pages", paste0("la page « ", indicator_key, " » référence un indicateur inconnu"))
       }
     champs <- c("indicator", "label", "definition", "unit", "calculation",
-                "direction", "caveats", "vintage")
+                "direction", "caveats")
     if (!is.list(page) || any(!vapply(champs, function(x)
       est_chaine_non_vide(page[[x]]), logical(1)))) {
       manquer("indicator_pages", "le descripteur scalaire est incomplet")

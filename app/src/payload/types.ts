@@ -685,7 +685,6 @@ export interface ScalarPageMetadata {
   calculation: string
   direction: 'high' | 'low'
   caveats: string
-  vintage: string
   levels: TerritoireType[]
   sources: string[]
 }

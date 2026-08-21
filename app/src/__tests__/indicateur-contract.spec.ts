@@ -16,6 +16,7 @@ describe('contrat des pages d’indicateur', () => {
     ['détail invalide', (meta: any) => { meta.indicator_pages.densite.detail = 42 }],
     ['clé/indicateur incohérents', (meta: any) => { meta.indicator_pages.densite.indicator = 'autre' }],
     ['source de référence absente de la page', (meta: any) => { meta.indicator_pages.densite.sources = ['age_detail'] }],
+    ['vintage dupliqué', (meta: any) => { meta.indicator_pages.densite.vintage = 'ancienne valeur' }],
   ])('rejette %s', (_name, mutate) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     mutate(metadata)
