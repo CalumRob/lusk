@@ -304,7 +304,7 @@ export function sousGroupesPourTerritoire(
     const lignesFigure = groupesParCle.get(sousGroupe.figure.indicator)
     const figureCompacte: FigureCompacte | null =
       lignesFigure && lignesFigure.length > 0
-        ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure, palette: sousGroupe.figure.comparison?.palette }
+        ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure }
         : null
 
     // A subgroup may deliberately have no reading (the silent, indicator-only
