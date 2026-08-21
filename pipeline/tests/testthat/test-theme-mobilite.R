@@ -1129,8 +1129,21 @@ test_that("compute_histoires_mobilite : « Ce que le vélo préserve » ne se d�
   # classification (la même colonne que les lignes de défaut — la forme du
   # contrat, jamais un doublon de vocabulaire)
   expect_true(all(c("territoire", "type", "theme", "story_key",
-                    "div_loss_t", "div_loss_b", "delta",
-                    "classification_saillance") %in% names(velo)))
+                     "div_loss_t", "div_loss_b", "delta",
+                     "classification_saillance", "dens_min", "dens_max",
+                     paste0("dens_", 1:10), paste0("dec_", 1:10)) %in% names(velo)))
+  expect_false(any(vapply(velo, is.list, logical(1))))
+  expect_true(all(vapply(velo[paste0("dens_", 1:10)], is.numeric, logical(1))))
+  expect_true(all(vapply(velo[paste0("dec_", 1:10)], is.numeric, logical(1))))
+  expect_true(all(velo$dens_min <= velo$dens_max))
+  expect_true(all(rowSums(velo[paste0("dens_", 1:10)] > 0) > 0))
+  chemin <- tempfile(fileext = ".parquet")
+  on.exit(unlink(chemin), add = TRUE)
+  nanoparquet::write_parquet(velo, chemin)
+  retour <- nanoparquet::read_parquet(chemin)
+  expect_false(any(vapply(retour, is.list, logical(1))))
+  expect_equal(as.data.frame(retour[paste0("dens_", 1:10)]),
+               as.data.frame(velo[paste0("dens_", 1:10)]))
   expect_true(all(velo$classification_saillance == "saillant"))
   expect_false("classification" %in% names(histoires))
   expect_true(all(velo$theme == "mobilite"))
@@ -2445,6 +2458,26 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_true(all(cyclable_ind$vintage_source == ref_osm))
   expect_true(all(cyclable_ind$vintage_date_reference == "2026-08-05"))
   expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
+})
+
+test_that("construire_indicateurs_mobilite : un territoire absent du snapshot garde ses deux clés tot_loss", {
+  fx <- fixture_indicateurs_mobilite()
+  fx$tot_loss_territoires <- dplyr::filter(fx$tot_loss_territoires, code != "29002")
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+
+  ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
+  absent <- ind[ind$territoire == "29002" &
+                  ind$key %in% c("tot_loss_t", "tot_loss_b"), ]
+
+  expect_setequal(absent$key, c("tot_loss_t", "tot_loss_b"))
+  expect_true(all(is.na(absent$value)))
+  expect_false(any(is.na(ind$key)))
+  expect_equal(nrow(absent), 2)
 })
 
 test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction DÉCLARÉE de SA clé (#368)", {

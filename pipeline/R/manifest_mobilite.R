@@ -470,10 +470,10 @@ MANIFEST_MOBILITE_STATIONNEMENT_VELO <- tibble::tribble(
 MANIFEST_MOBILITE_BPE_B316 <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
-  "bpe_b316", "INSEE — Base permanente des équipements, B316 stations-service",
-  "https://api.insee.fr/melodi/file/BPE/BPE_2024_CSV_FR", "bpe_b316_2024.csv", "2024",
-  "2024-01-01", "2026-08-18", "lov2",
-  "BPE 2024, type d’équipement B316 (FACILITIES) : dénombré par commune pour le dénominateur stations-service du ratio EV/fuel. Les absences restent NA.",
+  "bpe_b316", "INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service",
+  "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet", "BPE25.parquet", "2025",
+  "2025-01-01", "2026-08-04", "lov2",
+  "Le fichier détail géolocalisé BPE 2025 est lu directement en Parquet. Chaque ligne d'équipement TYPEQU = B316 et DEPCOM valide compte pour une station-service ; les lignes agrégées/non communales sont exclues. Les lignes sont comptées par commune puis normalisées en FACILITIES/NB_EQUIP. Les communes absentes restent indisponibles, tandis qu'une observation valide de zéro reste zéro. Données diffusées en géographie au 1er janvier 2025. Licence Ouverte 2.0 (INSEE).",
   "manuel", "fichier"
 )
 
@@ -482,10 +482,10 @@ verifier_contrat_mobilite_bpe_b316 <- function(fragment, contenu = NULL) {
     "Contrat Mobilité BPE B316 violé — %s : %s.", champ, detail), call. = FALSE)
   if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) manquer("forme", "une source")
   if (fragment$id != "bpe_b316") manquer("id", "id attendu : bpe_b316")
-  if (fragment$fichier != "bpe_b316_2024.csv") manquer("fichier", "export BPE B316 2024")
-  if (fragment$vintage != "2024") manquer("vintage", "millésime 2024")
-  if (!grepl("^https://api\\.insee\\.fr/melodi/file/BPE/BPE_[0-9]{4}_CSV_FR$", fragment$url))
-    manquer("url", "export CSV BPE INSEE, pas une page HTML ni un chemin local")
+  if (fragment$fichier != "BPE25.parquet") manquer("fichier", "fichier détail BPE25 Parquet")
+  if (fragment$vintage != "2025") manquer("vintage", "millésime 2025")
+  if (fragment$url != "https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet")
+    manquer("url", "artefact Parquet BPE25 téléchargeable, pas une page HTML ni un chemin local")
   if (fragment$licence != "lov2") manquer("licence", "lov2")
   if (fragment$mode != "manuel" || fragment$type != "fichier") manquer("mode/type", "manuel/fichier")
   if (!is.null(contenu)) {

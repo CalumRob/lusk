@@ -662,11 +662,18 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
       partage_longueur = "km", partage_km_1000 = "km / 1 000 hab",
       total_longueur = "km")
   )
-  tot_loss <- analytiques$tot_loss_territoires %>% tidyr::pivot_longer(
-    c(tot_loss_t, tot_loss_b), names_to = "key", values_to = "value") %>%
-    dplyr::mutate(detail = NA_character_, unit = "accès perdus") %>%
-    dplyr::select(code, key, detail, value, unit) %>%
-    dplyr::filter(key %in% c("tot_loss_t", "tot_loss_b"))
+  # Comme les autres clés scalaires, chaque famille est d'abord alignée sur le
+  # squelette canonique. Le snapshot ne couvre pas nécessairement tous les
+  # territoires (notamment les îles 29083 et 29084) : ils restent publiés avec
+  # leur clé canonique et une valeur NA, jamais avec une clé NA.
+  tot_loss <- dplyr::bind_rows(
+    aligner(analytiques$tot_loss_territoires %>%
+              dplyr::select(code, value = tot_loss_t),
+            "tot_loss_t", "accès perdus"),
+    aligner(analytiques$tot_loss_territoires %>%
+              dplyr::select(code, value = tot_loss_b),
+            "tot_loss_b", "accès perdus")
+  )
 
   # le rang PAR DÉTAIL : chaque mesure est classée dans SON groupe de
   # comparaison (le percentile partagé de compute.R, jamais re-forké)
@@ -682,9 +689,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     territoires
   )
   rangs_tot_loss <- construire_rangs_detail(
-    analytiques$tot_loss_territoires %>% tidyr::pivot_longer(
-      c(tot_loss_t, tot_loss_b), names_to = "key", values_to = "value") %>%
-      dplyr::transmute(code, key, detail = NA_character_, value),
+    tot_loss %>% dplyr::select(code, key, detail, value),
     territoires)
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
@@ -877,18 +882,9 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     dplyr::rename(territoire = code,
                   classification_saillance = classification) %>%
     dplyr::select(territoire, type, theme, story_key,
-                  div_loss_t, div_loss_b, delta, classification_saillance,
-                  dens_min, dens_max, dplyr::all_of(paste0("dens_", 1:10)),
-                  dplyr::all_of(paste0("dec_", 1:10))) %>%
-    dplyr::rowwise() %>%
-    dplyr::mutate(distribution_signature = list(list(
-      dens = c(dplyr::c_across(dplyr::all_of(paste0("dens_", 1:10)))),
-      dec = c(dplyr::c_across(dplyr::all_of(paste0("dec_", 1:10)))),
-      min = dens_min,
-      max = dens_max
-    ))) %>%
-    dplyr::ungroup() %>%
-    dplyr::select(-dplyr::all_of(c("dens_min", "dens_max", paste0("dens_", 1:10), paste0("dec_", 1:10)))) %>%
+                   div_loss_t, div_loss_b, delta, classification_saillance,
+                   dens_min, dens_max, dplyr::all_of(paste0("dens_", 1:10)),
+                   dplyr::all_of(paste0("dec_", 1:10))) %>%
     dplyr::arrange(territoire)
 
   dplyr::bind_rows(vingt, velo) %>%

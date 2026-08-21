@@ -1,5 +1,93 @@
 [
   {
+    "id": "mobilite_snapshot",
+    "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
+    "version": "2026-02",
+    "licence": "odbl",
+    "date_reference": "2026-02-28",
+    "date_publication": "2026-08-06"
+  },
+  {
+    "id": "rp_logement_princ",
+    "source": "INSEE — Recensement de la population, exploitations principales (Logements) — tableau LOG T12 « Équipement automobile des ménages » (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-07-29"
+  },
+  {
+    "id": "osm_reseaux",
+    "source": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)",
+    "version": "2026-08",
+    "licence": "odbl",
+    "date_reference": "2026-08-05",
+    "date_publication": "2026-08-06"
+  },
+  {
+    "id": "amenagements_cyclables",
+    "source": "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001)",
+    "version": "2026-08",
+    "licence": "odbl",
+    "date_reference": "2026-08-07",
+    "date_publication": "2026-08-07"
+  },
+  {
+    "id": "communes_limites",
+    "source": "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": null
+  },
+  {
+    "id": "korrigo",
+    "source": "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
+    "version": "2026-02",
+    "licence": "odbl",
+    "date_reference": "2026-02-03",
+    "date_publication": "2026-02-03"
+  },
+  {
+    "id": "batiments_residentiels",
+    "source": "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l'offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
+    "version": "2025-07",
+    "licence": "lov2",
+    "date_reference": "2025-07-31",
+    "date_publication": "2026-08-06"
+  },
+  {
+    "id": "bornes-recharges",
+    "source": "Etalab / data.bretagne.bzh — Fichier consolidé des Bornes de Recharge pour Véhicules Électriques (IRVE), schéma 2.2.0",
+    "version": "2026-07",
+    "licence": "lov2",
+    "date_reference": "2026-07-28",
+    "date_publication": "2026-08-04"
+  },
+  {
+    "id": "stationnement-velo",
+    "source": "Ecolab — Nombre de places de stationnement vélo pour 1 000 hab. (hub d'indicateurs territoriaux de transition écologique ; source OSM : Base Nationale du Stationnement Cyclable)",
+    "version": "2022-2025",
+    "licence": "odbl",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-02-03"
+  },
+  {
+    "id": "bpe_b316",
+    "source": "INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-08-04"
+  },
+  {
+    "id": "cog_passage",
+    "source": "INSEE — Table de passage annuelle des communes (COG 2025) : la correspondance des codes communaux entre les millésimes 2003-2025",
+    "version": "2025",
+    "licence": "lov2",
+    "date_reference": "2025-01-01",
+    "date_publication": "2026-05-06"
+  },
+  {
     "id": "sirene_snapshot",
     "source": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
     "version": "2026-04",
@@ -248,86 +336,6 @@
     "date_publication": "2026-08-11"
   },
   {
-    "id": "mobilite_snapshot",
-    "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
-    "version": "2026-02",
-    "licence": "odbl",
-    "date_reference": "2026-02-28",
-    "date_publication": "2026-08-06"
-  },
-  {
-    "id": "rp_logement_princ",
-    "source": "INSEE — Recensement de la population, exploitations principales (Logements) — tableau LOG T12 « Équipement automobile des ménages » (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-07-29"
-  },
-  {
-    "id": "osm_reseaux",
-    "source": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)",
-    "version": "2026-08",
-    "licence": "odbl",
-    "date_reference": "2026-08-05",
-    "date_publication": "2026-08-06"
-  },
-  {
-    "id": "amenagements_cyclables",
-    "source": "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001)",
-    "version": "2026-08",
-    "licence": "odbl",
-    "date_reference": "2026-08-07",
-    "date_publication": "2026-08-07"
-  },
-  {
-    "id": "communes_limites",
-    "source": "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": null
-  },
-  {
-    "id": "korrigo",
-    "source": "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
-    "version": "2026-02",
-    "licence": "odbl",
-    "date_reference": "2026-02-03",
-    "date_publication": "2026-02-03"
-  },
-  {
-    "id": "batiments_residentiels",
-    "source": "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l'offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
-    "version": "2025-07",
-    "licence": "lov2",
-    "date_reference": "2025-07-31",
-    "date_publication": "2026-08-06"
-  },
-  {
-    "id": "bornes-recharges",
-    "source": "Etalab / data.bretagne.bzh — Fichier consolidé des Bornes de Recharge pour Véhicules Électriques (IRVE), schéma 2.2.0",
-    "version": "2026-07",
-    "licence": "lov2",
-    "date_reference": "2026-07-28",
-    "date_publication": "2026-08-04"
-  },
-  {
-    "id": "stationnement-velo",
-    "source": "Ecolab — Nombre de places de stationnement vélo pour 1 000 hab. (hub d'indicateurs territoriaux de transition écologique ; source OSM : Base Nationale du Stationnement Cyclable)",
-    "version": "2022-2025",
-    "licence": "odbl",
-    "date_reference": "2025-01-01",
-    "date_publication": "2026-02-03"
-  },
-  {
-    "id": "cog_passage",
-    "source": "INSEE — Table de passage annuelle des communes (COG 2025) : la correspondance des codes communaux entre les millésimes 2003-2025",
-    "version": "2025",
-    "licence": "lov2",
-    "date_reference": "2025-01-01",
-    "date_publication": "2026-05-06"
-  },
-  {
     "id": "serie_historique",
     "source": "INSEE — Série historique du recensement",
     "version": "2023",
@@ -494,13 +502,5 @@
     "licence": "lov2",
     "date_reference": "2026-08-05",
     "date_publication": "2026-08-05"
-  },
-  {
-    "id": "bpe_b316",
-    "source": "INSEE — Base permanente des équipements, B316 stations-service",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-01-01",
-    "date_publication": "2026-08-18"
   }
 ]

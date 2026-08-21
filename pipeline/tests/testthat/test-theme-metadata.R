@@ -416,6 +416,20 @@ test_that("sous-groupes : la décomposition #370 — douze sous-groupes, ordre d
   }
 })
 
+test_that("Mobilité #369 places parking and fuel comparison in their semantic groups", {
+  meta <- lire_theme_metadata("mobilite")
+  groupe <- setNames(lapply(meta$subgroups, `[[`, "indicators"),
+                     vapply(meta$subgroups, `[[`, character(1), "key"))
+
+  expect_true(all(c("tot_loss_t", "tot_loss_b") %in% groupe[["acces-aux-services"]]))
+  expect_false(any(c("places_stationnement_voiture_1000",
+                     "stationnement_velo_par_voiture",
+                     "bornes_ev_par_station_service") %in% groupe[["acces-aux-services"]]))
+  expect_true(all(c("places_stationnement_voiture_1000",
+                    "stationnement_velo_par_voiture") %in% groupe[["partage-de-lespace-public"]]))
+  expect_true("bornes_ev_par_station_service" %in% groupe[["motorisation"]])
+})
+
 test_that("sous-groupes : structure-verte ne déclare AUCUNE lecture — le sous-groupe silencieux (#370)", {
   meta <- lire_theme_metadata("economie")
   structure_verte <- meta$subgroups[[2L]]

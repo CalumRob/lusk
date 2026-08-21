@@ -46,7 +46,7 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     }
   })
 
-  it('déclare 26 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
+  it('déclare 25 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
     const idsJeux = new Set(
       Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
     )
@@ -93,19 +93,23 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     )
   })
 
-  it('signale les entrées de registre sans ligne vintages en direct (dégradation autorisée)', () => {
+  it('synchronise la ligne vintage BPE B316 avec le registre et les faits éditoriaux', () => {
     const vintages = lireVintagesCommites()
-    const idsVintages = new Set(vintages.map((v) => v.id))
-    const registreSeul = Object.keys(SOURCES_METHODES).filter((id) => !idsVintages.has(id))
-
-    // BPE est documenté AVANT
-    // leur ligne vintages — la dégradation gracieuse est exercée à l'écran
-    // (faits éditoriaux rendus, dates jamais inventées) jusqu'à la publication
-    // pipeline (#369). Toute autre entrée sans ligne vintages est un signal.
-    expect(registreSeul).toEqual(['bpe_b316'])
+    const bpe = vintages.find((v) => v.id === 'bpe_b316')
+    expect(bpe).toMatchObject({
+      source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+      version: '2025',
+      licence: 'lov2',
+      date_reference: '2025-01-01',
+      date_publication: '2026-08-04',
+    })
+    expect(SOURCES_METHODES.bpe_b316).toMatchObject({
+      url: 'https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet',
+      libelle: 'Millésime 2025',
+    })
   })
 
-  it('déclare 58 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369)', () => {
+  it('déclare 57 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369)', () => {
     expect(Object.keys(SOURCES_METHODES).length).toBe(57)
   })
 

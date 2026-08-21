@@ -883,7 +883,7 @@ function lireHistoireEconomie(
   ligneIndexee: number,
   fichier: string,
 ): Histoire {
-  const { territoire, type, story_key, groupe, salience_reason } = entete
+  const { territoire, type, groupe, salience_reason } = entete
 
   // Le top-5 replié : chaque rang porte code + label (+ LQ pour la lecture de
   // spécialisation). Le premier
@@ -1057,23 +1057,22 @@ function lireHistoireMobilite(
       ligneIndexee,
       'une Story « ce-que-le-velo-preserve » sans saillance « saillant »',
     )
-    const shared = ligne['distribution_signature']
-    exiger(shared !== undefined, fichier, ligneIndexee, 'la Story vélo doit porter la signature de distribution partagée')
-    if (shared !== undefined) {
-      exiger(estObjet(shared), fichier, ligneIndexee, '« distribution_signature » doit être un objet')
-      for (const famille of ['dens', 'dec'] as const) {
-        const valeurs = (shared as LigneBrute)[famille]
-        exiger(Array.isArray(valeurs) && valeurs.length === 10, fichier, ligneIndexee, `« distribution_signature.${famille} » doit contenir 10 valeurs`)
-        for (const valeur of valeurs as unknown[]) {
-          exiger(estNombre(valeur), fichier, ligneIndexee, `« distribution_signature.${famille} » contient une valeur invalide`)
-        }
-        if (famille === 'dens') exiger((valeurs as number[]).some((valeur) => valeur > 0), fichier, ligneIndexee, '« distribution_signature.dens » doit être exploitable')
-      }
-      exiger(estNombre((shared as LigneBrute).min) && estNombre((shared as LigneBrute).max), fichier, ligneIndexee, '« distribution_signature.min/max » doit être numérique pour une Story vélo')
-      const minimum = (shared as LigneBrute).min as number
-      const maximum = (shared as LigneBrute).max as number
-      exiger(maximum >= minimum, fichier, ligneIndexee, '« distribution_signature » doit avoir un intervalle valide')
+    const dens_min = ligne['dens_min']
+    const dens_max = ligne['dens_max']
+    exiger(estNombre(dens_min), fichier, ligneIndexee, '« dens_min » doit être numérique pour une Story vélo')
+    exiger(estNombre(dens_max), fichier, ligneIndexee, '« dens_max » doit être numérique pour une Story vélo')
+    exiger((dens_max as number) >= (dens_min as number), fichier, ligneIndexee, '« dens_min/dens_max » doit avoir un intervalle valide')
+    const densites: number[] = []
+    const deciles: number[] = []
+    for (let k = 1; k <= 10; k++) {
+      const dens = ligne[`dens_${k}`]
+      const dec = ligne[`dec_${k}`]
+      exiger(estNombre(dens), fichier, ligneIndexee, `« dens_${k} » doit être numérique pour une Story vélo`)
+      exiger(estNombre(dec), fichier, ligneIndexee, `« dec_${k} » doit être numérique pour une Story vélo`)
+      densites.push(dens as number)
+      deciles.push(dec as number)
     }
+    exiger(densites.some((valeur) => valeur > 0), fichier, ligneIndexee, 'la signature plate de densité doit être exploitable')
     return {
       territoire,
       type,
@@ -1085,21 +1084,13 @@ function lireHistoireMobilite(
       div_loss_b: div_loss_b as number,
       delta: delta as number,
       pct_iso_full_t: null,
-      dens_min: null,
-      dens_max: null,
-      dens_1: null, dens_2: null, dens_3: null, dens_4: null, dens_5: null,
-      dens_6: null, dens_7: null, dens_8: null, dens_9: null, dens_10: null,
-      dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null,
-      dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null,
+      dens_min: dens_min as number,
+      dens_max: dens_max as number,
+      dens_1: densites[0], dens_2: densites[1], dens_3: densites[2], dens_4: densites[3], dens_5: densites[4],
+      dens_6: densites[5], dens_7: densites[6], dens_8: densites[7], dens_9: densites[8], dens_10: densites[9],
+      dec_1: deciles[0], dec_2: deciles[1], dec_3: deciles[2], dec_4: deciles[3], dec_5: deciles[4],
+      dec_6: deciles[5], dec_7: deciles[6], dec_8: deciles[7], dec_9: deciles[8], dec_10: deciles[9],
       classification_saillance: classification_saillance as 'saillant',
-      ...(shared ? {
-        distribution_signature: {
-          dens: (shared as LigneBrute).dens as number[],
-          dec: (shared as LigneBrute).dec as number[],
-          min: (shared as LigneBrute).min as number,
-          max: (shared as LigneBrute).max as number,
-        },
-      } : {}),
       ...estampille,
     }
   }

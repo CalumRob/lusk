@@ -334,7 +334,6 @@ export function sousGroupesPourTerritoire(
 
 /** The Mobilité distribution signature, from the row's flat bins. */
 function distributionDe(histoire: HistoireMobilite): DistributionMobilite {
-  if (histoire.distribution_signature) return histoire.distribution_signature
   return {
     dens: [
       histoire.dens_1, histoire.dens_2, histoire.dens_3, histoire.dens_4, histoire.dens_5,
