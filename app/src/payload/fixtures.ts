@@ -126,15 +126,15 @@ export const indicateursDemographieFixture: Indicateur[] = [
  * × 1000, population moyenne = (pop_prec + pop) / 2).
  */
 export const histoiresDemographieFixture: Histoire[] = [
-  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
-  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
-  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
-  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
-  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
-  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
-  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
-  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
-  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'etat-et-dynamique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
+  { territoire: '22001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 70, solde_migratoire: 30, taux_solde_naturel: 5.982905982905983, taux_solde_migratoire: 2.564102564102564, classification: 'attire-renouvelle' },
+  { territoire: '22002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -5, taux_solde_naturel: -8.080808080808081, taux_solde_migratoire: -2.02020202020202, classification: 'vide-meurt' },
+  { territoire: '29001', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 20, solde_migratoire: 380, taux_solde_naturel: 1.19047619047619, taux_solde_migratoire: 22.61904761904762, classification: 'attire-renouvelle' },
+  { territoire: '29002', type: 'commune', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: -20, solde_migratoire: -380, taux_solde_naturel: -1.041666666666667, taux_solde_migratoire: -19.79166666666667, classification: 'vide-meurt' },
+  { territoire: '200000001', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '200000002', type: 'epci', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '22', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 3.527336860670194, taux_solde_migratoire: 1.763668430335097, classification: 'attire-renouvelle' },
+  { territoire: '29', type: 'departement', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 0, solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'vide-meurt' },
+  { territoire: '53', type: 'region', theme: 'demographie', story_key: 'trajectoire-demographique', groupe: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 50, solde_migratoire: 25, taux_solde_naturel: 0.9965122072700558, taux_solde_migratoire: 0.4982561036350279, classification: 'attire-renouvelle' },
 ]
 
 /**
@@ -390,7 +390,7 @@ export const histoiresHabitatFixture: Histoire[] = [
     type: 'commune',
     theme: 'habitat',
     story_key: 'etat-energetique-du-parc',
-    groupe: 'etat-du-parc',
+    groupe: 'etat-energetique-du-parc',
     salience_reason: 'defaut',
     classification: 'parc-performant',
     part_passoires: 0.13333333333333333,
@@ -402,7 +402,7 @@ export const histoiresHabitatFixture: Histoire[] = [
     type: 'region',
     theme: 'habitat',
     story_key: 'etat-energetique-du-parc',
-    groupe: 'etat-du-parc',
+    groupe: 'etat-energetique-du-parc',
     salience_reason: 'defaut',
     classification: 'parc-intermediaire',
     part_passoires: 0.08704730274243572,
@@ -1105,7 +1105,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     label: 'Démographie',
     subgroups: [
       {
-        key: 'etat-et-dynamique',
+        key: 'trajectoire-demographique',
         label: 'État et dynamique de la population',
         framing: 'La population de la commune : sa taille, sa densité, son évolution depuis 1968 et la structure de ses ménages.',
         indicators: ['densite', 'structure_age', 'evolution_1968', 'taille_menages'],
@@ -1177,7 +1177,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     label: 'Habitat',
     subgroups: [
       {
-        key: 'etat-du-parc',
+        key: 'etat-energetique-du-parc',
         label: 'L\u2019état du parc',
         framing: 'Le parc de logements de la commune : sa composition, son statut, son âge, son type, son prix et son efficacité énergétique.',
         indicators: ['mix_logements', 'statut', 'age_du_bati', 'type', 'prix_m2', 'part_passoires', 'distribution_dpe'],

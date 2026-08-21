@@ -394,7 +394,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     // est sorti du manifeste) + les TROIS patchs correctifs M2 du run
     // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
     // l'amendement, appliquée dans #243)
-    expect(payload.vintages).toHaveLength(62)
+    expect(payload.vintages).toHaveLength(63)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:

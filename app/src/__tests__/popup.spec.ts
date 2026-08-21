@@ -30,7 +30,7 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: null,
 }
 
@@ -41,7 +41,7 @@ const coucheTauxSoldeNaturel: Couche = {
   detail: null,
   libelle: 'taux_solde_naturel',
   parDefaut: true,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: 'trajectoire-demographique',
 }
 
@@ -52,7 +52,7 @@ const coucheTrancheMoin15: Couche = {
   detail: '<15',
   libelle: 'Moins de 15 ans',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: null,
 }
 
@@ -108,7 +108,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
       detail: null,
       libelle: 'part_passoires',
       parDefaut: true,
-      sousGroupe: 'etat-du-parc',
+      sousGroupe: 'etat-energetique-du-parc',
       storyKey: 'etat-energetique-du-parc',
     }
     const payloadHabitat: Payload = {
@@ -142,7 +142,7 @@ describe("kpisPourPopup — the popup's rows (per-layer, ADR-0019)", () => {
           type: 'commune',
           theme: 'habitat',
           story_key: 'etat-energetique-du-parc',
-          groupe: 'etat-du-parc',
+          groupe: 'etat-energetique-du-parc',
           salience_reason: 'defaut',
           classification: 'parc-performant',
           part_passoires: 0.13,
