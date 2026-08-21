@@ -683,7 +683,7 @@ export interface ScalarPageMetadata {
   definition: string
   unit: string
   calculation: string
-  direction: string
+  direction: 'high' | 'low'
   caveats: string
   vintage: string
   levels: TerritoireType[]

@@ -1185,7 +1185,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
     indicator_pages: { densite: {
       indicator: 'densite', detail: null, label: 'Densité de population',
       definition: 'Nombre d’habitants par kilomètre carré.', unit: 'hab./km²',
-      calculation: 'Population municipale divisée par la superficie.', direction: 'Descriptif',
+      calculation: 'Population municipale divisée par la superficie.', direction: 'high',
       caveats: 'La superficie est celle du territoire.', vintage: 'RP 2023',
       levels: ['commune', 'epci', 'departement'],
       sources: ['serie_historique'],

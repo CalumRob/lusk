@@ -540,6 +540,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!page$indicator %in% cles_indicateurs) {
       manquer("indicator_pages", "l'indicateur n'appartient pas au registre")
     }
+    if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
+      manquer("indicator_pages.direction", "la direction doit être high ou low")
+    }
     if (is.null(page$levels) || length(page$levels) == 0L ||
         any(!page$levels %in% c("commune", "epci", "departement"))) {
       manquer("indicator_pages.levels", "les niveaux comparables sont invalides")

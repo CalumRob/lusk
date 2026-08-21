@@ -1,33 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { modeleExploration } from '../indicateurs/explorationModel'
+import { estimerDensite, modeleExploration, positionDensite } from '../indicateurs/explorationModel'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
 
 const territoires: Territoire[] = [
-  { territoire: 'a', type: 'commune', nom: 'Alpha', departement: '22', epci: 'e' },
-  { territoire: 'b', type: 'commune', nom: 'Beta', departement: '22', epci: 'e' },
-  { territoire: 'c', type: 'commune', nom: 'Gamma', departement: '29', epci: 'f' },
+  { territoire: 'a', type: 'commune', nom: 'Alpha', departement: '22', epci: 'e' }, { territoire: 'b', type: 'commune', nom: 'Beta', departement: '22', epci: 'e' }, { territoire: 'c', type: 'commune', nom: 'Gamma', departement: '29', epci: 'f' }, { territoire: 'd', type: 'commune', nom: 'Delta', departement: '29', epci: 'f' },
+  { territoire: 'e', type: 'epci', nom: 'E Bretagne', departement: null, epci: null }, { territoire: 'f', type: 'epci', nom: 'F Bretagne', departement: null, epci: null },
+  { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: null, epci: null }, { territoire: '29', type: 'departement', nom: 'Finistère', departement: null, epci: null },
 ]
-const facts = (id: string, value: number): Indicateur => ({ territoire: id, type: 'commune', theme: 'demographie', key: 'densite', detail: null, value, unit: 'hab./km²', rang_epci: null, rang_dep: null, rang_reg: null, rang_epci_n: null, rang_dep_n: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2024-01-01' })
+const facts = (id: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ territoire: id, type, theme: 'demographie', key: 'densite', detail: null, value, unit: 'hab./km²', rang_epci: null, rang_dep: null, rang_reg: null, rang_epci_n: null, rang_dep_n: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2024-01-01' })
 
 describe('modèle pur de Page d’indicateur', () => {
-  it('normalise le niveau, scope les pairs et conserve les égalités', () => {
-    const result = modeleExploration([facts('a', 10), facts('b', 10), facts('c', 20)], metadonneesThemesFixtures.demographie, territoires, { niveau: 'commune', departement: '22' })
-    expect(result.state.niveau).toBe('commune')
-    expect(result.rows.map((row) => row.territoire.nom)).toEqual(['Alpha', 'Beta'])
-    expect(result.median).toBe(10)
-    expect(result.high).toHaveLength(2)
-    expect(result.low).toHaveLength(2)
-  })
-  it('gives explicit URL state precedence over remembered level', () => {
-    const result = modeleExploration([facts('a', 10)], metadonneesThemesFixtures.demographie, territoires, { niveau: 'commune' }, 'departement')
-    expect(result.state.niveau).toBe('commune')
-  })
-  it('uses the arithmetic median for even samples and direction-aware competition ranks', () => {
-    const meta = structuredClone(metadonneesThemesFixtures.demographie)
-    meta.indicator_pages!.densite.direction = 'moins = mieux'
-    const result = modeleExploration([facts('a', 10), facts('b', 20), facts('c', 30)], meta, territoires, { niveau: 'commune' })
-    expect(result.median).toBe(20)
-    expect(result.rows.map((row) => row.rang)).toEqual([3, 2, 1])
-  })
+  it('keeps Bretagne EPCI and département scopes populated', () => { const result = modeleExploration([facts('e', 10, 'epci'), facts('f', 20, 'epci')], metadonneesThemesFixtures.demographie, territoires, { niveau: 'epci' }, undefined, 'densite'); expect(result.rows).toHaveLength(2); const dep = modeleExploration([facts('22', 10, 'departement'), facts('29', 20, 'departement')], metadonneesThemesFixtures.demographie, territoires, { niveau: 'departement' }, undefined, 'densite'); expect(dep.rows).toHaveLength(2) })
+  it('filters communes and removes incompatible scope state at other levels', () => { const metadata = metadonneesThemesFixtures.demographie; const factsAll = [facts('a', 10), facts('b', 20), facts('c', 30)]; expect(modeleExploration(factsAll, metadata, territoires, { niveau: 'commune', departement: '22' }, undefined, 'densite').rows).toHaveLength(2); const result = modeleExploration([facts('e', 10, 'epci')], metadata, territoires, { niveau: 'epci', departement: '22', epci: 'e' }, undefined, 'densite'); expect(result.state.departement).toBeUndefined(); expect(result.state.epci).toBeUndefined() })
+  it('computes a true even median and typed high/low ranks with ties', () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.direction = 'low'; const result = modeleExploration([facts('a', 10), facts('b', 10), facts('c', 30), facts('d', 40)], metadata, territoires, { niveau: 'commune' }, undefined, 'densite'); expect(result.median).toBe(20); expect(result.direction).toBe('low'); expect(result.rows.map((row) => row.rang)).toEqual([4, 3, 1, 1]) })
+  it('samples a finite KDE on a value-domain grid and positions selections', () => { const density = estimerDensite([10, 20, 30]); expect(density).toHaveLength(64); expect(density.every((point) => Number.isFinite(point.x) && Number.isFinite(point.density) && point.density >= 0)).toBe(true); expect(new Set(density.map((point) => point.x)).size).toBe(64); expect(positionDensite(density, 20)).toBeCloseTo(50); expect(estimerDensite([2, 2])[0].x).toBe(2) })
+  it('presents ties as counts, unique extremes as linkable rows, and handles null/empty/zero/highlight exclusion', () => { const metadata = metadonneesThemesFixtures.demographie; const tied = modeleExploration([facts('a', 0), facts('b', 0), facts('c', null)], metadata, territoires, { niveau: 'commune', territoire: 'c' }, undefined, 'densite'); expect(tied.high.count).toBe(2); expect(tied.high.rows).toHaveLength(0); expect(tied.median).toBe(0); expect(tied.markerX).toBeNull(); const empty = modeleExploration([], metadata, territoires, { niveau: 'commune' }, undefined, 'densite'); expect(empty.rows).toHaveLength(0); expect(empty.median).toBeNull() })
 })

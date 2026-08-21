@@ -2000,13 +2000,14 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(indicator_keys.includes(key) && estObjet(raw), fichier, 0, `« indicator_pages.${key} » doit référencer un indicateur publié`)
       const page = raw as LigneBrute
       exiger(page['indicator'] === key, fichier, 0, `« indicator_pages.${key}.indicator » doit correspondre à sa clé`)
+      exiger(page['direction'] === 'high' || page['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.direction » doit être high ou low`)
       for (const champ of ['label', 'definition', 'unit', 'calculation', 'direction', 'caveats', 'vintage']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
       const detail = page['detail']; exiger(detail === undefined || detail === null || estChaine(detail), fichier, 0, `« indicator_pages.${key}.detail » doit être une chaîne ou null`)
       exiger(Array.isArray(page['levels']) && page['levels'].length > 0 && new Set(page['levels'] as unknown[]).size === (page['levels'] as unknown[]).length && (page['levels'] as unknown[]).every((x) => x === 'commune' || x === 'epci' || x === 'departement'), fichier, 0, `« indicator_pages.${key}.levels » est invalide`)
       exiger(Array.isArray(page['sources']) && page['sources'].length > 0 && (page['sources'] as unknown[]).every((source) => estChaine(source) && source.length > 0), fichier, 0, `« indicator_pages.${key}.sources » est vide ou invalide`)
       const sources = page['sources'] as string[]
       if (meta['source_records'] !== undefined) for (const source of sources) { const record = estObjet(meta['source_records']) ? (meta['source_records'] as LigneBrute)[source] : undefined; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as string, caveats: page['caveats'] as string, vintage: page['vintage'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources }
+      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, vintage: page['vintage'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources }
     }
   }
 

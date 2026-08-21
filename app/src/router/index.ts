@@ -86,4 +86,13 @@ const router = createRouter({
   routes,
 })
 
+router.beforeEach((to) => {
+  if (to.name === 'indicateur' && to.query.vue !== undefined && to.query.vue !== 'carte' && to.query.vue !== 'indicateur') {
+    const query = { ...to.query }
+    delete query.vue
+    return { ...to, query }
+  }
+  return true
+})
+
 export default router
