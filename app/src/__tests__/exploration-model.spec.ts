@@ -23,4 +23,11 @@ describe('modèle pur de Page d’indicateur', () => {
     const result = modeleExploration([facts('a', 10)], metadonneesThemesFixtures.demographie, territoires, { niveau: 'commune' }, 'departement')
     expect(result.state.niveau).toBe('commune')
   })
+  it('uses the arithmetic median for even samples and direction-aware competition ranks', () => {
+    const meta = structuredClone(metadonneesThemesFixtures.demographie)
+    meta.indicator_pages!.densite.direction = 'moins = mieux'
+    const result = modeleExploration([facts('a', 10), facts('b', 20), facts('c', 30)], meta, territoires, { niveau: 'commune' })
+    expect(result.median).toBe(20)
+    expect(result.rows.map((row) => row.rang)).toEqual([3, 2, 1])
+  })
 })
