@@ -2072,9 +2072,22 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
          if (candidate !== extensionKey && page[candidate] !== undefined) exiger(false, fichier, 0, `« indicator_pages.${key}.${candidate} » ne correspond pas à la famille déclarée`)
        }
        if (family !== 'scalar') exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
-        if (extension !== undefined) {
+         if (extension !== undefined) {
          exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
-         for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
+          for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
+          if (family === 'composition' || family === 'pyramid') {
+            const declared = extension[family === 'composition' ? 'parts' : 'dimensions'] as unknown[]
+            const labels = detail_labels[key] ?? {}
+            if (family === 'composition' && Object.keys(labels).length > 0) {
+              exiger(declared.every((value) => Object.prototype.hasOwnProperty.call(labels, value as PropertyKey)), fichier, 0, `« indicator_pages.${key}.${extensionKey} » référence un détail sans libellé canonical`)
+            } else if (family === 'pyramid' && Object.keys(labels).length > 0) {
+              exiger(declared.includes('detail') && declared.includes('sex'), fichier, 0, `« indicator_pages.${key}.pyramid » doit déclarer detail et sex`)
+            }
+            if (comparison !== undefined && comparison['details'] !== undefined) {
+              exiger(Array.isArray(comparison['details']) && declared.filter((value) => Object.prototype.hasOwnProperty.call(labels, value as PropertyKey)).every((value) => (comparison['details'] as unknown[]).includes(value)), fichier, 0, `« indicator_pages.${key}.comparison.details » ne couvre pas les détails déclarés`)
+            }
+             if (family === 'pyramid' && Object.keys(labels).length > 0) exiger(comparison !== undefined && Array.isArray(comparison['sexes']) && (comparison['sexes'] as unknown[]).length > 0, fichier, 0, `« indicator_pages.${key}.comparison.sex » est requis pour une pyramide`)
+          }
          if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
         }
         const assertNever = (value: never): never => { throw new Error(`Famille de figure non implémentée : ${String(value)}`) }

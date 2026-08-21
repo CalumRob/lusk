@@ -449,6 +449,10 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     # composition remains visible.  The shape is shared with the TS validator.
     comparaison <- groupe$figure$comparison
     if (!is.null(comparaison)) {
+      palette <- if ("palette" %in% names(comparaison)) comparaison[["palette"]] else NULL
+      if (!is.null(palette) && !is.na(palette) && !identical(palette, "theme") && !identical(palette, "dpe")) {
+        manquer("figure.comparison", paste0("« ", cle, " » : palette doit être theme ou dpe"))
+      }
       if (!est_liste(comparaison) || !"detail" %in% names(comparaison) ||
           !(is.null(comparaison$detail) || est_chaine_non_vide(comparaison$detail))) {
         manquer("figure.comparison", paste0("« ", cle, " » : detail doit être une chaîne ou NULL"))
@@ -460,10 +464,6 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       }
       if (!identical(famille, "composition")) {
         manquer("figure.comparison", paste0("« ", cle, " » : comparison est réservé à composition"))
-      }
-      palette <- if ("palette" %in% names(comparaison)) comparaison[["palette"]] else NULL
-      if (!is.null(palette) && !is.na(palette) && !identical(palette, "theme") && !identical(palette, "dpe")) {
-        manquer("figure.comparison", paste0("« ", cle, " » : palette doit être theme ou dpe"))
       }
       detail_comparaison <- comparaison[["detail"]]
       details_figure <- metadata$detail_labels[[indicateur_figure]]
@@ -664,7 +664,10 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.null(comparison$indicator) && !est_chaine_non_vide(comparison$indicator)) manquer("indicator_pages.comparison.indicator", "l'indicateur est invalide")
       if (!is.null(comparison$indicator) && !comparison$indicator %in% cles_indicateurs) manquer("indicator_pages.comparison.indicator", "l'indicateur est inconnu")
       for (champ in c("details", "sexes", "dimensions")) {
-        if (!is.null(comparison[[champ]]) && (!is.character(comparison[[champ]]) || !length(comparison[[champ]]) || any(!vapply(comparison[[champ]], est_chaine_non_vide, logical(1L))) || anyDuplicated(comparison[[champ]]))) manquer(paste0("indicator_pages.comparison.", champ), "les valeurs doivent être une liste non vide de chaînes distinctes")
+        if (!is.null(comparison[[champ]])) {
+          valeurs <- unlist(comparison[[champ]], use.names = FALSE)
+          if (!is.character(valeurs) || !length(valeurs) || any(!vapply(valeurs, est_chaine_non_vide, logical(1L))) || anyDuplicated(valeurs)) manquer(paste0("indicator_pages.comparison.", champ), "les valeurs doivent être une liste non vide de chaînes distinctes")
+        }
       }
       if (!is.null(comparison$sexes) && !all(comparison$sexes %in% c("F", "M"))) manquer("indicator_pages.comparison.sexes", "le sexe doit être F ou M")
       if (!is.null(comparison$detail) && !is.null(comparison$details) && !comparison$detail %in% comparison$details) manquer("indicator_pages.comparison.detail", "le détail n'est pas déclaré dans details")
@@ -688,8 +691,17 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")
       for (champ in if (is.null(extensions[[famille]])) character() else extensions[[famille]]) {
         valeur <- extension[[champ]]
-        ok <- if (is.character(valeur)) length(valeur) > 0L && all(vapply(valeur, est_chaine_non_vide, logical(1L))) else est_chaine_non_vide(valeur)
+        valeurs <- if (is.character(valeur) || is.list(valeur)) unlist(valeur, use.names = FALSE) else valeur
+        ok <- if (is.character(valeurs)) length(valeurs) > 0L && all(vapply(valeurs, est_chaine_non_vide, logical(1L))) else est_chaine_non_vide(valeurs)
         if (!ok) manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ), "le champ est incomplet")
+      }
+      if (famille %in% c("composition", "pyramid")) {
+        declarees <- extension[[if (famille == "composition") "parts" else "dimensions"]]
+        labels <- if (is.null(metadata$detail_labels[[indicator_key]])) list() else metadata$detail_labels[[indicator_key]]
+        if (famille == "composition" && any(!vapply(declarees, function(x) !is.null(labels[[x]]), logical(1)))) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "une part ne possède pas de libellé canonical")
+        if (famille == "pyramid" && !all(c("detail", "sex") %in% declarees)) manquer(paste0("indicator_pages.", indicator_key, ".pyramid"), "detail et sex sont requis")
+        if (!is.null(comparison) && !is.null(comparison$details) && any(!declarees[declarees %in% names(labels)] %in% comparison$details)) manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"), "les détails déclarés ne sont pas couverts")
+        if (famille == "pyramid" && (is.null(comparison$sexes) || !length(comparison$sexes))) manquer(paste0("indicator_pages.", indicator_key, ".comparison.sex"), "le sexe est requis pour une pyramide")
       }
       if (famille == "relationship") {
         if (!is.list(extension$roles) || !est_chaine_non_vide(extension$roles$x) || !est_chaine_non_vide(extension$roles$y) || !est_chaine_non_vide(extension$measure)) manquer("indicator_pages.relationship", "roles et measure sont requis")

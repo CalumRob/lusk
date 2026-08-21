@@ -27,4 +27,24 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
       }
     }
   })
+
+  it('publie les sept pages conceptuelles composition/pyramide du périmètre #403', () => {
+    const expected = {
+      demographie: { structure_age: 'pyramid' },
+      habitat: { mix_logements: 'composition', statut: 'composition', age_du_bati: 'composition', type: 'composition' },
+      mobilite: { voitures_menage: 'composition', offre_cyclable: 'composition' },
+    } as const
+    for (const [theme, pages] of Object.entries(expected)) {
+      const metadata = lire(canonicalDir, theme) as { indicator_pages: Record<string, { family: string; sources: string[]; comparison?: { details?: string[]; sex?: string }; composition?: { parts: string[] }; pyramid?: { dimensions: string[] } }> }
+      for (const [indicator, family] of Object.entries(pages)) {
+        const page = metadata.indicator_pages[indicator]
+        expect(page, `${theme}.${indicator}`).toBeDefined()
+        expect(page.family).toBe(family)
+        expect(page.sources.length).toBeGreaterThan(0)
+        expect(page.comparison?.details?.length ?? page.pyramid?.dimensions.length).toBeGreaterThan(0)
+        if (family === 'composition') expect(page.composition?.parts.length).toBeGreaterThan(0)
+        if (family === 'pyramid') expect(page.comparison?.sex).toMatch(/^[FM]$/)
+      }
+    }
+  })
 })

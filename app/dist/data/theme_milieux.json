@@ -6,37 +6,93 @@
       "key": "artificialisation",
       "label": "L’artificialisation",
       "framing": "La consommation de la terre par l’urbanisation : l’état artificialisé et le flux annuel.",
-      "indicators": ["artif_par_habitant", "conso_enaf_annuel"],
+      "indicators": [
+        "artif_par_habitant",
+        "conso_enaf_annuel"
+      ],
       "figure": {
-        "family": "comparison-bars",
+        "family": "trajectory",
         "indicator": "artif_par_habitant"
       },
       "reading": {
         "story_key": "se-densifier-setaler-ou-sen-aller",
-        "params": ["periode_pop", "periode_artif", "delta_population", "trajectoire_artif_par_habitant", "classification"],
+        "params": [
+          "periode_pop",
+          "periode_artif",
+          "delta_population",
+          "trajectoire_artif_par_habitant",
+          "classification"
+        ],
         "template": [
-          { "type": "text", "content": "Entre " },
-          { "type": "param", "key": "periode_pop" },
-          { "type": "text", "content": " et " },
-          { "type": "param", "key": "periode_artif" },
-          { "type": "text", "content": ", " },
-          { "type": "territoire" },
-          { "type": "text", "content": " " },
-          { "type": "strong", "children": [
-            { "type": "param", "key": "classification" }
-          ] },
-          { "type": "text", "content": " (trajectoire " },
-          { "type": "param", "key": "trajectoire_artif_par_habitant" },
-          { "type": "text", "content": " par habitant). " },
-          { "type": "link", "href": "/methodologie#milieux", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
-          ] }
+          {
+            "type": "text",
+            "content": "Entre "
+          },
+          {
+            "type": "param",
+            "key": "periode_pop"
+          },
+          {
+            "type": "text",
+            "content": " et "
+          },
+          {
+            "type": "param",
+            "key": "periode_artif"
+          },
+          {
+            "type": "text",
+            "content": ", "
+          },
+          {
+            "type": "territoire"
+          },
+          {
+            "type": "text",
+            "content": " "
+          },
+          {
+            "type": "strong",
+            "children": [
+              {
+                "type": "param",
+                "key": "classification"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "content": " (trajectoire "
+          },
+          {
+            "type": "param",
+            "key": "trajectoire_artif_par_habitant"
+          },
+          {
+            "type": "text",
+            "content": " par habitant). "
+          },
+          {
+            "type": "link",
+            "href": "/methodologie#milieux",
+            "children": [
+              {
+                "type": "text",
+                "content": "Sources et méthodes"
+              }
+            ]
+          }
         ]
       }
     }
   ],
-  "indicator_keys": ["artif_par_habitant", "conso_enaf_annuel"],
-  "story_keys": ["se-densifier-setaler-ou-sen-aller"],
+  "indicator_keys": [
+    "artif_par_habitant",
+    "conso_enaf_annuel"
+  ],
+  "story_keys": [
+    "se-densifier-setaler-ou-sen-aller"
+  ],
   "sources": {
     "artif_par_habitant": "ocsge_artificialisation_22_2025",
     "conso_enaf_annuel": "consoenaf"
@@ -85,12 +141,5 @@
     "grandir-en-setalant": "grandit en s'étalant",
     "sen-aller-et-consommer-quand-meme": "se vide, et consomme quand même",
     "les-departs-laissent-la-place-a-la-renaturation": "se vide, laissant la place à la renaturation"
-  },
-  "source_records": {
-    "serie_historique": { "dataset": "INSEE — Série historique du recensement", "publisher": "INSEE", "url": "https://www.data.gouv.fr/datasets/serie-historique-du-recensement-de-la-population", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "serie_historique", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }], "clocks": [{ "name": "Population", "frequency": "au rythme des recensements", "reference": "RP 2017 et 2023 (fenêtre dérivée)", "trigger": "Quand l’INSEE publie un nouveau recensement, la fenêtre glisse." }] },
-    "consoenaf": { "dataset": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025", "publisher": "Cerema", "url": "https://www.data.gouv.fr/datasets/consommation-despaces-naturels-agricoles-et-forestiers-du-1er-janvier-2011-au-1er-janvier-2025", "licence": "Licence Ouverte 2.0", "vintage": "2025", "freshness": "24 juillet 2026", "vintages": [{ "id": "consoenaf", "label": "Millésime 2025", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-01-01", "datePublication": "2026-07-24" }], "clocks": [{ "name": "Consommation d’ENAF", "frequency": "annuelle — le jeu est mis à jour chaque année", "reference": "CONSOENAF 2011-2025 (COG 2025)", "trigger": "La série suit l’horloge annuelle CONSOENAF." }] },
-    "ocsge_artificialisation_22_2025": { "dataset": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)", "publisher": "IGN", "url": "https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION", "licence": "Licence Ouverte 2.0", "vintage": "M2–M3", "freshness": "millésimes départementaux", "vintages": [
-      { "id": "ocsge_artificialisation_22_2021", "label": "Millésime 2021 · Côtes-d’Armor (22)", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-01-01", "datePublication": "2025-09-12" }, { "id": "ocsge_artificialisation_22_2025", "label": "Millésime 2025 · Côtes-d’Armor (22)", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-01-01", "datePublication": "2026-07-03" }, { "id": "ocsge_artificialisation_29_2021", "label": "Millésime 2021 · Finistère (29)", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-01-01", "datePublication": "2025-09-12" }, { "id": "ocsge_artificialisation_29_2024", "label": "Millésime 2024 · Finistère (29)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-07-03" }, { "id": "ocsge_artificialisation_35_2020", "label": "Millésime 2020 · Ille-et-Vilaine (35)", "version": "2020", "licence": "Licence Ouverte 2.0", "dateReference": "2020-01-01", "datePublication": "2025-09-12" }, { "id": "ocsge_artificialisation_35_2023", "label": "Millésime 2023 · Ille-et-Vilaine (35)", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-07-03" }, { "id": "ocsge_artificialisation_56_2022", "label": "Millésime 2022 · Morbihan (56)", "version": "2022", "licence": "Licence Ouverte 2.0", "dateReference": "2022-01-01", "datePublication": "2025-09-12" }, { "id": "ocsge_artificialisation_56_2024", "label": "Millésime 2024 · Morbihan (56)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-07-03" }, { "id": "ocsge_patch_correctif_22", "label": "Patch correctif — Côtes-d’Armor (22), millésime corrigé 2021", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-01-01", "datePublication": "2026-07-03" }, { "id": "ocsge_patch_correctif_29", "label": "Patch correctif — Finistère (29), millésime corrigé 2021", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-01-01", "datePublication": "2026-07-03" }, { "id": "ocsge_patch_correctif_56", "label": "Patch correctif — Morbihan (56), millésime corrigé 2022", "version": "2022", "licence": "Licence Ouverte 2.0", "dateReference": "2022-01-01", "datePublication": "2026-07-03" }
-    ], "clocks": [{ "name": "État artificialisé", "frequency": "triennal — au rythme des prises de vue aériennes de l’IGN", "reference": "M2→M3 par département (22 : 2021→2025 · 29 : 2021→2024 · 35 : 2020→2023 · 56 : 2022→2024)", "trigger": "Quand l’IGN publie un nouveau millésime OCS-GE, la fenêtre des états glisse." }] }
   }
 }

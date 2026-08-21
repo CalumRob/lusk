@@ -3,56 +3,89 @@
   "label": "Habitat",
   "subgroups": [
     {
-      "key": "composition-du-parc",
-      "label": "La composition du parc",
-      "framing": "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type.",
-      "indicators": ["mix_logements", "statut", "type"],
-      "figure": {
-        "family": "composition",
-        "indicator": "mix_logements"
-      }
-    },
-    {
-      "key": "etat-energetique-du-parc",
-      "label": "L’état énergétique du parc",
-      "framing": "L’état énergétique du parc : la distribution des étiquettes DPE, la part de passoires thermiques et l’âge du bâti.",
-      "indicators": ["distribution_dpe", "part_passoires", "age_du_bati"],
+      "key": "etat-du-parc",
+      "label": "L’état du parc",
+      "framing": "Le parc de logements de la commune : sa composition, son statut, son âge, son type, son prix et son efficacité énergétique.",
+      "indicators": [
+        "mix_logements",
+        "statut",
+        "age_du_bati",
+        "type",
+        "prix_m2",
+        "part_passoires",
+        "distribution_dpe"
+      ],
       "figure": {
         "family": "composition",
         "indicator": "distribution_dpe"
       },
       "reading": {
         "story_key": "etat-energetique-du-parc",
-        "params": ["classification", "part_passoires", "part_abc", "n_dpe"],
+        "params": [
+          "classification",
+          "part_passoires",
+          "part_abc",
+          "n_dpe"
+        ],
         "template": [
-          { "type": "text", "content": "Le parc de " },
-          { "type": "territoire" },
-          { "type": "text", "content": " est " },
-          { "type": "strong", "children": [
-            { "type": "param", "key": "classification" }
-          ] },
-          { "type": "text", "content": " : " },
-          { "type": "param", "key": "part_passoires" },
-          { "type": "text", "content": " de passoires thermiques. " },
-          { "type": "link", "href": "/methodologie#habitat", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
-          ] }
+          {
+            "type": "text",
+            "content": "Le parc de "
+          },
+          {
+            "type": "territoire"
+          },
+          {
+            "type": "text",
+            "content": " est "
+          },
+          {
+            "type": "strong",
+            "children": [
+              {
+                "type": "param",
+                "key": "classification"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "content": " : "
+          },
+          {
+            "type": "param",
+            "key": "part_passoires"
+          },
+          {
+            "type": "text",
+            "content": " de passoires thermiques. "
+          },
+          {
+            "type": "link",
+            "href": "/methodologie#habitat",
+            "children": [
+              {
+                "type": "text",
+                "content": "Sources et méthodes"
+              }
+            ]
+          }
         ]
-      }
-    },
-    {
-      "key": "marche",
-      "label": "Le marché",
-      "framing": "Le marché immobilier de la commune : la médiane du prix au m² des ventes.",
-      "indicators": ["prix_m2"],
-      "figure": {
-        "family": "trajectory",
-        "indicator": "prix_m2"
       }
     }
   ],
-  "indicator_keys": ["mix_logements", "statut", "age_du_bati", "type", "prix_m2", "part_passoires", "distribution_dpe"],
-  "story_keys": ["etat-energetique-du-parc"],
+  "indicator_keys": [
+    "mix_logements",
+    "statut",
+    "age_du_bati",
+    "type",
+    "prix_m2",
+    "part_passoires",
+    "distribution_dpe"
+  ],
+  "story_keys": [
+    "etat-energetique-du-parc"
+  ],
   "sources": {
     "mix_logements": "logements",
     "statut": "logements",
@@ -123,17 +156,5 @@
     "parc-intermediaire": "intermédiaire",
     "passoire-energetique": "une passoire énergétique",
     "parc-heterogene": "hétérogène"
-  },
-  "indicator_caveats": { "prix_m2": "Non publié quand les ventes sont trop peu nombreuses pour être représentatives.", "part_passoires": "La base DPE surreprésente les logements vendus ou loués ; non publié sous 30 logements.", "distribution_dpe": "Les réformes de 2024 et 2026 rendent les diagnostics récents moins directement comparables." },
-  "source_records": {
-    "logements": { "dataset": "INSEE — Logements (dossier complet)", "publisher": "INSEE", "url": "https://www.data.gouv.fr/datasets/logements-principaux-indicateurs-dossier-complet", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "logements", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }] },
-    "dvf_2025_dep22": { "dataset": "Étalab — DVF géolocalisées", "publisher": "Étalab", "url": "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees", "licence": "Licence Ouverte 2.0", "vintage": "2021–2025", "freshness": "18 mai 2026", "vintages": [
-      { "id": "dvf_2021_dep22", "label": "Millésime 2021 · Côtes-d’Armor (22)", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2021_dep29", "label": "Millésime 2021 · Finistère (29)", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2021_dep35", "label": "Millésime 2021 · Ille-et-Vilaine (35)", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2021_dep56", "label": "Millésime 2021 · Morbihan (56)", "version": "2021", "licence": "Licence Ouverte 2.0", "dateReference": "2021-12-31", "datePublication": "2026-05-18" },
-      { "id": "dvf_2022_dep22", "label": "Millésime 2022 · Côtes-d’Armor (22)", "version": "2022", "licence": "Licence Ouverte 2.0", "dateReference": "2022-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2022_dep29", "label": "Millésime 2022 · Finistère (29)", "version": "2022", "licence": "Licence Ouverte 2.0", "dateReference": "2022-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2022_dep35", "label": "Millésime 2022 · Ille-et-Vilaine (35)", "version": "2022", "licence": "Licence Ouverte 2.0", "dateReference": "2022-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2022_dep56", "label": "Millésime 2022 · Morbihan (56)", "version": "2022", "licence": "Licence Ouverte 2.0", "dateReference": "2022-12-31", "datePublication": "2026-05-18" },
-      { "id": "dvf_2023_dep22", "label": "Millésime 2023 · Côtes-d’Armor (22)", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2023_dep29", "label": "Millésime 2023 · Finistère (29)", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2023_dep35", "label": "Millésime 2023 · Ille-et-Vilaine (35)", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2023_dep56", "label": "Millésime 2023 · Morbihan (56)", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-12-31", "datePublication": "2026-05-18" },
-      { "id": "dvf_2024_dep22", "label": "Millésime 2024 · Côtes-d’Armor (22)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2024_dep29", "label": "Millésime 2024 · Finistère (29)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2024_dep35", "label": "Millésime 2024 · Ille-et-Vilaine (35)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2024_dep56", "label": "Millésime 2024 · Morbihan (56)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-12-31", "datePublication": "2026-05-18" },
-      { "id": "dvf_2025_dep22", "label": "Millésime 2025 · Côtes-d’Armor (22)", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2025_dep29", "label": "Millésime 2025 · Finistère (29)", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2025_dep35", "label": "Millésime 2025 · Ille-et-Vilaine (35)", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-12-31", "datePublication": "2026-05-18" }, { "id": "dvf_2025_dep56", "label": "Millésime 2025 · Morbihan (56)", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-12-31", "datePublication": "2026-05-18" }
-    ] },
-    "dpe_22": { "dataset": "ADEME — Observatoire DPE, logements existants", "publisher": "ADEME", "url": "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant", "licence": "Licence Ouverte 2.0", "vintage": "2024", "freshness": "6 août 2026", "vintages": [{ "id": "dpe_22", "label": "Côtes-d’Armor (22)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-08-06" }, { "id": "dpe_29", "label": "Finistère (29)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-08-06" }, { "id": "dpe_35", "label": "Ille-et-Vilaine (35)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-08-06" }, { "id": "dpe_56", "label": "Morbihan (56)", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-08-06" }] }
   }
 }
