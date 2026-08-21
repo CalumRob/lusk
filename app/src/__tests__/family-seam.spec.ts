@@ -14,7 +14,7 @@ describe('seam des familles de Repères', () => {
   it.each([
     ['scalar', 'scalar'], ['trajectory', 'trajectory'], ['composition', 'composition'],
     ['distribution', 'distribution'], ['list', 'list'], ['relationship', 'relationship'],
-    ['profile', 'profile'], ['pyramid', 'pyramid'], ['comparison-bars', 'comparison-bars'],
+    ['pyramid', 'pyramid'], ['comparison-bars', 'comparison-bars'],
   ] as const)('dispatches %s through one renderer identity', (family, renderer) => {
     const page = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, family, indicator: `fixture_${family}` }
     const result = dispatchIndicatorFamily(page, {})

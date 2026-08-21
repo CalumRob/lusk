@@ -2054,6 +2054,14 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
        const validatedPage = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources } as IndicatorPageMetadata
        if (page['family'] !== undefined) validatedPage.family = family as IndicatorPageMetadata['family']
        if (comparison !== undefined) validatedPage.comparison = comparison as IndicatorPageMetadata['comparison']
+       const extensionFields: Record<string, string[]> = { trajectory: ['endpoints'], composition: ['parts'], distribution: ['signature', 'summary'], list: ['categories'], pyramid: ['dimensions'], 'comparison-bars': ['series'] }
+       const extension = page[family as string]
+       if (extension !== undefined) {
+         exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
+         for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaine(value)) : estChaine(extension[field]), fichier, 0, `« indicator_pages.${key}.${family}.${field} » est incomplet`)
+         if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaine(extension['roles']['x']) && estChaine(extension['roles']['y']) && estChaine(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
+         ;(validatedPage as unknown as Record<string, unknown>)[family as string] = extension
+       }
        indicator_pages[key] = validatedPage
     }
   }

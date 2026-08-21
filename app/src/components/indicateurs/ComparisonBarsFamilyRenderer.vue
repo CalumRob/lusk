@@ -1,2 +1,2 @@
 <script setup lang="ts">import type { FamilyDispatch } from '@/indicateurs/familySeam'; defineProps<{ dispatch: FamilyDispatch }>()</script>
-<template><div class="family-renderer" data-renderer="comparison-bars"><p>Barres de comparaison — composition spécialisée.</p></div></template>
+<template><div class="family-renderer" data-renderer="comparison-bars" :data-state="dispatch.status" aria-label="Repères en barres de comparaison"><p>Barres de comparaison · {{ dispatch.representation.rows.length }} séries · {{ dispatch.facet.unit }}</p></div></template>

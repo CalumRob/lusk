@@ -4,13 +4,12 @@ import ScalarFamilyRenderer from './ScalarFamilyRenderer.vue'
 import TrajectoryFamilyRenderer from './TrajectoryFamilyRenderer.vue'
 import CompositionFamilyRenderer from './CompositionFamilyRenderer.vue'
 import DistributionFamilyRenderer from './DistributionFamilyRenderer.vue'
-import ProfileFamilyRenderer from './ProfileFamilyRenderer.vue'
 import ListFamilyRenderer from './ListFamilyRenderer.vue'
 import RelationshipFamilyRenderer from './RelationshipFamilyRenderer.vue'
 import PyramidFamilyRenderer from './PyramidFamilyRenderer.vue'
 import ComparisonBarsFamilyRenderer from './ComparisonBarsFamilyRenderer.vue'
 defineProps<{ dispatch: FamilyDispatch }>()
-const renderers = { ScalarFamilyRenderer, TrajectoryFamilyRenderer, CompositionFamilyRenderer, DistributionFamilyRenderer, ProfileFamilyRenderer, ListFamilyRenderer, RelationshipFamilyRenderer, PyramidFamilyRenderer, ComparisonBarsFamilyRenderer }
+const renderers = { ScalarFamilyRenderer, TrajectoryFamilyRenderer, CompositionFamilyRenderer, DistributionFamilyRenderer, ListFamilyRenderer, RelationshipFamilyRenderer, PyramidFamilyRenderer, ComparisonBarsFamilyRenderer }
 </script>
 <template>
   <section class="repere-family-outlet" :data-family="dispatch.family" :data-renderer="dispatch.renderer">

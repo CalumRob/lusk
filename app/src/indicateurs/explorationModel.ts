@@ -1,5 +1,4 @@
-import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata } from '@/payload/types'
-import { normalizeComparisonFacet } from './familySeam'
+import type { Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
 
 export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
@@ -15,15 +14,7 @@ export interface ModeleExploration { state: Required<Pick<EtatExploration, 'nive
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
 
-export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload
-export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload
-export function payloadPourCarte(payload: Payload, facetOrTheme: ComparisonFacet | Theme, indicatorOrNiveau: string | NiveauIndicateur, niveauOrDepartement?: NiveauIndicateur | string, departementOrEpci?: string, epciLegacy?: string): Payload {
-  const facet = typeof facetOrTheme === 'string'
-    ? { theme: facetOrTheme, indicator: indicatorOrNiveau as string, detail: null, sex: null, dimension: null, direction: 'high' as const, unit: '', labels: {}, url: '', valid: true }
-    : facetOrTheme
-  const niveau = typeof facetOrTheme === 'string' ? niveauOrDepartement as NiveauIndicateur : indicatorOrNiveau as NiveauIndicateur
-  const departement = typeof facetOrTheme === 'string' ? departementOrEpci : niveauOrDepartement as string | undefined
-  const epci = typeof facetOrTheme === 'string' ? epciLegacy : departementOrEpci
+export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload {
   const ids = new Set(payload.territoires.filter((territory) => territory.type === niveau && (niveau !== 'commune' || ((!departement || territory.departement === departement) && (!epci || territory.epci === epci)))).map((territory) => territory.territoire))
   return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension) && fact.type === niveau && ids.has(fact.territoire)) }
 }
@@ -62,21 +53,18 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
   return before.y + (after.y - before.y) * fraction
 }
 
-export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeMetadata, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string, indicator?: string): ModeleExploration {
-  const page = metadata.indicator_pages?.[indicator ?? facts[0]?.key ?? '']
-  if (!page) throw new Error(`Indicateur non publié pour le thème « ${metadata.theme} »`)
-  const facet = normalizeComparisonFacet(page, requested)
-  const supported = page.levels.filter((level): level is NiveauIndicateur => niveaux.includes(level as NiveauIndicateur))
+export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
+  const supported = facet.levels.filter((level): level is NiveauIndicateur => niveaux.includes(level as NiveauIndicateur))
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
   const values = all.map((row) => row.value).sort((a, b) => a - b)
   const median = values.length % 2 ? values[(values.length - 1) / 2] : values.length ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 : null
   const ranked = [...all].sort((a, b) => facet.direction === 'low' ? a.value - b.value : b.value - a.value)
   const ranks = new Map<string, number>()
   ranked.forEach((row, index) => ranks.set(row.territoire.territoire, index && row.value === ranked[index - 1].value ? ranks.get(ranked[index - 1].territoire.territoire)! : index + 1))
-  const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: `/territoire/${row.territoire.type}/${row.territoire.territoire}?theme=${metadata.theme}`, highlighted: row.territoire.territoire === requested.territoire })
+  const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: `/territoire/${row.territoire.type}/${row.territoire.territoire}?theme=${facet.theme}`, highlighted: row.territoire.territoire === requested.territoire })
   const filtered = all.filter((row) => !requested.recherche || row.territoire.nom.toLocaleLowerCase('fr').includes(requested.recherche.toLocaleLowerCase('fr')))
   const tri = requested.tri ?? 'nom'
   const ordre = requested.ordre ?? 'asc'

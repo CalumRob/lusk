@@ -7,6 +7,7 @@ export interface FamilyRendererIdentity { family: FamilyName; component: string;
 /** One facet contract, shared by Repères, Carte, ranks, extremes and table. */
 export interface ComparisonFacet {
   theme: import('@/payload/types').Theme
+  levels: readonly import('@/payload/types').TerritoireType[]
   indicator: string
   detail: string | null
   sex: Sexe | null
@@ -23,7 +24,6 @@ export type FamilyRepresentation =
   | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly Indicateur[] }
   | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[] }
   | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[] }
-  | { kind: 'profile'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[] }
   | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[] }
   | { kind: 'relationship'; rows: readonly Indicateur[]; territories: readonly Territoire[]; points: readonly Indicateur[] }
   | { kind: 'pyramid'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[] }
@@ -48,40 +48,39 @@ export const familyRegistry: Readonly<Record<FamilyName, FamilyRendererIdentity>
   trajectory: { family: 'trajectory', component: 'TrajectoryFamilyRenderer', semantics: 'trajectory' },
   composition: { family: 'composition', component: 'CompositionFamilyRenderer', semantics: 'composition' },
   distribution: { family: 'distribution', component: 'DistributionFamilyRenderer', semantics: 'distribution' },
-  profile: { family: 'profile', component: 'ProfileFamilyRenderer', semantics: 'list' },
   list: { family: 'list', component: 'ListFamilyRenderer', semantics: 'list' },
   relationship: { family: 'relationship', component: 'RelationshipFamilyRenderer', semantics: 'relationship' },
   pyramid: { family: 'pyramid', component: 'PyramidFamilyRenderer', semantics: 'composition' },
   'comparison-bars': { family: 'comparison-bars', component: 'ComparisonBarsFamilyRenderer', semantics: 'composition' },
 })
 
-function one(value: unknown): string | null { return typeof value === 'string' && value.length > 0 ? value : null }
-function declared(value: string | null, allowed: readonly string[] | undefined, fallback: string | null): { value: string | null; valid: boolean } {
-  if (allowed === undefined) return { value: fallback, valid: value === null }
-  if (value !== null && allowed.includes(value)) return { value, valid: true }
-  return { value: fallback, valid: value === null || value === fallback }
+function queryValue(value: unknown): { value: string | null; present: boolean; malformed: boolean } {
+  if (value === undefined) return { value: null, present: false, malformed: false }
+  if (typeof value === 'string' && value.length > 0) return { value, present: true, malformed: false }
+  return { value: null, present: true, malformed: true }
+}
+function resolveQuery(value: { value: string | null; present: boolean; malformed: boolean }, allowed: readonly string[] | undefined, fallback: string | null): { value: string | null; valid: boolean } {
+  const valid = !value.malformed && (!value.present || (allowed !== undefined && value.value !== null && allowed.includes(value.value)))
+  return { value: valid && value.present ? value.value : fallback, valid }
 }
 
 export function normalizeComparisonFacet(page: IndicatorPageMetadata, requested: object = {}, theme: Theme = 'demographie'): ComparisonFacet {
   const query = requested as Record<string, unknown>
   const comparison: ComparisonFacetMetadata = page.comparison ?? {}
-  const requestedDetail = one(query.detail)
-  const requestedSex = query.sex === 'F' || query.sex === 'M' ? query.sex as Sexe : null
-  const requestedDimension = one(query.dimension)
-  const detail = declared(requestedDetail, comparison.details, comparison.detail ?? page.detail ?? null)
-  const sexValue = comparison.sexes === undefined || requestedSex !== null && comparison.sexes.includes(requestedSex)
-    ? requestedSex ?? comparison.sex ?? null
-    : comparison.sex ?? null
-  const sex = { value: sexValue as Sexe | null, valid: requestedSex === null || comparison.sexes === undefined || comparison.sexes.includes(requestedSex) }
-  const dimension = declared(requestedDimension, comparison.dimensions, comparison.dimension ?? null)
-  const requestedIndicator = one(query.facet)
+  const requestedDetail = queryValue(query.detail)
+  const requestedSex = queryValue(query.sex)
+  const requestedDimension = queryValue(query.dimension)
+  const detail = resolveQuery(requestedDetail, comparison.details, comparison.detail ?? page.detail ?? null)
+  const sex = resolveQuery(requestedSex, comparison.sexes, comparison.sex ?? null)
+  const dimension = resolveQuery(requestedDimension, comparison.dimensions, comparison.dimension ?? null)
+  const requestedIndicator = queryValue(query.facet)
   const indicator = comparison.indicator ?? page.indicator
-  const indicatorValid = requestedIndicator === null || requestedIndicator === indicator
+  const indicatorValid = !requestedIndicator.malformed && (!requestedIndicator.present || requestedIndicator.value === indicator)
   const params = new URLSearchParams({ facet: indicator })
   if (detail.value !== null) params.set('detail', detail.value)
   if (sex.value !== null) params.set('sex', sex.value)
   if (dimension.value !== null) params.set('dimension', dimension.value)
-  return { theme, indicator, detail: detail.value, sex: sex.value, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, labels: comparison.labels ?? {}, url: `?${params.toString()}`, valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
+  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, labels: comparison.labels ?? {}, url: `?${params.toString()}`, valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
 }
 
 function representation(family: FamilyName, rows: readonly Indicateur[], territories: readonly Territoire[]): FamilyRepresentation {

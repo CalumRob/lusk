@@ -29,7 +29,7 @@ describe('contrat des pages d’indicateur', () => {
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
   })
 
-  it.each(['scalar', 'trajectory', 'composition', 'distribution', 'profile', 'relationship', 'pyramid', 'comparison-bars'] as const)('accepte la famille %s', (family) => {
+  it.each(['scalar', 'trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const)('accepte la famille %s', (family) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     metadata.indicator_pages!.densite.family = family
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).not.toThrow()

@@ -24,14 +24,14 @@ THEMES_METADATA <- c("mobilite", "demographie", "habitat", "economie", "milieux"
 # composition (des parts qui somment, mode-colored quand les parts sont des
 # modes), trajectory (une évolution), distribution (une signature de
 # répartition), relationship (une relation entre deux forces — le nuage),
-# list (un classement ordonné — le top-5 LQ), pyramid (la pyramide des âges),
+# list (un classement ordonné — le top-5 LQ ; les profils produit passent par
+# cette famille), pyramid (la pyramide des âges),
 # comparison-bars (des barres de comparaison — les états M2→M3, les barres
 # iso_* avec la médiane). Des identifiants de contrat, en anglais — les labels
-# français vivent dans les métadonnées. `profile` (le classement d'avant la
-# grammaire) est RETIRÉ : toute famille hors des huit est rejetée par les
-# validateurs (R + TS — le miroir exact de l'app, jamais une dérive).
+# français vivent dans les métadonnées. Toute famille hors des huit est rejetée
+# par les validateurs (R + TS — le miroir exact de l'app, jamais une dérive).
 FAMILLES_FIGURE <- c("scalar", "composition", "trajectory", "distribution",
-                     "relationship", "profile", "list", "pyramid", "comparison-bars")
+                     "relationship", "list", "pyramid", "comparison-bars")
 
 # Les types de nœuds du texte riche TYPÉ — une liste fermée : le HTML brut
 # n'est pas un type, un contenu text avec des chevrons est rejeté.
@@ -620,7 +620,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     # contract. The six page families are deliberately mirrored by TS.
     famille <- if (is.null(page$family)) "scalar" else page$family
     if (!est_chaine_non_vide(famille) || !famille %in% c("scalar", "trajectory",
-        "composition", "distribution", "profile", "list", "relationship",
+        "composition", "distribution", "list", "relationship",
         "pyramid", "comparison-bars")) {
       manquer("indicator_pages.family", paste0("famille hors contrat « ", famille, " »"))
     }
@@ -640,6 +640,23 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.null(comparison$sex) && !comparison$sex %in% c("F", "M")) manquer("indicator_pages.comparison.sex", "le sexe doit être F ou M")
       if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
       if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
+    }
+    extensions <- list(
+      trajectory = c("endpoints"), composition = c("parts"),
+      distribution = c("signature", "summary"), list = c("categories"),
+      pyramid = c("dimensions"), `comparison-bars` = c("series")
+    )
+    extension <- page[[famille]]
+    if (!is.null(extension)) {
+      if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")
+      for (champ in if (is.null(extensions[[famille]])) character() else extensions[[famille]]) {
+        valeur <- extension[[champ]]
+        ok <- if (is.character(valeur)) length(valeur) > 0L && all(vapply(valeur, est_chaine_non_vide, logical(1L))) else est_chaine_non_vide(valeur)
+        if (!ok) manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ), "le champ est incomplet")
+      }
+      if (famille == "relationship") {
+        if (!is.list(extension$roles) || !est_chaine_non_vide(extension$roles$x) || !est_chaine_non_vide(extension$roles$y) || !est_chaine_non_vide(extension$measure)) manquer("indicator_pages.relationship", "roles et measure sont requis")
+      }
     }
     }
   }

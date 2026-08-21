@@ -10,16 +10,17 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import type { Fichier } from '../payload/loader'
 
 const payload: Payload = { territoires: [...territoiresFixture, { territoire: 'e', type: 'epci', nom: 'EPCI test', departement: null, epci: null }], indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: runReportFraisFixture, vintages: vintagesFixture, programmes: null, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
-async function monter(url: string, appels: string[] = []) {
+async function monter(url: string, appels: string[] = [], metadataOverride = metadonneesThemesFixtures.demographie) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()
   const empty = { type: 'FeatureCollection' as const, features: [] }
+  const routedPayload = { ...payload, themeMetadata: { demographie: metadataOverride } }
   const wrapper = mount(IndicateurView, {
     global: {
       plugins: [router],
       provide: {
-        [PAYLOAD_CHARGER_KEY]: async (fichier: Fichier) => { appels.push(fichier); return chargerAvec(payload)(fichier) },
+        [PAYLOAD_CHARGER_KEY]: async (fichier: Fichier) => { appels.push(fichier); return chargerAvec(routedPayload)(fichier) },
         [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
       },
       stubs: {
@@ -50,6 +51,8 @@ describe('IndicateurView — routed URL seam', () => {
   it('sorts by explicit URL-backed name, value and direction-aware rank controls', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?tri=nom&ordre=asc'); expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune A1'); await wrapper.findAll('thead button')[1].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.tri).toBe('valeur'); expect(router.currentRoute.value.query.ordre).toBe('asc'); expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune D') })
   it('clicking a table row persists the selected territory and uses a non-fixed density marker', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite'); await wrapper.findAll('tbody button')[0].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.territoire).toBe('22001'); const marker = wrapper.find('.point-highlight'); expect(marker.exists()).toBe(true); expect(marker.attributes('cx')).not.toBe('300') })
   it('gives the selected density marker an accessible formatted description', async () => { const { wrapper } = await monter('/indicateurs/demographie/densite?territoire=22001'); expect(wrapper.find('svg desc').text()).toContain('Commune A1'); expect(wrapper.find('svg desc').text()).toContain('200'); expect(wrapper.find('svg desc').text()).toContain('positionné sur l’axe') })
+  it.each(['scalar', 'composition', 'trajectory', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const)('routed family %s mounts through the real outlet and renderer', async (family) => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.family = family; const { wrapper, router } = await monter('/indicateurs/demographie/densite', [], metadata); expect(router.currentRoute.value.name).toBe('indicateur'); expect(wrapper.find('.repere-family-outlet').exists()).toBe(true); expect(wrapper.find(`[data-renderer="${family}"]`).exists()).toBe(true) })
+  it('routed malformed facets become invalid and persist one canonical URL without loops', async () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.comparison = { details: ['total'], detail: 'total', dimensions: ['menages'], dimension: 'menages', sexes: ['F'], sex: 'F' }; const { router } = await monter('/indicateurs/demographie/densite?detail=stale&sex=X&dimension=stale', [], metadata); await flushPromises(); expect(router.currentRoute.value.query.facet).toBe('densite'); expect(router.currentRoute.value.query.detail).toBe('total'); expect(router.currentRoute.value.query.sex).toBe('F'); expect(router.currentRoute.value.query.dimension).toBe('menages'); const before = router.currentRoute.value.fullPath; await flushPromises(); expect(router.currentRoute.value.fullPath).toBe(before) })
   it('renders unique extremes as named fiche links', async () => { const { wrapper } = await monter('/indicateurs/demographie/densite'); expect(wrapper.find('a[href*="territoire/commune/22001"]').exists()).toBe(true); })
   it('renders tied extremes as counts without pretending one territory wins', async () => { const tiedPayload = structuredClone(payload); tiedPayload.indicateurs = tiedPayload.indicateurs.map((fact) => fact.key === 'densite' && fact.type === 'commune' ? { ...fact, value: 10 } : fact); const original = payload.indicateurs; payload.indicateurs = tiedPayload.indicateurs; const { wrapper } = await monter('/indicateurs/demographie/densite'); expect(wrapper.text()).toContain('4 territoires à égalité'); expect(wrapper.find('.extremes a').exists()).toBe(false); payload.indicateurs = original })
 })

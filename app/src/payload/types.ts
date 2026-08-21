@@ -470,7 +470,6 @@ export const FAMILLES_FIGURE = [
   'distribution',
   'trajectory',
   'relationship',
-  'profile',
   'list',
   'pyramid',
   'comparison-bars',
@@ -735,15 +734,21 @@ export interface ComparisonFacetMetadata {
   unit?: string
   labels?: Record<string, string>
 }
+export interface TrajectoryMetadata { endpoints?: string[] }
+export interface CompositionMetadata { parts?: string[] }
+export interface DistributionMetadata { signature?: string; summary?: string }
+export interface RelationshipMetadata { roles?: { x: string; y: string }; measure?: string }
+export interface ListMetadata { categories?: string[] }
+export interface PyramidMetadata { dimensions?: string[] }
+export interface ComparisonBarsMetadata { series?: string[] }
 
 export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
-export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory' }
-export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition' }
-export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution' }
-export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list' }
-export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship' }
-export type ProfilePageMetadata = IndicatorPageMetadataBase & { family: 'profile' }
-export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid' }
-export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars' }
-export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | ProfilePageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
+export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory?: TrajectoryMetadata }
+export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition'; composition?: CompositionMetadata }
+export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution'; distribution?: DistributionMetadata }
+export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list'; list?: ListMetadata }
+export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship'; relationship?: RelationshipMetadata }
+export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid?: PyramidMetadata }
+export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparison_bars?: ComparisonBarsMetadata }
+export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
 export type IndicatorPageMetadata = IndicatorPageFamilyMetadata
