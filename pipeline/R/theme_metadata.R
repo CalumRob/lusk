@@ -24,12 +24,12 @@ THEMES_METADATA <- c("mobilite", "demographie", "habitat", "economie", "milieux"
 # composition (des parts qui somment, mode-colored quand les parts sont des
 # modes), trajectory (une évolution), distribution (une signature de
 # répartition), relationship (une relation entre deux forces — le nuage),
-# list (un classement ordonné — le top-5 LQ), pyramid (la pyramide des âges),
+# list (un classement ordonné — le top-5 LQ ; les profils produit passent par
+# cette famille), pyramid (la pyramide des âges),
 # comparison-bars (des barres de comparaison — les états M2→M3, les barres
 # iso_* avec la médiane). Des identifiants de contrat, en anglais — les labels
-# français vivent dans les métadonnées. `profile` (le classement d'avant la
-# grammaire) est RETIRÉ : toute famille hors des huit est rejetée par les
-# validateurs (R + TS — le miroir exact de l'app, jamais une dérive).
+# français vivent dans les métadonnées. Toute famille hors des huit est rejetée
+# par les validateurs (R + TS — le miroir exact de l'app, jamais une dérive).
 FAMILLES_FIGURE <- c("scalar", "composition", "trajectory", "distribution",
                      "relationship", "list", "pyramid", "comparison-bars")
 
@@ -615,6 +615,51 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     if (!is.null(detail) && (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[detail]]))) {
       manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
+    }
+    # Family descriptors are an additive seam: omitted means the #401 scalar
+    # contract. The six page families are deliberately mirrored by TS.
+    famille <- if (is.null(page$family)) "scalar" else page$family
+    if (!est_chaine_non_vide(famille) || !famille %in% c("scalar", "trajectory",
+        "composition", "distribution", "list", "relationship",
+        "pyramid", "comparison-bars")) {
+      manquer("indicator_pages.family", paste0("famille hors contrat « ", famille, " »"))
+    }
+    if (!is.null(page$comparison)) {
+      comparison <- page$comparison
+      if (!is.list(comparison)) manquer("indicator_pages.comparison", "la facette doit être un objet")
+      if (!is.null(comparison$indicator) && !est_chaine_non_vide(comparison$indicator)) manquer("indicator_pages.comparison.indicator", "l'indicateur est invalide")
+      if (!is.null(comparison$indicator) && !comparison$indicator %in% cles_indicateurs) manquer("indicator_pages.comparison.indicator", "l'indicateur est inconnu")
+      for (champ in c("details", "sexes", "dimensions")) {
+        if (!is.null(comparison[[champ]]) && (!is.character(comparison[[champ]]) || !length(comparison[[champ]]) || any(!vapply(comparison[[champ]], est_chaine_non_vide, logical(1L))) || anyDuplicated(comparison[[champ]]))) manquer(paste0("indicator_pages.comparison.", champ), "les valeurs doivent être une liste non vide de chaînes distinctes")
+      }
+      if (!is.null(comparison$sexes) && !all(comparison$sexes %in% c("F", "M"))) manquer("indicator_pages.comparison.sexes", "le sexe doit être F ou M")
+      if (!is.null(comparison$detail) && !is.null(comparison$details) && !comparison$detail %in% comparison$details) manquer("indicator_pages.comparison.detail", "le détail n'est pas déclaré dans details")
+      if (!is.null(comparison$sex) && !is.null(comparison$sexes) && !comparison$sex %in% comparison$sexes) manquer("indicator_pages.comparison.sex", "le sexe n'est pas déclaré dans sexes")
+      if (!is.null(comparison$dimension) && !is.null(comparison$dimensions) && !comparison$dimension %in% comparison$dimensions) manquer("indicator_pages.comparison.dimension", "la dimension n'est pas déclarée dans dimensions")
+      for (champ in c("detail", "dimension", "unit")) if (!is.null(comparison[[champ]]) && !est_chaine_non_vide(comparison[[champ]])) manquer(paste0("indicator_pages.comparison.", champ), "la valeur est invalide")
+      if (!is.null(comparison$sex) && !comparison$sex %in% c("F", "M")) manquer("indicator_pages.comparison.sex", "le sexe doit être F ou M")
+      if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
+      if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
+    }
+    extensions <- list(
+      trajectory = c("endpoints"), composition = c("parts"),
+      distribution = c("signature", "summary"), list = c("categories"),
+      pyramid = c("dimensions"), `comparison-bars` = c("series")
+    )
+    extension_keys <- c("trajectory", "composition", "distribution", "relationship", "list", "pyramid", "comparison-bars", "comparison_bars")
+    for (candidate in setdiff(extension_keys, famille)) if (!is.null(page[[candidate]])) manquer(paste0("indicator_pages.", indicator_key, ".", candidate), "l'extension ne correspond pas à la famille déclarée")
+      extension <- page[[if (famille == "comparison-bars") "comparison-bars" else famille]]
+    if (famille != "scalar" && is.null(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension est requise")
+    if (!is.null(extension)) {
+      if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")
+      for (champ in if (is.null(extensions[[famille]])) character() else extensions[[famille]]) {
+        valeur <- extension[[champ]]
+        ok <- if (is.character(valeur)) length(valeur) > 0L && all(vapply(valeur, est_chaine_non_vide, logical(1L))) else est_chaine_non_vide(valeur)
+        if (!ok) manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ), "le champ est incomplet")
+      }
+      if (famille == "relationship") {
+        if (!is.list(extension$roles) || !est_chaine_non_vide(extension$roles$x) || !est_chaine_non_vide(extension$roles$y) || !est_chaine_non_vide(extension$measure)) manquer("indicator_pages.relationship", "roles et measure sont requis")
+      }
     }
     }
   }

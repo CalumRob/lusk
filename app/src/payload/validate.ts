@@ -42,6 +42,14 @@ import type {
   TerritoireType,
   Theme,
   ThemeMetadata,
+  IndicatorPageMetadataBase,
+  TrajectoryMetadata,
+  CompositionMetadata,
+  DistributionMetadata,
+  RelationshipMetadata,
+  ListMetadata,
+  PyramidMetadata,
+  ComparisonBarsMetadata,
   FamilleFigure,
   Vintage,
   Sexe,
@@ -147,6 +155,8 @@ function estObjet(x: unknown): x is LigneBrute {
 function estChaine(x: unknown): x is string {
   return typeof x === 'string'
 }
+
+function estChaineNonVide(x: unknown): x is string { return estChaine(x) && x.length > 0 }
 
 function estNombre(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x)
@@ -468,12 +478,15 @@ export function validerIndicateurs(
     const detail = ligne['detail']
     exiger(detail === null || estChaine(detail), fichier, ligneIndexee, '« detail » doit être une chaîne ou null')
 
+    const dimension = ligne['dimension']
+    exiger(dimension === undefined || dimension === null || estChaineNonVide(dimension), fichier, ligneIndexee, '« dimension » doit être une chaîne non vide ou null')
+
     const sex = lireSexe(ligne, fichier, ligneIndexee)
 
     // Unicité : territoire × key × detail × sex (issue #390 — la dimension sexe
     // entre dans la clé pour que les lignes F et M d'une même tranche soient
     // distinctes, jamais un doublon).
-    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}`
+    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}\u0000${dimension ?? ''}`
     exiger(!vus.has(cle), fichier, ligneIndexee, `ligne en double (territoire × key × detail × sex) pour « ${key} » de « ${territoire} »`)
     vus.add(cle)
 
@@ -534,6 +547,7 @@ export function validerIndicateurs(
       key,
       detail,
       sex,
+      dimension: dimension === undefined ? null : dimension,
       value,
       unit,
       rider: rider === undefined ? null : rider,
@@ -2034,7 +2048,47 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources }
+        const family = (page['family'] === undefined ? 'scalar' : page['family']) as FamilleFigure
+       exiger(estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
+       const comparison = page['comparison']
+       if (comparison !== undefined) {
+         exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
+         for (const field of ['indicator', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaineNonVide(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         for (const field of ['details', 'sexes', 'dimensions']) exiger(comparison[field] === undefined || (Array.isArray(comparison[field]) && (comparison[field] as unknown[]).length > 0 && new Set(comparison[field] as unknown[]).size === (comparison[field] as unknown[]).length && (comparison[field] as unknown[]).every((value) => estChaineNonVide(value))), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         if (comparison['indicator'] !== undefined) exiger(indicator_keys.includes(comparison['indicator'] as string), fichier, 0, `« indicator_pages.${key}.comparison.indicator » est inconnu`)
+         if (comparison['detail'] !== undefined && comparison['details'] !== undefined) exiger((comparison['details'] as unknown[]).includes(comparison['detail']), fichier, 0, `« indicator_pages.${key}.comparison.detail » n'est pas déclaré dans details`)
+         if (comparison['sex'] !== undefined && comparison['sex'] !== null && comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).includes(comparison['sex']), fichier, 0, `« indicator_pages.${key}.comparison.sex » n'est pas déclaré dans sexes`)
+         if (comparison['dimension'] !== undefined && comparison['dimension'] !== null && comparison['dimensions'] !== undefined) exiger((comparison['dimensions'] as unknown[]).includes(comparison['dimension']), fichier, 0, `« indicator_pages.${key}.comparison.dimension » n'est pas déclaré dans dimensions`)
+         if (comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).every((value) => value === 'F' || value === 'M'), fichier, 0, `« indicator_pages.${key}.comparison.sexes » est invalide`)
+         exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, 0, `« indicator_pages.${key}.comparison.sex » est invalide`)
+         exiger(comparison['direction'] === undefined || comparison['direction'] === 'high' || comparison['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.comparison.direction » est invalide`)
+         if (comparison['labels'] !== undefined) exiger(estObjet(comparison['labels']) && Object.values(comparison['labels'] as LigneBrute).every((value) => estChaineNonVide(value)), fichier, 0, `« indicator_pages.${key}.comparison.labels » est invalide`)
+       }
+        const base: IndicatorPageMetadataBase = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
+       const extensionFields: Record<string, string[]> = { trajectory: ['endpoints'], composition: ['parts'], distribution: ['signature', 'summary'], list: ['categories'], pyramid: ['dimensions'], 'comparison-bars': ['series'] }
+       const extensionKey = family === 'comparison-bars' ? 'comparison-bars' : family
+       const extension = page[extensionKey]
+       for (const candidate of ['trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars', 'comparison_bars']) {
+         if (candidate !== extensionKey && page[candidate] !== undefined) exiger(false, fichier, 0, `« indicator_pages.${key}.${candidate} » ne correspond pas à la famille déclarée`)
+       }
+       if (family !== 'scalar') exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
+        if (extension !== undefined) {
+         exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
+         for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
+         if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
+        }
+        const assertNever = (value: never): never => { throw new Error(`Famille de figure non implémentée : ${String(value)}`) }
+        switch (family) {
+          case 'scalar': indicator_pages[key] = page['family'] === undefined ? base : { ...base, family: 'scalar' }; break
+          case 'trajectory': indicator_pages[key] = { ...base, family, trajectory: extension as unknown as TrajectoryMetadata }; break
+          case 'composition': indicator_pages[key] = { ...base, family, composition: extension as unknown as CompositionMetadata }; break
+          case 'distribution': indicator_pages[key] = { ...base, family, distribution: extension as unknown as DistributionMetadata }; break
+          case 'relationship': indicator_pages[key] = { ...base, family, relationship: extension as unknown as RelationshipMetadata }; break
+          case 'list': indicator_pages[key] = { ...base, family, list: extension as unknown as ListMetadata }; break
+          case 'pyramid': indicator_pages[key] = { ...base, family, pyramid: extension as unknown as PyramidMetadata }; break
+          case 'comparison-bars': indicator_pages[key] = { ...base, family, comparisonBars: extension as unknown as ComparisonBarsMetadata }; break
+          default: assertNever(family)
+        }
     }
   }
 

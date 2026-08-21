@@ -1,0 +1,2 @@
+<script setup lang="ts">import type { FamilyDispatch } from '@/indicateurs/familySeam'; defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'scalar' }> }>()</script>
+<template><div class="family-renderer scalar-family-renderer" data-renderer="scalar" :data-state="dispatch.status" aria-label="Repères scalaires"><p class="visually-hidden">{{ dispatch.facet.unit }} · {{ dispatch.representation.rows.length }} valeurs</p><slot :dispatch="dispatch" /></div></template>

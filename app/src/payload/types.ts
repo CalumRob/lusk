@@ -67,7 +67,7 @@ export interface VintageStamp {
   vintage_date_publication: string
 }
 
-/** One facts row per (territoire × key × detail × sex). */
+/** One facts row per (territoire × key × detail × sex × dimension). */
 export interface Indicateur extends VintageStamp {
   territoire: string
   type: TerritoireType
@@ -76,6 +76,8 @@ export interface Indicateur extends VintageStamp {
   detail: string | null
   /** The sex dimension (issue #390) — carried by the sex-split indicators (structure_age). */
   sex?: Sexe | null
+  /** Optional analytical dimension for multi-axis indicator facts. */
+  dimension?: string | null
   value: number | null
   unit: string
   /** Contextual explanation for an unavailable value (pipeline-owned fact). */
@@ -664,7 +666,7 @@ export interface ThemeMetadata {
   classification_labels?: Record<string, string>
   /** Optional page descriptor: only published entries are eligible for /indicateurs. */
   /** Per-concept publication descriptors; the indicator key is the authority. */
-  indicator_pages?: Record<string, ScalarPageMetadata>
+  indicator_pages?: Record<string, IndicatorPageMetadata>
   /** Reusable provenance records, referenced by indicator_pages.sources. */
   source_records?: Record<string, SourceRecord>
   /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
@@ -703,7 +705,10 @@ export interface SourceClock {
   trigger?: string
 }
 
-export interface ScalarPageMetadata {
+/** Shared page contract. `family` is optional for the legacy scalar payload;
+ * the resolver treats its absence as `scalar`, so #401 metadata remains byte
+ * for byte compatible while new family descriptors are discriminated. */
+export interface IndicatorPageMetadataBase {
   indicator: string
   detail?: string | null
   label: string
@@ -714,4 +719,39 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
+  /** Payload-declared comparison facet dimensions. */
+  comparison?: ComparisonFacetMetadata
 }
+
+export interface ComparisonFacetMetadata {
+  indicator?: string
+  detail?: string | null
+  /** Allowed URL values; absent means this dimension is not declared. */
+  details?: string[]
+  sex?: Sexe | null
+  sexes?: Sexe[]
+  dimension?: string | null
+  dimensions?: string[]
+  direction?: 'high' | 'low'
+  unit?: string
+  labels?: Record<string, string>
+}
+export interface TrajectoryMetadata { endpoints: string[] }
+export interface CompositionMetadata { parts: string[] }
+export interface DistributionMetadata { signature: string; summary: string }
+export interface RelationshipMetadata { roles: { x: string; y: string }; measure: string }
+export interface ListMetadata { categories: string[] }
+export interface PyramidMetadata { dimensions: string[] }
+export interface ComparisonBarsMetadata { series: string[] }
+
+export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
+export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory: TrajectoryMetadata }
+export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition'; composition: CompositionMetadata }
+export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution'; distribution: DistributionMetadata }
+export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list'; list: ListMetadata }
+export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship'; relationship: RelationshipMetadata }
+export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid: PyramidMetadata }
+/** JSON uses the ADR family literal as the key; TS uses camelCase. */
+export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparisonBars: ComparisonBarsMetadata }
+export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
+export type IndicatorPageMetadata = IndicatorPageFamilyMetadata
