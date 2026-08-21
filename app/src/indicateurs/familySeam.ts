@@ -95,7 +95,7 @@ function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensio
 export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
   const allFacts = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator)
-  const rows = allFacts.filter((fact) => fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  const rows = allFacts.filter((fact) => fact.detail === facet.detail && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension)
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
   const territories = input.territories ?? []
   const common = { facet, resolvedUrl: facet.url, selected }

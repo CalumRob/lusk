@@ -258,7 +258,6 @@ const lignesReseaux = computed(
               :reseaux="lignesReseaux"
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
-              :palette="groupe.figureCompacte.palette"
               :theme="theme"
             />
           </div>

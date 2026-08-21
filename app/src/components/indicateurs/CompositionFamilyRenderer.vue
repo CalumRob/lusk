@@ -6,7 +6,10 @@ import { formaterNombreFR } from '@/payload/selectors'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'composition' }> }>()
 const territory = computed(() => props.dispatch.selected?.territoire ?? props.dispatch.representation.territories[0]?.territoire)
-const parts = computed(() => props.dispatch.representation.parts.filter((fact) => fact.territoire === territory.value))
+const parts = computed(() => {
+  const allowed = new Set(props.dispatch.representation.extension.parts)
+  return props.dispatch.representation.parts.filter((fact) => fact.territoire === territory.value && fact.detail !== null && allowed.has(fact.detail))
+})
 const total = computed(() => parts.value.reduce((sum, part) => sum + (part.value ?? 0), 0))
 const palette = computed(() => props.dispatch.facet.labels)
 function colour(detail: string | null) { return detail && couleurDpe(detail) ? couleurDpe(detail) : undefined }
@@ -22,11 +25,11 @@ function barStyle(part: (typeof parts.value)[number]): Record<string, string> {
 <template>
   <figure class="family-renderer composition-renderer" data-renderer="composition" :data-state="dispatch.status" aria-label="Repères de composition">
     <div v-if="parts.length" class="composition-bar" role="img" :aria-label="parts.map((part) => `${label(part.detail)} ${value(part.value, part.unit)}`).join(' · ')">
-      <span v-for="part in parts" :key="`${part.territoire}-${part.detail}-${part.sex ?? ''}-${part.dimension ?? ''}`" :class="{ active: part.detail === dispatch.facet.detail && (dispatch.facet.sex === null || part.sex === dispatch.facet.sex) }" :style="barStyle(part)" :title="`${label(part.detail)} : ${value(part.value, part.unit)}`" />
+      <span v-for="part in parts" :key="`${part.territoire}-${part.detail}-${part.sex ?? ''}-${part.dimension ?? ''}`" :class="{ active: part.detail === dispatch.facet.detail && (part.sex ?? null) === dispatch.facet.sex && (part.dimension ?? null) === dispatch.facet.dimension }" :style="barStyle(part)" :title="`${label(part.detail)} : ${value(part.value, part.unit)}`" />
     </div>
     <p v-else role="status">Composition indisponible pour ce territoire.</p>
     <ul class="composition-legend">
-      <li v-for="part in parts" :key="`legend-${part.territoire}-${part.detail}-${part.sex ?? ''}-${part.dimension ?? ''}`" :class="{ active: part.detail === dispatch.facet.detail && (dispatch.facet.sex === null || part.sex === dispatch.facet.sex) }"><span>{{ label(part.detail) }}</span><strong>{{ value(part.value, part.unit) }}</strong></li>
+      <li v-for="part in parts" :key="`legend-${part.territoire}-${part.detail}-${part.sex ?? ''}-${part.dimension ?? ''}`" :class="{ active: part.detail === dispatch.facet.detail && (part.sex ?? null) === dispatch.facet.sex && (part.dimension ?? null) === dispatch.facet.dimension }"><span>{{ label(part.detail) }}</span><strong>{{ value(part.value, part.unit) }}</strong></li>
     </ul>
     <figcaption>{{ dispatch.facet.label }}<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span></figcaption>
   </figure>

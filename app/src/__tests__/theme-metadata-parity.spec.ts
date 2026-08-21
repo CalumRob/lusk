@@ -9,6 +9,9 @@ const publicDir = join(process.cwd(), '..', 'public', 'data')
 function lire(dir: string, theme: string): unknown {
   return JSON.parse(readFileSync(join(dir, `theme_${theme}.json`), 'utf8'))
 }
+function lireFaits(theme: string): Array<Record<string, unknown>> {
+  return JSON.parse(readFileSync(join(publicDir, `indicateurs_${theme}.json`), 'utf8'))
+}
 
 describe('métadonnées de thème — autorité canonique et snapshot public', () => {
   it('garde le snapshot public sémantiquement identique au fichier épinglé', () => {
@@ -46,5 +49,29 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
         if (family === 'pyramid') expect(page.comparison?.sex).toMatch(/^[FM]$/)
       }
     }
+  })
+
+  it('publie la pyramide réelle avec exactement 7 tranches × 2 sexes par territoire', () => {
+    const rows = lireFaits('demographie').filter((row) => row.key === 'structure_age')
+    const grouped = new Map<string, Array<Record<string, unknown>>>()
+    for (const row of rows) {
+      const key = `${row.territoire}|${row.type}`
+      grouped.set(key, [...(grouped.get(key) ?? []), row])
+    }
+    expect(grouped.size).toBeGreaterThan(0)
+    for (const group of grouped.values()) {
+      expect(group).toHaveLength(14)
+      expect(new Set(group.map((row) => `${row.detail}|${row.sex}`)).size).toBe(14)
+      expect(new Set(group.map((row) => row.sex))).toEqual(new Set(['F', 'M']))
+      expect(new Set(group.map((row) => row.unit))).toEqual(new Set(['%']))
+    }
+  })
+
+  it('garde l’offre cyclable dans le domaine des longueurs protégées/partagées', () => {
+    const page = (lire(canonicalDir, 'mobilite') as any).indicator_pages.offre_cyclable
+    expect(page.composition.parts).toEqual(['protege_longueur', 'partage_longueur'])
+    expect(page.comparison.details).toEqual(['protege_longueur', 'partage_longueur', 'total_longueur'])
+    expect(page.comparison.unit).toBe('km')
+    expect(page.composition.parts.some((part: string) => part.includes('km_1000'))).toBe(false)
   })
 })

@@ -445,38 +445,6 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       manquer("figure", paste0(
         "« ", cle, " » : la figure doit rendre un indicateur que le sous-groupe possède"))
     }
-    # Composition: one URL-backed scalar facet may be declared while the full
-    # composition remains visible.  The shape is shared with the TS validator.
-    comparaison <- groupe$figure$comparison
-    if (!is.null(comparaison)) {
-      palette <- if ("palette" %in% names(comparaison)) comparaison[["palette"]] else NULL
-      if (!is.null(palette) && !is.na(palette) && !identical(palette, "theme") && !identical(palette, "dpe")) {
-        manquer("figure.comparison", paste0("« ", cle, " » : palette doit être theme ou dpe"))
-      }
-      if (!est_liste(comparaison) || !"detail" %in% names(comparaison) ||
-          !(is.null(comparaison$detail) || est_chaine_non_vide(comparaison$detail))) {
-        manquer("figure.comparison", paste0("« ", cle, " » : detail doit être une chaîne ou NULL"))
-      }
-      sex <- if ("sex" %in% names(comparaison)) comparaison[["sex"]] else NULL
-      if (is.character(sex) && length(sex) == 1L && !is.na(sex) && nzchar(sex) &&
-          !identical(sex, "F") && !identical(sex, "M")) {
-        manquer("figure.comparison", paste0("« ", cle, " » : sex doit être F, M ou NULL"))
-      }
-      if (!identical(famille, "composition")) {
-        manquer("figure.comparison", paste0("« ", cle, " » : comparison est réservé à composition"))
-      }
-      detail_comparaison <- comparaison[["detail"]]
-      details_figure <- metadata$detail_labels[[indicateur_figure]]
-      if (!is.null(detail_comparaison) && !is.na(detail_comparaison) &&
-          (is.null(details_figure) || !detail_comparaison %in% names(details_figure))) {
-        manquer("figure.comparison", paste0("« ", cle, " » : detail absent de detail_labels"))
-      }
-      if (identical(palette, "dpe") && (is.null(details_figure) || length(details_figure) == 0L ||
-          any(!names(details_figure) %in% LETTERS[1:7]))) {
-        manquer("figure.comparison", paste0("« ", cle, " » : palette DPE exige des détails A à G"))
-      }
-    }
-
     # la lecture résolue — le lien explicite vers l'histoire du sous-groupe
     # (parent #308 : l'app n'infère jamais la relation depuis les noms).
     # Issue #370 : la lecture est OPTIONNELLE — un sous-groupe peut ne déclarer

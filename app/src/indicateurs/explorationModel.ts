@@ -16,7 +16,7 @@ export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauInd
 
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload {
   const ids = new Set(payload.territoires.filter((territory) => territory.type === niveau && (niveau !== 'commune' || ((!departement || territory.departement === departement) && (!epci || territory.epci === epci)))).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension && fact.type === niveau && ids.has(fact.territoire)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */

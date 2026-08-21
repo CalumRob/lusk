@@ -55,7 +55,6 @@ export interface FigureCompacte {
   /** The indicator the figure renders — the subgroup's matter. */
   clef: string
   lignes: Indicateur[]
-  palette?: 'theme' | 'dpe'
 }
 
 /** The resolved reading of a subgroup — the row plus the template params displayed. */
