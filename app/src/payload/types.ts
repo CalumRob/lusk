@@ -470,6 +470,7 @@ export const FAMILLES_FIGURE = [
   'distribution',
   'trajectory',
   'relationship',
+  'profile',
   'list',
   'pyramid',
   'comparison-bars',
@@ -717,9 +718,22 @@ export interface IndicatorPageMetadataBase {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
-  family?: FamilleFigure
   /** Payload-declared comparison facet dimensions. */
-  comparison?: { indicator?: string; detail?: string | null; sex?: Sexe | null; dimension?: string | null; direction?: 'high' | 'low'; unit?: string; labels?: Record<string, string> }
+  comparison?: ComparisonFacetMetadata
+}
+
+export interface ComparisonFacetMetadata {
+  indicator?: string
+  detail?: string | null
+  /** Allowed URL values; absent means this dimension is not declared. */
+  details?: string[]
+  sex?: Sexe | null
+  sexes?: Sexe[]
+  dimension?: string | null
+  dimensions?: string[]
+  direction?: 'high' | 'low'
+  unit?: string
+  labels?: Record<string, string>
 }
 
 export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
@@ -728,5 +742,8 @@ export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'com
 export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution' }
 export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list' }
 export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship' }
-export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata
+export type ProfilePageMetadata = IndicatorPageMetadataBase & { family: 'profile' }
+export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid' }
+export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars' }
+export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | ProfilePageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
 export type IndicatorPageMetadata = IndicatorPageFamilyMetadata

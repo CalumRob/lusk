@@ -2036,15 +2036,24 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
        const family = page['family'] === undefined ? 'scalar' : page['family']
-       exiger(estUneDe(family, FAMILLES_FIGURE.filter((value) => value !== 'pyramid' && value !== 'comparison-bars')), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
+       exiger(estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
        const comparison = page['comparison']
        if (comparison !== undefined) {
          exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
+         for (const field of ['indicator', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaine(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         for (const field of ['details', 'sexes', 'dimensions']) exiger(comparison[field] === undefined || (Array.isArray(comparison[field]) && new Set(comparison[field] as unknown[]).size === (comparison[field] as unknown[]).length && (comparison[field] as unknown[]).every((value) => estChaine(value))), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         if (comparison['indicator'] !== undefined) exiger(indicator_keys.includes(comparison['indicator'] as string), fichier, 0, `« indicator_pages.${key}.comparison.indicator » est inconnu`)
+         if (comparison['detail'] !== undefined && comparison['details'] !== undefined) exiger((comparison['details'] as unknown[]).includes(comparison['detail']), fichier, 0, `« indicator_pages.${key}.comparison.detail » n'est pas déclaré dans details`)
+         if (comparison['sex'] !== undefined && comparison['sex'] !== null && comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).includes(comparison['sex']), fichier, 0, `« indicator_pages.${key}.comparison.sex » n'est pas déclaré dans sexes`)
+         if (comparison['dimension'] !== undefined && comparison['dimension'] !== null && comparison['dimensions'] !== undefined) exiger((comparison['dimensions'] as unknown[]).includes(comparison['dimension']), fichier, 0, `« indicator_pages.${key}.comparison.dimension » n'est pas déclaré dans dimensions`)
+         if (comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).every((value) => value === 'F' || value === 'M'), fichier, 0, `« indicator_pages.${key}.comparison.sexes » est invalide`)
          exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, 0, `« indicator_pages.${key}.comparison.sex » est invalide`)
          exiger(comparison['direction'] === undefined || comparison['direction'] === 'high' || comparison['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.comparison.direction » est invalide`)
+         if (comparison['labels'] !== undefined) exiger(estObjet(comparison['labels']) && Object.values(comparison['labels'] as LigneBrute).every((value) => estChaine(value)), fichier, 0, `« indicator_pages.${key}.comparison.labels » est invalide`)
        }
        const validatedPage = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources } as IndicatorPageMetadata
        if (page['family'] !== undefined) validatedPage.family = family as IndicatorPageMetadata['family']
+       if (comparison !== undefined) validatedPage.comparison = comparison as IndicatorPageMetadata['comparison']
        indicator_pages[key] = validatedPage
     }
   }

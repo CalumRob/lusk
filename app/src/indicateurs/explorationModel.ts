@@ -1,5 +1,6 @@
 import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata } from '@/payload/types'
 import { normalizeComparisonFacet } from './familySeam'
+import type { ComparisonFacet } from './familySeam'
 
 export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
 export type DirectionIndicateur = 'high' | 'low'
@@ -14,9 +15,17 @@ export interface ModeleExploration { state: Required<Pick<EtatExploration, 'nive
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
 
-export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload {
+export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload
+export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload
+export function payloadPourCarte(payload: Payload, facetOrTheme: ComparisonFacet | Theme, indicatorOrNiveau: string | NiveauIndicateur, niveauOrDepartement?: NiveauIndicateur | string, departementOrEpci?: string, epciLegacy?: string): Payload {
+  const facet = typeof facetOrTheme === 'string'
+    ? { theme: facetOrTheme, indicator: indicatorOrNiveau as string, detail: null, sex: null, dimension: null, direction: 'high' as const, unit: '', labels: {}, url: '', valid: true }
+    : facetOrTheme
+  const niveau = typeof facetOrTheme === 'string' ? niveauOrDepartement as NiveauIndicateur : indicatorOrNiveau as NiveauIndicateur
+  const departement = typeof facetOrTheme === 'string' ? departementOrEpci : niveauOrDepartement as string | undefined
+  const epci = typeof facetOrTheme === 'string' ? epciLegacy : departementOrEpci
   const ids = new Set(payload.territoires.filter((territory) => territory.type === niveau && (niveau !== 'commune' || ((!departement || territory.departement === departement) && (!epci || territory.epci === epci)))).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === theme && fact.key === indicator && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension) && fact.type === niveau && ids.has(fact.territoire)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */

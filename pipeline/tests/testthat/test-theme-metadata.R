@@ -414,7 +414,7 @@ test_that("sous-groupes : la décomposition #370 — douze sous-groupes, ordre d
   )
   familles_contractuelles <- c(
     "scalar", "composition", "trajectory", "distribution",
-    "relationship", "list", "pyramid", "comparison-bars"
+    "relationship", "profile", "list", "pyramid", "comparison-bars"
   )
   expect_identical(FAMILLES_FIGURE, familles_contractuelles)
 
@@ -473,12 +473,10 @@ test_that("valider_theme_metadata : un sous-groupe sans lecture valide (le sous-
   expect_no_error(valider_theme_metadata(meta))
 })
 
-test_that("valider_theme_metadata : la famille de figure hors des huit styles prédéfinis est rejetée (#370)", {
-  # la grammaire fermée (ADR-0023) : les huit familles seulement — `profile`
-  # (la famille d'avant la grammaire) comme `camembert` sont hors contrat
+test_that("valider_theme_metadata : les familles connues sont acceptées et les inconnues rejetées (#424)", {
   meta <- lire_metadata("theme-demographie-valide.json")
   meta$subgroups[[1L]]$figure$family <- "profile"
-  expect_error(valider_theme_metadata(meta), "hors contrat")
+  expect_no_error(valider_theme_metadata(meta))
   meta <- lire_metadata("theme-demographie-valide.json")
   meta$subgroups[[1L]]$figure$family <- "camembert"
   expect_error(valider_theme_metadata(meta), "hors contrat")
