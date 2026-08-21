@@ -531,6 +531,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     for (indicator_key in names(metadata$indicator_pages)) {
       page <- metadata$indicator_pages[[indicator_key]]
+      if (!indicator_key %in% cles_indicateurs) {
+        manquer("indicator_pages", paste0("la page « ", indicator_key, " » référence un indicateur inconnu"))
+      }
     champs <- c("indicator", "label", "definition", "unit", "calculation",
                 "direction", "caveats", "vintage")
     if (!is.list(page) || any(!vapply(champs, function(x)
@@ -540,10 +543,14 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!page$indicator %in% cles_indicateurs) {
       manquer("indicator_pages", "l'indicateur n'appartient pas au registre")
     }
+    if (!identical(page$indicator, indicator_key)) {
+      manquer("indicator_pages.indicator", paste0("« ", indicator_key, " » doit correspondre à sa clé"))
+    }
     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
       manquer("indicator_pages.direction", "la direction doit être high ou low")
     }
     if (is.null(page$levels) || length(page$levels) == 0L ||
+        anyDuplicated(unlist(page$levels, use.names = FALSE)) ||
         any(!page$levels %in% c("commune", "epci", "departement"))) {
       manquer("indicator_pages.levels", "les niveaux comparables sont invalides")
     }
@@ -560,6 +567,13 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
           function(x) est_chaine_non_vide(source[[x]]), logical(1)))) {
         manquer("indicator_pages.sources", "une source est incomplète")
       }
+    }
+    detail <- page$detail
+    if (!is.null(detail) && !(is.character(detail) && length(detail) == 1L)) {
+      manquer("indicator_pages.detail", paste0("« ", indicator_key, " » doit être une chaîne ou NULL"))
+    }
+    if (!is.null(detail) && (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[detail]]))) {
+      manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
     }
     }
   }

@@ -171,6 +171,21 @@ test_that("valider_theme_metadata : la politique de source de référence", {
   )
 })
 
+test_that("valider_theme_metadata : les pages scalaires rejettent les cinq dérives typées", {
+  mutations <- list(
+    direction_typée = function(meta) { meta$indicator_pages$densite$direction <- "Descriptif"; meta },
+    niveaux_dupliqués = function(meta) { meta$indicator_pages$densite$levels <- c("commune", "commune"); meta },
+    source_inconnue = function(meta) { meta$indicator_pages$densite$sources <- "missing"; meta },
+    détail_invalide = function(meta) { meta$indicator_pages$densite$detail <- 42; meta },
+    clé_indicateur_incohérente = function(meta) { meta$indicator_pages$densite$indicator <- "autre"; meta }
+  )
+  for (nom in names(mutations)) {
+    meta <- lire_metadata("theme-demographie-valide.json")
+    meta <- mutations[[nom]](meta)
+    expect_error(valider_theme_metadata(meta), "indicator_pages", info = nom)
+  }
+})
+
 # Les libellés payload-owned (issue #318) — les trois cartes de vocabulaire
 # que le thème déclare : indicator_labels (EXACTEMENT indicator_keys),
 # detail_labels (clés ⊆ indicator_keys, chaque valeur une carte détail →
