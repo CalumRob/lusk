@@ -670,10 +670,10 @@ export interface ThemeMetadata {
 /** A page contract for a relationship: roles are explicit, never inferred from keys. */
 export type RelationshipPageMetadata = Omit<ScalarPageMetadata, 'direction' | 'family'> & {
   family: 'relationship'
-  axis: { indicator: string; label: string; unit: string }
-  measure: { indicator: string; label: string; unit: string }
+  axis: { indicator: string; detail?: string | null; label: string; unit: string }
+  measure: { indicator: string; detail?: string | null; label: string; unit: string }
   /** The one URL-backed scalar used by Carte, extremes and table ordering. */
-  scalarFacet: { indicator: string; direction: 'high' | 'low' }
+  scalarFacet: { indicator: string; detail?: string | null; direction: 'high' | 'low' }
 }
 
 export type IndicatorPageMetadata = ScalarPageMetadata
@@ -699,7 +699,7 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
-  axis?: { indicator: string; label: string; unit: string }
-  measure?: { indicator: string; label: string; unit: string }
+  axis?: { indicator: string; detail?: string | null; label: string; unit: string }
+  measure?: { indicator: string; detail?: string | null; label: string; unit: string }
   scalarFacet?: { indicator: string; direction: 'high' | 'low' }
 }

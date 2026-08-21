@@ -555,19 +555,29 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (famille_page == "relationship") {
       for (role in c("axis", "measure")) {
         val <- page[[role]]
-        if (!est_liste(val) || !est_chaine_non_vide(val$indicator) ||
+        if (!est_liste(val) || !est_chaine_non_vide(val$indicator) || !val$indicator %in% cles_indicateurs ||
             !est_chaine_non_vide(val$label) || !est_chaine_non_vide(val$unit)) {
           manquer("indicator_pages", paste0("« ", indicator_key, ".", role,
                                              " » doit déclarer un rôle sémantique complet"))
         }
+        if (!is.null(val$detail) &&
+            (is.null(metadata$detail_labels[[val$indicator]]) ||
+             is.null(metadata$detail_labels[[val$indicator]][[val$detail]]))) {
+          manquer("indicator_pages", paste0("détail inconnu « ", indicator_key, ".", role, " »"))
+        }
       }
       facet <- page$scalarFacet
-      if (!est_liste(facet) || !est_chaine_non_vide(facet$indicator) ||
+      if (!est_liste(facet) || !est_chaine_non_vide(facet$indicator) || !facet$indicator %in% cles_indicateurs ||
           !facet$direction %in% c("high", "low")) {
         manquer("indicator_pages.scalarFacet", "la facette scalaire explicite est invalide")
       }
+      if (!is.null(facet$detail) &&
+          (is.null(metadata$detail_labels[[facet$indicator]]) ||
+           is.null(metadata$detail_labels[[facet$indicator]][[facet$detail]]))) {
+        manquer("indicator_pages.scalarFacet", "le détail de la facette est inconnu")
+      }
     }
-    if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
+    if (famille_page == "scalar" && !identical(page$direction, "high") && !identical(page$direction, "low")) {
       manquer("indicator_pages.direction", "la direction doit être high ou low")
     }
     if (is.null(page$levels) || length(page$levels) == 0L ||
