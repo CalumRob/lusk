@@ -4,11 +4,11 @@ import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { ancreSource } from '@/methodes/sources'
-import { publishedSources } from '@/methodes/authority'
+import { sourceRecords } from '@/payload/selectors'
 import { usePayload } from '@/payload/usePayload'
 
 const { payload, erreur, chargement, recharger } = usePayload()
-const sources = computed(() => (payload.value ? publishedSources(payload.value) : []))
+const sources = computed(() => payload.value ? sourceRecords(payload.value).filter((source) => source.consumers.length > 0) : [])
 </script>
 
 <template>
@@ -29,15 +29,16 @@ const sources = computed(() => (payload.value ? publishedSources(payload.value) 
         <header class="source-record__header">
           <div>
             <p class="source-record__eyebrow">Jeu de données</p>
-            <h2>{{ source.name }}</h2>
-            <p class="source-record__publisher">Éditeur : {{ source.publisher }}</p>
+            <h2>{{ source.dataset }}</h2>
+            <p class="source-record__publisher">Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }}</p>
           </div>
           <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a>
         </header>
         <p v-if="source.caveat" class="source-record__caveat">{{ source.caveat }}</p>
-        <p v-if="source.updateClocks.length" class="source-record__clock">
-          <strong>Horloge de mise à jour :</strong> {{ source.updateClocks.join(' · ') }}
-        </p>
+        <section v-if="source.clocks.length" class="source-record__clocks" aria-label="Horloges de mise à jour">
+          <h3>Horloges de mise à jour</h3>
+          <dl><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl>
+        </section>
         <h3>Millésimes et fraîcheur</h3>
         <ul class="source-record__vintages">
           <li v-for="vintage in source.vintages" :id="ancreSource(vintage.id)" :key="vintage.id">
@@ -51,7 +52,7 @@ const sources = computed(() => (payload.value ? publishedSources(payload.value) 
         <h3>Consommateurs publiés</h3>
         <ul v-if="source.consumers.length" class="source-record__consumers">
           <li v-for="consumer in source.consumers" :key="`${consumer.theme}-${consumer.key}`">
-            <a :href="`/methodologie?onglet=methodes&section=${consumer.theme}#indicateur-${consumer.key}`">{{ consumer.label }}</a>
+            <RouterLink :to="{ name: 'indicateur', params: { theme: consumer.theme, indicator: consumer.key } }">{{ consumer.label }}</RouterLink>
             <span> · {{ consumer.theme }}</span>
             <small v-if="consumer.caveat"> — {{ consumer.caveat }}</small>
           </li>

@@ -668,12 +668,35 @@ export interface ThemeMetadata {
 }
 
 export interface SourceRecord {
+  /** Stable source-record key; when nested this is the dataset anchor. */
+  id?: string
   dataset: string
   publisher: string
   url: string
   licence: string
   vintage: string
   freshness: string
+  /** Full freshness rows; the scalar fields remain a compatibility summary. */
+  vintages?: SourceVintageRecord[]
+  /** Named clocks are structured facts, never prose concatenated by a view. */
+  clocks?: SourceClock[]
+  caveat?: string
+}
+
+export interface SourceVintageRecord {
+  id: string
+  label: string
+  version: string | null
+  licence: string | null
+  dateReference: string | null
+  datePublication: string | null
+}
+
+export interface SourceClock {
+  name: string
+  frequency: string
+  reference: string
+  trigger?: string
 }
 
 export interface ScalarPageMetadata {

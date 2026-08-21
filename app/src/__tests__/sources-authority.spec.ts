@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { publishedSources } from '../methodes/authority'
+import { sourceRecords } from '../payload/selectors'
 import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, territoiresFixture, vintagesFixture } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
 
@@ -14,9 +14,9 @@ const payload: Payload = {
   programmes: null,
 }
 
-describe('publishedSources — autorité dataset-centric publiée', () => {
+describe('sourceRecords — autorité dataset-centric publiée', () => {
   it('regroupe les lignes vintage et conserve toute la fraîcheur', () => {
-    const serie = publishedSources(payload).find((source) => source.id === 'serie_historique')!
+    const serie = sourceRecords(payload).find((source) => source.id === 'serie_historique')!
     expect(serie.publisher).toBe('INSEE')
     expect(serie.url).toContain('data.gouv.fr')
     expect(serie.vintages).toHaveLength(1)
@@ -24,9 +24,18 @@ describe('publishedSources — autorité dataset-centric publiée', () => {
   })
 
   it('publie uniquement les consommateurs résolus par le registre', () => {
-    const serie = publishedSources(payload).find((source) => source.id === 'serie_historique')!
+    const serie = sourceRecords(payload).find((source) => source.id === 'serie_historique')!
     expect(serie.consumers.map((consumer) => consumer.key)).toEqual(['densite', 'evolution_1968'])
-    expect(publishedSources(payload).some((source) => source.consumers.some((consumer) => consumer.key === 'le-matin-la-commune-se-vide'))).toBe(false)
-    expect(publishedSources(payload).find((source) => source.id === 'flores_a88')?.consumers).toEqual([])
+    expect(sourceRecords(payload).some((source) => source.consumers.some((consumer) => consumer.key === 'le-matin-la-commune-se-vide'))).toBe(false)
+    expect(sourceRecords(payload).find((source) => source.id === 'flores_a88')).toBeUndefined()
+  })
+
+  it('forme une union exacte des indicateurs publiés et conserve les horloges structurées', () => {
+    const records = sourceRecords(payload)
+    for (const line of payload.indicateurs) {
+      expect(records.some((record) => record.consumers.some((consumer) => consumer.theme === line.theme && consumer.key === line.key))).toBe(true)
+    }
+    const mobilite = sourceRecords(payload, { includeUnpublished: true }).find((record) => record.id === 'mobilite_snapshot')
+    expect(mobilite?.clocks.some((clock) => clock.frequency && clock.reference && clock.trigger)).toBe(true)
   })
 })
