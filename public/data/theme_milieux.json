@@ -141,5 +141,13 @@
     "grandir-en-setalant": "grandit en s'étalant",
     "sen-aller-et-consommer-quand-meme": "se vide, et consomme quand même",
     "les-departs-laissent-la-place-a-la-renaturation": "se vide, laissant la place à la renaturation"
+  },
+  "indicator_pages": {
+    "artif_par_habitant": {"indicator":"artif_par_habitant","label":"Intensité état","definition":"Surface artificialisée par habitant à chaque état OCS-GE.","unit":"m²/hab.","calculation":"Surface de l’état divisée par la population.","direction":"low","caveats":"Les millésimes départementaux diffèrent et les trous restent manquants.","levels":["commune","epci","departement"],"sources":["ocsge_artificialisation_22_2025"],"family":"trajectory","default_detail":"2025","endpoint_labels":{"M2":"État initial (M2)","M3":"État final (M3)","2020":"2020","2021":"2021","2022":"2022","2023":"2023","2024":"2024","2025":"2025"}},
+    "conso_enaf_annuel": {"indicator":"conso_enaf_annuel","label":"Consommation d’ENAF — série annuelle","definition":"Consommation annuelle d’espaces naturels, agricoles et forestiers.","unit":"ha","calculation":"Valeur publiée par année.","direction":"low","caveats":"La série peut être plus courte selon le territoire.","levels":["commune","epci","departement"],"sources":["consoenaf"],"family":"trajectory","default_detail":"2024","endpoint_labels":{"2011":"2011","2012":"2012","2013":"2013","2014":"2014","2015":"2015","2016":"2016","2017":"2017","2018":"2018","2019":"2019","2020":"2020","2021":"2021","2022":"2022","2023":"2023","2024":"2024"}}
+  },
+  "source_records": {
+    "ocsge_artificialisation_22_2025":{"dataset":"OCS-GE Artificialisation","publisher":"IGN","url":"https://geoservices.ign.fr/ocsge","licence":"Licence ouverte 2.0","vintage":"M2–M3","freshness":"Millésimes départementaux"},
+    "consoenaf":{"dataset":"Consommation d’espaces naturels, agricoles et forestiers","publisher":"Cerema","url":"https://artificialisation.developpement-durable.gouv.fr/","licence":"Licence ouverte","vintage":"2011–2024","freshness":"Publication annuelle"}
   }
 }

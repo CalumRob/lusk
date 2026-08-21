@@ -36,6 +36,26 @@ async function monter(url: string, appels: string[] = []) {
 beforeEach(() => localStorage.clear())
 
 describe('IndicateurView — routed URL seam', () => {
+  it('canonicalizes and changes a trajectory endpoint across Repères and Carte', async () => {
+    const originalMetadata = payload.themeMetadata!.demographie!
+    const originalFacts = payload.indicateurs
+    const meta = structuredClone(originalMetadata)
+    payload.themeMetadata!.demographie = meta
+    meta.indicator_keys = [...meta.indicator_keys, 'serie_test']
+    meta.sources.serie_test = 'serie_historique'
+    meta.indicator_labels.serie_test = 'Série test'
+    meta.detail_labels.serie_test = { '2022': '2022', '2024': '2024' }
+    meta.indicator_pages = { serie_test: { indicator: 'serie_test', label: 'Série test', definition: 'Une trajectoire.', unit: 'u', calculation: '—', direction: 'high', caveats: '—', levels: ['commune'], sources: ['serie_historique'], family: 'trajectory', default_detail: '2024', endpoint_labels: { '2022': '2022', '2024': '2024' } } }
+    payload.indicateurs = [...originalFacts, ...(['22001', '22002'].flatMap((territoire, i) => ['2022', '2024'].map((detail) => ({ ...originalFacts[0], territoire, key: 'serie_test', detail, value: i + Number(detail) / 10000 }))))]
+    try {
+      const { wrapper, router } = await monter('/indicateurs/demographie/serie_test')
+      expect(router.currentRoute.value.query.detail).toBe('2024')
+      expect(wrapper.text()).toContain('Endpoint actif')
+      await router.push({ query: { vue: 'carte', detail: '2022' } }); await flushPromises()
+      expect(router.currentRoute.value.query.detail).toBe('2022')
+      expect(wrapper.find('[data-testid="map"]').exists()).toBe(true)
+    } finally { payload.themeMetadata!.demographie = originalMetadata; payload.indicateurs = originalFacts }
+  })
   it('defaults to Repères and switches real URL-backed views; invalid vue is cleared by selecting Repères', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=wat'); expect(wrapper.find('main').exists()).toBe(true); await wrapper.findAll('.vues button')[0].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.vue).toBeUndefined(); await router.push({ query: { vue: 'carte' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('carte'); await router.push({ query: { vue: 'indicateur' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('indicateur') })
   it('renders unknown indicator honestly', async () => { const { wrapper } = await monter('/indicateurs/demographie/not-published'); expect(wrapper.text()).toContain('Indicateur introuvable') })
   it('renders an unknown theme as a finite honest error state', async () => { const { wrapper } = await monter('/indicateurs/inconnu/densite'); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Chargement de l’indicateur') })

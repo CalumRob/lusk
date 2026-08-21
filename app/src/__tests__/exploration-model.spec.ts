@@ -21,7 +21,8 @@ describe('modèle pur de Page d’indicateur', () => {
     const result = modeleExploration([point('a', '2022', 10), point('a', '2023', 12), point('b', '2022', 10), point('b', '2024', null)], metadata, territoires, { niveau: 'commune' }, undefined, 'prix')
     expect(result.activeDetail).toBe('2024')
     expect(result.trajectoire?.find((line) => line.territoire.territoire === 'a')?.points).toHaveLength(2)
-    expect(result.rows).toHaveLength(0)
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0].value).toBeNull()
   })
 
   it('lets the URL choose an endpoint and keeps tied active extremes honest', () => {

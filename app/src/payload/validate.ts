@@ -2007,6 +2007,12 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
        for (const champ of ['label', 'definition', 'unit', 'calculation', 'direction', 'caveats']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
        const detail = page['detail']; exiger(detail === undefined || detail === null || estChaine(detail), fichier, 0, `« indicator_pages.${key}.detail » doit être une chaîne ou null`)
        const default_detail = page['default_detail']; exiger(default_detail === undefined || default_detail === null || estChaine(default_detail), fichier, 0, `« indicator_pages.${key}.default_detail » doit être une chaîne ou null`)
+       const endpoint_labels = page['endpoint_labels']; exiger(endpoint_labels === undefined || estObjet(endpoint_labels) && Object.values(endpoint_labels).every((label) => estChaine(label) && label.length > 0), fichier, 0, `« indicator_pages.${key}.endpoint_labels » est invalide`)
+       if (page['family'] === 'trajectory') {
+         exiger(estObjet(endpoint_labels) && Object.keys(endpoint_labels).length > 0, fichier, 0, `« indicator_pages.${key}.endpoint_labels » est requis pour une trajectoire`)
+         if (default_detail !== undefined && default_detail !== null) exiger(Object.prototype.hasOwnProperty.call(endpoint_labels, default_detail), fichier, 0, `« indicator_pages.${key}.default_detail » n'est pas un endpoint déclaré`)
+         for (const endpoint of Object.keys(endpoint_labels as LigneBrute)) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[key]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[key], endpoint), fichier, 0, `endpoint « ${endpoint} » sans libellé publié`)
+       }
       if (detail !== undefined && detail !== null) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[key]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[key], detail), fichier, 0, `« indicator_pages.${key}.detail » est inconnu`)
       exiger(Array.isArray(page['levels']) && page['levels'].length > 0 && new Set(page['levels'] as unknown[]).size === (page['levels'] as unknown[]).length && (page['levels'] as unknown[]).every((x) => x === 'commune' || x === 'epci' || x === 'departement'), fichier, 0, `« indicator_pages.${key}.levels » est invalide`)
       exiger(Array.isArray(page['sources']) && page['sources'].length > 0 && new Set(page['sources'] as unknown[]).size === (page['sources'] as unknown[]).length && (page['sources'] as unknown[]).every((source) => estChaine(source) && source.length > 0), fichier, 0, `« indicator_pages.${key}.sources » est vide ou invalide`)
@@ -2014,7 +2020,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-       indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(page['family'] === undefined ? {} : { family: page['family'] as FamilleFigure }), ...(default_detail === undefined ? {} : { default_detail: default_detail as string | null }) }
+       indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(page['family'] === undefined ? {} : { family: page['family'] as FamilleFigure }), ...(default_detail === undefined ? {} : { default_detail: default_detail as string | null }), ...(endpoint_labels === undefined ? {} : { endpoint_labels: endpoint_labels as Record<string, string> }) }
     }
   }
 
@@ -2122,5 +2128,18 @@ export function verifierPariteLibelles(payload: Payload): void {
       'theme_<theme>.json',
       `Parité libellés ↔ payload rompue — ${violations.join(' · ')}`,
     )
+  }
+}
+
+/** Trajectory descriptors are validated against the facts, not just metadata. */
+export function verifierPariteTrajectoires(payload: Payload): void {
+  for (const [theme, metadata] of Object.entries(payload.themeMetadata ?? {})) {
+    for (const [key, page] of Object.entries(metadata?.indicator_pages ?? {})) {
+      if (page.family !== 'trajectory') continue
+      const endpoints = page.endpoint_labels ?? {}
+      const details = new Set(payload.indicateurs.filter((fact) => fact.theme === theme && fact.key === key && fact.detail !== null).map((fact) => fact.detail as string))
+      for (const endpoint of Object.keys(endpoints)) if (!details.has(endpoint)) throw new PayloadError('validation', `theme_${theme}.json`, `endpoint « ${endpoint} » de « ${key} » absent des faits publiés`)
+      if (page.default_detail !== null && page.default_detail !== undefined && !details.has(page.default_detail)) throw new PayloadError('validation', `theme_${theme}.json`, `endpoint par défaut « ${page.default_detail} » de « ${key} » absent des faits publiés`)
+    }
   }
 }

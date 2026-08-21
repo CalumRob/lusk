@@ -156,5 +156,9 @@
     "parc-intermediaire": "intermédiaire",
     "passoire-energetique": "une passoire énergétique",
     "parc-heterogene": "hétérogène"
-  }
+  },
+  "indicator_pages": {
+    "prix_m2": {"indicator":"prix_m2","label":"Médiane prix au m²","definition":"Prix médian déclaré par mètre carré des ventes.","unit":"€/m²","calculation":"Médiane des prix au m² par millésime.","direction":"high","caveats":"Fenêtres inégales et valeurs manquantes conservées.","levels":["commune","epci","departement"],"sources":["dvf_2025_dep22"],"family":"trajectory","default_detail":"2025","endpoint_labels":{"2021":"2021","2022":"2022","2023":"2023","2024":"2024","2025":"2025"}}
+  },
+  "source_records": {"dvf_2025_dep22":{"dataset":"Demandes de valeurs foncières","publisher":"Etalab","url":"https://dvf.etalab.gouv.fr/","licence":"Licence ouverte","vintage":"2025","freshness":"Publication annuelle"}}
 }

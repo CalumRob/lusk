@@ -691,4 +691,6 @@ export interface ScalarPageMetadata {
   family?: FamilleFigure
   /** For trajectory pages, the published detail/year is the comparison facet. */
   default_detail?: string | null
+  /** Authoritative labels for selectable trajectory endpoints. */
+  endpoint_labels?: Record<string, string>
 }

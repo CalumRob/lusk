@@ -588,6 +588,14 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!is.null(page$default_detail) && !(is.character(page$default_detail) && length(page$default_detail) == 1L)) {
       manquer("indicator_pages.default_detail", "le détail actif par défaut doit être une chaîne ou NULL")
     }
+    if (!is.null(page$endpoint_labels) && (!is.list(page$endpoint_labels) || length(page$endpoint_labels) == 0L || any(!vapply(page$endpoint_labels, est_chaine_non_vide, logical(1L)))) ) {
+      manquer("indicator_pages.endpoint_labels", "les libellés d'endpoint sont invalides")
+    }
+    if (identical(page$family, "trajectory")) {
+      if (is.null(page$endpoint_labels) || !is.list(page$endpoint_labels) || length(page$endpoint_labels) == 0L) manquer("indicator_pages.endpoint_labels", "requis pour une trajectoire")
+      if (!is.null(page$default_detail) && !page$default_detail %in% names(page$endpoint_labels)) manquer("indicator_pages.default_detail", "endpoint par défaut non déclaré")
+      for (endpoint in names(page$endpoint_labels)) if (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[endpoint]])) manquer("indicator_pages.endpoint_labels", paste0("endpoint inconnu « ", endpoint, " »"))
+    }
     }
   }
 
@@ -638,5 +646,21 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       paste(partagees_hist, collapse = ", ")))
   }
 
+  invisible(metadata)
+}
+
+# Mirror of verifierPariteTrajectoires(): endpoint contracts are checked against
+# the published facts, so a descriptor can never advertise a dead year.
+verifier_parite_trajectoires <- function(metadata, indicateurs) {
+  if (is.null(metadata$indicator_pages)) return(invisible(metadata))
+  for (key in names(metadata$indicator_pages)) {
+    page <- metadata$indicator_pages[[key]]
+    if (!identical(page$family, "trajectory")) next
+    faits <- indicateurs[indicateurs$key == key & !is.na(indicateurs$detail), , drop = FALSE]
+    details <- unique(as.character(faits$detail))
+    endpoints <- if (is.null(page$endpoint_labels)) character() else names(page$endpoint_labels)
+    if (length(setdiff(endpoints, details)) > 0L) stop("endpoint absent des faits publiés")
+    if (!is.null(page$default_detail) && !page$default_detail %in% details) stop("endpoint par défaut absent des faits publiés")
+  }
   invisible(metadata)
 }
