@@ -547,9 +547,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!identical(page$indicator, indicator_key)) {
       manquer("indicator_pages.indicator", paste0("« ", indicator_key, " » doit correspondre à sa clé"))
     }
-    if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
-      manquer("indicator_pages.direction", "la direction doit être high ou low")
-    }
+     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
+       manquer("indicator_pages.direction", "la direction doit être high ou low")
+     }
+     if (!is.null(page$family) && !page$family %in% c("scalar", "composition", "distribution", "trajectory", "relationship", "profile")) {
+       manquer("indicator_pages.family", "la famille de figure est inconnue")
+     }
     if (is.null(page$levels) || length(page$levels) == 0L ||
         anyDuplicated(unlist(page$levels, use.names = FALSE)) ||
         any(!page$levels %in% c("commune", "epci", "departement"))) {

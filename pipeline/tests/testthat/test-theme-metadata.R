@@ -180,6 +180,7 @@ test_that("valider_theme_metadata : les pages scalaires rejettent les cinq déri
     source_de_référence_absente = function(meta) { meta$indicator_pages$densite$sources <- "age_detail"; meta },
     vintage_dupliqué = function(meta) { meta$indicator_pages$densite$vintage <- "ancienne valeur"; meta },
     détail_invalide = function(meta) { meta$indicator_pages$densite$detail <- 42; meta },
+    famille_inconnue = function(meta) { meta$indicator_pages$densite$family <- "camembert"; meta },
     clé_indicateur_incohérente = function(meta) { meta$indicator_pages$densite$indicator <- "autre"; meta }
   )
   for (nom in names(mutations)) {

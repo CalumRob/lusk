@@ -687,4 +687,6 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
+  /** Figure family is part of the publication contract, never inferred in the app. */
+  family?: FamilleFigure
 }

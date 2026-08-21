@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
 import { modeleExploration, payloadPourCarte } from '@/indicateurs/explorationModel'
-import type { NiveauIndicateur, OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
+import type { ModeleExploration, NiveauIndicateur, OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
 import { useGeometrie } from '@/geo/useGeometrie'
 import type { NiveauMasque } from '@/geo/types'
@@ -23,15 +23,7 @@ const attendre: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${s
 const { payload, erreur, chargement } = usePayload({ attendre })
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
-const subgroup = computed(() => metadata.value?.subgroups.find((group) => group.indicators.includes(indicator.value)))
-// A published figure is a page even when its descriptor is intentionally
-// absent (profiles are published through the subgroup contract).
-const page = computed(() => metadata.value?.indicator_pages?.[indicator.value] ?? (() => {
-  if (!metadata.value || !subgroup.value) return undefined
-  const sample = payload.value.indicateurs.find((fact) => fact.theme === theme.value && fact.key === indicator.value)
-  if (!sample) return undefined
-  return { indicator: indicator.value, detail: null, label: metadata.value.indicator_labels[indicator.value] ?? indicator.value, definition: subgroup.value.framing, unit: sample.unit, calculation: 'Valeurs publiées par le pipeline.', direction: 'high' as const, caveats: 'La disponibilité dépend des valeurs publiées.', levels: [...new Set(payload.value.indicateurs.filter((fact) => fact.key === indicator.value).map((fact) => fact.type))], sources: metadata.value.sources[indicator.value] ? [metadata.value.sources[indicator.value]] : [] }
-})())
+const page = computed(() => metadata.value?.indicator_pages?.[indicator.value])
 const sources = computed(() => page.value?.sources.map((id) => metadata.value?.source_records?.[id]).filter((source): source is NonNullable<typeof source> => Boolean(source)) ?? [])
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value && f.key === indicator.value))
 const niveauRoute = computed(() => ['commune', 'epci', 'departement'].includes(String(route.query.niveau)) ? route.query.niveau as NiveauIndicateur : undefined)
@@ -44,8 +36,13 @@ const validScope = computed(() => {
   return { departement, epci }
 })
 const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
-const model = computed(() => page.value && metadata.value ? modeleExploration(facts.value, metadata.value, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined, indicator.value) : null)
-const profile = computed(() => subgroup.value?.figure.family === 'profile' && metadata.value ? modeleProfil(facts.value, metadata.value, payload.value.territoires, typeof route.query.detail === 'string' ? route.query.detail : undefined) : null)
+const isProfile = computed(() => page.value?.family === 'profile')
+const profile = computed(() => isProfile.value && metadata.value ? modeleProfil(facts.value, metadata.value, payload.value.territoires, typeof route.query.detail === 'string' ? route.query.detail : undefined, niveauRoute.value ?? page.value?.levels[0], validScope.value.departement, validScope.value.epci) : null)
+const model = computed<ModeleExploration | null>(() => {
+  if (isProfile.value && profile.value) return { state: { niveau: niveauRoute.value ?? (page.value?.levels[0] as NiveauIndicateur), departement: validScope.value.departement, epci: validScope.value.epci, territoire: requested.value.territoire, recherche: requested.value.recherche, tri: requested.value.tri ?? 'nom', ordre: requested.value.ordre ?? 'asc' }, rows: [], median: profile.value.median, distribution: [], density: [], high: profile.value.high as never, low: profile.value.low as never, scopeLabel: 'Comparaison publiée', direction: page.value?.direction ?? 'high', markerX: null, markerY: null }
+  return page.value && metadata.value ? modeleExploration(facts.value, metadata.value, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined, indicator.value) : null
+})
+const resolvedFacet = computed(() => profile.value?.selected ?? page.value?.detail ?? null)
 const themeVars = computed(() => themeValide.value ? themeStyle(theme.value as Theme) : undefined)
 const directionGlyph = computed(() => page.value?.direction === 'low' ? '▼' : '▲')
 const directionText = computed(() => page.value?.direction === 'low' ? 'moins = mieux' : 'plus = mieux')
@@ -54,26 +51,30 @@ const markerDescription = computed(() => selectedRow.value && page.value ? `${se
 function afficherRang(row: { rang: number; rangTaille: number }) { return `${row.rang === 1 ? '1er' : `${row.rang}e`} / ${row.rangTaille}` }
 function setSort(tri: TriExploration) { const ordre = route.query.tri === tri && route.query.ordre === 'asc' ? 'desc' : 'asc'; router.replace({ query: normalizedQuery({ tri, ordre }) }) }
 const payloadCarte = computed(() => {
-  const niveau = model.value?.state.niveau ?? niveauRoute.value ?? 'commune'
+  const niveau = model.value?.state.niveau ?? niveauRoute.value ?? page.value?.levels[0] ?? 'commune'
   const departement = niveau === 'commune' && typeof route.query.departement === 'string' ? route.query.departement : undefined
   const epci = niveau === 'commune' && typeof route.query.epci === 'string' ? route.query.epci : undefined
-  return payloadPourCarte(payload.value, theme.value as Theme, indicator.value, niveau, departement, epci)
+  return payloadPourCarte(payload.value, theme.value as Theme, indicator.value, niveau as NiveauIndicateur, departement, epci, resolvedFacet.value)
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
-const couche = computed<Couche | null>(() => page.value ? ({ source: 'indicateur', clef: indicator.value, detail: page.value.detail ?? null, libelle: page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
+const couche = computed<Couche | null>(() => page.value ? ({ source: 'indicateur', clef: indicator.value, detail: resolvedFacet.value, libelle: page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
 const niveauMasque = computed<NiveauMasque>(() => model.value?.state.niveau === 'epci' ? 'epcis' : model.value?.state.niveau === 'departement' ? 'departements' : 'communes')
 const territoireCible = computed(() => payload.value.territoires.find((t) => t.territoire === route.query.territoire && t.type === model.value?.state.niveau) ?? null)
 function normalizedQuery(extra: Record<string, string | undefined> = {}) { const next = { ...route.query, ...extra }; if (next.niveau !== 'commune') { delete next.departement; delete next.epci }; if (payload.value.territoires.length > 0) { if (next.departement !== validScope.value.departement) delete next.departement; if (next.epci !== validScope.value.epci) delete next.epci }; return next }
 function setQuery(key: string, value: string) { router.replace({ query: normalizedQuery({ [key]: value || undefined }) }) }
 function setVue(value: 'reperes' | 'carte' | 'indicateur') { router.replace({ query: normalizedQuery({ vue: value === 'reperes' ? undefined : value }) }) }
 watch(() => [route.params.theme, route.params.indicator, route.query.recherche], () => { recherche.value = String(route.query.recherche ?? '') }, { immediate: true })
+watch(() => [profile.value?.selected, route.params.theme, route.params.indicator], ([facet]) => {
+  if (!isProfile.value || typeof facet !== 'string') return
+  if (route.query.detail !== facet) router.replace({ query: normalizedQuery({ detail: facet }) })
+}, { immediate: true })
 watch(() => [route.query.niveau, route.query.departement, route.query.epci, payload.value.territoires.length], () => { if (!payload.value.territoires.length) return; const niveau = model.value?.state.niveau; const query = normalizedQuery({ niveau }); if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query }) }, { immediate: true })
 watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query.niveau === undefined) router.replace({ query: normalizedQuery({ niveau }) }) }, { immediate: true })
 watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && ['commune', 'epci', 'departement'].includes(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
 </script>
 <template>
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
-    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.</div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.</div><div v-else-if="!page || (!model && !profile)" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>

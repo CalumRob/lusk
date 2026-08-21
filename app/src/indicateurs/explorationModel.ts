@@ -13,9 +13,9 @@ export interface ModeleExploration { state: Required<Pick<EtatExploration, 'nive
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
 
-export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload {
+export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string, detail?: string | null): Payload {
   const ids = new Set(payload.territoires.filter((territory) => territory.type === niveau && (niveau !== 'commune' || ((!departement || territory.departement === departement) && (!epci || territory.epci === epci)))).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === theme && fact.key === indicator && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === theme && fact.key === indicator && fact.type === niveau && ids.has(fact.territoire) && (detail === undefined || fact.detail === detail)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */

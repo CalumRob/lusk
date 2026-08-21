@@ -18,6 +18,6 @@ describe('contrat de profil', () => {
     const tied = modeleProfil([fact('22001', '<15', 10), fact('22002', '<15', 10)], metadonneesThemesFixtures.demographie, territoiresFixture)
     expect(tied.high.count).toBe(2); expect(tied.high.rows).toHaveLength(0)
     const unavailable = modeleProfil([], metadonneesThemesFixtures.demographie, territoiresFixture, 'missing')
-    expect(unavailable.state).toBe('empty'); expect(unavailable.selected).toBeNull()
+    expect(unavailable.state).toBe('unavailable'); expect(unavailable.selected).toBeNull()
   })
 })

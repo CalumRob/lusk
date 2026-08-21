@@ -44,6 +44,7 @@ import type {
   ThemeMetadata,
   Vintage,
   Sexe,
+  FamilleFigure,
 } from './types'
 import {
   CLES_HISTOIRES_PAR_THEME,
@@ -2002,6 +2003,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(page['vintage'] === undefined, fichier, 0, `« indicator_pages.${key}.vintage » est interdit : la fraîcheur vient des source_records`)
       exiger(page['indicator'] === key, fichier, 0, `« indicator_pages.${key}.indicator » doit correspondre à sa clé`)
       exiger(page['direction'] === 'high' || page['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.direction » doit être high ou low`)
+      exiger(page['family'] === undefined || FAMILLES_FIGURE.includes(page['family'] as FamilleFigure), fichier, 0, `« indicator_pages.${key}.family » est inconnue`)
        for (const champ of ['label', 'definition', 'unit', 'calculation', 'direction', 'caveats']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
       const detail = page['detail']; exiger(detail === undefined || detail === null || estChaine(detail), fichier, 0, `« indicator_pages.${key}.detail » doit être une chaîne ou null`)
       if (detail !== undefined && detail !== null) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[key]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[key], detail), fichier, 0, `« indicator_pages.${key}.detail » est inconnu`)
@@ -2011,7 +2013,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources }
+       indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, family: page['family'] as FamilleFigure | undefined }
     }
   }
 
