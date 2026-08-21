@@ -577,6 +577,8 @@ export interface FigureSousGroupe {
 export interface FigureComparison {
   detail: string | null
   sex: Sexe | null
+  /** Explicit sanctioned palette treatment; never inferred from labels. */
+  palette?: 'theme' | 'dpe'
 }
 
 /**
@@ -695,4 +697,6 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
+  /** Semantic page family; required for multi-detail composition pages. */
+  family?: FamilleFigure
 }

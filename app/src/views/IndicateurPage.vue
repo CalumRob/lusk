@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
-import { modeleExploration, payloadPourCarte } from '@/indicateurs/explorationModel'
+import { modeleComposition, modeleExploration, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { NiveauIndicateur, OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
 import { useGeometrie } from '@/geo/useGeometrie'
@@ -13,6 +13,7 @@ import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Sexe, Theme } from '@/payload/types'
 import { themeStyle } from '@/indicateurs/themeTokens'
 import { formaterNombreFR } from '@/payload/selectors'
+import CompositionRepere from '@/components/indicateurs/CompositionRepere.vue'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
@@ -36,6 +37,13 @@ const validScope = computed(() => {
 })
 const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, detail: typeof route.query.detail === 'string' ? route.query.detail : undefined, sex: route.query.sex === 'F' || route.query.sex === 'M' ? route.query.sex as Sexe : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
 const model = computed(() => page.value && metadata.value ? modeleExploration(facts.value, metadata.value, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined, indicator.value) : null)
+const compositionFigure = computed(() => metadata.value?.subgroups.flatMap((group) => group.indicators.includes(indicator.value) && group.figure.family === 'composition' ? [group.figure] : [])[0])
+const composition = computed(() => {
+  if (!page.value || page.value.family !== 'composition' || !metadata.value || !model.value) return null
+  const cible = payload.value.territoires.find((territory) => territory.territoire === requested.value.territoire && territory.type === model.value!.state.niveau) ?? payload.value.territoires.find((territory) => territory.type === model.value!.state.niveau)
+  if (!cible) return null
+  return modeleComposition(facts.value.filter((fact) => fact.territoire === cible.territoire), metadata.value, indicator.value, { detail: model.value.state.detail, sex: model.value.state.sex })
+})
 const themeVars = computed(() => themeValide.value ? themeStyle(theme.value as Theme) : undefined)
 const directionGlyph = computed(() => page.value?.direction === 'low' ? '▼' : '▲')
 const directionText = computed(() => page.value?.direction === 'low' ? 'moins = mieux' : 'plus = mieux')
@@ -49,18 +57,26 @@ const payloadCarte = computed(() => {
   const epci = niveau === 'commune' && typeof route.query.epci === 'string' ? route.query.epci : undefined
   const carte = payloadPourCarte(payload.value, theme.value as Theme, indicator.value, niveau, departement, epci)
   if (model.value?.state.detail === undefined) return carte
-  return { ...carte, indicateurs: carte.indicateurs.filter((fact) => fact.detail === model.value?.state.detail && (model.value?.state.sex === undefined || fact.sex === model.value?.state.sex || fact.sex === null)) }
+  return { ...carte, indicateurs: carte.indicateurs.filter((fact) => fact.detail === model.value?.state.detail && (model.value?.state.sex === undefined ? fact.sex === null : fact.sex === model.value?.state.sex)) }
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
-const couche = computed<Couche | null>(() => page.value ? ({ source: 'indicateur', clef: indicator.value, detail: page.value.detail ?? null, libelle: page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
+const couche = computed<Couche | null>(() => page.value ? ({ source: 'indicateur', clef: indicator.value, detail: model.value?.state.detail ?? page.value.detail ?? null, libelle: page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
 const niveauMasque = computed<NiveauMasque>(() => model.value?.state.niveau === 'epci' ? 'epcis' : model.value?.state.niveau === 'departement' ? 'departements' : 'communes')
 const territoireCible = computed(() => payload.value.territoires.find((t) => t.territoire === route.query.territoire && t.type === model.value?.state.niveau) ?? null)
 function normalizedQuery(extra: Record<string, string | undefined> = {}) { const next = { ...route.query, ...extra }; if (next.niveau !== 'commune') { delete next.departement; delete next.epci }; if (payload.value.territoires.length > 0) { if (next.departement !== validScope.value.departement) delete next.departement; if (next.epci !== validScope.value.epci) delete next.epci }; return next }
 function setQuery(key: string, value: string) { router.replace({ query: normalizedQuery({ [key]: value || undefined }) }) }
+function setFacet(detail: string, sex: Sexe | null) { router.replace({ query: normalizedQuery({ detail, sex: sex ?? undefined }) }) }
 function setVue(value: 'reperes' | 'carte' | 'indicateur') { router.replace({ query: normalizedQuery({ vue: value === 'reperes' ? undefined : value }) }) }
 watch(() => [route.params.theme, route.params.indicator, route.query.recherche], () => { recherche.value = String(route.query.recherche ?? '') }, { immediate: true })
 watch(() => [route.query.niveau, route.query.departement, route.query.epci, payload.value.territoires.length], () => { if (!payload.value.territoires.length) return; const niveau = model.value?.state.niveau; const query = normalizedQuery({ niveau }); if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query }) }, { immediate: true })
 watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query.niveau === undefined) router.replace({ query: normalizedQuery({ niveau }) }) }, { immediate: true })
+watch(() => [model.value?.state.detail, model.value?.state.sex, page.value?.family], ([detail, sex, family]) => {
+  if (!model.value || !page.value) return
+  const next = family === 'composition'
+    ? normalizedQuery({ detail: typeof detail === 'string' ? detail : undefined, sex: sex === 'F' || sex === 'M' ? sex : undefined })
+    : normalizedQuery({ detail: undefined, sex: undefined })
+  if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next })
+}, { immediate: true })
 watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && ['commune', 'epci', 'departement'].includes(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
 </script>
 <template>
@@ -69,7 +85,7 @@ watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && 
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
-      <main v-if="vue === 'reperes'"><div class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterNombreFR(model!.median, 2) }} <small>{{ page.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
+       <main v-if="vue === 'reperes'"><CompositionRepere v-if="composition" :label="page.label" :parts="composition.parts" :palette="compositionFigure?.comparison?.palette ?? 'theme'" :detail="composition.selectedDetail" :sex="composition.selectedSex" @facet="setFacet" /><div class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterNombreFR(model!.median, 2) }} <small>{{ page.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
          <div class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ row.value }} {{ page.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ row.value }} {{ page.unit }}</RouterLink></article></div>
          <div class="controls"><label>Niveau <select :value="model!.state.niveau" @change="setQuery('niveau', ($event.target as HTMLSelectElement).value)"><option v-for="niveau in page.levels" :key="niveau" :value="niveau">{{ niveau === 'commune' ? 'Communes' : niveau === 'epci' ? 'EPCI' : 'Départements' }}</option></select></label><label v-if="model!.state.niveau === 'commune'">Département <input :value="route.query.departement ?? ''" @input="setQuery('departement', ($event.target as HTMLInputElement).value)" /></label><label v-if="model!.state.niveau === 'commune'">EPCI <input :value="route.query.epci ?? ''" @input="setQuery('epci', ($event.target as HTMLInputElement).value)" /></label><label>Rechercher <input v-model="recherche" @input="setQuery('recherche', recherche)" /></label></div>
           <table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterNombreFR(row.value, 2) }} {{ page.unit }}</td><td><span :title="`${directionGlyph} ${directionText}`" :aria-label="`${afficherRang(row)} · ${directionText}`">{{ afficherRang(row) }}</span></td><td><button type="button" @click="setQuery('territoire', row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>

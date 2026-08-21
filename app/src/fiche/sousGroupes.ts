@@ -55,6 +55,7 @@ export interface FigureCompacte {
   /** The indicator the figure renders — the subgroup's matter. */
   clef: string
   lignes: Indicateur[]
+  palette?: 'theme' | 'dpe'
 }
 
 /** The resolved reading of a subgroup — the row plus the template params displayed. */
@@ -297,7 +298,7 @@ export function sousGroupesPourTerritoire(
     const lignesFigure = groupesParCle.get(sousGroupe.figure.indicator)
     const figureCompacte: FigureCompacte | null =
       lignesFigure && lignesFigure.length > 0
-        ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure }
+        ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure, palette: sousGroupe.figure.comparison?.palette }
         : null
 
     const { lecture, indisponible } = lecturePour(

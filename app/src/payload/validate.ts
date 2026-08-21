@@ -42,6 +42,7 @@ import type {
   TerritoireType,
   Theme,
   ThemeMetadata,
+  FamilleFigure,
   Vintage,
   Sexe,
 } from './types'
@@ -1880,6 +1881,13 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(estObjet(comparison), fichier, ligneIndexee, `« ${cle} » : comparison doit être un objet`)
       exiger(comparison['detail'] === null || estChaine(comparison['detail']), fichier, ligneIndexee, `« ${cle} » : comparison.detail doit être une chaîne ou null`)
       exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, ligneIndexee, `« ${cle} » : comparison.sex doit être F, M ou null`)
+      exiger(family === 'composition', fichier, ligneIndexee, `« ${cle} » : comparison est réservé à la famille composition`)
+      exiger(comparison['palette'] === undefined || comparison['palette'] === 'theme' || comparison['palette'] === 'dpe', fichier, ligneIndexee, `« ${cle} » : comparison.palette doit être theme ou dpe`)
+      exiger(comparison['detail'] === null || (detail_labels[indicateurFigure] !== undefined && Object.prototype.hasOwnProperty.call(detail_labels[indicateurFigure], comparison['detail'])), fichier, ligneIndexee, `« ${cle} » : comparison.detail doit être déclaré dans detail_labels`)
+      if (comparison['palette'] === 'dpe') {
+        const details = detail_labels[indicateurFigure] ?? {}
+        exiger(Object.keys(details).length > 0 && Object.keys(details).every((detail) => /^[A-G]$/.test(detail)), fichier, ligneIndexee, `« ${cle} » : la palette DPE exige des détails A à G`)
+      }
     }
 
     // la lecture résolue — le lien explicite vers l'histoire du sous-groupe
@@ -1913,7 +1921,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       label: libelle,
       framing,
       indicators,
-      figure: { family, indicator: indicateurFigure, ...(comparison === undefined ? {} : { comparison: { detail: comparison['detail'] as string | null, sex: (comparison['sex'] ?? null) as Sexe | null } }) },
+      figure: { family, indicator: indicateurFigure, ...(comparison === undefined ? {} : { comparison: { detail: comparison['detail'] as string | null, sex: (comparison['sex'] ?? null) as Sexe | null, ...(comparison['palette'] === undefined ? {} : { palette: comparison['palette'] as 'theme' | 'dpe' }) } }) },
       reading: { story_key, params, template },
     }
   })
@@ -2010,6 +2018,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(page['direction'] === 'high' || page['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.direction » doit être high ou low`)
        for (const champ of ['label', 'definition', 'unit', 'calculation', 'direction', 'caveats']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
       const detail = page['detail']; exiger(detail === undefined || detail === null || estChaine(detail), fichier, 0, `« indicator_pages.${key}.detail » doit être une chaîne ou null`)
+      const family = page['family']; exiger(family === undefined || estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
       if (detail !== undefined && detail !== null) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[key]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[key], detail), fichier, 0, `« indicator_pages.${key}.detail » est inconnu`)
       exiger(Array.isArray(page['levels']) && page['levels'].length > 0 && new Set(page['levels'] as unknown[]).size === (page['levels'] as unknown[]).length && (page['levels'] as unknown[]).every((x) => x === 'commune' || x === 'epci' || x === 'departement'), fichier, 0, `« indicator_pages.${key}.levels » est invalide`)
       exiger(Array.isArray(page['sources']) && page['sources'].length > 0 && new Set(page['sources'] as unknown[]).size === (page['sources'] as unknown[]).length && (page['sources'] as unknown[]).every((source) => estChaine(source) && source.length > 0), fichier, 0, `« indicator_pages.${key}.sources » est vide ou invalide`)
@@ -2017,7 +2026,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources }
+      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(family === undefined ? {} : { family: family as FamilleFigure }) }
     }
   }
 
@@ -2075,6 +2084,14 @@ export function verifierPariteLibelles(payload: Payload): void {
   const violations: string[] = []
   for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
     const indicateursTheme = payload.indicateurs.filter((i) => i.theme === theme)
+
+    for (const subgroup of meta.subgroups) {
+      const comparison = subgroup.figure.comparison
+      if (!comparison) continue
+      const rows = indicateursTheme.filter((row) => row.key === subgroup.figure.indicator)
+      if (comparison.detail !== null && !rows.some((row) => row.detail === comparison.detail)) violations.push(`${theme}: détail de comparaison « ${comparison.detail} » de « ${subgroup.figure.indicator} » absent des faits`)
+      if (comparison.sex !== null && !rows.some((row) => row.detail === comparison.detail && row.sex === comparison.sex)) violations.push(`${theme}: sexe de comparaison « ${comparison.sex} » de « ${subgroup.figure.indicator} » absent des faits`)
+    }
 
     for (const ligne of indicateursTheme) {
       if (!(ligne.key in meta.indicator_labels)) {

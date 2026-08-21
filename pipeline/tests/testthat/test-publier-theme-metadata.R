@@ -54,6 +54,18 @@ test_that("les cinq thèmes publient theme_<thème>.json — relu valide, source
   }
 })
 
+test_that("la comparaison de composition reste fermée et ses exceptions sont explicites", {
+  meta <- lire_theme_metadata("habitat")
+  invalide <- meta
+  invalide$subgroups[[1]]$figure$comparison$palette <- "dpe"
+  invalide$subgroups[[1]]$figure$comparison$detail <- "inconnu"
+  expect_error(valider_theme_metadata(invalide), "detail absent de detail_labels")
+
+  invalide <- meta
+  invalide$subgroups[[1]]$figure$comparison$palette <- "rainbow"
+  expect_error(valider_theme_metadata(invalide), "palette doit être theme ou dpe")
+})
+
 test_that("le nom du fichier dérive du thème VALIDÉ du contenu, jamais d'un paramètre", {
   cible <- tempfile("pub-meta-")
   on.exit(unlink(cible, recursive = TRUE))

@@ -10,7 +10,7 @@
       "figure": {
         "family": "composition",
         "indicator": "distribution_dpe",
-        "comparison": { "detail": "F", "sex": null }
+        "comparison": { "detail": "F", "sex": null, "palette": "dpe" }
       },
       "reading": {
         "story_key": "etat-energetique-du-parc",
@@ -104,5 +104,19 @@
     "parc-intermediaire": "intermédiaire",
     "passoire-energetique": "une passoire énergétique",
     "parc-heterogene": "hétérogène"
+  },
+  "indicator_pages": {
+    "mix_logements": { "indicator": "mix_logements", "label": "Mix de logements", "definition": "Répartition du parc entre résidences principales, secondaires et logements vacants.", "unit": "%", "calculation": "Part de chaque catégorie dans le parc de logements.", "direction": "high", "caveats": "Les catégories sont publiées séparément et les valeurs manquantes restent absentes.", "levels": ["commune", "epci", "departement"], "sources": ["logements"], "family": "composition" },
+    "statut": { "indicator": "statut", "label": "Statut d’occupation", "definition": "Répartition des résidences principales selon le statut d’occupation.", "unit": "%", "calculation": "Part de chaque statut dans les résidences principales.", "direction": "high", "caveats": "Les parts sont celles du recensement.", "levels": ["commune", "epci", "departement"], "sources": ["logements"], "family": "composition" },
+    "age_du_bati": { "indicator": "age_du_bati", "label": "Âge du bâti", "definition": "Répartition des résidences principales selon la période d’achèvement.", "unit": "%", "calculation": "Part de chaque période dans le parc connu.", "direction": "low", "caveats": "La période inconnue n’est pas redistribuée.", "levels": ["commune", "epci", "departement"], "sources": ["logements"], "family": "composition" },
+    "type": { "indicator": "type", "label": "Type de logement", "definition": "Répartition des résidences principales entre maisons et appartements.", "unit": "%", "calculation": "Part de chaque type dans les résidences principales.", "direction": "high", "caveats": "Les catégories sont publiées séparément.", "levels": ["commune", "epci", "departement"], "sources": ["logements"], "family": "composition" },
+    "prix_m2": { "indicator": "prix_m2", "label": "Médiane prix au m²", "definition": "Prix médian déclaré par mètre carré.", "unit": "€/m²", "calculation": "Médiane des ventes de la période publiée.", "direction": "low", "caveats": "Une valeur absente signifie que le seuil de ventes n’est pas atteint.", "levels": ["commune", "epci", "departement"], "sources": ["dvf_2025_dep22"] },
+    "part_passoires": { "indicator": "part_passoires", "label": "Part de passoires thermiques", "definition": "Part des DPE F ou G dans la base DPE.", "unit": "%", "calculation": "DPE F ou G divisés par les DPE exploitables.", "direction": "low", "caveats": "Base DPE non représentative de tout le parc et seuil de suppression appliqué.", "levels": ["commune", "epci", "departement"], "sources": ["dpe_22"] },
+    "distribution_dpe": { "indicator": "distribution_dpe", "label": "Distribution des étiquettes DPE (A à G)", "definition": "Répartition des étiquettes A à G dans la base DPE.", "unit": "%", "calculation": "Part de chaque étiquette dans les DPE exploitables.", "direction": "low", "caveats": "La base DPE n’est pas le parc complet.", "levels": ["commune", "epci", "departement"], "sources": ["dpe_22"], "family": "composition" }
+  },
+  "source_records": {
+    "logements": { "dataset": "Recensement — logements", "publisher": "INSEE", "url": "https://www.insee.fr", "licence": "Licence ouverte", "vintage": "RP 2023", "freshness": "Publication annuelle" },
+    "dvf_2025_dep22": { "dataset": "Demandes de valeurs foncières", "publisher": "DGFiP", "url": "https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/", "licence": "Licence ouverte", "vintage": "2025", "freshness": "Publication annuelle" },
+    "dpe_22": { "dataset": "Observatoire DPE", "publisher": "ADEME", "url": "https://data.ademe.fr/datasets/dpe-v2-logements-existants", "licence": "Licence ouverte", "vintage": "2025", "freshness": "Base roulante" }
   }
 }

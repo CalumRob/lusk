@@ -445,6 +445,23 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
           !identical(sex, "F") && !identical(sex, "M")) {
         manquer("figure.comparison", paste0("« ", cle, " » : sex doit être F, M ou NULL"))
       }
+      if (!identical(famille, "composition")) {
+        manquer("figure.comparison", paste0("« ", cle, " » : comparison est réservé à composition"))
+      }
+      palette <- if ("palette" %in% names(comparaison)) comparaison[["palette"]] else NULL
+      if (!is.null(palette) && !is.na(palette) && !identical(palette, "theme") && !identical(palette, "dpe")) {
+        manquer("figure.comparison", paste0("« ", cle, " » : palette doit être theme ou dpe"))
+      }
+      detail_comparaison <- comparaison[["detail"]]
+      details_figure <- metadata$detail_labels[[indicateur_figure]]
+      if (!is.null(detail_comparaison) && !is.na(detail_comparaison) &&
+          (is.null(details_figure) || !detail_comparaison %in% names(details_figure))) {
+        manquer("figure.comparison", paste0("« ", cle, " » : detail absent de detail_labels"))
+      }
+      if (identical(palette, "dpe") && (is.null(details_figure) || length(details_figure) == 0L ||
+          any(!names(details_figure) %in% LETTERS[1:7]))) {
+        manquer("figure.comparison", paste0("« ", cle, " » : palette DPE exige des détails A à G"))
+      }
     }
 
     # la lecture résolue — le lien explicite vers l'histoire du sous-groupe
@@ -558,7 +575,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!page$indicator %in% cles_indicateurs) {
       manquer("indicator_pages", "l'indicateur n'appartient pas au registre")
     }
-    if (!identical(page$indicator, indicator_key)) {
+      if (!identical(page$indicator, indicator_key)) {
       manquer("indicator_pages.indicator", paste0("« ", indicator_key, " » doit correspondre à sa clé"))
     }
     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
@@ -587,6 +604,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.list(source) || any(!vapply(c("dataset", "publisher", "url", "licence", "vintage", "freshness"),
           function(x) est_chaine_non_vide(source[[x]]), logical(1)))) {
         manquer("indicator_pages.sources", "une source est incomplète")
+      }
+      if (!is.null(page$family) && !page$family %in% FAMILLES_FIGURE) {
+        manquer("indicator_pages.family", paste0("« ", indicator_key, " » : famille hors contrat"))
       }
     }
     detail <- page$detail

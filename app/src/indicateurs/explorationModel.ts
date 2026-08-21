@@ -84,11 +84,18 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const isComposition = metadata.subgroups.some((g) => g.figure.family === 'composition' && g.figure.indicator === page.indicator)
+  const isComposition = page.family === 'composition' || (page.family === undefined && metadata.subgroups.some((g) => g.figure.family === 'composition' && g.figure.indicator === page.indicator))
   const compositionRows = facts.filter((fact) => fact.key === page.indicator && fact.type === niveau)
   const declaredFigure = metadata.subgroups.find((g) => g.figure.indicator === page.indicator)?.figure
-  const selectedDetail = (requested as EtatExploration & { detail?: string }).detail ?? page.detail ?? declaredFigure?.comparison?.detail ?? (isComposition ? compositionRows.find((fact) => fact.detail !== null)?.detail ?? null : null)
-  const all = facts.filter((fact) => fact.key === page.indicator && (isComposition ? fact.detail === selectedDetail && (fact.sex === null || fact.sex === ((requested as EtatExploration & { sex?: Sexe }).sex ?? null)) : fact.detail === (page.detail ?? null)) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const detailsDisponibles = new Set(compositionRows.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))
+  const detailDemande = (requested as EtatExploration & { detail?: string }).detail
+  const detailDefaut = page.detail ?? declaredFigure?.comparison?.detail ?? (isComposition ? compositionRows.find((fact) => fact.detail !== null)?.detail ?? null : null)
+  const selectedDetail = isComposition && detailDemande !== undefined && !detailsDisponibles.has(detailDemande) ? detailDefaut : detailDemande ?? detailDefaut
+  const sexesDisponibles = new Set(compositionRows.filter((fact) => fact.detail === selectedDetail).map((fact) => fact.sex).filter((sex): sex is Sexe => sex !== null && sex !== undefined))
+  const sexDemande = requested.sex
+  const sexDefaut = declaredFigure?.comparison?.sex ?? (sexesDisponibles.has('F') ? 'F' : sexesDisponibles.has('M') ? 'M' : undefined)
+  const selectedSex = isComposition ? (sexDemande !== undefined && !sexesDisponibles.has(sexDemande) ? sexDefaut : sexDemande ?? sexDefaut) : undefined
+  const all = facts.filter((fact) => fact.key === page.indicator && (isComposition ? fact.detail === selectedDetail && (selectedSex === undefined ? fact.sex === null : fact.sex === selectedSex) : fact.detail === (page.detail ?? null)) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
   const values = all.map((row) => row.value).sort((a, b) => a - b)
   const median = values.length % 2 ? values[(values.length - 1) / 2] : values.length ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 : null
   const ranked = [...all].sort((a, b) => page.direction === 'low' ? a.value - b.value : b.value - a.value)
@@ -108,5 +115,5 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
   const density = estimerDensite(values)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, detail: selectedDetail ?? undefined, sex: requested.sex, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, detail: selectedDetail ?? undefined, sex: selectedSex, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
 }

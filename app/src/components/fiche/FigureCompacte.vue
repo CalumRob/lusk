@@ -41,6 +41,8 @@ const props = defineProps<{
   reseaux?: Indicateur[]
   large?: boolean
   signe?: boolean
+  /** Palette is declared by theme metadata; direct legacy mounts default only for compatibility. */
+  palette?: 'theme' | 'dpe'
 }>()
 
 type Corps =
@@ -55,7 +57,7 @@ const corps = computed<Corps>(() => {
   if (props.famille === 'composition') {
     // DPE is the one official palette override. Detect the declared A→G
     // composition, never an indicator key; this keeps the shell family-level.
-    if (props.lignes.some((ligne) => ligne.detail !== null && /^[A-G]$/.test(ligne.detail))) return 'composition-dpe'
+    if (props.palette === 'dpe' || (props.palette === undefined && props.lignes.some((ligne) => ligne.detail !== null && /^[A-G]$/.test(ligne.detail)))) return 'composition-dpe'
     // structure_age n'est un vrai pyramid hommes/femmes QUE si le payload porte
     // la dimension sexe (issue bloquante #390). Sans elle (les sept lignes
     // totales legacy, sans sexe), on rend la décomposition segmentée/liste

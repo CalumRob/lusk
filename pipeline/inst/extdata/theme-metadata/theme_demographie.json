@@ -83,6 +83,8 @@
     "caveats": "La superficie est celle du territoire.",
     "levels": ["commune", "epci", "departement"],
     "sources": ["serie_historique"]
+  }, "structure_age": {
+    "indicator": "structure_age", "label": "Structure par âge", "definition": "Répartition de la population par tranche d’âge et sexe.", "unit": "%", "calculation": "Part de chaque tranche et sexe dans la population.", "direction": "high", "caveats": "Les valeurs nulles restent nulles ; la dimension sexe est publiée lorsqu’elle est disponible.", "levels": ["commune", "epci", "departement"], "sources": ["age_detail"], "family": "composition"
   }},
-  "source_records": { "serie_historique": { "dataset": "Série historique", "publisher": "INSEE", "url": "https://www.insee.fr", "licence": "Licence ouverte", "vintage": "RP 2023", "freshness": "Publication annuelle" } }
+  "source_records": { "serie_historique": { "dataset": "Série historique", "publisher": "INSEE", "url": "https://www.insee.fr", "licence": "Licence ouverte", "vintage": "RP 2023", "freshness": "Publication annuelle" }, "age_detail": { "dataset": "Recensement — structure par âge", "publisher": "INSEE", "url": "https://www.insee.fr", "licence": "Licence ouverte", "vintage": "RP 2023", "freshness": "Publication annuelle" } }
 }
