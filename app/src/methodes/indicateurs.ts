@@ -74,6 +74,8 @@ export interface IndicateurMethodes {
    * jamais silencieuse : chaque indicateur porte son sens.
    */
   direction: DirectionRang
+  /** Réserve de lecture propre à cet indicateur, publiée avec sa source. */
+  caveat?: string
 }
 
 /** Une lecture d'une Story — une classification publiée et son explication factuelle. */
@@ -335,6 +337,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         // une ligne du jeu, la matrice et le lien « Source » résolvent l'en-tête
         sourceId: 'dvf_2021_dep22',
         direction: 'moins-est-mieux',
+        caveat: 'Non publié quand les ventes sont trop peu nombreuses pour être représentatives.',
       },
       part_passoires: {
         label: 'Part de passoires thermiques',
@@ -345,6 +348,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         // Le jeu DPE (ADR-0022 : l'en-tête #source-dpe), la même forme que DVF
         sourceId: 'dpe_22',
         direction: 'moins-est-mieux',
+        caveat: 'La base DPE surreprésente les logements vendus ou loués ; non publié sous 30 logements.',
       },
       distribution_dpe: {
         label: 'Distribution des étiquettes DPE (A à G)',
@@ -354,6 +358,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source: 'ADEME — Observatoire DPE, logements existants',
         sourceId: 'dpe_22',
         direction: 'moins-est-mieux',
+        caveat: 'Les réformes de 2024 et 2026 rendent les diagnostics récents moins directement comparables.',
       },
     },
     stories: [

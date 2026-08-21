@@ -21,6 +21,7 @@ describe('router — route table', () => {
       '/departements',
       '/territoire/:type/:id',
       '/methodologie',
+      '/sources',
       '/a-propos',
       '/indicateurs/:theme/:indicator',
     ])
@@ -47,6 +48,7 @@ describe('router — navigation resolves to the French placeholder views', () =>
     '/departements',
     '/territoire/commune/35000',
     '/methodologie',
+    '/sources',
     '/a-propos',
     '/indicateurs/demographie/densite',
   ])('resolves "%s" to a registered component', async (path) => {

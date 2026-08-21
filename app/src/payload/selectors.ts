@@ -21,9 +21,13 @@ import type {
   Territoire,
   TerritoireType,
   Theme,
+  SourceClock,
+  SourceRecord,
+  SourceVintageRecord,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
-import { SOURCES_METHODES } from '@/methodes/sources'
+import { SOURCES_METHODES, datasetDeSource } from '@/methodes/sources'
+import { THEMES_METHODES } from '@/methodes/indicateurs'
 
 /**
  * Which themes exist in the payload, in canonical order (ADR-0007: Aperçu
@@ -678,6 +682,196 @@ export function formaterLicence(code: string): string {
   return LICENCES[code] ?? code
 }
 
+export interface SourceConsumerRecord {
+  key: string
+  label: string
+  theme: Theme
+  caveat: string | null
+}
+
+export interface SourceDatasetRecord {
+  id: string
+  dataset: string
+  publisher: string
+  url: string | null
+  licence: string | null
+  vintage: string | null
+  freshness: string | null
+  dateReference: string | null
+  datePublication: string | null
+  vintages: SourceVintageRecord[]
+  clocks: SourceClock[]
+  caveat: string | null
+  consumers: SourceConsumerRecord[]
+  replie: boolean
+  themes: Theme[]
+}
+
+function clocksPourThemes(themes: readonly Theme[]): SourceClock[] {
+  const clocks: SourceClock[] = []
+  for (const theme of themes) {
+    const documentation = THEMES_METHODES[theme as keyof typeof THEMES_METHODES]
+    for (const [name, clock] of [
+      ['Horloge lente', documentation?.horlogeLente],
+      ['Horloges du thème', documentation?.deuxHorloges],
+    ] as const) {
+      if (!clock) continue
+      for (const entry of clock.entrees) {
+        clocks.push({ name: `${name} · ${entry.donnee}`, frequency: entry.frequence, reference: entry.reference, trigger: clock.declencheur })
+      }
+    }
+  }
+  return clocks
+}
+
+/**
+ * Canonical published source authority. Metadata source_records is preferred;
+ * the legacy editorial registry is only an input adapter while old payloads
+ * migrate. All grouping, vintage and clock semantics live here.
+ */
+export function sourceRecords(payload: Payload, options: { includeUnpublished?: boolean } = {}): SourceDatasetRecord[] {
+  const metadataRecords = new Map<string, SourceRecord>()
+  for (const metadata of Object.values(payload.themeMetadata ?? {})) {
+    for (const [id, record] of Object.entries(metadata?.source_records ?? {})) {
+      metadataRecords.set(id, { ...record, id })
+    }
+  }
+  const vintages = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
+  const records = new Map<string, SourceDatasetRecord>()
+  const metadataPourJeu = (id: string, datasetId: string): SourceRecord | undefined =>
+    metadataRecords.get(datasetId) ?? metadataRecords.get(id) ?? [...metadataRecords.entries()].find(([metadataId]) => datasetDeSource(metadataId) === datasetId)?.[1]
+
+  for (const [id, editorial] of Object.entries(SOURCES_METHODES)) {
+    const datasetId = datasetDeSource(id)
+    let record = records.get(datasetId)
+    const metadata = metadataPourJeu(id, datasetId)
+    const authoredVintages = metadata?.vintages?.map((row) => {
+      const dynamic = vintages.get(row.id)
+      return dynamic
+        ? { ...row, version: dynamic.version, licence: formaterLicence(dynamic.licence), dateReference: dynamic.date_reference, datePublication: dynamic.date_publication }
+        : row
+    })
+    if (!record) {
+      record = {
+        id: datasetId,
+        dataset: metadata?.dataset ?? editorial.nom,
+        publisher: metadata?.publisher ?? editorial.editeur,
+        url: metadata?.url ?? editorial.url,
+        licence: metadata?.licence ?? null,
+        vintage: metadata?.vintage ?? null,
+        freshness: metadata?.freshness ?? null,
+        dateReference: null,
+        datePublication: null,
+        vintages: authoredVintages ?? [],
+        clocks: metadata?.clocks ?? clocksPourThemes(editorial.themes),
+        caveat: metadata?.caveat ?? editorial.caveat ?? null,
+        consumers: [],
+        replie: true,
+        themes: [...editorial.themes],
+      }
+      records.set(datasetId, record)
+    }
+    // A migrated metadata record is authoritative, including its complete
+    // vintage rows. The vintages table may enrich an old record, but never
+    // replaces or duplicates rows authored in canonical metadata.
+    if (!metadata?.vintages?.length) {
+      const vintage = vintages.get(id)
+      record.vintages.push({
+        id,
+        label: editorial.libelle,
+        version: vintage?.version ?? null,
+        licence: vintage ? formaterLicence(vintage.licence) : metadata?.licence ?? null,
+        dateReference: vintage?.date_reference ?? null,
+        datePublication: vintage?.date_publication ?? null,
+      })
+    }
+  }
+
+  // Records authored by the payload but not yet represented in the legacy
+  // registry still publish, without inventing a vintage row.
+  for (const [id, metadata] of metadataRecords) {
+    if (records.has(id)) continue
+    records.set(id, {
+      id,
+      dataset: metadata.dataset,
+      publisher: metadata.publisher,
+      url: metadata.url,
+      licence: metadata.licence,
+      vintage: metadata.vintage,
+      freshness: metadata.freshness,
+      dateReference: null,
+      datePublication: null,
+      vintages: metadata.vintages ?? [],
+      clocks: metadata.clocks ?? [],
+      caveat: metadata.caveat ?? null,
+      consumers: [],
+      replie: true,
+      themes: [],
+    })
+  }
+
+  const metadataConsumers: Array<{ theme: Theme; key: string; primary: string; secondary: string[] }> = []
+  const canonicalThemes = new Set<Theme>()
+  for (const [theme, metadata] of Object.entries(payload.themeMetadata ?? {})) {
+    if (!metadata?.source_records) continue
+    canonicalThemes.add(theme as Theme)
+    for (const [key, primary] of Object.entries(metadata?.sources ?? {})) {
+      metadataConsumers.push({ theme: theme as Theme, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })
+    }
+  }
+  // Old fixtures and pre-migration payloads have no source_records metadata;
+  // this adapter is deliberately the only remaining static fallback.
+  if (options.includeUnpublished || metadataConsumers.length === 0) {
+    const fallbackThemes = options.includeUnpublished
+      ? (Object.keys(THEMES_METHODES) as Theme[]).filter((theme) => !canonicalThemes.has(theme))
+      : []
+    for (const theme of fallbackThemes) {
+      for (const [key, documentation] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
+        if (documentation.sourceId) metadataConsumers.push({ theme, key, primary: documentation.sourceId, secondary: [] })
+      }
+    }
+    if (metadataConsumers.length === 0 && !options.includeUnpublished) {
+      for (const line of payload.indicateurs) {
+        const documentation = THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]
+        if (documentation?.sourceId) metadataConsumers.push({ theme: line.theme, key: line.key, primary: documentation.sourceId, secondary: [] })
+      }
+    }
+  }
+  for (const record of records.values()) {
+    const seenConsumers = new Set<string>()
+    for (const consumer of metadataConsumers) {
+      const metadata = payload.themeMetadata?.[consumer.theme]
+      const page = metadata?.indicator_pages?.[consumer.key]
+      const sourceIds = new Set([
+        consumer.primary,
+        ...consumer.secondary,
+      ].filter((sourceId): sourceId is string => Boolean(sourceId)))
+      if (![...sourceIds].some((sourceId) => datasetDeSource(sourceId) === record.id)) continue
+      const consumerId = `${consumer.theme}:${consumer.key}`
+      if (seenConsumers.has(consumerId)) continue
+      seenConsumers.add(consumerId)
+      record.consumers.push({
+        key: consumer.key,
+        label: metadata?.indicator_labels[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.label ?? consumer.key,
+        theme: consumer.theme,
+        caveat: page?.caveats ?? metadata?.indicator_caveats?.[consumer.key] ?? THEMES_METHODES[consumer.theme as keyof typeof THEMES_METHODES]?.indicateurs[consumer.key]?.caveat ?? null,
+      })
+      if (!record.themes.includes(consumer.theme)) record.themes.push(consumer.theme)
+    }
+    const first = record.vintages[0]
+    record.replie = record.vintages.length <= 1 || record.vintages.every((vintage) => vintage.licence === first?.licence && vintage.datePublication === first?.datePublication)
+    if (record.replie) {
+      record.licence ??= first?.licence ?? null
+      record.vintage ??= etendue(record.vintages.map((vintage) => vintage.version))
+      record.freshness ??= etendueDates(record.vintages.map((vintage) => vintage.datePublication))
+      record.dateReference = etendueDates(record.vintages.map((vintage) => vintage.dateReference))
+      record.datePublication = etendueDates(record.vintages.map((vintage) => vintage.datePublication))
+    }
+  }
+  const all = [...records.values()]
+  return options.includeUnpublished ? all : all.filter((record) => record.consumers.length > 0)
+}
+
 /** Une ligne vintage d'un jeu — le libellé éditorial + les faits de fraîcheur (ADR-0022). */
 export interface LigneVintageMethodes {
   /** L'id de la ligne — la clé de jointure registre × vintages (ancreSource dérive l'ancre de la ligne). */
@@ -762,76 +956,32 @@ function etendueDates(isos: (string | null)[]): string | null {
  * la page ne casse jamais.
  */
 export function sourcesMethodes(payload: Payload): MethodesSources {
-  const vintagesAbsents = payload.vintages === null
-  const parId = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
-
-  const groupes = new Map<
-    string,
-    {
-      id: string
-      nom: string
-      editeur: string
-      url: string | null
-      themes: Theme[]
-      lignes: LigneVintageMethodes[]
-    }
-  >()
-  for (const [id, source] of Object.entries(SOURCES_METHODES)) {
-    const idJeu = source.dataset ?? id
-    let groupe = groupes.get(idJeu)
-    if (!groupe) {
-      groupe = {
-        id: idJeu,
-        nom: source.nom,
-        editeur: source.editeur,
-        url: source.url,
-        themes: source.themes,
-        lignes: [],
-      }
-      groupes.set(idJeu, groupe)
-    }
-    const vintage = parId.get(id) ?? null
-    groupe.lignes.push({
-      id,
-      libelle: source.libelle,
-      version: vintage?.version ?? null,
-      licence: vintage ? formaterLicence(vintage.licence) : null,
-      dateReference: vintage?.date_reference ?? null,
-      datePublication: vintage?.date_publication ?? null,
-    })
-  }
-
-  const jeux: LigneJeuMethodes[] = []
-  for (const groupe of groupes.values()) {
-    const premiere = groupe.lignes[0]
-    const replie =
-      groupe.lignes.length <= 1 ||
-      groupe.lignes.every(
-        (ligne) =>
-          ligne.licence === premiere?.licence &&
-          ligne.datePublication === premiere?.datePublication,
-      )
-    jeux.push({
-      id: groupe.id,
-      nom: groupe.nom,
-      editeur: groupe.editeur,
-      url: groupe.url,
-      themes: groupe.themes,
-      replie,
-      version: replie ? etendue(groupe.lignes.map((l) => l.version)) : null,
-      licence: replie ? (premiere?.licence ?? null) : null,
-      dateReference: replie ? etendueDates(groupe.lignes.map((l) => l.dateReference)) : null,
-      datePublication: replie ? etendueDates(groupe.lignes.map((l) => l.datePublication)) : null,
-      vintages: groupe.lignes.map((ligne) => ({
-        ...ligne,
-        dateReference: ligne.dateReference ? formaterDateFrancaise(ligne.dateReference) : null,
-        datePublication: ligne.datePublication
-          ? formaterDateFrancaise(ligne.datePublication)
-          : null,
+  return {
+    vintagesAbsents: payload.vintages === null,
+    jeux: sourceRecords(payload, { includeUnpublished: true }).map((record) => {
+      const legacy = Object.entries(SOURCES_METHODES).find(([id]) => datasetDeSource(id) === record.id)?.[1]
+      return {
+      id: record.id,
+      nom: legacy?.nom ?? record.dataset,
+      editeur: record.publisher,
+      url: legacy?.url ?? record.url,
+      themes: legacy?.themes ?? record.themes,
+      replie: record.replie,
+      version: record.replie ? record.vintage : null,
+      licence: record.replie ? (record.vintages[0]?.licence ?? record.licence) : null,
+      dateReference: record.replie ? record.dateReference : null,
+      datePublication: record.replie ? record.datePublication : null,
+      vintages: record.vintages.map((vintage) => ({
+        id: vintage.id,
+        libelle: vintage.label,
+        version: vintage.version,
+        licence: vintage.licence,
+        dateReference: vintage.dateReference ? formaterDateFrancaise(vintage.dateReference) : null,
+        datePublication: vintage.datePublication ? formaterDateFrancaise(vintage.datePublication) : null,
       })),
-    })
+      }
+    }),
   }
-  return { vintagesAbsents, jeux }
 }
 
 /** Les deux labels communaux (ancrés à la commune, listes lauréates ANCT). */

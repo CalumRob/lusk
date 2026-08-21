@@ -13,6 +13,8 @@ import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Theme } from '@/payload/types'
 import { themeStyle } from '@/indicateurs/themeTokens'
 import { formaterNombreFR } from '@/payload/selectors'
+import { sourceRecords } from '@/payload/selectors'
+import { ancreSource, datasetDeSource } from '@/methodes/sources'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
@@ -23,7 +25,11 @@ const { payload, erreur, chargement } = usePayload({ attendre })
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
 const page = computed(() => metadata.value?.indicator_pages?.[indicator.value])
-const sources = computed(() => page.value?.sources.map((id) => metadata.value?.source_records?.[id]).filter((source): source is NonNullable<typeof source> => Boolean(source)) ?? [])
+const sources = computed(() => {
+  if (!page.value || !payload.value) return []
+  const authority = sourceRecords(payload.value)
+  return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id))).filter((source): source is NonNullable<typeof source> => Boolean(source))
+})
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value && f.key === indicator.value))
 const niveauRoute = computed(() => ['commune', 'epci', 'departement'].includes(String(route.query.niveau)) ? route.query.niveau as NiveauIndicateur : undefined)
 const validScope = computed(() => {
@@ -73,7 +79,7 @@ watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && 
           <table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterNombreFR(row.value, 2) }} {{ page.unit }}</td><td><span :title="`${directionGlyph} ${directionText}`" :aria-label="`${afficherRang(row)} · ${directionText}`">{{ afficherRang(row) }}</span></td><td><button type="button" @click="setQuery('territoire', row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>
       </main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="Number(Boolean(route.query.territoire))" /></div><div v-else role="status">Chargement de la carte…</div></section>
-      <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd><dt>Vintage</dt><dd>{{ sources[0]?.vintage ?? '—' }}</dd></dl><div v-for="source in sources" :key="source.dataset"><h3>{{ source.dataset }}</h3><a :href="source.url">{{ source.publisher }}</a><p>{{ source.licence }} · {{ source.vintage }} · {{ source.freshness }}</p></div></aside>
+       <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
     </template>
   </section>
 </template>
