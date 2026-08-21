@@ -239,7 +239,4 @@ verifier_contrat_naf_a17 <- function(artefact) {
   invisible(TRUE)
 }
 
-# %||% --------------------------------------------------------------------------
-# L'opérateur de repli : la première valeur non NULL (utilisé pour nommer
-# l'artefact même quand son id est corrompu).
-`%||%` <- function(a, b) if (is.null(a) || length(a) == 0 || is.na(a)) b else a
+# l'opérateur %||% est défini une fois, dans artefact_egss.R
