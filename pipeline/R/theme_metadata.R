@@ -531,7 +531,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     for (indicator_key in names(metadata$indicator_pages)) {
       page <- metadata$indicator_pages[[indicator_key]]
-      if (!is.null(page$vintage)) manquer("indicator_pages.vintage", "la fraîcheur vient des source_records, pas de la page")
+    if (!is.null(page$vintage)) manquer("indicator_pages.vintage", "la fraîcheur vient des source_records, pas de la page")
+    family <- if (is.null(page$family)) "scalar" else page$family
+    if (!family %in% c("scalar", "distribution")) manquer("indicator_pages.family", "la famille doit être scalar ou distribution")
       if (!indicator_key %in% cles_indicateurs) {
         manquer("indicator_pages", paste0("la page « ", indicator_key, " » référence un indicateur inconnu"))
       }
@@ -581,6 +583,11 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     if (!is.null(detail) && (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[detail]]))) {
       manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
+    }
+    if (identical(family, "distribution")) {
+      # The app-side validator is authoritative for this optional extension;
+      # older R descriptors are allowed to round-trip without the nullable
+      # `detail` member (jsonlite drops NULL object members).
     }
     }
   }

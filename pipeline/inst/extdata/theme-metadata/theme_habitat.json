@@ -103,5 +103,23 @@
     "parc-intermediaire": "intermédiaire",
     "passoire-energetique": "une passoire énergétique",
     "parc-heterogene": "hétérogène"
+  },
+  "indicator_pages": {
+    "distribution_dpe": {
+      "indicator": "distribution_dpe",
+      "label": "Distribution des étiquettes DPE (A à G)",
+      "definition": "Répartition des diagnostics de performance énergétique par étiquette.",
+      "unit": "%",
+      "calculation": "Part de chaque étiquette parmi les diagnostics disponibles.",
+      "direction": "low",
+      "caveats": "La comparaison entre territoires porte sur la part F/G, tandis que la distribution A à G reste visible pour le territoire sélectionné.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["dpe_22"],
+      "family": "distribution",
+      "summary": { "indicator": "part_passoires", "detail": null, "label": "Part de passoires thermiques", "unit": "%" }
+    }
+  },
+  "source_records": {
+    "dpe_22": { "dataset": "DPE", "publisher": "ADEME", "url": "https://data.ademe.fr", "licence": "Licence ouverte", "vintage": "2024", "freshness": "Publication annuelle" }
   }
 }

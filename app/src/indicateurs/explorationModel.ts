@@ -8,14 +8,18 @@ export interface EtatExploration { niveau?: NiveauIndicateur; departement?: stri
 export interface DensitePoint { x: number; density: number; y: number }
 export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
-export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
+export interface SignatureFacet { detail: string | null; value: number }
+export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; signature: SignatureFacet[] | null; summaryLabel: string; summaryUnit: string; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
 
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
 
-export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string): Payload {
+export function payloadPourCarte(payload: Payload, theme: Theme, indicator: string, niveau: NiveauIndicateur, departement?: string, epci?: string, metadata?: ThemeMetadata): Payload {
+  const page = metadata?.indicator_pages?.[indicator]
+  const mapIndicator = page?.family === 'distribution' && page.summary ? page.summary.indicator : indicator
+  const mapDetail = page?.family === 'distribution' && page.summary ? page.summary.detail : (page?.detail ?? null)
   const ids = new Set(payload.territoires.filter((territory) => territory.type === niveau && (niveau !== 'commune' || ((!departement || territory.departement === departement) && (!epci || territory.epci === epci)))).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === theme && fact.key === indicator && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === theme && fact.key === mapIndicator && fact.detail === mapDetail && fact.type === niveau && ids.has(fact.territoire)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
@@ -59,7 +63,11 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.key === page.indicator && fact.detail === (page.detail ?? null) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const family = page.family ?? 'scalar'
+  const summary = family === 'distribution' ? page.summary : undefined
+  if (family === 'distribution' && !summary) throw new Error(`Distribution sans facette de comparaison « ${page.indicator} »`)
+  const comparisonFacts = summary ? facts.filter((fact) => fact.key === summary.indicator && fact.detail === summary.detail) : facts.filter((fact) => fact.key === page.indicator && fact.detail === (page.detail ?? null))
+  const all = comparisonFacts.filter((fact) => fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
   const values = all.map((row) => row.value).sort((a, b) => a - b)
   const median = values.length % 2 ? values[(values.length - 1) / 2] : values.length ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 : null
   const ranked = [...all].sort((a, b) => page.direction === 'low' ? a.value - b.value : b.value - a.value)
@@ -79,5 +87,6 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
   const density = estimerDensite(values)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  const selectedSignature = family === 'distribution' && requested.territoire ? facts.filter((fact) => fact.key === page.indicator && fact.detail !== (summary?.detail ?? null) && fact.type === niveau && fact.territoire === requested.territoire && fact.value !== null).map((fact) => ({ detail: fact.detail, value: fact.value as number })) : null
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, signature: selectedSignature, summaryLabel: summary?.label ?? page.label, summaryUnit: summary?.unit ?? page.unit, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
 }

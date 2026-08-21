@@ -662,9 +662,17 @@ export interface ThemeMetadata {
   classification_labels?: Record<string, string>
   /** Optional page descriptor: only published entries are eligible for /indicateurs. */
   /** Per-concept publication descriptors; the indicator key is the authority. */
-  indicator_pages?: Record<string, ScalarPageMetadata>
+  indicator_pages?: Record<string, IndicatorPageMetadata>
   /** Reusable provenance records, referenced by indicator_pages.sources. */
   source_records?: Record<string, SourceRecord>
+}
+
+/** A page may expose a scalar, or a within-territory distribution.  A
+ * distribution never gets compared by its bins: `summary` is its declared
+ * between-territory facet (ADR-0019/issue #404). */
+export interface IndicatorPageMetadata extends ScalarPageMetadata {
+  family?: 'scalar' | 'distribution'
+  summary?: { indicator: string; detail: string | null; label: string; unit: string }
 }
 
 export interface SourceRecord {
