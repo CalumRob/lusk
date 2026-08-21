@@ -1,4 +1,4 @@
-import type { ComparisonFacetMetadata, IndicatorPageMetadata, Indicateur, FamilleFigure, Sexe, Territoire, Theme } from '@/payload/types'
+import type { ComparisonFacetMetadata, IndicatorPageMetadata, Indicateur, FamilleFigure, Sexe, Territoire, Theme, TrajectoryMetadata, CompositionMetadata, DistributionMetadata, RelationshipMetadata, ListMetadata, PyramidMetadata, ComparisonBarsMetadata } from '@/payload/types'
 
 export type FamilyStatus = 'ready' | 'unavailable' | 'incomplete' | 'invalid'
 export type FamilyName = FamilleFigure
@@ -21,13 +21,13 @@ export interface ComparisonFacet {
 
 export type FamilyRepresentation =
   | { kind: 'scalar'; rows: readonly Indicateur[]; territories: readonly Territoire[] }
-  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly Indicateur[] }
-  | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[] }
-  | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[] }
-  | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[] }
-  | { kind: 'relationship'; rows: readonly Indicateur[]; territories: readonly Territoire[]; points: readonly Indicateur[] }
-  | { kind: 'pyramid'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[] }
-  | { kind: 'comparison-bars'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[] }
+  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly Indicateur[]; extension: TrajectoryMetadata }
+  | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: CompositionMetadata }
+  | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[]; extension: DistributionMetadata }
+  | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[]; extension: ListMetadata }
+  | { kind: 'relationship'; rows: readonly Indicateur[]; territories: readonly Territoire[]; points: readonly Indicateur[]; extension: RelationshipMetadata }
+  | { kind: 'pyramid'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: PyramidMetadata }
+  | { kind: 'comparison-bars'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: ComparisonBarsMetadata }
 
 export interface FamilyDispatch {
   family: FamilyName
@@ -76,20 +76,23 @@ export function normalizeComparisonFacet(page: IndicatorPageMetadata, requested:
   const requestedIndicator = queryValue(query.facet)
   const indicator = comparison.indicator ?? page.indicator
   const indicatorValid = !requestedIndicator.malformed && (!requestedIndicator.present || requestedIndicator.value === indicator)
-  const params = new URLSearchParams({ facet: indicator })
+  const params = new URLSearchParams()
   if (detail.value !== null) params.set('detail', detail.value)
   if (sex.value !== null) params.set('sex', sex.value)
   if (dimension.value !== null) params.set('dimension', dimension.value)
-  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, labels: comparison.labels ?? {}, url: `?${params.toString()}`, valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
+  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, labels: comparison.labels ?? {}, url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
 }
 
-function representation(family: FamilyName, rows: readonly Indicateur[], territories: readonly Territoire[]): FamilyRepresentation {
+function representation(page: IndicatorPageMetadata, family: FamilyName, rows: readonly Indicateur[], territories: readonly Territoire[]): FamilyRepresentation {
   if (family === 'scalar') return { kind: family, rows, territories }
-  if (family === 'trajectory') return { kind: family, rows, territories, endpoints: rows }
-  if (family === 'composition' || family === 'pyramid' || family === 'comparison-bars') return { kind: family, rows, territories, parts: rows }
-  if (family === 'distribution') return { kind: family, rows, territories, distribution: rows }
-  if (family === 'relationship') return { kind: family, rows, territories, points: rows }
-  return { kind: family, rows, territories, entries: rows }
+  const extension = (page as unknown as Record<string, unknown>)[family === 'comparison-bars' ? 'comparisonBars' : family]
+  if (family === 'trajectory') return { kind: family, rows, territories, endpoints: rows, extension: extension as TrajectoryMetadata }
+  if (family === 'composition') return { kind: family, rows, territories, parts: rows, extension: extension as CompositionMetadata }
+  if (family === 'pyramid') return { kind: family, rows, territories, parts: rows, extension: extension as PyramidMetadata }
+  if (family === 'comparison-bars') return { kind: family, rows, territories, parts: rows, extension: extension as ComparisonBarsMetadata }
+  if (family === 'distribution') return { kind: family, rows, territories, distribution: rows, extension: extension as DistributionMetadata }
+  if (family === 'relationship') return { kind: family, rows, territories, points: rows, extension: extension as RelationshipMetadata }
+  return { kind: family, rows, territories, entries: rows, extension: extension as ListMetadata }
 }
 
 export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
@@ -98,6 +101,8 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
   const rows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension))
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
-  const status: FamilyStatus = !facet.valid ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
-  return { family, renderer: family, rendererIdentity: renderer, facet, resolvedUrl: facet.url, representation: representation(family, rows, input.territories ?? []), selected, status }
+  const extensionKey = family === 'comparison-bars' ? 'comparisonBars' : family
+  const extensionMissing = family !== 'scalar' && !(page as unknown as Record<string, unknown>)[extensionKey]
+  const status: FamilyStatus = !facet.valid || extensionMissing ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
+  return { family, renderer: family, rendererIdentity: renderer, facet, resolvedUrl: facet.url, representation: representation(page, family, rows, input.territories ?? []), selected, status }
 }

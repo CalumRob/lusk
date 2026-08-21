@@ -32,6 +32,19 @@ describe('contrat des pages d’indicateur', () => {
   it.each(['scalar', 'trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const)('accepte la famille %s', (family) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     metadata.indicator_pages!.densite.family = family
+    const extensions: Record<string, unknown> = { trajectory: { endpoints: ['debut', 'fin'] }, composition: { parts: ['a'] }, distribution: { signature: 'x', summary: 'y' }, relationship: { roles: { x: 'a', y: 'b' }, measure: 'r' }, list: { categories: ['a'] }, pyramid: { dimensions: ['a'] }, 'comparison-bars': { series: ['a'] } }
+    if (family !== 'scalar') (metadata.indicator_pages!.densite as any)[family === 'comparison-bars' ? 'comparison-bars' : family] = extensions[family]
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).not.toThrow()
+  })
+
+  it.each([
+    ['trajectory', { endpoints: ['', 'fin'] }], ['composition', { parts: [] }],
+    ['distribution', { signature: 'x', summary: '' }], ['list', { categories: [''] }],
+    ['pyramid', { dimensions: [''] }], ['comparison-bars', { series: [''] }],
+  ] as const)('rejette les extensions %s vides', (family, extension) => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.indicator_pages!.densite.family = family
+    ;(metadata.indicator_pages!.densite as any)[family === 'comparison-bars' ? 'comparison-bars' : family] = extension
+    expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
   })
 })

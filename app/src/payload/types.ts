@@ -734,13 +734,13 @@ export interface ComparisonFacetMetadata {
   unit?: string
   labels?: Record<string, string>
 }
-export interface TrajectoryMetadata { endpoints?: string[] }
-export interface CompositionMetadata { parts?: string[] }
-export interface DistributionMetadata { signature?: string; summary?: string }
-export interface RelationshipMetadata { roles?: { x: string; y: string }; measure?: string }
-export interface ListMetadata { categories?: string[] }
-export interface PyramidMetadata { dimensions?: string[] }
-export interface ComparisonBarsMetadata { series?: string[] }
+export interface TrajectoryMetadata { endpoints: string[] }
+export interface CompositionMetadata { parts: string[] }
+export interface DistributionMetadata { signature: string; summary: string }
+export interface RelationshipMetadata { roles: { x: string; y: string }; measure: string }
+export interface ListMetadata { categories: string[] }
+export interface PyramidMetadata { dimensions: string[] }
+export interface ComparisonBarsMetadata { series: string[] }
 
 export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
 export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory?: TrajectoryMetadata }
@@ -749,6 +749,7 @@ export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'di
 export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list'; list?: ListMetadata }
 export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship'; relationship?: RelationshipMetadata }
 export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid?: PyramidMetadata }
-export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparison_bars?: ComparisonBarsMetadata }
+/** JSON uses the ADR family literal as the key; TS uses camelCase. */
+export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparisonBars: ComparisonBarsMetadata }
 export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
 export type IndicatorPageMetadata = IndicatorPageFamilyMetadata

@@ -8,7 +8,7 @@ describe('seam des familles de Repères', () => {
     const page = metadonneesThemesFixtures.demographie.indicator_pages!.densite
     const facet = normalizeComparisonFacet(page, { detail: 'stale', sex: 'X', dimension: 'total' })
     expect(facet).toMatchObject({ indicator: 'densite', detail: null, sex: null, direction: 'high', unit: 'hab./km²' })
-    expect(facet.url).toBe('?facet=densite')
+    expect(facet.url).toBe('')
   })
 
   it.each([
@@ -17,7 +17,8 @@ describe('seam des familles de Repères', () => {
     ['pyramid', 'pyramid'], ['comparison-bars', 'comparison-bars'],
   ] as const)('dispatches %s through one renderer identity', (family, renderer) => {
     const page = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, family, indicator: `fixture_${family}` }
-    const result = dispatchIndicatorFamily(page, {})
+    if (family !== 'scalar') (page as any)[family === 'comparison-bars' ? 'comparisonBars' : family] = family === 'relationship' ? { roles: { x: 'x', y: 'y' }, measure: 'm' } : family === 'distribution' ? { signature: 's', summary: 'm' } : { [family === 'trajectory' ? 'endpoints' : family === 'composition' ? 'parts' : family === 'list' ? 'categories' : family === 'pyramid' ? 'dimensions' : 'series']: ['x'] }
+    const result = dispatchIndicatorFamily(page as any, {})
     expect(result.family).toBe(family)
     expect(result.renderer).toBe(renderer)
     expect(result.status).toBe('unavailable')
@@ -25,7 +26,7 @@ describe('seam des familles de Repères', () => {
   })
 
   it('canonicalizes declared facet values and distinguishes invalid from unavailable/incomplete', () => {
-    const base = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, family: 'composition' as const, comparison: { details: ['total', 'F'], detail: 'total', sexes: ['F' as const], unit: 'hab./km²', labels: { total: 'Total' } } }
+    const base = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, family: 'composition' as const, composition: { parts: ['total'] }, comparison: { details: ['total', 'F'], detail: 'total', sexes: ['F' as const], unit: 'hab./km²', labels: { total: 'Total' } } }
     const valid = dispatchIndicatorFamily(base, { facet: { detail: 'F', sex: 'F' }, facts: [] })
     expect(valid.facet.url).toContain('detail=F'); expect(valid.status).toBe('unavailable')
     const invalid = dispatchIndicatorFamily(base, { facet: { detail: 'stale', sex: 'X' } })

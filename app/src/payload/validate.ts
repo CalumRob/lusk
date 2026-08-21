@@ -149,6 +149,8 @@ function estChaine(x: unknown): x is string {
   return typeof x === 'string'
 }
 
+function estChaineNonVide(x: unknown): x is string { return estChaine(x) && x.length > 0 }
+
 function estNombre(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x)
 }
@@ -2040,8 +2042,8 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
        const comparison = page['comparison']
        if (comparison !== undefined) {
          exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
-         for (const field of ['indicator', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaine(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
-         for (const field of ['details', 'sexes', 'dimensions']) exiger(comparison[field] === undefined || (Array.isArray(comparison[field]) && new Set(comparison[field] as unknown[]).size === (comparison[field] as unknown[]).length && (comparison[field] as unknown[]).every((value) => estChaine(value))), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         for (const field of ['indicator', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaineNonVide(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         for (const field of ['details', 'sexes', 'dimensions']) exiger(comparison[field] === undefined || (Array.isArray(comparison[field]) && (comparison[field] as unknown[]).length > 0 && new Set(comparison[field] as unknown[]).size === (comparison[field] as unknown[]).length && (comparison[field] as unknown[]).every((value) => estChaineNonVide(value))), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
          if (comparison['indicator'] !== undefined) exiger(indicator_keys.includes(comparison['indicator'] as string), fichier, 0, `« indicator_pages.${key}.comparison.indicator » est inconnu`)
          if (comparison['detail'] !== undefined && comparison['details'] !== undefined) exiger((comparison['details'] as unknown[]).includes(comparison['detail']), fichier, 0, `« indicator_pages.${key}.comparison.detail » n'est pas déclaré dans details`)
          if (comparison['sex'] !== undefined && comparison['sex'] !== null && comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).includes(comparison['sex']), fichier, 0, `« indicator_pages.${key}.comparison.sex » n'est pas déclaré dans sexes`)
@@ -2055,12 +2057,17 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
        if (page['family'] !== undefined) validatedPage.family = family as IndicatorPageMetadata['family']
        if (comparison !== undefined) validatedPage.comparison = comparison as IndicatorPageMetadata['comparison']
        const extensionFields: Record<string, string[]> = { trajectory: ['endpoints'], composition: ['parts'], distribution: ['signature', 'summary'], list: ['categories'], pyramid: ['dimensions'], 'comparison-bars': ['series'] }
-       const extension = page[family as string]
+       const extensionKey = family === 'comparison-bars' ? 'comparison-bars' : family
+       const extension = page[extensionKey]
+       for (const candidate of ['trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars', 'comparison_bars']) {
+         if (candidate !== extensionKey && page[candidate] !== undefined) exiger(false, fichier, 0, `« indicator_pages.${key}.${candidate} » ne correspond pas à la famille déclarée`)
+       }
+       if (family !== 'scalar') exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
        if (extension !== undefined) {
          exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
-         for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaine(value)) : estChaine(extension[field]), fichier, 0, `« indicator_pages.${key}.${family}.${field} » est incomplet`)
-         if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaine(extension['roles']['x']) && estChaine(extension['roles']['y']) && estChaine(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
-         ;(validatedPage as unknown as Record<string, unknown>)[family as string] = extension
+         for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
+         if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
+         ;(validatedPage as unknown as Record<string, unknown>)[family === 'comparison-bars' ? 'comparisonBars' : family] = extension
        }
        indicator_pages[key] = validatedPage
     }

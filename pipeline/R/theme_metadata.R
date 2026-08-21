@@ -630,7 +630,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.null(comparison$indicator) && !est_chaine_non_vide(comparison$indicator)) manquer("indicator_pages.comparison.indicator", "l'indicateur est invalide")
       if (!is.null(comparison$indicator) && !comparison$indicator %in% cles_indicateurs) manquer("indicator_pages.comparison.indicator", "l'indicateur est inconnu")
       for (champ in c("details", "sexes", "dimensions")) {
-        if (!is.null(comparison[[champ]]) && (!is.character(comparison[[champ]]) || anyDuplicated(comparison[[champ]]))) manquer(paste0("indicator_pages.comparison.", champ), "les valeurs doivent être une liste de chaînes distinctes")
+        if (!is.null(comparison[[champ]]) && (!is.character(comparison[[champ]]) || !length(comparison[[champ]]) || any(!vapply(comparison[[champ]], est_chaine_non_vide, logical(1L))) || anyDuplicated(comparison[[champ]]))) manquer(paste0("indicator_pages.comparison.", champ), "les valeurs doivent être une liste non vide de chaînes distinctes")
       }
       if (!is.null(comparison$sexes) && !all(comparison$sexes %in% c("F", "M"))) manquer("indicator_pages.comparison.sexes", "le sexe doit être F ou M")
       if (!is.null(comparison$detail) && !is.null(comparison$details) && !comparison$detail %in% comparison$details) manquer("indicator_pages.comparison.detail", "le détail n'est pas déclaré dans details")
@@ -646,7 +646,10 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       distribution = c("signature", "summary"), list = c("categories"),
       pyramid = c("dimensions"), `comparison-bars` = c("series")
     )
+    extension_keys <- c("trajectory", "composition", "distribution", "relationship", "list", "pyramid", "comparison-bars", "comparison_bars")
+    for (candidate in setdiff(extension_keys, famille)) if (!is.null(page[[candidate]])) manquer(paste0("indicator_pages.", indicator_key, ".", candidate), "l'extension ne correspond pas à la famille déclarée")
     extension <- page[[famille]]
+    if (famille != "scalar" && is.null(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension est requise")
     if (!is.null(extension)) {
       if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")
       for (champ in if (is.null(extensions[[famille]])) character() else extensions[[famille]]) {
