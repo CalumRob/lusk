@@ -7,9 +7,6 @@
       "label": "L’accès aux services",
       "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.",
       "indicators": [
-        "places_stationnement_voiture_1000",
-        "bornes_ev_par_station_service",
-        "stationnement_velo_par_voiture",
         "tot_loss_t",
         "tot_loss_b",
         "iso_alimentation",
@@ -72,6 +69,8 @@
       "indicators": [
         "reseaux",
         "places_stationnement_velo_1000",
+        "places_stationnement_voiture_1000",
+        "stationnement_velo_par_voiture",
         "offre_cyclable"
       ],
       "figure": {
@@ -85,7 +84,8 @@
       "framing": "L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.",
       "indicators": [
         "voitures_menage",
-        "bornes_recharge"
+        "bornes_recharge",
+        "bornes_ev_par_station_service"
       ],
       "figure": {
         "family": "composition",

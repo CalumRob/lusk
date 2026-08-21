@@ -202,8 +202,8 @@ export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
  * distribution signature (dens_1..10 + dec_1..10 + min/max — the
  * building-level density of div_loss_t, NEVER the matrix, lesson of issue
  * #131) and the saillance classification. When the vélo reading fires, the
- * signature columns are null on its row (the distribution is the default
- * reading's matter — the same chart, the same plot, ADR-0012). Each row
+ * signature columns carry the flattened distribution for the vélo story too
+ * (the current contract keeps the signature available on vélo rows). Each row
  * carries the snapshot's vintage stamp (issue #74).
  */
 export interface HistoireMobilite extends LectureResolueBase, VintageStamp {
