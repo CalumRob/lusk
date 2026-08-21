@@ -15,6 +15,16 @@ test_that("BPE B316 preserves absent communes and counts only B316", {
     data.frame(code = "29001", places_velo = 1), data.frame(code = "29001", places_voiture = 1))$bornes_ev_par_station_service, 0)
 })
 
+test_that("BPE B316 ignores non-B316 rows when a canonical table is mixed", {
+  x <- normaliser_bpe_b316(data.frame(
+    GEO = c("29001", "29001", "35001"),
+    FACILITIES = c("B316", "B999", "B316"),
+    NB_EQUIP = c("2", "99", "0")
+  ))
+  expect_equal(x$commune, c("29001", "35001"))
+  expect_equal(x$fuel, c(2, 0))
+})
+
 test_that("BPE B316 rejects non-canonical legacy source shapes", {
   expect_error(normaliser_bpe_b316(data.frame(
     GEO = "29001", FACILITY_TYPE = "B316", OBS_VALUE = "2")),

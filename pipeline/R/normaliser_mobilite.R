@@ -339,6 +339,10 @@ normaliser_bpe_b316 <- function(x) {
   if (!all(requis %in% names(x)))
     stop("BPE B316 : GEO/FACILITIES/NB_EQUIP requis.", call. = FALSE)
   verifier_contenu_bpe_b316(x)
+  # A canonical table can contain several equipment types.  BPE B316 is a
+  # filtered view, so other types must not inflate the station-service count.
+  type <- toupper(trimws(as.character(x$FACILITIES)))
+  x <- x[type %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE"), , drop = FALSE]
   tibble::as_tibble(x) %>%
     dplyr::transmute(commune = as.character(GEO), fuel = as.numeric(NB_EQUIP)) %>%
     dplyr::group_by(commune) %>%

@@ -97,7 +97,7 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     const vintages = lireVintagesCommites()
     const bpe = vintages.find((v) => v.id === 'bpe_b316')
     expect(bpe).toMatchObject({
-      source: 'INSEE — Base permanente des équipements BPE25 géolocalisée, filtre B316 stations-service',
+      source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
       version: '2025',
       licence: 'lov2',
       date_reference: '2025-01-01',
