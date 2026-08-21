@@ -73,3 +73,87 @@ test_that("le lecteur échoue FORT quand le CSV épinglé est introuvable", {
   expect_error(lire_naf_a17(chemin = file.path(tempdir(), "introuvable.csv")),
                "jointure")
 })
+
+# 2. Le vérificateur de contrat : l'intégrité de l'artefact ----------------------
+
+test_that("le vérificateur accepte l'artefact épinglé (silencieux, invisible(TRUE))", {
+  expect_silent(verifie <- verifier_contrat_naf_a17(artefact_naf_a17()))
+  expect_true(verifie)
+})
+
+test_that("un artefact corrompu (format sous-classe invalide) échoue FORT en nommant l'artefact et la règle de jointure", {
+  # le QA du plan : corrompre l'artefact -> échec bruyant qui nomme l'artefact
+  # ET la règle de jointure — jamais un échec silencieux
+  corrompu <- artefact_naf_a17()
+  corrompu$table$sous_classe[1] <- "01.11"  # la lettre finale manque (5 caractères)
+
+  expect_error(verifier_contrat_naf_a17(corrompu), "naf2_na17_2008")
+  expect_error(verifier_contrat_naf_a17(corrompu), "jointure")
+
+  # une forme numérique (silencieuse, elle détruirait les zéros de tête) est
+  # elle aussi une corruption : « 6.1Z » n'est pas un APET NAF rév. 2 valide
+  numerique <- corrompu
+  numerique$table$sous_classe[1] <- "6.1Z"
+  expect_error(verifier_contrat_naf_a17(numerique), "naf2_na17_2008")
+})
+
+test_that("une copie corrompue sur disque (via le lecteur) échoue au moment où elle est consommée", {
+  # la table relue depuis un fichier corrompu porte la corruption jusqu'au
+  # vérificateur : le contrat tient du disque à la consommation
+  copie <- file.path(tempdir(), "table_naf2_na17_corrompue.csv")
+  on.exit(unlink(copie), add = TRUE)
+  d <- lire_naf_a17()
+  d$sous_classe[1] <- "01.11ZZ"  # 7 caractères : pas un APET NN.NNL
+  readr::write_csv(d, copie, eol = "\n")
+
+  corrompu <- artefact_naf_a17()
+  corrompu$table <- lire_naf_a17(copie)
+  expect_error(verifier_contrat_naf_a17(corrompu), "naf2_na17_2008")
+})
+
+test_that("un code A17 hors vocabulaire officiel échoue FORT", {
+  inconnu <- artefact_naf_a17()
+  inconnu$table$na17_code[1] <- "XX"
+  expect_error(verifier_contrat_naf_a17(inconnu), "naf2_na17_2008")
+  expect_error(verifier_contrat_naf_a17(inconnu), "XX")
+})
+
+test_that("un libellé A17 qui s'écarte du libellé officiel de son code échoue FORT", {
+  # le XLS ne porte pas les libellés : un libellé réécrit (même pour un code
+  # juste) est une transcription corrompue — le vocabulaire fermé le refuse
+  relibelle <- artefact_naf_a17()
+  relibelle$table$na17_libelle[1] <- "agriculture"
+  expect_error(verifier_contrat_naf_a17(relibelle), "naf2_na17_2008")
+})
+
+test_that("une sous-classe dupliquée échoue FORT", {
+  dupliquee <- artefact_naf_a17()
+  dupliquee$table$sous_classe[2] <- dupliquee$table$sous_classe[1]
+  expect_error(verifier_contrat_naf_a17(dupliquee), "naf2_na17_2008")
+  expect_error(verifier_contrat_naf_a17(dupliquee), "doubl")
+})
+
+test_that("une colonne manquante échoue FORT en nommant la colonne", {
+  sans_colonne <- artefact_naf_a17()
+  sans_colonne$table$na17_code <- NULL
+  expect_error(verifier_contrat_naf_a17(sans_colonne), "na17_code")
+  expect_error(verifier_contrat_naf_a17(sans_colonne), "naf2_na17_2008")
+})
+
+test_that("l'artefact refuse aussi une métadonnée manquante ou vide", {
+  sans_id <- artefact_naf_a17()
+  sans_id$id <- NA_character_
+  expect_error(verifier_contrat_naf_a17(sans_id), "id")
+  sans_source <- artefact_naf_a17()
+  sans_source$source <- ""
+  expect_error(verifier_contrat_naf_a17(sans_source), "source")
+  sans_vintage <- artefact_naf_a17()
+  sans_vintage$vintage <- NULL
+  expect_error(verifier_contrat_naf_a17(sans_vintage), "vintage")
+  sans_url <- artefact_naf_a17()
+  sans_url$url <- ""
+  expect_error(verifier_contrat_naf_a17(sans_url), "url")
+  sans_note <- artefact_naf_a17()
+  sans_note$note <- NA_character_
+  expect_error(verifier_contrat_naf_a17(sans_note), "note")
+})
