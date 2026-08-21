@@ -1,0 +1,733 @@
+sous_classe,na17_code,na17_libelle
+01.11Z,AZ,"Agriculture, sylviculture et pêche"
+01.12Z,AZ,"Agriculture, sylviculture et pêche"
+01.13Z,AZ,"Agriculture, sylviculture et pêche"
+01.14Z,AZ,"Agriculture, sylviculture et pêche"
+01.15Z,AZ,"Agriculture, sylviculture et pêche"
+01.16Z,AZ,"Agriculture, sylviculture et pêche"
+01.19Z,AZ,"Agriculture, sylviculture et pêche"
+01.21Z,AZ,"Agriculture, sylviculture et pêche"
+01.22Z,AZ,"Agriculture, sylviculture et pêche"
+01.23Z,AZ,"Agriculture, sylviculture et pêche"
+01.24Z,AZ,"Agriculture, sylviculture et pêche"
+01.25Z,AZ,"Agriculture, sylviculture et pêche"
+01.26Z,AZ,"Agriculture, sylviculture et pêche"
+01.27Z,AZ,"Agriculture, sylviculture et pêche"
+01.28Z,AZ,"Agriculture, sylviculture et pêche"
+01.29Z,AZ,"Agriculture, sylviculture et pêche"
+01.30Z,AZ,"Agriculture, sylviculture et pêche"
+01.41Z,AZ,"Agriculture, sylviculture et pêche"
+01.42Z,AZ,"Agriculture, sylviculture et pêche"
+01.43Z,AZ,"Agriculture, sylviculture et pêche"
+01.44Z,AZ,"Agriculture, sylviculture et pêche"
+01.45Z,AZ,"Agriculture, sylviculture et pêche"
+01.46Z,AZ,"Agriculture, sylviculture et pêche"
+01.47Z,AZ,"Agriculture, sylviculture et pêche"
+01.49Z,AZ,"Agriculture, sylviculture et pêche"
+01.50Z,AZ,"Agriculture, sylviculture et pêche"
+01.61Z,AZ,"Agriculture, sylviculture et pêche"
+01.62Z,AZ,"Agriculture, sylviculture et pêche"
+01.63Z,AZ,"Agriculture, sylviculture et pêche"
+01.64Z,AZ,"Agriculture, sylviculture et pêche"
+01.70Z,AZ,"Agriculture, sylviculture et pêche"
+02.10Z,AZ,"Agriculture, sylviculture et pêche"
+02.20Z,AZ,"Agriculture, sylviculture et pêche"
+02.30Z,AZ,"Agriculture, sylviculture et pêche"
+02.40Z,AZ,"Agriculture, sylviculture et pêche"
+03.11Z,AZ,"Agriculture, sylviculture et pêche"
+03.12Z,AZ,"Agriculture, sylviculture et pêche"
+03.21Z,AZ,"Agriculture, sylviculture et pêche"
+03.22Z,AZ,"Agriculture, sylviculture et pêche"
+05.10Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+05.20Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+06.10Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+06.20Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+07.10Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+07.21Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+07.29Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+08.11Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+08.12Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+08.91Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+08.92Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+08.93Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+08.99Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+09.10Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+09.90Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+10.11Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.12Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.13A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.13B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.20Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.31Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.32Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.39A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.39B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.41A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.41B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.42Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.51A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.51B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.51C,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.51D,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.52Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.61A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.61B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.62Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.71A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.71B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.71C,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.71D,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.72Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.73Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.81Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.82Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.83Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.84Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.85Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.86Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.89Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.91Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+10.92Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.01Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.02A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.02B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.03Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.04Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.05Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.06Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.07A,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+11.07B,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+12.00Z,C1,"Fabrication de denrées alimentaires, de boissons et de produits à base de tabac"
+13.10Z,C5,Fabrication d'autres produits industriels
+13.20Z,C5,Fabrication d'autres produits industriels
+13.30Z,C5,Fabrication d'autres produits industriels
+13.91Z,C5,Fabrication d'autres produits industriels
+13.92Z,C5,Fabrication d'autres produits industriels
+13.93Z,C5,Fabrication d'autres produits industriels
+13.94Z,C5,Fabrication d'autres produits industriels
+13.95Z,C5,Fabrication d'autres produits industriels
+13.96Z,C5,Fabrication d'autres produits industriels
+13.99Z,C5,Fabrication d'autres produits industriels
+14.11Z,C5,Fabrication d'autres produits industriels
+14.12Z,C5,Fabrication d'autres produits industriels
+14.13Z,C5,Fabrication d'autres produits industriels
+14.14Z,C5,Fabrication d'autres produits industriels
+14.19Z,C5,Fabrication d'autres produits industriels
+14.20Z,C5,Fabrication d'autres produits industriels
+14.31Z,C5,Fabrication d'autres produits industriels
+14.39Z,C5,Fabrication d'autres produits industriels
+15.11Z,C5,Fabrication d'autres produits industriels
+15.12Z,C5,Fabrication d'autres produits industriels
+15.20Z,C5,Fabrication d'autres produits industriels
+16.10A,C5,Fabrication d'autres produits industriels
+16.10B,C5,Fabrication d'autres produits industriels
+16.21Z,C5,Fabrication d'autres produits industriels
+16.22Z,C5,Fabrication d'autres produits industriels
+16.23Z,C5,Fabrication d'autres produits industriels
+16.24Z,C5,Fabrication d'autres produits industriels
+16.29Z,C5,Fabrication d'autres produits industriels
+17.11Z,C5,Fabrication d'autres produits industriels
+17.12Z,C5,Fabrication d'autres produits industriels
+17.21A,C5,Fabrication d'autres produits industriels
+17.21B,C5,Fabrication d'autres produits industriels
+17.21C,C5,Fabrication d'autres produits industriels
+17.22Z,C5,Fabrication d'autres produits industriels
+17.23Z,C5,Fabrication d'autres produits industriels
+17.24Z,C5,Fabrication d'autres produits industriels
+17.29Z,C5,Fabrication d'autres produits industriels
+18.11Z,C5,Fabrication d'autres produits industriels
+18.12Z,C5,Fabrication d'autres produits industriels
+18.13Z,C5,Fabrication d'autres produits industriels
+18.14Z,C5,Fabrication d'autres produits industriels
+18.20Z,C5,Fabrication d'autres produits industriels
+19.10Z,C2,Cokéfaction et raffinage
+19.20Z,C2,Cokéfaction et raffinage
+20.11Z,C5,Fabrication d'autres produits industriels
+20.12Z,C5,Fabrication d'autres produits industriels
+20.13A,C5,Fabrication d'autres produits industriels
+20.13B,C5,Fabrication d'autres produits industriels
+20.14Z,C5,Fabrication d'autres produits industriels
+20.15Z,C5,Fabrication d'autres produits industriels
+20.16Z,C5,Fabrication d'autres produits industriels
+20.17Z,C5,Fabrication d'autres produits industriels
+20.20Z,C5,Fabrication d'autres produits industriels
+20.30Z,C5,Fabrication d'autres produits industriels
+20.41Z,C5,Fabrication d'autres produits industriels
+20.42Z,C5,Fabrication d'autres produits industriels
+20.51Z,C5,Fabrication d'autres produits industriels
+20.52Z,C5,Fabrication d'autres produits industriels
+20.53Z,C5,Fabrication d'autres produits industriels
+20.59Z,C5,Fabrication d'autres produits industriels
+20.60Z,C5,Fabrication d'autres produits industriels
+21.10Z,C5,Fabrication d'autres produits industriels
+21.20Z,C5,Fabrication d'autres produits industriels
+22.11Z,C5,Fabrication d'autres produits industriels
+22.19Z,C5,Fabrication d'autres produits industriels
+22.21Z,C5,Fabrication d'autres produits industriels
+22.22Z,C5,Fabrication d'autres produits industriels
+22.23Z,C5,Fabrication d'autres produits industriels
+22.29A,C5,Fabrication d'autres produits industriels
+22.29B,C5,Fabrication d'autres produits industriels
+23.11Z,C5,Fabrication d'autres produits industriels
+23.12Z,C5,Fabrication d'autres produits industriels
+23.13Z,C5,Fabrication d'autres produits industriels
+23.14Z,C5,Fabrication d'autres produits industriels
+23.19Z,C5,Fabrication d'autres produits industriels
+23.20Z,C5,Fabrication d'autres produits industriels
+23.31Z,C5,Fabrication d'autres produits industriels
+23.32Z,C5,Fabrication d'autres produits industriels
+23.41Z,C5,Fabrication d'autres produits industriels
+23.42Z,C5,Fabrication d'autres produits industriels
+23.43Z,C5,Fabrication d'autres produits industriels
+23.44Z,C5,Fabrication d'autres produits industriels
+23.49Z,C5,Fabrication d'autres produits industriels
+23.51Z,C5,Fabrication d'autres produits industriels
+23.52Z,C5,Fabrication d'autres produits industriels
+23.61Z,C5,Fabrication d'autres produits industriels
+23.62Z,C5,Fabrication d'autres produits industriels
+23.63Z,C5,Fabrication d'autres produits industriels
+23.64Z,C5,Fabrication d'autres produits industriels
+23.65Z,C5,Fabrication d'autres produits industriels
+23.69Z,C5,Fabrication d'autres produits industriels
+23.70Z,C5,Fabrication d'autres produits industriels
+23.91Z,C5,Fabrication d'autres produits industriels
+23.99Z,C5,Fabrication d'autres produits industriels
+24.10Z,C5,Fabrication d'autres produits industriels
+24.20Z,C5,Fabrication d'autres produits industriels
+24.31Z,C5,Fabrication d'autres produits industriels
+24.32Z,C5,Fabrication d'autres produits industriels
+24.33Z,C5,Fabrication d'autres produits industriels
+24.34Z,C5,Fabrication d'autres produits industriels
+24.41Z,C5,Fabrication d'autres produits industriels
+24.42Z,C5,Fabrication d'autres produits industriels
+24.43Z,C5,Fabrication d'autres produits industriels
+24.44Z,C5,Fabrication d'autres produits industriels
+24.45Z,C5,Fabrication d'autres produits industriels
+24.46Z,C5,Fabrication d'autres produits industriels
+24.51Z,C5,Fabrication d'autres produits industriels
+24.52Z,C5,Fabrication d'autres produits industriels
+24.53Z,C5,Fabrication d'autres produits industriels
+24.54Z,C5,Fabrication d'autres produits industriels
+25.11Z,C5,Fabrication d'autres produits industriels
+25.12Z,C5,Fabrication d'autres produits industriels
+25.21Z,C5,Fabrication d'autres produits industriels
+25.29Z,C5,Fabrication d'autres produits industriels
+25.30Z,C5,Fabrication d'autres produits industriels
+25.40Z,C5,Fabrication d'autres produits industriels
+25.50A,C5,Fabrication d'autres produits industriels
+25.50B,C5,Fabrication d'autres produits industriels
+25.61Z,C5,Fabrication d'autres produits industriels
+25.62A,C5,Fabrication d'autres produits industriels
+25.62B,C5,Fabrication d'autres produits industriels
+25.71Z,C5,Fabrication d'autres produits industriels
+25.72Z,C5,Fabrication d'autres produits industriels
+25.73A,C5,Fabrication d'autres produits industriels
+25.73B,C5,Fabrication d'autres produits industriels
+25.91Z,C5,Fabrication d'autres produits industriels
+25.92Z,C5,Fabrication d'autres produits industriels
+25.93Z,C5,Fabrication d'autres produits industriels
+25.94Z,C5,Fabrication d'autres produits industriels
+25.99A,C5,Fabrication d'autres produits industriels
+25.99B,C5,Fabrication d'autres produits industriels
+26.11Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.12Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.20Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.30Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.40Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.51A,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.51B,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.52Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.60Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.70Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+26.80Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.11Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.12Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.20Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.31Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.32Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.33Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.40Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.51Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.52Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+27.90Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.11Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.12Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.13Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.14Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.15Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.21Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.22Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.23Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.24Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.25Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.29A,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.29B,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.30Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.41Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.49Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.91Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.92Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.93Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.94Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.95Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.96Z,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.99A,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+28.99B,C3,"Fabrication d'équipements électriques, électroniques, informatiques, fabrication de machines"
+29.10Z,C4,Fabrication de matériels de transport
+29.20Z,C4,Fabrication de matériels de transport
+29.31Z,C4,Fabrication de matériels de transport
+29.32Z,C4,Fabrication de matériels de transport
+30.11Z,C4,Fabrication de matériels de transport
+30.12Z,C4,Fabrication de matériels de transport
+30.20Z,C4,Fabrication de matériels de transport
+30.30Z,C4,Fabrication de matériels de transport
+30.40Z,C4,Fabrication de matériels de transport
+30.91Z,C4,Fabrication de matériels de transport
+30.92Z,C4,Fabrication de matériels de transport
+30.99Z,C4,Fabrication de matériels de transport
+31.01Z,C5,Fabrication d'autres produits industriels
+31.02Z,C5,Fabrication d'autres produits industriels
+31.03Z,C5,Fabrication d'autres produits industriels
+31.09A,C5,Fabrication d'autres produits industriels
+31.09B,C5,Fabrication d'autres produits industriels
+32.11Z,C5,Fabrication d'autres produits industriels
+32.12Z,C5,Fabrication d'autres produits industriels
+32.13Z,C5,Fabrication d'autres produits industriels
+32.20Z,C5,Fabrication d'autres produits industriels
+32.30Z,C5,Fabrication d'autres produits industriels
+32.40Z,C5,Fabrication d'autres produits industriels
+32.50A,C5,Fabrication d'autres produits industriels
+32.50B,C5,Fabrication d'autres produits industriels
+32.91Z,C5,Fabrication d'autres produits industriels
+32.99Z,C5,Fabrication d'autres produits industriels
+33.11Z,C5,Fabrication d'autres produits industriels
+33.12Z,C5,Fabrication d'autres produits industriels
+33.13Z,C5,Fabrication d'autres produits industriels
+33.14Z,C5,Fabrication d'autres produits industriels
+33.15Z,C5,Fabrication d'autres produits industriels
+33.16Z,C5,Fabrication d'autres produits industriels
+33.17Z,C5,Fabrication d'autres produits industriels
+33.19Z,C5,Fabrication d'autres produits industriels
+33.20A,C5,Fabrication d'autres produits industriels
+33.20B,C5,Fabrication d'autres produits industriels
+33.20C,C5,Fabrication d'autres produits industriels
+33.20D,C5,Fabrication d'autres produits industriels
+35.11Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.12Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.13Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.14Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.21Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.22Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.23Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+35.30Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+36.00Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+37.00Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+38.11Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+38.12Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+38.21Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+38.22Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+38.31Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+38.32Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+39.00Z,DE,"Industries extractives, énergie, eau, gestion des déchets et dépollution"
+41.10A,FZ,Construction
+41.10B,FZ,Construction
+41.10C,FZ,Construction
+41.10D,FZ,Construction
+41.20A,FZ,Construction
+41.20B,FZ,Construction
+42.11Z,FZ,Construction
+42.12Z,FZ,Construction
+42.13A,FZ,Construction
+42.13B,FZ,Construction
+42.21Z,FZ,Construction
+42.22Z,FZ,Construction
+42.91Z,FZ,Construction
+42.99Z,FZ,Construction
+43.11Z,FZ,Construction
+43.12A,FZ,Construction
+43.12B,FZ,Construction
+43.13Z,FZ,Construction
+43.21A,FZ,Construction
+43.21B,FZ,Construction
+43.22A,FZ,Construction
+43.22B,FZ,Construction
+43.29A,FZ,Construction
+43.29B,FZ,Construction
+43.31Z,FZ,Construction
+43.32A,FZ,Construction
+43.32B,FZ,Construction
+43.32C,FZ,Construction
+43.33Z,FZ,Construction
+43.34Z,FZ,Construction
+43.39Z,FZ,Construction
+43.91A,FZ,Construction
+43.91B,FZ,Construction
+43.99A,FZ,Construction
+43.99B,FZ,Construction
+43.99C,FZ,Construction
+43.99D,FZ,Construction
+43.99E,FZ,Construction
+45.11Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+45.19Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+45.20A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+45.20B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+45.31Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+45.32Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+45.40Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.11Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.12A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.12B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.13Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.14Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.15Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.16Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.17A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.17B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.18Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.19A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.19B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.21Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.22Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.23Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.24Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.31Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.32A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.32B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.32C,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.33Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.34Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.35Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.36Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.37Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.38A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.38B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.39A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.39B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.41Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.42Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.43Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.44Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.45Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.46Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.47Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.48Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.49Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.51Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.52Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.61Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.62Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.63Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.64Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.65Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.66Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.69A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.69B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.69C,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.71Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.72Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.73A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.73B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.74A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.74B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.75Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.76Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.77Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+46.90Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.11A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.11B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.11C,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.11D,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.11E,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.11F,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.19A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.19B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.21Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.22Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.23Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.24Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.25Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.26Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.29Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.30Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.41Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.42Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.43Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.51Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.52A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.52B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.53Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.54Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.59A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.59B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.61Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.62Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.63Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.64Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.65Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.71Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.72A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.72B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.73Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.74Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.75Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.76Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.77Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.78A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.78B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.78C,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.79Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.81Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.82Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.89Z,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.91A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.91B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.99A,GZ,"Commerce, réparation d'automobiles et de motocycles"
+47.99B,GZ,"Commerce, réparation d'automobiles et de motocycles"
+49.10Z,HZ,Transports et entreposage
+49.20Z,HZ,Transports et entreposage
+49.31Z,HZ,Transports et entreposage
+49.32Z,HZ,Transports et entreposage
+49.39A,HZ,Transports et entreposage
+49.39B,HZ,Transports et entreposage
+49.39C,HZ,Transports et entreposage
+49.41A,HZ,Transports et entreposage
+49.41B,HZ,Transports et entreposage
+49.41C,HZ,Transports et entreposage
+49.42Z,HZ,Transports et entreposage
+49.50Z,HZ,Transports et entreposage
+50.10Z,HZ,Transports et entreposage
+50.20Z,HZ,Transports et entreposage
+50.30Z,HZ,Transports et entreposage
+50.40Z,HZ,Transports et entreposage
+51.10Z,HZ,Transports et entreposage
+51.21Z,HZ,Transports et entreposage
+51.22Z,HZ,Transports et entreposage
+52.10A,HZ,Transports et entreposage
+52.10B,HZ,Transports et entreposage
+52.21Z,HZ,Transports et entreposage
+52.22Z,HZ,Transports et entreposage
+52.23Z,HZ,Transports et entreposage
+52.24A,HZ,Transports et entreposage
+52.24B,HZ,Transports et entreposage
+52.29A,HZ,Transports et entreposage
+52.29B,HZ,Transports et entreposage
+53.10Z,HZ,Transports et entreposage
+53.20Z,HZ,Transports et entreposage
+55.10Z,IZ,Hébergement et restauration
+55.20Z,IZ,Hébergement et restauration
+55.30Z,IZ,Hébergement et restauration
+55.90Z,IZ,Hébergement et restauration
+56.10A,IZ,Hébergement et restauration
+56.10B,IZ,Hébergement et restauration
+56.10C,IZ,Hébergement et restauration
+56.21Z,IZ,Hébergement et restauration
+56.29A,IZ,Hébergement et restauration
+56.29B,IZ,Hébergement et restauration
+56.30Z,IZ,Hébergement et restauration
+58.11Z,JZ,Information et communication
+58.12Z,JZ,Information et communication
+58.13Z,JZ,Information et communication
+58.14Z,JZ,Information et communication
+58.19Z,JZ,Information et communication
+58.21Z,JZ,Information et communication
+58.29A,JZ,Information et communication
+58.29B,JZ,Information et communication
+58.29C,JZ,Information et communication
+59.11A,JZ,Information et communication
+59.11B,JZ,Information et communication
+59.11C,JZ,Information et communication
+59.12Z,JZ,Information et communication
+59.13A,JZ,Information et communication
+59.13B,JZ,Information et communication
+59.14Z,JZ,Information et communication
+59.20Z,JZ,Information et communication
+60.10Z,JZ,Information et communication
+60.20A,JZ,Information et communication
+60.20B,JZ,Information et communication
+61.10Z,JZ,Information et communication
+61.20Z,JZ,Information et communication
+61.30Z,JZ,Information et communication
+61.90Z,JZ,Information et communication
+62.01Z,JZ,Information et communication
+62.02A,JZ,Information et communication
+62.02B,JZ,Information et communication
+62.03Z,JZ,Information et communication
+62.09Z,JZ,Information et communication
+63.11Z,JZ,Information et communication
+63.12Z,JZ,Information et communication
+63.91Z,JZ,Information et communication
+63.99Z,JZ,Information et communication
+64.11Z,KZ,Activités financières et d'assurance
+64.19Z,KZ,Activités financières et d'assurance
+64.20Z,KZ,Activités financières et d'assurance
+64.30Z,KZ,Activités financières et d'assurance
+64.91Z,KZ,Activités financières et d'assurance
+64.92Z,KZ,Activités financières et d'assurance
+64.99Z,KZ,Activités financières et d'assurance
+65.11Z,KZ,Activités financières et d'assurance
+65.12Z,KZ,Activités financières et d'assurance
+65.20Z,KZ,Activités financières et d'assurance
+65.30Z,KZ,Activités financières et d'assurance
+66.11Z,KZ,Activités financières et d'assurance
+66.12Z,KZ,Activités financières et d'assurance
+66.19A,KZ,Activités financières et d'assurance
+66.19B,KZ,Activités financières et d'assurance
+66.21Z,KZ,Activités financières et d'assurance
+66.22Z,KZ,Activités financières et d'assurance
+66.29Z,KZ,Activités financières et d'assurance
+66.30Z,KZ,Activités financières et d'assurance
+68.10Z,LZ,Activités immobilières
+68.20A,LZ,Activités immobilières
+68.20B,LZ,Activités immobilières
+68.31Z,LZ,Activités immobilières
+68.32A,LZ,Activités immobilières
+68.32B,LZ,Activités immobilières
+69.10Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+69.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+70.10Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+70.21Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+70.22Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+71.11Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+71.12A,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+71.12B,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+71.20A,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+71.20B,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+72.11Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+72.19Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+72.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+73.11Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+73.12Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+73.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+74.10Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+74.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+74.30Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+74.90A,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+74.90B,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+75.00Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.11A,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.11B,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.12Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.21Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.22Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.29Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.31Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.32Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.33Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.34Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.35Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.39Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+77.40Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+78.10Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+78.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+78.30Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+79.11Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+79.12Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+79.90Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+80.10Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+80.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+80.30Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+81.10Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+81.21Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+81.22Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+81.29A,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+81.29B,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+81.30Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.11Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.19Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.20Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.30Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.91Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.92Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+82.99Z,MN,"Activités scientifiques et techniques, services administratifs et de soutien"
+84.11Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.12Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.13Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.21Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.22Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.23Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.24Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.25Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.30A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.30B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+84.30C,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.10Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.20Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.31Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.32Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.41Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.42Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.51Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.52Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.53Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.59A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.59B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+85.60Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.10Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.21Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.22A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.22B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.22C,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.23Z,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.90A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.90B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.90C,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.90D,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.90E,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+86.90F,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.10A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.10B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.10C,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.20A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.20B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.30A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.30B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.90A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+87.90B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.10A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.10B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.10C,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.91A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.91B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.99A,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+88.99B,OQ,"Administration publique, enseignement, santé humaine et action sociale"
+90.01Z,RU,Autres activités de services
+90.02Z,RU,Autres activités de services
+90.03A,RU,Autres activités de services
+90.03B,RU,Autres activités de services
+90.04Z,RU,Autres activités de services
+91.01Z,RU,Autres activités de services
+91.02Z,RU,Autres activités de services
+91.03Z,RU,Autres activités de services
+91.04Z,RU,Autres activités de services
+92.00Z,RU,Autres activités de services
+93.11Z,RU,Autres activités de services
+93.12Z,RU,Autres activités de services
+93.13Z,RU,Autres activités de services
+93.19Z,RU,Autres activités de services
+93.21Z,RU,Autres activités de services
+93.29Z,RU,Autres activités de services
+94.11Z,RU,Autres activités de services
+94.12Z,RU,Autres activités de services
+94.20Z,RU,Autres activités de services
+94.91Z,RU,Autres activités de services
+94.92Z,RU,Autres activités de services
+94.99Z,RU,Autres activités de services
+95.11Z,RU,Autres activités de services
+95.12Z,RU,Autres activités de services
+95.21Z,RU,Autres activités de services
+95.22Z,RU,Autres activités de services
+95.23Z,RU,Autres activités de services
+95.24Z,RU,Autres activités de services
+95.25Z,RU,Autres activités de services
+95.29Z,RU,Autres activités de services
+96.01A,RU,Autres activités de services
+96.01B,RU,Autres activités de services
+96.02A,RU,Autres activités de services
+96.02B,RU,Autres activités de services
+96.03Z,RU,Autres activités de services
+96.04Z,RU,Autres activités de services
+96.09Z,RU,Autres activités de services
+97.00Z,RU,Autres activités de services
+98.10Z,RU,Autres activités de services
+98.20Z,RU,Autres activités de services
+99.00Z,RU,Autres activités de services
