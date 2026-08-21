@@ -43,6 +43,8 @@ export interface SourceEditoriale {
   /** L'id du jeu de données auquel la ligne appartient (ADR-0022) — les
    *  familles générées partagent la clé ; absente, la ligne est son propre jeu. */
   dataset?: string
+  /** Limite propre au jeu, affichée avec chacun de ses consommateurs. */
+  caveat?: string
 }
 
 /**

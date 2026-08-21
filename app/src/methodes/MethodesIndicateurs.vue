@@ -72,6 +72,9 @@ function uniteAffichage(unite: string): string {
             <div class="bloc-indicateur" :id="ancreIndicateur(clef)" :data-clef="clef">
               <dt class="bloc-indicateur-label">{{ indicateur.label }}</dt>
               <dd class="bloc-indicateur-definition">{{ indicateur.definition }}</dd>
+              <dd v-if="indicateur.caveat" class="bloc-indicateur-caveat">
+                <span class="meta-etiquette">Limite</span>{{ indicateur.caveat }}
+              </dd>
               <dd class="bloc-indicateur-meta">
                 <span class="meta-direction">
                   <span class="meta-etiquette">Sens du classement</span>
@@ -253,6 +256,12 @@ function uniteAffichage(unite: string): string {
   margin: 0;
   color: var(--text-secondary);
   font: var(--text-body-sm);
+}
+
+.bloc-indicateur-caveat {
+  margin: 0;
+  color: var(--text-tertiary);
+  font: var(--text-caption);
 }
 
 .bloc-indicateur-meta {

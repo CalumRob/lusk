@@ -8,6 +8,7 @@ import EpcisView from '../views/EpcisView.vue'
 import MethodologieView from '../views/MethodologieView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
 import IndicateurView from '../views/IndicateurView.vue'
+import SourcesView from '../views/SourcesView.vue'
 
 /**
  * The site map (site-map.md, /, /carte, /communes, /epcis, /departements,
@@ -65,6 +66,12 @@ export const routes = [
     name: 'methodologie',
     component: MethodologieView,
     meta: { title: 'Méthodologie' },
+  },
+  {
+    path: '/sources',
+    name: 'sources',
+    component: SourcesView,
+    meta: { title: 'Sources' },
   },
   {
     path: '/a-propos',
