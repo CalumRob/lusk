@@ -530,13 +530,18 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       manquer("indicator_pages", "la carte des pages doit être un objet")
     }
     for (indicator_key in names(metadata$indicator_pages)) {
-      page <- metadata$indicator_pages[[indicator_key]]
+    page <- metadata$indicator_pages[[indicator_key]]
+    famille_page <- if (is.null(page$family)) "scalar" else page$family
+    if (!famille_page %in% c("scalar", "relationship")) {
+      manquer("indicator_pages.family", paste0("famille inconnue « ", famille_page, " »"))
+    }
       if (!is.null(page$vintage)) manquer("indicator_pages.vintage", "la fraîcheur vient des source_records, pas de la page")
       if (!indicator_key %in% cles_indicateurs) {
         manquer("indicator_pages", paste0("la page « ", indicator_key, " » référence un indicateur inconnu"))
       }
     champs <- c("indicator", "label", "definition", "unit", "calculation",
-                "direction", "caveats")
+                "caveats")
+    if (famille_page == "scalar") champs <- c(champs, "direction")
     if (!is.list(page) || any(!vapply(champs, function(x)
       est_chaine_non_vide(page[[x]]), logical(1)))) {
       manquer("indicator_pages", "le descripteur scalaire est incomplet")
@@ -546,6 +551,21 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     if (!identical(page$indicator, indicator_key)) {
       manquer("indicator_pages.indicator", paste0("« ", indicator_key, " » doit correspondre à sa clé"))
+    }
+    if (famille_page == "relationship") {
+      for (role in c("axis", "measure")) {
+        val <- page[[role]]
+        if (!est_liste(val) || !est_chaine_non_vide(val$indicator) ||
+            !est_chaine_non_vide(val$label) || !est_chaine_non_vide(val$unit)) {
+          manquer("indicator_pages", paste0("« ", indicator_key, ".", role,
+                                             " » doit déclarer un rôle sémantique complet"))
+        }
+      }
+      facet <- page$scalarFacet
+      if (!est_liste(facet) || !est_chaine_non_vide(facet$indicator) ||
+          !facet$direction %in% c("high", "low")) {
+        manquer("indicator_pages.scalarFacet", "la facette scalaire explicite est invalide")
+      }
     }
     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
       manquer("indicator_pages.direction", "la direction doit être high ou low")

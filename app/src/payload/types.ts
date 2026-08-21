@@ -662,10 +662,21 @@ export interface ThemeMetadata {
   classification_labels?: Record<string, string>
   /** Optional page descriptor: only published entries are eligible for /indicateurs. */
   /** Per-concept publication descriptors; the indicator key is the authority. */
-  indicator_pages?: Record<string, ScalarPageMetadata>
+  indicator_pages?: Record<string, IndicatorPageMetadata>
   /** Reusable provenance records, referenced by indicator_pages.sources. */
   source_records?: Record<string, SourceRecord>
 }
+
+/** A page contract for a relationship: roles are explicit, never inferred from keys. */
+export type RelationshipPageMetadata = Omit<ScalarPageMetadata, 'direction' | 'family'> & {
+  family: 'relationship'
+  axis: { indicator: string; label: string; unit: string }
+  measure: { indicator: string; label: string; unit: string }
+  /** The one URL-backed scalar used by Carte, extremes and table ordering. */
+  scalarFacet: { indicator: string; direction: 'high' | 'low' }
+}
+
+export type IndicatorPageMetadata = ScalarPageMetadata
 
 export interface SourceRecord {
   dataset: string
@@ -677,6 +688,7 @@ export interface SourceRecord {
 }
 
 export interface ScalarPageMetadata {
+  family?: 'scalar' | 'relationship'
   indicator: string
   detail?: string | null
   label: string
@@ -687,4 +699,7 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
+  axis?: { indicator: string; label: string; unit: string }
+  measure?: { indicator: string; label: string; unit: string }
+  scalarFacet?: { indicator: string; direction: 'high' | 'low' }
 }

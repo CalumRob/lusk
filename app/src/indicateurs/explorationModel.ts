@@ -1,4 +1,4 @@
-import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata } from '@/payload/types'
+import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata, RelationshipPageMetadata } from '@/payload/types'
 
 export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
 export type DirectionIndicateur = 'high' | 'low'
@@ -9,6 +9,8 @@ export interface DensitePoint { x: number; density: number; y: number }
 export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
 export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
+export interface RelationPoint { territoire: Territoire; axis: number | null; measure: number | null; scalar: number | null; highlighted: boolean; fiche: string }
+export interface ModeleRelation { points: RelationPoint[]; table: RelationPoint[]; incomplete: RelationPoint[]; axisLabel: string; measureLabel: string; scalarIndicator: string }
 
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
@@ -80,4 +82,29 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const density = estimerDensite(values)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
   return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+}
+
+/**
+ * Pure relationship model. The caller supplies the declared roles from the
+ * page contract; this function deliberately never guesses from indicator
+ * names. The cloud and table share the exact same projected point objects,
+ * which preserves selection and fiche hand-off continuity.
+ */
+export function modeleRelation(
+  facts: readonly Indicateur[],
+  page: RelationshipPageMetadata,
+  territoires: readonly Territoire[],
+  niveau: NiveauIndicateur,
+  selected?: string,
+): ModeleRelation {
+  const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
+  const byRole = (indicator: string) => new Map(facts.filter((fact) => fact.key === indicator && fact.type === niveau).map((fact) => [fact.territoire, fact.value] as const))
+  const axis = byRole(page.axis.indicator); const measure = byRole(page.measure.indicator); const scalar = byRole(page.scalarFacet.indicator)
+  const ids = new Set([...axis.keys(), ...measure.keys(), ...scalar.keys()])
+  const points = [...ids].map((id) => {
+    const territoire = refs.get(id)
+    if (!territoire) return null
+    return { territoire, axis: axis.get(id) ?? null, measure: measure.get(id) ?? null, scalar: scalar.get(id) ?? null, highlighted: id === selected, fiche: `/territoire/${territoire.type}/${id}` }
+  }).filter((point): point is RelationPoint => point !== null)
+  return { points, table: points.filter((point) => point.scalar !== null), incomplete: points.filter((point) => point.axis === null || point.measure === null), axisLabel: page.axis.label, measureLabel: page.measure.label, scalarIndicator: page.scalarFacet.indicator }
 }

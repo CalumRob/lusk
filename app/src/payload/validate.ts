@@ -1999,10 +1999,12 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     for (const [key, raw] of Object.entries(meta['indicator_pages'] as LigneBrute)) {
       exiger(indicator_keys.includes(key) && estObjet(raw), fichier, 0, `« indicator_pages.${key} » doit référencer un indicateur publié`)
       const page = raw as LigneBrute
+      const family = page['family'] === undefined ? 'scalar' : page['family']
+      exiger(family === 'scalar' || family === 'relationship', fichier, 0, `« indicator_pages.${key}.family » est invalide`)
       exiger(page['vintage'] === undefined, fichier, 0, `« indicator_pages.${key}.vintage » est interdit : la fraîcheur vient des source_records`)
       exiger(page['indicator'] === key, fichier, 0, `« indicator_pages.${key}.indicator » doit correspondre à sa clé`)
-      exiger(page['direction'] === 'high' || page['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.direction » doit être high ou low`)
-       for (const champ of ['label', 'definition', 'unit', 'calculation', 'direction', 'caveats']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
+      if (family === 'scalar') exiger(page['direction'] === 'high' || page['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.direction » doit être high ou low`)
+       for (const champ of ['label', 'definition', 'unit', 'calculation', 'caveats']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
       const detail = page['detail']; exiger(detail === undefined || detail === null || estChaine(detail), fichier, 0, `« indicator_pages.${key}.detail » doit être une chaîne ou null`)
       if (detail !== undefined && detail !== null) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[key]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[key], detail), fichier, 0, `« indicator_pages.${key}.detail » est inconnu`)
       exiger(Array.isArray(page['levels']) && page['levels'].length > 0 && new Set(page['levels'] as unknown[]).size === (page['levels'] as unknown[]).length && (page['levels'] as unknown[]).every((x) => x === 'commune' || x === 'epci' || x === 'departement'), fichier, 0, `« indicator_pages.${key}.levels » est invalide`)
@@ -2011,7 +2013,14 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources }
+      if (family === 'relationship') {
+        for (const role of ['axis', 'measure']) { const value = page[role] as LigneBrute; exiger(estObjet(value) && estChaine(value['indicator']) && estChaine(value['label']) && estChaine(value['unit']), fichier, 0, `« indicator_pages.${key}.${role} » doit déclarer un rôle sémantique complet`) }
+        const facet = page['scalarFacet'] as LigneBrute
+        exiger(estObjet(facet) && estChaine(facet['indicator']) && (facet['direction'] === 'high' || facet['direction'] === 'low'), fichier, 0, `« indicator_pages.${key}.scalarFacet » doit être explicite`)
+        indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: (facet['direction'] as 'high' | 'low'), caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, family: 'relationship', axis: page['axis'] as never, measure: page['measure'] as never, scalarFacet: page['scalarFacet'] as never }
+      } else {
+        indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, unit: page['unit'] as string, definition: page['definition'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources }
+      }
     }
   }
 
