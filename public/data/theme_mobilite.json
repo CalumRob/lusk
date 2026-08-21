@@ -133,5 +133,163 @@
     "div_loss_t": "Types de services perdus à pied ou en transports en commun",
     "pct_iso_full_t": "Part des bâtiments perdant tout accès",
     "classification_saillance": "Classification de saillance"
+  },
+  "source_records": {
+    "rp_logement_princ": {
+      "dataset": "INSEE — Recensement de la population, logements (LOG T12)",
+      "publisher": "INSEE",
+      "url": "https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "30 juin 2026",
+      "vintages": [
+        {
+          "id": "rp_logement_princ",
+          "label": "Millésime 2023",
+          "version": "2023",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2023-01-01",
+          "datePublication": "2026-06-30"
+        }
+      ]
+    },
+    "amenagements_cyclables": {
+      "dataset": "Geovelo — Aménagements cyclables France Métropolitaine",
+      "publisher": "Geovelo",
+      "url": "https://www.data.gouv.fr/datasets/amenagements-cyclables-france-metropolitaine/",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2026-08",
+      "freshness": "7 août 2026",
+      "vintages": [
+        {
+          "id": "amenagements_cyclables",
+          "label": "Snapshot 2026-08",
+          "version": "2026-08",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-08-07",
+          "datePublication": "2026-08-07"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Offre vélo",
+          "frequency": "mensuelle — un snapshot du jeu publié chaque mois",
+          "reference": "snapshot 2026-08 (la date du fichier épinglé par le pipeline)",
+          "trigger": "La figure se recalcule quand l’une des deux horloges bouge."
+        }
+      ]
+    },
+    "korrigo": {
+      "dataset": "Bretagne Mobilité — Korrigo",
+      "publisher": "Bretagne Mobilité",
+      "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2026-02",
+      "freshness": "28 février 2026",
+      "vintages": [
+        {
+          "id": "korrigo",
+          "label": "Snapshot 2026-02",
+          "version": "2026-02",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-02-28",
+          "datePublication": "2026-08-06"
+        }
+      ]
+    },
+    "bornes-recharges": {
+      "dataset": "Etalab — Bornes de recharge pour véhicules électriques",
+      "publisher": "Etalab",
+      "url": "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2026-07",
+      "freshness": "juillet 2026",
+      "vintages": [
+        {
+          "id": "bornes-recharges",
+          "label": "Snapshot 2026-07",
+          "version": "2026-07",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2026-07-01",
+          "datePublication": "2026-07-01"
+        }
+      ]
+    },
+    "stationnement-velo": {
+      "dataset": "Ecolab — Stationnement vélo",
+      "publisher": "Ecolab",
+      "url": "https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2022-2025",
+      "freshness": "3 février 2026",
+      "vintages": [
+        {
+          "id": "stationnement-velo",
+          "label": "Snapshot 2022-2025",
+          "version": "2022-2025",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2025-01-01",
+          "datePublication": "2026-02-03"
+        }
+      ]
+    },
+    "osm_reseaux": {
+      "dataset": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)",
+      "publisher": "OpenStreetMap",
+      "url": "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "2026-08",
+      "freshness": "5 août 2026",
+      "vintages": [
+        {
+          "id": "osm_reseaux",
+          "label": "Extrait 2026-08",
+          "version": "2026-08",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-08-05",
+          "datePublication": "2026-08-06"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Réseau routier",
+          "frequency": "extrait reconstruit chaque jour, figé sur un rythme lent",
+          "reference": "extrait du 5 août 2026",
+          "trigger": "La figure se recalcule quand l’une des deux horloges bouge."
+        }
+      ]
+    },
+    "mobilite_snapshot": {
+      "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
+      "publisher": "Lusk",
+      "url": "https://github.com/CalumRob/lusk",
+      "licence": "ODbL — © OpenStreetMap contributors",
+      "vintage": "Snapshot 2026-02",
+      "freshness": "6 août 2026",
+      "vintages": [
+        {
+          "id": "mobilite_snapshot",
+          "label": "Snapshot 2026-02",
+          "version": "2026-02",
+          "licence": "ODbL — © OpenStreetMap contributors",
+          "dateReference": "2026-02-28",
+          "datePublication": "2026-08-06"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Équipements de proximité",
+          "frequency": "annuelle — un nouveau millésime publié chaque année",
+          "reference": "BPE 2024",
+          "trigger": "Recalcul manuel sur décision après un nouveau millésime significatif."
+        },
+        {
+          "name": "Bâtiments résidentiels",
+          "frequency": "par campagnes espacées",
+          "reference": "BDNB juillet 2025",
+          "trigger": "Recalcul manuel sur décision après une actualisation majeure."
+        }
+      ]
+    }
   }
 }

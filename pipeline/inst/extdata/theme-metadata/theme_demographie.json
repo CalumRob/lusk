@@ -83,5 +83,42 @@
     "levels": ["commune", "epci", "departement"],
     "sources": ["serie_historique"]
   }},
-  "source_records": { "serie_historique": { "dataset": "Série historique", "publisher": "INSEE", "url": "https://www.insee.fr", "licence": "Licence ouverte", "vintage": "RP 2023", "freshness": "Publication annuelle" } }
+  "source_records": {
+    "serie_historique": {
+      "dataset": "INSEE — Série historique du recensement",
+      "publisher": "INSEE",
+      "url": "https://www.data.gouv.fr/datasets/serie-historique-du-recensement-de-la-population",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "30 juin 2026",
+      "vintages": [{ "id": "serie_historique", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }]
+    },
+    "age_detail": {
+      "dataset": "INSEE — Population par sexe et âge (PRINC)",
+      "publisher": "INSEE",
+      "url": "https://www.data.gouv.fr/datasets/evolution-et-structure-de-la-population-principaux-indicateurs-dossier-complet-1",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "30 juin 2026",
+      "vintages": [{ "id": "age_detail", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }]
+    },
+    "menages": {
+      "dataset": "INSEE — Ménages (dossier complet)",
+      "publisher": "INSEE",
+      "url": "https://www.data.gouv.fr/datasets/menages-principaux-indicateurs-dossier-complet",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "30 juin 2026",
+      "vintages": [{ "id": "menages", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }]
+    },
+    "epci": {
+      "dataset": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/information/2510634",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2025",
+      "freshness": "—",
+      "vintages": [{ "id": "epci", "label": "Millésime 2025", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-01-01" }]
+    }
+  }
 }

@@ -665,6 +665,8 @@ export interface ThemeMetadata {
   indicator_pages?: Record<string, ScalarPageMetadata>
   /** Reusable provenance records, referenced by indicator_pages.sources. */
   source_records?: Record<string, SourceRecord>
+  /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
+  indicator_caveats?: Record<string, string>
 }
 
 export interface SourceRecord {

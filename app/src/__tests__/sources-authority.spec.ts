@@ -38,4 +38,25 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
     const mobilite = sourceRecords(payload, { includeUnpublished: true }).find((record) => record.id === 'mobilite_snapshot')
     expect(mobilite?.clocks.some((clock) => clock.frequency && clock.reference && clock.trigger)).toBe(true)
   })
+
+  it('consomme les vintages propres à source_records sans les reconstruire depuis le registre', () => {
+    const metadata = {
+      demographie: {
+        sources: { densite: 'serie_historique' },
+        indicator_labels: { densite: 'Densité de population' },
+        indicator_pages: { densite: { sources: ['serie_historique', 'menages'] } },
+        source_records: {
+          serie_historique: {
+            dataset: 'Canonique série', publisher: 'Canonique', url: 'https://canonique.example', licence: 'Canonique', vintage: 'V-custom', freshness: 'Fraîcheur custom',
+            vintages: [{ id: 'custom-row', label: 'Ligne custom', version: 'V-custom', licence: 'Canonique', dateReference: null, datePublication: null }],
+          },
+        },
+      },
+    } as unknown as Payload['themeMetadata']
+    const records = sourceRecords({ ...payload, themeMetadata: metadata })
+    const serie = records.find((record) => record.id === 'serie_historique')!
+    expect(serie.dataset).toBe('Canonique série')
+    expect(serie.vintages.map((vintage) => vintage.id)).toEqual(['custom-row'])
+    expect(records.find((record) => record.id === 'menages')?.consumers.map((consumer) => consumer.key)).toEqual(['densite', 'taille_menages'])
+  })
 })

@@ -738,11 +738,19 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
   }
   const vintages = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
   const records = new Map<string, SourceDatasetRecord>()
+  const metadataPourJeu = (id: string, datasetId: string): SourceRecord | undefined =>
+    metadataRecords.get(datasetId) ?? metadataRecords.get(id) ?? [...metadataRecords.entries()].find(([metadataId]) => datasetDeSource(metadataId) === datasetId)?.[1]
 
   for (const [id, editorial] of Object.entries(SOURCES_METHODES)) {
     const datasetId = datasetDeSource(id)
     let record = records.get(datasetId)
-    const metadata = metadataRecords.get(datasetId) ?? metadataRecords.get(id)
+    const metadata = metadataPourJeu(id, datasetId)
+    const authoredVintages = metadata?.vintages?.map((row) => {
+      const dynamic = vintages.get(row.id)
+      return dynamic
+        ? { ...row, version: dynamic.version, licence: formaterLicence(dynamic.licence), dateReference: dynamic.date_reference, datePublication: dynamic.date_publication }
+        : row
+    })
     if (!record) {
       record = {
         id: datasetId,
@@ -754,7 +762,7 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
         freshness: metadata?.freshness ?? null,
         dateReference: null,
         datePublication: null,
-        vintages: [],
+        vintages: authoredVintages ?? [],
         clocks: metadata?.clocks ?? clocksPourThemes(editorial.themes),
         caveat: metadata?.caveat ?? editorial.caveat ?? null,
         consumers: [],
@@ -763,15 +771,20 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       }
       records.set(datasetId, record)
     }
-    const vintage = vintages.get(id)
-    record.vintages.push({
-      id,
-      label: editorial.libelle,
-      version: vintage?.version ?? null,
-      licence: vintage ? formaterLicence(vintage.licence) : metadata?.licence ?? null,
-      dateReference: vintage?.date_reference ?? null,
-      datePublication: vintage?.date_publication ?? null,
-    })
+    // A migrated metadata record is authoritative, including its complete
+    // vintage rows. The vintages table may enrich an old record, but never
+    // replaces or duplicates rows authored in canonical metadata.
+    if (!metadata?.vintages?.length) {
+      const vintage = vintages.get(id)
+      record.vintages.push({
+        id,
+        label: editorial.libelle,
+        version: vintage?.version ?? null,
+        licence: vintage ? formaterLicence(vintage.licence) : metadata?.licence ?? null,
+        dateReference: vintage?.date_reference ?? null,
+        datePublication: vintage?.date_publication ?? null,
+      })
+    }
   }
 
   // Records authored by the payload but not yet represented in the legacy
@@ -803,17 +816,20 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
     for (const line of payload.indicateurs) {
       if (!published.has(`${line.theme}:${line.key}`)) continue
       const metadata = payload.themeMetadata?.[line.theme]
-      const sourceId = metadata?.sources[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.sourceId
-      if (!sourceId || datasetDeSource(sourceId) !== record.id) continue
+      const page = metadata?.indicator_pages?.[line.key]
+      const sourceIds = new Set([
+        metadata?.sources[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.sourceId,
+        ...(page?.sources ?? []),
+      ].filter((sourceId): sourceId is string => Boolean(sourceId)))
+      if (![...sourceIds].some((sourceId) => datasetDeSource(sourceId) === record.id)) continue
       const consumerId = `${line.theme}:${line.key}`
       if (seenConsumers.has(consumerId)) continue
       seenConsumers.add(consumerId)
-      const page = metadata?.indicator_pages?.[line.key]
       record.consumers.push({
         key: line.key,
         label: metadata?.indicator_labels[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.label ?? line.key,
         theme: line.theme,
-        caveat: page?.caveats ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.caveat ?? null,
+        caveat: page?.caveats ?? metadata?.indicator_caveats?.[line.key] ?? THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]?.caveat ?? null,
       })
       if (!record.themes.includes(line.theme)) record.themes.push(line.theme)
     }
