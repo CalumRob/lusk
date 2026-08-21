@@ -87,7 +87,7 @@ test_that("le schéma de la table est le contrat de l'issue #18 (étendu #312)",
     "classification", "part_passoires", "part_abc", "n_dpe"
   ))
   expect_true(all(p$histoires$theme == "habitat"))
-  expect_true(all(p$histoires$groupe == "etat-du-parc"))
+  expect_true(all(p$histoires$groupe == "etat-energetique-du-parc"))
   expect_true(all(p$histoires$salience_reason == "defaut"))
   expect_true(all(p$histoires$story_key == "etat-energetique-du-parc"))
 })

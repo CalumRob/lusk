@@ -150,16 +150,20 @@ histoires_lq_niveau <- function(lq, base_epci, cle, type, top_n) {
 #     (rang / activity_code / activity_label / lq / n — `n` conservé), pour
 #     les COMMUNES (vs la moyenne bretonne, gate E), les EPCIs et les
 #     DÉPARTEMENTS (LQ recalée à référence MÊME-ÉCHELLE — un EPCI vs les
-#     autres EPCIs, jamais vs la moyenne bretonne des communes) ;
-#   - « ce que la Bretagne abrite » : le top-N par PRÉSENCE de la région (n +
-#     part du parc) — la région n'a pas de Story LQ (sa LQ est dégénérée).
+#     autres EPCIs, jamais vs la moyenne bretonne des communes).
+# Issue #370 : la lecture régionale « ce que la Bretagne abrite » est RETIRÉE
+# de la fiche (le sous-groupe structure-verte ne déclare plus de lecture) — la
+# région (53) ne porte plus AUCUNE ligne d'Histoire Économie : son onglet rend
+# les indicateurs du bloc seuls (la LQ régionale est dégénérée, tous les
+# ratios ≡ 1). `calculer_presence_bretagne` reste un artefact analytique
+# (data/processed/economie — la matière de la structure régionale), jamais une
+# ligne de payload.
 # Sélection déterministe (ADR-0002) partout : LQ (ou n) décroissante, puis
 # code APE croissant. Une commune / EPCI / département avec moins de top_n
 # activités reçoit toutes ses activités (jamais de padding). Le type de
 # territoire est porté par les lignes (la forme du contrat histoires).
 construire_histoires_economie_payload <- function(lq, base_epci,
-                                                  top_n = TOP_N_SPECIALISATIONS_LQ,
-                                                  top_n_region = TOP_N_PRESENCE_REGION) {
+                                                  top_n = TOP_N_SPECIALISATIONS_LQ) {
   # niveau commune : l'Histoire existante (la LQ vs la Bretagne, gate E)
   communes <- calculer_histoires_lq(lq, top_n = top_n) %>%
     dplyr::transmute(
@@ -174,10 +178,7 @@ construire_histoires_economie_payload <- function(lq, base_epci,
   epcis <- histoires_lq_niveau(lq, base_epci, "EPCI", "epci", top_n)
   deps <- histoires_lq_niveau(lq, base_epci, "DEP", "departement", top_n)
 
-  # niveau région : la lecture de STRUCTURE (jamais une Story LQ)
-  region <- calculer_presence_bretagne(lq, top_n = top_n_region)
-
-  dplyr::bind_rows(communes, epcis, deps, region) %>%
+  dplyr::bind_rows(communes, epcis, deps) %>%
     dplyr::arrange(territoire, story_key, rang)
 }
 

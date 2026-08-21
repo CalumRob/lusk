@@ -131,17 +131,17 @@ describe('couchesDuTheme — Démographie (fixture)', () => {
     const couches = couchesDuTheme(payload, 'demographie')
 
     expect(couches.coucheParDefaut).toMatchObject({
-      sousGroupe: 'etat-et-dynamique',
+      sousGroupe: 'trajectoire-demographique',
       storyKey: 'trajectoire-demographique',
     })
     const groupe = couches.entrees[1] as { type: 'groupe'; groupe: { couches: { sousGroupe: string | null; storyKey: string | null }[] } }
     expect(groupe.groupe.couches[0]).toMatchObject({
-      sousGroupe: 'etat-et-dynamique',
+      sousGroupe: 'trajectoire-demographique',
       storyKey: 'trajectoire-demographique',
     })
     // an indicator layer carries its owning subgroup, no story
     expect(couches.entrees[2]).toMatchObject({
-      couche: { sousGroupe: 'etat-et-dynamique', storyKey: null },
+      couche: { sousGroupe: 'trajectoire-demographique', storyKey: null },
     })
   })
 })

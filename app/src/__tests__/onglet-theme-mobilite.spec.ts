@@ -162,6 +162,8 @@ describe('OngletTheme — the reading slot (the metadata template + the flagship
     const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
     expect(graphique.exists()).toBe(true)
     expect(graphique.props('mediane')).toBe(38)
+    expect(graphique.props('medianeVelo')).toBe(38)
+    expect(graphique.props('modes')).toEqual({ t: 'à pied ou en transports en commun', b: 'à vélo' })
     expect(graphique.props('distribution')).toMatchObject({ min: 28, max: 47 })
     expect(graphique.props('distribution')?.dec).toHaveLength(10)
     expect(graphique.props('nuage')).toHaveLength(2)
@@ -183,15 +185,18 @@ describe('OngletTheme — the reading slot (the metadata template + the flagship
     expect(contexte.find('.lecture-conteneur').text()).toBe('EPCI X')
   })
 
-  it('shows the vélo salience territory’s own row in the template — and no distribution chart', async () => {
+  it('shows the vélo salience territory’s own row and the shared distribution chart', async () => {
     const wrapper = await monter('22002')
 
     // the same metadata template reads the row's own div_loss_t (the resolved
-    // vélo reading); the distribution is the default's matter — no chart
+    // vélo reading), while both mode marks use the same distribution figure.
     expect(wrapper.find('.lecture-texte').text()).toContain(
       'Sans voiture, 24 types de services disparaissent',
     )
-    expect(wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(false)
+    const graphique = wrapper.findComponent(GraphiqueDistributionMobilite)
+    expect(graphique.exists()).toBe(true)
+    expect(graphique.props('mediane')).toBe(24)
+    expect(graphique.props('medianeVelo')).toBe(13)
   })
 
   it('renders the reading for the région — the default Story serves the région fiche (ADR-0012)', async () => {

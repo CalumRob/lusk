@@ -27,7 +27,7 @@ const coucheTauxSoldeNaturel: Couche = {
   detail: null,
   libelle: 'taux_solde_naturel',
   parDefaut: true,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: 'trajectoire-demographique',
 }
 
@@ -37,7 +37,7 @@ const coucheTauxSoldeMigratoire: Couche = {
   detail: null,
   libelle: 'taux_solde_migratoire',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: 'trajectoire-demographique',
 }
 
@@ -47,7 +47,7 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: null,
 }
 
@@ -57,7 +57,7 @@ const coucheMoin15: Couche = {
   detail: '<15',
   libelle: 'Moins de 15 ans',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: null,
 }
 

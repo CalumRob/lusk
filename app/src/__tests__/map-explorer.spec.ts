@@ -108,7 +108,7 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: null,
 }
 
@@ -119,7 +119,7 @@ const coucheTauxSoldeNaturel: Couche = {
   detail: null,
   libelle: 'taux_solde_naturel',
   parDefaut: true,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: 'trajectoire-demographique',
 }
 

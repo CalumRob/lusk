@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   figureLecturePour,
+  lignesLQPour,
   sourceLecture,
   sousGroupesPourTerritoire,
 } from '../fiche/sousGroupes'
@@ -254,7 +255,7 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
     })
   })
 
-  it('résout la lecture de présence de la région (structure-verte, n + part du parc)', () => {
+  it('la structure verte reste silencieuse quand la métadonnée ne déclare aucune lecture', () => {
     const sousGroupes = sousGroupesDe(
       'economie',
       '53',
@@ -263,11 +264,8 @@ describe('sousGroupesPourTerritoire — la lecture rejointe par (territoire, gro
     )
 
     expect(lectureDe(sousGroupes[0])).toBeNull()
-    expect(lectureDe(sousGroupes[1])?.story_key).toBe('ce-que-la-bretagne-abrite')
-    expect(lectureDe(sousGroupes[1])?.parametres).toEqual({
-      activity_label: "Location de terrains et d'autres biens immobiliers",
-      part_parc: '16,5',
-    })
+    expect(lectureDe(sousGroupes[1])).toBeNull()
+    expect(sousGroupes[1].lectureIndisponible).toBe(false)
   })
 
   it('rend une lecture null pour un territoire sans ligne (la donnée absente — jamais inventée)', () => {
@@ -325,14 +323,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     const lecture = lectureDe(sousGroupes[0])
     const figure = lecture ? figureLecturePour(payloadDe(indicateursDemographieFixture, histoiresDemographieFixture), '22001', lecture) : null
 
-    expect(figure).toMatchObject({
-      genre: 'soldes',
-      tauxNaturel: 5.982905982905983,
-      tauxMigratoire: 2.564102564102564,
-      classification: 'attire-renouvelle',
-      nom: 'Commune A1',
-    })
-    expect(figure?.nuage).toHaveLength(2)
+    expect(figure).toBeNull()
   })
 
   it('rend la distribution Mobilité pour la lecture par défaut (la signature + la médiane)', () => {
@@ -352,17 +343,27 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
     expect(figure.nuage).toHaveLength(2)
   })
 
-  it('rend AUCUNE figure pour la lecture vélo (la distribution est la matière du défaut)', () => {
+  it('rend la même distribution pour la lecture vélo, avec les deux marques de mode', () => {
+    const histoires = histoiresMobiliteFixture
     const payload = payloadDe(
       indicateursMobiliteFixture,
-      histoiresMobiliteFixture,
+      histoires,
       { mobilite: metadonneesThemesFixtures.mobilite },
     )
     const sousGroupes = sousGroupesPourTerritoire(payload, 'mobilite', '22002')
     const lecture = lectureDe(sousGroupes[0])
 
     expect(lecture?.story_key).toBe('ce-que-le-velo-preserve')
-    expect(lecture ? figureLecturePour(payload, '22002', lecture) : null).toBeNull()
+    const figure = lecture ? figureLecturePour(payload, '22002', lecture) : null
+    expect(figure).toMatchObject({
+      genre: 'distribution',
+      mediane: 24,
+      medianeVelo: 13,
+      modes: { t: 'à pied ou en transports en commun', b: 'à vélo' },
+    })
+    if (figure?.genre !== 'distribution') throw new Error('figure attendue')
+    expect(figure.distribution.dec.filter((point) => point !== null)).toHaveLength(10)
+    expect(figure.distribution.dens.filter((point) => point !== null)).toHaveLength(10)
   })
 
   it('rend le quadrant Milieux (les deux forces + la fenêtre des états) quand les états existent', () => {
@@ -379,7 +380,7 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
       genre: 'quadrant',
       tauxVariationPopulation: 14.4927536231884,
       deltaM2ParHabitant: 300,
-      classification: 'grandir-en-setalant',
+      classification: "grandit en s'étalant",
       periodePop: '2017-2023',
       periodeArtif: '2021-2025',
       nom: 'Commune A1',
@@ -401,6 +402,21 @@ describe('figureLecturePour — la figure compacte de la lecture, par story_key 
         lecture,
       ),
     ).toBeNull()
+  })
+})
+
+describe('lignesLQPour — la liste appartient à la spécialisation communale', () => {
+  it('ne fabrique pas de LQ quand la lecture optionnelle est absente', () => {
+    const sousGroupes = sousGroupesDe(
+      'economie',
+      '53',
+      histoiresEconomieFixture,
+      indicateursEconomieFixture,
+    )
+    const lecture = lectureDe(sousGroupes[1])
+
+    expect(lecture).toBeNull()
+    expect(lecture ? lignesLQPour(lecture) : []).toEqual([])
   })
 })
 

@@ -5,14 +5,10 @@
     {
       "key": "acces-aux-services",
       "label": "L’accès aux services",
-      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun, et l’offre de transport qui le permet.",
+      "framing": "Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.",
       "indicators": [
-        "voitures_menage",
-        "reseaux",
-        "offre_tc",
-        "bornes_recharge",
-        "places_stationnement_velo_1000",
-        "offre_cyclable",
+        "tot_loss_t",
+        "tot_loss_b",
         "iso_alimentation",
         "iso_sante",
         "iso_administration",
@@ -20,12 +16,12 @@
         "iso_banque"
       ],
       "figure": {
-        "family": "scalar",
-        "indicator": "offre_cyclable"
+        "family": "comparison-bars",
+        "indicator": "iso_alimentation"
       },
       "reading": {
         "story_key": "vingt-minutes-sans-voiture",
-        "params": ["div_loss_t", "pct_iso_full_t", "classification_saillance"],
+        "params": ["div_loss_t", "div_loss_b", "tot_loss_t", "tot_loss_b", "pct_iso_full_t", "classification_saillance"],
         "template": [
           { "type": "text", "content": "Sans voiture, " },
           { "type": "param", "key": "div_loss_t" },
@@ -37,6 +33,48 @@
           ] }
         ]
       }
+    },
+    {
+      "key": "partage-de-lespace-public",
+      "label": "Le partage de l’espace public",
+      "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
+      "indicators": [
+        "reseaux",
+        "places_stationnement_velo_1000",
+        "places_stationnement_voiture_1000",
+        "stationnement_velo_par_voiture",
+        "offre_cyclable"
+      ],
+      "figure": {
+        "family": "composition",
+        "indicator": "offre_cyclable"
+      }
+    },
+    {
+      "key": "motorisation",
+      "label": "La motorisation",
+      "framing": "L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.",
+      "indicators": [
+        "voitures_menage",
+        "bornes_recharge",
+        "bornes_ev_par_station_service"
+      ],
+      "figure": {
+        "family": "composition",
+        "indicator": "voitures_menage"
+      }
+    },
+    {
+      "key": "offre-transports-commun",
+      "label": "L’offre de transports en commun",
+      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt de transports en commun.",
+      "indicators": [
+        "offre_tc"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "offre_tc"
+      }
     }
   ],
   "indicator_keys": [
@@ -45,6 +83,11 @@
     "offre_tc",
     "bornes_recharge",
     "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000",
+    "bornes_ev_par_station_service",
+    "stationnement_velo_par_voiture",
+    "tot_loss_t",
+    "tot_loss_b",
     "offre_cyclable",
     "iso_alimentation",
     "iso_sante",
@@ -59,6 +102,11 @@
     "offre_tc": "korrigo",
     "bornes_recharge": "bornes-recharges",
     "places_stationnement_velo_1000": "stationnement-velo",
+    "places_stationnement_voiture_1000": "osm_reseaux",
+     "bornes_ev_par_station_service": "bpe_b316",
+     "stationnement_velo_par_voiture": "osm_reseaux",
+     "tot_loss_t": "mobilite_snapshot",
+     "tot_loss_b": "mobilite_snapshot",
     "offre_cyclable": "osm_reseaux",
     "iso_alimentation": "mobilite_snapshot",
     "iso_sante": "mobilite_snapshot",
@@ -77,6 +125,11 @@
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
     "bornes_recharge": "Bornes de recharge pour véhicules électriques",
     "places_stationnement_velo_1000": "Places de stationnement vélo pour 1 000 hab.",
+    "places_stationnement_voiture_1000": "Places de stationnement voiture pour 1 000 hab.",
+     "bornes_ev_par_station_service": "Bornes de recharge par station-service",
+     "stationnement_velo_par_voiture": "Places de stationnement vélo pour 1 place voiture",
+     "tot_loss_t": "Perte totale d’accès — à pied ou en transports en commun",
+     "tot_loss_b": "Perte totale d’accès — à vélo",
     "offre_cyclable": "L’offre cyclable"
   },
   "detail_labels": {
@@ -103,6 +156,9 @@
   },
   "param_labels": {
     "div_loss_t": "Types de services perdus à pied ou en transports en commun",
+    "div_loss_b": "Types de services perdus à vélo",
+    "tot_loss_t": "Nombre d'accès perdus à pied ou en transports en commun",
+    "tot_loss_b": "Nombre d'accès perdus à vélo",
     "pct_iso_full_t": "Part des bâtiments perdant tout accès",
     "classification_saillance": "Classification de saillance"
   }

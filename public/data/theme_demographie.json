@@ -3,7 +3,7 @@
   "label": "Démographie",
   "subgroups": [
     {
-      "key": "etat-et-dynamique",
+      "key": "trajectoire-demographique",
       "label": "État et dynamique de la population",
       "framing": "La population de la commune : sa taille, sa densité, son évolution depuis 1968 et la structure de ses ménages.",
       "indicators": [

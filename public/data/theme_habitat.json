@@ -3,7 +3,7 @@
   "label": "Habitat",
   "subgroups": [
     {
-      "key": "etat-du-parc",
+      "key": "etat-energetique-du-parc",
       "label": "L’état du parc",
       "framing": "Le parc de logements de la commune : sa composition, son statut, son âge, son type, son prix et son efficacité énergétique.",
       "indicators": [

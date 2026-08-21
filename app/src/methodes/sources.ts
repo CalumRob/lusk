@@ -377,23 +377,18 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   // dénominateur du ratio stationnement vélo ÷ voiture. La ligne vintages
   // arrive avec la publication pipeline (#369) : dégradation gracieuse
   // jusqu'alors (faits éditoriaux rendus, dates jamais inventées).
-  'osm_parkings': {
-    nom: 'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
-    libelle: 'Extrait 2026-08',
-    editeur: 'OpenStreetMap',
-    url: 'https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf',
-    themes: ['mobilite'],
-  },
+  // Les aires de stationnement et les réseaux partagent le même jeu OSM :
+  // osm_reseaux est l'identité canonique, jamais un doublon osm_parkings.
   // Les stations-service (BPE B316) — le dénominateur du ratio bornes
   // électriques ÷ stations-service (#369, triage 2026-08-12) : la source
   // officielle INSEE (définition : stations ayant vendu ≥ 500 000 L l'année
   // précédente). La ligne vintages arrive avec la publication pipeline
   // (#369) : dégradation gracieuse jusqu'alors.
   'bpe_b316': {
-    nom: 'INSEE — BPE : stations-service (B316)',
-    libelle: 'Millésime 2024',
+    nom: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
+    libelle: 'Millésime 2025',
     editeur: 'INSEE',
-    url: 'https://www.insee.fr/fr/metadonnees/source/operation/S2216/bases-donnees-ligne',
+    url: 'https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet',
     themes: ['mobilite'],
   },
 

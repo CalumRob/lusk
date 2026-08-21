@@ -163,6 +163,7 @@ function scalairesStoryDe(metadata: ThemeMetadata, histoiresDuTheme: Histoire[])
   const vus = new Set<string>()
   const scalaires: ScalaireStory[] = []
   for (const sousGroupe of metadata.subgroups) {
+    if (!sousGroupe.reading) continue
     for (const champ of sousGroupe.reading.params) {
       if (vus.has(champ)) continue
       if (!estScalaireNumerique(histoiresDuTheme, champ)) continue

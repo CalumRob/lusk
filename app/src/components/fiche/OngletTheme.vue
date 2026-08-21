@@ -20,11 +20,13 @@ import GraphiqueDistributionMobilite from '@/components/fiche/GraphiqueDistribut
 import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieux.vue'
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
+import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
 import {
   figureLecturePour,
+  lignesLQPour,
   sourceLecture,
   sousGroupesPourTerritoire,
 } from '@/fiche/sousGroupes'
@@ -42,6 +44,7 @@ const props = defineProps<{
 interface SousGroupeRenduComplet extends SousGroupeRendu {
   figureLecture: FigureLecture | null
   source: string | null
+  lignesLQ: ReturnType<typeof lignesLQPour>
 }
 
 // The theme's published label rides in the metadata (theme_<theme>.json) — the
@@ -61,6 +64,7 @@ const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
       ? figureLecturePour(props.payload, props.territoire, groupe.lecture)
       : null,
     source: groupe.lecture ? sourceLecture(props.payload, groupe.lecture) : null,
+    lignesLQ: groupe.lecture ? lignesLQPour(groupe.lecture) : [],
   })),
 )
 
@@ -144,67 +148,80 @@ const lignesReseaux = computed(
              resolved row's values, the reading's compact figure and its
              exhaustive source. -->
         <div v-if="groupe.lecture" class="sous-groupe-lecture">
-          <p class="lecture-texte voix-recit">
-            <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
-              <NoeudLecture
-                :noeud="noeud"
-                :parametres="groupe.lecture.parametres"
-                :nom-territoire="nomTerritoire"
+          <div class="lecture-ligne">
+            <p class="lecture-texte voix-recit">
+              <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
+                <NoeudLecture
+                  :noeud="noeud"
+                  :parametres="groupe.lecture.parametres"
+                  :nom-territoire="nomTerritoire"
+                />
+              </template>
+            </p>
+
+            <div class="lecture-figure">
+              <p
+                v-if="
+                  descriptionNuageComputed &&
+                  (groupe.figureLecture?.genre === 'soldes' ||
+                    groupe.figureLecture?.genre === 'distribution')
+                "
+                class="lecture-contexte"
+              >
+                {{ descriptionNuageComputed.prepositionCourant }}
+                <span class="lecture-courant">{{ descriptionNuageComputed.nomCourant }}</span>
+                et {{ descriptionNuageComputed.groupe }}
+                <RouterLink
+                  v-if="descriptionNuageComputed.conteneur"
+                  class="lecture-conteneur"
+                  :to="{
+                    name: 'territoire',
+                    params: {
+                      type: descriptionNuageComputed.conteneur.type,
+                      id: descriptionNuageComputed.conteneur.code,
+                    },
+                  }"
+                >
+                  {{ descriptionNuageComputed.conteneur.nom }}
+                </RouterLink>
+              </p>
+
+              <GraphiqueSoldes
+                v-if="groupe.figureLecture?.genre === 'soldes'"
+                :taux-naturel="groupe.figureLecture.tauxNaturel"
+                :taux-migratoire="groupe.figureLecture.tauxMigratoire"
+                :classification="groupe.figureLecture.classification"
+                :nom="groupe.figureLecture.nom"
+                :nuage="groupe.figureLecture.nuage"
               />
-            </template>
-          </p>
+              <GraphiqueDistributionMobilite
+                v-else-if="groupe.figureLecture?.genre === 'distribution'"
+                :distribution="groupe.figureLecture.distribution"
+                :mediane="groupe.figureLecture.mediane"
+                :mediane-velo="groupe.figureLecture.medianeVelo"
+                :modes="groupe.figureLecture.modes"
+                :nom="groupe.figureLecture.nom"
+                :nuage="groupe.figureLecture.nuage"
+              />
 
-          <p
-            v-if="
-              descriptionNuageComputed &&
-              (groupe.figureLecture?.genre === 'soldes' ||
-                groupe.figureLecture?.genre === 'distribution')
-            "
-            class="lecture-contexte"
-          >
-            {{ descriptionNuageComputed.prepositionCourant }}
-            <span class="lecture-courant">{{ descriptionNuageComputed.nomCourant }}</span>
-            et {{ descriptionNuageComputed.groupe }}
-            <RouterLink
-              v-if="descriptionNuageComputed.conteneur"
-              class="lecture-conteneur"
-              :to="{
-                name: 'territoire',
-                params: {
-                  type: descriptionNuageComputed.conteneur.type,
-                  id: descriptionNuageComputed.conteneur.code,
-                },
-              }"
-            >
-              {{ descriptionNuageComputed.conteneur.nom }}
-            </RouterLink>
-          </p>
-
-          <GraphiqueSoldes
-            v-if="groupe.figureLecture?.genre === 'soldes'"
-            :taux-naturel="groupe.figureLecture.tauxNaturel"
-            :taux-migratoire="groupe.figureLecture.tauxMigratoire"
-            :classification="groupe.figureLecture.classification"
-            :nom="groupe.figureLecture.nom"
-            :nuage="groupe.figureLecture.nuage"
-          />
-          <GraphiqueDistributionMobilite
-            v-else-if="groupe.figureLecture?.genre === 'distribution'"
-            :distribution="groupe.figureLecture.distribution"
-            :mediane="groupe.figureLecture.mediane"
-            :nom="groupe.figureLecture.nom"
-            :nuage="groupe.figureLecture.nuage"
-          />
-          <GraphiqueQuadrantMilieux
-            v-else-if="groupe.figureLecture?.genre === 'quadrant'"
-            :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
-            :delta-m2-par-habitant="groupe.figureLecture.deltaM2ParHabitant"
-            :classification="groupe.figureLecture.classification"
-            :nom="groupe.figureLecture.nom"
-            :periode-pop="groupe.figureLecture.periodePop"
-            :periode-artif="groupe.figureLecture.periodeArtif"
-            :nuage="groupe.figureLecture.nuage"
-          />
+              <FigureLectureRenderer
+                v-if="groupe.lignesLQ.length"
+                :famille="groupe.lecture?.figure?.family ?? 'list'"
+                :lignes="groupe.lignesLQ"
+                :labels="{ rang: metadata!.param_labels.rang, activite: metadata!.param_labels.activity_label, lq: metadata!.param_labels.lq }"
+              />
+              <GraphiqueQuadrantMilieux
+                v-if="groupe.figureLecture?.genre === 'quadrant'"
+                :taux-variation-population="groupe.figureLecture.tauxVariationPopulation"
+                :delta-m2-par-habitant="groupe.figureLecture.deltaM2ParHabitant"
+                :classification="groupe.figureLecture.classification"
+                :nom="groupe.figureLecture.nom"
+                :periode-pop="groupe.figureLecture.periodePop"
+                :periode-artif="groupe.figureLecture.periodeArtif"
+                :nuage="groupe.figureLecture.nuage"
+              />
+            </div>
+          </div>
 
           <p v-if="groupe.source" class="lecture-source">
             <span class="lecture-etiquette">Source</span>
@@ -327,6 +344,15 @@ const lignesReseaux = computed(
   box-shadow: var(--shadow-subtle);
 }
 
+.lecture-ligne {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(var(--figure-compact-width-min), var(--figure-compact-width-max));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.lecture-figure { min-width: 0; }
+
 /* La phrase de lecture porte la voix récit (serif) — la classe utilitaire
    globale `.voix-recit` pose la famille, jamais la voix corps Manrope
    (DESIGN.md §9). On ne pose PAS font-family ici pour ne pas écraser
@@ -338,6 +364,8 @@ const lignesReseaux = computed(
   line-height: 1.6;
   color: var(--text-primary);
 }
+
+@media (max-width: 640px) { .lecture-ligne { grid-template-columns: 1fr; } }
 
 .lecture-texte .noeud-gras {
   color: var(--couleur-strong);
