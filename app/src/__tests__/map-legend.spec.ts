@@ -23,7 +23,7 @@ const coucheDensite: Couche = {
   detail: null,
   libelle: 'Densité de population',
   parDefaut: false,
-  sousGroupe: 'etat-et-dynamique',
+  sousGroupe: 'trajectoire-demographique',
   storyKey: null,
 }
 
@@ -94,7 +94,7 @@ describe('MapLegend — the active layer bucket legend', () => {
         detail: null,
         libelle: 'Part de passoires thermiques',
         parDefaut: false,
-        sousGroupe: 'etat-du-parc',
+        sousGroupe: 'etat-energetique-du-parc',
         storyKey: 'etat-energetique-du-parc',
       },
       couleurs: ['#f0ddd2', '#d9ae94', '#c98f6e'],

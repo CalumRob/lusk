@@ -73,6 +73,8 @@ export interface LectureSousGroupe {
    * pct_iso_full_t, by contract) never kills the reading.
    */
   parametres: Record<string, string>
+  /** Optional payload-declared reading family (e.g. the LQ list). */
+  figure?: { family: FamilleFigure; indicator: string }
 }
 
 /** One fiche subgroup, rendered — the shared anatomy of all five themes. */
@@ -124,6 +126,9 @@ export type FigureLecture =
       genre: 'distribution'
       distribution: DistributionMobilite
       mediane: number
+      medianeVelo: number
+      /** Mode labels resolved from the payload classification vocabulary. */
+      modes: { t: string; b: string }
       nom: string
       nuage: PointNuageMobilite[]
     }
@@ -244,6 +249,7 @@ function lecturePour(
   groupe: string,
   template: NoeudTexteRiche[],
   metadata: ThemeMetadata,
+  figure?: LectureSousGroupe['figure'],
 ): { lecture: LectureSousGroupe | null; indisponible: boolean } {
   const histoire = payload.histoires.find(
     (h) => h.theme === theme && h.territoire === territoire && h.groupe === groupe,
@@ -260,7 +266,7 @@ function lecturePour(
   // sous-groupe déclare le lien canonique dans la métadonnée, la ligne porte
   // la sélection effective (la saillance vélo remplace le défaut, même groupe).
   return {
-    lecture: { story_key: histoire.story_key, histoire, template, parametres },
+    lecture: { story_key: histoire.story_key, histoire, template, parametres, ...(figure ? { figure } : {}) },
     indisponible: false,
   }
 }
@@ -301,14 +307,19 @@ export function sousGroupesPourTerritoire(
         ? { famille: sousGroupe.figure.family, clef: sousGroupe.figure.indicator, lignes: lignesFigure, palette: sousGroupe.figure.comparison?.palette }
         : null
 
-    const { lecture, indisponible } = lecturePour(
-      payload,
-      theme,
-      territoire,
-      sousGroupe.key,
-      sousGroupe.reading.template,
-      metadata,
-    )
+    // A subgroup may deliberately have no reading (the silent, indicator-only
+    // state). Do not turn that absence into copy or a fake Story.
+    const { lecture, indisponible } = sousGroupe.reading
+      ? lecturePour(
+          payload,
+          theme,
+          territoire,
+          sousGroupe.key,
+          sousGroupe.reading.template,
+          metadata,
+          sousGroupe.reading.figure,
+        )
+      : { lecture: null, indisponible: false }
 
     return {
       key: sousGroupe.key,
@@ -351,25 +362,34 @@ export function figureLecturePour(
 ): FigureLecture | null {
   const histoire = lecture.histoire
   const nom = trouverTerritoire(payload, territoire)?.nom ?? territoire
+  const metadata = payload.themeMetadata?.[histoire.theme]
+  const classificationLabel = (value: string) => metadata?.classification_labels?.[value] ?? null
 
   if (lecture.story_key === 'trajectoire-demographique') {
     const h = histoire as HistoireDemographie
+    const classification = classificationLabel(h.classification)
+    if (classification === null) return null
     return {
       genre: 'soldes',
       tauxNaturel: h.taux_solde_naturel,
       tauxMigratoire: h.taux_solde_migratoire,
-      classification: h.classification,
+      classification,
       nom,
       nuage: nuageComparaison(payload, territoire) ?? [],
     }
   }
 
-  if (lecture.story_key === 'vingt-minutes-sans-voiture') {
+  if (lecture.story_key === 'vingt-minutes-sans-voiture' || lecture.story_key === 'ce-que-le-velo-preserve') {
     const h = histoire as HistoireMobilite
+    // Mode wording is resolved from the payload's shared reseaux vocabulary;
+    // classification_labels describes reading values, not transport modes.
+    const modes = modesDepuisMetadata(metadata)
     return {
       genre: 'distribution',
-      distribution: distributionDe(h),
+      distribution: distributionPourLecture(h),
       mediane: h.div_loss_t,
+      medianeVelo: h.div_loss_b,
+      modes,
       nom,
       nuage: nuageMobilite(payload, territoire) ?? [],
     }
@@ -385,11 +405,13 @@ export function figureLecturePour(
     if (h.artif_m2_par_habitant === null || h.artif_m3_par_habitant === null) return null
     if (h.taux_variation_population === null) return null
     if (h.periode_artif === null) return null
+    const classification = classificationLabel(h.classification)
+    if (classification === null) return null
     return {
       genre: 'quadrant',
       tauxVariationPopulation: h.taux_variation_population,
       deltaM2ParHabitant: h.artif_m3_par_habitant - h.artif_m2_par_habitant,
-      classification: h.classification,
+      classification,
       nom,
       periodePop: h.periode_pop,
       periodeArtif: h.periode_artif,
@@ -398,6 +420,39 @@ export function figureLecturePour(
   }
 
   return null
+}
+
+function distributionPourLecture(histoire: HistoireMobilite): DistributionMobilite {
+  return distributionDe(histoire)
+}
+
+/** Mode labels come from the payload's established `reseaux` vocabulary. */
+function modesDepuisMetadata(metadata: ThemeMetadata | undefined): { t: string; b: string } {
+  const details = metadata?.detail_labels.reseaux
+  const mode = (libelle: string | undefined) => libelle?.replace(/^[^—]+—\s*/, '') ?? ''
+  return { t: mode(details?.t_densite), b: mode(details?.b_densite) }
+}
+
+/** The five payload-owned LQ rows become a compact reading figure. */
+export interface LigneLQ {
+  rang: number
+  activite: string
+  lq: number | null
+}
+
+export function lignesLQPour(lecture: LectureSousGroupe): LigneLQ[] {
+  // Only the commune/EPCI/département specialisation story owns LQ. The
+  // regional presence story has different matter (part of the parc), and
+  // must not acquire an invented list merely because its theme is économie.
+  if (lecture.figure?.family !== 'list' || lecture.figure.indicator !== 'lq') return []
+  const h = lecture.histoire
+  const lignes: LigneLQ[] = []
+  for (let rang = 1; rang <= 5; rang += 1) {
+    const activite = h[`top${rang}_activity_label` as keyof typeof h] as string | null
+    if (!activite) continue
+    lignes.push({ rang, activite, lq: h[`top${rang}_lq` as keyof typeof h] as unknown as number | null })
+  }
+  return lignes
 }
 
 /**

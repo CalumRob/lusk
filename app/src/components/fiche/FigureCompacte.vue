@@ -12,9 +12,7 @@
  *                   `structure_age` (pyramide des âges), sinon la barre
  *                   segmentée héritée (IndicatorFigure) ;
  * - `trajectory`  → petite ligne sur les millésimes (FigureTrajectoire) ;
- * - `profile`, `distribution`, `relationship` → corps hérité (IndicatorFigure),
- *   jusqu'à ce qu'un corps dédié existe : le comportement legacy est préservé
- *   (#371).
+ * - les familles sans corps spécialisé → corps hérité (IndicatorFigure).
  *
  * Chaque corps rend sa propre racine `.figure-indicateur[data-clef]` — le
  * contrat de test de la grille (OngletTheme) reste intact.

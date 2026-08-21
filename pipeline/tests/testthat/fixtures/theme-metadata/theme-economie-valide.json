@@ -34,27 +34,13 @@
       "framing": "La place des établissements verts dans le tissu productif.",
       "indicators": ["eco_activites"],
       "figure": {
-        "family": "profile",
+        "family": "scalar",
         "indicator": "eco_activites"
-      },
-      "reading": {
-        "story_key": "ce-que-la-bretagne-abrite",
-        "params": ["activity_label", "part_parc", "n"],
-        "template": [
-          { "type": "text", "content": "La Bretagne abrite surtout " },
-          { "type": "param", "key": "activity_label" },
-          { "type": "text", "content": " (" },
-          { "type": "param", "key": "part_parc" },
-          { "type": "text", "content": " du parc). " },
-          { "type": "link", "href": "/methodologie#economie", "children": [
-            { "type": "text", "content": "Méthodes" }
-          ] }
-        ]
       }
     }
   ],
   "indicator_keys": ["effectifs_salaries", "chomage", "eco_activites"],
-  "story_keys": ["ce-que-la-commune-abrite", "ce-que-la-bretagne-abrite"],
+  "story_keys": ["ce-que-la-commune-abrite"],
   "sources": {
     "effectifs_salaries": "flores_a88",
     "chomage": "rp_chomage",
@@ -70,7 +56,6 @@
     "rang": "Rang",
     "activity_label": "Activité dominante",
     "lq": "Location quotient (LQ)",
-    "n": "Nombre d'établissements",
-    "part_parc": "Part du parc breton"
+    "n": "Nombre d'établissements"
   }
 }

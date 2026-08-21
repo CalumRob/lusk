@@ -113,6 +113,11 @@ construire_donnees_mobilite <- function(cache = "data/raw",
   )
   if (is.null(sources)) {
     sources <- construire_sources_offre_mobilite(cache)
+    if (is.null(sources$parkings_osm))
+      sources$parkings_osm <- lire_parkings_osm(file.path(cache, fichier_source("osm_reseaux")))
+    if (is.null(sources$stations_service))
+      sources$stations_service <- normaliser_bpe_b316(
+        lire_bpe_b316(file.path(cache, fichier_source("bpe_b316"))))
   }
 
   readr::write_rds(table, sortie)
@@ -122,13 +127,15 @@ construire_donnees_mobilite <- function(cache = "data/raw",
     voitures_communes = voitures,
     communes_limites = limites,
     lignes_osm = lignes,
+    parkings_osm = sources$parkings_osm,
+    stations_service = sources$stations_service,
     amenagements_cyclables = amenagements$table,
     # l'issue #233 : le diagnostic de couverture du snapshot Geovelo (lignes +
     # km par département, courant vs précédent, le signal de régression) — la
     # matière du run report, portée par le seam d'entrée du run quand
     # l'orchestrateur le fournit (NULL pour les autres thèmes)
     couverture = amenagements$couverture
-  ), sources)
+  ), sources[setdiff(names(sources), c("parkings_osm", "stations_service"))])
 }
 
 # vintages_mobilite ------------------------------------------------------------
@@ -188,6 +195,10 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
   "commune", "nb_buildings",
   unname(CLES_ISOLATION_MOBILITE),
   "med_div_loss_t", "med_div_loss_b", "pct_iso_full_t",
+  "med_tot_loss_t", "med_tot_loss_b",
+  "med_tot_loss_t_epci", "med_tot_loss_b_epci",
+  "med_tot_loss_t_dep", "med_tot_loss_b_dep",
+  "med_tot_loss_t_reg", "med_tot_loss_b_reg",
   "med_div_loss_t_epci", "med_div_loss_b_epci", "pct_iso_full_t_epci",
   "med_div_loss_t_dep", "med_div_loss_b_dep", "pct_iso_full_t_dep",
   "med_div_loss_t_reg", "med_div_loss_b_reg", "pct_iso_full_t_reg",
@@ -262,6 +273,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   div_loss_territoires <- agreger_div_loss_territoires(
     div_communes, snapshot, base_epci
   )
+  tot_loss_territoires <- agreger_tot_loss_territoires(
+    calculer_tot_loss_communes(snapshot), snapshot, base_epci)
   saillance_territoires <- construire_saillance_territoires(div_loss_territoires)
   densite_territoires <- construire_signature_densite(snapshot, base_epci)
   nuage_territoires <- construire_nuage_territoires(div_loss_territoires,
@@ -315,10 +328,23 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     donnees$amenagements_cyclables,
     stationnement_velo_communes[c("commune", "population")]
   )
-  offre_territoires <- agreger_offre_territoires(
-    offre_tc_communes, bornes_communes, stationnement_velo_communes,
-    base_epci, offre_cyclable_communes
-  )
+  stationnement_voiture_communes <- NULL
+  if (all(c("parkings_osm", "lignes_osm", "communes_limites") %in% names(donnees))) {
+    stationnement_voiture_communes <- calculer_stationnement_voiture_communes(
+      donnees$parkings_osm, donnees$lignes_osm, donnees$communes_limites)
+  }
+  fuel_communes <- if ("stations_service" %in% names(donnees))
+    calculer_fuel_communes(donnees$stations_service) else NULL
+  if (is.null(stationnement_voiture_communes) && is.null(fuel_communes)) {
+    offre_territoires <- agreger_offre_territoires(
+      offre_tc_communes, bornes_communes, stationnement_velo_communes,
+      base_epci, offre_cyclable_communes)
+  } else {
+    offre_territoires <- agreger_offre_territoires(
+      offre_tc_communes, bornes_communes, stationnement_velo_communes,
+      base_epci, offre_cyclable_communes, stationnement_voiture_communes,
+      fuel_communes)
+  }
 
   if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)
   readr::write_rds(mobilite_communes, file.path(sortie, "mobilite_communes.rds"))
@@ -372,7 +398,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     bornes_communes = bornes_communes,
     stationnement_velo_communes = stationnement_velo_communes,
     offre_cyclable_communes = offre_cyclable_communes,
-    offre_territoires = offre_territoires
+    offre_territoires = offre_territoires,
+    tot_loss_territoires = tot_loss_territoires
   )
 }
 
@@ -438,6 +465,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("voitures_menage", "reseaux",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
+           "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
+           "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
           "offre_cyclable",
           names(CLES_ISOLATION_MOBILITE)),
   libelle = c(
@@ -446,6 +475,11 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "Part des bâtiments près d’un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
+     "Places de stationnement voiture pour 1 000 hab.",
+     "Bornes de recharge par station-service",
+     "Places de stationnement vélo pour 1 place voiture",
+     "Perte totale d’accès — à pied ou en transports en commun",
+     "Perte totale d’accès — à vélo",
     "L’offre cyclable",
     "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
     "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
@@ -459,16 +493,18 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
     "stationnement-velo",
+     "osm_reseaux", c("bornes-recharges", "bpe_b316"),
+     c("stationnement-velo", "osm_reseaux"), "mobilite_snapshot", "mobilite_snapshot",
     c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
     "mobilite_snapshot", "mobilite_snapshot"
   ),
-  source_reference = c("rp_logement_princ",
-                       "amenagements_cyclables",
-                       "korrigo", "bornes-recharges", "stationnement-velo",
-                       "osm_reseaux",
-                       rep("mobilite_snapshot", 5)),
-  multiplicite = c(3L, 6L, 1L, 1L, 1L, 5L, rep(1L, 5))
+   source_reference = c("rp_logement_princ", "amenagements_cyclables",
+                        "korrigo", "bornes-recharges", "stationnement-velo",
+                        "osm_reseaux", "bpe_b316", "osm_reseaux",
+                        "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
+                        rep("mobilite_snapshot", 5)),
+   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5))
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -536,10 +572,11 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
                                              directions = DIRECTIONS_MOBILITE) {
   aligner <- function(table_agregee, key, unit) {
+    if (!"rider" %in% names(table_agregee)) table_agregee$rider <- NA_character_
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
       dplyr::transmute(
         code = code, key = key, detail = NA_character_,
-        value = value, unit = unit
+        value = value, unit = unit, rider = rider
       )
   }
   sous_bloc <- function(key) {
@@ -562,6 +599,16 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     places_stationnement_velo_1000 = aligner(
       sous_bloc("places_stationnement_velo_1000"),
       "places_stationnement_velo_1000", "places / 1 000 hab")
+    ,places_stationnement_voiture_1000 = aligner(
+      sous_bloc("places_stationnement_voiture_1000"),
+      "places_stationnement_voiture_1000", "places / 1 000 hab")
+     ,bornes_ev_par_station_service = aligner(
+       analytiques$offre_territoires %>% dplyr::filter(key == "bornes_ev_par_station_service") %>%
+         dplyr::select(dplyr::any_of(c("code", "value", "rider"))),
+       "bornes_ev_par_station_service", "bornes / station")
+     ,stationnement_velo_par_voiture = aligner(
+       sous_bloc("stationnement_velo_par_voiture"),
+       "stationnement_velo_par_voiture", "places vélo / place voiture")
   )
   rangs <- compute_ranks(territoires, tables, scalaires = list(),
                          directions = directions)
@@ -607,13 +654,25 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   # multi-mesures — les longueurs protégé/partagé/total et les km/1 000 hab —
   # alignées sur le squelette (le détail NA des clés scalaires du sous-bloc ne
   # les concerne pas : la clé porte SES détails, la même forme que reseaux)
-  offre_cyclable <- aligner_detail(
+    offre_cyclable <- aligner_detail(
     analytiques$offre_territoires %>%
       dplyr::filter(key == "offre_cyclable"),
     "offre_cyclable",
     c(protege_longueur = "km", protege_km_1000 = "km / 1 000 hab",
       partage_longueur = "km", partage_km_1000 = "km / 1 000 hab",
       total_longueur = "km")
+  )
+  # Comme les autres clés scalaires, chaque famille est d'abord alignée sur le
+  # squelette canonique. Le snapshot ne couvre pas nécessairement tous les
+  # territoires (notamment les îles 29083 et 29084) : ils restent publiés avec
+  # leur clé canonique et une valeur NA, jamais avec une clé NA.
+  tot_loss <- dplyr::bind_rows(
+    aligner(analytiques$tot_loss_territoires %>%
+              dplyr::select(code, value = tot_loss_t),
+            "tot_loss_t", "accès perdus"),
+    aligner(analytiques$tot_loss_territoires %>%
+              dplyr::select(code, value = tot_loss_b),
+            "tot_loss_b", "accès perdus")
   )
 
   # le rang PAR DÉTAIL : chaque mesure est classée dans SON groupe de
@@ -629,6 +688,9 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
       dplyr::filter(key == "offre_cyclable"),
     territoires
   )
+  rangs_tot_loss <- construire_rangs_detail(
+    tot_loss %>% dplyr::select(code, key, detail, value),
+    territoires)
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
@@ -651,12 +713,17 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     rangs_voitures,
     rangs_reseaux,
     rangs_offre_cyclable
+    ,rangs_tot_loss
   )
 
   dplyr::bind_rows(
     tables$offre_tc,
     tables$bornes_recharge,
     tables$places_stationnement_velo_1000,
+    tables$places_stationnement_voiture_1000,
+    tables$bornes_ev_par_station_service,
+    tables$stationnement_velo_par_voiture,
+    tot_loss,
     dplyr::bind_rows(isolation),
     voitures,
     reseaux,
@@ -672,7 +739,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
       "rang_epci", "rang_dep", "rang_reg",
       "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
-      "vintage_date_reference", "vintage_date_publication"
+       "vintage_date_reference", "vintage_date_publication", "rider"
     )))
 }
 
@@ -700,9 +767,15 @@ construire_rangs_detail <- function(table_long, territoires,
     by = "code"
   )
 
-  dplyr::bind_rows(lapply(sort(unique(tab$detail)), function(detail) {
-    lignes <- tab[tab$detail == detail, ]
-    cle <- unique(lignes$key)
+  groupes_detail <- unique(tab[c("key", "detail")])
+  groupes_detail <- groupes_detail[order(groupes_detail$key,
+                                         groupes_detail$detail,
+                                         na.last = TRUE), , drop = FALSE]
+  dplyr::bind_rows(lapply(seq_len(nrow(groupes_detail)), function(i) {
+    cle <- groupes_detail$key[[i]]
+    detail <- groupes_detail$detail[[i]]
+    lignes <- tab[tab$key == cle & (is.na(tab$detail) == is.na(detail)) &
+                    (is.na(detail) | tab$detail == detail), , drop = FALSE]
     # la direction DÉCLARÉE de la clé (issue #368 — aucune clé ne se repose sur
     # le défaut high-is-good de rang_ordinal_par_groupe) ; une clé sans
     # déclaration est une erreur de descripteur, jamais un défaut silencieux
@@ -770,6 +843,9 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     )
 
   div <- analytiques$div_loss_territoires
+  tot <- analytiques$tot_loss_territoires
+  if (is.null(tot) || !all(c("tot_loss_t", "tot_loss_b") %in% names(tot)))
+    stop("compute_histoires_mobilite : tot_loss absent des analytiques.", call. = FALSE)
   saillance <- analytiques$saillance_territoires[c("code", "classification")]
   signature <- analytiques$densite_territoires
 
@@ -792,6 +868,10 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     dplyr::arrange(territoire)
 
   velo <- div %>%
+    # The resolved payload has one row per (territoire, groupe).  The vélo
+    # reading therefore carries the default reading's shared distribution
+    # explicitly; it must never rely on a second default row at app runtime.
+    dplyr::left_join(signature, by = "code") %>%
     dplyr::left_join(saillance, by = "code") %>%
     dplyr::filter(classification == "saillant") %>%
     dplyr::mutate(
@@ -802,7 +882,9 @@ compute_histoires_mobilite <- function(analytiques, vintages) {
     dplyr::rename(territoire = code,
                   classification_saillance = classification) %>%
     dplyr::select(territoire, type, theme, story_key,
-                  div_loss_t, div_loss_b, delta, classification_saillance) %>%
+                   div_loss_t, div_loss_b, delta, classification_saillance,
+                   dens_min, dens_max, dplyr::all_of(paste0("dens_", 1:10)),
+                   dplyr::all_of(paste0("dec_", 1:10))) %>%
     dplyr::arrange(territoire)
 
   dplyr::bind_rows(vingt, velo) %>%
@@ -884,6 +966,14 @@ validations_mobilite <- list(
       stop("Payload invalide : un taux de stationnement vélo négatif.",
            call. = FALSE)
     }
+    invisible(payload)
+  },
+  function(payload) {
+    keys <- payload$indicateurs$key
+    p <- payload$indicateurs$value[keys == "places_stationnement_voiture_1000"]
+    r <- payload$indicateurs$value[keys == "bornes_ev_par_station_service"]
+    if (any(!is.na(c(p, r)) & c(p, r) < 0))
+      stop("Payload invalide : stationnement voiture ou ratio EV/fuel négatif.", call. = FALSE)
     invisible(payload)
   },
   # la figure « L'offre cyclable » (issue #231) : des longueurs et taux non
@@ -1014,6 +1104,11 @@ DIRECTIONS_MOBILITE <- list(
   offre_tc = "high",
   bornes_recharge = "high",
   places_stationnement_velo_1000 = "high",
+  places_stationnement_voiture_1000 = "low",
+  bornes_ev_par_station_service = "high",
+  stationnement_velo_par_voiture = "high",
+  tot_loss_t = "low",
+  tot_loss_b = "low",
   offre_cyclable = "high",
   div_loss_t = "low",
   div_loss_b = "low",

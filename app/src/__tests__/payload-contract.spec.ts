@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
-import type { Payload } from '../payload/types'
+import type { HistoireMobilite, Payload } from '../payload/types'
 import {
   apercuPourTerritoire,
   formaterRang,
@@ -394,7 +394,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     // est sorti du manifeste) + les TROIS patchs correctifs M2 du run
     // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
     // l'amendement, appliquée dans #243)
-    expect(payload.vintages).toHaveLength(62)
+    expect(payload.vintages).toHaveLength(63)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:
@@ -461,23 +461,14 @@ describe('payload contract — the committed payload parses and renders', () => 
     // 1202 communes + 61 EPCIs + 4 départements + la région = 1268 lectures
     // (issue #312 : le top-5 est replié dans la ligne, jamais 5 lignes par
     // territoire — l'identité (territoire × groupe) est unique)
-    expect(histoiresEconomie).toHaveLength(1268)
+    expect(histoiresEconomie).toHaveLength(1267)
     expect(
       histoiresEconomie.every(
         (h) => h.groupe === 'sante-et-taille' || h.groupe === 'structure-verte',
       ),
     ).toBe(true)
     const storyKeys = new Set(histoiresEconomie.map((h) => h.story_key))
-    expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite']))
-
-    // la région porte la lecture de structure (groupe structure-verte), le
-    // reste la spécialisation (groupe sante-et-taille)
-    expect(
-      histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite'),
-    ).toHaveLength(1)
-    expect(histoiresEconomie.filter((h) => h.story_key === 'ce-que-la-bretagne-abrite').every(
-      (h) => h.territoire === '53',
-    )).toBe(true)
+    expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite']))
 
     // le sélecteur Story lit le top-5 réel d'une commune, replié dans la ligne
     const allineuc = histoireEconomiePourTerritoire(payload, '22001')
@@ -519,6 +510,17 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(velo).toHaveLength(139)
     expect(velo.every((h) => h.salience_reason === 'delta-velo-saillant')).toBe(true)
     expect(velo.every((h) => h.classification_saillance === 'saillant')).toBe(true)
+    expect(velo.every((h) => {
+      const signature = h as HistoireMobilite
+      const dens = [signature.dens_1, signature.dens_2, signature.dens_3, signature.dens_4, signature.dens_5,
+        signature.dens_6, signature.dens_7, signature.dens_8, signature.dens_9, signature.dens_10]
+      const dec = [signature.dec_1, signature.dec_2, signature.dec_3, signature.dec_4, signature.dec_5,
+        signature.dec_6, signature.dec_7, signature.dec_8, signature.dec_9, signature.dec_10]
+      return dens.every((value) => typeof value === 'number') && dens.some((value) => value > 0) &&
+        dec.every((value) => typeof value === 'number') && signature.dens_max !== null && signature.dens_min !== null &&
+        signature.dens_max >= signature.dens_min
+    })).toBe(true)
+    expect(new Set(histoiresMobilite.map((h) => `${h.territoire}|${h.groupe}`)).size).toBe(1266)
   })
 
   it('carries the real Mobilité Story matter — div_loss_t, la signature et l’estampille snapshot', async () => {

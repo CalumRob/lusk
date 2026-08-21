@@ -42,6 +42,14 @@ import type {
   TerritoireType,
   Theme,
   ThemeMetadata,
+  IndicatorPageMetadataBase,
+  TrajectoryMetadata,
+  CompositionMetadata,
+  DistributionMetadata,
+  RelationshipMetadata,
+  ListMetadata,
+  PyramidMetadata,
+  ComparisonBarsMetadata,
   FamilleFigure,
   Vintage,
   Sexe,
@@ -147,6 +155,8 @@ function estObjet(x: unknown): x is LigneBrute {
 function estChaine(x: unknown): x is string {
   return typeof x === 'string'
 }
+
+function estChaineNonVide(x: unknown): x is string { return estChaine(x) && x.length > 0 }
 
 function estNombre(x: unknown): x is number {
   return typeof x === 'number' && Number.isFinite(x)
@@ -468,18 +478,24 @@ export function validerIndicateurs(
     const detail = ligne['detail']
     exiger(detail === null || estChaine(detail), fichier, ligneIndexee, '« detail » doit être une chaîne ou null')
 
+    const dimension = ligne['dimension']
+    exiger(dimension === undefined || dimension === null || estChaineNonVide(dimension), fichier, ligneIndexee, '« dimension » doit être une chaîne non vide ou null')
+
     const sex = lireSexe(ligne, fichier, ligneIndexee)
 
     // Unicité : territoire × key × detail × sex (issue #390 — la dimension sexe
     // entre dans la clé pour que les lignes F et M d'une même tranche soient
     // distinctes, jamais un doublon).
-    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}`
+    const cle = `${territoire}\u0000${key}\u0000${detail ?? ''}\u0000${sex ?? ''}\u0000${dimension ?? ''}`
     exiger(!vus.has(cle), fichier, ligneIndexee, `ligne en double (territoire × key × detail × sex) pour « ${key} » de « ${territoire} »`)
     vus.add(cle)
 
     const value = ligne['value']
     exiger(estValeur(value), fichier, ligneIndexee, '« value » doit être un nombre ou null')
     const unit = lireChaine(ligne, 'unit', fichier, ligneIndexee)
+    const rider = ligne['rider']
+    exiger(rider === null || rider === undefined || estChaine(rider), fichier, ligneIndexee,
+      '« rider » doit être une chaîne ou null')
 
     const rang_epci = lireRang(ligne, 'rang_epci', fichier, ligneIndexee)
     const rang_dep = lireRang(ligne, 'rang_dep', fichier, ligneIndexee)
@@ -531,8 +547,10 @@ export function validerIndicateurs(
       key,
       detail,
       sex,
+      dimension: dimension === undefined ? null : dimension,
       value,
       unit,
+      rider: rider === undefined ? null : rider,
       rang_epci,
       rang_dep,
       rang_reg,
@@ -745,7 +763,6 @@ const RAISON_PAR_STORY: Record<string, RaisonSaillance> = {
   'trajectoire-demographique': 'defaut',
   'etat-energetique-du-parc': 'defaut',
   'ce-que-la-commune-abrite': 'defaut',
-  'ce-que-la-bretagne-abrite': 'defaut',
   'se-densifier-setaler-ou-sen-aller': 'defaut',
 }
 
@@ -880,11 +897,10 @@ function lireHistoireEconomie(
   ligneIndexee: number,
   fichier: string,
 ): Histoire {
-  const { territoire, type, story_key, groupe, salience_reason } = entete
-  const estPresence = story_key === 'ce-que-la-bretagne-abrite'
+  const { territoire, type, groupe, salience_reason } = entete
 
   // Le top-5 replié : chaque rang porte code + label (+ LQ pour la lecture de
-  // spécialisation, + part du parc pour la présence régionale). Le premier
+  // spécialisation). Le premier
   // rang EXISTE toujours (une lecture sans sa première activité est une
   // dérive) ; un territoire à moins de cinq activités porte NA au-delà (jamais
   // de padding). Le label vient TOUJOURS du payload — jamais codé en dur.
@@ -915,15 +931,10 @@ function lireHistoireEconomie(
     exiger(estValeur(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre ou null`)
     exiger(estValeur(n), fichier, ligneIndexee, `« ${prefixe}_n » doit être un nombre ou null`)
     exiger(estValeur(part_parc), fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être un nombre ou null`)
-    // la matière de la lecture : la LQ pour la spécialisation (jamais la part
-    // du parc), la part du parc pour la présence régionale (jamais la LQ)
-    if (estPresence) {
-      exiger(lq === null, fichier, ligneIndexee, `« ${prefixe}_lq » doit être null pour ce-que-la-bretagne-abrite`)
-      exiger(estNombre(part_parc), fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être un nombre pour ce-que-la-bretagne-abrite`)
-    } else {
-      exiger(estNombre(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre pour ce-que-la-commune-abrite`)
-      exiger(part_parc === null, fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être null pour ce-que-la-commune-abrite`)
-    }
+    // la matière de la lecture : la LQ pour la spécialisation ; la part du parc
+    // régionale a quitté le contrat de fiche.
+    exiger(estNombre(lq), fichier, ligneIndexee, `« ${prefixe}_lq » doit être un nombre pour ce-que-la-commune-abrite`)
+    exiger(part_parc === null, fichier, ligneIndexee, `« ${prefixe}_part_parc » doit être null pour ce-que-la-commune-abrite`)
     exiger(estNombre(n), fichier, ligneIndexee, `« ${prefixe}_n » doit être un nombre`)
     top[`${prefixe}_activity_code`] = code
     top[`${prefixe}_activity_label`] = label
@@ -964,33 +975,19 @@ function lireHistoireEconomie(
   // la matière est vérifiée rang par rang (top1_* non vide, lq/part_parc/n
   // par lecture) — le resserrage des types plats se fait ici, comme les
   // formes discriminées des autres thèmes
-  const lecture = estPresence
-    ? {
-        territoire,
-        type,
-        theme: 'economie' as const,
-        groupe,
-        story_key: 'ce-que-la-bretagne-abrite' as const,
-        salience_reason,
-        ...top,
-        vintage_source,
-        vintage_version,
-        vintage_date_reference,
-        vintage_date_publication,
-      }
-    : {
-        territoire,
-        type,
-        theme: 'economie' as const,
-        groupe,
-        story_key: 'ce-que-la-commune-abrite' as const,
-        salience_reason,
-        ...top,
-        vintage_source,
-        vintage_version,
-        vintage_date_reference,
-        vintage_date_publication,
-      }
+  const lecture = {
+    territoire,
+    type,
+    theme: 'economie' as const,
+    groupe,
+    story_key: 'ce-que-la-commune-abrite' as const,
+    salience_reason,
+    ...top,
+    vintage_source,
+    vintage_version,
+    vintage_date_reference,
+    vintage_date_publication,
+  }
   return lecture as HistoireEconomie
 }
 
@@ -1074,6 +1071,22 @@ function lireHistoireMobilite(
       ligneIndexee,
       'une Story « ce-que-le-velo-preserve » sans saillance « saillant »',
     )
+    const dens_min = ligne['dens_min']
+    const dens_max = ligne['dens_max']
+    exiger(estNombre(dens_min), fichier, ligneIndexee, '« dens_min » doit être numérique pour une Story vélo')
+    exiger(estNombre(dens_max), fichier, ligneIndexee, '« dens_max » doit être numérique pour une Story vélo')
+    exiger((dens_max as number) >= (dens_min as number), fichier, ligneIndexee, '« dens_min/dens_max » doit avoir un intervalle valide')
+    const densites: number[] = []
+    const deciles: number[] = []
+    for (let k = 1; k <= 10; k++) {
+      const dens = ligne[`dens_${k}`]
+      const dec = ligne[`dec_${k}`]
+      exiger(estNombre(dens), fichier, ligneIndexee, `« dens_${k} » doit être numérique pour une Story vélo`)
+      exiger(estNombre(dec), fichier, ligneIndexee, `« dec_${k} » doit être numérique pour une Story vélo`)
+      densites.push(dens as number)
+      deciles.push(dec as number)
+    }
+    exiger(densites.some((valeur) => valeur > 0), fichier, ligneIndexee, 'la signature plate de densité doit être exploitable')
     return {
       territoire,
       type,
@@ -1085,12 +1098,12 @@ function lireHistoireMobilite(
       div_loss_b: div_loss_b as number,
       delta: delta as number,
       pct_iso_full_t: null,
-      dens_min: null,
-      dens_max: null,
-      dens_1: null, dens_2: null, dens_3: null, dens_4: null, dens_5: null,
-      dens_6: null, dens_7: null, dens_8: null, dens_9: null, dens_10: null,
-      dec_1: null, dec_2: null, dec_3: null, dec_4: null, dec_5: null,
-      dec_6: null, dec_7: null, dec_8: null, dec_9: null, dec_10: null,
+      dens_min: dens_min as number,
+      dens_max: dens_max as number,
+      dens_1: densites[0], dens_2: densites[1], dens_3: densites[2], dens_4: densites[3], dens_5: densites[4],
+      dens_6: densites[5], dens_7: densites[6], dens_8: densites[7], dens_9: densites[8], dens_10: densites[9],
+      dec_1: deciles[0], dec_2: deciles[1], dec_3: deciles[2], dec_4: deciles[3], dec_5: deciles[4],
+      dec_6: deciles[5], dec_7: deciles[6], dec_8: deciles[7], dec_9: deciles[8], dec_10: deciles[9],
       classification_saillance: classification_saillance as 'saillant',
       ...estampille,
     }
@@ -1820,8 +1833,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   }
 
   // 6. les sous-groupes — l'ordre de la fiche (le premier est le premier
-  //    rendu) ; chaque sous-groupe porte ses indicateurs, sa figure et sa
-  //    lecture résolue
+  //    rendu) ; chaque sous-groupe porte ses indicateurs et sa figure. La
+  //    lecture est optionnelle : un slot indicateur-only reste silencieux,
+  //    jamais une histoire inventée (#370).
   const subgroupsBrut = meta['subgroups']
   exiger(Array.isArray(subgroupsBrut) && subgroupsBrut.length > 0, fichier, 0, '« subgroups » doit être un tableau non vide')
   const clesGroupes = new Set<string>()
@@ -1876,23 +1890,21 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       ligneIndexee,
       `« ${cle} » : la figure doit rendre un indicateur que le sous-groupe possède`,
     )
-    const comparison = figure['comparison']
-    if (comparison !== undefined) {
-      exiger(estObjet(comparison), fichier, ligneIndexee, `« ${cle} » : comparison doit être un objet`)
-      exiger(comparison['detail'] === null || estChaine(comparison['detail']), fichier, ligneIndexee, `« ${cle} » : comparison.detail doit être une chaîne ou null`)
-      exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, ligneIndexee, `« ${cle} » : comparison.sex doit être F, M ou null`)
-      exiger(family === 'composition', fichier, ligneIndexee, `« ${cle} » : comparison est réservé à la famille composition`)
-      exiger(comparison['palette'] === undefined || comparison['palette'] === 'theme' || comparison['palette'] === 'dpe', fichier, ligneIndexee, `« ${cle} » : comparison.palette doit être theme ou dpe`)
-      exiger(comparison['detail'] === null || (detail_labels[indicateurFigure] !== undefined && Object.prototype.hasOwnProperty.call(detail_labels[indicateurFigure], comparison['detail'])), fichier, ligneIndexee, `« ${cle} » : comparison.detail doit être déclaré dans detail_labels`)
-      if (comparison['palette'] === 'dpe') {
-        const details = detail_labels[indicateurFigure] ?? {}
-        exiger(Object.keys(details).length > 0 && Object.keys(details).every((detail) => /^[A-G]$/.test(detail)), fichier, ligneIndexee, `« ${cle} » : la palette DPE exige des détails A à G`)
-      }
-    }
 
     // la lecture résolue — le lien explicite vers l'histoire du sous-groupe
-    // (parent #308 : l'app n'infère jamais la relation depuis les noms)
+    // (parent #308 : l'app n'infère jamais la relation depuis les noms). Un
+    // sous-groupe sans lecture est valide : il ne lie aucune story et ne
+    // déclare aucun paramètre/template.
     const readingBrut = groupe['reading']
+    if (readingBrut === undefined || readingBrut === null) {
+      return {
+        key: cle,
+        label: libelle,
+        framing,
+        indicators,
+        figure: { family, indicator: indicateurFigure },
+      }
+    }
     exiger(estObjet(readingBrut), fichier, ligneIndexee, `« ${cle} » : la lecture (reading) est absente ou non-objet`)
     const reading = readingBrut as LigneBrute
     const story_key = lireChaine(reading, 'story_key', fichier, ligneIndexee)
@@ -1915,20 +1927,31 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
 
     // le template — le texte riche TYPÉ
     const template = validerTemplate(reading['template'], fichier, params, cle)
+    const readingFigureBrut = reading['figure']
+    let readingFigure: { family: FamilleFigure; indicator: string } | undefined
+    if (readingFigureBrut !== undefined) {
+      exiger(estObjet(readingFigureBrut), fichier, ligneIndexee, `« ${cle} » : reading.figure doit être un objet`)
+      const rf = readingFigureBrut as LigneBrute
+      const rfFamily = lireChaine(rf, 'family', fichier, ligneIndexee)
+      exiger(estUneDe(rfFamily, FAMILLES_FIGURE), fichier, ligneIndexee, `« ${cle} » : famille de reading.figure inconnue`)
+      const rfIndicator = lireChaine(rf, 'indicator', fichier, ligneIndexee)
+      exiger(params.includes(rfIndicator), fichier, ligneIndexee, `« ${cle} » : reading.figure doit rendre un paramètre déclaré`)
+      readingFigure = { family: rfFamily as FamilleFigure, indicator: rfIndicator }
+    }
 
     return {
       key: cle,
       label: libelle,
       framing,
       indicators,
-      figure: { family, indicator: indicateurFigure, ...(comparison === undefined ? {} : { comparison: { detail: comparison['detail'] as string | null, sex: (comparison['sex'] ?? null) as Sexe | null, ...(comparison['palette'] === undefined ? {} : { palette: comparison['palette'] as 'theme' | 'dpe' }) } }) },
-      reading: { story_key, params, template },
+      figure: { family, indicator: indicateurFigure },
+      reading: { story_key, params, template, ...(readingFigure ? { figure: readingFigure } : {}) },
     }
   })
 
   // 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
-  //    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
-  //    sous-groupe — rien d'orphelin, rien de partagé (l'identité
+  //    EXACTEMENT un sous-groupe, chaque histoire non-candidate est lue par
+  //    EXACTEMENT un sous-groupe — rien d'orphelin, rien de partagé (l'identité
   //    (territoire × groupe) unique du parent #308). Une story déclarée au
   //    registre sans sous-groupe qui la lit est LÉGITIME quand le registre de
   //    résolution la déclare candidate de saillance (ADR-0002) du groupe d'un
@@ -2018,7 +2041,6 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(page['direction'] === 'high' || page['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.direction » doit être high ou low`)
        for (const champ of ['label', 'definition', 'unit', 'calculation', 'direction', 'caveats']) exiger(estChaine(page[champ]) && (page[champ] as string).length > 0, fichier, 0, `« indicator_pages.${key}.${champ} » doit être renseigné`)
       const detail = page['detail']; exiger(detail === undefined || detail === null || estChaine(detail), fichier, 0, `« indicator_pages.${key}.detail » doit être une chaîne ou null`)
-      const family = page['family']; exiger(family === undefined || estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
       if (detail !== undefined && detail !== null) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[key]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[key], detail), fichier, 0, `« indicator_pages.${key}.detail » est inconnu`)
       exiger(Array.isArray(page['levels']) && page['levels'].length > 0 && new Set(page['levels'] as unknown[]).size === (page['levels'] as unknown[]).length && (page['levels'] as unknown[]).every((x) => x === 'commune' || x === 'epci' || x === 'departement'), fichier, 0, `« indicator_pages.${key}.levels » est invalide`)
       exiger(Array.isArray(page['sources']) && page['sources'].length > 0 && new Set(page['sources'] as unknown[]).size === (page['sources'] as unknown[]).length && (page['sources'] as unknown[]).every((source) => estChaine(source) && source.length > 0), fichier, 0, `« indicator_pages.${key}.sources » est vide ou invalide`)
@@ -2026,7 +2048,47 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-      indicator_pages[key] = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(family === undefined ? {} : { family: family as FamilleFigure }) }
+        const family = (page['family'] === undefined ? 'scalar' : page['family']) as FamilleFigure
+       exiger(estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
+       const comparison = page['comparison']
+       if (comparison !== undefined) {
+         exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
+         for (const field of ['indicator', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaineNonVide(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         for (const field of ['details', 'sexes', 'dimensions']) exiger(comparison[field] === undefined || (Array.isArray(comparison[field]) && (comparison[field] as unknown[]).length > 0 && new Set(comparison[field] as unknown[]).size === (comparison[field] as unknown[]).length && (comparison[field] as unknown[]).every((value) => estChaineNonVide(value))), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         if (comparison['indicator'] !== undefined) exiger(indicator_keys.includes(comparison['indicator'] as string), fichier, 0, `« indicator_pages.${key}.comparison.indicator » est inconnu`)
+         if (comparison['detail'] !== undefined && comparison['details'] !== undefined) exiger((comparison['details'] as unknown[]).includes(comparison['detail']), fichier, 0, `« indicator_pages.${key}.comparison.detail » n'est pas déclaré dans details`)
+         if (comparison['sex'] !== undefined && comparison['sex'] !== null && comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).includes(comparison['sex']), fichier, 0, `« indicator_pages.${key}.comparison.sex » n'est pas déclaré dans sexes`)
+         if (comparison['dimension'] !== undefined && comparison['dimension'] !== null && comparison['dimensions'] !== undefined) exiger((comparison['dimensions'] as unknown[]).includes(comparison['dimension']), fichier, 0, `« indicator_pages.${key}.comparison.dimension » n'est pas déclaré dans dimensions`)
+         if (comparison['sexes'] !== undefined) exiger((comparison['sexes'] as unknown[]).every((value) => value === 'F' || value === 'M'), fichier, 0, `« indicator_pages.${key}.comparison.sexes » est invalide`)
+         exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, 0, `« indicator_pages.${key}.comparison.sex » est invalide`)
+         exiger(comparison['direction'] === undefined || comparison['direction'] === 'high' || comparison['direction'] === 'low', fichier, 0, `« indicator_pages.${key}.comparison.direction » est invalide`)
+         if (comparison['labels'] !== undefined) exiger(estObjet(comparison['labels']) && Object.values(comparison['labels'] as LigneBrute).every((value) => estChaineNonVide(value)), fichier, 0, `« indicator_pages.${key}.comparison.labels » est invalide`)
+       }
+        const base: IndicatorPageMetadataBase = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
+       const extensionFields: Record<string, string[]> = { trajectory: ['endpoints'], composition: ['parts'], distribution: ['signature', 'summary'], list: ['categories'], pyramid: ['dimensions'], 'comparison-bars': ['series'] }
+       const extensionKey = family === 'comparison-bars' ? 'comparison-bars' : family
+       const extension = page[extensionKey]
+       for (const candidate of ['trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars', 'comparison_bars']) {
+         if (candidate !== extensionKey && page[candidate] !== undefined) exiger(false, fichier, 0, `« indicator_pages.${key}.${candidate} » ne correspond pas à la famille déclarée`)
+       }
+       if (family !== 'scalar') exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
+        if (extension !== undefined) {
+         exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
+         for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
+         if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
+        }
+        const assertNever = (value: never): never => { throw new Error(`Famille de figure non implémentée : ${String(value)}`) }
+        switch (family) {
+          case 'scalar': indicator_pages[key] = page['family'] === undefined ? base : { ...base, family: 'scalar' }; break
+          case 'trajectory': indicator_pages[key] = { ...base, family, trajectory: extension as unknown as TrajectoryMetadata }; break
+          case 'composition': indicator_pages[key] = { ...base, family, composition: extension as unknown as CompositionMetadata }; break
+          case 'distribution': indicator_pages[key] = { ...base, family, distribution: extension as unknown as DistributionMetadata }; break
+          case 'relationship': indicator_pages[key] = { ...base, family, relationship: extension as unknown as RelationshipMetadata }; break
+          case 'list': indicator_pages[key] = { ...base, family, list: extension as unknown as ListMetadata }; break
+          case 'pyramid': indicator_pages[key] = { ...base, family, pyramid: extension as unknown as PyramidMetadata }; break
+          case 'comparison-bars': indicator_pages[key] = { ...base, family, comparisonBars: extension as unknown as ComparisonBarsMetadata }; break
+          default: assertNever(family)
+        }
     }
   }
 
@@ -2084,14 +2146,6 @@ export function verifierPariteLibelles(payload: Payload): void {
   const violations: string[] = []
   for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
     const indicateursTheme = payload.indicateurs.filter((i) => i.theme === theme)
-
-    for (const subgroup of meta.subgroups) {
-      const comparison = subgroup.figure.comparison
-      if (!comparison) continue
-      const rows = indicateursTheme.filter((row) => row.key === subgroup.figure.indicator)
-      if (comparison.detail !== null && !rows.some((row) => row.detail === comparison.detail)) violations.push(`${theme}: détail de comparaison « ${comparison.detail} » de « ${subgroup.figure.indicator} » absent des faits`)
-      if (comparison.sex !== null && !rows.some((row) => row.detail === comparison.detail && row.sex === comparison.sex)) violations.push(`${theme}: sexe de comparaison « ${comparison.sex} » de « ${subgroup.figure.indicator} » absent des faits`)
-    }
 
     for (const ligne of indicateursTheme) {
       if (!(ligne.key in meta.indicator_labels)) {

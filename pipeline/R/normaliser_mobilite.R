@@ -16,7 +16,7 @@
 # la normalisation bruyamment — jamais un succès partiel silencieux.
 COLONNES_REQUISES_MOBILITE <- c(
   "code_insee", "nom_commune", "code_departement_insee", "raison_sociale",
-  "nb_buildings"
+  "nb_buildings", "med_tot_loss_t", "med_tot_loss_b"
 )
 
 # MOTIF_NUMERIQUES_MOBILITE -----------------------------------------------------
@@ -231,6 +231,123 @@ lire_lignes_osm <- function(chemin_pbf) {
          call. = FALSE)
   }
   lignes
+}
+
+# Parking fermé (ways + relations) shares the Geofabrik extract with networks.
+# Nodes and non-parking features are deliberately not admitted to the contract.
+normaliser_parkings_osm <- function(x) {
+  if (!"amenity" %in% names(x)) stop("OSM parkings : colonne amenity absente.", call. = FALSE)
+  # Do not let NA in the GDAL attribute vector select an NA feature row.
+  # The OSM multipolygon driver can append one such geometry-collection row;
+  # it is not a parking feature and has no polygonal area to attribute.
+  amenity <- as.character(x$amenity)
+  x <- x[!is.na(amenity) & amenity == "parking", , drop = FALSE]
+  if (!"osm_id" %in% names(x)) stop("OSM parkings : osm_id absent.", call. = FALSE)
+  x <- x[!duplicated(as.character(x$osm_id)), , drop = FALSE]
+  # The OSM multipolygon layer contains a small number of invalid relations
+  # (usually duplicate edges between member ways).  Repair at ingestion, before
+  # any area or commune attribution operation.  st_make_valid preserves the
+  # polygonal area and can legitimately return POLYGON for a MULTIPOLYGON.
+  x <- sf::st_make_valid(x)
+  if (any(!sf::st_is_valid(x)))
+    stop("OSM parkings : géométrie invalide après réparation.", call. = FALSE)
+  x
+}
+
+lire_parkings_osm <- function(chemin_pbf) {
+  x <- osmextract::oe_read(chemin_pbf, layer = "multipolygons", quiet = TRUE)
+  normaliser_parkings_osm(x)
+}
+
+lire_bpe_b316 <- function(chemin) {
+  if (basename(chemin) != "BPE25.parquet")
+    stop("BPE 2025 : l'entrée doit être le fichier BPE25.parquet officiel.", call. = FALSE)
+  brut <- nanoparquet::read_parquet(chemin)
+  selectionner_bpe_b316_2025(brut)
+}
+
+# BPE25 is an equipment-row file: one retained B316 row is one station.  The
+# file has no GEO_OBJECT column, so DEPCOM is the authoritative commune-grain
+# key for the downloaded detail extract.  Coverage must be established before
+# filtering B316: a commune represented by another equipment type is observed
+# with zero stations-service, not unavailable.
+selectionner_bpe_b316_2025 <- function(x) {
+  requis <- c("DEPCOM", "TYPEQU")
+  manquantes <- setdiff(requis, names(x))
+  if (length(manquantes)) stop("BPE25 : colonne(s) manquante(s) : ",
+                               paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  depcom <- as.character(x$DEPCOM)
+  breton <- substr(depcom, 1, 2) %in% DEPT_BRETAGNE
+  if (any(breton & !grepl("^[0-9]{5}$", depcom)))
+    stop("BPE25 : code commune breton invalide.", call. = FALSE)
+  type <- toupper(trimws(as.character(x$TYPEQU)))
+  if (any(breton & (is.na(type) | !nzchar(type))))
+    stop("BPE25 : TYPEQU ne doit pas être manquant pour une commune bretonne.", call. = FALSE)
+
+  # In fixture/commune-grain inputs GEO_OBJECT is explicit.  The official
+  # geolocalized BPE25 detail has no such column; there, every valid Breton
+  # DEPCOM row is a commune-grain observation.
+  commune <- breton
+  if ("GEO_OBJECT" %in% names(x))
+    commune <- commune & toupper(trimws(as.character(x$GEO_OBJECT))) == "COM"
+  couverture <- unique(depcom[commune])
+  y <- x[commune & type == "B316", , drop = FALSE]
+  if (!nrow(y)) stop("BPE25 : aucune observation communale B316 pour 2025.", call. = FALSE)
+  # Keep one row per equipment (the BPE detail grain), and add one explicit
+  # zero row only for covered communes with no B316 equipment.  The next seam
+  # aggregates these rows into the canonical commune count.
+  b316_communes <- unique(as.character(y$DEPCOM))
+  zeros <- setdiff(couverture, b316_communes)
+  y <- dplyr::bind_rows(
+    tibble::tibble(GEO = zeros, FACILITIES = "B316", NB_EQUIP = 0),
+    tibble::tibble(GEO = as.character(y$DEPCOM), FACILITIES = "B316", NB_EQUIP = 1)
+  )
+  verifier_contenu_bpe_b316(y)
+  y
+}
+
+verifier_contenu_bpe_b316 <- function(x) {
+  attendues <- c("GEO", "FACILITIES", "NB_EQUIP")
+  if (!is.data.frame(x) || !all(attendues %in% names(x)) || nrow(x) == 0L)
+    stop("BPE B316 : la table doit contenir des lignes GEO/FACILITIES/NB_EQUIP.", call. = FALSE)
+  geo <- as.character(x$GEO)
+  type <- toupper(trimws(as.character(x$FACILITIES)))
+  valeur <- suppressWarnings(as.numeric(x$NB_EQUIP))
+  # COG commune codes include Corsica's 2A/2B form; they are valid source
+  # identities even though they are outside the Breton extraction.
+  valide_code <- grepl("^[0-9]{5}$|^2[AB][0-9]{3}$", geo)
+  valide_geo <- valide_code & substr(geo, 1, 2) %in% DEPT_BRETAGNE
+  b316 <- type %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE")
+  if (any(is.na(type) | !nzchar(type)))
+    stop("BPE B316 : FACILITIES ne doit pas être manquant.", call. = FALSE)
+  if (any(b316 & !valide_code))
+    stop("BPE B316 : code commune invalide pour B316.", call. = FALSE)
+  if (!any(b316 & valide_geo))
+    stop("BPE B316 : aucune ligne B316 utilisable.", call. = FALSE)
+  if (any(b316 & (is.na(valeur) | valeur < 0)))
+    stop("BPE B316 : GEO breton et NB_EQUIP numérique non négatif requis pour B316.", call. = FALSE)
+  invisible(TRUE)
+}
+
+# BPE B316 is a FACILITIES count.  The only accepted normalized shape is the
+# canonical GEO/FACILITIES/NB_EQUIP contract; legacy MELODI aliases are not
+# interchangeable with the geolocalized BPE25 detail file.
+normaliser_bpe_b316 <- function(x) {
+  if (all(c("DEPCOM", "TYPEQU") %in% names(x)))
+    x <- selectionner_bpe_b316_2025(x)
+  requis <- c("GEO", "FACILITIES", "NB_EQUIP")
+  if (!all(requis %in% names(x)))
+    stop("BPE B316 : GEO/FACILITIES/NB_EQUIP requis.", call. = FALSE)
+  verifier_contenu_bpe_b316(x)
+  # A canonical table can contain several equipment types.  BPE B316 is a
+  # filtered view, so other types must not inflate the station-service count.
+  type <- toupper(trimws(as.character(x$FACILITIES)))
+  x <- x[type %in% c("B316", "316", "STATION-SERVICE", "STATION SERVICE"), , drop = FALSE]
+  tibble::as_tibble(x) %>%
+    dplyr::transmute(commune = as.character(GEO), fuel = as.numeric(NB_EQUIP)) %>%
+    dplyr::group_by(commune) %>%
+    dplyr::summarise(fuel = sum(fuel), .groups = "drop") %>%
+    dplyr::arrange(commune)
 }
 
 # lire_amenagements_cyclables ----------------------------------------------------

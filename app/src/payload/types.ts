@@ -67,7 +67,7 @@ export interface VintageStamp {
   vintage_date_publication: string
 }
 
-/** One facts row per (territoire × key × detail × sex). */
+/** One facts row per (territoire × key × detail × sex × dimension). */
 export interface Indicateur extends VintageStamp {
   territoire: string
   type: TerritoireType
@@ -76,8 +76,12 @@ export interface Indicateur extends VintageStamp {
   detail: string | null
   /** The sex dimension (issue #390) — carried by the sex-split indicators (structure_age). */
   sex?: Sexe | null
+  /** Optional analytical dimension for multi-axis indicator facts. */
+  dimension?: string | null
   value: number | null
   unit: string
+  /** Contextual explanation for an unavailable value (pipeline-owned fact). */
+  rider?: string | null
   /**
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no
@@ -147,22 +151,21 @@ export interface HistoireHabitat extends LectureResolueBase {
 /**
  * The Économie Story row (issue #120, RESOLVED by #312) — ONE row per
  * (territoire, groupe), the top-5 folded into flat params (top1_*..top5_*:
- * the reading content — the LQ for the specialisation reading, the parc share
- * for the région's presence reading; the rank is the index, never a column).
+ * the reading content — the LQ for the specialisation reading; the rank is the
+ * index, never a column).
  * A territory with fewer than five activities carries only its real ones (no
  * padding — the columns beyond stay null). Discriminated by `story_key` :
  * « ce que la commune abrite » (communes/EPCIs/départements, groupe
- * sante-et-taille) et « ce que la Bretagne abrite » (la région, groupe
- * structure-verte). The activity label comes ALWAYS from the payload, never
+ * sante-et-taille). The activity label comes ALWAYS from the payload, never
  * hard-coded. Each row wears its vintage stamp (issue #74).
  */
 export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
   theme: 'economie'
-  story_key: 'ce-que-la-commune-abrite' | 'ce-que-la-bretagne-abrite'
+  story_key: 'ce-que-la-commune-abrite'
   /** La matière de la lecture — le top-5 replié (le rang est l'index). */
   top1_activity_code: string | null
   top1_activity_label: string | null
-  /** La spécialisation (LQ) — null pour la lecture de présence. */
+  /** La spécialisation (LQ). */
   top1_lq: number | null
   top1_n: number | null
   /** La part du parc breton — null pour la lecture de spécialisation. */
@@ -201,8 +204,8 @@ export interface HistoireEconomie extends LectureResolueBase, VintageStamp {
  * distribution signature (dens_1..10 + dec_1..10 + min/max — the
  * building-level density of div_loss_t, NEVER the matrix, lesson of issue
  * #131) and the saillance classification. When the vélo reading fires, the
- * signature columns are null on its row (the distribution is the default
- * reading's matter — the same chart, the same plot, ADR-0012). Each row
+ * signature columns carry the flattened distribution for the vélo story too
+ * (the current contract keeps the signature available on vélo rows). Each row
  * carries the snapshot's vintage stamp (issue #74).
  */
 export interface HistoireMobilite extends LectureResolueBase, VintageStamp {
@@ -462,14 +465,16 @@ export interface Payload {
  * on both sides.
  */
 
-/** The six figure families of the shared figure grammar (parent #308). */
+/** The eight figure families of the shared figure grammar (ADR-0023, #370). */
 export const FAMILLES_FIGURE = [
   'scalar',
   'composition',
   'distribution',
   'trajectory',
   'relationship',
-  'profile',
+  'list',
+  'pyramid',
+  'comparison-bars',
 ] as const
 
 export type FamilleFigure = (typeof FAMILLES_FIGURE)[number]
@@ -495,7 +500,7 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
   mobilite: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
   demographie: ['trajectoire-demographique'],
   habitat: ['etat-energetique-du-parc'],
-  economie: ['ce-que-la-commune-abrite', 'ce-que-la-bretagne-abrite'],
+  economie: ['ce-que-la-commune-abrite'],
   milieux: ['se-densifier-setaler-ou-sen-aller'],
 }
 
@@ -522,12 +527,9 @@ export const GROUPES_PAR_STORY: Record<Theme, Record<string, string>> = {
     'vingt-minutes-sans-voiture': 'acces-aux-services',
     'ce-que-le-velo-preserve': 'acces-aux-services',
   },
-  demographie: { 'trajectoire-demographique': 'etat-et-dynamique' },
-  habitat: { 'etat-energetique-du-parc': 'etat-du-parc' },
-  economie: {
-    'ce-que-la-commune-abrite': 'sante-et-taille',
-    'ce-que-la-bretagne-abrite': 'structure-verte',
-  },
+  demographie: { 'trajectoire-demographique': 'trajectoire-demographique' },
+  habitat: { 'etat-energetique-du-parc': 'etat-energetique-du-parc' },
+  economie: { 'ce-que-la-commune-abrite': 'sante-et-taille' },
   milieux: { 'se-densifier-setaler-ou-sen-aller': 'artificialisation' },
 }
 
@@ -569,16 +571,6 @@ export interface FigureSousGroupe {
   family: FamilleFigure
   /** An indicator the subgroup owns — the figure renders the subgroup's matter. */
   indicator: string
-  /** Declared default scalar facet for composition pages. */
-  comparison?: FigureComparison
-}
-
-/** Shared composition semantics: show every part, compare exactly one facet. */
-export interface FigureComparison {
-  detail: string | null
-  sex: Sexe | null
-  /** Explicit sanctioned palette treatment; never inferred from labels. */
-  palette?: 'theme' | 'dpe'
 }
 
 /**
@@ -590,16 +582,18 @@ export interface LectureSousGroupe {
   story_key: string
   params: string[]
   template: NoeudTexteRiche[]
+  figure?: FigureSousGroupe
 }
 
-/** One subgroup of the fiche — a stable place with indicators, a figure and a reading. */
+/** One subgroup of the fiche — a stable place with indicators, a figure and an optional reading. */
 export interface SousGroupeMetadata {
   key: string
   label: string
   framing: string
   indicators: string[]
   figure: FigureSousGroupe
-  reading: LectureSousGroupe
+  /** Absent for an honest indicator-only subgroup (e.g. structure-verte). */
+  reading?: LectureSousGroupe
 }
 
 /**
@@ -672,21 +666,49 @@ export interface ThemeMetadata {
   classification_labels?: Record<string, string>
   /** Optional page descriptor: only published entries are eligible for /indicateurs. */
   /** Per-concept publication descriptors; the indicator key is the authority. */
-  indicator_pages?: Record<string, ScalarPageMetadata>
+  indicator_pages?: Record<string, IndicatorPageMetadata>
   /** Reusable provenance records, referenced by indicator_pages.sources. */
   source_records?: Record<string, SourceRecord>
+  /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
+  indicator_caveats?: Record<string, string>
 }
 
 export interface SourceRecord {
+  /** Stable source-record key; when nested this is the dataset anchor. */
+  id?: string
   dataset: string
   publisher: string
   url: string
   licence: string
   vintage: string
   freshness: string
+  /** Full freshness rows; the scalar fields remain a compatibility summary. */
+  vintages?: SourceVintageRecord[]
+  /** Named clocks are structured facts, never prose concatenated by a view. */
+  clocks?: SourceClock[]
+  caveat?: string
 }
 
-export interface ScalarPageMetadata {
+export interface SourceVintageRecord {
+  id: string
+  label: string
+  version: string | null
+  licence: string | null
+  dateReference: string | null
+  datePublication: string | null
+}
+
+export interface SourceClock {
+  name: string
+  frequency: string
+  reference: string
+  trigger?: string
+}
+
+/** Shared page contract. `family` is optional for the legacy scalar payload;
+ * the resolver treats its absence as `scalar`, so #401 metadata remains byte
+ * for byte compatible while new family descriptors are discriminated. */
+export interface IndicatorPageMetadataBase {
   indicator: string
   detail?: string | null
   label: string
@@ -697,6 +719,39 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
-  /** Semantic page family; required for multi-detail composition pages. */
-  family?: FamilleFigure
+  /** Payload-declared comparison facet dimensions. */
+  comparison?: ComparisonFacetMetadata
 }
+
+export interface ComparisonFacetMetadata {
+  indicator?: string
+  detail?: string | null
+  /** Allowed URL values; absent means this dimension is not declared. */
+  details?: string[]
+  sex?: Sexe | null
+  sexes?: Sexe[]
+  dimension?: string | null
+  dimensions?: string[]
+  direction?: 'high' | 'low'
+  unit?: string
+  labels?: Record<string, string>
+}
+export interface TrajectoryMetadata { endpoints: string[] }
+export interface CompositionMetadata { parts: string[] }
+export interface DistributionMetadata { signature: string; summary: string }
+export interface RelationshipMetadata { roles: { x: string; y: string }; measure: string }
+export interface ListMetadata { categories: string[] }
+export interface PyramidMetadata { dimensions: string[] }
+export interface ComparisonBarsMetadata { series: string[] }
+
+export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
+export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory: TrajectoryMetadata }
+export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition'; composition: CompositionMetadata }
+export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution'; distribution: DistributionMetadata }
+export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list'; list: ListMetadata }
+export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship'; relationship: RelationshipMetadata }
+export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid: PyramidMetadata }
+/** JSON uses the ADR family literal as the key; TS uses camelCase. */
+export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparisonBars: ComparisonBarsMetadata }
+export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
+export type IndicatorPageMetadata = IndicatorPageFamilyMetadata

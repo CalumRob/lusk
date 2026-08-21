@@ -252,6 +252,6 @@ onBeforeUnmount(() => {
 
 .graphique-soldes-canvas {
   width: 100%;
-  height: 280px;
+  height: var(--figure-compact-height);
 }
 </style>

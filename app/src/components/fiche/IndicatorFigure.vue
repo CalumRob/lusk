@@ -153,6 +153,7 @@ const segments = computed<Segment[]>(() => {
     </div>
 
     <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
+    <p v-if="premiere?.rider" class="figure-indicateur-rider">{{ premiere.rider }}</p>
     <PuceRang v-if="puce && !multi" :puce="puce" />
     <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
   </figure>
@@ -202,6 +203,12 @@ const segments = computed<Segment[]>(() => {
   color: var(--text-tertiary);
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
+}
+
+.figure-indicateur-rider {
+  margin: 0;
+  color: var(--text-secondary);
+  font: var(--text-caption);
 }
 
 .figure-indicateur-decomposition {

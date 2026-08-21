@@ -3,17 +3,20 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
-import { modeleComposition, modeleExploration, payloadPourCarte } from '@/indicateurs/explorationModel'
+import { modeleExploration, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { NiveauIndicateur, OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
 import { useGeometrie } from '@/geo/useGeometrie'
 import type { NiveauMasque } from '@/geo/types'
 import type { Couche } from '@/carte/coucheModel'
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Sexe, Theme } from '@/payload/types'
+import type { Theme } from '@/payload/types'
 import { themeStyle } from '@/indicateurs/themeTokens'
 import { formaterNombreFR } from '@/payload/selectors'
-import CompositionRepere from '@/components/indicateurs/CompositionRepere.vue'
+import { sourceRecords } from '@/payload/selectors'
+import { ancreSource, datasetDeSource } from '@/methodes/sources'
+import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
+import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
@@ -24,7 +27,12 @@ const { payload, erreur, chargement } = usePayload({ attendre })
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
 const page = computed(() => metadata.value?.indicator_pages?.[indicator.value])
-const sources = computed(() => page.value?.sources.map((id) => metadata.value?.source_records?.[id]).filter((source): source is NonNullable<typeof source> => Boolean(source)) ?? [])
+const familyDispatch = computed(() => page.value ? dispatchIndicatorFamily(page.value, { theme: theme.value as Theme, facts: facts.value, territories: payload.value.territoires, selected: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, facet: route.query }) : null)
+const sources = computed(() => {
+  if (!page.value || !payload.value) return []
+  const authority = sourceRecords(payload.value)
+  return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id))).filter((source): source is NonNullable<typeof source> => Boolean(source))
+})
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value && f.key === indicator.value))
 const niveauRoute = computed(() => ['commune', 'epci', 'departement'].includes(String(route.query.niveau)) ? route.query.niveau as NiveauIndicateur : undefined)
 const validScope = computed(() => {
@@ -35,49 +43,39 @@ const validScope = computed(() => {
   if (departement && epci && !communes.some((territory) => territory.departement === departement && territory.epci === epci)) return { departement: undefined, epci }
   return { departement, epci }
 })
-const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, detail: typeof route.query.detail === 'string' ? route.query.detail : undefined, sex: route.query.sex === 'F' || route.query.sex === 'M' ? route.query.sex as Sexe : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
-const model = computed(() => page.value && metadata.value ? modeleExploration(facts.value, metadata.value, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined, indicator.value) : null)
-const compositionFigure = computed(() => metadata.value?.subgroups.flatMap((group) => group.indicators.includes(indicator.value) && group.figure.family === 'composition' ? [group.figure] : [])[0])
-const composition = computed(() => {
-  if (!page.value || page.value.family !== 'composition' || !metadata.value || !model.value) return null
-  const cible = payload.value.territoires.find((territory) => territory.territoire === requested.value.territoire && territory.type === model.value!.state.niveau) ?? payload.value.territoires.find((territory) => territory.type === model.value!.state.niveau)
-  if (!cible) return null
-  return modeleComposition(facts.value.filter((fact) => fact.territoire === cible.territoire), metadata.value, indicator.value, { detail: model.value.state.detail, sex: model.value.state.sex })
-})
+const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
+const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined) : null)
 const themeVars = computed(() => themeValide.value ? themeStyle(theme.value as Theme) : undefined)
-const directionGlyph = computed(() => page.value?.direction === 'low' ? '▼' : '▲')
-const directionText = computed(() => page.value?.direction === 'low' ? 'moins = mieux' : 'plus = mieux')
+const directionGlyph = computed(() => familyDispatch.value?.facet.direction === 'low' ? '▼' : '▲')
+const directionText = computed(() => familyDispatch.value?.facet.direction === 'low' ? 'moins = mieux' : 'plus = mieux')
 const selectedRow = computed(() => model.value?.rows.find((row) => row.highlighted))
-const markerDescription = computed(() => selectedRow.value && page.value ? `${selectedRow.value.territoire.nom} : ${formaterNombreFR(selectedRow.value.value, 2)} ${page.value.unit}, positionné sur l’axe de densité à sa valeur.` : '')
+const markerDescription = computed(() => selectedRow.value && familyDispatch.value ? `${selectedRow.value.territoire.nom} : ${formaterNombreFR(selectedRow.value.value, 2)} ${familyDispatch.value.facet.unit}, positionné sur l’axe de densité à sa valeur.` : '')
 function afficherRang(row: { rang: number; rangTaille: number }) { return `${row.rang === 1 ? '1er' : `${row.rang}e`} / ${row.rangTaille}` }
 function setSort(tri: TriExploration) { const ordre = route.query.tri === tri && route.query.ordre === 'asc' ? 'desc' : 'asc'; router.replace({ query: normalizedQuery({ tri, ordre }) }) }
 const payloadCarte = computed(() => {
   const niveau = model.value?.state.niveau ?? niveauRoute.value ?? 'commune'
   const departement = niveau === 'commune' && typeof route.query.departement === 'string' ? route.query.departement : undefined
   const epci = niveau === 'commune' && typeof route.query.epci === 'string' ? route.query.epci : undefined
-  const carte = payloadPourCarte(payload.value, theme.value as Theme, indicator.value, niveau, departement, epci)
-  if (model.value?.state.detail === undefined) return carte
-  return { ...carte, indicateurs: carte.indicateurs.filter((fact) => fact.detail === model.value?.state.detail && (model.value?.state.sex === undefined ? fact.sex === null : fact.sex === model.value?.state.sex)) }
+  return payloadPourCarte(payload.value, familyDispatch.value!.facet, niveau, departement, epci)
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
-const couche = computed<Couche | null>(() => page.value ? ({ source: 'indicateur', clef: indicator.value, detail: model.value?.state.detail ?? page.value.detail ?? null, libelle: page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
+const couche = computed<Couche | null>(() => page.value && familyDispatch.value ? ({ source: 'indicateur', clef: familyDispatch.value.facet.indicator, detail: familyDispatch.value.facet.detail, libelle: familyDispatch.value.facet.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
 const niveauMasque = computed<NiveauMasque>(() => model.value?.state.niveau === 'epci' ? 'epcis' : model.value?.state.niveau === 'departement' ? 'departements' : 'communes')
 const territoireCible = computed(() => payload.value.territoires.find((t) => t.territoire === route.query.territoire && t.type === model.value?.state.niveau) ?? null)
 function normalizedQuery(extra: Record<string, string | undefined> = {}) { const next = { ...route.query, ...extra }; if (next.niveau !== 'commune') { delete next.departement; delete next.epci }; if (payload.value.territoires.length > 0) { if (next.departement !== validScope.value.departement) delete next.departement; if (next.epci !== validScope.value.epci) delete next.epci }; return next }
 function setQuery(key: string, value: string) { router.replace({ query: normalizedQuery({ [key]: value || undefined }) }) }
-function setFacet(detail: string, sex: Sexe | null) { router.replace({ query: normalizedQuery({ detail, sex: sex ?? undefined }) }) }
 function setVue(value: 'reperes' | 'carte' | 'indicateur') { router.replace({ query: normalizedQuery({ vue: value === 'reperes' ? undefined : value }) }) }
 watch(() => [route.params.theme, route.params.indicator, route.query.recherche], () => { recherche.value = String(route.query.recherche ?? '') }, { immediate: true })
 watch(() => [route.query.niveau, route.query.departement, route.query.epci, payload.value.territoires.length], () => { if (!payload.value.territoires.length) return; const niveau = model.value?.state.niveau; const query = normalizedQuery({ niveau }); if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query }) }, { immediate: true })
 watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query.niveau === undefined) router.replace({ query: normalizedQuery({ niveau }) }) }, { immediate: true })
-watch(() => [model.value?.state.detail, model.value?.state.sex, page.value?.family], ([detail, sex, family]) => {
-  if (!model.value || !page.value) return
-  const next = family === 'composition'
-    ? normalizedQuery({ detail: typeof detail === 'string' ? detail : undefined, sex: sex === 'F' || sex === 'M' ? sex : undefined })
-    : normalizedQuery({ detail: undefined, sex: undefined })
+watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && ['commune', 'epci', 'departement'].includes(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
+watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
+  if (resolved === undefined || !page.value) return
+  const canonical = new URLSearchParams(resolved.slice(1)); const next = { ...route.query }
+  for (const key of ['facet', 'detail', 'sex', 'dimension']) delete next[key]
+  canonical.forEach((value, key) => { next[key] = value })
   if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next })
 }, { immediate: true })
-watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && ['commune', 'epci', 'departement'].includes(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
 </script>
 <template>
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
@@ -85,13 +83,16 @@ watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && 
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
-       <main v-if="vue === 'reperes'"><CompositionRepere v-if="composition" :label="page.label" :parts="composition.parts" :palette="compositionFigure?.comparison?.palette ?? 'theme'" :detail="composition.selectedDetail" :sex="composition.selectedSex" @facet="setFacet" /><div class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterNombreFR(model!.median, 2) }} <small>{{ page.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
-         <div class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ row.value }} {{ page.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ row.value }} {{ page.unit }}</RouterLink></article></div>
+       <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch">
+         <template #default>
+          <div class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterNombreFR(model!.median, 2) }} <small>{{ familyDispatch.facet.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
+          <div class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ row.value }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ row.value }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>
          <div class="controls"><label>Niveau <select :value="model!.state.niveau" @change="setQuery('niveau', ($event.target as HTMLSelectElement).value)"><option v-for="niveau in page.levels" :key="niveau" :value="niveau">{{ niveau === 'commune' ? 'Communes' : niveau === 'epci' ? 'EPCI' : 'Départements' }}</option></select></label><label v-if="model!.state.niveau === 'commune'">Département <input :value="route.query.departement ?? ''" @input="setQuery('departement', ($event.target as HTMLInputElement).value)" /></label><label v-if="model!.state.niveau === 'commune'">EPCI <input :value="route.query.epci ?? ''" @input="setQuery('epci', ($event.target as HTMLInputElement).value)" /></label><label>Rechercher <input v-model="recherche" @input="setQuery('recherche', recherche)" /></label></div>
-          <table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterNombreFR(row.value, 2) }} {{ page.unit }}</td><td><span :title="`${directionGlyph} ${directionText}`" :aria-label="`${afficherRang(row)} · ${directionText}`">{{ afficherRang(row) }}</span></td><td><button type="button" @click="setQuery('territoire', row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>
-      </main>
+           <table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterNombreFR(row.value, 2) }} {{ familyDispatch.facet.unit }}</td><td><span :title="`${directionGlyph} ${directionText}`" :aria-label="`${afficherRang(row)} · ${directionText}`">{{ afficherRang(row) }}</span></td><td><button type="button" @click="setQuery('territoire', row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>
+         </template>
+       </RepereFamilyOutlet></main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="Number(Boolean(route.query.territoire))" /></div><div v-else role="status">Chargement de la carte…</div></section>
-      <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd><dt>Vintage</dt><dd>{{ sources[0]?.vintage ?? '—' }}</dd></dl><div v-for="source in sources" :key="source.dataset"><h3>{{ source.dataset }}</h3><a :href="source.url">{{ source.publisher }}</a><p>{{ source.licence }} · {{ source.vintage }} · {{ source.freshness }}</p></div></aside>
+       <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
     </template>
   </section>
 </template>

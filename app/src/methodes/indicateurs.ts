@@ -74,6 +74,8 @@ export interface IndicateurMethodes {
    * jamais silencieuse : chaque indicateur porte son sens.
    */
   direction: DirectionRang
+  /** Réserve de lecture propre à cet indicateur, publiée avec sa source. */
+  caveat?: string
 }
 
 /** Une lecture d'une Story — une classification publiée et son explication factuelle. */
@@ -335,6 +337,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         // une ligne du jeu, la matrice et le lien « Source » résolvent l'en-tête
         sourceId: 'dvf_2021_dep22',
         direction: 'moins-est-mieux',
+        caveat: 'Non publié quand les ventes sont trop peu nombreuses pour être représentatives.',
       },
       part_passoires: {
         label: 'Part de passoires thermiques',
@@ -345,6 +348,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         // Le jeu DPE (ADR-0022 : l'en-tête #source-dpe), la même forme que DVF
         sourceId: 'dpe_22',
         direction: 'moins-est-mieux',
+        caveat: 'La base DPE surreprésente les logements vendus ou loués ; non publié sous 30 logements.',
       },
       distribution_dpe: {
         label: 'Distribution des étiquettes DPE (A à G)',
@@ -354,6 +358,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         source: 'ADEME — Observatoire DPE, logements existants',
         sourceId: 'dpe_22',
         direction: 'moins-est-mieux',
+        caveat: 'Les réformes de 2024 et 2026 rendent les diagnostics récents moins directement comparables.',
       },
     },
     stories: [
@@ -510,8 +515,8 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         label: 'Bornes de recharge pour 1 station-service',
         definition:
           'Le rapport entre l’offre de recharge électrique et l’offre de carburant du territoire : le nombre de bornes IRVE pour une station-service (la source officielle BPE B316 — les stations ayant vendu 500 000 litres ou plus l’année précédente). Le classement lit le rapport : plus il y a de bornes par station-service, mieux le territoire prépare la bascule vers l’électrique. Le rapport n’est publié que là où le territoire compte au moins une station-service.',
-        unite: 'bornes / station-service',
-        source: 'INSEE — BPE : stations-service (B316)',
+        unite: 'bornes / station',
+        source: 'INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service',
         sourceId: 'bpe_b316',
         direction: 'plus-est-mieux',
       },
@@ -531,8 +536,8 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
           'Le nombre de places de stationnement voiture rapporté à 1 000 habitants, estimé depuis les aires de stationnement de la cartographie participative OpenStreetMap (amenity=parking — les surfaces, jamais le champ capacity, porté par une minorité des aires), divisé par des facteurs documentés : 25 m² par place en parc de surface, environ 11,5 m² par place en voirie. Une estimation, jamais un inventaire — l’espace que la voiture stationnée prend dans l’espace public. Le classement se lit à l’envers : moins de places par habitant, c’est mieux — la part de l’espace public que la voiture occupe.',
         unite: 'places / 1 000 hab',
         source:
-          'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
-        sourceId: 'osm_parkings',
+          'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+         sourceId: 'osm_reseaux',
         direction: 'moins-est-mieux',
       },
       stationnement_velo_par_voiture: {
@@ -541,8 +546,8 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
           'Le rapport entre l’offre de stationnement des deux modes : le nombre de places vélo (la base nationale du stationnement cyclable) pour une place voiture (l’estimation des aires de stationnement OpenStreetMap). Le classement lit le rapport : plus il y a de places vélo par place voiture, mieux l’espace public est partagé entre les modes.',
         unite: 'places vélo / place voiture',
         source:
-          'OpenStreetMap \u2014 aires de stationnement (amenity=parking, extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
-        sourceId: 'osm_parkings',
+          'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+         sourceId: 'osm_reseaux',
         direction: 'plus-est-mieux',
       },
       offre_cyclable: {

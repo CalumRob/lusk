@@ -654,6 +654,24 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   verifier_egale(sum(snapshot$nb_buildings), 1223578L,
                  "Mobilité e2e — le total réel des bâtiments analysés")
 
+  # BPE25 is an equipment-row source, normalized to one aggregate count per
+  # commune.  Keep this at the real-data seam: a successful run must prove that
+  # the B316 source was actually carried into the normalized theme input.
+  stations <- donnees$stations_service
+  verifier_egale(names(stations), c("commune", "fuel"),
+                 "Mobilité e2e — la forme normalisée de BPE B316")
+  verifier_egale(nrow(stations), 1202L,
+                 "Mobilité e2e — les communes couvertes par BPE")
+  verifier_egale(sum(stations$fuel > 0), 349L,
+                 "Mobilité e2e — les communes avec B316")
+  verifier_egale(dplyr::n_distinct(stations$commune), 1202L,
+                 "Mobilité e2e — les communes BPE distinctes")
+  verifier_egale(sum(stations$fuel), 567L,
+                 "Mobilité e2e — le total des équipements B316")
+  verifier_vrai(all(!is.na(stations$commune) & !is.na(stations$fuel) &
+                      stations$fuel >= 0),
+                "Mobilité e2e", "une valeur B316 normalisée invalide")
+
   base <- lire_epci(base_epci)
   sortie_analytiques <- tempfile("verif-mobilite-")
   dir.create(sortie_analytiques)
@@ -824,7 +842,9 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
                  "Mobilité e2e — le stationnement vélo par commune")
   verifier_egale(nrow(analytiques$offre_cyclable_communes), 1202L,
                  "Mobilité e2e — l'offre cyclable par commune")
-  verifier_egale(nrow(analytiques$offre_territoires), 10142L,
+  # 10 142 lignes avant #369 + trois familles complètes ajoutées par #369
+  # (1 268 territoires chacune) = 13 946 lignes.
+  verifier_egale(nrow(analytiques$offre_territoires), 13946L,
                  "Mobilité e2e — l'offre par territoire")
 
   offre <- analytiques$offre_territoires
@@ -833,6 +853,15 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
       (if (is.na(detail)) is.na(offre$detail) else offre$detail %in% detail)
     offre$value[ok]
   }
+  ratio <- offre[offre$key == "bornes_ev_par_station_service", ]
+  n_epci <- length(unique(base$EPCI[!is.na(base$EPCI)]))
+  n_dep <- length(unique(base$DEP[!is.na(base$DEP)]))
+  verifier_egale(nrow(ratio), nrow(base) + n_epci + n_dep + 1L,
+                 "Mobilité e2e — le ratio B316 aux quatre niveaux")
+  verifier_vrai(all(c("35238", "242900314", "35", "53") %in% ratio$code),
+                "Mobilité e2e", "le ratio B316 n'atteint pas tous les niveaux")
+  verifier_vrai(is.na(lire_offre("29083", "bornes_ev_par_station_service")),
+                "Mobilité e2e", "une commune BPE indisponible devenue zéro")
   verifier_egale(round(lire_offre("35238", "offre_tc"), 4), 0.9957,
                  "Mobilité e2e — l'offre TC de Rennes (la vraie part des bâtiments)")
   # Korrigo (GTFS) est une source VIVANTE re-téléchargée par la restauration
@@ -903,7 +932,10 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   # les Stories résolues (issue #312) : une lecture par (territoire, groupe),
   # la saillance vélo REMPLACE le défaut là où elle tire (139 territoires)
   payload <- construire_payload_mobilite(analytiques, base,
-                                         vintages_mobilite())
+                                          vintages_mobilite())
+  verifier_egale(sum(payload$indicateurs$key ==
+                       "bornes_ev_par_station_service"), nrow(ratio),
+                 "Mobilité e2e — la clé B316 du payload publié")
 
   # les rangs-en-contexte du payload (ADR-0021, #380) : des ORDINAUX
   # directionnels (Rennes 1re de Rennes Métropole — jamais une fraction), une

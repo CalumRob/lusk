@@ -59,7 +59,7 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
   it('renders the metadata subgroup — label and framing', async () => {
     const wrapper = await monter('22001')
 
-    const sousGroupe = wrapper.find('.sous-groupe[data-groupe="etat-et-dynamique"]')
+    const sousGroupe = wrapper.find('.sous-groupe[data-groupe="trajectoire-demographique"]')
     expect(sousGroupe.exists()).toBe(true)
     expect(wrapper.find('.sous-groupe-titre').text()).toBe(
       'État et dynamique de la population',
@@ -132,7 +132,7 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
     expect(graphique.props()).toMatchObject({
       tauxNaturel: 5.982905982905983,
       tauxMigratoire: 2.564102564102564,
-      classification: 'attire-renouvelle',
+      classification: 'attire et se renouvelle',
       nom: 'Commune A1',
     })
     expect(graphique.props('nuage')).toHaveLength(2)

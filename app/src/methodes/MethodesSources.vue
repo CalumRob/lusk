@@ -31,12 +31,12 @@ import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { NOMS_THEMES } from '@/fiche/onglets'
-import { ancreIndicateur, indicateursParDataset } from '@/methodes/indicateurs'
+import { ancreIndicateur } from '@/methodes/indicateurs'
 import type { IndicateurConsommateur } from '@/methodes/indicateurs'
 import { ancreSource } from '@/methodes/sources'
 import SourcesTable from '@/methodes/SourcesTable.vue'
 import type { ColonneTableSources, LigneTableSources } from '@/methodes/SourcesTable.vue'
-import { sourcesMethodes } from '@/payload/selectors'
+import { sourceRecords, sourcesMethodes } from '@/payload/selectors'
 import type { Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
 
@@ -57,14 +57,15 @@ const jeux = computed(() => {
 })
 
 /** La matrice dataset → indicateurs (issue #336) — la jointure inverse du lien « Source ». */
-const matrice = computed(() => indicateursParDataset())
+const authority = computed(() => payload.value ? sourceRecords(payload.value, { includeUnpublished: true }) : [])
 
 /** Les indicateurs du jeu — filtrés par l'onglet de thème (un onglet ne montre
  *  que les indicateurs de SON thème, jamais ceux des autres). */
 function indicateursDuJeu(idJeu: string): readonly IndicateurConsommateur[] | null {
-  const consommateurs = matrice.value.get(idJeu) ?? []
+  const consommateurs = authority.value.find((record) => record.id === idJeu)?.consumers ?? []
   const filtre = props.themes
-  return filtre ? consommateurs.filter((c) => filtre.includes(c.theme)) : consommateurs
+  const visibles = filtre ? consommateurs.filter((c) => filtre.includes(c.theme)) : consommateurs
+  return visibles.map((consumer) => ({ clef: consumer.key, label: consumer.label, theme: consumer.theme }))
 }
 
 const vintagesAbsents = computed(() => table.value?.vintagesAbsents ?? false)
