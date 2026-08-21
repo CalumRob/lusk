@@ -523,6 +523,68 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
   }
 
+  # Page d'indicateur scalaire (#401) : optional for legacy descriptors, but
+  # once declared it is a complete, self-contained publication contract.
+  if (!is.null(metadata$indicator_pages)) {
+    if (!is.list(metadata$indicator_pages) || is.null(names(metadata$indicator_pages))) {
+      manquer("indicator_pages", "la carte des pages doit être un objet")
+    }
+    for (indicator_key in names(metadata$indicator_pages)) {
+      page <- metadata$indicator_pages[[indicator_key]]
+      if (!is.null(page$vintage)) manquer("indicator_pages.vintage", "la fraîcheur vient des source_records, pas de la page")
+      if (!indicator_key %in% cles_indicateurs) {
+        manquer("indicator_pages", paste0("la page « ", indicator_key, " » référence un indicateur inconnu"))
+      }
+    champs <- c("indicator", "label", "definition", "unit", "calculation",
+                "direction", "caveats")
+    if (!is.list(page) || any(!vapply(champs, function(x)
+      est_chaine_non_vide(page[[x]]), logical(1)))) {
+      manquer("indicator_pages", "le descripteur scalaire est incomplet")
+    }
+    if (!page$indicator %in% cles_indicateurs) {
+      manquer("indicator_pages", "l'indicateur n'appartient pas au registre")
+    }
+    if (!identical(page$indicator, indicator_key)) {
+      manquer("indicator_pages.indicator", paste0("« ", indicator_key, " » doit correspondre à sa clé"))
+    }
+    if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
+      manquer("indicator_pages.direction", "la direction doit être high ou low")
+    }
+    if (is.null(page$levels) || length(page$levels) == 0L ||
+        anyDuplicated(unlist(page$levels, use.names = FALSE)) ||
+        any(!page$levels %in% c("commune", "epci", "departement"))) {
+      manquer("indicator_pages.levels", "les niveaux comparables sont invalides")
+    }
+    if (is.null(page$sources) || !is.list(page$sources) || length(page$sources) == 0L ||
+        any(!vapply(page$sources, est_chaine_non_vide, logical(1)))) {
+      manquer("indicator_pages.sources", "aucune source complète n'est déclarée")
+    }
+    if (anyDuplicated(unlist(page$sources, use.names = FALSE))) {
+      manquer("indicator_pages.sources", "une source de page est en double")
+    }
+    if (!metadata$sources[[indicator_key]] %in% unlist(page$sources, use.names = FALSE)) {
+      manquer("indicator_pages.sources", paste0("la page « ", indicator_key, " » doit contenir sa source de référence « ", metadata$sources[[indicator_key]], " »"))
+    }
+    if (is.null(metadata$source_records) || !is.list(metadata$source_records)) {
+      manquer("source_records", "les références de source ne sont pas publiées")
+    }
+    for (source_id in page$sources) {
+      source <- metadata$source_records[[source_id]]
+      if (!is.list(source) || any(!vapply(c("dataset", "publisher", "url", "licence", "vintage", "freshness"),
+          function(x) est_chaine_non_vide(source[[x]]), logical(1)))) {
+        manquer("indicator_pages.sources", "une source est incomplète")
+      }
+    }
+    detail <- page$detail
+    if (!is.null(detail) && !(is.character(detail) && length(detail) == 1L)) {
+      manquer("indicator_pages.detail", paste0("« ", indicator_key, " » doit être une chaîne ou NULL"))
+    }
+    if (!is.null(detail) && (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[detail]]))) {
+      manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
+    }
+    }
+  }
+
   # 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
   #    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
   #    sous-groupe — rien d'orphelin, rien de partagé (l'identité

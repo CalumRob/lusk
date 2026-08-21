@@ -7,6 +7,7 @@ import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import MethodologieView from '../views/MethodologieView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
+import IndicateurView from '../views/IndicateurView.vue'
 
 /**
  * The site map (site-map.md, /, /carte, /communes, /epcis, /departements,
@@ -71,11 +72,27 @@ export const routes = [
     component: AProposView,
     meta: { title: 'À propos' },
   },
+  {
+    path: '/indicateurs/:theme/:indicator',
+    name: 'indicateur',
+    component: IndicateurView,
+    props: true,
+    meta: { title: 'Indicateur' },
+  },
 ] as const
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to) => {
+  if (to.name === 'indicateur' && to.query.vue !== undefined && to.query.vue !== 'carte' && to.query.vue !== 'indicateur') {
+    const query = { ...to.query }
+    delete query.vue
+    return { ...to, query }
+  }
+  return true
 })
 
 export default router
