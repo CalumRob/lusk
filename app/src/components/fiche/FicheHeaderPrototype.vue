@@ -4,7 +4,7 @@
  * header instead of changing the Aperçu contract: the real apercu payload is
  * only presented in three competing arrangements, selected by ?variant=.
  */
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { formaterValeurApercu, libelleApercu } from '@/fiche/apercu'
@@ -29,7 +29,22 @@ const variant = computed<HeaderVariant>(() => {
 const facts = computed(() => apercuPourTerritoire(props.payload, props.territoire))
 const population = computed(() => facts.value.find((fact) => fact.key === 'population'))
 const densite = computed(() => facts.value.find((fact) => fact.key === 'densite'))
-const composition = computed(() => facts.value.find((fact) => fact.key === 'part_65_plus'))
+const territoire = computed(() => props.payload.territoires.find((item) => item.territoire === props.territoire))
+const compositionRelationship = computed(() => {
+  const current = territoire.value
+  if (!current) return 'Composition indisponible'
+  if (current.type === 'commune' && current.epci) {
+    const parent = props.payload.territoires.find((item) => item.territoire === current.epci)
+    const members = props.payload.territoires.filter((item) => item.type === 'commune' && item.epci === current.epci)
+    return parent
+      ? `Commune de ${parent.nom} · ${members.length} communes dans cet EPCI`
+      : `Membre d’un EPCI · ${members.length} communes dans cet EPCI`
+  }
+  const members = props.payload.territoires.filter(
+    (item) => item.type === 'commune' && (item.departement === current.territoire || item.epci === current.territoire),
+  )
+  return members.length > 0 ? `${members.length} communes rattachées` : 'Relation de composition indisponible'
+})
 
 const switcherLabels: Record<HeaderVariant, string> = {
   remove: 'Sans ancres',
@@ -42,7 +57,7 @@ function selectVariant(next: HeaderVariant): void {
 }
 
 function onSwitcherKeydown(event: KeyboardEvent): void {
-  const target = event.target as HTMLElement | null
+  const target = document.activeElement as HTMLElement | null
   if (target?.matches('input, textarea, select, [contenteditable="true"]')) return
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
   event.preventDefault()
@@ -51,44 +66,52 @@ function onSwitcherKeydown(event: KeyboardEvent): void {
   selectVariant(VARIANTS[(index + step + VARIANTS.length) % VARIANTS.length])
 }
 
+onMounted(() => window.addEventListener('keydown', onSwitcherKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onSwitcherKeydown))
+
 function display(fact: typeof facts.value[number] | undefined): string {
   return fact ? formaterValeurApercu(fact) : '—'
 }
 </script>
 
 <template>
-  <section
-    class="prototype-header"
-    :class="`prototype-header--${variant}`"
-    :data-header-variant="variant"
-    aria-label="Prototype d’en-tête de fiche"
-  >
-    <template v-if="variant === 'anchors'">
-      <p class="prototype-kicker">Repères du territoire</p>
-      <dl class="prototype-anchors">
-        <div v-for="fact in facts" :key="fact.key" class="prototype-anchor">
-          <dt>{{ libelleApercu(fact.key) }}</dt>
-          <dd>{{ formaterValeurApercu(fact) }}</dd>
-        </div>
-      </dl>
-      <p class="prototype-note">Ancres d’identité persistantes · superficie non publiée dans ce payload.</p>
-    </template>
+  <template v-if="variant !== 'remove'">
+    <section
+      class="prototype-header"
+      :class="`prototype-header--${variant}`"
+      :data-header-variant="variant"
+      aria-label="Prototype d’en-tête de fiche"
+    >
+      <template v-if="variant === 'anchors'">
+        <p class="prototype-kicker">Repères du territoire</p>
+        <dl class="prototype-anchors">
+          <div v-for="fact in facts" :key="fact.key" class="prototype-anchor">
+            <dt>{{ libelleApercu(fact.key) }}</dt>
+            <dd>{{ formaterValeurApercu(fact) }}</dd>
+          </div>
+          <div class="prototype-anchor">
+            <dt>Superficie</dt>
+            <dd>Non publiée</dd>
+          </div>
+        </dl>
+        <p class="prototype-note">Composition : {{ compositionRelationship }}.</p>
+      </template>
 
-    <template v-else-if="variant === 'compact'">
-      <p class="prototype-compact-label">Identité</p>
-      <p class="prototype-compact-line">
-        <strong>{{ display(population) }}</strong>
-        <span aria-hidden="true">·</span>
-        <strong>{{ display(densite) }}</strong>
-        <span aria-hidden="true">·</span>
-        <strong>{{ display(composition) }}</strong>
-      </p>
-      <p class="prototype-note">Une seule ligne de repères, avant le contenu de la fiche.</p>
-    </template>
+      <template v-else-if="variant === 'compact'">
+        <p class="prototype-compact-label">Identité</p>
+        <p class="prototype-compact-line">
+          <strong>{{ display(population) }}</strong>
+          <span aria-hidden="true">·</span>
+          <strong>{{ display(densite) }}</strong>
+          <span aria-hidden="true">·</span>
+          <strong>Superficie non publiée</strong>
+        </p>
+        <p class="prototype-note">{{ compositionRelationship }}.</p>
+      </template>
+    </section>
+  </template>
 
-    <p v-else class="prototype-removal-note">Le contenu commence directement après l’identité.</p>
-
-    <div v-if="development" class="prototype-switcher" @keydown="onSwitcherKeydown">
+  <div v-if="development" class="prototype-switcher">
       <span>Prototype</span>
       <button
         v-for="name in VARIANTS"
@@ -98,8 +121,7 @@ function display(fact: typeof facts.value[number] | undefined): string {
         :title="`${switcherLabels[name]} (← →)`"
         @click="selectVariant(name)"
       >{{ switcherLabels[name] }}</button>
-    </div>
-  </section>
+  </div>
 </template>
 
 <style scoped>
@@ -107,7 +129,7 @@ function display(fact: typeof facts.value[number] | undefined): string {
 .prototype-kicker, .prototype-compact-label { margin: 0 0 var(--space-3); color: var(--brand-500); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
 .prototype-anchors { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); margin: 0; }
 .prototype-anchor { display: flex; flex-direction: column-reverse; gap: var(--space-1); }
-.prototype-anchor dt, .prototype-note, .prototype-removal-note { margin: 0; color: var(--text-secondary); font: var(--text-body-sm); }
+.prototype-anchor dt, .prototype-note { margin: 0; color: var(--text-secondary); font: var(--text-body-sm); }
 .prototype-anchor dd { margin: 0; color: var(--text-primary); font: var(--text-h3); font-variant-numeric: tabular-nums; }
 .prototype-note { margin-top: var(--space-4); font-size: 0.75rem; }
 .prototype-compact-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0; color: var(--text-primary); font: var(--text-body-lg); }
