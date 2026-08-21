@@ -22,4 +22,12 @@ describe('contrat des pages d’indicateur', () => {
     mutate(metadata)
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
   })
+
+  it('rejects a distribution without an all-or-nothing labelled signature', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie) as any
+    metadata.indicator_pages.densite.family = 'distribution'
+    metadata.indicator_pages.densite.summary = { indicator: 'densite', detail: null, label: 'Facette', unit: 'u' }
+    metadata.indicator_pages.densite.signature = { details: ['missing'], completeness: 'partial' }
+    expect(() => validerThemeMetadata(metadata, 'fixture.json')).toThrow()
+  })
 })

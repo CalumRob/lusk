@@ -116,6 +116,7 @@
       "levels": ["commune", "epci", "departement"],
       "sources": ["dpe_22"],
       "family": "distribution",
+      "signature": { "details": ["A", "B", "C", "D", "E", "F", "G"], "completeness": "all-or-nothing" },
       "summary": { "indicator": "part_passoires", "detail": null, "label": "Part de passoires thermiques", "unit": "%" }
     }
   },

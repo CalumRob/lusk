@@ -673,6 +673,7 @@ export interface ThemeMetadata {
 export interface IndicatorPageMetadata extends ScalarPageMetadata {
   family?: 'scalar' | 'distribution'
   summary?: { indicator: string; detail: string | null; label: string; unit: string }
+  signature?: { details: string[]; completeness: 'all-or-nothing' }
 }
 
 export interface SourceRecord {

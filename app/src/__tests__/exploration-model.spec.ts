@@ -21,7 +21,7 @@ describe('modèle pur de Page d’indicateur', () => {
   it('presents ties as counts, unique extremes as linkable rows, and handles null/empty/zero/highlight exclusion', () => { const metadata = metadonneesThemesFixtures.demographie; const tied = modeleExploration([facts('a', 0), facts('b', 0), facts('c', null)], metadata, territoires, { niveau: 'commune', territoire: 'c' }, undefined, 'densite'); expect(tied.high.count).toBe(2); expect(tied.high.rows).toHaveLength(0); expect(tied.median).toBe(0); expect(tied.markerX).toBeNull(); const empty = modeleExploration([], metadata, territoires, { niveau: 'commune' }, undefined, 'densite'); expect(empty.rows).toHaveLength(0); expect(empty.median).toBeNull() })
   it('compares a distribution through its declared summary while retaining the selected signature', () => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
-    metadata.indicator_pages!.densite = { ...metadata.indicator_pages!.densite, family: 'distribution', summary: { indicator: 'densite', detail: null, label: 'Facette résumée', unit: 'u' } }
+    metadata.indicator_pages!.densite = { ...metadata.indicator_pages!.densite, family: 'distribution', signature: { details: ['A', 'B'], completeness: 'all-or-nothing' }, summary: { indicator: 'densite', detail: null, label: 'Facette résumée', unit: 'u' } }
     const signature = (id: string, detail: string, value: number): Indicateur => ({ ...facts(id, value), detail })
     const result = modeleExploration([facts('a', 10), facts('b', 20), signature('a', 'A', .25), signature('a', 'B', .75)], metadata, territoires, { niveau: 'commune', territoire: 'a' }, undefined, 'densite')
     expect(result.rows.map((row) => row.value)).toEqual([10, 20])

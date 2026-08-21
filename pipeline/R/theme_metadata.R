@@ -588,6 +588,13 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       # The app-side validator is authoritative for this optional extension;
       # older R descriptors are allowed to round-trip without the nullable
       # `detail` member (jsonlite drops NULL object members).
+      signature <- page$signature
+      if (!is.list(signature) || is.null(signature$details) || length(signature$details) == 0L ||
+          !identical(signature$completeness, "all-or-nothing") ||
+          anyDuplicated(unlist(signature$details, use.names = FALSE)) ||
+          any(!vapply(signature$details, function(d) is.character(d) && length(d) == 1L && !is.null(metadata$detail_labels[[indicator_key]][[d]]), logical(1)))) {
+        manquer("indicator_pages.signature", "la signature doit déclarer tous ses détails et une complétude all-or-nothing")
+      }
     }
     }
   }
