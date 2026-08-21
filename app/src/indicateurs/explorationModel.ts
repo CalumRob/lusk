@@ -4,11 +4,13 @@ export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'dep
 export type DirectionIndicateur = 'high' | 'low'
 export type TriExploration = 'nom' | 'valeur' | 'rang'
 export type OrdreExploration = 'asc' | 'desc'
-export interface EtatExploration { niveau?: NiveauIndicateur; departement?: string; epci?: string; territoire?: string; recherche?: string; tri?: TriExploration; ordre?: OrdreExploration }
+export interface EtatExploration { niveau?: NiveauIndicateur; departement?: string; epci?: string; territoire?: string; recherche?: string; tri?: TriExploration; ordre?: OrdreExploration; detail?: string }
 export interface DensitePoint { x: number; density: number; y: number }
 export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
-export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
+export interface TrajectoirePoint { detail: string; value: number | null }
+export interface TrajectoireLigne { territoire: Territoire; points: TrajectoirePoint[] }
+export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null; family?: string; activeDetail?: string | null; trajectoire?: TrajectoireLigne[] }
 
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
@@ -59,7 +61,13 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.key === page.indicator && fact.detail === (page.detail ?? null) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const inScopeFacts = facts.filter((fact) => fact.key === page.indicator && fact.type === niveau && refs.has(fact.territoire) && dansScope(refs.get(fact.territoire)!))
+  const details = [...new Set(inScopeFacts.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))]
+  const numericDetails = details.filter((detail) => /^\d{4}$/.test(detail)).sort()
+  const activeDetail = page.family === 'trajectory'
+    ? (requested.detail && details.includes(requested.detail) ? requested.detail : page.default_detail && details.includes(page.default_detail) ? page.default_detail : numericDetails.at(-1) ?? details.at(-1) ?? null)
+    : (page.detail ?? null)
+  const all = inScopeFacts.filter((fact) => fact.detail === activeDetail && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire))
   const values = all.map((row) => row.value).sort((a, b) => a - b)
   const median = values.length % 2 ? values[(values.length - 1) / 2] : values.length ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 : null
   const ranked = [...all].sort((a, b) => page.direction === 'low' ? a.value - b.value : b.value - a.value)
@@ -79,5 +87,9 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
   const density = estimerDensite(values)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  const trajectoire = page.family === 'trajectory' ? [...new Set(inScopeFacts.map((fact) => fact.territoire))].map((id) => ({
+    territoire: refs.get(id)!,
+    points: inScopeFacts.filter((fact) => fact.territoire === id && fact.detail !== null).sort((a, b) => String(a.detail).localeCompare(String(b.detail))).map((fact) => ({ detail: fact.detail as string, value: fact.value })),
+  })) : undefined
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre, detail: activeDetail ?? undefined }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected), family: page.family, activeDetail, trajectoire }
 }

@@ -550,6 +550,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
       manquer("indicator_pages.direction", "la direction doit être high ou low")
     }
+    if (!is.null(page$family) && !(is.character(page$family) && length(page$family) == 1L && page$family %in% FAMILLES_FIGURE)) {
+      manquer("indicator_pages.family", "la famille de figure est inconnue")
+    }
     if (is.null(page$levels) || length(page$levels) == 0L ||
         anyDuplicated(unlist(page$levels, use.names = FALSE)) ||
         any(!page$levels %in% c("commune", "epci", "departement"))) {
@@ -581,6 +584,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     if (!is.null(detail) && (is.null(metadata$detail_labels[[indicator_key]]) || is.null(metadata$detail_labels[[indicator_key]][[detail]]))) {
       manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
+    }
+    if (!is.null(page$default_detail) && !(is.character(page$default_detail) && length(page$default_detail) == 1L)) {
+      manquer("indicator_pages.default_detail", "le détail actif par défaut doit être une chaîne ou NULL")
     }
     }
   }

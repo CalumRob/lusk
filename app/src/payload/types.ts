@@ -687,4 +687,8 @@ export interface ScalarPageMetadata {
   caveats: string
   levels: TerritoireType[]
   sources: string[]
+  /** Shared Repères grammar. Omitted means the scalar grammar. */
+  family?: FamilleFigure
+  /** For trajectory pages, the published detail/year is the comparison facet. */
+  default_detail?: string | null
 }

@@ -11,6 +11,27 @@ const territoires: Territoire[] = [
 const facts = (id: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ territoire: id, type, theme: 'demographie', key: 'densite', detail: null, value, unit: 'hab./km²', rang_epci: null, rang_dep: null, rang_reg: null, rang_epci_n: null, rang_dep_n: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2024-01-01' })
 
 describe('modèle pur de Page d’indicateur', () => {
+  it('uses the latest published endpoint by default while retaining the full uneven path', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.indicator_keys = ['prix']
+    metadata.indicator_pages = { prix: { indicator: 'prix', detail: null, label: 'Prix', definition: 'Prix', unit: '€', calculation: 'x', direction: 'high', caveats: '—', levels: ['commune'], sources: ['serie_historique'], family: 'trajectory' } }
+    metadata.sources = { prix: 'serie_historique' }
+    metadata.indicator_labels = { prix: 'Prix' }
+    const point = (id: string, detail: string, value: number | null) => ({ ...facts(id, value), key: 'prix', detail })
+    const result = modeleExploration([point('a', '2022', 10), point('a', '2023', 12), point('b', '2022', 10), point('b', '2024', null)], metadata, territoires, { niveau: 'commune' }, undefined, 'prix')
+    expect(result.activeDetail).toBe('2024')
+    expect(result.trajectoire?.find((line) => line.territoire.territoire === 'a')?.points).toHaveLength(2)
+    expect(result.rows).toHaveLength(0)
+  })
+
+  it('lets the URL choose an endpoint and keeps tied active extremes honest', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.indicator_keys = ['prix']; metadata.sources = { prix: 'serie_historique' }; metadata.indicator_labels = { prix: 'Prix' }
+    metadata.indicator_pages = { prix: { indicator: 'prix', label: 'Prix', definition: 'Prix', unit: '€', calculation: 'x', direction: 'high', caveats: '—', levels: ['commune'], sources: ['serie_historique'], family: 'trajectory' } }
+    const point = (id: string, detail: string, value: number) => ({ ...facts(id, value), key: 'prix', detail })
+    const result = modeleExploration([point('a', '2022', 4), point('b', '2022', 4)], metadata, territoires, { niveau: 'commune', detail: '2022' }, undefined, 'prix')
+    expect(result.activeDetail).toBe('2022'); expect(result.high.count).toBe(2); expect(result.high.rows).toHaveLength(0)
+  })
   it('keeps Bretagne EPCI and département scopes populated', () => { const result = modeleExploration([facts('e', 10, 'epci'), facts('f', 20, 'epci')], metadonneesThemesFixtures.demographie, territoires, { niveau: 'epci' }, undefined, 'densite'); expect(result.rows).toHaveLength(2); const dep = modeleExploration([facts('22', 10, 'departement'), facts('29', 20, 'departement')], metadonneesThemesFixtures.demographie, territoires, { niveau: 'departement' }, undefined, 'densite'); expect(dep.rows).toHaveLength(2) })
   it('filters communes and removes incompatible scope state at other levels', () => { const metadata = metadonneesThemesFixtures.demographie; const factsAll = [facts('a', 10), facts('b', 20), facts('c', 30)]; expect(modeleExploration(factsAll, metadata, territoires, { niveau: 'commune', departement: '22' }, undefined, 'densite').rows).toHaveLength(2); const result = modeleExploration([facts('e', 10, 'epci')], metadata, territoires, { niveau: 'epci', departement: '22', epci: 'e' }, undefined, 'densite'); expect(result.state.departement).toBeUndefined(); expect(result.state.epci).toBeUndefined() })
   it('computes a true even median and typed high/low ranks with ties', () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.direction = 'low'; const result = modeleExploration([facts('a', 10), facts('b', 10), facts('c', 30), facts('d', 40)], metadata, territoires, { niveau: 'commune', tri: 'valeur', ordre: 'desc' }, undefined, 'densite'); expect(result.median).toBe(20); expect(result.direction).toBe('low'); expect(result.rows.map((row) => row.rang)).toEqual([4, 3, 1, 1]) })
