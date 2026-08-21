@@ -1,0 +1,101 @@
+{
+  "theme": "economie",
+  "label": "Économie/Emploi",
+  "subgroups": [
+    {
+      "key": "sante-et-taille",
+      "label": "Santé et taille du tissu productif",
+      "framing": "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement.",
+      "indicators": [
+        "effectifs_salaries",
+        "chomage"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "effectifs_salaries"
+      },
+      "reading": {
+        "story_key": "ce-que-la-commune-abrite",
+        "figure": { "family": "list", "indicator": "lq" },
+        "params": [
+          "rang",
+          "activity_label",
+          "lq",
+          "n"
+        ],
+        "template": [
+          {
+            "type": "text",
+            "content": "La commune se spécialise dans "
+          },
+          {
+            "type": "strong",
+            "children": [
+              {
+                "type": "param",
+                "key": "activity_label"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "content": " (rang "
+          },
+          {
+            "type": "param",
+            "key": "rang"
+          },
+          {
+            "type": "text",
+            "content": " du top 5). "
+          },
+          {
+            "type": "link",
+            "href": "/methodologie#economie",
+            "children": [
+              {
+                "type": "text",
+                "content": "Sources et méthodes"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "structure-verte",
+      "label": "La structure verte",
+      "framing": "La place des établissements verts dans le tissu productif.",
+      "indicators": [
+        "eco_activites"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "eco_activites"
+      }
+    }
+  ],
+  "indicator_keys": [
+    "effectifs_salaries",
+    "chomage",
+    "eco_activites"
+  ],
+  "story_keys": ["ce-que-la-commune-abrite"],
+  "sources": {
+    "effectifs_salaries": "flores_a88",
+    "chomage": "rp_chomage",
+    "eco_activites": "sirene_snapshot"
+  },
+  "indicator_labels": {
+    "effectifs_salaries": "Effectifs salariés (lieu de travail)",
+    "chomage": "Chômage (population active)",
+    "eco_activites": "Part des éco-activités"
+  },
+  "detail_labels": {},
+  "param_labels": {
+    "rang": "Rang",
+    "activity_label": "Activité dominante",
+    "lq": "Location quotient (LQ)",
+    "n": "Nombre d'établissements"
+  }
+}
