@@ -176,6 +176,8 @@ test_that("valider_theme_metadata : les pages scalaires rejettent les cinq déri
     direction_typée = function(meta) { meta$indicator_pages$densite$direction <- "Descriptif"; meta },
     niveaux_dupliqués = function(meta) { meta$indicator_pages$densite$levels <- c("commune", "commune"); meta },
     source_inconnue = function(meta) { meta$indicator_pages$densite$sources <- "missing"; meta },
+    source_dupliquée = function(meta) { meta$indicator_pages$densite$sources <- c("serie_historique", "serie_historique"); meta },
+    source_de_référence_absente = function(meta) { meta$indicator_pages$densite$sources <- "age_detail"; meta },
     détail_invalide = function(meta) { meta$indicator_pages$densite$detail <- 42; meta },
     clé_indicateur_incohérente = function(meta) { meta$indicator_pages$densite$indicator <- "autre"; meta }
   )

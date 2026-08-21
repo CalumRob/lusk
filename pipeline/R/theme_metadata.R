@@ -558,6 +558,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
         any(!vapply(page$sources, est_chaine_non_vide, logical(1)))) {
       manquer("indicator_pages.sources", "aucune source complète n'est déclarée")
     }
+    if (anyDuplicated(unlist(page$sources, use.names = FALSE))) {
+      manquer("indicator_pages.sources", "une source de page est en double")
+    }
+    if (!metadata$sources[[indicator_key]] %in% unlist(page$sources, use.names = FALSE)) {
+      manquer("indicator_pages.sources", paste0("la page « ", indicator_key, " » doit contenir sa source de référence « ", metadata$sources[[indicator_key]], " »"))
+    }
     if (is.null(metadata$source_records) || !is.list(metadata$source_records)) {
       manquer("source_records", "les références de source ne sont pas publiées")
     }
