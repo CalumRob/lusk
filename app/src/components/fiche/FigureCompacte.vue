@@ -51,14 +51,16 @@ type Corps =
   | 'heritier'
 
 const corps = computed<Corps>(() => {
-  if (props.famille === 'scalar' && props.clef === 'offre_cyclable') return 'offre-cyclable'
+  if (props.famille === 'scalar' && props.reseaux && props.reseaux.length > 0) return 'offre-cyclable'
   if (props.famille === 'composition') {
-    if (props.clef === 'distribution_dpe') return 'composition-dpe'
+    // DPE is the one official palette override. Detect the declared A→G
+    // composition, never an indicator key; this keeps the shell family-level.
+    if (props.lignes.some((ligne) => ligne.detail !== null && /^[A-G]$/.test(ligne.detail))) return 'composition-dpe'
     // structure_age n'est un vrai pyramid hommes/femmes QUE si le payload porte
     // la dimension sexe (issue bloquante #390). Sans elle (les sept lignes
     // totales legacy, sans sexe), on rend la décomposition segmentée/liste
     // honnête (corps hérité) — jamais une pyramide à un seul côté trompeuse.
-    if (props.clef === 'structure_age') {
+    if (props.lignes.some((ligne) => ligne.sex !== null && ligne.sex !== undefined)) {
       return estPyramideSexuee(props.lignes) ? 'composition-pyramide' : 'heritier'
     }
   }

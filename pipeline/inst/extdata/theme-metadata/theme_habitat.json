@@ -9,7 +9,8 @@
       "indicators": ["mix_logements", "statut", "age_du_bati", "type", "prix_m2", "part_passoires", "distribution_dpe"],
       "figure": {
         "family": "composition",
-        "indicator": "distribution_dpe"
+        "indicator": "distribution_dpe",
+        "comparison": { "detail": "F", "sex": null }
       },
       "reading": {
         "story_key": "etat-energetique-du-parc",

@@ -9,7 +9,8 @@
       "indicators": ["densite", "structure_age", "evolution_1968", "taille_menages"],
       "figure": {
         "family": "composition",
-        "indicator": "structure_age"
+        "indicator": "structure_age",
+        "comparison": { "detail": "25-39", "sex": "F" }
       },
       "reading": {
         "story_key": "trajectoire-demographique",

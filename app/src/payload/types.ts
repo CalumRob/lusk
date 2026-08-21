@@ -569,6 +569,14 @@ export interface FigureSousGroupe {
   family: FamilleFigure
   /** An indicator the subgroup owns — the figure renders the subgroup's matter. */
   indicator: string
+  /** Declared default scalar facet for composition pages. */
+  comparison?: FigureComparison
+}
+
+/** Shared composition semantics: show every part, compare exactly one facet. */
+export interface FigureComparison {
+  detail: string | null
+  sex: Sexe | null
 }
 
 /**

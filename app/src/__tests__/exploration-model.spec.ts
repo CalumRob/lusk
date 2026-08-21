@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, modeleExploration, payloadPourCarte, positionDensite } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, modeleComposition, modeleExploration, payloadPourCarte, positionDensite } from '../indicateurs/explorationModel'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
 
@@ -11,6 +11,17 @@ const territoires: Territoire[] = [
 const facts = (id: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ territoire: id, type, theme: 'demographie', key: 'densite', detail: null, value, unit: 'hab./km²', rang_epci: null, rang_dep: null, rang_reg: null, rang_epci_n: null, rang_dep_n: null, rang_reg_n: null, vintage_source: 'INSEE', vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2024-01-01' })
 
 describe('modèle pur de Page d’indicateur', () => {
+  it('keeps every composition part visible while selecting one URL-backed facet', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.subgroups[0].figure = { family: 'composition', indicator: 'structure_age', comparison: { detail: '25-39', sex: 'F' } }
+    const base = (detail: string, sex: 'F' | 'M', value: number): Indicateur => ({ ...facts('a', value), key: 'structure_age', detail, sex })
+    const model = modeleComposition([base('15-24', 'F', 10), base('25-39', 'F', 20), base('25-39', 'M', 30)], metadata, 'structure_age', {})
+    expect(model.parts).toHaveLength(3)
+    expect(model.parts.filter((part) => part.selected).map((part) => part.value)).toEqual([20])
+    expect(model.active).toHaveLength(1)
+    const override = modeleComposition([base('15-24', 'F', 10), base('25-39', 'F', 20), base('25-39', 'M', 30)], metadata, 'structure_age', { detail: '25-39', sex: 'M' })
+    expect(override.active[0].value).toBe(30)
+  })
   it('keeps Bretagne EPCI and département scopes populated', () => { const result = modeleExploration([facts('e', 10, 'epci'), facts('f', 20, 'epci')], metadonneesThemesFixtures.demographie, territoires, { niveau: 'epci' }, undefined, 'densite'); expect(result.rows).toHaveLength(2); const dep = modeleExploration([facts('22', 10, 'departement'), facts('29', 20, 'departement')], metadonneesThemesFixtures.demographie, territoires, { niveau: 'departement' }, undefined, 'densite'); expect(dep.rows).toHaveLength(2) })
   it('filters communes and removes incompatible scope state at other levels', () => { const metadata = metadonneesThemesFixtures.demographie; const factsAll = [facts('a', 10), facts('b', 20), facts('c', 30)]; expect(modeleExploration(factsAll, metadata, territoires, { niveau: 'commune', departement: '22' }, undefined, 'densite').rows).toHaveLength(2); const result = modeleExploration([facts('e', 10, 'epci')], metadata, territoires, { niveau: 'epci', departement: '22', epci: 'e' }, undefined, 'densite'); expect(result.state.departement).toBeUndefined(); expect(result.state.epci).toBeUndefined() })
   it('computes a true even median and typed high/low ranks with ties', () => { const metadata = structuredClone(metadonneesThemesFixtures.demographie); metadata.indicator_pages!.densite.direction = 'low'; const result = modeleExploration([facts('a', 10), facts('b', 10), facts('c', 30), facts('d', 40)], metadata, territoires, { niveau: 'commune', tri: 'valeur', ordre: 'desc' }, undefined, 'densite'); expect(result.median).toBe(20); expect(result.direction).toBe('low'); expect(result.rows.map((row) => row.rang)).toEqual([4, 3, 1, 1]) })

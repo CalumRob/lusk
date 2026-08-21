@@ -1875,6 +1875,12 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       ligneIndexee,
       `« ${cle} » : la figure doit rendre un indicateur que le sous-groupe possède`,
     )
+    const comparison = figure['comparison']
+    if (comparison !== undefined) {
+      exiger(estObjet(comparison), fichier, ligneIndexee, `« ${cle} » : comparison doit être un objet`)
+      exiger(comparison['detail'] === null || estChaine(comparison['detail']), fichier, ligneIndexee, `« ${cle} » : comparison.detail doit être une chaîne ou null`)
+      exiger(comparison['sex'] === undefined || comparison['sex'] === null || comparison['sex'] === 'F' || comparison['sex'] === 'M', fichier, ligneIndexee, `« ${cle} » : comparison.sex doit être F, M ou null`)
+    }
 
     // la lecture résolue — le lien explicite vers l'histoire du sous-groupe
     // (parent #308 : l'app n'infère jamais la relation depuis les noms)
@@ -1907,7 +1913,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       label: libelle,
       framing,
       indicators,
-      figure: { family, indicator: indicateurFigure },
+      figure: { family, indicator: indicateurFigure, ...(comparison === undefined ? {} : { comparison: { detail: comparison['detail'] as string | null, sex: (comparison['sex'] ?? null) as Sexe | null } }) },
       reading: { story_key, params, template },
     }
   })

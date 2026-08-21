@@ -1,14 +1,39 @@
-import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata } from '@/payload/types'
+import type { Indicateur, Payload, Territoire, TerritoireType, Theme, ThemeMetadata, Sexe } from '@/payload/types'
 
 export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
 export type DirectionIndicateur = 'high' | 'low'
 export type TriExploration = 'nom' | 'valeur' | 'rang'
 export type OrdreExploration = 'asc' | 'desc'
-export interface EtatExploration { niveau?: NiveauIndicateur; departement?: string; epci?: string; territoire?: string; recherche?: string; tri?: TriExploration; ordre?: OrdreExploration }
+export interface EtatExploration { niveau?: NiveauIndicateur; departement?: string; epci?: string; territoire?: string; detail?: string; sex?: Sexe; recherche?: string; tri?: TriExploration; ordre?: OrdreExploration }
 export interface DensitePoint { x: number; density: number; y: number }
 export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
 export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
+
+export interface PartComposition { detail: string | null; sex: Sexe | null; value: number | null; unit: string; selected: boolean; label: string }
+export interface ModeleComposition { parts: PartComposition[]; selectedDetail: string | null; selectedSex: Sexe | null; active: Indicateur[] }
+
+/**
+ * Family contract for compositions.  It deliberately knows no indicator name:
+ * every part remains visible, while one declared (or URL-selected) facet is the
+ * scalar used by Repères, Carte, extremes and the table.
+ */
+export function modeleComposition(
+  facts: readonly Indicateur[],
+  metadata: ThemeMetadata,
+  indicator: string,
+  requested: { detail?: string; sex?: Sexe },
+): ModeleComposition {
+  const descriptor = metadata.subgroups.flatMap((g) => g.indicators.includes(indicator) ? [g.figure] : []).find((f) => f.family === 'composition')
+  const declared = descriptor?.comparison
+  const rows = facts.filter((fact) => fact.key === indicator)
+  const detail = requested.detail ?? declared?.detail ?? rows.find((row) => row.detail !== null)?.detail ?? null
+  const sex = requested.sex ?? declared?.sex ?? (rows.some((row) => row.sex === 'F') ? 'F' : null)
+  const labels = metadata.detail_labels[indicator] ?? {}
+  const parts = rows.map((row) => ({ detail: row.detail, sex: row.sex ?? null, value: row.value, unit: row.unit, selected: row.detail === detail && (sex === null || row.sex === sex), label: labels[row.detail ?? ''] ?? '' }))
+  const active = rows.filter((row) => row.detail === detail && (sex === null || row.sex === sex))
+  return { parts, selectedDetail: detail, selectedSex: sex, active }
+}
 
 const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
 export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
@@ -59,7 +84,11 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.key === page.indicator && fact.detail === (page.detail ?? null) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const isComposition = metadata.subgroups.some((g) => g.figure.family === 'composition' && g.figure.indicator === page.indicator)
+  const compositionRows = facts.filter((fact) => fact.key === page.indicator && fact.type === niveau)
+  const declaredFigure = metadata.subgroups.find((g) => g.figure.indicator === page.indicator)?.figure
+  const selectedDetail = (requested as EtatExploration & { detail?: string }).detail ?? page.detail ?? declaredFigure?.comparison?.detail ?? (isComposition ? compositionRows.find((fact) => fact.detail !== null)?.detail ?? null : null)
+  const all = facts.filter((fact) => fact.key === page.indicator && (isComposition ? fact.detail === selectedDetail && (fact.sex === null || fact.sex === ((requested as EtatExploration & { sex?: Sexe }).sex ?? null)) : fact.detail === (page.detail ?? null)) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
   const values = all.map((row) => row.value).sort((a, b) => a - b)
   const median = values.length % 2 ? values[(values.length - 1) / 2] : values.length ? (values[values.length / 2 - 1] + values[values.length / 2]) / 2 : null
   const ranked = [...all].sort((a, b) => page.direction === 'low' ? a.value - b.value : b.value - a.value)
@@ -79,5 +108,5 @@ export function modeleExploration(facts: readonly Indicateur[], metadata: ThemeM
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
   const density = estimerDensite(values)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, detail: selectedDetail ?? undefined, sex: requested.sex, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: page.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
 }

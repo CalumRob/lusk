@@ -432,6 +432,20 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       manquer("figure", paste0(
         "« ", cle, " » : la figure doit rendre un indicateur que le sous-groupe possède"))
     }
+    # Composition: one URL-backed scalar facet may be declared while the full
+    # composition remains visible.  The shape is shared with the TS validator.
+    comparaison <- groupe$figure$comparison
+    if (!is.null(comparaison)) {
+      if (!est_liste(comparaison) || !"detail" %in% names(comparaison) ||
+          !(is.null(comparaison$detail) || est_chaine_non_vide(comparaison$detail))) {
+        manquer("figure.comparison", paste0("« ", cle, " » : detail doit être une chaîne ou NULL"))
+      }
+      sex <- if ("sex" %in% names(comparaison)) comparaison[["sex"]] else NULL
+      if (is.character(sex) && length(sex) == 1L && !is.na(sex) && nzchar(sex) &&
+          !identical(sex, "F") && !identical(sex, "M")) {
+        manquer("figure.comparison", paste0("« ", cle, " » : sex doit être F, M ou NULL"))
+      }
+    }
 
     # la lecture résolue — le lien explicite vers l'histoire du sous-groupe
     # (parent #308 : l'app n'infère jamais la relation depuis les noms)

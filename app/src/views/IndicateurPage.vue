@@ -10,7 +10,7 @@ import { useGeometrie } from '@/geo/useGeometrie'
 import type { NiveauMasque } from '@/geo/types'
 import type { Couche } from '@/carte/coucheModel'
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Theme } from '@/payload/types'
+import type { Sexe, Theme } from '@/payload/types'
 import { themeStyle } from '@/indicateurs/themeTokens'
 import { formaterNombreFR } from '@/payload/selectors'
 
@@ -34,7 +34,7 @@ const validScope = computed(() => {
   if (departement && epci && !communes.some((territory) => territory.departement === departement && territory.epci === epci)) return { departement: undefined, epci }
   return { departement, epci }
 })
-const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
+const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, detail: typeof route.query.detail === 'string' ? route.query.detail : undefined, sex: route.query.sex === 'F' || route.query.sex === 'M' ? route.query.sex as Sexe : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
 const model = computed(() => page.value && metadata.value ? modeleExploration(facts.value, metadata.value, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined, indicator.value) : null)
 const themeVars = computed(() => themeValide.value ? themeStyle(theme.value as Theme) : undefined)
 const directionGlyph = computed(() => page.value?.direction === 'low' ? '▼' : '▲')
@@ -47,7 +47,9 @@ const payloadCarte = computed(() => {
   const niveau = model.value?.state.niveau ?? niveauRoute.value ?? 'commune'
   const departement = niveau === 'commune' && typeof route.query.departement === 'string' ? route.query.departement : undefined
   const epci = niveau === 'commune' && typeof route.query.epci === 'string' ? route.query.epci : undefined
-  return payloadPourCarte(payload.value, theme.value as Theme, indicator.value, niveau, departement, epci)
+  const carte = payloadPourCarte(payload.value, theme.value as Theme, indicator.value, niveau, departement, epci)
+  if (model.value?.state.detail === undefined) return carte
+  return { ...carte, indicateurs: carte.indicateurs.filter((fact) => fact.detail === model.value?.state.detail && (model.value?.state.sex === undefined || fact.sex === model.value?.state.sex || fact.sex === null)) }
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
 const couche = computed<Couche | null>(() => page.value ? ({ source: 'indicateur', clef: indicator.value, detail: page.value.detail ?? null, libelle: page.value.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
