@@ -743,12 +743,12 @@ export interface PyramidMetadata { dimensions: string[] }
 export interface ComparisonBarsMetadata { series: string[] }
 
 export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
-export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory?: TrajectoryMetadata }
-export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition'; composition?: CompositionMetadata }
-export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution'; distribution?: DistributionMetadata }
-export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list'; list?: ListMetadata }
-export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship'; relationship?: RelationshipMetadata }
-export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid?: PyramidMetadata }
+export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory: TrajectoryMetadata }
+export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition'; composition: CompositionMetadata }
+export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution'; distribution: DistributionMetadata }
+export type ListPageMetadata = IndicatorPageMetadataBase & { family: 'list'; list: ListMetadata }
+export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 'relationship'; relationship: RelationshipMetadata }
+export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid: PyramidMetadata }
 /** JSON uses the ADR family literal as the key; TS uses camelCase. */
 export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparisonBars: ComparisonBarsMetadata }
 export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata

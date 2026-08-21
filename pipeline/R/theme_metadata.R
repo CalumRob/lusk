@@ -648,7 +648,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     )
     extension_keys <- c("trajectory", "composition", "distribution", "relationship", "list", "pyramid", "comparison-bars", "comparison_bars")
     for (candidate in setdiff(extension_keys, famille)) if (!is.null(page[[candidate]])) manquer(paste0("indicator_pages.", indicator_key, ".", candidate), "l'extension ne correspond pas à la famille déclarée")
-    extension <- page[[famille]]
+      extension <- page[[if (famille == "comparison-bars") "comparison-bars" else famille]]
     if (famille != "scalar" && is.null(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension est requise")
     if (!is.null(extension)) {
       if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")

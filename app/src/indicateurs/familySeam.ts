@@ -2,7 +2,7 @@ import type { ComparisonFacetMetadata, IndicatorPageMetadata, Indicateur, Famill
 
 export type FamilyStatus = 'ready' | 'unavailable' | 'incomplete' | 'invalid'
 export type FamilyName = FamilleFigure
-export interface FamilyRendererIdentity { family: FamilyName; component: string; semantics: 'scalar' | 'composition' | 'trajectory' | 'distribution' | 'list' | 'relationship' }
+export type FamilyRendererIdentity = { [F in FamilyName]: { family: F; component: string; semantics: 'scalar' | 'composition' | 'trajectory' | 'distribution' | 'list' | 'relationship' } }[FamilyName]
 
 /** One facet contract, shared by Repères, Carte, ranks, extremes and table. */
 export interface ComparisonFacet {
@@ -29,17 +29,15 @@ export type FamilyRepresentation =
   | { kind: 'pyramid'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: PyramidMetadata }
   | { kind: 'comparison-bars'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: ComparisonBarsMetadata }
 
-export interface FamilyDispatch {
-  family: FamilyName
-  /** Stable family renderer key; identity metadata is adjacent for the outlet. */
-  renderer: FamilyName
-  rendererIdentity: FamilyRendererIdentity
-  facet: ComparisonFacet
-  resolvedUrl: string
-  representation: FamilyRepresentation
-  selected: Indicateur | null
-  status: FamilyStatus
-}
+type FamilyDispatchBase = { facet: ComparisonFacet; resolvedUrl: string; selected: Indicateur | null; status: FamilyStatus }
+export type FamilyDispatch = {
+  [F in FamilyName]: FamilyDispatchBase & {
+    family: F
+    renderer: F
+    rendererIdentity: Extract<FamilyRendererIdentity, { family: F }>
+    representation: Extract<FamilyRepresentation, { kind: F }>
+  }
+}[FamilyName]
 
 /** Explicit registry: pyramid and comparison-bars share composition mechanics,
  * but retain their own family identity and renderer extension point. */
@@ -83,16 +81,17 @@ export function normalizeComparisonFacet(page: IndicatorPageMetadata, requested:
   return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, labels: comparison.labels ?? {}, url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
 }
 
-function representation(page: IndicatorPageMetadata, family: FamilyName, rows: readonly Indicateur[], territories: readonly Territoire[]): FamilyRepresentation {
-  if (family === 'scalar') return { kind: family, rows, territories }
-  const extension = (page as unknown as Record<string, unknown>)[family === 'comparison-bars' ? 'comparisonBars' : family]
-  if (family === 'trajectory') return { kind: family, rows, territories, endpoints: rows, extension: extension as TrajectoryMetadata }
-  if (family === 'composition') return { kind: family, rows, territories, parts: rows, extension: extension as CompositionMetadata }
-  if (family === 'pyramid') return { kind: family, rows, territories, parts: rows, extension: extension as PyramidMetadata }
-  if (family === 'comparison-bars') return { kind: family, rows, territories, parts: rows, extension: extension as ComparisonBarsMetadata }
-  if (family === 'distribution') return { kind: family, rows, territories, distribution: rows, extension: extension as DistributionMetadata }
-  if (family === 'relationship') return { kind: family, rows, territories, points: rows, extension: extension as RelationshipMetadata }
-  return { kind: family, rows, territories, entries: rows, extension: extension as ListMetadata }
+function representation(page: IndicatorPageMetadata, rows: readonly Indicateur[], territories: readonly Territoire[]): FamilyRepresentation {
+  switch (page.family) {
+    case 'trajectory': return { kind: 'trajectory', rows, territories, endpoints: rows, extension: page.trajectory }
+    case 'composition': return { kind: 'composition', rows, territories, parts: rows, extension: page.composition }
+    case 'distribution': return { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }
+    case 'list': return { kind: 'list', rows, territories, entries: rows, extension: page.list }
+    case 'relationship': return { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }
+    case 'pyramid': return { kind: 'pyramid', rows, territories, parts: rows, extension: page.pyramid }
+    case 'comparison-bars': return { kind: 'comparison-bars', rows, territories, parts: rows, extension: page.comparisonBars }
+    default: return { kind: 'scalar', rows, territories }
+  }
 }
 
 export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
@@ -101,8 +100,15 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
   const rows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact as Indicateur & { dimension?: string | null }).dimension === facet.dimension))
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
-  const extensionKey = family === 'comparison-bars' ? 'comparisonBars' : family
-  const extensionMissing = family !== 'scalar' && !(page as unknown as Record<string, unknown>)[extensionKey]
+  const extensionMissing = page.family !== undefined && page.family !== 'scalar' && (
+    (page.family === 'trajectory' && !page.trajectory) ||
+    (page.family === 'composition' && !page.composition) ||
+    (page.family === 'distribution' && !page.distribution) ||
+    (page.family === 'list' && !page.list) ||
+    (page.family === 'relationship' && !page.relationship) ||
+    (page.family === 'pyramid' && !page.pyramid) ||
+    (page.family === 'comparison-bars' && !page.comparisonBars)
+  )
   const status: FamilyStatus = !facet.valid || extensionMissing ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
-  return { family, renderer: family, rendererIdentity: renderer, facet, resolvedUrl: facet.url, representation: representation(page, family, rows, input.territories ?? []), selected, status }
+  return { family, renderer: family, rendererIdentity: renderer, facet, resolvedUrl: facet.url, representation: representation(page, rows, input.territories ?? []), selected, status } as FamilyDispatch
 }

@@ -26,11 +26,7 @@ const attendre: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${s
 const { payload, erreur, chargement } = usePayload({ attendre })
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
-const page = computed(() => {
-  const raw = metadata.value?.indicator_pages?.[indicator.value]
-  if (!raw?.comparison) return raw
-  return { ...raw, unit: raw.comparison.unit ?? raw.unit, direction: raw.comparison.direction ?? raw.direction }
-})
+const page = computed(() => metadata.value?.indicator_pages?.[indicator.value])
 const familyDispatch = computed(() => page.value ? dispatchIndicatorFamily(page.value, { theme: theme.value as Theme, facts: facts.value, territories: payload.value.territoires, selected: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, facet: route.query }) : null)
 const sources = computed(() => {
   if (!page.value || !payload.value) return []
@@ -74,9 +70,9 @@ watch(() => [route.query.niveau, route.query.departement, route.query.epci, payl
 watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query.niveau === undefined) router.replace({ query: normalizedQuery({ niveau }) }) }, { immediate: true })
 watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && ['commune', 'epci', 'departement'].includes(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
 watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
-  if (!resolved || !page.value) return
+  if (resolved === undefined || !page.value) return
   const canonical = new URLSearchParams(resolved.slice(1)); const next = { ...route.query }
-  for (const key of ['detail', 'sex', 'dimension']) delete next[key]
+  for (const key of ['facet', 'detail', 'sex', 'dimension']) delete next[key]
   canonical.forEach((value, key) => { next[key] = value })
   if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next })
 }, { immediate: true })
