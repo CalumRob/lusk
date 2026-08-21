@@ -59,7 +59,7 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
   it('renders the metadata subgroup — label and framing', async () => {
     const wrapper = await monter('22001')
 
-    const sousGroupe = wrapper.find('.sous-groupe[data-groupe="etat-et-dynamique"]')
+    const sousGroupe = wrapper.find('.sous-groupe[data-groupe="trajectoire-demographique"]')
     expect(sousGroupe.exists()).toBe(true)
     expect(wrapper.find('.sous-groupe-titre').text()).toBe(
       'État et dynamique de la population',

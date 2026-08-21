@@ -238,8 +238,8 @@ describe('sourcesMethodes — vintages absents (404)', () => {
     const { jeux, vintagesAbsents } = sourcesMethodes(payloadAvec(null))
 
     expect(vintagesAbsents).toBe(true)
-    // les deux jeux de #369 (osm_parkings, bpe_b316) montent le compte à 26
-    expect(jeux.length).toBe(26)
+    // les aires OSM partagent l’identité osm_reseaux ; seul BPE ajoute un jeu
+    expect(jeux.length).toBe(25)
     for (const jeu of jeux) {
       expect(jeu.replie).toBe(true)
       expect(jeu.vintages[0].version).toBeNull()
