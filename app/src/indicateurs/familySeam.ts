@@ -94,17 +94,18 @@ function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensio
 
 export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
-  const rows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  const allFacts = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator)
+  const rows = allFacts.filter((fact) => fact.detail === facet.detail && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension)
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
   const territories = input.territories ?? []
   const common = { facet, resolvedUrl: facet.url, selected }
   switch (page.family) {
     case 'trajectory': return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: rows, extension: page.trajectory }, status: statusFor(facet, rows, page.trajectory === undefined) }
-    case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: rows, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
+     case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
     case 'distribution': return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
     case 'list': return { ...common, family: 'list', renderer: 'list', rendererIdentity: familyRegistry.list, representation: { kind: 'list', rows, territories, entries: rows, extension: page.list }, status: statusFor(facet, rows, page.list === undefined) }
     case 'relationship': return { ...common, family: 'relationship', renderer: 'relationship', rendererIdentity: familyRegistry.relationship, representation: { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }, status: statusFor(facet, rows, page.relationship === undefined) }
-    case 'pyramid': return { ...common, family: 'pyramid', renderer: 'pyramid', rendererIdentity: familyRegistry.pyramid, representation: { kind: 'pyramid', rows, territories, parts: rows, extension: page.pyramid }, status: statusFor(facet, rows, page.pyramid === undefined) }
+     case 'pyramid': return { ...common, family: 'pyramid', renderer: 'pyramid', rendererIdentity: familyRegistry.pyramid, representation: { kind: 'pyramid', rows, territories, parts: allFacts, extension: page.pyramid }, status: statusFor(facet, rows, page.pyramid === undefined) }
     case 'comparison-bars': return { ...common, family: 'comparison-bars', renderer: 'comparison-bars', rendererIdentity: familyRegistry['comparison-bars'], representation: { kind: 'comparison-bars', rows, territories, parts: rows, extension: page.comparisonBars }, status: statusFor(facet, rows, page.comparisonBars === undefined) }
     case undefined:
     case 'scalar': return { ...common, family: 'scalar', renderer: 'scalar', rendererIdentity: familyRegistry.scalar, representation: { kind: 'scalar', rows, territories }, status: statusFor(facet, rows, false) }

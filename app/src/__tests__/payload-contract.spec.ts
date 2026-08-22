@@ -130,7 +130,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(themes.has('habitat')).toBe(true)
     expect(themes.has('economie')).toBe(true)
     expect(themes.has('milieux')).toBe(true)
-    const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}`))
+    const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}|${i.sex ?? ''}|${i.dimension ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
   })
 

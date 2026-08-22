@@ -92,6 +92,8 @@
     "caveats": "La superficie est celle du territoire.",
     "levels": ["commune", "epci", "departement"],
     "sources": ["serie_historique"]
+  }, "structure_age": {
+    "indicator": "structure_age", "label": "Structure par âge", "definition": "Répartition de la population par tranche d’âge et sexe.", "unit": "%", "calculation": "Population par tranche d’âge et sexe rapportée à la population du territoire.", "direction": "high", "caveats": "Les parts sont publiées par l’INSEE et peuvent être indisponibles pour un territoire.", "levels": ["commune", "epci", "departement"], "sources": ["age_detail"], "family": "pyramid", "pyramid": { "dimensions": ["detail", "sex"] }, "comparison": { "details": ["<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+"], "detail": "<15", "sexes": ["F", "M"], "sex": "F", "unit": "%", "labels": { "<15": "Moins de 15 ans", "15-24": "15 à 24 ans", "25-39": "25 à 39 ans", "40-54": "40 à 54 ans", "55-64": "55 à 64 ans", "65-79": "65 à 79 ans", "80+": "80 ans et plus" } }
   }},
   "source_records": {
     "serie_historique": {
