@@ -417,46 +417,144 @@ verifier_lq_flores_reel <- function(donnees) {
   invisible(TRUE)
 }
 
+# PLANCHER_CODES_OBSERVES_A17 ---------------------------------------------------
+# Le plancher de POSTES A17 distincts observés dans la table LQ réelle (issue
+# #428, parent #154) : 12. La réalité verrouillée 2026-08-21 observe 16 postes
+# sur les 17 du vocabulaire officiel (seul C2 — cokéfaction et raffinage —
+# n'a aucun établissement dans le tissu productif breton,
+# docs/research/naf-grain-lq.md) ; un repli A10 observerait ≤ 10 codes et une
+# jointure partiellement cassée en perdrait davantage. Le plancher laisse une
+# marge de quatre postes à la dérive d'époque du stock et déclenche sur tout
+# effondrement du mapping. C'est la défense en profondeur CÔTÉ MANQUE : côté
+# trop, la règle de vocabulaire refuse déjà tout code hors A17.
+PLANCHER_CODES_OBSERVES_A17 <- 12L
+
+# SEUIL_EPAISSEUR_MEDIANE_LQ ----------------------------------------------------
+# L'épaisseur médiane de cellule (le n d'une cellule commune × activité) que
+# la LQ réelle doit atteindre (issue #428) : 8. La recherche empirique mesure
+# une médiane de 13 au grain A17 décidé (docs/research/naf-grain-lq.md),
+# contre 2 en sous-classe, 2 en classe, 2 en groupe, 3 en division/A88 et 6 à
+# A38 : 8 sépare STRICTEMENT l'A17 de toute autre granularité mesurée — un
+# retour au grain fin ou un autre agrégat fait échouer le verrou bruyamment —
+# tandis que la marge sous la médiane réelle (13 − 8) tolère la dérive
+# d'époque du stock SIRENE.
+SEUIL_EPAISSEUR_MEDIANE_LQ <- 8
+
+# verifier_forme_lq_a17 ---------------------------------------------------------
+# Les RÈGLES de forme de la LQ Économie au grain A17 (issue #428 — le pattern
+# « dé-magic-number » remplace les comptes figés d'antan : 135 784 cellules,
+# 835 390 lignes de M, 695 codes APET) :
+#   - VOCABULAIRE : les codes portés par la table sont un sous-ensemble du
+#     vocabulaire FERMÉ des 17 postes A17 officiels (VOCABULAIRE_NA17_OFFICIEL,
+#     l'artefact épinglé #426). Le tripwire du bypass bas-niveau : les
+#     sous-classes APET (« NN.NNL ») de l'ancien chemin sans mapper sont hors
+#     vocabulaire — la règle échoue en les nommant ;
+#   - PLANCHER de codes distincts observés (PLANCHER_CODES_OBSERVES_A17) :
+#     l'effondrement du mapping (tout vers un poste, ou perdu) échoue ;
+#   - ÉPAISSEUR médiane de cellule ≥ SEUIL_EPAISSEUR_MEDIANE_LQ : la régression
+#     au grain fin (médiane 2 en sous-classe vs 13 à A17) échoue ;
+#   - la SANITÉ de la LQ continue reste verrouillée : finie, positive, jamais
+#     toutes ≡ 1.
+verifier_forme_lq_a17 <- function(lq, verrou,
+                                  plancher_codes = PLANCHER_CODES_OBSERVES_A17,
+                                  seuil_epaisseur = SEUIL_EPAISSEUR_MEDIANE_LQ) {
+  inconnus <- sort(unique(setdiff(lq$activity_code,
+                                  names(VOCABULAIRE_NA17_OFFICIEL))))
+  verifier_vrai(length(inconnus) == 0L, verrou, paste0(
+    "code(s) hors du vocabulaire officiel des 17 postes A17 : ",
+    paste(inconnus, collapse = ", "),
+    " — le grain n'est plus A17 (bypass du mapper ou jointure cassée)."))
+
+  observes <- dplyr::n_distinct(lq$activity_code)
+  verifier_vrai(observes >= plancher_codes, verrou, sprintf(paste0(
+    "%d poste(s) A17 observé(s), sous le plancher de %d — le mapping est ",
+    "effondré."), observes, plancher_codes))
+
+  epaisseur <- stats::median(lq$n)
+  verifier_vrai(epaisseur >= seuil_epaisseur, verrou, sprintf(paste0(
+    "l'épaisseur médiane de cellule (%g établissements) est sous le seuil %g ",
+    "— retour au grain fin (médiane 13 à A17, 2 en sous-classe)."),
+    epaisseur, seuil_epaisseur))
+
+  verifier_vrai(all(is.finite(lq$lq)) && all(lq$lq > 0),
+                verrou, "une LQ non finie ou non positive")
+  verifier_vrai(any(lq$lq < 1) && any(lq$lq > 1),
+                verrou, "des LQ toutes égales à 1")
+
+  invisible(TRUE)
+}
+
+# verifier_exclusions_a17 -------------------------------------------------------
+# La règle du RAPPORT D'EXCLUSION (issue #428) — le tripwire de la jointure
+# cassée : exactement l'ensemble connu, découvert sur la vraie table
+# (2026-08-21) — « 00.00Z », l'inconnue qui n'est pas une activité NAF
+# officielle, porteuse d'UN SEUL établissement — et un motif qui nomme
+# l'artefact épinglé. TOUT autre code exclu (une sous-classe post-2008 absente
+# de la correspondance épinglée, un code corrompu) échoue bruyamment ici.
+verifier_exclusions_a17 <- function(exclusions, verrou) {
+  verifier_egale(sort(unique(exclusions$activity_code)), "00.00Z",
+                 paste(verrou, "— les codes exclus du mapping A17"))
+  verifier_egale(sum(exclusions$n[exclusions$activity_code == "00.00Z"]), 1L,
+                 paste(verrou,
+                       "— l'inconnue 00.00Z ne porte qu'un seul établissement"))
+  verifier_vrai(all(grepl("naf2_na17_2008", exclusions$motif)),
+                verrou, "un motif hors artefact épinglé naf2_na17_2008")
+  invisible(TRUE)
+}
+
+# verifier_forme_sidecar_m ------------------------------------------------------
+# La règle du SIDECAR M (issue #428) : aligné sur l'univers EXACT des cellules
+# retenues de la LQ — le croisement complet communes × activités, une ligne
+# par cellule, les zéros explicites compris — et strictement binaire. La règle
+# remplace le compte magique 835 390 (le compte du grain fin d'antan).
+verifier_forme_sidecar_m <- function(m, lq, verrou) {
+  verifier_egale(
+    nrow(m),
+    dplyr::n_distinct(lq$commune) * dplyr::n_distinct(lq$activity_code),
+    paste(verrou, "— le croisement complet commune × activité"))
+  verifier_vrai(all(m$m %in% c(0, 1)),
+                verrou, "une valeur de matrice hors {0, 1}")
+  invisible(TRUE)
+}
+
 # verifier_lq_economie_reel -----------------------------------------------------
 # Verrou du bloc converti de test-analytics-economie-lq.R : la vraie table
-# sirene_snapshot (181 481 lignes, 1202 communes, 695 codes APE) — le
-# regroupement, le plancher (0 suppression : le minimum observé est 10
-# établissements), la LQ de Balassa continue, l'Histoire top-5 par commune et
-# la matrice M sidecar.
+# sirene_snapshot (181 481 lignes, 1202 communes) passe par LE CHAÎNON LIVRÉ
+# (construire_analytique_lq_economie — agrégation → MAPPING A17 + rapport
+# d'exclusion → plancher → Balassa → histoires → M), JAMAIS par un
+# re-enchaînement bas-niveau qui contournerait le mapper : l'ancien verrou
+# figeait ainsi le grain sous-classe abandonné (135 784 cellules / 695 codes
+# APET) pendant que la production calculait en A17 (#427, parent #154).
+# Depuis l'issue #428, ce que le verrou asserte sont des RÈGLES au grain A17
+# (verifier_forme_lq_a17, verifier_exclusions_a17, verifier_forme_sidecar_m)
+# plus les contrats réels conservés (les comptes du snapshot source, 0
+# suppression au plancher gate D, les histoires 1202 × TOP_N).
 verifier_lq_economie_reel <- function(donnees) {
   snapshot <- donnees$sirene_snapshot
 
-  verifier_egale(nrow(snapshot), 181481L, "LQ Économie — le compte réel")
+  verifier_egale(nrow(snapshot), 181481L, "LQ Économie — le compte réel du snapshot")
   verifier_egale(dplyr::n_distinct(snapshot$commune), 1202L,
                  "LQ Économie — les 1202 communes")
-  verifier_egale(dplyr::n_distinct(snapshot$activity_code), 695L,
-                 "LQ Économie — les codes APE 5 chiffres")
 
-  agrege <- agreger_sirene_par_activite(snapshot)
-  res <- appliquer_plancher_communes(agrege)
-  verifier_egale(nrow(res$suppression), 0L,
+  sortie <- tempfile("verif-lq-economie-")
+  dir.create(sortie)
+  analytique <- construire_analytique_lq_economie(snapshot, sortie = sortie)
+
+  verifier_forme_lq_a17(analytique$lq, "LQ Économie — le grain A17")
+  verifier_exclusions_a17(analytique$exclusions, "LQ Économie")
+
+  # le plancher gate D sur la vraie table : 0 suppression (minimum observé :
+  # 10 établissements/commune), les 1202 communes retenues
+  verifier_egale(nrow(analytique$suppression), 0L,
                  "LQ Économie — aucune commune sous le plancher")
-  verifier_egale(dplyr::n_distinct(res$retenu$commune), 1202L,
+  verifier_egale(dplyr::n_distinct(analytique$lq$commune), 1202L,
                  "LQ Économie — les communes retenues")
 
-  lq <- calculer_lq_balassa(res$retenu)
-  verifier_egale(nrow(lq), nrow(res$retenu),
-                 "LQ Économie — une ligne par cellule observée")
-  verifier_vrai(all(is.finite(lq$lq)) && all(lq$lq > 0),
-                "LQ Économie", "une LQ non finie ou non positive")
-  verifier_vrai(any(lq$lq < 1) && any(lq$lq > 1),
-                "LQ Économie", "des LQ toutes égales à 1")
-
-  histoires <- calculer_histoires_lq(lq)
-  verifier_egale(nrow(histoires), 1202L * TOP_N_SPECIALISATIONS_LQ,
+  verifier_egale(nrow(analytique$histoires), 1202L * TOP_N_SPECIALISATIONS_LQ,
                  "LQ Économie — les 5 lignes d'Histoire par commune")
 
-  m <- calculer_matrice_m(lq)
-  verifier_egale(nrow(m),
-                 dplyr::n_distinct(lq$commune) * dplyr::n_distinct(lq$activity_code),
-                 "LQ Économie — la matrice M sidecar")
-  verifier_vrai(all(m$m %in% c(0, 1)),
-                "LQ Économie", "une valeur de matrice hors {0, 1}")
+  verifier_forme_sidecar_m(analytique$m, analytique$lq,
+                           "LQ Économie — la matrice M sidecar")
 
   invisible(TRUE)
 }
@@ -555,9 +653,10 @@ verifier_rangs_economie_reel <- function(donnees, base_epci) {
 # verifier_economie_e2e_reel ----------------------------------------------------
 # Verrou du bloc converti de test-analytics-economie-e2e.R (T10) : le chaînon
 # analytique complet sur les tables réelles — les comptes verrouillés des
-# tables normalisées, des artefacts analytiques T1-T6 (les comptes du run
-# 2026-08-05) et du payload publié (les trois clés de l'issue #131, une ligne
-# par territoire). La stabilité octet-pour-octet entre deux runs reste la
+# tables normalisées, des artefacts analytiques T1-T6 (la LQ Économie aux
+# RÈGLES du grain A17 depuis l'issue #428 ; les autres artefacts aux comptes
+# de leurs runs) et du payload publié (les trois clés de l'issue #131, une
+# ligne par territoire). La stabilité octet-pour-octet entre deux runs reste la
 # porte de test-targets-byte-identical.R (un target est un run unique). Les
 # artefacts analytiques sont écrits dans un répertoire TEMPORAIRE (jamais la
 # sortie analytique du run — pas de course avec publie_economie).
@@ -577,13 +676,15 @@ verifier_economie_e2e_reel <- function(donnees, base_epci) {
   analytiques <- construire_analytiques_economie(
     donnees, base, artefact_egss(), sortie = sortie_analytiques)
 
+  # issue #428 — la LQ Économie n'y est plus un compte magique (135 784
+  # cellules au grain sous-classe d'antan) : elle passe par les RÈGLES du
+  # grain A17 ; les autres artefacts gardent leurs comptes verrouillés.
   comptes_analytiques <- c(
-    lq_economie = 135784L, lq_emploi_a88 = 22616L,
+    lq_emploi_a88 = 22616L,
     eco_activites_economie = 1202L, dormitory_economie = 1202L,
     chomage_economie = 1202L
   )
   tables_analytiques <- list(
-    lq_economie = analytiques$lq,
     lq_emploi_a88 = analytiques$lq_emploi_a88,
     eco_activites_economie = analytiques$eco_activites,
     dormitory_economie = analytiques$dortoir,
@@ -594,25 +695,31 @@ verifier_economie_e2e_reel <- function(donnees, base_epci) {
                    unname(comptes_analytiques[[nom]]),
                    paste("Économie e2e — l'artefact analytique", nom))
   }
+  verifier_forme_lq_a17(analytiques$lq, "Économie e2e — la LQ Économie")
   verifier_egale(nrow(analytiques$lq_emploi_a38), 16019L,
                  "Économie e2e — l'artefact support lq_emploi_a38")
-  verifier_egale(nrow(analytiques$histoires_lq), 1202L * 5L,
+  verifier_egale(nrow(analytiques$histoires_lq), 1202L * TOP_N_SPECIALISATIONS_LQ,
                  "Économie e2e — l'artefact support histoires_lq")
-  verifier_egale(nrow(analytiques$m), 835390L,
-                 "Économie e2e — l'artefact support m_economie")
+  verifier_forme_sidecar_m(analytiques$m, analytiques$lq,
+                           "Économie e2e — l'artefact support m_economie")
 
   payload <- construire_payload_economie(analytiques, base,
                                          vintages_economie())
   comptes_payload <- c(
-    indicateurs = 1268L * 3L, histoires = 1268L,
-    territoires = 1268L, apercu = 0L
+    indicateurs = 1268L * 3L, territoires = 1268L, apercu = 0L
   )
   verifier_egale(nrow(payload$indicateurs),
                  unname(comptes_payload[["indicateurs"]]),
                  "Économie e2e — le payload indicateurs")
-  verifier_egale(nrow(payload$histoires),
-                 unname(comptes_payload[["histoires"]]),
-                 "Économie e2e — le payload histoires")
+  # issue #428 — vérité minimale : le compte d'antan (1268) datait d'AVANT la
+  # #370, qui a retiré la lecture régionale Économie du payload. Depuis, chaque
+  # territoire SAUF la région porte exactement UNE lecture résolue — la RÈGLE
+  # remplace le compte figé (une lecture par territoire porteur).
+  sans_region <- payload$territoires[payload$territoires$type != "region", ]
+  verifier_egale(nrow(payload$histoires), nrow(sans_region),
+                 paste("Économie e2e — le payload histoires (une lecture par",
+                       "territoire porteur ; la région sans Histoire Économie",
+                       "depuis #370)"))
   verifier_egale(nrow(payload$territoires),
                  unname(comptes_payload[["territoires"]]),
                  "Économie e2e — le payload territoires")
