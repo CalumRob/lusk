@@ -16,17 +16,20 @@
 # vérification de fraîcheur du normaliseur passe. Les lignes exclues portent
 # aussi des dates (le contrôle ne court que sur les lignes retenues, mais la
 # colonne est ainsi exercée partout).
-# Le jeu couvre, à travers 15 lignes : 4 communes bretonnes (22001 · 29001 ·
+# Le jeu couvre, à travers 14 lignes : 4 communes bretonnes (22001 · 29001 ·
 # 35001 · 56001, une par département), un doublon de cellule (2 établissements
 # sur 22001 × 01.11Z × « 0 salarié »), les deux jumelles d'une même cellule
-# commune × APE (22001 × 47.11A × « 20 à 49 salariés ») qui NE se distinguent
+# commune × APE (22001 × 47.11Z × « 20 à 49 salariés ») qui NE se distinguent
 # que par leur diffusion côté INSEE — le statut de diffusion n'étant PAS retenu
-# (todo 9), elles fusionnent en UNE cellule — l'inconnue « 00.00Z » (une ligne,
-# issue #427 : non mappable vers l'A17, exercée par le mapping + le rapport
-# d'exclusion du chaînon LQ) — et le chemin d'échec : un établissement fermé
-# (« Fermé »), une commune manquante, une commune hors Bretagne (44001), une
-# commune au format invalide, un département non breton (12345), un code APE
-# manquant et un code APE invalide.
+# (todo 9), elles fusionnent en UNE cellule — et le chemin d'échec : un
+# établissement fermé (« Fermé »), une commune manquante, une commune hors
+# Bretagne (44001), une commune au format invalide, un département non breton
+# (12345), un code APE manquant et un code APE invalide.
+#
+# Ce jeu CSV nourrit le CONTRAT DU NORMALISEUR seul (test-reshape-economie-
+# sirene.R) : il est en amont du grain LQ et ne porte PAS le scénario d'exclusion
+# A17 (#427) — celui-ci vit dans fixture_lq_analytique() ci-dessous, la forme
+# normalisée que le chaînon consomme.
 
 load_fixture_sirene <- function() {
   readr::read_csv(

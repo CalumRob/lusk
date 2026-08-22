@@ -4,7 +4,7 @@
 # §Story pool : la LQ est l'Histoire par défaut « ce que la commune sait
 # faire »). Le chaînon analytique qui transforme la table normalisée
 # `sirene_snapshot` (commune × code APE × tranche d'effectifs → nombre
-# d'établissements ACTIFS) en quatre artefacts sous data/processed/economie/ :
+# d'établissements ACTIFS) en cinq artefacts sous data/processed/economie/ :
 #
 #   1. `agreger_sirene_par_activite`  — regroupement de la dimension tranche :
 #      somme de `value` par commune × code APE. La table long et creuse du

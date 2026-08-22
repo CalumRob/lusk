@@ -198,10 +198,15 @@ test_that("construire_analytiques_economie : le seam de calcul de T8 enchaîne l
   }
 
   local_mocked_bindings(
-    construire_analytique_lq_economie = function(snapshot, sortie) {
+    # la signature du chaînon T1 depuis #427 : le paramètre d'injection
+    # `correspondance` (défaut réel côté builder — ici un stub hermétique) et
+    # le cinquième élément `exclusions` du retour (le rapport d'exclusion A17)
+    construire_analytique_lq_economie = function(snapshot, sortie,
+                                                 correspondance = NULL) {
       pousser("lq")
       list(lq = tibble::tibble(x = 1), histoires = tibble::tibble(x = 2),
-           m = tibble::tibble(x = 3), suppression = tibble::tibble())
+           m = tibble::tibble(x = 3), suppression = tibble::tibble(),
+           exclusions = tibble::tibble())
     },
     construire_analytique_lq_flores = function(flores, grain, sortie) {
       pousser(paste0("lq_flores_", grain))
