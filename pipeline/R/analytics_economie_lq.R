@@ -4,13 +4,21 @@
 # §Story pool : la LQ est l'Histoire par défaut « ce que la commune sait
 # faire »). Le chaînon analytique qui transforme la table normalisée
 # `sirene_snapshot` (commune × code APE × tranche d'effectifs → nombre
-# d'établissements ACTIFS) en quatre artefacts sous data/processed/economie/ :
+# d'établissements ACTIFS) en cinq artefacts sous data/processed/economie/ :
 #
 #   1. `agreger_sirene_par_activite`  — regroupement de la dimension tranche :
 #      somme de `value` par commune × code APE. La table long et creuse du
 #      contrat (une ligne par cellule observée commune × APE × tranche, la
 #      taille reste une valeur atomique par ligne) redevient le comptage du
 #      grain fin commune × activité.
+#   1bis. `mapper_activites_a17`     — le MAPPING A17 (issue #427, parent #154 :
+#      le grain sous-classe est trop fin pour la LQ — décision de bascule sur
+#      A17) : la jointure EXACTE à l'artefact épinglé #426 (sous_classe =
+#      activity_code — jamais un préfixe de chaîne), le RE-SOMME des n par
+#      commune × A17, les libellés A17 OFFICIELS portés par la table. Les codes
+#      sans correspondance (« 00.00Z » dans le snapshot réel, exactement 1
+#      établissement) sont EXCLUS du calcul et RAPPORTÉS dans un rapport
+#      persisté — jamais silencieux.
 #   2. `appliquer_plancher_communes`  — le plancher de commune gate D : une
 #      commune n'entre dans le calcul analytique que si son TOTAL
 #      d'établissements actifs (somme de ligne sur tous les codes APE) ≥ 5.
@@ -48,8 +56,8 @@
 #      relatedness future (gate F — docs/research/relatedness.md §5 Layer 1 :
 #      « entry = 1 if the commune's LQ ≥ 1 »). L'Histoire ne l'utilise jamais.
 #
-# `construire_analytique_lq_economie` enchaîne les cinq étapes et persiste les
-# quatre artefacts sous la localisation dédiée Économie/Emploi des données
+# `construire_analytique_lq_economie` enchaîne les six étapes et persiste les
+# cinq artefacts sous la localisation dédiée Économie/Emploi des données
 # processées (data/processed/economie/). Idempotent et déterministe (les
 # tibbles sont triés, les écritures relisent l'identique) — relancer produit
 # les mêmes artefacts, octet-pour-octet. Aucun payload de fiche ici : les
@@ -115,6 +123,86 @@ agreger_sirene_par_activite <- function(snapshot) {
       .groups = "drop"
     ) %>%
     dplyr::arrange(commune, activity_code)
+}
+
+# mapper_activites_a17 ----------------------------------------------------------
+# Le MAPPING A17 (issue #427, parent #154 — la bascule du grain LQ décidée par
+# le parent : la sous-classe est trop fine, les cellules n=1 fabriquent des LQ
+# bruit) : les sous-classes APET de la table agrégée remontent aux postes A17
+# de la nomenclature agrégée par l'ARTEFACT ÉPINGLÉ (#426). La règle de
+# jointure est celle de l'artefact : EXACTE, sous_classe = activity_code —
+# jamais un préfixe de chaîne, jamais un repli heuristique. Le contrat de la
+# correspondance est vérifié AVANT tout calcul (le même ordre que le score vert
+# et son artefact EGSS) : une table corrompue s'arrête ici, bruyamment.
+#
+#   - la re-somme : les sous-classes qui remontent au MÊME poste fusionnent en
+#     UNE cellule commune × A17 (la somme des n est conservée à travers la
+#     jointure) ;
+#   - les libellés : activity_label devient le libellé A17 OFFICIEL porté par
+#     la table (verrouillé par VOCABULAIRE_NA17_OFFICIEL) — jamais le libellé
+#     APET d'entrée ;
+#   - les codes SANS correspondance sont EXCLUS du calcul et RAPPORTÉS — dans
+#     le snapshot réel exactement « 00.00Z » (l'inconnue n'est pas une activité
+#     NAF officielle, son absence de la table est ATTENDUE), mais LE RAPPORT
+#     EST LE MÉCANISME : tout code absent de la table sort du calcul et entre
+#     au rapport, quel qu'il soit — jamais silencieux.
+#
+# Retourne la liste {mappe, exclusions} :
+#   - mappe      : la table commune × A17 × libellé officiel × n — LA MÊME
+#     FORME que la sortie d'agreger_sirene_par_activite : le plancher, la
+#     Balassa, l'Histoire et la matrice M consomment sans changement de
+#     contrat ;
+#   - exclusions : LE rapport d'exclusion — une ligne par code non mappable,
+#     avec son n total, ses communes concernées et le motif qui nomme
+#     l'artefact. Déterministe : trié par code.
+mapper_activites_a17 <- function(agrege, correspondance = artefact_naf_a17()) {
+  manquantes <- setdiff(c("commune", "activity_code", "activity_label", "n"),
+                        names(agrege))
+  if (length(manquantes) > 0) {
+    stop("Mapping A17 — la table agrégée doit porter les colonnes commune, ",
+         "activity_code, activity_label et n (manquantes : ",
+         paste(manquantes, collapse = ", "), ").", call. = FALSE)
+  }
+
+  verifier_contrat_naf_a17(correspondance)
+
+  jointe <- agrege %>%
+    dplyr::left_join(
+      correspondance$table[c("sous_classe", "na17_code", "na17_libelle")],
+      by = c("activity_code" = "sous_classe")
+    )
+
+  list(
+    mappe = jointe %>%
+      dplyr::filter(!is.na(na17_code)) %>%
+      dplyr::group_by(commune, na17_code) %>%
+      dplyr::summarise(
+        activity_label = premier_libelle(na17_libelle),
+        n = sum(n),
+        .groups = "drop"
+      ) %>%
+      dplyr::rename(activity_code = na17_code) %>%
+      dplyr::select(commune, activity_code, activity_label, n) %>%
+      dplyr::arrange(commune, activity_code),
+    exclusions = jointe %>%
+      dplyr::filter(is.na(na17_code)) %>%
+      dplyr::group_by(activity_code) %>%
+      dplyr::summarise(
+        n = sum(n),
+        n_communes = dplyr::n_distinct(commune),
+        communes = paste(sort(unique(commune)), collapse = ", "),
+        motif = sprintf(
+          paste0(
+            "code absent de la correspondance officielle NAF rév. 2 → A17 ",
+            "(artefact %s) : exclu du calcul, rapporté ici."
+          ),
+          correspondance$id
+        ),
+        .groups = "drop"
+      ) %>%
+      dplyr::select(activity_code, n, n_communes, communes, motif) %>%
+      dplyr::arrange(activity_code)
+  )
 }
 
 # appliquer_plancher_communes --------------------------------------------------
@@ -320,17 +408,24 @@ calculer_matrice_m <- function(lq) {
 
 # construire_analytique_lq_economie --------------------------------------------
 # L'acte « calculer » du chaînon : le snapshot normalisé (lignes
-# commune × APE × tranche) vers les quatre artefacts analytiques, persistés
+# commune × APE × tranche) vers les cinq artefacts analytiques, persistés
 # sous la localisation Économie/Emploi des données processées (défaut :
-# data/processed/economie/). Retourne la liste {lq, histoires, m, suppression}
-# — la forme de test. Le paramètre `snapshot` permet aux tests de passer la
-# fixture directement (le même chemin de code que la vraie table). Idempotent
-# (les écritures écrassent) et déterministe (les tibbles retournés relisent
+# data/processed/economie/). Retourne la liste {lq, histoires, m, suppression,
+# exclusions} — la forme de test. Le paramètre `snapshot` permet aux tests de
+# passer la fixture directement (le même chemin de code que la vraie table) ;
+# le paramètre `correspondance` (issue #427 — la même philosophie que l'artefact
+# EGSS injecté dans T3) permet aux tests de passer une copie corrompue, et
+# DÉFAUT à l'artefact épinglé réel : les appelants existants ne changent pas.
+# L'ordre du chaînon est celui de la bascule A17 : agrégation APET → mapping
+# A17 (+ rapport d'exclusion) → plancher → Balassa → histoires → M. Idempotent
+# (les écritures écrasent) et déterministe (les tibbles retournés relisent
 # l'identique des fichiers persistés).
 construire_analytique_lq_economie <- function(snapshot,
-                                              sortie = "data/processed/economie") {
+                                              sortie = "data/processed/economie",
+                                              correspondance = artefact_naf_a17()) {
   agrege <- agreger_sirene_par_activite(snapshot)
-  plancher <- appliquer_plancher_communes(agrege)
+  a17 <- mapper_activites_a17(agrege, correspondance)
+  plancher <- appliquer_plancher_communes(a17$mappe)
   lq <- calculer_lq_balassa(plancher$retenu)
   histoires <- calculer_histoires_lq(lq)
   m <- calculer_matrice_m(lq)
@@ -341,7 +436,10 @@ construire_analytique_lq_economie <- function(snapshot,
   readr::write_rds(m, file.path(sortie, "m_economie.rds"))
   readr::write_rds(plancher$suppression,
                    file.path(sortie, "suppression_lq_economie.rds"))
+  readr::write_rds(a17$exclusions,
+                   file.path(sortie, "exclusions_lq_economie.rds"))
 
   list(lq = lq, histoires = histoires, m = m,
-       suppression = plancher$suppression)
+       suppression = plancher$suppression,
+       exclusions = a17$exclusions)
 }

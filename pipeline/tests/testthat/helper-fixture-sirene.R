@@ -25,6 +25,11 @@
 # établissement fermé (« Fermé »), une commune manquante, une commune hors
 # Bretagne (44001), une commune au format invalide, un département non breton
 # (12345), un code APE manquant et un code APE invalide.
+#
+# Ce jeu CSV nourrit le CONTRAT DU NORMALISEUR seul (test-reshape-economie-
+# sirene.R) : il est en amont du grain LQ et ne porte PAS le scénario d'exclusion
+# A17 (#427) — celui-ci vit dans fixture_lq_analytique() ci-dessous, la forme
+# normalisée que le chaînon consomme.
 
 load_fixture_sirene <- function() {
   readr::read_csv(
@@ -36,17 +41,26 @@ load_fixture_sirene <- function() {
 
 # fixture_lq_analytique --------------------------------------------------------
 # Le mini snapshot normalisé de l'analyse LQ (partagé par
-# test-analytics-economie-lq.R et test-analytics-economie-territoires.R) : 14
+# test-analytics-economie-lq.R et test-analytics-economie-territoires.R) : 15
 # lignes, commune × code APE × tranche. Après regroupement des tranches :
-#   22001 : 01.11Z = 2 · 47.11Z = 3 · 86.10Z = 5   (total 10)
-#   29001 : 01.11Z = 4 · 47.11Z = 1 · 86.10Z = 5   (total 10)
-#   35001 : 01.11Z = 6 · 47.11Z = 2 · 86.10Z = 2   (total 10)
-#   56001 : 01.11Z = 1 · 47.11Z = 1 · 86.10Z = 1   (total 3 — SOUS LE PLANCHER)
-# Totaux bretons retenus : 01.11Z = 12 · 47.11Z = 6 · 86.10Z = 12 · total = 30
+#   22001 : 01.11Z = 2 · 47.11A = 3 · 86.10Z = 5 · 00.00Z = 1   (total 11)
+#   29001 : 01.11Z = 4 · 47.11A = 1 · 86.10Z = 5               (total 10)
+#   35001 : 01.11Z = 6 · 47.11A = 2 · 86.10Z = 2               (total 10)
+#   56001 : 01.11Z = 1 · 47.11A = 1 · 86.10Z = 1               (total 3 — SOUS LE PLANCHER)
+# Issue #427 — le mapping A17 (mapper_activites_a17, AVANT le plancher) :
+#   - les trois sous-classes remontent à leurs postes officiels
+#     (01.11Z → AZ · 47.11A → GZ · 86.10Z → OQ), libellés officiels de
+#     l'artefact épinglé (#426) ;
+#   - « 00.00Z » (inconnue, absente de la correspondance — comme dans le
+#     snapshot réel : exactement 1 établissement) est EXCLUE et RAPPORTÉE —
+#     jamais silencieuse ;
+#   - les totaux par commune reviennent donc à 10 / 10 / 10 (56001 à 3) et les
+#     attendus de LQ calculés à la main restent des fractions exactes :
+# Totaux bretons retenus : AZ = 12 · GZ = 6 · OQ = 12 · total = 30
 # → parts bretonnes 0,4 / 0,2 / 0,4.
 #   LQ 22001 : (2/10)/0,4 = 0,5 · (3/10)/0,2 = 1,5 · (5/10)/0,4 = 1,25
 #   LQ 29001 : (4/10)/0,4 = 1,0 · (1/10)/0,2 = 0,5 · (5/10)/0,4 = 1,25
-#   LQ 35001 : (6/10)/0,4 = 1,5 · (2/10)/0,2 = 1,0 · (1/10)/0,4 = 0,5
+#   LQ 35001 : (6/10)/0,4 = 1,5 · (2/10)/0,2 = 1,0 · (2/10)/0,4 = 0,5
 fixture_lq_analytique <- function() {
   tibble::tribble(
     ~commune, ~activity_code, ~activity_label, ~value, ~measure, ~source,
@@ -58,17 +72,23 @@ fixture_lq_analytique <- function() {
     "22001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
     "NAF rév. 2",
-    "22001", "47.11Z", "Commerce de détail non spécialisé", 3L, "ETABLISSEMENTS_ACTIFS",
+    "22001", "47.11A", "Commerce de détail non spécialisé", 3L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "22001", "86.10Z", "Activités hospitalières", 5L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
     "NAF rév. 2",
+    # 22001 — l'inconnue « 00.00Z » (issue #427) : absente de la correspondance
+    # NAF rév. 2 → A17, comme dans le snapshot réel (exactement 1 établissement)
+    # — le mapping l'exclut et la rapporte, jamais silencieusement
+    "22001", "00.00Z", "Activité inconnue", 1L, "ETABLISSEMENTS_ACTIFS",
+    "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
+    "NAF rév. 2",
     # 29001 — 3 lignes
     "29001", "01.11Z", "Culture de céréales", 4L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
-    "29001", "47.11Z", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
+    "29001", "47.11A", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "29001", "86.10Z", "Activités hospitalières", 5L, "ETABLISSEMENTS_ACTIFS",
@@ -81,7 +101,7 @@ fixture_lq_analytique <- function() {
     "35001", "01.11Z", "Culture de céréales", 3L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
     "NAF rév. 2",
-    "35001", "47.11Z", "Commerce de détail non spécialisé", 2L, "ETABLISSEMENTS_ACTIFS",
+    "35001", "47.11A", "Commerce de détail non spécialisé", 2L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "35001", "86.10Z", "Activités hospitalières", 2L, "ETABLISSEMENTS_ACTIFS",
@@ -91,7 +111,7 @@ fixture_lq_analytique <- function() {
     "56001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
-    "56001", "47.11Z", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
+    "56001", "47.11A", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "56001", "86.10Z", "Activités hospitalières", 1L, "ETABLISSEMENTS_ACTIFS",

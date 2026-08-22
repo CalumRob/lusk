@@ -155,12 +155,13 @@ test_that("eco_activites : la part d'un agrégat se recalcule depuis les numéra
 # 4. La LQ même-échelle des agrégats + les histoires multi-lignes -------------
 
 # Le fixture LQ analytique (le même que test-analytics-economie-lq.R) : les
-# cellules retenues de 22001 / 29001 / 35001 (56001 sous le plancher), et une
-# base des EPCI qui les porte.
+# cellules retenues de 22001 / 29001 / 35001 (56001 sous le plancher), mappées
+# au grain A17 (#427 : agrégation APET → mapping A17 → plancher), et une base
+# des EPCI qui les porte.
 fixture_lq_territoires <- function() {
   agrege <- agreger_sirene_par_activite(fixture_lq_analytique())
-  appliquer_plancher_communes(agrege)$retenu %>%
-    calculer_lq_balassa()
+  mappe <- mapper_activites_a17(agrege)$mappe
+  calculer_lq_balassa(appliquer_plancher_communes(mappe)$retenu)
 }
 
 base_epci_histoires <- tibble::tribble(
@@ -185,31 +186,31 @@ test_that("histoires : ce-que-la-commune-abrite top-5 par niveau, LQ même-éche
     abrite[abrite$territoire == territoire & abrite$rang == rang, ]
   }
 
-  # la commune 22001 : 47.11Z (1,5) > 86.10Z (1,25) > 01.11Z (0,5) — `n` porté
-  expect_equal(ligne("22001", 1)$activity_code, "47.11Z")
+  # la commune 22001 : GZ (1,5) > OQ (1,25) > AZ (0,5) — `n` porté
+  expect_equal(ligne("22001", 1)$activity_code, "GZ")
   expect_equal(ligne("22001", 1)$lq, 1.5)
   expect_equal(ligne("22001", 1)$n, 3)
-  expect_equal(ligne("22001", 3)$activity_code, "01.11Z")
+  expect_equal(ligne("22001", 3)$activity_code, "AZ")
   expect_true(all(abrite$type[abrite$territoire == "22001"] == "commune"))
 
   # l'EPCI X (22001 + 29001) : sa LQ est MÊME-ÉCHELLE — (6/20)/(12/30) = 0,75
-  # sur 01.11Z, jamais la LQ de ses communes (22001 y vaut 0,5). Top : 86.10Z
-  # (1,25) > 47.11Z (1,0) > 01.11Z (0,75), n = 10 · 4 · 6.
-  expect_equal(ligne("200000001", 1)$activity_code, "86.10Z")
+  # sur AZ, jamais la LQ de ses communes (22001 y vaut 0,5). Top : OQ
+  # (1,25) > GZ (1,0) > AZ (0,75), n = 10 · 4 · 6.
+  expect_equal(ligne("200000001", 1)$activity_code, "OQ")
   expect_equal(ligne("200000001", 1)$lq, 1.25)
   expect_equal(ligne("200000001", 1)$n, 10)
-  expect_equal(ligne("200000001", 2)$activity_code, "47.11Z")
-  expect_equal(ligne("200000001", 3)$activity_code, "01.11Z")
+  expect_equal(ligne("200000001", 2)$activity_code, "GZ")
+  expect_equal(ligne("200000001", 3)$activity_code, "AZ")
   expect_equal(ligne("200000001", 3)$lq, 0.75)
   expect_true(all(abrite$type[abrite$territoire == "200000001"] == "epci"))
 
-  # l'EPCI Y (35001 seule) : 01.11Z (1,5) > 47.11Z (1,0) > 86.10Z (0,5)
-  expect_equal(ligne("200000002", 1)$activity_code, "01.11Z")
+  # l'EPCI Y (35001 seule) : AZ (1,5) > GZ (1,0) > OQ (0,5)
+  expect_equal(ligne("200000002", 1)$activity_code, "AZ")
   expect_equal(ligne("200000002", 1)$lq, 1.5)
 
-  # le département 22 (22001 seule) : 47.11Z (1,5) > 86.10Z (1,25) > 01.11Z (0,5)
-  expect_equal(ligne("22", 1)$activity_code, "47.11Z")
-  expect_equal(ligne("22", 2)$activity_code, "86.10Z")
+  # le département 22 (22001 seule) : GZ (1,5) > OQ (1,25) > AZ (0,5)
+  expect_equal(ligne("22", 1)$activity_code, "GZ")
+  expect_equal(ligne("22", 2)$activity_code, "OQ")
   expect_true(all(abrite$type[abrite$territoire == "22"] == "departement"))
 
   # la commune sous le plancher (56001) n'a AUCUNE ligne d'Histoire
@@ -278,9 +279,9 @@ test_that("replier_top5_en_lecture : le top-5 devient une lecture par (territoir
   expect_false(any(duplicated(lectures[c("territoire", "story_key")])))
   expect_equal(nrow(lectures), length(unique(histoires$territoire)))
 
-  # la matière de la lecture 22001 : top1 = le rang 1 de la LQ (47.11Z, 1,5)
+  # la matière de la lecture 22001 : top1 = le rang 1 de la LQ (GZ, 1,5)
   h22001 <- lectures[lectures$territoire == "22001", ]
-  expect_equal(h22001$top1_activity_code, "47.11Z")
+  expect_equal(h22001$top1_activity_code, "GZ")
   expect_equal(h22001$top1_lq, 1.5)
   expect_equal(h22001$top1_n, 3)
   # un territoire à moins de 5 activités ne reçoit AUCUN padding : les
@@ -310,6 +311,6 @@ test_that("replier_top5_en_lecture : la matière passe par la résolution partag
   # la matière du top-5 survit à la résolution
   expect_equal(
     resolues$top1_activity_code[resolues$territoire == "22001"],
-    "47.11Z"
+    "GZ"
   )
 })
