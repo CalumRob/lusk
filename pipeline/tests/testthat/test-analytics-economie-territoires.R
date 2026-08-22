@@ -160,9 +160,8 @@ test_that("eco_activites : la part d'un agrégat se recalcule depuis les numéra
 # des EPCI qui les porte.
 fixture_lq_territoires <- function() {
   agrege <- agreger_sirene_par_activite(fixture_lq_analytique())
-  mapper_activites_a17(agrege)$mappe %>%
-    appliquer_plancher_communes() %>%
-    calculer_lq_balassa()
+  mappe <- mapper_activites_a17(agrege)$mappe
+  calculer_lq_balassa(appliquer_plancher_communes(mappe)$retenu)
 }
 
 base_epci_histoires <- tibble::tribble(

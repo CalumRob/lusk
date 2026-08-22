@@ -19,7 +19,7 @@
 # Le jeu couvre, à travers 15 lignes : 4 communes bretonnes (22001 · 29001 ·
 # 35001 · 56001, une par département), un doublon de cellule (2 établissements
 # sur 22001 × 01.11Z × « 0 salarié »), les deux jumelles d'une même cellule
-# commune × APE (22001 × 47.11Z × « 20 à 49 salariés ») qui NE se distinguent
+# commune × APE (22001 × 47.11A × « 20 à 49 salariés ») qui NE se distinguent
 # que par leur diffusion côté INSEE — le statut de diffusion n'étant PAS retenu
 # (todo 9), elles fusionnent en UNE cellule — l'inconnue « 00.00Z » (une ligne,
 # issue #427 : non mappable vers l'A17, exercée par le mapping + le rapport
@@ -40,13 +40,13 @@ load_fixture_sirene <- function() {
 # Le mini snapshot normalisé de l'analyse LQ (partagé par
 # test-analytics-economie-lq.R et test-analytics-economie-territoires.R) : 15
 # lignes, commune × code APE × tranche. Après regroupement des tranches :
-#   22001 : 01.11Z = 2 · 47.11Z = 3 · 86.10Z = 5 · 00.00Z = 1   (total 11)
-#   29001 : 01.11Z = 4 · 47.11Z = 1 · 86.10Z = 5               (total 10)
-#   35001 : 01.11Z = 6 · 47.11Z = 2 · 86.10Z = 2               (total 10)
-#   56001 : 01.11Z = 1 · 47.11Z = 1 · 86.10Z = 1               (total 3 — SOUS LE PLANCHER)
+#   22001 : 01.11Z = 2 · 47.11A = 3 · 86.10Z = 5 · 00.00Z = 1   (total 11)
+#   29001 : 01.11Z = 4 · 47.11A = 1 · 86.10Z = 5               (total 10)
+#   35001 : 01.11Z = 6 · 47.11A = 2 · 86.10Z = 2               (total 10)
+#   56001 : 01.11Z = 1 · 47.11A = 1 · 86.10Z = 1               (total 3 — SOUS LE PLANCHER)
 # Issue #427 — le mapping A17 (mapper_activites_a17, AVANT le plancher) :
 #   - les trois sous-classes remontent à leurs postes officiels
-#     (01.11Z → AZ · 47.11Z → GZ · 86.10Z → OQ), libellés officiels de
+#     (01.11Z → AZ · 47.11A → GZ · 86.10Z → OQ), libellés officiels de
 #     l'artefact épinglé (#426) ;
 #   - « 00.00Z » (inconnue, absente de la correspondance — comme dans le
 #     snapshot réel : exactement 1 établissement) est EXCLUE et RAPPORTÉE —
@@ -69,7 +69,7 @@ fixture_lq_analytique <- function() {
     "22001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
     "NAF rév. 2",
-    "22001", "47.11Z", "Commerce de détail non spécialisé", 3L, "ETABLISSEMENTS_ACTIFS",
+    "22001", "47.11A", "Commerce de détail non spécialisé", 3L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "22001", "86.10Z", "Activités hospitalières", 5L, "ETABLISSEMENTS_ACTIFS",
@@ -85,7 +85,7 @@ fixture_lq_analytique <- function() {
     "29001", "01.11Z", "Culture de céréales", 4L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
-    "29001", "47.11Z", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
+    "29001", "47.11A", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "29001", "86.10Z", "Activités hospitalières", 5L, "ETABLISSEMENTS_ACTIFS",
@@ -98,7 +98,7 @@ fixture_lq_analytique <- function() {
     "35001", "01.11Z", "Culture de céréales", 3L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "1 ou 2 salariés",
     "NAF rév. 2",
-    "35001", "47.11Z", "Commerce de détail non spécialisé", 2L, "ETABLISSEMENTS_ACTIFS",
+    "35001", "47.11A", "Commerce de détail non spécialisé", 2L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "35001", "86.10Z", "Activités hospitalières", 2L, "ETABLISSEMENTS_ACTIFS",
@@ -108,7 +108,7 @@ fixture_lq_analytique <- function() {
     "56001", "01.11Z", "Culture de céréales", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
-    "56001", "47.11Z", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
+    "56001", "47.11A", "Commerce de détail non spécialisé", 1L, "ETABLISSEMENTS_ACTIFS",
     "data.bretagne.bzh — Base SIRENE", "2026-04", "Actif", "0 salarié",
     "NAF rév. 2",
     "56001", "86.10Z", "Activités hospitalières", 1L, "ETABLISSEMENTS_ACTIFS",

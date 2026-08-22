@@ -46,7 +46,7 @@
 
 # La table A17 mappée ----------------------------------------------------------
 # Le pas de mapping (#427) appliqué à la fixture : les sous-classes APET
-# deviennent les postes A17 officiels (01.11Z → AZ · 47.11Z → GZ · 86.10Z → OQ,
+# deviennent les postes A17 officiels (01.11Z → AZ · 47.11A → GZ · 86.10Z → OQ,
 # libellés officiels de l'artefact épinglé), la cellule 00.00Z part au rapport
 # d'exclusion. Les totaux par commune reviennent à 10 / 10 / 10 (56001 à 3,
 # sous le plancher) — les attendus de LQ calculés à la main restent exacts.
@@ -66,16 +66,16 @@ test_that("le regroupement des tranches somme value par commune × code APE", {
     ~commune, ~activity_code, ~n,
     "22001", "00.00Z", 1L,
     "22001", "01.11Z", 2L,
-    "22001", "47.11Z", 3L,
+    "22001", "47.11A", 3L,
     "22001", "86.10Z", 5L,
     "29001", "01.11Z", 4L,
-    "29001", "47.11Z", 1L,
+    "29001", "47.11A", 1L,
     "29001", "86.10Z", 5L,
     "35001", "01.11Z", 6L,
-    "35001", "47.11Z", 2L,
+    "35001", "47.11A", 2L,
     "35001", "86.10Z", 2L,
     "56001", "01.11Z", 1L,
-    "56001", "47.11Z", 1L,
+    "56001", "47.11A", 1L,
     "56001", "86.10Z", 1L
   )
   expect_equal(
@@ -111,10 +111,11 @@ test_that("le mapping A17 joint l'artefact épinglé : la somme est conservée, 
   # une ligne par commune × poste — 12 cellules (les 13 agrégées moins l'inconnue)
   expect_equal(nrow(mappe), 12)
 
-  # la somme est CONSERVÉE à travers la jointure : 31 établissements agrégés,
-  # 30 mappés (l'inconnue 00.00Z part au rapport), chaque commune retenue à 10
-  expect_equal(sum(agrege$n), 31)
-  expect_equal(sum(mappe$n), 30)
+  # la somme est CONSERVÉE à travers la jointure : 34 établissements agrégés,
+  # 33 mappés (l'inconnue 00.00Z part au rapport) — les 30 restants après le
+  # plancher, chaque commune retenue à 10
+  expect_equal(sum(agrege$n), 34)
+  expect_equal(sum(mappe$n), 33)
 
   # les libellés sont les LIBELLÉS A17 OFFICIELS portés par l'artefact —
   # jamais un préfixe de chaîne, jamais le libellé APET d'entrée
