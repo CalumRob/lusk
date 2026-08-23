@@ -17,13 +17,15 @@ export interface ComparisonFacet {
   /** The single public label used by comparison surfaces and map layers. */
   label: string
   labels: Record<string, string>
+  /** The declared comparison details — the closed selectable list of the facet (#438 trajectory axis). */
+  details: readonly string[]
   url: string
   valid: boolean
 }
 
 export type FamilyRepresentation =
   | { kind: 'scalar'; rows: readonly Indicateur[]; territories: readonly Territoire[] }
-  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly Indicateur[]; extension: TrajectoryMetadata }
+  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; extension: TrajectoryMetadata }
   | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: CompositionMetadata }
   | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[]; extension: DistributionMetadata }
   | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[]; extension: ListMetadata }
@@ -85,7 +87,7 @@ export function normalizeComparisonFacet(page: IndicatorPageMetadata, requested:
   if (sex.value !== null) params.set('sex', sex.value)
   if (dimension.value !== null) params.set('dimension', dimension.value)
   const labels = comparison.labels ?? {}
-  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, label: detail.value !== null && labels[detail.value] ? labels[detail.value] : page.label, labels, url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
+  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, label: detail.value !== null && labels[detail.value] ? labels[detail.value] : page.label, labels, details: comparison.details ?? [], url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
 }
 
 function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensionMissing: boolean): FamilyStatus {
@@ -100,7 +102,7 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
   const territories = input.territories ?? []
   const common = { facet, resolvedUrl: facet.url, selected }
   switch (page.family) {
-    case 'trajectory': return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: rows, extension: page.trajectory }, status: statusFor(facet, rows, page.trajectory === undefined) }
+    case 'trajectory': return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, extension: page.trajectory }, status: statusFor(facet, rows, page.trajectory === undefined) }
      case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
     case 'distribution': return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
     case 'list': return { ...common, family: 'list', renderer: 'list', rendererIdentity: familyRegistry.list, representation: { kind: 'list', rows, territories, entries: rows, extension: page.list }, status: statusFor(facet, rows, page.list === undefined) }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -40,5 +40,82 @@ describe('helpers partagés rang ex-aequo et médiane (#437)', () => {
     expect(mediane([30, 10, 20])).toBe(20)
     expect(mediane([40, 10, 30, 20])).toBe(25)
     expect(mediane([])).toBeNull()
+  })
+})
+
+// La grammaire Repères des trajectoires (#438) — le modèle du chemin complet :
+// échelles dérivées des valeurs RÉELLES (jamais un bornage brut), une SEULE
+// échelle proportionnelle aux années pour les points ET les libellés, les
+// états déclarés restent sur l'axe même sans valeur, et l'étalement
+// territorial par détail réutilise la médiane partagée (#437).
+describe('modèle trajectoire de Page d’indicateur (#438)', () => {
+  const pageTrajectoire = (details: string[], detail: string, endpoints: string[]) => normalizeComparisonFacet({
+    ...structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite),
+    indicator: 'prix',
+    family: 'trajectory',
+    trajectory: { endpoints },
+    comparison: { details, detail, unit: '€/m²', labels: Object.fromEntries(details.map((d) => [d, d])) },
+  }, {}, 'demographie')
+  const point = (id: string, detail: string | null, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ ...facts(id, value ?? 0, type), key: 'prix', value, detail })
+  const parDetail = (modele: ReturnType<typeof modeleTrajectoire>, detail: string) => modele.etapes.find((etape) => etape.detail === detail)!
+
+  it('dérive le domaine de l’échelle des valeurs réelles — un étalement large reste large (jamais aplati)', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const modele = modeleTrajectoire([point('a', '2020', 300), point('a', '2024', 3200), point('b', '2020', 280), point('b', '2024', 3100)], facet, ['2020', '2024'], territoires, { niveau: 'commune' })
+    expect(modele.domaineValeurs).toEqual({ min: 280, max: 3200 })
+    expect(parDetail(modele, '2020').mediane).toBe(290)
+    expect(parDetail(modele, '2024').mediane).toBe(3150)
+    expect(parDetail(modele, '2024').min).toBe(3100)
+    expect(parDetail(modele, '2024').max).toBe(3200)
+  })
+
+  it('positionne points et libellés sur UNE seule échelle proportionnelle aux années (années non consécutives)', () => {
+    const facet = pageTrajectoire(['2019', '2021', '2025'], '2025', ['2019', '2025'])
+    const modele = modeleTrajectoire([point('a', '2019', 10), point('a', '2021', 12), point('a', '2025', 16)], facet, ['2019', '2025'], territoires, { niveau: 'commune' })
+    // Le domaine temporel couvre 2019 → 2025 (6 ans) : 2021 siège au tiers,
+    // pas à la moitié de l'index (le défaut index-pair du PR supplanté).
+    const x = (detail: string) => parDetail(modele, detail).x
+    expect(x('2019')).toBe(0)
+    expect(x('2021')).toBeCloseTo(100 / 3, 6)
+    expect(x('2025')).toBe(100)
+  })
+
+  it('garde sur l’axe les bornes déclarées sans valeur (états OCS-GE M2/M3) — jamais effacées du chemin', () => {
+    const facet = pageTrajectoire(['M2', 'M3', '2020', '2024'], '2024', ['M2', 'M3'])
+    const modele = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12), point('b', '2020', 14), point('b', 'M2', null)], facet, ['M2', 'M3'], territoires, { niveau: 'commune' })
+    const m2 = parDetail(modele, 'M2')
+    const m3 = parDetail(modele, 'M3')
+    // Les deux états déclarés existent comme étapes, ordonnées hors de la
+    // plage des années (état initial avant, état final après).
+    expect(modele.etapes.map((etape) => etape.detail)).toEqual(['M2', '2020', '2024', 'M3'])
+    expect(m2.x).toBe(0)
+    expect(m3.x).toBe(100)
+    // M2 ne porte qu'une valeur manquante déclarée : l'étalement reste null.
+    expect(m2.nValeurs).toBe(0)
+    expect(m2.nManquantes).toBe(1)
+    expect(m2.mediane).toBeNull()
+    // M3 est déclaré mais sans aucune ligne à ce niveau : présent et vide.
+    expect(m3.nValeurs).toBe(0)
+    expect(m3.nManquantes).toBe(0)
+    expect(m3.mediane).toBeNull()
+  })
+
+  it('calcule l’étalement par détail dans le périmètre actif (niveau et resserrage)', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const epci = modeleTrajectoire([point('e', '2020', 100, 'epci'), point('f', '2020', 300, 'epci'), point('a', '2020', 9999)], facet, ['2020', '2024'], territoires, { niveau: 'epci' })
+    expect(parDetail(epci, '2020').mediane).toBe(200)
+    expect(parDetail(epci, '2020').nValeurs).toBe(2)
+    const resserre = modeleTrajectoire([point('a', '2020', 1), point('c', '2020', 5000)], facet, ['2020', '2024'], territoires, { niveau: 'commune', departement: '22' })
+    expect(parDetail(resserre, '2020').mediane).toBe(1)
+    expect(parDetail(resserre, '2020').max).toBe(1)
+  })
+
+  it('expose le chemin du territoire mis en avant, valeurs manquantes comprises', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const modele = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', null), point('b', '2020', 20), point('b', '2024', 22)], facet, ['2020', '2024'], territoires, { niveau: 'commune', territoire: 'a' })
+    expect(modele.serieTerritoire!.map((p) => p.value)).toEqual([10, null])
+    expect(modele.serieTerritoire!.map((p) => p.detail)).toEqual(['2020', '2024'])
+    const horsScope = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12)], facet, ['2020', '2024'], territoires, { niveau: 'epci', territoire: 'a' })
+    expect(horsScope.serieTerritoire).toBeNull()
   })
 })
