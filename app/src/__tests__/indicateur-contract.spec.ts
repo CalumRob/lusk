@@ -10,8 +10,7 @@ describe('contrat des pages d’indicateur', () => {
   })
 
   it.each([
-    ['direction typée', (meta: any) => { meta.indicator_pages.densite.direction = 'Descriptif' }],
-    ['niveau dupliqué', (meta: any) => { meta.indicator_pages.densite.levels = ['commune', 'commune'] }],
+    ['direction typée', (meta: any) => { meta.indicator_pages.densite.direction = 'Descriptif' }],    ['niveau dupliqué', (meta: any) => { meta.indicator_pages.densite.levels = ['commune', 'commune'] }],
     ['source inconnue', (meta: any) => { meta.indicator_pages.densite.sources = ['missing'] }],
     ['détail invalide', (meta: any) => { meta.indicator_pages.densite.detail = 42 }],
     ['clé/indicateur incohérents', (meta: any) => { meta.indicator_pages.densite.indicator = 'autre' }],
@@ -54,6 +53,17 @@ describe('contrat des pages d’indicateur', () => {
     metadata.indicator_pages!.densite.family = family
     ;(metadata.indicator_pages!.densite as any)[family === 'comparison-bars' ? 'comparison-bars' : family] = extension
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
+  })
+
+  // L'union discriminée par famille est NORMALISÉE par le validateur (#437) :
+  // une page scalaire sans `family` (la forme héritée #401) sort avec
+  // `family: 'scalar'` — plus jamais un alias optionnel qui ne fait rien.
+  it('normalise la page scalaire héritée avec sa famille « scalar »', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    const { family: _familleHeritee, ...pageSansFamille } = metadata.indicator_pages!.densite
+    ;(metadata.indicator_pages as any).densite = pageSansFamille
+    const validee = validerThemeMetadata(metadata, 'theme_demographie.json')
+    expect(validee.indicator_pages!.densite.family).toBe('scalar')
   })
 })
 

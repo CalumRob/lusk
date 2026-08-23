@@ -33,6 +33,16 @@ THEMES_METADATA <- c("mobilite", "demographie", "habitat", "economie", "milieux"
 FAMILLES_FIGURE <- c("scalar", "composition", "trajectory", "distribution",
                      "relationship", "list", "pyramid", "comparison-bars")
 
+# Les SIX familles sémantiques des Repères (#437) — le vocabulaire fermé des
+# pages d'indicateur, le miroir exact de FAMILLES_SEMANTIQUES (app/src/payload/
+# types.ts), la parité étant prouvée par test (theme-metadata-parity.spec.ts).
+# C'est LA liste sur laquelle les quatre tickets de grammaire Repères se
+# branchent (#438 trajectoires, #439 profils/listes, #440 distributions,
+# #441 relations) ; pyramid et comparison-bars partagent la mécanique
+# composition sans ajouter de sémantique (ADR-0023).
+FAMILLES_SEMANTIQUES <- c("scalar", "composition", "trajectory", "distribution",
+                          "relationship", "list")
+
 # Les types de nœuds du texte riche TYPÉ — une liste fermée : le HTML brut
 # n'est pas un type, un contenu text avec des chevrons est rejeté.
 TYPES_NOEUD_TEXTE_RICHE <- c("text", "param", "territoire", "strong", "link")
@@ -619,7 +629,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       manquer("indicator_pages.detail", paste0("détail inconnu « ", detail, " »"))
     }
     # Family descriptors are an additive seam: omitted means the #401 scalar
-    # contract. The six page families are deliberately mirrored by TS.
+    # contract. The page families are FAMILLES_FIGURE — the eight ADR-0023
+    # identities, of which SIX carry a semantic family (FAMILLES_SEMANTIQUES,
+    # mirrored by TS); pyramid and comparison-bars share composition mechanics.
     famille <- if (is.null(page$family)) "scalar" else page$family
     if (!est_chaine_non_vide(famille) || !famille %in% c("scalar", "trajectory",
         "composition", "distribution", "list", "relationship",
@@ -652,22 +664,36 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
       if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
     }
-    extensions <- list(
-      trajectory = c("endpoints"), composition = c("parts"),
-      distribution = c("signature", "summary"), list = c("categories"),
-      pyramid = c("dimensions"), `comparison-bars` = c("series")
+    extensions_tableaux <- list(
+      trajectory = "endpoints", composition = "parts", list = "categories",
+      pyramid = "dimensions", `comparison-bars` = "series"
     )
+    extensions_chaines <- list(distribution = c("signature", "summary"))
     extension_keys <- c("trajectory", "composition", "distribution", "relationship", "list", "pyramid", "comparison-bars", "comparison_bars")
     for (candidate in setdiff(extension_keys, famille)) if (!is.null(page[[candidate]])) manquer(paste0("indicator_pages.", indicator_key, ".", candidate), "l'extension ne correspond pas à la famille déclarée")
       extension <- page[[if (famille == "comparison-bars") "comparison-bars" else famille]]
     if (famille != "scalar" && is.null(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension est requise")
     if (!is.null(extension)) {
       if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")
-      for (champ in if (is.null(extensions[[famille]])) character() else extensions[[famille]]) {
-        valeur <- extension[[champ]]
-        valeurs <- if (is.character(valeur) || is.list(valeur)) unlist(valeur, use.names = FALSE) else valeur
-        ok <- if (is.character(valeurs)) length(valeurs) > 0L && all(vapply(valeurs, est_chaine_non_vide, logical(1L))) else est_chaine_non_vide(valeurs)
-        if (!ok) manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ), "le champ est incomplet")
+      # Les champs d'extension sont TYPÉS par famille (#437 — le miroir exact
+      # de l'app) : les familles « collection » portent UN tableau non vide de
+      # chaînes distinctes ; distribution porte DEUX chaînes non vides
+      # (signature, summary). Jamais une forme dérivée (une chaîne là où le
+      # contrat attend un tableau) acceptée puis masquée par un cast.
+      for (champ in if (is.null(extensions_tableaux[[famille]])) character() else extensions_tableaux[[famille]]) {
+        valeurs <- extension[[champ]]
+        if (!is.list(valeurs) || length(valeurs) == 0L ||
+            anyDuplicated(unlist(valeurs, use.names = FALSE)) ||
+            any(!vapply(valeurs, est_chaine_non_vide, logical(1L)))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ),
+                  "le champ est incomplet — un tableau non vide de chaînes distinctes est requis")
+        }
+      }
+      for (champ in if (is.null(extensions_chaines[[famille]])) character() else extensions_chaines[[famille]]) {
+        if (!est_chaine_non_vide(extension[[champ]])) {
+          manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ),
+                  "le champ est incomplet — une chaîne non vide est requise")
+        }
       }
       if (famille %in% c("composition", "pyramid")) {
         declarees <- extension[[if (famille == "composition") "parts" else "dimensions"]]

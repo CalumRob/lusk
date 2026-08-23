@@ -479,6 +479,27 @@ export const FAMILLES_FIGURE = [
 
 export type FamilleFigure = (typeof FAMILLES_FIGURE)[number]
 
+/**
+ * La vocabulaire sémantique fermé des SIX familles de Repères (#437) :
+ * scalar · composition · trajectory · distribution · relationship · list —
+ * le miroir exact de FAMILLES_SEMANTIQUES (pipeline/R/theme_metadata.R), la
+ * parité étant prouvée par test (theme-metadata-parity.spec.ts). C'est LA
+ * liste sur laquelle les quatre tickets de grammaire Repères se branchent
+ * (#438 trajectoires, #439 profils/listes, #440 distributions, #441
+ * relations) ; les familles pyramid et comparison-bars partagent la mécanique
+ * composition sans ajouter de sémantique (ADR-0023).
+ */
+export const FAMILLES_SEMANTIQUES = [
+  'scalar',
+  'composition',
+  'trajectory',
+  'distribution',
+  'relationship',
+  'list',
+] as const
+
+export type FamilleSemantique = (typeof FAMILLES_SEMANTIQUES)[number]
+
 /** The constrained rich-text node types — raw HTML is forbidden (parent #308). */
 export const TYPES_NOEUD_TEXTE_RICHE = [
   'text',
@@ -705,9 +726,10 @@ export interface SourceClock {
   trigger?: string
 }
 
-/** Shared page contract. `family` is optional for the legacy scalar payload;
- * the resolver treats its absence as `scalar`, so #401 metadata remains byte
- * for byte compatible while new family descriptors are discriminated. */
+/** Shared page contract. The discriminated union is keyed on `family`; the
+ * validators NORMALIZE the legacy family-less #401 payload to `family:
+ * 'scalar'`, so the type below always carries it (#437 — no do-nothing
+ * optional alias). */
 export interface IndicatorPageMetadataBase {
   indicator: string
   detail?: string | null
@@ -744,7 +766,7 @@ export interface ListMetadata { categories: string[] }
 export interface PyramidMetadata { dimensions: string[] }
 export interface ComparisonBarsMetadata { series: string[] }
 
-export type ScalarPageMetadata = IndicatorPageMetadataBase & { family?: 'scalar' }
+export type ScalarPageMetadata = IndicatorPageMetadataBase & { family: 'scalar' }
 export type TrajectoryPageMetadata = IndicatorPageMetadataBase & { family: 'trajectory'; trajectory: TrajectoryMetadata }
 export type CompositionPageMetadata = IndicatorPageMetadataBase & { family: 'composition'; composition: CompositionMetadata }
 export type DistributionPageMetadata = IndicatorPageMetadataBase & { family: 'distribution'; distribution: DistributionMetadata }
@@ -753,5 +775,4 @@ export type RelationshipPageMetadata = IndicatorPageMetadataBase & { family: 're
 export type PyramidPageMetadata = IndicatorPageMetadataBase & { family: 'pyramid'; pyramid: PyramidMetadata }
 /** JSON uses the ADR family literal as the key; TS uses camelCase. */
 export type ComparisonBarsPageMetadata = IndicatorPageMetadataBase & { family: 'comparison-bars'; comparisonBars: ComparisonBarsMetadata }
-export type IndicatorPageFamilyMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata
-export type IndicatorPageMetadata = IndicatorPageFamilyMetadata
+export type IndicatorPageMetadata = ScalarPageMetadata | TrajectoryPageMetadata | CompositionPageMetadata | DistributionPageMetadata | ListPageMetadata | RelationshipPageMetadata | PyramidPageMetadata | ComparisonBarsPageMetadata

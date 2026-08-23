@@ -1,8 +1,8 @@
-import type { ComparisonFacetMetadata, IndicatorPageMetadata, Indicateur, FamilleFigure, Sexe, Territoire, Theme, TrajectoryMetadata, CompositionMetadata, DistributionMetadata, RelationshipMetadata, ListMetadata, PyramidMetadata, ComparisonBarsMetadata } from '@/payload/types'
+import type { ComparisonFacetMetadata, FamilleSemantique, IndicatorPageMetadata, Indicateur, FamilleFigure, Sexe, Territoire, Theme, TrajectoryMetadata, CompositionMetadata, DistributionMetadata, RelationshipMetadata, ListMetadata, PyramidMetadata, ComparisonBarsMetadata } from '@/payload/types'
 
 export type FamilyStatus = 'ready' | 'unavailable' | 'incomplete' | 'invalid'
 export type FamilyName = FamilleFigure
-export type FamilyRendererIdentity = { [F in FamilyName]: { family: F; component: string; semantics: 'scalar' | 'composition' | 'trajectory' | 'distribution' | 'list' | 'relationship' } }[FamilyName]
+export type FamilyRendererIdentity = { [F in FamilyName]: { family: F; component: string; semantics: FamilleSemantique } }[FamilyName]
 
 /** One facet contract, shared by Repères, Carte, ranks, extremes and table. */
 export interface ComparisonFacet {
@@ -107,7 +107,6 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
     case 'relationship': return { ...common, family: 'relationship', renderer: 'relationship', rendererIdentity: familyRegistry.relationship, representation: { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }, status: statusFor(facet, rows, page.relationship === undefined) }
      case 'pyramid': return { ...common, family: 'pyramid', renderer: 'pyramid', rendererIdentity: familyRegistry.pyramid, representation: { kind: 'pyramid', rows, territories, parts: allFacts, extension: page.pyramid }, status: statusFor(facet, rows, page.pyramid === undefined) }
     case 'comparison-bars': return { ...common, family: 'comparison-bars', renderer: 'comparison-bars', rendererIdentity: familyRegistry['comparison-bars'], representation: { kind: 'comparison-bars', rows, territories, parts: rows, extension: page.comparisonBars }, status: statusFor(facet, rows, page.comparisonBars === undefined) }
-    case undefined:
     case 'scalar': return { ...common, family: 'scalar', renderer: 'scalar', rendererIdentity: familyRegistry.scalar, representation: { kind: 'scalar', rows, territories }, status: statusFor(facet, rows, false) }
   }
   return assertNever(page)
