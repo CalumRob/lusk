@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { lignesLQPour } from '@/fiche/sousGroupes'
 
 const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
 const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
@@ -16,6 +17,36 @@ function lireFaits(theme: string): Array<Record<string, unknown>> {
 describe('métadonnées de thème — autorité canonique et snapshot public', () => {
   it('garde le snapshot public sémantiquement identique au fichier épinglé', () => {
     for (const theme of themes) expect(lire(publicDir, theme), theme).toEqual(lire(canonicalDir, theme))
+  })
+
+  it('déclare la figure liste/lq de la lecture de spécialisation dans le canon (jamais plus de clobber)', () => {
+    const metadata = lire(canonicalDir, 'economie') as {
+      subgroups: Array<{ key: string; reading?: { story_key?: string; figure?: { family?: string; indicator?: string } } }>
+    }
+    const sante = metadata.subgroups.find((sg) => sg.key === 'sante-et-taille')
+    expect(sante?.reading?.story_key, 'story_key').toBe('ce-que-la-commune-abrite')
+    expect(sante?.reading?.figure, 'la figure liste/lq porte le top-5 — sa perte rend la lecture muette après le rang 1').toEqual({
+      family: 'list',
+      indicator: 'lq',
+    })
+  })
+
+  it('résout les cinq lignes du top-5 depuis la figure canonique et une ligne réelle du payload', () => {
+    const metadata = lire(canonicalDir, 'economie') as {
+      subgroups: Array<{ key: string; reading?: { story_key?: string; figure?: { family?: string; indicator?: string } } }>
+    }
+    const reading = metadata.subgroups.find((sg) => sg.key === 'sante-et-taille')!.reading!
+    const histoires = JSON.parse(readFileSync(join(publicDir, 'histoires_economie.json'), 'utf8')) as Array<Record<string, unknown>>
+    const ligneCommune = histoires.find((h) => h.type === 'commune' && h.top5_activity_code !== null)
+    expect(ligneCommune, 'une commune avec ses cinq rangs publiés').toBeDefined()
+    const lecture = {
+      story_key: reading.story_key,
+      histoire: ligneCommune,
+      template: [],
+      parametres: {},
+      figure: reading.figure,
+    } as unknown as Parameters<typeof lignesLQPour>[0]
+    expect(lignesLQPour(lecture).map((l) => l.rang)).toEqual([1, 2, 3, 4, 5])
   })
 
   it('déclare chaque source actuellement consommée et ses lignes de fraîcheur dans le canon', () => {

@@ -16,7 +16,10 @@
       },
       "reading": {
         "story_key": "ce-que-la-commune-abrite",
-        "figure": { "family": "list", "indicator": "lq" },
+        "figure": {
+          "family": "list",
+          "indicator": "lq"
+        },
         "params": [
           "rang",
           "activity_label",
@@ -80,7 +83,9 @@
     "chomage",
     "eco_activites"
   ],
-  "story_keys": ["ce-que-la-commune-abrite"],
+  "story_keys": [
+    "ce-que-la-commune-abrite"
+  ],
   "sources": {
     "effectifs_salaries": "flores_a88",
     "chomage": "rp_chomage",
@@ -97,5 +102,61 @@
     "activity_label": "Activité dominante",
     "lq": "Location quotient (LQ)",
     "n": "Nombre d'établissements"
+  },
+  "source_records": {
+    "flores_a88": {
+      "dataset": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/statistiques/8266010",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2024",
+      "freshness": "31 mars 2026",
+      "vintages": [
+        {
+          "id": "flores_a88",
+          "label": "Millésime 2024",
+          "version": "2024",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2024-01-01",
+          "datePublication": "2026-03-31"
+        }
+      ]
+    },
+    "rp_chomage": {
+      "dataset": "INSEE — Population active et chômage (dossier complet)",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/statistiques/9002680",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "30 juin 2026",
+      "vintages": [
+        {
+          "id": "rp_chomage",
+          "label": "Millésime 2023",
+          "version": "2023",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2023-01-01",
+          "datePublication": "2026-06-30"
+        }
+      ]
+    },
+    "sirene_snapshot": {
+      "dataset": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+      "publisher": "INSEE",
+      "url": "https://data.bretagne.bzh/explore/dataset/sirene-v3-consolidee/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "Snapshot 2026-04",
+      "freshness": "avril 2026",
+      "vintages": [
+        {
+          "id": "sirene_snapshot",
+          "label": "Snapshot 2026-04",
+          "version": "2026-04",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2026-04-01",
+          "datePublication": "2026-04-01"
+        }
+      ]
+    }
   }
 }

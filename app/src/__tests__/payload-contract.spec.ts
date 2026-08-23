@@ -458,9 +458,9 @@ describe('payload contract — the committed payload parses and renders', () => 
     const payload = obtenirPayload()
 
     const histoiresEconomie = payload.histoires.filter((h) => h.theme === 'economie')
-    // 1202 communes + 61 EPCIs + 4 départements + la région = 1268 lectures
-    // (issue #312 : le top-5 est replié dans la ligne, jamais 5 lignes par
-    // territoire — l'identité (territoire × groupe) est unique)
+    // 1202 communes + 61 EPCIs + 4 départements = 1267 lectures (la région n'a
+    // pas de lecture LQ — #370 ; le top-5 est replié dans la ligne, jamais 5
+    // lignes par territoire — l'identité (territoire × groupe) est unique)
     expect(histoiresEconomie).toHaveLength(1267)
     expect(
       histoiresEconomie.every(
@@ -470,10 +470,15 @@ describe('payload contract — the committed payload parses and renders', () => 
     const storyKeys = new Set(histoiresEconomie.map((h) => h.story_key))
     expect(storyKeys).toEqual(new Set(['ce-que-la-commune-abrite']))
 
-    // le sélecteur Story lit le top-5 réel d'une commune, replié dans la ligne
+    // le sélecteur Story lit le top-5 réel d'une commune, replié dans la
+    // ligne — le LIBELLÉ exact appartient au grain (A17 depuis #154) et au
+    // millésime, jamais au test : le contrat est l'égalité sélecteur ↔ ligne
+    // publiée et la forme du poste agrégé
     const allineuc = histoireEconomiePourTerritoire(payload, '22001')
-    expect(allineuc?.top1_activity_label).toBe('Élevage de volailles')
+    const ligneBrute = histoiresEconomie.find((h) => h.territoire === '22001')
     expect(allineuc?.groupe).toBe('sante-et-taille')
+    expect(allineuc?.top1_activity_label).toBe(ligneBrute?.top1_activity_label)
+    expect(ligneBrute?.top1_activity_code).toMatch(/^[A-Z][A-Z0-9]$/)
   })
 
   it('exposes the Économie Story vintage on every line (issue #74 — the story cites its source)', async () => {

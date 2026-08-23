@@ -1,11 +1,11 @@
 {
-  "mode": "full",
-  "timestamp": "2026-08-12T15:05:19Z",
+  "mode": "cron",
+  "timestamp": "2026-08-23T10:22:29Z",
   "statuts": [
     {
       "id": "sirene_snapshot",
       "mode": "manuel",
-      "status": "frais"
+      "status": "à traiter à la main"
     },
     {
       "id": "flores_a38",
