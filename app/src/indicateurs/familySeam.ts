@@ -102,7 +102,16 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
   const territories = input.territories ?? []
   const common = { facet, resolvedUrl: facet.url, selected }
   switch (page.family) {
-    case 'trajectory': return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, extension: page.trajectory }, status: statusFor(facet, rows, page.trajectory === undefined) }
+    case 'trajectory': {
+      // La disponibilité d'une trajectoire lit le CHEMIN COMPLET (tous les
+      // détails déclarés) : une borne déclarée sans valeur à ce périmètre
+      // (états OCS-GE M2/M3 au niveau commune) reste sélectionnable sans
+      // rendre la page « indisponible » — le chemin existe toujours (#438).
+      const detailsDeclarees = page.comparison?.details ?? [...new Set(allFacts.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))]
+      const cheminRows = allFacts.filter((fact) => fact.detail !== null && detailsDeclarees.includes(fact.detail) && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension)
+      const status: FamilyStatus = !facet.valid || page.trajectory === undefined ? 'invalid' : cheminRows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
+      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, extension: page.trajectory }, status }
+    }
      case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
     case 'distribution': return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
     case 'list': return { ...common, family: 'list', renderer: 'list', rendererIdentity: familyRegistry.list, representation: { kind: 'list', rows, territories, entries: rows, extension: page.list }, status: statusFor(facet, rows, page.list === undefined) }
