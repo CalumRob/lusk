@@ -61,6 +61,7 @@ import {
   validerThemeMetadata,
   validerVintages,
   verifierPariteLibelles,
+  verifierPariteTrajectoires,
 } from './validate'
 
 /** The minimal Response surface the loader needs (fetch() satisfies it). */
@@ -285,6 +286,10 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // rendu (la fiche et la carte ne retombent jamais sur la clé brute).
   const payload = { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, themeMetadata }
   verifierPariteLibelles(payload)
+  // La parité trajectoires ↔ faits publiés (#438) : le chemin déclaré d'une
+  // page trajectoire est exactement ce que le pipeline publie — jamais une
+  // année morte, jamais une année publiée absente (miroir R à la publication).
+  verifierPariteTrajectoires(payload)
 
   return payload
 }

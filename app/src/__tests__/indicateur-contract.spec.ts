@@ -41,6 +41,9 @@ describe('contrat des pages d’indicateur', () => {
       ;(metadata.indicator_pages!.densite as any).comparison = { details: ['a'], detail: 'a', unit: '%', labels: { a: 'Part A' } }
     }
     if (family === 'pyramid') (metadata.indicator_pages!.densite as any).comparison = { sexes: ['F', 'M'], sex: 'F', unit: '%' }
+    // #438 : l'axe fermé comparison.details est requis pour une trajectoire,
+    // et ses bornes sont des détails déclarés — le miroir strict de R
+    if (family === 'trajectory') (metadata.indicator_pages!.densite as any).comparison = { details: ['debut', 'fin'], detail: 'fin', unit: '%' }
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).not.toThrow()
   })
 

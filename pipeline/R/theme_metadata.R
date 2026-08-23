@@ -69,6 +69,56 @@ CLES_HISTOIRES_PAR_THEME <- list(
 # ci-dessus) est ici, la publication est là (la même séparation que
 # theme_programmes.R : le contrat d'un côté, publier_programmes de l'autre).
 
+# verifier_parite_trajectoires ---------------------------------------------------
+# La parité trajectoires ↔ faits COMMITTÉS (#438) — le miroir exact de
+# verifierPariteTrajectoires (app/src/payload/validate.ts, appelée au
+# chargement). Pour chaque page trajectoire : les détails déclarés
+# (comparison.details) couvrent EXACTEMENT les détails publiés de la clé —
+# hors la ligne poolée sans détail (le scalaire classé, hors chemin) :
+# jamais une année morte déclarée, jamais une année publiée absente du
+# chemin. Le filtre des faits est THÈME × CLÉ, identique à l'app — les clés
+# ne sont pas uniques entre thèmes, un filtre par clé seule laisserait les
+# miroirs diverger. Les règles STRUCTURELLES des bornes vivent dans
+# valider_theme_metadata (ci-dessus). Cette garde s'exécute sur les
+# artefacts committés (le contrat de payload committé — la même discipline
+# que la parité des libellés), jamais sur un run dégradé : un cache sans
+# archives OCS-GE (#237) publie légitimement l'état M2/M3 seul, ses années
+# déclarées restent des étapes vides et honnêtes.
+verifier_parite_trajectoires <- function(metadata, indicateurs) {
+  manquer <- function(theme, cle, detail) {
+    stop(sprintf(
+      "Parité trajectoires ↔ payload rompue — %s, « %s » : %s.",
+      theme, cle, detail
+    ), call. = FALSE)
+  }
+  if (!is.null(metadata$indicator_pages)) {
+    for (cle in names(metadata$indicator_pages)) {
+      page <- metadata$indicator_pages[[cle]]
+      if (!identical(page$family, "trajectory")) next
+
+      details_publies <- unique(as.character(
+        indicateurs$detail[indicateurs$theme == metadata$theme &
+                             indicateurs$key == cle &
+                             !vapply(indicateurs$detail, function(x) is.null(x) || is.na(x), logical(1L))]
+      ))
+      declarees <- if (is.null(page$comparison$details)) character(0L) else
+        unlist(page$comparison$details, use.names = FALSE)
+
+      mortes <- setdiff(declarees, details_publies)
+      if (length(mortes) > 0L) {
+        manquer(metadata$theme, cle, paste0(
+          "détail(s) déclaré(s) jamais publié(s) : ", paste(mortes, collapse = ", ")))
+      }
+      absentes <- setdiff(details_publies, declarees)
+      if (length(absentes) > 0L) {
+        manquer(metadata$theme, cle, paste0(
+          "détail(s) publié(s) absent du chemin déclaré : ", paste(absentes, collapse = ", ")))
+      }
+    }
+  }
+  invisible(metadata)
+}
+
 # STORIES_RESOLUES_PAR_THEME ----------------------------------------------------
 # Le registre de la RÉSOLUTION des histoires (issue #312, parent #308) : pour
 # chaque thème, la table qui dit où chaque story vit (le `groupe` de la fiche —
@@ -705,6 +755,36 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       }
       if (famille == "relationship") {
         if (!is.list(extension$roles) || !est_chaine_non_vide(extension$roles$x) || !est_chaine_non_vide(extension$roles$y) || !est_chaine_non_vide(extension$measure)) manquer("indicator_pages.relationship", "roles et measure sont requis")
+      }
+      if (identical(famille, "trajectory")) {
+        # Les bornes d'une trajectoire sont STRUCTURELLES (#438) : l'axe
+        # comparison.details est requis (fermé), les bornes sont au moins
+        # deux détails distincts, toutes déclarées dans l'axe, et tout détail
+        # non annuel (les états OCS-GE M2/M3) est une borne — l'échelle
+        # proportionnelle aux années ne sait pas le positionner. Le miroir
+        # exact vit dans validerThemeMetadata (app/src/payload/validate.ts).
+        endpoints <- unlist(extension$endpoints, use.names = FALSE)
+        if (is.null(comparison) || is.null(comparison$details)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
+                  "l'axe fermé du chemin est requis pour une trajectoire")
+        }
+        declarees <- unlist(comparison$details, use.names = FALSE)
+        if (length(endpoints) < 2L || anyDuplicated(endpoints) > 0L) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.endpoints"),
+                  "les bornes doivent être deux détails distincts au moins")
+        }
+        hors_axe <- setdiff(endpoints, declarees)
+        if (length(hors_axe) > 0L) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.endpoints"),
+                  paste0("borne(s) non déclarée(s) dans comparison.details : ",
+                         paste(hors_axe, collapse = ", ")))
+        }
+        orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
+        if (length(orphelines) > 0L) {
+          manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
+                  paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
+                         paste(orphelines, collapse = ", ")))
+        }
       }
     }
     }
