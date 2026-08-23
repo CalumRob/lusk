@@ -2109,7 +2109,22 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
         const assertNever = (value: never): never => { throw new Error(`Famille de figure non implémentée : ${String(value)}`) }
         switch (family) {
           case 'scalar': indicator_pages[key] = { ...base, family: 'scalar' }; break
-          case 'trajectory': indicator_pages[key] = { ...base, family, trajectory: { endpoints: lireExtensionChaines('endpoints') } }; break
+          case 'trajectory': {
+            // Les bornes d'une trajectoire sont STRUCTURELLES (#438) : l'axe
+            // comparison.details est requis (fermé), les bornes sont au moins
+            // deux détails distincts, toutes déclarées dans l'axe, et tout
+            // détail non annuel (les états OCS-GE M2/M3) est une borne —
+            // l'échelle proportionnelle aux années ne sait pas le positionner.
+            // Le miroir exact vit dans valider_theme_metadata (theme_metadata.R).
+            const endpoints = lireExtensionChaines('endpoints')
+            exiger(comparison !== undefined && Array.isArray(comparison['details']) && (comparison['details'] as unknown[]).length > 0, fichier, 0, `« indicator_pages.${key}.comparison.details » est requis pour une trajectoire (l'axe fermé du chemin)`)
+            const detailsDeclarees = comparison !== undefined ? (comparison['details'] as unknown[] as string[]) : []
+            exiger(endpoints.length >= 2 && new Set(endpoints).size === endpoints.length, fichier, 0, `« indicator_pages.${key}.trajectory.endpoints » doit déclarer deux bornes distinctes au moins`)
+            exiger(endpoints.every((endpoint) => detailsDeclarees.includes(endpoint)), fichier, 0, `« indicator_pages.${key}.trajectory.endpoints » : une borne n'est pas déclarée dans comparison.details`)
+            exiger(detailsDeclarees.filter((value) => !/^\d{4}$/.test(value)).every((value) => endpoints.includes(value)), fichier, 0, `« indicator_pages.${key}.comparison.details » : un détail non annuel doit être une borne déclarée`)
+            indicator_pages[key] = { ...base, family, trajectory: { endpoints } }
+            break
+          }
           case 'composition': indicator_pages[key] = { ...base, family, composition: { parts: lireExtensionChaines('parts') } }; break
           case 'distribution': indicator_pages[key] = { ...base, family, distribution: { signature: lireExtensionChaine('signature'), summary: lireExtensionChaine('summary') } }; break
           case 'relationship': {
@@ -2229,6 +2244,46 @@ export function verifierPariteLibelles(payload: Payload): void {
       'validation',
       'theme_<theme>.json',
       `Parité libellés ↔ payload rompue — ${violations.join(' · ')}`,
+    )
+  }
+}
+
+/**
+ * La parité trajectoires ↔ faits publiés (#438) — la garde de chargement qui
+ * prouve que le chemin déclaré d'une page trajectoire est exactement ce que
+ * le pipeline publie : pour chaque page de famille « trajectory », les
+ * détails déclarés (comparison.details) couvrent EXACTEMENT les détails
+ * publiés de la clé — hors la ligne poolée sans détail (le scalaire classé,
+ * hors chemin). Jamais une année morte déclarée, jamais une année publiée
+ * absente du chemin. Les règles STRUCTURELLES des bornes (≥ 2, ⊆ details,
+ * non annuel = borne) vivent dans validerThemeMetadata ; leur miroir R
+ * (verifier_parite_trajectoires) exécute la même couverture sur les
+ * artefacts committés (le contrat de payload committé). Une dérive échoue
+ * FORT au chargement — jamais un chemin qui ment.
+ */
+export function verifierPariteTrajectoires(payload: Payload): void {
+  const violations: string[] = []
+  for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
+    for (const [key, page] of Object.entries(meta.indicator_pages ?? {})) {
+      if (page.family !== 'trajectory') continue
+
+      const publiees = new Set(
+        payload.indicateurs.filter((i) => i.theme === theme && i.key === key && i.detail !== null).map((i) => i.detail as string),
+      )
+      const declarees = page.comparison?.details ?? []
+      for (const detail of declarees) {
+        if (!publiees.has(detail)) violations.push(`${theme}: détail « ${detail} » de « ${key} » déclaré jamais publié (année morte)`)
+      }
+      for (const detail of publiees) {
+        if (!declarees.includes(detail)) violations.push(`${theme}: détail « ${detail} » de « ${key} » publié absent du chemin déclaré`)
+      }
+    }
+  }
+  if (violations.length > 0) {
+    throw new PayloadError(
+      'validation',
+      'theme_<theme>.json',
+      `Parité trajectoires ↔ payload rompue — ${violations.join(' · ')}`,
     )
   }
 }

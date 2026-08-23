@@ -588,3 +588,114 @@ test_that("valider_theme_metadata : parité négative composition/pyramid — li
          pyramid = list(dimensions = list("detail", "sex")))))
   expect_error(valider_theme_metadata(meta), "sexe est requis")
 })
+
+# La parité trajectoires ↔ faits publiés (issue #438) : les pages de famille
+# « trajectory » déclarent un chemin EXACTEMENT égal aux détails publiés de la
+# clé, des bornes déclarées sans année morte, et aucun détail non annuel hors
+# bornes. Le miroir TypeScript vit dans verifierPariteTrajectoires (validate.ts,
+# appelée au chargement) ; côté pipeline, les règles STRUCTURELLES des bornes
+# vivent dans valider_theme_metadata (donc à chaque publication et cible
+# targets), et la couverture des faits s'exécute sur le payload COMMITTÉ (le
+# contrat de payload committé, comme la parité des libellés) — jamais du code
+# mort, jamais un chemin qui ment.
+
+faits_trajectoires_milieux <- function() {
+  tibble::tibble(
+    key = c(rep("artif_par_habitant", 8L), rep("conso_enaf_annuel", 14L)),
+    detail = c("M2", "M3", "2020", "2021", "2022", "2023", "2024", "2025",
+               as.character(2011:2024))
+  )
+}
+
+test_that("verifier_parite_trajectoires : le canon Milieux épinglé est en parité avec ses faits (#438)", {
+  meta <- lire_theme_metadata("milieux")
+  expect_identical(meta$indicator_pages$artif_par_habitant$family, "trajectory")
+  expect_no_error(verifier_parite_trajectoires(meta, faits_trajectoires_milieux()))
+})
+
+test_that("verifier_parite_trajectoires : le payload COMMITTÉ et les descripteurs épinglés sont en parité (#438)", {
+  # Le payload COMMITTÉ est l'artefact que l'app fetch — la même lecture que
+  # la parité des libellés, et le miroir exact de verifierPariteTrajectoires
+  # au chargement de l'app : chaque page trajectoire épinglée couvre
+  # EXACTEMENT les détails publiés de sa clé.
+  racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
+  expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
+
+  pages_trajectoires <- 0L
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    cles <- names(meta$indicator_pages)
+    if (!any(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))) next
+
+    faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
+    verifier_parite_trajectoires(meta, faits)
+    pages_trajectoires <- pages_trajectoires +
+      sum(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))
+  }
+  # La couverture du devoir : les TROIS indicateurs trajectoires publiés ont
+  # leur page — jamais une famille trajectoire orpheline.
+  expect_identical(pages_trajectoires, 3L)
+})
+
+test_that("verifier_parite_trajectoires : une année morte déclarée échoue fort (#438)", {
+  meta <- lire_theme_metadata("milieux")
+  meta$indicator_pages$conso_enaf_annuel$comparison$details <-
+    c(unlist(meta$indicator_pages$conso_enaf_annuel$comparison$details,
+             use.names = FALSE), "2030")
+  expect_error(verifier_parite_trajectoires(meta, faits_trajectoires_milieux()),
+               "jamais publié")
+})
+
+test_that("verifier_parite_trajectoires : une année publiée absente du chemin échoue fort (#438)", {
+  meta <- lire_theme_metadata("milieux")
+  faits <- dplyr::bind_rows(faits_trajectoires_milieux(),
+                            tibble::tibble(key = "conso_enaf_annuel", detail = "2010"))
+  expect_error(verifier_parite_trajectoires(meta, faits), "absent du chemin")
+})
+
+test_that("valider_theme_metadata : des bornes de trajectoire incomplètes ou hors axe échouent fort (#438)", {
+  meta <- lire_theme_metadata("milieux")
+
+  # une seule borne — la trajectoire exige initial ET final
+  meta$indicator_pages$artif_par_habitant$trajectory$endpoints <- list("M2")
+  expect_error(valider_theme_metadata(meta), "distincts au moins")
+  meta <- lire_theme_metadata("milieux")
+
+  # une borne non déclarée dans comparison.details
+  meta$indicator_pages$artif_par_habitant$trajectory$endpoints <- list("M2", "M9")
+  expect_error(valider_theme_metadata(meta), "non déclarée")
+  meta <- lire_theme_metadata("milieux")
+
+  # un détail non annuel hors des bornes (l'axe ne sait pas le positionner)
+  meta$indicator_pages$artif_par_habitant$comparison$details <-
+    c(unlist(meta$indicator_pages$artif_par_habitant$comparison$details,
+             use.names = FALSE), "ETAT")
+  expect_error(valider_theme_metadata(meta), "borne déclarée")
+  meta <- lire_theme_metadata("milieux")
+
+  # l'axe fermé est REQUIS pour une trajectoire
+  meta$indicator_pages$artif_par_habitant$comparison <- NULL
+  expect_error(valider_theme_metadata(meta), "requis pour une trajectoire")
+})
+
+test_that("publier_theme_metadata : les bornes structurales sont câblées à la publication (#438)", {
+  meta <- lire_theme_metadata("milieux")
+  meta_casse <- lire_theme_metadata("milieux")
+  meta_casse$indicator_pages$conso_enaf_annuel$trajectory$endpoints <-
+    list("2011", "2099")
+
+  sortie <- file.path(tempdir(), "bornes-trajectoires")
+  dir.create(sortie, showWarnings = FALSE)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  # un descripteur qui annonce une borne hors de son axe échoue FORT sans rien écrire
+  expect_error(
+    publier_theme_metadata(meta_casse, sortie, theme_attendu = "milieux"),
+    "2099"
+  )
+  expect_false(file.exists(file.path(sortie, "theme_milieux.json")))
+
+  # le canon épinglé passe la même porte et écrit son fichier
+  expect_no_error(publier_theme_metadata(meta, sortie, theme_attendu = "milieux"))
+  expect_true(file.exists(file.path(sortie, "theme_milieux.json")))
+})

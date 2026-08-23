@@ -349,6 +349,48 @@
           "appartement": "Appartements"
         }
       }
+    },
+    "prix_m2": {
+      "indicator": "prix_m2",
+      "label": "Médiane prix au m²",
+      "definition": "Prix médian déclaré au mètre carré des ventes de maisons et d’appartements, par millésime DVF.",
+      "unit": "€/m²",
+      "calculation": "Médiane des prix au m² par millésime ; la valeur de tête poolée sur la fenêtre glissante reste le scalaire classé de la fiche.",
+      "direction": "low",
+      "caveats": "Supprimée sous 10 ventes : des millésimes entiers peuvent manquer pour un territoire, ils restent déclarés et manquants sur la trajectoire.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "dvf_2025_dep22"
+      ],
+      "family": "trajectory",
+      "trajectory": {
+        "endpoints": [
+          "2021",
+          "2025"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "2021",
+          "2022",
+          "2023",
+          "2024",
+          "2025"
+        ],
+        "detail": "2025",
+        "unit": "€/m²",
+        "labels": {
+          "2021": "2021",
+          "2022": "2022",
+          "2023": "2023",
+          "2024": "2024",
+          "2025": "2025"
+        }
+      }
     }
   },
   "source_records": {
