@@ -92,6 +92,9 @@ describe('contrat des pages composition/pyramid — le miroir strict de R (#431)
     ['une pyramide sans comparison.sexes', (meta: any) => {
       meta.indicator_pages.evolution_1968 = pageEvolution({ family: 'pyramid', pyramid: { dimensions: ['detail', 'sex'] } })
     }, /requis pour une pyramide/],
+    ['des parts absentes de l\u2019extension — le miroir de composition = list()', (meta: any) => {
+      meta.indicator_pages.evolution_1968 = pageEvolution({ family: 'composition', composition: {} })
+    }, /incomplet/],
   ])('rejette %s — le même verdict que R (#431)', (_nom, muter, motif) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     muter(metadata)
