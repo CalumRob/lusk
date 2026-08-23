@@ -43,9 +43,19 @@ export function rangsExAequo(values: readonly number[], direction: DirectionIndi
   return values.map((value) => rangParValeur.get(value)!)
 }
 
+/**
+ * L'appartenance au périmètre actif (#438, revue) — LE prédicat unique du
+ * module : un territoire du niveau demandé, resserré aux filtres
+ * département/EPCI au niveau commune seulement. Repères, la carte par état
+ * et les trajectoires lisent LA même appartenance, jamais trois copies.
+ */
+export function dansScope(territoire: Territoire, niveau: NiveauIndicateur, departement?: string, epci?: string): boolean {
+  return territoire.type === niveau && (niveau !== 'commune' || ((!departement || territoire.departement === departement) && (!epci || territoire.epci === epci)))
+}
+
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat: { niveau: NiveauIndicateur; departement?: string; epci?: string }): Payload {
   const { niveau, departement, epci } = etat
-  const ids = new Set(payload.territoires.filter((territory) => territory.type === niveau && (niveau !== 'commune' || ((!departement || territory.departement === departement) && (!epci || territory.epci === epci)))).map((territory) => territory.territoire))
+  const ids = new Set(payload.territoires.filter((territory) => dansScope(territory, niveau, departement, epci)).map((territory) => territory.territoire))
   return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension && fact.type === niveau && ids.has(fact.territoire)) }
 }
 
@@ -86,9 +96,8 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
 export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
   const supported = facet.levels.filter((level): level is NiveauIndicateur => niveaux.includes(level as NiveauIndicateur))
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
-  const dansScope = (territoire: Territoire) => territoire.type === niveau && (niveau !== 'commune' || ((!requested.departement || territoire.departement === requested.departement) && (!requested.epci || territoire.epci === requested.epci)))
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
+  const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
   const values = all.map((row) => row.value)
   // La série triée du modèle (la comparaison inter-territoires de Repères) :
   // la médiane et la densité lisent la même série triée que avant #437.
@@ -165,7 +174,6 @@ export function modeleTrajectoire(
 ): ModeleTrajectoire {
   const details = facet.details
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const dansScope = (territoire: Territoire) => territoire.type === etat.niveau && (etat.niveau !== 'commune' || ((!etat.departement || territoire.departement === etat.departement) && (!etat.epci || territoire.epci === etat.epci)))
 
   // L'échelle temporelle partagée — UNE coordonnée par détail déclaré. Une
   // année siège à SA place dans la fenêtre ; une borne déclarée non annuelle
@@ -188,7 +196,7 @@ export function modeleTrajectoire(
   }
 
   const lignes = details.map((detail) => {
-    const rows = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire)))
+    const rows = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
     const valeurs = rows.filter((row) => row.value !== null).map((row) => row.value as number)
     return {
       detail,
@@ -206,7 +214,7 @@ export function modeleTrajectoire(
   const domaineValeurs = { min: valeursDuChemin.length ? Math.min(...valeursDuChemin) : null, max: valeursDuChemin.length ? Math.max(...valeursDuChemin) : null }
 
   const refSelectionne = etat.territoire ? refs.get(etat.territoire) : undefined
-  const serieTerritoire = refSelectionne && dansScope(refSelectionne)
+  const serieTerritoire = refSelectionne && dansScope(refSelectionne, etat.niveau, etat.departement, etat.epci)
     ? lignes.map((ligne) => {
         const row = facts.find((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === ligne.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.territoire === refSelectionne.territoire)
         return { detail: ligne.detail, label: ligne.label, x: ligne.x, value: row ? row.value : null } satisfies PointTrajectoire
