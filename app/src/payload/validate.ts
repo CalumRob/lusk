@@ -2077,16 +2077,20 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
           for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
           if (family === 'composition' || family === 'pyramid') {
             const declared = extension[family === 'composition' ? 'parts' : 'dimensions'] as unknown[]
+            // Issue #431 : le miroir strict de valider_theme_metadata — les
+            // libellés canonical des parts, les dimensions detail/sex et les
+            // sexes de la pyramide sont requis SANS CONDITION (jamais une
+            // dérive silencieuse quand detail_labels est absent pour la clé).
             const labels = detail_labels[key] ?? {}
-            if (family === 'composition' && Object.keys(labels).length > 0) {
+            if (family === 'composition') {
               exiger(declared.every((value) => Object.prototype.hasOwnProperty.call(labels, value as PropertyKey)), fichier, 0, `« indicator_pages.${key}.${extensionKey} » référence un détail sans libellé canonical`)
-            } else if (family === 'pyramid' && Object.keys(labels).length > 0) {
+            } else {
               exiger(declared.includes('detail') && declared.includes('sex'), fichier, 0, `« indicator_pages.${key}.pyramid » doit déclarer detail et sex`)
             }
             if (comparison !== undefined && comparison['details'] !== undefined) {
               exiger(Array.isArray(comparison['details']) && declared.filter((value) => Object.prototype.hasOwnProperty.call(labels, value as PropertyKey)).every((value) => (comparison['details'] as unknown[]).includes(value)), fichier, 0, `« indicator_pages.${key}.comparison.details » ne couvre pas les détails déclarés`)
             }
-             if (family === 'pyramid' && Object.keys(labels).length > 0) exiger(comparison !== undefined && Array.isArray(comparison['sexes']) && (comparison['sexes'] as unknown[]).length > 0, fichier, 0, `« indicator_pages.${key}.comparison.sex » est requis pour une pyramide`)
+             if (family === 'pyramid') exiger(comparison !== undefined && Array.isArray(comparison['sexes']) && (comparison['sexes'] as unknown[]).length > 0, fichier, 0, `« indicator_pages.${key}.comparison.sex » est requis pour une pyramide`)
           }
          if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
         }
