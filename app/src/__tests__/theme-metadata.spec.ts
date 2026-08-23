@@ -339,3 +339,83 @@ describe('validerThemeMetadata — la 4e carte, les libellés des classification
     }
   })
 })
+
+// La symétrie stricte de la facette comparison (issue #431) — le miroir des
+// fixtures R (test-theme-metadata.R) : une page AVEC comparison suivie d'une
+// SANS, dans les DEUX ordres. Le verdict ne dépend jamais de l'ordre des pages
+// et reste identique au validateur R pour les mêmes descripteurs.
+describe('validerThemeMetadata — la validation des pages ne dépend jamais de leur ordre (#431)', () => {
+  function pageBase(indicator: string): Record<string, unknown> {
+    return {
+      indicator,
+      detail: null,
+      label: 'Libellé',
+      definition: 'Définition',
+      unit: 'unité',
+      calculation: 'Calcul',
+      direction: 'high',
+      caveats: 'Réserve',
+      levels: ['commune', 'epci', 'departement'],
+      sources: ['serie_historique'],
+    }
+  }
+
+  function metaAvecPages(pages: Array<[string, unknown]>): ThemeMetadata {
+    const meta = copieBrute('demographie')
+    meta.indicator_pages = Object.fromEntries(pages) as ThemeMetadata['indicator_pages']
+    return meta
+  }
+
+  function verdictErreur(meta: ThemeMetadata): PayloadError {
+    let erreur: unknown
+    try { validerThemeMetadata(meta, 'theme_demographie.json') } catch (e) { erreur = e }
+    expect(erreur).toBeInstanceOf(PayloadError)
+    return erreur as PayloadError
+  }
+
+  it('rejette une pyramide sans comparison quel que soit l\u2019ordre des pages', () => {
+    const avec = () => ({
+      ...pageBase('evolution_1968'),
+      family: 'pyramid',
+      pyramid: { dimensions: ['detail', 'sex'] },
+      comparison: { details: ['<15', '15-24'], detail: '<15', sexes: ['F', 'M'], sex: 'F', unit: '%' },
+    })
+    const sans = () => ({
+      ...pageBase('densite'),
+      family: 'pyramid',
+      pyramid: { dimensions: ['detail', 'sex'] },
+    })
+    for (const [ordre, pages] of [
+      ['avec puis sans', [['evolution_1968', avec()], ['densite', sans()]]],
+      ['sans puis avec', [['densite', sans()], ['evolution_1968', avec()]]],
+    ] as Array<[string, Array<[string, unknown]>]>) {
+      const erreur = verdictErreur(metaAvecPages(pages))
+      expect(erreur.message, `ordre ${ordre}`).toMatch(/requis pour une pyramide/)
+    }
+  })
+
+  it('accepte une composition sans comparison quel que soit l\u2019ordre des pages', () => {
+    const avec = () => ({
+      ...pageBase('densite'),
+      family: 'composition',
+      composition: { parts: ['a', 'b'] },
+      comparison: { details: ['a', 'b'], detail: 'a', unit: 'u', labels: { a: 'A', b: 'B' } },
+    })
+    const sans = () => ({
+      ...pageBase('evolution_1968'),
+      family: 'composition',
+      composition: { parts: ['x', 'y'] },
+    })
+    for (const [ordre, pages] of [
+      ['avec puis sans', [['densite', avec()], ['evolution_1968', sans()]]],
+      ['sans puis avec', [['evolution_1968', sans()], ['densite', avec()]]],
+    ] as Array<[string, Array<[string, unknown]>]>) {
+      const meta = metaAvecPages(pages)
+      ;(meta.detail_labels as Record<string, unknown>).densite = { a: 'A', b: 'B' }
+      ;(meta.detail_labels as Record<string, unknown>).evolution_1968 = { x: 'X', y: 'Y' }
+      expect(
+        () => validerThemeMetadata(meta, `theme_demographie.json (${ordre})`),
+      ).not.toThrow()
+    }
+  })
+})

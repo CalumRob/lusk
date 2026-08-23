@@ -626,6 +626,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
         "pyramid", "comparison-bars")) {
       manquer("indicator_pages.family", paste0("famille hors contrat « ", famille, " »"))
     }
+    # Issue #431 : comparison est scopé PAR page — réinitialisé à CHAQUE
+    # itération de la boucle. Une page sans comparison ne peut jamais observer
+    # l'état d'une page précédente (des sexes ou des détails hérités qui
+    # retourneraient un verdict dépendant de l'ordre des pages), et la
+    # validation famille ci-dessous trouve toujours une variable définie.
+    comparison <- NULL
     if (!is.null(page$comparison)) {
       comparison <- page$comparison
       if (!is.list(comparison)) manquer("indicator_pages.comparison", "la facette doit être un objet")

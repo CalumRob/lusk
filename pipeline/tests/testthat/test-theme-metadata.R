@@ -478,3 +478,113 @@ test_that("valider_theme_metadata : les familles connues sont acceptées et les 
   meta$subgroups[[1L]]$figure$family <- "camembert"
   expect_error(valider_theme_metadata(meta), "hors contrat")
 })
+
+# La symétrie stricte de la facette comparison (issue #431) : la variable
+# comparison est scopée PAR page d'indicateur — une page SANS comparison ne
+# peut jamais observer l'état (frais ou absent) des pages précédentes de la
+# boucle. Fixtures miroirs : une page AVEC comparison suivie d'une SANS, dans
+# les DEUX ordres — les verdicts ne dépendent jamais de l'ordre d'itération,
+# et restent identiques au validateur TypeScript de l'app (validerTheme-
+# Metadata). Le canon #403 n'est pas touché : ses sept descripteurs portent
+# déjà leurs labels et leur comparison complète.
+
+page_indicateur_base <- function(ind, src) {
+  list(
+    indicator = ind, label = "Libellé", definition = "Définition",
+    unit = "unité", calculation = "Calcul", direction = "high",
+    caveats = "Réserve",
+    levels = list("commune", "epci", "departement"),
+    sources = list(src)
+  )
+}
+
+comparaison_pyramide_minimale <- function() {
+  # le miroir du contrat #403 : des sexes déclarés, un détail par défaut
+  list(details = list("<15", "15-24"), detail = "<15",
+       sexes = list("F", "M"), sex = "F", unit = "%")
+}
+
+test_that("valider_theme_metadata : une pyramide sans comparison est rejetée quel que soit l'ordre des pages (#431)", {
+  meta_pyramides <- function(inverse = FALSE) {
+    meta <- lire_metadata("theme-demographie-valide.json")
+    avec <- c(page_indicateur_base("evolution_1968", "serie_historique"),
+              list(family = "pyramid",
+                   pyramid = list(dimensions = list("detail", "sex")),
+                   comparison = comparaison_pyramide_minimale()))
+    sans <- c(page_indicateur_base("densite", "serie_historique"),
+              list(family = "pyramid",
+                   pyramid = list(dimensions = list("detail", "sex"))))
+    meta$indicator_pages <- if (!inverse) {
+      list(evolution_1968 = avec, densite = sans)
+    } else {
+      list(densite = sans, evolution_1968 = avec)
+    }
+    meta
+  }
+  # le sexe est requis pour une pyramide — dans LES DEUX ordres : la page
+  # sans comparison ne peut pas hériter des sexes de la page précédente
+  expect_error(valider_theme_metadata(meta_pyramides(FALSE)), "sexe est requis")
+  expect_error(valider_theme_metadata(meta_pyramides(TRUE)), "sexe est requis")
+})
+
+test_that("valider_theme_metadata : une composition sans comparison reste valide quel que soit l'ordre des pages (#431)", {
+  meta_compositions <- function(inverse = FALSE) {
+    meta <- lire_metadata("theme-demographie-valide.json")
+    avec <- c(page_indicateur_base("densite", "serie_historique"),
+              list(family = "composition",
+                   composition = list(parts = list("a", "b")),
+                   comparison = list(details = list("a", "b"), detail = "a",
+                                     unit = "u",
+                                     labels = list(a = "A", b = "B"))))
+    sans <- c(page_indicateur_base("evolution_1968", "serie_historique"),
+              list(family = "composition",
+                   composition = list(parts = list("x", "y"))))
+    meta$detail_labels$densite <- list(a = "A", b = "B")
+    meta$detail_labels$evolution_1968 <- list(x = "X", y = "Y")
+    meta$indicator_pages <- if (!inverse) {
+      list(densite = avec, evolution_1968 = sans)
+    } else {
+      list(evolution_1968 = sans, densite = avec)
+    }
+    meta
+  }
+  # une composition sans comparison est LÉGITIME — elle ne doit jamais
+  # hériter des détails couverts par la comparison de la page précédente
+  # (le rejet spurieux « détails non couverts » était dépendant de l'ordre)
+  expect_no_error(valider_theme_metadata(meta_compositions(FALSE)))
+  expect_no_error(valider_theme_metadata(meta_compositions(TRUE)))
+})
+
+test_that("valider_theme_metadata : parité négative composition/pyramid — libellés, parts, dimensions, sexes (#431)", {
+  # une part sans libellé canonical
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$detail_labels$densite <- list(a = "A")
+  meta$indicator_pages <- list(densite = c(
+    page_indicateur_base("densite", "serie_historique"),
+    list(family = "composition", composition = list(parts = list("a", "b")))))
+  expect_error(valider_theme_metadata(meta), "libellé")
+
+  # des parts absentes (l'extension est requise, complète)
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = c(
+    page_indicateur_base("densite", "serie_historique"),
+    list(family = "composition", composition = list())))
+  expect_error(valider_theme_metadata(meta), "incomplet")
+
+  # une pyramide dont les dimensions n'incluent pas sex
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = c(
+    page_indicateur_base("densite", "serie_historique"),
+    list(family = "pyramid",
+         pyramid = list(dimensions = list("detail")),
+         comparison = comparaison_pyramide_minimale())))
+  expect_error(valider_theme_metadata(meta), "detail et sex")
+
+  # une pyramide sans comparison.sexes
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = c(
+    page_indicateur_base("densite", "serie_historique"),
+    list(family = "pyramid",
+         pyramid = list(dimensions = list("detail", "sex")))))
+  expect_error(valider_theme_metadata(meta), "sexe est requis")
+})
