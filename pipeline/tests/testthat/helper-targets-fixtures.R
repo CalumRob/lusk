@@ -79,7 +79,8 @@ ecrire_source_toypkg <- function(projet, scenario) {
     "    construire_donnees = construire_fake,",
     "    vintages = vintages_fake,",
     "    compute = compute_fake,",
-    "    publish = publish_fake",
+    "    publish = publish_fake,",
+    '    metadata = function() lire_metadata_fake("toy")',
     "  )",
     "}",
     "# Le SECOND thème du mini-paquet (issue #341) : un thème « futur » avec SES",
@@ -112,7 +113,8 @@ ecrire_source_toypkg <- function(projet, scenario) {
     "    construire_donnees = construire_fake2,",
     "    vintages = vintages_fake2,",
     "    compute = compute_fake2,",
-    "    publish = publish_fake2",
+    "    publish = publish_fake2,",
+    '    metadata = function() lire_metadata_fake("toy2")',
     "  )",
     "}",
     "# Le TROISIÈME thème du mini-paquet (revue #341, finding 5) : le thème",
@@ -135,6 +137,24 @@ ecrire_source_toypkg <- function(projet, scenario) {
     "}",
     "vintages_fake_jetable <- function() {",
     "  data.frame(id = \"c\", version = \"2023\", stringsAsFactors = FALSE)",
+    "}",
+    "# Le seam métadonnées du mini-graphe (issue #434) : le lecteur du fichier",
+    "# épinglé inst/extdata/theme-metadata/theme_<theme>.json (la même forme que",
+    "# lire_theme_metadata du paquet — system.file, résolu aussi sous pkgload)",
+    "# et le seam de publication qui écrit theme_<theme>.txt à côté des faits.",
+    "lire_metadata_fake <- function(theme, chemin = NULL) {",
+    "  if (is.null(chemin)) {",
+    "    chemin <- system.file(\"extdata\", \"theme-metadata\",",
+    "                          paste0(\"theme_\", theme, \".json\"),",
+    "                          package = \"toypkg\")",
+    "  }",
+    "  list(theme = theme, label = readLines(chemin, warn = FALSE))",
+    "}",
+    "publier_metadata_fake <- function(metadata, sortie = \"out\") {",
+    "  if (!dir.exists(sortie)) dir.create(sortie, recursive = TRUE)",
+    "  cible <- file.path(sortie, paste0(\"theme_\", metadata$theme, \".txt\"))",
+    "  writeLines(metadata$label, cible)",
+    "  invisible(cible)",
     "}",
     "theme_jetable <- function() {",
     "  list(",
@@ -349,7 +369,7 @@ ecrire_mini_graphe_multi <- function(projet, themes = c("toy", "toy2")) {
     "  vintages <- as.name(paste0(\"vintages_table_\", nom))",
     "  payload <- as.name(paste0(\"payload_\", nom))",
     "  publie <- as.name(paste0(\"publie_\", nom))",
-    "  list(",
+    "  grappe <- list(",
     "    tar_target_raw(as.character(sources),",
     "               bquote(download_fake(.(theme$manifest), cache = .(cache),",
     "                                    mode = MODE_RUN))),",
@@ -366,6 +386,27 @@ ecrire_mini_graphe_multi <- function(projet, themes = c("toy", "toy2")) {
     '                                              .(paste0("out_", nom, ".txt"))))),',
     '               format = "file")',
     "  )",
+    "  # le seam métadonnées (issue #434) : dispatch PAR TRAIT comme la vraie",
+    "  # grappe_theme — le descripteur est reconstruit par SON constructeur et",
+    "  # SON membre metadata lit le fichier épinglé inst/extdata/theme-metadata/.",
+    "  # Le canon épinglé est une DÉPENDANCE SUIVIE : fichier_metadata_<nom> est",
+    "  # une cible format = \"file\" (fraîcheur PAR CONTENU) référencée par la",
+    "  # cible metadata_ — un changement du canon SEUL n'invalide qu'ELLE et SA",
+    "  # cible ; sans changement tout reste frais.",
+    "  if (\"metadata\" %in% names(theme)) {",
+    "    canon <- as.name(paste0(\"fichier_metadata_\", nom))",
+    "    constructeur <- as.name(paste0(\"theme_\", nom))",
+    "    fichier_canon <- paste0(\"theme_\", nom, \".json\")",
+    "    grappe <- c(grappe, list(",
+    "      tar_target_raw(as.character(canon),",
+    "        bquote(system.file(\"extdata\", \"theme-metadata\", .(fichier_canon),",
+    "                           package = \"toypkg\")), format = \"file\"),",
+    "      tar_target_raw(as.character(paste0(\"metadata_\", nom)),",
+    "        bquote({ .(canon)",
+    "                 theme_ <- .(constructeur)()",
+    "                 publier_metadata_fake(theme_$metadata(), .(sortie)) }))))",
+    "  }",
+    "  grappe",
     "}",
     paste0("THEMES <- list(", noms_themes, ")"),
     "list(unlist(lapply(THEMES, grappe_mini), recursive = FALSE))"
@@ -378,10 +419,15 @@ ecrire_mini_graphe_multi <- function(projet, themes = c("toy", "toy2")) {
 # La variante PLURITHÈME d'installer_mini_projet : le mini-paquet porte toy ET
 # toy2 (ecrire_source_toypkg les écrit tous les deux), le fichier d'entrée du
 # second thème est créé, et le mini-graphe est construit par la fabrique sur
-# la liste des descripteurs.
+# la liste des descripteurs. Les DEUX thèmes déclarent le seam metadata
+# (issue #434) : chacun a SON fichier épinglé inst/extdata/theme-metadata/
+# (un contenu DISTINCT par thème — un changement du canon de l'un ne doit
+# jamais invalider l'autre).
 installer_mini_projet_multi <- function(themes = c("toy", "toy2")) {
   projet <- tempfile("mini-multi-")
   dir.create(file.path(projet, "toypkg", "R"), recursive = TRUE)
+  dir.create(file.path(projet, "toypkg", "inst", "extdata", "theme-metadata"),
+             recursive = TRUE)
   dir.create(file.path(projet, "data", "raw"), recursive = TRUE)
   dir.create(file.path(projet, "out"), recursive = TRUE)
 
@@ -395,6 +441,13 @@ installer_mini_projet_multi <- function(themes = c("toy", "toy2")) {
              file.path(projet, "data", "raw", "entree3.txt"))
 
   ecrire_source_toypkg(projet, "base")
+  # les canons épinglés du seam metadata (#434) — un par thème déclarant
+  for (t in themes) {
+    if (!t %in% c("toy", "toy2")) next
+    writeLines(paste0("canon-", t, "-v1"),
+               file.path(projet, "toypkg", "inst", "extdata", "theme-metadata",
+                         paste0("theme_", t, ".json")))
+  }
   ecrire_mini_graphe_multi(projet, themes = themes)
   projet
 }

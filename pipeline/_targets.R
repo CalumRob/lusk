@@ -265,11 +265,31 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   # faits : le target n'écrit que theme_<theme>.json, validé contre les
   # vintages du thème (publier_theme_metadata — la garde theme_attendu refuse
   # la collision).
+  #
+  # Le CANON ÉPINGLÉ est une DÉPENDANCE SUIVIE (issue #434) : fichier_metadata_
+  # <thème> est une cible format = "file" qui résout la ressource du paquet
+  # (system.file — résolue aussi sous pkgload, le précédent artefact_egss.R) ;
+  # la fraîcheur est PAR CONTENU (trust_timestamps = FALSE) — un changement du
+  # canon SEUL change le hash de la cible et invalide exactement metadata_
+  # <thème> au run suivant (l'observation 2026-08-11 #4 : sans suivi, la
+  # publication sautait silencieusement après l'édition d'un seul JSON —
+  # 29d5277, contournement manuel tar_invalidate). La cible canon est LEAF :
+  # rien d'autre du graphe ne la référence, le reste du thème ne bouge pas ;
+  # un run sans changement garde tout frais (pas de fausse invalidation).
   if ("metadata" %in% names(theme)) {
+    canon <- as.name(paste0("fichier_metadata_", nom))
+    fichier_canon <- paste0("theme_", nom, ".json")
     grappe <- c(grappe, list(
+      tar_target_raw(
+        as.character(canon),
+        bquote(system.file("extdata", "theme-metadata", .(fichier_canon),
+                           package = "lusk")),
+        format = "file"
+      ),
       tar_target_raw(
         as.character(metadata),
         bquote({
+          .(canon)
           theme_ <- .(theme_descripteur)
           publier_theme_metadata(theme_$metadata(), .(sortie),
                                  vintages = .(vintages),
