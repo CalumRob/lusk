@@ -90,7 +90,10 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
   const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire)))
   const values = all.map((row) => row.value)
-  const median = mediane(values)
+  // La série triée du modèle (la comparaison inter-territoires de Repères) :
+  // la médiane et la densité lisent la même série triée que avant #437.
+  const distribution = [...values].sort((a, b) => a - b)
+  const median = mediane(distribution)
   const rangsCalcules = rangsExAequo(values, facet.direction)
   const ranks = new Map(all.map((row, index) => [row.territoire.territoire, rangsCalcules[index]] as const))
   const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: `/territoire/${row.territoire.type}/${row.territoire.territoire}?theme=${facet.theme}`, highlighted: row.territoire.territoire === requested.territoire })
@@ -105,7 +108,7 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   }).map(project)
   const highRows = all.filter((row) => row.value === Math.max(...all.map((item) => item.value))).map(project)
   const lowRows = all.filter((row) => row.value === Math.min(...all.map((item) => item.value))).map(project)
-  const density = estimerDensite(values)
+  const density = estimerDensite(distribution)
   const selected = all.find((row) => row.territoire.territoire === requested.territoire)?.value ?? null
-  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution: values, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: facet.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
+  return { state: { niveau, departement: niveau === 'commune' ? requested.departement : undefined, epci: niveau === 'commune' ? requested.epci : undefined, territoire: requested.territoire, recherche: requested.recherche, tri, ordre }, rows, median, distribution, density, high: { count: highRows.length, rows: highRows.length === 1 ? highRows : [] }, low: { count: lowRows.length, rows: lowRows.length === 1 ? lowRows : [] }, scopeLabel: requested.departement ? `Département ${requested.departement}` : requested.epci ? `EPCI ${requested.epci}` : 'Bretagne', direction: facet.direction, markerX: positionDensite(density, selected), markerY: hauteurDensite(density, selected) }
 }
