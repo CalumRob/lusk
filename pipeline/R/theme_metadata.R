@@ -76,12 +76,14 @@ CLES_HISTOIRES_PAR_THEME <- list(
 # (comparison.details) couvrent EXACTEMENT les détails publiés de la clé —
 # hors la ligne poolée sans détail (le scalaire classé, hors chemin) :
 # jamais une année morte déclarée, jamais une année publiée absente du
-# chemin. Les règles STRUCTURELLES des bornes vivent dans valider_theme_
-# metadata (ci-dessus). Cette garde s'exécute sur les artefacts committés
-# (le contrat de payload committé — la même discipline que la parité des
-# libellés), jamais sur un run dégradé : un cache sans archives OCS-GE
-# (#237) publie légitimement l'état M2/M3 seul, ses années déclarées
-# restent des étapes vides et honnêtes.
+# chemin. Le filtre des faits est THÈME × CLÉ, identique à l'app — les clés
+# ne sont pas uniques entre thèmes, un filtre par clé seule laisserait les
+# miroirs diverger. Les règles STRUCTURELLES des bornes vivent dans
+# valider_theme_metadata (ci-dessus). Cette garde s'exécute sur les
+# artefacts committés (le contrat de payload committé — la même discipline
+# que la parité des libellés), jamais sur un run dégradé : un cache sans
+# archives OCS-GE (#237) publie légitimement l'état M2/M3 seul, ses années
+# déclarées restent des étapes vides et honnêtes.
 verifier_parite_trajectoires <- function(metadata, indicateurs) {
   manquer <- function(theme, cle, detail) {
     stop(sprintf(
@@ -95,7 +97,8 @@ verifier_parite_trajectoires <- function(metadata, indicateurs) {
       if (!identical(page$family, "trajectory")) next
 
       details_publies <- unique(as.character(
-        indicateurs$detail[indicateurs$key == cle &
+        indicateurs$detail[indicateurs$theme == metadata$theme &
+                             indicateurs$key == cle &
                              !vapply(indicateurs$detail, function(x) is.null(x) || is.na(x), logical(1L))]
       ))
       declarees <- if (is.null(page$comparison$details)) character(0L) else

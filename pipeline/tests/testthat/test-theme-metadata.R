@@ -601,6 +601,7 @@ test_that("valider_theme_metadata : parité négative composition/pyramid — li
 
 faits_trajectoires_milieux <- function() {
   tibble::tibble(
+    theme = "milieux",
     key = c(rep("artif_par_habitant", 8L), rep("conso_enaf_annuel", 14L)),
     detail = c("M2", "M3", "2020", "2021", "2022", "2023", "2024", "2025",
                as.character(2011:2024))
@@ -649,7 +650,7 @@ test_that("verifier_parite_trajectoires : une année morte déclarée échoue fo
 test_that("verifier_parite_trajectoires : une année publiée absente du chemin échoue fort (#438)", {
   meta <- lire_theme_metadata("milieux")
   faits <- dplyr::bind_rows(faits_trajectoires_milieux(),
-                            tibble::tibble(key = "conso_enaf_annuel", detail = "2010"))
+                            tibble::tibble(theme = "milieux", key = "conso_enaf_annuel", detail = "2010"))
   expect_error(verifier_parite_trajectoires(meta, faits), "absent du chemin")
 })
 
