@@ -1,5 +1,45 @@
 [
   {
+    "id": "sirene_snapshot",
+    "source": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+    "version": "2026-04",
+    "licence": "lov2",
+    "date_reference": "2026-03-31",
+    "date_publication": "2026-05-01"
+  },
+  {
+    "id": "flores_a38",
+    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A38)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-03-31"
+  },
+  {
+    "id": "flores_a88",
+    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-03-31"
+  },
+  {
+    "id": "rp_emploi",
+    "source": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "rp_chomage",
+    "source": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-07-15"
+  },
+  {
     "id": "mobilite_snapshot",
     "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
     "version": "2026-02",
@@ -86,46 +126,6 @@
     "licence": "lov2",
     "date_reference": "2025-01-01",
     "date_publication": "2026-05-06"
-  },
-  {
-    "id": "sirene_snapshot",
-    "source": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
-    "version": "2026-04",
-    "licence": "lov2",
-    "date_reference": "2026-03-31",
-    "date_publication": "2026-05-01"
-  },
-  {
-    "id": "flores_a38",
-    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A38)",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-12-31",
-    "date_publication": "2026-03-31"
-  },
-  {
-    "id": "flores_a88",
-    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-12-31",
-    "date_publication": "2026-03-31"
-  },
-  {
-    "id": "rp_emploi",
-    "source": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-06-30"
-  },
-  {
-    "id": "rp_chomage",
-    "source": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-07-15"
   },
   {
     "id": "epci",
