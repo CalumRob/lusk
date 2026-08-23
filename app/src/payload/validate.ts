@@ -43,13 +43,6 @@ import type {
   Theme,
   ThemeMetadata,
   IndicatorPageMetadataBase,
-  TrajectoryMetadata,
-  CompositionMetadata,
-  DistributionMetadata,
-  RelationshipMetadata,
-  ListMetadata,
-  PyramidMetadata,
-  ComparisonBarsMetadata,
   FamilleFigure,
   Vintage,
   Sexe,
@@ -2048,8 +2041,13 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(pageSources.includes(sources[key] as string), fichier, 0, `« indicator_pages.${key}.sources » doit contenir sa source de référence « ${sources[key]} »`)
       exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » est requis par les pages scalaires')
       for (const source of pageSources) { const record = (meta['source_records'] as LigneBrute)[source]; exiger(estObjet(record), fichier, 0, `source référencée « ${source} » introuvable`); for (const field of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) exiger(estChaine((record as LigneBrute)[field]) && ((record as LigneBrute)[field] as string).length > 0, fichier, 0, `source.${field} doit être renseignée`) }
-        const family = (page['family'] === undefined ? 'scalar' : page['family']) as FamilleFigure
-       exiger(estUneDe(family, FAMILLES_FIGURE), fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
+      // La famille — la clé de l'union discriminée (#437). L'absence est la
+      // forme héritée #401 : le validateur la NORMALISE en « scalar » (jamais
+      // un alias optionnel qui ne fait rien). La lecture passe par le garde
+      // estUneDe — aucun cast non vérifié.
+      const familleBrute: unknown = page['family'] === undefined ? 'scalar' : page['family']
+      if (!estUneDe(familleBrute, FAMILLES_FIGURE)) throw erreur(fichier, 0, `« indicator_pages.${key}.family » est hors contrat`)
+      const family: FamilleFigure = familleBrute
        const comparison = page['comparison']
        if (comparison !== undefined) {
          exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
@@ -2065,18 +2063,34 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
          if (comparison['labels'] !== undefined) exiger(estObjet(comparison['labels']) && Object.values(comparison['labels'] as LigneBrute).every((value) => estChaineNonVide(value)), fichier, 0, `« indicator_pages.${key}.comparison.labels » est invalide`)
        }
         const base: IndicatorPageMetadataBase = { indicator: key, detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
-       const extensionFields: Record<string, string[]> = { trajectory: ['endpoints'], composition: ['parts'], distribution: ['signature', 'summary'], list: ['categories'], pyramid: ['dimensions'], 'comparison-bars': ['series'] }
-       const extensionKey = family === 'comparison-bars' ? 'comparison-bars' : family
-       const extension = page[extensionKey]
+       const extensionKey = family
+       const extensionBrute = page[extensionKey]
+       exiger(extensionBrute === undefined || estObjet(extensionBrute), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
+       const extension = estObjet(extensionBrute) ? extensionBrute : undefined
        for (const candidate of ['trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars', 'comparison_bars']) {
          if (candidate !== extensionKey && page[candidate] !== undefined) exiger(false, fichier, 0, `« indicator_pages.${key}.${candidate} » ne correspond pas à la famille déclarée`)
        }
-       if (family !== 'scalar') exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
-         if (extension !== undefined) {
-         exiger(estObjet(extension), fichier, 0, `« indicator_pages.${key}.${family} » doit être un objet`)
-          for (const field of extensionFields[family as string] ?? []) exiger(Array.isArray(extension[field]) ? (extension[field] as unknown[]).length > 0 && (extension[field] as unknown[]).every((value) => estChaineNonVide(value)) : estChaineNonVide(extension[field]), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${field} » est incomplet`)
-          if (family === 'composition' || family === 'pyramid') {
-            const declared = extension[family === 'composition' ? 'parts' : 'dimensions'] as unknown[]
+       if (family !== 'scalar') exiger(extension !== undefined, fichier, 0, `« indicator_pages.${key}.${extensionKey} » est requis`)
+      // La construction des extensions est TYPÉE champ par champ (#437) :
+      // chaque tableau validé devient un string[] réel — plus jamais un
+      // double cast « as unknown as » qui masquerait une forme dérivée.
+      function lireExtensionChaines(champ: string): string[] {
+        const brut = extension?.[champ]
+        exiger(
+          Array.isArray(brut) && brut.length > 0 && new Set(brut).size === brut.length && brut.every((value) => estChaineNonVide(value)),
+          fichier,
+          0,
+          `« indicator_pages.${key}.${extensionKey}.${champ} » est incomplet (un tableau non vide de chaînes distinctes est requis)`,
+        )
+        return brut
+      }
+      function lireExtensionChaine(champ: string): string {
+        const valeur = extension?.[champ]
+        exiger(estChaineNonVide(valeur), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${champ} » est incomplet (une chaîne non vide est requise)`)
+        return valeur
+      }
+          if (extension !== undefined && (family === 'composition' || family === 'pyramid')) {
+            const declared = family === 'composition' ? lireExtensionChaines('parts') : lireExtensionChaines('dimensions')
             // Issue #431 : le miroir strict de valider_theme_metadata — les
             // libellés canonical des parts, les dimensions detail/sex et les
             // sexes de la pyramide sont requis SANS CONDITION (jamais une
@@ -2092,18 +2106,21 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
             }
              if (family === 'pyramid') exiger(comparison !== undefined && Array.isArray(comparison['sexes']) && (comparison['sexes'] as unknown[]).length > 0, fichier, 0, `« indicator_pages.${key}.comparison.sex » est requis pour une pyramide`)
           }
-         if (family === 'relationship') { exiger(estObjet(extension['roles']) && estChaineNonVide(extension['roles']['x']) && estChaineNonVide(extension['roles']['y']) && estChaineNonVide(extension['measure']), fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`) }
-        }
         const assertNever = (value: never): never => { throw new Error(`Famille de figure non implémentée : ${String(value)}`) }
         switch (family) {
-          case 'scalar': indicator_pages[key] = page['family'] === undefined ? base : { ...base, family: 'scalar' }; break
-          case 'trajectory': indicator_pages[key] = { ...base, family, trajectory: extension as unknown as TrajectoryMetadata }; break
-          case 'composition': indicator_pages[key] = { ...base, family, composition: extension as unknown as CompositionMetadata }; break
-          case 'distribution': indicator_pages[key] = { ...base, family, distribution: extension as unknown as DistributionMetadata }; break
-          case 'relationship': indicator_pages[key] = { ...base, family, relationship: extension as unknown as RelationshipMetadata }; break
-          case 'list': indicator_pages[key] = { ...base, family, list: extension as unknown as ListMetadata }; break
-          case 'pyramid': indicator_pages[key] = { ...base, family, pyramid: extension as unknown as PyramidMetadata }; break
-          case 'comparison-bars': indicator_pages[key] = { ...base, family, comparisonBars: extension as unknown as ComparisonBarsMetadata }; break
+          case 'scalar': indicator_pages[key] = { ...base, family: 'scalar' }; break
+          case 'trajectory': indicator_pages[key] = { ...base, family, trajectory: { endpoints: lireExtensionChaines('endpoints') } }; break
+          case 'composition': indicator_pages[key] = { ...base, family, composition: { parts: lireExtensionChaines('parts') } }; break
+          case 'distribution': indicator_pages[key] = { ...base, family, distribution: { signature: lireExtensionChaine('signature'), summary: lireExtensionChaine('summary') } }; break
+          case 'relationship': {
+            const rolesBrut = extension?.['roles']
+            if (!estObjet(rolesBrut) || !estChaineNonVide(rolesBrut['x']) || !estChaineNonVide(rolesBrut['y'])) throw erreur(fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`)
+            indicator_pages[key] = { ...base, family, relationship: { roles: { x: rolesBrut['x'], y: rolesBrut['y'] }, measure: lireExtensionChaine('measure') } }
+            break
+          }
+          case 'list': indicator_pages[key] = { ...base, family, list: { categories: lireExtensionChaines('categories') } }; break
+          case 'pyramid': indicator_pages[key] = { ...base, family, pyramid: { dimensions: lireExtensionChaines('dimensions') } }; break
+          case 'comparison-bars': indicator_pages[key] = { ...base, family, comparisonBars: { series: lireExtensionChaines('series') } }; break
           default: assertNever(family)
         }
     }

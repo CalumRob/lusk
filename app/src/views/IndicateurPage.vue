@@ -56,7 +56,7 @@ const payloadCarte = computed(() => {
   const niveau = model.value?.state.niveau ?? niveauRoute.value ?? 'commune'
   const departement = niveau === 'commune' && typeof route.query.departement === 'string' ? route.query.departement : undefined
   const epci = niveau === 'commune' && typeof route.query.epci === 'string' ? route.query.epci : undefined
-  return payloadPourCarte(payload.value, familyDispatch.value!.facet, niveau, departement, epci)
+  return payloadPourCarte(payload.value, familyDispatch.value!.facet, { niveau, departement, epci })
 })
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
 const couche = computed<Couche | null>(() => page.value && familyDispatch.value ? ({ source: 'indicateur', clef: familyDispatch.value.facet.indicator, detail: familyDispatch.value.facet.detail, libelle: familyDispatch.value.facet.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)

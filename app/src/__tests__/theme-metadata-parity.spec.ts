@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { lignesLQPour } from '@/fiche/sousGroupes'
+import { FAMILLES_SEMANTIQUES } from '@/payload/types'
 
 const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
 const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
 const publicDir = join(process.cwd(), '..', 'public', 'data')
+const themeMetadataR = join(process.cwd(), '..', 'pipeline', 'R', 'theme_metadata.R')
 
 function lire(dir: string, theme: string): unknown {
   return JSON.parse(readFileSync(join(dir, `theme_${theme}.json`), 'utf8'))
@@ -17,6 +19,19 @@ function lireFaits(theme: string): Array<Record<string, unknown>> {
 describe('métadonnées de thème — autorité canonique et snapshot public', () => {
   it('garde le snapshot public sémantiquement identique au fichier épinglé', () => {
     for (const theme of themes) expect(lire(publicDir, theme), theme).toEqual(lire(canonicalDir, theme))
+  })
+
+  it('porte la MÊME liste fermée des six familles sémantiques que le pipeline (#437)', () => {
+    // La parité app/pipeline du vocabulaire des familles de Repères : la
+    // constante TS (FAMILLES_SEMANTIQUES, types.ts) doit être IDENTIQUE — même
+    // ordre, mêmes six valeurs — à sa déclaration miroir R (FAMILLES_SEMANTIQUES,
+    // pipeline/R/theme_metadata.R). Une dérive de l'un ou l'autre échoue ici.
+    const source = readFileSync(themeMetadataR, 'utf8')
+    const declaration = source.match(/FAMILLES_SEMANTIQUES\s*<-\s*c\(([^)]*)\)/)
+    expect(declaration, 'la constante miroir R est déclarée').not.toBeNull()
+    const cotes = declaration![1].match(/"([^"]+)"/g) ?? []
+    const famillesR = cotes.map((cote) => cote.slice(1, -1))
+    expect(famillesR).toEqual([...FAMILLES_SEMANTIQUES])
   })
 
   it('déclare la figure liste/lq de la lecture de spécialisation dans le canon (jamais plus de clobber)', () => {
