@@ -6,11 +6,7 @@
       "key": "etat-de-la-population",
       "label": "État de la population",
       "framing": "La population de la commune : sa taille, sa densité et la structure de ses ménages.",
-      "indicators": [
-        "densite",
-        "structure_age",
-        "taille_menages"
-      ],
+      "indicators": ["densite", "structure_age", "taille_menages"],
       "figure": {
         "family": "pyramid",
         "indicator": "structure_age"
@@ -20,93 +16,37 @@
       "key": "trajectoire-demographique",
       "label": "Trajectoire démographique",
       "framing": "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.",
-      "indicators": [
-        "evolution_1968"
-      ],
+      "indicators": ["evolution_1968"],
       "figure": {
         "family": "trajectory",
         "indicator": "evolution_1968"
       },
       "reading": {
         "story_key": "trajectoire-demographique",
-        "params": [
-          "periode",
-          "taux_solde_naturel",
-          "taux_solde_migratoire",
-          "classification"
-        ],
+        "params": ["periode", "taux_solde_naturel", "taux_solde_migratoire", "classification"],
         "template": [
-          {
-            "type": "text",
-            "content": "Entre "
-          },
-          {
-            "type": "param",
-            "key": "periode"
-          },
-          {
-            "type": "text",
-            "content": ", la population de "
-          },
-          {
-            "type": "territoire"
-          },
-          {
-            "type": "text",
-            "content": " "
-          },
-          {
-            "type": "strong",
-            "children": [
-              {
-                "type": "param",
-                "key": "classification"
-              }
-            ]
-          },
-          {
-            "type": "text",
-            "content": " : "
-          },
-          {
-            "type": "param",
-            "key": "taux_solde_naturel"
-          },
-          {
-            "type": "text",
-            "content": " par an (naturel), "
-          },
-          {
-            "type": "param",
-            "key": "taux_solde_migratoire"
-          },
-          {
-            "type": "text",
-            "content": " (migratoire). "
-          },
-          {
-            "type": "link",
-            "href": "/methodologie#demographie",
-            "children": [
-              {
-                "type": "text",
-                "content": "Sources et méthodes"
-              }
-            ]
-          }
+          { "type": "text", "content": "Entre " },
+          { "type": "param", "key": "periode" },
+          { "type": "text", "content": ", la population de " },
+          { "type": "territoire" },
+          { "type": "text", "content": " " },
+          { "type": "strong", "children": [
+            { "type": "param", "key": "classification" }
+          ] },
+          { "type": "text", "content": " : " },
+          { "type": "param", "key": "taux_solde_naturel" },
+          { "type": "text", "content": " par an (naturel), " },
+          { "type": "param", "key": "taux_solde_migratoire" },
+          { "type": "text", "content": " (migratoire). " },
+          { "type": "link", "href": "/methodologie#demographie", "children": [
+            { "type": "text", "content": "Sources et méthodes" }
+          ] }
         ]
       }
     }
   ],
-  "indicator_keys": [
-    "densite",
-    "structure_age",
-    "evolution_1968",
-    "taille_menages"
-  ],
-  "story_keys": [
-    "trajectoire-demographique"
-  ],
+  "indicator_keys": ["densite", "structure_age", "evolution_1968", "taille_menages"],
+  "story_keys": ["trajectoire-demographique"],
   "sources": {
     "densite": "serie_historique",
     "structure_age": "age_detail",
@@ -142,76 +82,19 @@
     "vide-meurt": "se vide et se meurt",
     "vide-renouvelle": "se vide, mais se renouvelle"
   },
-  "indicator_pages": {
-    "densite": {
-      "indicator": "densite",
-      "label": "Densité de population",
-      "definition": "Nombre d’habitants par kilomètre carré.",
-      "unit": "hab./km²",
-      "calculation": "Population municipale divisée par la superficie.",
-      "direction": "high",
-      "caveats": "La superficie est celle du territoire.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "serie_historique"
-      ]
-    },
-    "structure_age": {
-      "indicator": "structure_age",
-      "label": "Structure par âge",
-      "definition": "Répartition de la population par tranche d’âge et sexe.",
-      "unit": "%",
-      "calculation": "Population par tranche d’âge et sexe rapportée à la population du territoire.",
-      "direction": "high",
-      "caveats": "Les parts sont publiées par l’INSEE et peuvent être indisponibles pour un territoire.",
-      "levels": [
-        "commune",
-        "epci",
-        "departement"
-      ],
-      "sources": [
-        "age_detail"
-      ],
-      "family": "pyramid",
-      "pyramid": {
-        "dimensions": [
-          "detail",
-          "sex"
-        ]
-      },
-      "comparison": {
-        "details": [
-          "<15",
-          "15-24",
-          "25-39",
-          "40-54",
-          "55-64",
-          "65-79",
-          "80+"
-        ],
-        "detail": "<15",
-        "sexes": [
-          "F",
-          "M"
-        ],
-        "sex": "F",
-        "unit": "%",
-        "labels": {
-          "<15": "Moins de 15 ans",
-          "15-24": "15 à 24 ans",
-          "25-39": "25 à 39 ans",
-          "40-54": "40 à 54 ans",
-          "55-64": "55 à 64 ans",
-          "65-79": "65 à 79 ans",
-          "80+": "80 ans et plus"
-        }
-      }
-    }
-  },
+  "indicator_pages": { "densite": {
+    "indicator": "densite",
+    "label": "Densité de population",
+    "definition": "Nombre d’habitants par kilomètre carré.",
+    "unit": "hab./km²",
+    "calculation": "Population municipale divisée par la superficie.",
+    "direction": "high",
+    "caveats": "La superficie est celle du territoire.",
+    "levels": ["commune", "epci", "departement"],
+    "sources": ["serie_historique"]
+  }, "structure_age": {
+    "indicator": "structure_age", "label": "Structure par âge", "definition": "Répartition de la population par tranche d’âge et sexe.", "unit": "%", "calculation": "Population par tranche d’âge et sexe rapportée à la population du territoire.", "direction": "high", "caveats": "Les parts sont publiées par l’INSEE et peuvent être indisponibles pour un territoire.", "levels": ["commune", "epci", "departement"], "sources": ["age_detail"], "family": "pyramid", "pyramid": { "dimensions": ["detail", "sex"] }, "comparison": { "details": ["<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+"], "detail": "<15", "sexes": ["F", "M"], "sex": "F", "unit": "%", "labels": { "<15": "Moins de 15 ans", "15-24": "15 à 24 ans", "25-39": "25 à 39 ans", "40-54": "40 à 54 ans", "55-64": "55 à 64 ans", "65-79": "65 à 79 ans", "80+": "80 ans et plus" } }
+  }},
   "source_records": {
     "serie_historique": {
       "dataset": "INSEE — Série historique du recensement",
@@ -220,16 +103,7 @@
       "licence": "Licence Ouverte 2.0",
       "vintage": "2023",
       "freshness": "30 juin 2026",
-      "vintages": [
-        {
-          "id": "serie_historique",
-          "label": "Millésime 2023",
-          "version": "2023",
-          "licence": "Licence Ouverte 2.0",
-          "dateReference": "2023-01-01",
-          "datePublication": "2026-06-30"
-        }
-      ]
+      "vintages": [{ "id": "serie_historique", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }]
     },
     "age_detail": {
       "dataset": "INSEE — Population par sexe et âge (PRINC)",
@@ -238,16 +112,7 @@
       "licence": "Licence Ouverte 2.0",
       "vintage": "2023",
       "freshness": "30 juin 2026",
-      "vintages": [
-        {
-          "id": "age_detail",
-          "label": "Millésime 2023",
-          "version": "2023",
-          "licence": "Licence Ouverte 2.0",
-          "dateReference": "2023-01-01",
-          "datePublication": "2026-06-30"
-        }
-      ]
+      "vintages": [{ "id": "age_detail", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }]
     },
     "menages": {
       "dataset": "INSEE — Ménages (dossier complet)",
@@ -256,16 +121,7 @@
       "licence": "Licence Ouverte 2.0",
       "vintage": "2023",
       "freshness": "30 juin 2026",
-      "vintages": [
-        {
-          "id": "menages",
-          "label": "Millésime 2023",
-          "version": "2023",
-          "licence": "Licence Ouverte 2.0",
-          "dateReference": "2023-01-01",
-          "datePublication": "2026-06-30"
-        }
-      ]
+      "vintages": [{ "id": "menages", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }]
     },
     "epci": {
       "dataset": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
@@ -274,15 +130,7 @@
       "licence": "Licence Ouverte 2.0",
       "vintage": "2025",
       "freshness": "—",
-      "vintages": [
-        {
-          "id": "epci",
-          "label": "Millésime 2025",
-          "version": "2025",
-          "licence": "Licence Ouverte 2.0",
-          "dateReference": "2025-01-01"
-        }
-      ]
+      "vintages": [{ "id": "epci", "label": "Millésime 2025", "version": "2025", "licence": "Licence Ouverte 2.0", "dateReference": "2025-01-01" }]
     }
   }
 }
