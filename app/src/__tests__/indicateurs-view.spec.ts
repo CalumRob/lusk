@@ -130,8 +130,8 @@ describe('IndicateursView — le catalogue groupé', () => {
     expect(hrefs).toContain('/indicateurs/habitat/prix_m2')
     expect(hrefs).toContain('/indicateurs/programmes/subventions_annuelles')
     // Aucune entrée pour un fait sans page — la garde only-published à travers la vue.
-    expect(hrefs.some((href) => href.includes('couverture_programmes'))).toBe(false)
-    expect(hrefs.some((href) => href.includes('subventions_par_domaine'))).toBe(false)
+    expect(hrefs.some((href) => href?.includes('couverture_programmes'))).toBe(false)
+    expect(hrefs.some((href) => href?.includes('subventions_par_domaine'))).toBe(false)
     // Le libellé affiché est celui du descripteur, jamais la clé brute.
     const textes = liens.map((lien) => lien.text())
     expect(textes).toContain('Distribution des étiquettes DPE (A à G)')

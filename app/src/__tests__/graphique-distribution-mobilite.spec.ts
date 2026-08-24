@@ -6,7 +6,8 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import * as echarts from 'echarts/core'
 
 import GraphiqueDistributionMobilite from '../components/fiche/GraphiqueDistributionMobilite.vue'
-import type { DistributionMobilite, PointNuageMobilite } from '../payload/selectors'
+import type { DistributionMobilite } from '../fiche/sousGroupes'
+import type { PointNuageMobilite } from '../payload/selectors'
 import { routes } from '../router'
 
 /**

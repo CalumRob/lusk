@@ -38,9 +38,8 @@ describe('handoffExploration — le seam pur', () => {
       query: { territoire: '22001', niveau: 'commune' },
     })
     const epci = territoiresFixture.find((t) => t.territoire === '200000001')!
-    expect(handoffExploration(metadata, 'densite', epci)?.query).toEqual({
-      territoire: '200000001',
-      niveau: 'epci',
+    expect(handoffExploration(metadata, 'densite', epci)).toMatchObject({
+      query: { territoire: '200000001', niveau: 'epci' },
     })
   })
 
