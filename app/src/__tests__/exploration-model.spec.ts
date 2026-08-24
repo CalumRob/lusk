@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -236,5 +236,106 @@ describe('modèle distribution de Page d’indicateur (#440)', () => {
     const silence = modeleSignature(faitsComplets, facet, pageDistribution, territoires, {}, { niveau: 'commune' })
     expect(silence.etat).toBeNull()
     expect(silence.message).toBeNull()
+  })
+})
+
+// La grammaire Repères des relations (#441) — le nuage croisé déclaré par la
+// page (deux rôles étiquetés x × y) à côté de la comparaison inter-
+// territoires que la facette scalaire pilote seule. Les points du nuage SONT
+// les lignes du tableau : même population, même rang, même surlignage, même
+// passarelle fiche — par construction. Les échelles se dérivent des VALEURS
+// RÉELLES (jamais un bornage magique), et les points incomplets ne sont PAS
+// empilés à coordonnées fixes : ils sont dits, territoire par territoire.
+describe('modèle relation de Page d’indicateur (#441)', () => {
+  const pageRelation = {
+    ...structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite),
+    family: 'relationship' as const,
+    relationship: { roles: { x: { indicator: 'axe_x', detail: null, label: 'Force X', unit: 'uX' }, y: { indicator: 'axe_y', detail: null, label: 'Force Y', unit: 'uY' } } },
+    comparison: { indicator: 'densite', label: 'Densité comparée', unit: 'hab./km²', direction: 'high' as const },
+  }
+  const facet = normalizeComparisonFacet(pageRelation, {}, 'demographie')
+  const fait = (key: string, id: string, value: number | null): Indicateur => ({ ...facts(id, value ?? 0), key })
+  const faitsNuage = [fait('densite', 'a', 10), fait('densite', 'b', 20), fait('axe_x', 'a', 1000), fait('axe_y', 'a', 2), fait('axe_x', 'b', 5000), fait('axe_y', 'b', 4)]
+  const modeleDe = (faits: Indicateur[], etat: { niveau?: 'commune' | 'epci' | 'departement'; departement?: string; epci?: string; territoire?: string } = {}) => {
+    const base = modeleExploration(faits.filter((f) => f.key === 'densite'), facet, territoires, { niveau: 'commune', ...etat })
+    return { base, modele: modeleRelation(base.rows, faits, facet, pageRelation, territoires, { ...base.state }) }
+  }
+
+  it('les points du nuage SONT les lignes du tableau — même territoire, même rang, même surlignage, même passarelle', () => {
+    const { base, modele } = modeleDe(faitsNuage, { territoire: 'a' })
+    expect(modele.points.map((point) => point.territoire.territoire)).toEqual(base.rows.map((row) => row.territoire.territoire))
+    for (const point of modele.points) {
+      const row = base.rows.find((r) => r.territoire.territoire === point.territoire.territoire)!
+      expect(point.rang).toBe(row.rang)
+      expect(point.rangTaille).toBe(row.rangTaille)
+      expect(point.valeur).toBe(row.value)
+      expect(point.highlighted).toBe(row.highlighted)
+      expect(point.fiche).toBe(row.fiche)
+    }
+    // le point du territoire mis en avant porte ses coordonnées publiées
+    expect(modele.points[0]).toMatchObject({ highlighted: true, x: 1000, y: 2 })
+    // l'état est complet : le territoire sélectionné porte sa paire entière
+    expect(modele.etat).toBe('complet')
+    expect(modele.message).toBeNull()
+  })
+
+  it('les échelles se dérivent des valeurs réelles des axes — jamais un bornage fixe', () => {
+    const { modele } = modeleDe(faitsNuage)
+    expect(modele.axeX).toMatchObject({ label: 'Force X', unit: 'uX', min: 1000, max: 5000 })
+    expect(modele.axeY).toMatchObject({ label: 'Force Y', unit: 'uY', min: 2, max: 4 })
+    // sans aucune paire complète, le domaine reste null — jamais inventé
+    const vide = modeleDe([fait('densite', 'a', 10)]).modele
+    expect(vide.axeX).toMatchObject({ min: null, max: null })
+  })
+
+  it('un point sans coordonnée complète n’est JAMAIS empilé à coordonnées fixes — il est dit', () => {
+    const ampute = [...faitsNuage.filter((f) => !(f.key === 'axe_y' && f.territoire === 'b'))]
+    const { modele } = modeleDe(ampute)
+    const b = modele.points.find((point) => point.territoire.territoire === 'b')!
+    expect(b).toMatchObject({ x: 5000, y: null })
+    expect(modele.incomplets.map((point) => point.territoire.nom)).toEqual(['Beta'])
+    // le domaine de l'axe Y lit les valeurs TRACÉES seulement (a) — la valeur
+    // manquante n'écrase jamais l'échelle
+    expect(modele.axeY).toMatchObject({ min: 2, max: 2 })
+    // la sélection sur le territoire amputé déclare la relation incomplète
+    const selectionne = modeleDe(ampute, { territoire: 'b' })
+    expect(selectionne.modele.etat).toBe('incomplet')
+    expect(selectionne.modele.message).toMatch(/Beta : relation incomplète à ce niveau\./)
+  })
+
+  it('les quatre états honnêtes — silence, absent à ce niveau (jamais une suppression), incomplet, complet', () => {
+    // aucun territoire sélectionné : rien n'est affirmé
+    const silence = modeleDe(faitsNuage).modele
+    expect(silence.etat).toBeNull()
+    expect(silence.message).toBeNull()
+    // une commune sélectionnée dans une comparaison d'EPCIs : ABSENTE
+    const faitsEpci = [fait('densite', 'e', 10), fait('axe_x', 'e', 1), fait('axe_y', 'e', 2)]
+    const absent = modeleDe(faitsEpci, { niveau: 'epci', territoire: 'a' }).modele
+    expect(absent.etat).toBe('absent')
+    expect(absent.message).toMatch(/Alpha : territoire absent à ce niveau de comparaison\./)
+    expect(absent.message).not.toMatch(/incomplète/)
+    // un territoire inconnu : absent aussi, message générique du squelette
+    const inconnu = modeleRelation([], faitsNuage, facet, pageRelation, territoires, { niveau: 'commune', territoire: 'zzz' })
+    expect(inconnu.etat).toBe('absent')
+    expect(inconnu.message).toBe('Territoire sélectionné absent à ce niveau de comparaison.')
+  })
+
+  it('la coordonnée d’un rôle suit THÈME × CLÉ × DÉTAIL du rôle et le niveau demandé', () => {
+    // un axe multi-détail : seul le détail déclaré par le rôle est lu
+    const pageDetail = structuredClone(pageRelation)
+    pageDetail.relationship.roles.x.detail = '2025'
+    pageDetail.relationship.roles.y.detail = '2025'
+    const facetDetail = normalizeComparisonFacet(pageDetail, {}, 'demographie')
+    const faitsDetail = [
+      fait('densite', 'a', 10),
+      { ...fait('axe_x', 'a', 7), detail: '2024' },
+      { ...fait('axe_x', 'a', 9), detail: '2025' },
+      { ...fait('axe_y', 'a', 1), detail: '2025' },
+      fait('axe_x', 'e', 999), // un EPCI au niveau commune : jamais lu
+    ]
+    const base = modeleExploration(faitsDetail.filter((f) => f.key === 'densite'), facetDetail, territoires, { niveau: 'commune', territoire: 'a' })
+    const modele = modeleRelation(base.rows, faitsDetail, facetDetail, pageDetail, territoires, { ...base.state })
+    expect(modele.etat).toBe('complet')
+    expect(modele.points[0]).toMatchObject({ x: 9, y: 1 })
   })
 })
