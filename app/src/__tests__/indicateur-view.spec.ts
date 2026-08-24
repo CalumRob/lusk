@@ -187,6 +187,9 @@ describe('IndicateurView — profils/listes (#439)', () => {
     expect(selectCategorie.exists()).toBe(true)
     expect(selectCategorie.findAll('option')).toHaveLength(CATEGORIES.length)
     expect(router.currentRoute.value.query.detail).toBe('b_longueur')
+    // Le nom du territoire porté par le modèle nourrit l'aria-label du bloc
+    // (le même motif que signature.nom chez les distributions).
+    expect(wrapper.find('.profil-lignes').attributes('aria-label')).toBe('Profil de Commune A1 sur 6 catégories déclarées')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
@@ -214,11 +217,15 @@ describe('IndicateurView — profils/listes (#439)', () => {
     // Sans territoire sélectionné : rien n'est affirmé.
     const initial = await monter('/indicateurs/mobilite/reseaux', [], metadataListe(), faitsReseaux(), 'mobilite')
     expect(initial.wrapper.text()).toContain('Sélectionnez un territoire pour voir son profil complet.')
-    // Un territoire du périmètre dont une catégorie manque : profil incomplet —
-    // jamais confondu avec une absence.
+    // Un territoire du périmètre dont une catégorie manque : les lignes
+    // DISPONIBLES restent rendues — le profil ne disparaît pas — et
+    // l'incomplétude est dite à côté, en nommant la catégorie manquante.
     const ampute = faitsReseaux().filter((fait) => !(fait.territoire === '22001' && fait.detail === 'c_densite'))
     const incomplet = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), ampute, 'mobilite')
-    expect(incomplet.wrapper.text()).toContain('Commune A1 : profil incomplet à ce niveau.')
+    expect(incomplet.wrapper.findAll('[data-ligne-profil]')).toHaveLength(5)
+    expect(incomplet.wrapper.find('[data-ligne-profil="b_longueur"]').exists()).toBe(true)
+    expect(incomplet.wrapper.find('[data-ligne-profil="c_densite"]').exists()).toBe(false)
+    expect(incomplet.wrapper.text()).toContain('Profil incomplet — sans valeur publiée à ce niveau : Densité — en voiture.')
     expect(incomplet.wrapper.text()).not.toContain('absent')
     // Un EPCI sélectionné dans une comparaison de communes : ABSENT à ce niveau.
     const absent = await monter('/indicateurs/mobilite/reseaux?territoire=200000001', [], metadataListe(), faitsReseaux(), 'mobilite')
