@@ -2,8 +2,9 @@
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, beforeEach } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
-import { chargerAvec, indicateursDemographieFixture, indicateursMilieuxFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
+import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import { COULEURS_DPE } from '../fiche/couleursDpe'
 import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/types'
 import { routes } from '../router'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
@@ -16,7 +17,7 @@ function pagePourFamille(family: FamilleFigure): IndicatorPageMetadata {
   page.comparison = { details: ['total'], detail: 'total', labels: { total: 'Total' }, unit: 'hab./km²', direction: 'high' }
   if (family === 'trajectory') page.trajectory = { endpoints: ['debut', 'fin'] }
   if (family === 'composition') page.composition = { parts: ['total'] }
-  if (family === 'distribution') page.distribution = { signature: 'distribution', summary: 'summary' }
+  if (family === 'distribution') page.distribution = { signature: ['total'] }
   if (family === 'relationship') page.relationship = { roles: { x: 'x', y: 'y' }, measure: 'measure' }
   if (family === 'list') page.list = { categories: ['total'] }
   if (family === 'pyramid') page.pyramid = { dimensions: ['total'] }
@@ -135,5 +136,63 @@ describe('IndicateurView — trajectoires (#438)', () => {
     expect(texte).toContain('Détail (actif)')
     expect(texte.toLowerCase()).not.toContain('endpoint')
     expect(texte.toLowerCase()).not.toContain('spread')
+  })
+})
+
+// La grammaire Repères des distributions (#440) — UN test routé qui verrouille
+// les états indisponibles HONNÊTES : la signature complète se rend, et les deux
+// échecs sont distingués l'un de l'autre — « territoire absent à ce niveau »
+// n'est JAMAIS habillé en « distribution incomplète ou supprimée » (le défaut
+// du PR supplanté, qui inventait un motif de suppression).
+describe('IndicateurView — distributions (#440)', () => {
+  function metadataDistribution(): typeof metadonneesThemesFixtures.habitat {
+    const metadata = structuredClone(metadonneesThemesFixtures.habitat)
+    metadata.indicator_pages = { distribution_dpe: {
+      indicator: 'distribution_dpe', detail: null, label: 'Distribution des étiquettes DPE (A à G)',
+      definition: 'Répartition des diagnostics de performance énergétique du territoire par étiquette, de A à G.',
+      unit: '%', calculation: 'Part de chaque étiquette parmi les diagnostics disponibles du territoire.',
+      direction: 'low',
+      caveats: 'La comparaison entre territoires porte sur la part de passoires thermiques (F/G), jamais sur les étiquettes une à une.',
+      levels: ['commune', 'epci', 'departement'], sources: ['dpe_22'],
+      family: 'distribution',
+      distribution: { signature: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
+      comparison: { indicator: 'part_passoires', label: 'Part de passoires thermiques', unit: '%', direction: 'low' },
+    } }
+    return metadata
+  }
+
+  it('rend la signature complète, nomme la facette résumée et distingue « absent » de « incomplète ou supprimée »', async () => {
+    // Sans territoire sélectionné : rien n'est affirmé — un appel, pas un état.
+    const initial = await monter('/indicateurs/habitat/distribution_dpe', [], metadataDistribution(), indicateursHabitatFixture, 'habitat')
+    expect(initial.wrapper.find('[data-renderer="distribution"]').exists()).toBe(true)
+    expect(initial.wrapper.text()).toContain('Sélectionnez un territoire pour voir sa signature complète')
+
+    // Signature complète : les barres déclarées A→G se rendent, et la facette
+    // résumée est VISIBLE du visiteur avec son libellé à elle.
+    await initial.router.push({ query: { territoire: '22001' } }); await flushPromises()
+    const complet = initial.wrapper.text()
+    expect(complet).toContain('Part de passoires thermiques')
+    for (const etiquette of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
+      expect(initial.wrapper.find(`[data-detail="${etiquette}"]`).exists(), `étiquette ${etiquette}`).toBe(true)
+    }
+    // ADR-0023 : les barres DPE portent les couleurs officielles A→G — jamais
+    // le dégradé du thème (le même verrou que la figure compacte de fiche).
+    const styleBarreA = initial.wrapper.find('[data-detail="A"] .barre').attributes('style')!.replace(/\s/g, '').toLowerCase()
+    expect(styleBarreA).toContain(COULEURS_DPE.A.toLowerCase())
+    expect(styleBarreA).not.toContain('indicateur-accent')
+    const styleBarreF = initial.wrapper.find('[data-detail="F"] .barre').attributes('style')!.replace(/\s/g, '').toLowerCase()
+    expect(styleBarreF).toContain(COULEURS_DPE.F.toLowerCase())
+
+    // Une étiquette sans valeur publiée : le périmètre PORTE le territoire,
+    // la distribution est incomplète ou supprimée — dit comme tel.
+    const sansG = indicateursHabitatFixture.filter((fact) => !(fact.key === 'distribution_dpe' && fact.detail === 'G'))
+    const incomplete = await monter('/indicateurs/habitat/distribution_dpe?territoire=22001', [], metadataDistribution(), sansG, 'habitat')
+    expect(incomplete.wrapper.text()).toContain('Commune A1 : distribution incomplète ou supprimée à ce niveau.')
+
+    // Un EPCI sélectionné dans une comparaison de communes : ABSENT à ce
+    // niveau — jamais un motif de suppression inventé.
+    const absent = await monter('/indicateurs/habitat/distribution_dpe?territoire=200000001', [], metadataDistribution(), indicateursHabitatFixture, 'habitat')
+    expect(absent.wrapper.find('[role="status"]').text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
+    expect(absent.wrapper.text()).not.toContain('supprimée')
   })
 })

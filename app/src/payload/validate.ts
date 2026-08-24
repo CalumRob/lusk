@@ -2051,7 +2051,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
        const comparison = page['comparison']
        if (comparison !== undefined) {
          exiger(estObjet(comparison), fichier, 0, `« indicator_pages.${key}.comparison » doit être un objet`)
-         for (const field of ['indicator', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaineNonVide(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
+         for (const field of ['indicator', 'label', 'detail', 'dimension', 'unit']) exiger(comparison[field] === undefined || comparison[field] === null || estChaineNonVide(comparison[field]), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
          for (const field of ['details', 'sexes', 'dimensions']) exiger(comparison[field] === undefined || (Array.isArray(comparison[field]) && (comparison[field] as unknown[]).length > 0 && new Set(comparison[field] as unknown[]).size === (comparison[field] as unknown[]).length && (comparison[field] as unknown[]).every((value) => estChaineNonVide(value))), fichier, 0, `« indicator_pages.${key}.comparison.${field} » est invalide`)
          if (comparison['indicator'] !== undefined) exiger(indicator_keys.includes(comparison['indicator'] as string), fichier, 0, `« indicator_pages.${key}.comparison.indicator » est inconnu`)
          if (comparison['detail'] !== undefined && comparison['details'] !== undefined) exiger((comparison['details'] as unknown[]).includes(comparison['detail']), fichier, 0, `« indicator_pages.${key}.comparison.detail » n'est pas déclaré dans details`)
@@ -2126,7 +2126,22 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
             break
           }
           case 'composition': indicator_pages[key] = { ...base, family, composition: { parts: lireExtensionChaines('parts') } }; break
-          case 'distribution': indicator_pages[key] = { ...base, family, distribution: { signature: lireExtensionChaine('signature'), summary: lireExtensionChaine('summary') } }; break
+          case 'distribution': {
+            // La distribution ne se compare JAMAIS par ses bins (#440) : la
+            // facette résumée est STRUCTURELLE — comparison déclarée, elle
+            // nomme SA clé publiée et son libellé public (souvent une AUTRE
+            // clé que la page : part_passoires résume distribution_dpe), et
+            // chaque détail de la signature possède son libellé canonical
+            // (#431, le miroir des parts composition). Le miroir exact vit
+            // dans valider_theme_metadata (theme_metadata.R).
+            const signature = lireExtensionChaines('signature')
+            exiger(comparison !== undefined && estChaineNonVide(comparison['indicator']), fichier, 0, `« indicator_pages.${key}.distribution » requiert la clé de sa facette résumée « comparison.indicator »`)
+            exiger(estChaineNonVide(comparison?.['label']), fichier, 0, `« indicator_pages.${key}.comparison.label » est requis : la facette résumée est visible du visiteur`)
+            const labelsSignature = detail_labels[key] ?? {}
+            exiger(signature.every((value) => Object.prototype.hasOwnProperty.call(labelsSignature, value)), fichier, 0, `« indicator_pages.${key}.distribution » référence un détail sans libellé canonical`)
+            indicator_pages[key] = { ...base, family, distribution: { signature } }
+            break
+          }
           case 'relationship': {
             const rolesBrut = extension?.['roles']
             if (!estObjet(rolesBrut) || !estChaineNonVide(rolesBrut['x']) || !estChaineNonVide(rolesBrut['y'])) throw erreur(fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`)
@@ -2284,6 +2299,42 @@ export function verifierPariteTrajectoires(payload: Payload): void {
       'validation',
       'theme_<theme>.json',
       `Parité trajectoires ↔ payload rompue — ${violations.join(' · ')}`,
+    )
+  }
+}
+
+/**
+ * La parité distributions ↔ faits publiés (#440) — la garde de chargement
+ * miroir de verifier_parite_distributions (theme_metadata.R) : pour chaque
+ * page de famille « distribution », la signature déclarée couvre EXACTEMENT
+ * les détails publiés de la clé — hors la ligne poolée sans détail. Jamais un
+ * détail de signature mort, jamais une étiquette publiée absente de la
+ * signature (les Repères d'une distribution sont complets ou ne mentent pas).
+ * Le filtre des faits est THÈME × CLÉ, identique au miroir R.
+ */
+export function verifierPariteDistributions(payload: Payload): void {
+  const violations: string[] = []
+  for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
+    for (const [key, page] of Object.entries(meta.indicator_pages ?? {})) {
+      if (page.family !== 'distribution') continue
+
+      const publiees = new Set(
+        payload.indicateurs.filter((i) => i.theme === theme && i.key === key && i.detail !== null).map((i) => i.detail as string),
+      )
+      const declarees = page.distribution?.signature ?? []
+      for (const detail of declarees) {
+        if (!publiees.has(detail)) violations.push(`${theme}: détail « ${detail} » de « ${key} » déclaré jamais publié (signature morte)`)
+      }
+      for (const detail of publiees) {
+        if (!declarees.includes(detail)) violations.push(`${theme}: détail « ${detail} » de « ${key} » publié absent de la signature déclarée`)
+      }
+    }
+  }
+  if (violations.length > 0) {
+    throw new PayloadError(
+      'validation',
+      'theme_<theme>.json',
+      `Parité distributions ↔ payload rompue — ${violations.join(' · ')}`,
     )
   }
 }

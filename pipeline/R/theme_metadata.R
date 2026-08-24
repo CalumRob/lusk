@@ -119,6 +119,53 @@ verifier_parite_trajectoires <- function(metadata, indicateurs) {
   invisible(metadata)
 }
 
+# verifier_parite_distributions --------------------------------------------------
+# La parité distributions ↔ faits COMMITTÉS (#440) — le miroir exact de
+# verifierPariteDistributions (app/src/payload/validate.ts, appelée au
+# chargement). Pour chaque page de famille « distribution » : la signature
+# déclarée couvre EXACTEMENT les détails publiés de la clé — hors la ligne
+# poolée sans détail. Jamais un détail de signature mort, jamais une étiquette
+# publiée absente de la signature : les Repères d'une distribution sont
+# complets ou ne mentent pas. Le filtre des faits est THÈME × CLÉ, identique à
+# l'app. Les règles STRUCTURELLES (clé + libellé de la facette résumée,
+# libellés canonical de la signature) vivent dans valider_theme_metadata
+# (ci-dessus). Cette garde s'exécute sur les artefacts committés (le contrat
+# de payload committé — la même discipline que les trajectoires #438).
+verifier_parite_distributions <- function(metadata, indicateurs) {
+  manquer <- function(theme, cle, detail) {
+    stop(sprintf(
+      "Parité distributions ↔ payload rompue — %s, « %s » : %s.",
+      theme, cle, detail
+    ), call. = FALSE)
+  }
+  if (!is.null(metadata$indicator_pages)) {
+    for (cle in names(metadata$indicator_pages)) {
+      page <- metadata$indicator_pages[[cle]]
+      if (!identical(page$family, "distribution")) next
+
+      details_publies <- unique(as.character(
+        indicateurs$detail[indicateurs$theme == metadata$theme &
+                             indicateurs$key == cle &
+                             !vapply(indicateurs$detail, function(x) is.null(x) || is.na(x), logical(1L))]
+      ))
+      declarees <- if (is.null(page$distribution$signature)) character(0L) else
+        unlist(page$distribution$signature, use.names = FALSE)
+
+      mortes <- setdiff(declarees, details_publies)
+      if (length(mortes) > 0L) {
+        manquer(metadata$theme, cle, paste0(
+          "détail(s) de signature jamais publié(s) : ", paste(mortes, collapse = ", ")))
+      }
+      absentes <- setdiff(details_publies, declarees)
+      if (length(absentes) > 0L) {
+        manquer(metadata$theme, cle, paste0(
+          "détail(s) publié(s) absent de la signature déclarée : ", paste(absentes, collapse = ", ")))
+      }
+    }
+  }
+  invisible(metadata)
+}
+
 # STORIES_RESOLUES_PAR_THEME ----------------------------------------------------
 # Le registre de la RÉSOLUTION des histoires (issue #312, parent #308) : pour
 # chaque thème, la table qui dit où chaque story vit (le `groupe` de la fiche —
@@ -709,16 +756,18 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.null(comparison$detail) && !is.null(comparison$details) && !comparison$detail %in% comparison$details) manquer("indicator_pages.comparison.detail", "le détail n'est pas déclaré dans details")
       if (!is.null(comparison$sex) && !is.null(comparison$sexes) && !comparison$sex %in% comparison$sexes) manquer("indicator_pages.comparison.sex", "le sexe n'est pas déclaré dans sexes")
       if (!is.null(comparison$dimension) && !is.null(comparison$dimensions) && !comparison$dimension %in% comparison$dimensions) manquer("indicator_pages.comparison.dimension", "la dimension n'est pas déclarée dans dimensions")
-      for (champ in c("detail", "dimension", "unit")) if (!is.null(comparison[[champ]]) && !est_chaine_non_vide(comparison[[champ]])) manquer(paste0("indicator_pages.comparison.", champ), "la valeur est invalide")
+      for (champ in c("detail", "dimension", "unit", "label")) if (!is.null(comparison[[champ]]) && !est_chaine_non_vide(comparison[[champ]])) manquer(paste0("indicator_pages.comparison.", champ), "la valeur est invalide")
       if (!is.null(comparison$sex) && !comparison$sex %in% c("F", "M")) manquer("indicator_pages.comparison.sex", "le sexe doit être F ou M")
       if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
       if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
     }
     extensions_tableaux <- list(
       trajectory = "endpoints", composition = "parts", list = "categories",
-      pyramid = "dimensions", `comparison-bars` = "series"
+      pyramid = "dimensions", `comparison-bars` = "series",
+      # #440 : la signature d'une distribution est un TABLEAU fermé de détails
+      # (la forme chaîne unique du PR supplanté est hors contrat).
+      distribution = "signature"
     )
-    extensions_chaines <- list(distribution = c("signature", "summary"))
     extension_keys <- c("trajectory", "composition", "distribution", "relationship", "list", "pyramid", "comparison-bars", "comparison_bars")
     for (candidate in setdiff(extension_keys, famille)) if (!is.null(page[[candidate]])) manquer(paste0("indicator_pages.", indicator_key, ".", candidate), "l'extension ne correspond pas à la famille déclarée")
       extension <- page[[if (famille == "comparison-bars") "comparison-bars" else famille]]
@@ -727,9 +776,9 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       if (!is.list(extension)) manquer(paste0("indicator_pages.", indicator_key, ".", famille), "l'extension doit être un objet")
       # Les champs d'extension sont TYPÉS par famille (#437 — le miroir exact
       # de l'app) : les familles « collection » portent UN tableau non vide de
-      # chaînes distinctes ; distribution porte DEUX chaînes non vides
-      # (signature, summary). Jamais une forme dérivée (une chaîne là où le
-      # contrat attend un tableau) acceptée puis masquée par un cast.
+      # chaînes distinctes, distribution y compris depuis #440 (SA signature).
+      # Jamais une forme dérivée (une chaîne là où le contrat attend un
+      # tableau) acceptée puis masquée par un cast.
       for (champ in if (is.null(extensions_tableaux[[famille]])) character() else extensions_tableaux[[famille]]) {
         valeurs <- extension[[champ]]
         if (!is.list(valeurs) || length(valeurs) == 0L ||
@@ -737,12 +786,6 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
             any(!vapply(valeurs, est_chaine_non_vide, logical(1L)))) {
           manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ),
                   "le champ est incomplet — un tableau non vide de chaînes distinctes est requis")
-        }
-      }
-      for (champ in if (is.null(extensions_chaines[[famille]])) character() else extensions_chaines[[famille]]) {
-        if (!est_chaine_non_vide(extension[[champ]])) {
-          manquer(paste0("indicator_pages.", indicator_key, ".", famille, ".", champ),
-                  "le champ est incomplet — une chaîne non vide est requise")
         }
       }
       if (famille %in% c("composition", "pyramid")) {
@@ -784,6 +827,33 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
           manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
                   paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
                          paste(orphelines, collapse = ", ")))
+        }
+      }
+      if (identical(famille, "distribution")) {
+        # La distribution ne se compare JAMAIS par ses bins (#440) : la
+        # facette résumée est STRUCTURELLE — comparison déclarée, elle nomme
+        # SA clé publiée et son libellé public (souvent une AUTRE clé que la
+        # page : part_passoires résume distribution_dpe), et chaque détail de
+        # la signature possède son libellé canonical (#431, le miroir des
+        # parts composition). Le miroir exact vit dans validerThemeMetadata
+        # (app/src/payload/validate.ts).
+        if (is.null(comparison)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".comparison"),
+                  "la facette résumée inter-territoires est requise pour une distribution")
+        }
+        if (is.null(comparison$indicator) || !est_chaine_non_vide(comparison$indicator)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".distribution"),
+                  "la clé de sa facette résumée « comparison.indicator » est requise")
+        }
+        if (is.null(comparison$label) || !est_chaine_non_vide(comparison$label)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".comparison.label"),
+                  "le libellé public de la facette résumée est requis — elle est visible du visiteur")
+        }
+        declarees <- unlist(extension$signature, use.names = FALSE)
+        labels <- if (is.null(metadata$detail_labels[[indicator_key]])) list() else metadata$detail_labels[[indicator_key]]
+        if (any(!vapply(declarees, function(x) !is.null(labels[[x]]), logical(1)))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".distribution"),
+                  "un détail de la signature n'a pas de libellé canonical")
         }
       }
     }
