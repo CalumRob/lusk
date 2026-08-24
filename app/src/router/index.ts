@@ -7,6 +7,7 @@ import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import MethodologieView from '../views/MethodologieView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
+import IndicateursView from '../views/IndicateursView.vue'
 import IndicateurView from '../views/IndicateurView.vue'
 import SourcesView from '../views/SourcesView.vue'
 
@@ -78,6 +79,15 @@ export const routes = [
     name: 'a-propos',
     component: AProposView,
     meta: { title: 'À propos' },
+  },
+  {
+    // Le catalogue des indicateurs (#409) — la route EXACTE précède sa sœur
+    // paramétrée : /indicateurs liste les Pages d'indicateur publiées,
+    // groupées par thème canonique et sous-groupe de fiche.
+    path: '/indicateurs',
+    name: 'indicateurs',
+    component: IndicateursView,
+    meta: { title: 'Indicateurs' },
   },
   {
     path: '/indicateurs/:theme/:indicator',
