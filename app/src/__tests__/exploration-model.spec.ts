@@ -250,7 +250,7 @@ describe('modèle relation de Page d’indicateur (#441)', () => {
   const pageRelation = {
     ...structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite),
     family: 'relationship' as const,
-    relationship: { roles: { x: { indicator: 'axe_x', detail: null, label: 'Force X', unit: 'uX' }, y: { indicator: 'axe_y', detail: null, label: 'Force Y', unit: 'uY' } } },
+    relationship: { roles: { x: { indicator: 'axe_x', detail: null as string | null, label: 'Force X', unit: 'uX' }, y: { indicator: 'axe_y', detail: null as string | null, label: 'Force Y', unit: 'uY' } } },
     comparison: { indicator: 'densite', label: 'Densité comparée', unit: 'hab./km²', direction: 'high' as const },
   }
   const facet = normalizeComparisonFacet(pageRelation, {}, 'demographie')
