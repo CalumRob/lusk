@@ -6,7 +6,7 @@
  * "rennes" must find "Rennes" (normaliserTexte, NFKD decomposition).
  */
 
-import type { Territoire, TerritoireType } from '../payload/types'
+import type { Territoire, TerritoireType, Theme } from '../payload/types'
 
 /** The French label of a territoire type — the search result chip. */
 const LIBELLES_TYPE: Record<TerritoireType, string> = {
@@ -79,4 +79,47 @@ export function rechercherTerritoires(
 
 export function libelleType(type: TerritoireType): string {
   return LIBELLES_TYPE[type]
+}
+
+/**
+ * Une entrée Indicateur de la recherche groupée (#409) — une Page
+ * d'indicateur publiée du catalogue, avec le libellé payload-owned de son
+ * thème pour la puce de groupe.
+ */
+export interface EntreeRechercheIndicateur {
+  theme: Theme
+  /** Le libellé publié du thème (theme_<theme>.json) — jamais un slug brut. */
+  themeLabel: string
+  /** Le libellé public du descripteur de la page. */
+  label: string
+  href: string
+}
+
+/**
+ * Search the catalogue entries by public label — the SAME matching/scoring as
+ * the territoires search (accent-insensitive, prefix before substring), a
+ * smaller cap (the grouped dropdown's per-section size).
+ */
+export function rechercherIndicateurs(
+  entrees: readonly EntreeRechercheIndicateur[],
+  requete: string,
+  limite = 4,
+): EntreeRechercheIndicateur[] {
+  const requeteNormalisee = normaliserTexte(requete)
+  if (requeteNormalisee === '') return []
+
+  return entrees
+    .map((entree) => ({
+      entree,
+      score: scoreCorrespondance(normaliserTexte(entree.label), requeteNormalisee),
+    }))
+    .filter((r) => r.score > 0)
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        a.entree.label.length - b.entree.label.length ||
+        a.entree.label.localeCompare(b.entree.label, 'fr'),
+    )
+    .slice(0, limite)
+    .map((r) => r.entree)
 }

@@ -77,8 +77,10 @@ export function groupesCatalogue(
 /** Le flat du catalogue pour la recherche groupée — miroir 1:1 des groupes. */
 export function entreesRechercheIndicateurs(
   metadata: Partial<Record<Theme, ThemeMetadata>>,
-): EntreeCatalogue[] {
+): (EntreeCatalogue & { /** Le libellé publié du thème, pour la puce de groupe. */ themeLabel: string })[] {
   return groupesCatalogue(metadata).flatMap((groupe) =>
-    groupe.sousGroupes.flatMap((sousGroupe) => sousGroupe.entrees),
+    groupe.sousGroupes.flatMap((sousGroupe) =>
+      sousGroupe.entrees.map((entree) => ({ ...entree, themeLabel: groupe.label })),
+    ),
   )
 }

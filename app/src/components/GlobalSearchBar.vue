@@ -12,33 +12,46 @@
  * opens it, Escape closes, Tab exits to the page (WAI-ARIA combobox pattern).
  *
  * Props: territoires (the reference table, from the host's loaded payload),
- * chargement + erreur (optional host-driven payload states). Emits: select
- * with the opened Territoire — the host hook (C1: close the mobile drawer).
- * sansNavigation (#283): the carte's search — the results are rows (buttons,
- * not RouterLinks) and selecting emits select WITHOUT navigating to the
- * fiche; the host (CarteView) zooms the map on the territory instead.
+ * indicateurs (OPTIONAL — the catalogue entries, #409: when provided the
+ * results are GROUPED « Territoires » + « Indicateurs » with one flat
+ * keyboard list across both sections; absent — home hero and carte — the
+ * search stays territory-only), chargement + erreur (optional host-driven
+ * payload states). Emits: select with the opened Territoire, and
+ * select-indicateur (#409) when a catalogue entry is activated (the host hook
+ * closes the overlay/drawer). sansNavigation (#283): the carte's search — the
+ * results are rows (buttons, not RouterLinks) and selecting emits select
+ * WITHOUT navigating to the fiche; the host (CarteView) zooms the map on the
+ * territory instead.
  */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CircleAlert, Loader2, Search, SearchX, X } from 'lucide-vue-next'
 
 import type { Territoire } from '../payload/types'
-import { libelleType, rechercherTerritoires } from '../search/recherche'
+import {
+  libelleType,
+  rechercherIndicateurs,
+  rechercherTerritoires,
+} from '../search/recherche'
+import type { EntreeRechercheIndicateur } from '../search/recherche'
 
 const props = withDefaults(
   defineProps<{
     territoires: Territoire[]
+    /** Les entrées du catalogue (#409) — présentes ⇒ résultats groupés. */
+    indicateurs?: EntreeRechercheIndicateur[]
     chargement?: boolean
     erreur?: string | null
     /** Mode sans navigation (#283) : les résultats émettent select sans
      *  router.push — la carte zoome sur l'entité au lieu d'ouvrir la fiche. */
     sansNavigation?: boolean
   }>(),
-  { chargement: false, erreur: null, sansNavigation: false },
+  { chargement: false, erreur: null, sansNavigation: false, indicateurs: undefined },
 )
 
 const emit = defineEmits<{
   select: [territoire: Territoire]
+  'select-indicateur': [entree: EntreeRechercheIndicateur]
 }>()
 
 const router = useRouter()
@@ -53,7 +66,22 @@ const actif = ref(-1)
 
 let minuteur: ReturnType<typeof setTimeout> | null = null
 
-const resultats = computed(() => rechercherTerritoires(props.territoires, debouncee.value))
+const resultatsTerritoires = computed(() => rechercherTerritoires(props.territoires, debouncee.value))
+const resultatsIndicateurs = computed(() =>
+  props.indicateurs ? rechercherIndicateurs(props.indicateurs, debouncee.value) : [],
+)
+/** Le mode groupé (#409) : la prop indique que l'hôte veut les deux groupes. */
+const groupee = computed(() => props.indicateurs !== undefined)
+/** La liste PLATE des options — le clavier traverse les deux groupes. */
+type Option =
+  | { genre: 'territoire'; territoire: Territoire }
+  | { genre: 'indicateur'; entree: EntreeRechercheIndicateur }
+const resultats = computed<Option[]>(() => [
+  ...resultatsTerritoires.value.map((territoire): Option => ({ genre: 'territoire', territoire })),
+  ...resultatsIndicateurs.value.map((entree): Option => ({ genre: 'indicateur', entree })),
+])
+/** L'index global de la première option Indicateurs — la couture du clavier. */
+const decalageIndicateurs = computed(() => resultatsTerritoires.value.length)
 const chargementVisuel = computed(() => enAttente.value || props.chargement)
 const ouvert = computed(
   () => focusDansChamp.value && (debouncee.value.trim() !== '' || props.erreur !== null),
@@ -126,14 +154,33 @@ function surKeydown(e: KeyboardEvent) {
 
 function ouvrirActif() {
   if (resultats.value.length === 0) return
-  const cible = actif.value >= 0 ? resultats.value[actif.value] : resultats.value[0]
-  activer(cible)
+  const cible = actif.value >= 0 ? resultats.value[actif.value]! : resultats.value[0]!
+  if (cible.genre === 'territoire') {
+    activer(cible.territoire)
+  } else {
+    // Une entrée Indicateur (#409) : navigation vers SA page, l'hôte ferme
+    // son overlay via select-indicateur.
+    emit('select-indicateur', cible.entree)
+    reinitialiser()
+    if (!props.sansNavigation) {
+      void router.push(cible.entree.href)
+    }
+  }
 }
 
 function surSelection(t: Territoire) {
   // RouterLink carries the navigation; the row action just hooks the host.
   emit('select', t)
   reinitialiser()
+}
+
+/** L'activation d'une entrée Indicateur (#409) — l'hôte ferme son overlay. */
+function surSelectionIndicateur(entree: EntreeRechercheIndicateur) {
+  emit('select-indicateur', entree)
+  reinitialiser()
+  if (!props.sansNavigation) {
+    void router.push(entree.href)
+  }
 }
 
 function activer(t: Territoire) {
@@ -213,29 +260,89 @@ function surFocusout(e: FocusEvent) {
         role="listbox"
         aria-label="Résultats"
       >
-        <component
-          :is="props.sansNavigation ? 'button' : 'router-link'"
-          v-for="(resultat, i) in resultats"
-          :id="`gsb-option-${i}`"
-          :key="resultat.territoire"
-          role="option"
-          :aria-selected="actif === i ? 'true' : 'false'"
-          class="global-search__option"
-          :class="{ 'is-actif': actif === i }"
-          :type="props.sansNavigation ? 'button' : undefined"
-          :to="
-            props.sansNavigation
-              ? undefined
-              : { name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }
-          "
-          @click="surSelection(resultat)"
-        >
-          <span class="global-search__nom">{{ resultat.nom }}</span>
-          <span class="global-search__chip">{{ libelleType(resultat.type) }}</span>
-          <span class="global-search__action">
-            {{ props.sansNavigation ? 'Sur la carte' : 'Voir la page' }}
-          </span>
-        </component>
+        <!-- Le mode groupé (#409) : « Territoires » puis « Indicateurs » — les
+             ids d'options restent la LISTE PLATE (gsb-option-N) pour que le
+             clavier traverse les deux groupes sans couture. -->
+        <template v-if="groupee">
+          <div
+            v-if="resultatsTerritoires.length > 0"
+            role="group"
+            aria-label="Territoires"
+          >
+            <component
+              :is="props.sansNavigation ? 'button' : 'router-link'"
+              v-for="(resultat, i) in resultatsTerritoires"
+              :id="`gsb-option-${i}`"
+              :key="resultat.territoire"
+              role="option"
+              :aria-selected="actif === i ? 'true' : 'false'"
+              class="global-search__option"
+              :class="{ 'is-actif': actif === i }"
+              :type="props.sansNavigation ? 'button' : undefined"
+              :to="
+                props.sansNavigation
+                  ? undefined
+                  : { name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }
+              "
+              @click="surSelection(resultat)"
+            >
+              <span class="global-search__nom">{{ resultat.nom }}</span>
+              <span class="global-search__chip">{{ libelleType(resultat.type) }}</span>
+              <span class="global-search__action">
+                {{ props.sansNavigation ? 'Sur la carte' : 'Voir la page' }}
+              </span>
+            </component>
+          </div>
+          <div
+            v-if="resultatsIndicateurs.length > 0"
+            role="group"
+            aria-label="Indicateurs"
+          >
+            <RouterLink
+              v-for="(entree, j) in resultatsIndicateurs"
+              :id="`gsb-option-${decalageIndicateurs + j}`"
+              :key="entree.href"
+              role="option"
+              :aria-selected="actif === decalageIndicateurs + j ? 'true' : 'false'"
+              class="global-search__option global-search__option--indicateur"
+              :class="{ 'is-actif': actif === decalageIndicateurs + j }"
+              :to="entree.href"
+              @click="surSelectionIndicateur(entree)"
+            >
+              <span class="global-search__nom">{{ entree.label }}</span>
+              <span class="global-search__chip">{{ entree.themeLabel }}</span>
+              <span class="global-search__action">Voir l’indicateur</span>
+            </RouterLink>
+          </div>
+        </template>
+
+        <!-- Le mode territoire-only (héros de l'accueil, recherche de la
+             carte #283) — le comportement historique, inchangé. -->
+        <template v-else>
+          <component
+            :is="props.sansNavigation ? 'button' : 'router-link'"
+            v-for="(resultat, i) in resultatsTerritoires"
+            :id="`gsb-option-${i}`"
+            :key="resultat.territoire"
+            role="option"
+            :aria-selected="actif === i ? 'true' : 'false'"
+            class="global-search__option"
+            :class="{ 'is-actif': actif === i }"
+            :type="props.sansNavigation ? 'button' : undefined"
+            :to="
+              props.sansNavigation
+                ? undefined
+                : { name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }
+            "
+            @click="surSelection(resultat)"
+          >
+            <span class="global-search__nom">{{ resultat.nom }}</span>
+            <span class="global-search__chip">{{ libelleType(resultat.type) }}</span>
+            <span class="global-search__action">
+              {{ props.sansNavigation ? 'Sur la carte' : 'Voir la page' }}
+            </span>
+          </component>
+        </template>
       </div>
       <p v-else-if="props.erreur" class="global-search__etat global-search__etat--erreur">
         <CircleAlert aria-hidden="true" />

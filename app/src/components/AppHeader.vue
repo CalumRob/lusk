@@ -28,6 +28,8 @@ import { useRoute } from 'vue-router'
 import AppIcon from '@/components/AppIcon.vue'
 import GlobalSearchBar from '@/components/GlobalSearchBar.vue'
 import LuskBrand from '@/components/LuskBrand.vue'
+import { entreesRechercheIndicateurs } from '@/indicateurs/catalogue'
+import type { EntreeRechercheIndicateur } from '@/search/recherche'
 import { usePayload } from '@/payload/usePayload'
 import type { Territoire } from '@/payload/types'
 
@@ -38,6 +40,16 @@ const route = useRoute()
 const { payload, erreur, chargement } = usePayload({ attendre: ['territoires', 'run-report'] })
 
 const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
+
+/**
+ * Les entrées Indicateurs de la recherche groupée (#409) — dérivées des
+ * métadonnées déjà présentes, sans rien ajouter au wait-set : la section
+ * « Indicateurs » apparaît quand les thèmes atterrissent en arrière-plan,
+ * la recherche territoires reste vivante avant.
+ */
+const entreesIndicateurs = computed<EntreeRechercheIndicateur[]>(() =>
+  payload.value ? entreesRechercheIndicateurs(payload.value.themeMetadata ?? {}) : [],
+)
 
 const messageErreur = computed(() => (erreur.value ? 'Impossible de charger les territoires.' : null))
 
@@ -298,9 +310,11 @@ onUnmounted(() => {
       <GlobalSearchBar
         class="recherche-superposee-barre"
         :territoires="territoires"
+        :indicateurs="entreesIndicateurs"
         :chargement="chargement"
         :erreur="messageErreur"
         @select="fermerRecherche(); fermer()"
+        @select-indicateur="fermerRecherche(); fermer()"
       />
     </div>
   </div>
@@ -333,9 +347,11 @@ onUnmounted(() => {
     <div class="tiroir-recherche">
       <GlobalSearchBar
         :territoires="territoires"
+        :indicateurs="entreesIndicateurs"
         :chargement="chargement"
         :erreur="messageErreur"
         @select="fermer()"
+        @select-indicateur="fermer()"
       />
     </div>
     <nav class="nav-tiroir" aria-label="Navigation principale">
