@@ -44,6 +44,7 @@ import type {
   ThemeMetadata,
   IndicatorPageMetadataBase,
   FamilleFigure,
+  RelationshipRoleMetadata,
   Vintage,
   Sexe,
 } from './types'
@@ -2084,11 +2085,6 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
         )
         return brut
       }
-      function lireExtensionChaine(champ: string): string {
-        const valeur = extension?.[champ]
-        exiger(estChaineNonVide(valeur), fichier, 0, `« indicator_pages.${key}.${extensionKey}.${champ} » est incomplet (une chaîne non vide est requise)`)
-        return valeur
-      }
           if (extension !== undefined && (family === 'composition' || family === 'pyramid')) {
             const declared = family === 'composition' ? lireExtensionChaines('parts') : lireExtensionChaines('dimensions')
             // Issue #431 : le miroir strict de valider_theme_metadata — les
@@ -2143,9 +2139,26 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
             break
           }
           case 'relationship': {
+            // La relation n'est JAMAIS un score unique (#441) : la facette
+            // scalaire est STRUCTURELLE — comparison déclarée, elle nomme SA
+            // clé publiée et son libellé public (le miroir des distributions
+            // #440) — et les deux rôles du nuage référencent des clés
+            // publiées en portant leurs libellés et unités propres (ADR-0023 :
+            // payload-owned, jamais une clé brute au rendu). Le miroir exact
+            // vit dans valider_theme_metadata (theme_metadata.R).
+            exiger(comparison !== undefined && estChaineNonVide(comparison['indicator']), fichier, 0, `« indicator_pages.${key}.relationship » requiert la clé publiée de sa facette scalaire « comparison.indicator »`)
+            exiger(estChaineNonVide(comparison?.['label']), fichier, 0, `« indicator_pages.${key}.comparison.label » est requis : la facette scalaire est visible du visiteur`)
             const rolesBrut = extension?.['roles']
-            if (!estObjet(rolesBrut) || !estChaineNonVide(rolesBrut['x']) || !estChaineNonVide(rolesBrut['y'])) throw erreur(fichier, 0, `« indicator_pages.${key}.relationship » est incomplet`)
-            indicator_pages[key] = { ...base, family, relationship: { roles: { x: rolesBrut['x'], y: rolesBrut['y'] }, measure: lireExtensionChaine('measure') } }
+            exiger(estObjet(rolesBrut) && estObjet((rolesBrut as LigneBrute)['x']) && estObjet((rolesBrut as LigneBrute)['y']), fichier, 0, `« indicator_pages.${key}.relationship.roles » doit déclarer ses deux rôles x et y`)
+            const lireRole = (axe: 'x' | 'y'): RelationshipRoleMetadata => {
+              const role = (rolesBrut as LigneBrute)[axe] as LigneBrute
+              exiger(estChaineNonVide(role['indicator']) && indicator_keys.includes(role['indicator'] as string), fichier, 0, `« indicator_pages.${key}.relationship.roles.${axe} » doit référencer un indicateur publié et porter son libellé et son unité`)
+              exiger(estChaineNonVide(role['label']), fichier, 0, `« indicator_pages.${key}.relationship.roles.${axe}.label » est requis : le rôle est visible du visiteur`)
+              exiger(estChaineNonVide(role['unit']), fichier, 0, `« indicator_pages.${key}.relationship.roles.${axe}.unit » doit être renseignée`)
+              if (role['detail'] !== undefined && role['detail'] !== null) exiger(estObjet(meta['detail_labels']) && estObjet((meta['detail_labels'] as LigneBrute)[role['indicator'] as string]) && Object.prototype.hasOwnProperty.call((meta['detail_labels'] as LigneBrute)[role['indicator'] as string], role['detail'] as PropertyKey), fichier, 0, `« indicator_pages.${key}.relationship.roles.${axe}.detail » est inconnu`)
+              return { indicator: role['indicator'] as string, detail: role['detail'] === undefined ? null : role['detail'] as string | null, label: role['label'] as string, unit: role['unit'] as string }
+            }
+            indicator_pages[key] = { ...base, family, relationship: { roles: { x: lireRole('x'), y: lireRole('y') } } }
             break
           }
           case 'list': {

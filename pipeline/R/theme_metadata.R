@@ -855,7 +855,42 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
         if (!is.null(comparison) && !is.null(comparison$details) && any(!declarees %in% unlist(comparison$details, use.names = FALSE))) manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"), "les catégories déclarées ne sont pas couvertes")
       }
       if (famille == "relationship") {
-        if (!is.list(extension$roles) || !est_chaine_non_vide(extension$roles$x) || !est_chaine_non_vide(extension$roles$y) || !est_chaine_non_vide(extension$measure)) manquer("indicator_pages.relationship", "roles et measure sont requis")
+        # La relation n'est JAMAIS un score unique (#441) : la facette scalaire
+        # est STRUCTURELLE — comparison déclarée, elle nomme SA clé publiée et
+        # son libellé public (le miroir des distributions #440) — et les deux
+        # rôles du nuage référencent des clés publiées en portant leurs
+        # libellés et unités propres (ADR-0023 : jamais une clé brute au
+        # rendu). Le miroir exact vit dans validerThemeMetadata
+        # (app/src/payload/validate.ts).
+        if (is.null(comparison) || is.null(comparison$indicator) || !est_chaine_non_vide(comparison$indicator)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".relationship"),
+                  "la clé publiée de sa facette scalaire « comparison.indicator » est requise")
+        }
+        if (is.null(comparison$label) || !est_chaine_non_vide(comparison$label)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".comparison.label"),
+                  "le libellé public de la facette scalaire est requis — elle est visible du visiteur")
+        }
+        roles <- extension$roles
+        if (!is.list(roles) || is.null(roles$x) || is.null(roles$y)) {
+          manquer(paste0("indicator_pages.", indicator_key, ".relationship.roles"),
+                  "les deux rôles x et y sont requis")
+        }
+        for (axe in c("x", "y")) {
+          role <- roles[[axe]]
+          if (!is.list(role) || is.null(role$indicator) ||
+              !est_chaine_non_vide(role$indicator) || !role$indicator %in% cles_indicateurs ||
+              is.null(role$label) || !est_chaine_non_vide(role$label) ||
+              is.null(role$unit) || !est_chaine_non_vide(role$unit)) {
+            manquer(paste0("indicator_pages.", indicator_key, ".relationship.roles.", axe),
+                    "le rôle doit référencer un indicateur publié et porter son libellé et son unité")
+          }
+          if (!is.null(role$detail) &&
+              (is.null(metadata$detail_labels[[role$indicator]]) ||
+               is.null(metadata$detail_labels[[role$indicator]][[role$detail]]))) {
+            manquer(paste0("indicator_pages.", indicator_key, ".relationship.roles.", axe, ".detail"),
+                    paste0("détail inconnu « ", role$detail, " »"))
+          }
+        }
       }
       if (identical(famille, "trajectory")) {
         # Les bornes d'une trajectoire sont STRUCTURELLES (#438) : l'axe

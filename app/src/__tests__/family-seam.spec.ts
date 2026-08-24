@@ -29,7 +29,7 @@ describe('seam des familles de Repères', () => {
     ['pyramid', 'pyramid'], ['comparison-bars', 'comparison-bars'],
   ] as const)('dispatches %s through one renderer identity', (family, renderer) => {
     const page = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, family, indicator: `fixture_${family}` }
-    if (family !== 'scalar') (page as any)[family === 'comparison-bars' ? 'comparisonBars' : family] = family === 'relationship' ? { roles: { x: 'x', y: 'y' }, measure: 'm' } : family === 'distribution' ? { signature: ['s'] } : { [family === 'trajectory' ? 'endpoints' : family === 'composition' ? 'parts' : family === 'list' ? 'categories' : family === 'pyramid' ? 'dimensions' : 'series']: ['x'] }
+    if (family !== 'scalar') (page as any)[family === 'comparison-bars' ? 'comparisonBars' : family] = family === 'relationship' ? { roles: { x: { indicator: 'densite', detail: null, label: 'Axe X', unit: 'hab./km²' }, y: { indicator: 'densite', detail: null, label: 'Axe Y', unit: 'hab./km²' } } } : family === 'distribution' ? { signature: ['s'] } : { [family === 'trajectory' ? 'endpoints' : family === 'composition' ? 'parts' : family === 'list' ? 'categories' : family === 'pyramid' ? 'dimensions' : 'series']: ['x'] }
     const result = dispatchIndicatorFamily(page as any, {})
     expect(result.family).toBe(family)
     expect(result.renderer).toBe(renderer)

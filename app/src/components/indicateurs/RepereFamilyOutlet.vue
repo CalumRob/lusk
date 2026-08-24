@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
-import type { ModeleProfil, ModeleSignature, ModeleTrajectoire } from '@/indicateurs/explorationModel'
+import type { ModeleProfil, ModeleRelation, ModeleSignature, ModeleTrajectoire } from '@/indicateurs/explorationModel'
 import ScalarFamilyRenderer from './ScalarFamilyRenderer.vue'
 import TrajectoryFamilyRenderer from './TrajectoryFamilyRenderer.vue'
 import CompositionFamilyRenderer from './CompositionFamilyRenderer.vue'
@@ -9,7 +9,7 @@ import ListFamilyRenderer from './ListFamilyRenderer.vue'
 import RelationshipFamilyRenderer from './RelationshipFamilyRenderer.vue'
 import PyramidFamilyRenderer from './PyramidFamilyRenderer.vue'
 import ComparisonBarsFamilyRenderer from './ComparisonBarsFamilyRenderer.vue'
-defineProps<{ dispatch: FamilyDispatch; modele?: ModeleTrajectoire | null; signature?: ModeleSignature | null; profil?: ModeleProfil | null }>()
+defineProps<{ dispatch: FamilyDispatch; modele?: ModeleTrajectoire | null; signature?: ModeleSignature | null; profil?: ModeleProfil | null; relation?: ModeleRelation | null }>()
 </script>
 <template>
   <section class="repere-family-outlet" :data-family="dispatch.family" :data-renderer="dispatch.renderer">
@@ -20,7 +20,7 @@ defineProps<{ dispatch: FamilyDispatch; modele?: ModeleTrajectoire | null; signa
     <CompositionFamilyRenderer v-else-if="dispatch.family === 'composition'" :dispatch="dispatch" />
     <DistributionFamilyRenderer v-else-if="dispatch.family === 'distribution'" :dispatch="dispatch" :signature="signature"><slot :dispatch="dispatch" /></DistributionFamilyRenderer>
     <ListFamilyRenderer v-else-if="dispatch.family === 'list'" :dispatch="dispatch" :profil="profil"><slot :dispatch="dispatch" /></ListFamilyRenderer>
-    <RelationshipFamilyRenderer v-else-if="dispatch.family === 'relationship'" :dispatch="dispatch" />
+    <RelationshipFamilyRenderer v-else-if="dispatch.family === 'relationship'" :dispatch="dispatch" :relation="relation"><slot :dispatch="dispatch" /></RelationshipFamilyRenderer>
     <PyramidFamilyRenderer v-else-if="dispatch.family === 'pyramid'" :dispatch="dispatch" />
     <ComparisonBarsFamilyRenderer v-else-if="dispatch.family === 'comparison-bars'" :dispatch="dispatch" />
     <p v-if="dispatch.status === 'incomplete'" role="status">Repères partiels : certaines valeurs sont indisponibles.</p>

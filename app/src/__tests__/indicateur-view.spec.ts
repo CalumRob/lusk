@@ -18,7 +18,7 @@ function pagePourFamille(family: FamilleFigure): IndicatorPageMetadata {
   if (family === 'trajectory') page.trajectory = { endpoints: ['debut', 'fin'] }
   if (family === 'composition') page.composition = { parts: ['total'] }
   if (family === 'distribution') page.distribution = { signature: ['total'] }
-  if (family === 'relationship') page.relationship = { roles: { x: 'x', y: 'y' }, measure: 'measure' }
+  if (family === 'relationship') page.relationship = { roles: { x: { indicator: 'densite', detail: null, label: 'Axe X', unit: 'hab./km²' }, y: { indicator: 'densite', detail: null, label: 'Axe Y', unit: 'hab./km²' } } }
   if (family === 'list') page.list = { categories: ['total'] }
   if (family === 'pyramid') page.pyramid = { dimensions: ['total'] }
   if (family === 'comparison-bars') page.comparisonBars = { series: ['total'] }
@@ -294,5 +294,85 @@ describe('IndicateurView — distributions (#440)', () => {
     const absent = await monter('/indicateurs/habitat/distribution_dpe?territoire=200000001', [], metadataDistribution(), indicateursHabitatFixture, 'habitat')
     expect(absent.wrapper.find('[role="status"]').text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
     expect(absent.wrapper.text()).not.toContain('supprimée')
+  })
+})
+
+// La grammaire Repères des relations (#441) — UN test routé qui prouve que la
+// page de relation se rend SANS crasher (le défaut fatal du PR supplanté :
+// un TypeError sur chaque page de relation) : le nuage croise ses deux rôles
+// étiquetés aux échelles dérivées des valeurs réelles, la comparaison inter-
+// territoires reste pilotée par la facette scalaire (jamais un score unique),
+// les points du nuage et les lignes du tableau portent LES MÊMES territoires
+// avec le surlignage préservé, et la carte reçoit LE niveau résolu avec SA
+// facette scalaire — jamais un calque vide sous un autre masque.
+describe('IndicateurView — relations (#441)', () => {
+  function metadataRelation(): typeof metadonneesThemesFixtures.demographie {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.indicator_pages = { relation_demo: {
+      indicator: 'relation_demo', detail: null,
+      label: 'Densité et solde des territoires',
+      definition: 'Le nuage croisé des deux forces du territoire : sa densité et son solde naturel.',
+      unit: 'hab./km²', calculation: 'Les deux rôles déclarés sont publiés par le pipeline.',
+      direction: 'high',
+      caveats: 'La comparaison entre territoires porte sur la densité, jamais un score unique.',
+      levels: ['commune', 'epci', 'departement'], sources: ['serie_historique'],
+      family: 'relationship',
+      relationship: { roles: { x: { indicator: 'densite', detail: null, label: 'Densité de population', unit: 'hab./km²' }, y: { indicator: 'solde_nat_rel', detail: null, label: 'Solde naturel comparé', unit: '‰/an' } } },
+      comparison: { indicator: 'densite', label: 'Densité comparée', unit: 'hab./km²', direction: 'high' },
+    } }
+    return metadata
+  }
+  const faitsRelation = (sans?: string) => [
+    ...indicateursDemographieFixture.filter((fact) => fact.key === 'densite'),
+    ...(['22001', '22002', '29001', '29002'] as const).filter((id) => id !== sans).map((id, index) => ({ ...indicateursDemographieFixture.find((fact) => fact.key === 'densite' && fact.territoire === id)!, key: 'solde_nat_rel', value: [1, 2, 3, 5][index]! })),
+  ]
+
+  it('rend le nuage étiqueté à l\u2019échelle réelle, nomme la facette scalaire, aligne nuage et tableau, et garde la carte cohérente', async () => {
+    const { wrapper, router } = await monter('/indicateurs/demographie/relation_demo?territoire=22001', [], metadataRelation(), faitsRelation())
+    expect(router.currentRoute.value.name).toBe('indicateur')
+    expect(wrapper.find('[data-renderer="relationship"]').exists()).toBe(true)
+
+    // Le nuage trace les quatre paires complètes, aux positions dérivées des
+    // VALEURS RÉELLES — quatre ordonnées distinctes, jamais un empilement fixe.
+    const points = wrapper.findAll('[data-point-relation]')
+    expect(points).toHaveLength(4)
+    const ordonnees = new Set(points.map((point) => point.attributes('cy')))
+    expect(ordonnees.size).toBe(4)
+    // ADR-0023 : les libellés viennent du contrat, JAMAIS une clé brute.
+    const texte = wrapper.text()
+    expect(texte).toContain('Densité de population')
+    expect(texte).toContain('Solde naturel comparé')
+    expect(texte).not.toContain('solde_nat_rel')
+    expect(texte).not.toContain('relation_demo')
+
+    // La facette scalaire pilote la comparaison et est VISIBLE du visiteur ;
+    // le tableau porte les MÊMES territoires que le nuage.
+    expect(texte).toContain('Densité comparée')
+    const lignesTableau = wrapper.findAll('tbody tr')
+    expect(lignesTableau.length).toBe(points.length)
+
+    // Le surlignage traverse le nuage ET le tableau (l'état préservé bout en bout).
+    expect(points.find((point) => point.attributes('data-point-relation') === '22001')!.classes()).toContain('selection')
+    expect(lignesTableau.find((ligne) => ligne.classes().includes('selection'))!.text()).toContain('Commune A1')
+
+    // Un point sans coordonnée complète est DIT, jamais empilé ni effacé.
+    const ampute = await monter('/indicateurs/demographie/relation_demo?territoire=22001', [], metadataRelation(), faitsRelation('29002'))
+    expect(ampute.wrapper.findAll('[data-point-relation]')).toHaveLength(3)
+    expect(ampute.wrapper.text()).toContain('Commune C')
+
+    // Un EPCI sélectionné dans une comparaison de communes : ABSENT — le même
+    // verdict honnête que les autres familles, jamais un motif inventé.
+    const absent = await monter('/indicateurs/demographie/relation_demo?territoire=200000001', [], metadataRelation(), faitsRelation())
+    expect(absent.wrapper.text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
+
+    // La carte : UNE échelle résolue — le masque ET les valeurs portent le
+    // niveau communal, et la couche lit SA facette scalaire (la clé du second
+    // rôle n'y entre jamais).
+    await router.push({ query: { ...router.currentRoute.value.query, vue: 'carte' } })
+    await flushPromises()
+    const carte = wrapper.find('[data-testid="map"]')
+    expect(carte.attributes('data-level')).toBe('communes')
+    expect(carte.attributes('data-selected')).toBe('22001')
+    expect(carte.attributes('data-values')).toBe('22001,22002,29001,29002')
   })
 })

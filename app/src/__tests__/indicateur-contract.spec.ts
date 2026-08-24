@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import { PayloadError, validerThemeMetadata } from '../payload/validate'
 
+// La forme valide minimale des rôles d'une relation (#441) — les deux axes du
+// nuage référencent une clé publiée et portent leurs libellés et unités.
+const rolesRelationValides = () => ({ roles: { x: { indicator: 'densite', detail: null, label: 'Axe X', unit: 'hab/km²' }, y: { indicator: 'densite', detail: null, label: 'Axe Y', unit: 'hab/km²' } } })
+
 describe('contrat des pages d’indicateur', () => {
   it('keeps the public label separate from the typed direction', () => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
@@ -31,7 +35,14 @@ describe('contrat des pages d’indicateur', () => {
   it.each(['scalar', 'trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const)('accepte la famille %s', (family) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     metadata.indicator_pages!.densite.family = family
-    const extensions: Record<string, unknown> = { trajectory: { endpoints: ['debut', 'fin'] }, composition: { parts: ['a'] }, distribution: { signature: ['x'] }, relationship: { roles: { x: 'a', y: 'b' }, measure: 'r' }, list: { categories: ['a'] }, pyramid: { dimensions: ['detail', 'sex'] }, 'comparison-bars': { series: ['a'] } }
+    const extensions: Record<string, unknown> = {
+      trajectory: { endpoints: ['debut', 'fin'] }, composition: { parts: ['a'] },
+      distribution: { signature: ['x'] },
+      // #441 : les deux rôles du nuage référencent des clés publiées et
+      // portent leurs libellés et unités propres
+      relationship: { roles: { x: { indicator: 'densite', detail: null, label: 'Axe X', unit: 'hab/km²' }, y: { indicator: 'densite', detail: null, label: 'Axe Y', unit: 'hab/km²' } } },
+      list: { categories: ['a'] }, pyramid: { dimensions: ['detail', 'sex'] }, 'comparison-bars': { series: ['a'] },
+    }
     if (family !== 'scalar') (metadata.indicator_pages!.densite as any)[family === 'comparison-bars' ? 'comparison-bars' : family] = extensions[family]
     // #431 : le contrat composition/pyramid est complet dans les DEUX miroirs
     // (R + app) — chaque part porte son libellé canonical, la pyramide déclare
@@ -50,6 +61,9 @@ describe('contrat des pages d’indicateur', () => {
       ;(metadata.detail_labels as any).densite = { x: 'Étiquette X' }
       ;(metadata.indicator_pages!.densite as any).comparison = { indicator: 'densite', label: 'Part X', unit: '%' }
     }
+    // #441 : la facette scalaire d'une relation nomme SA clé publiée et son
+    // libellé public — elle pilote carte, extrêmes et tableau, jamais un score unique
+    if (family === 'relationship') (metadata.indicator_pages!.densite as any).comparison = { indicator: 'densite', label: 'Densité comparée', unit: '%' }
     // #439 : chaque catégorie d'une liste porte son libellé canonical — le
     // miroir strict de R ; l'axe des catégories est comparison.details quand
     // la facette est déclarée
@@ -110,7 +124,40 @@ describe('contrat des pages d’indicateur', () => {
       meta.indicator_pages.densite.list = { categories: ['x', 'y'] }
       meta.indicator_pages.densite.comparison = { details: ['x'], detail: 'x', unit: '%' }
     }],
-  ])('rejette %s — le même verdict que R (#440/#439)', (_nom, muter) => {
+    // #441 — la facette scalaire d'une relation est STRUCTURELLE, et chaque
+    // rôle du nuage porte son libellé (jamais une clé brute au rendu,
+    // ADR-0023) : les mêmes verdicts que R.
+    ['une relation sans facette scalaire', (meta: any) => {
+      meta.indicator_pages.densite.family = 'relationship'
+      meta.indicator_pages.densite.relationship = rolesRelationValides()
+      delete meta.indicator_pages.densite.comparison
+    }],
+    ['une relation dont la facette scalaire ne nomme pas sa clé', (meta: any) => {
+      meta.indicator_pages.densite.family = 'relationship'
+      meta.indicator_pages.densite.relationship = rolesRelationValides()
+      meta.indicator_pages.densite.comparison = { label: 'Densité comparée', unit: '%' }
+    }],
+    ['une relation sans libellé public de facette scalaire', (meta: any) => {
+      meta.indicator_pages.densite.family = 'relationship'
+      meta.indicator_pages.densite.relationship = rolesRelationValides()
+      meta.indicator_pages.densite.comparison = { indicator: 'densite', unit: '%' }
+    }],
+    ['une relation dont un rôle ne porte pas son libellé', (meta: any) => {
+      meta.indicator_pages.densite.family = 'relationship'
+      meta.indicator_pages.densite.relationship = { roles: { x: { indicator: 'densite', label: 'Axe X', unit: 'hab/km²' }, y: { indicator: 'densite', unit: 'hab/km²' } } }
+      meta.indicator_pages.densite.comparison = { indicator: 'densite', label: 'Densité comparée', unit: '%' }
+    }],
+    ['une relation dont un rôle référence un indicateur inconnu', (meta: any) => {
+      meta.indicator_pages.densite.family = 'relationship'
+      meta.indicator_pages.densite.relationship = { roles: { x: { indicator: 'densite', label: 'Axe X', unit: 'hab/km²' }, y: { indicator: 'fantome', label: 'Axe Y', unit: 'hab/km²' } } }
+      meta.indicator_pages.densite.comparison = { indicator: 'densite', label: 'Densité comparée', unit: '%' }
+    }],
+    ['une relation dont un rôle déclare un détail inconnu', (meta: any) => {
+      meta.indicator_pages.densite.family = 'relationship'
+      meta.indicator_pages.densite.relationship = { roles: { x: { indicator: 'densite', label: 'Axe X', unit: 'hab/km²' }, y: { indicator: 'densite', detail: 'fantome', label: 'Axe Y', unit: 'hab/km²' } } }
+      meta.indicator_pages.densite.comparison = { indicator: 'densite', label: 'Densité comparée', unit: '%' }
+    }],
+  ])('rejette %s — le même verdict que R (#440/#439/#441)', (_nom, muter) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     muter(metadata)
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()

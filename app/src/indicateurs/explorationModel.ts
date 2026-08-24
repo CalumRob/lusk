@@ -226,6 +226,105 @@ export function modeleTrajectoire(
 }
 
 /**
+ * Le modèle Repères des relations (#441) — le nuage croisé déclaré par la
+ * page (deux rôles étiquetés x × y) à côté de la comparaison inter-
+ * territoires que la facette scalaire pilote seule (médiane, extrêmes,
+ * tableau, carte — la matière modeleExploration existante). Les points du
+ * nuage SONT les lignes du tableau : même population facet-comparable, même
+ * rang directionnel ex-aequo (#437), même surlignage, même passarelle fiche —
+ * par construction, jamais deux listes qui divergent.
+ */
+export interface PointRelation { territoire: Territoire; valeur: number | null; rang: number | null; rangTaille: number; fiche: string; highlighted: boolean; /** Les coordonnées publiées du nuage — null quand un axe manque. */ x: number | null; y: number | null }
+export interface AxeRelation { label: string; unit: string; /** Le domaine RÉEL des valeurs tracées — jamais une plage fixe. */ min: number | null; max: number | null }
+export interface ModeleRelation {
+  // Les quatre états honnêtes — le contrat commun des modèles Repères,
+  // résolu par le squelette partagé selectionTerritoire (#441).
+  etat: 'complet' | 'incomplet' | 'absent' | null
+  nom: string | null
+  message: string | null
+  points: readonly PointRelation[]
+  /** Les points sans coordonnée complète — dits honnêtement, JAMAIS empilés à coordonnées fixes (le défaut du PR supplanté). */
+  incomplets: readonly PointRelation[]
+  axeX: AxeRelation
+  axeY: AxeRelation
+}
+
+export function modeleRelation(
+  rows: readonly LigneExploration[],
+  faits: readonly Indicateur[],
+  facet: ComparisonFacet,
+  page: IndicatorPageMetadata,
+  territoires: readonly Territoire[],
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): ModeleRelation {
+  const roles = page.family === 'relationship' ? page.relationship.roles : null
+  // La coordonnée d'un rôle : THÈME × CLÉ × DÉTAIL du rôle (la leçon de
+  // parité #438), le sexe/dimension suivant la facette, au niveau demandé.
+  const coordonneesDe = (role: { indicator: string; detail: string | null }): Map<string, number> => {
+    const valeurs = new Map<string, number>()
+    if (!roles) return valeurs
+    for (const fact of faits) {
+      if (fact.theme !== facet.theme || fact.key !== role.indicator || (fact.detail ?? null) !== role.detail) continue
+      if ((facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau && fact.value !== null) valeurs.set(fact.territoire, fact.value)
+    }
+    return valeurs
+  }
+  const axeXValeurs = roles ? coordonneesDe(roles.x) : new Map<string, number>()
+  const axeYValeurs = roles ? coordonneesDe(roles.y) : new Map<string, number>()
+  const points: readonly PointRelation[] = rows.map((row) => ({ territoire: row.territoire, valeur: row.value, rang: row.rang, rangTaille: row.rangTaille, fiche: row.fiche, highlighted: row.highlighted, x: axeXValeurs.get(row.territoire.territoire) ?? null, y: axeYValeurs.get(row.territoire.territoire) ?? null }))
+  const incomplets = points.filter((point) => point.x === null || point.y === null)
+  // Les domaines se dérivent des valeurs TRACÉES seulement (paires complètes)
+  // — une valeur manquante n'écrase jamais l'échelle, un bornage fixe jamais.
+  const traces = points.filter((point) => point.x !== null && point.y !== null)
+  const domaineDe = (axe: 'x' | 'y'): { min: number | null; max: number | null } => {
+    const valeurs = traces.map((point) => (axe === 'x' ? point.x : point.y) as number)
+    return valeurs.length ? { min: Math.min(...valeurs), max: Math.max(...valeurs) } : { min: null, max: null }
+  }
+  const axeX: AxeRelation = { label: roles?.x.label ?? '', unit: roles?.x.unit ?? '', ...domaineDe('x') }
+  const axeY: AxeRelation = { label: roles?.y.label ?? '', unit: roles?.y.unit ?? '', ...domaineDe('y') }
+
+  // L'état du territoire sélectionné lit la trame partagée (#441) ; le
+  // complet/incomplet décide sur SA matière : la paire de coordonnées.
+  const selection = selectionTerritoire(territoires, etat)
+  if (selection.kind === 'silence') return { etat: null, nom: null, message: null, points, incomplets, axeX, axeY }
+  if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, points, incomplets, axeX, axeY }
+  const ref = selection.ref
+  const xSelection = axeXValeurs.get(ref.territoire) ?? null
+  const ySelection = axeYValeurs.get(ref.territoire) ?? null
+  return xSelection === null || ySelection === null
+    ? { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : relation incomplète à ce niveau.`, points, incomplets, axeX, axeY }
+    : { etat: 'complet', nom: ref.nom, message: null, points, incomplets, axeX, axeY }
+}
+
+/**
+ * Le squelette partagé des modèles multi-états Repères (#441) — la leçon de
+ * la revue #453 : la trame null/absent vivait en DEUX exemplaires identiques
+ * (modeleSignature #440, modeleProfil #439) ; la relation (#441) en aurait
+ * fait un troisième. La résolution de la sélection est UNE — silence (aucun
+ * territoire demandé), hors périmètre (« absent à ce niveau », JAMAIS habillé
+ * en suppression), territoire actif — et chaque famille décide ensuite seule
+ * de son complet/incomplet sur sa propre matière.
+ */
+export type SelectionTerritoire =
+  | { kind: 'silence' }
+  | { kind: 'horsScope'; nom: string | null; message: string }
+  | { kind: 'active'; ref: Territoire }
+
+export function selectionTerritoire(
+  territoires: readonly Territoire[],
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): SelectionTerritoire {
+  if (!etat.territoire) return { kind: 'silence' }
+  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
+  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
+    return ref
+      ? { kind: 'horsScope', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.` }
+      : { kind: 'horsScope', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.' }
+  }
+  return { kind: 'active', ref }
+}
+
+/**
  * Le modèle de la signature intra-territoire des distributions (#440) — les
  * détails déclarés (la signature fermée) du territoire sélectionné, à côté de
  * la comparaison inter-territoires que la facette résumée pilote seule.
@@ -259,13 +358,11 @@ export function modeleSignature(
 ): ModeleSignature {
   const details = page.family === 'distribution' ? [...page.distribution.signature] : []
   const barresDe = (valeurs: ReadonlyMap<string, number>): BarreSignature[] => details.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null }))
-  if (!etat.territoire) return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
-  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
-  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
-    return ref
-      ? { etat: 'absent', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.`, unite: null, barres: barresDe(new Map()) }
-      : { etat: 'absent', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.', unite: null, barres: barresDe(new Map()) }
-  }
+  // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
+  const selection = selectionTerritoire(territoires, etat)
+  if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
+  if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, barres: barresDe(new Map()) }
+  const ref = selection.ref
   // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — les clés
   // ne sont pas uniques entre thèmes ; le sexe/dimension suivent la facette.
   const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && details.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
@@ -321,13 +418,11 @@ export function modeleProfil(
   const categories = page.family === 'list' ? [...page.list.categories] : []
   const lignesDe = (valeurs: ReadonlyMap<string, number>, unites: ReadonlyMap<string, string>): LigneProfil[] =>
     categories.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null, unite: unites.get(detail) ?? null }))
-  if (!etat.territoire) return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
-  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
-  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
-    return ref
-      ? { etat: 'absent', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.`, lignes: lignesDe(new Map(), new Map()) }
-      : { etat: 'absent', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.', lignes: lignesDe(new Map(), new Map()) }
-  }
+  // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
+  const selection = selectionTerritoire(territoires, etat)
+  if (selection.kind === 'silence') return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
+  if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, lignes: lignesDe(new Map(), new Map()) }
+  const ref = selection.ref
   // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — le profil
   // lit la clé PROPRE de la page ; le sexe/dimension suivent la facette.
   const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && categories.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
