@@ -1,0 +1,158 @@
+{
+ "url": "http://localhost:5173/territoire/commune/35238?theme=economie",
+ "viewport": {
+  "w": 1440,
+  "h": 900
+ },
+ "content": {
+  "rect": {
+   "x": 112.5,
+   "y": 289,
+   "w": 1200,
+   "h": 1102.7
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "sante-et-taille",
+   "rectTop": 359.3,
+   "rectH": 614.1,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "lecture": {
+    "rectH": 614.1,
+    "lectureCardH": 297.1,
+    "proseWidth": 902,
+    "proseFontPx": 18,
+    "proseChPerLineApprox": 104,
+    "figureW": 200,
+    "figureH": 200,
+    "canvasRects": []
+   },
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 2,
+    "lastRowEmptyCells": 1,
+    "gapTitleToGrid": 390.1,
+    "cards": [
+     {
+      "clef": "effectifs_salaries",
+      "famille": "scalar",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 776,
+       "w": 768,
+       "h": 197.4
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": 793,
+      "labelTop": 836.2,
+      "chipTop": 869.2,
+      "vintageTop": 906,
+      "fillRatio": 0.83
+     },
+     {
+      "clef": "chomage",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 928.5,
+       "y": 776,
+       "w": 368,
+       "h": 197.4
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 945.5,
+      "insetLeftPx": 17,
+      "valueTop": 793,
+      "labelTop": 836.2,
+      "chipTop": 869.2,
+      "vintageTop": 906,
+      "fillRatio": 0.91
+     }
+    ]
+   }
+  },
+  {
+   "key": "structure-verte",
+   "rectTop": 1005.3,
+   "rectH": 259.4,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 31.9,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 1,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 69,
+    "cards": [
+     {
+      "clef": "eco_activites",
+      "famille": "scalar",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 1100.9,
+       "w": 768,
+       "h": 163.8
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": 1117.9,
+      "labelTop": 1161.1,
+      "chipTop": 1194.1,
+      "vintageTop": 1230.9,
+      "fillRatio": 0.9
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [],
+ "rowsMisalign": [],
+ "accentEdgeNotes": [
+  {
+   "group": "sante-et-taille",
+   "rowTop": 776,
+   "cards": [
+    "effectifs_salaries",
+    "chomage"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 0,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  }
+ ],
+ "leftoverX": 120,
+ "spec": {
+  "width": 1440,
+  "height": 900,
+  "mobile": false
+ }
+}

@@ -1,0 +1,208 @@
+{
+ "url": "http://localhost:5173/territoire/commune/35238?theme=demographie",
+ "viewport": {
+  "w": 1440,
+  "h": 900
+ },
+ "content": {
+  "rect": {
+   "x": 112.5,
+   "y": 289,
+   "w": 1200,
+   "h": 1408.9
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "etat-de-la-population",
+   "rectTop": 359.3,
+   "rectH": 627.5,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 3,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 69,
+    "cards": [
+     {
+      "clef": "structure_age",
+      "famille": "pyramid",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 454.9,
+       "w": 768,
+       "h": 327.4
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 715.4,
+      "chipTop": null,
+      "vintageTop": 748.4,
+      "fillRatio": 0.95
+     },
+     {
+      "clef": "densite",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 928.5,
+       "y": 454.9,
+       "w": 368,
+       "h": 327.4
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 947.5,
+      "insetLeftPx": 19,
+      "valueTop": 471.9,
+      "labelTop": 515.1,
+      "chipTop": 548.1,
+      "vintageTop": 584.9,
+      "fillRatio": 0.5
+     },
+     {
+      "clef": "taille_menages",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 806.2,
+       "w": 368,
+       "h": 180.6
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 145.5,
+      "insetLeftPx": 17,
+      "valueTop": 823.2,
+      "labelTop": 866.4,
+      "chipTop": 899.4,
+      "vintageTop": 936.2,
+      "fillRatio": 0.91
+     }
+    ]
+   }
+  },
+  {
+   "key": "trajectoire-demographique",
+   "rectTop": 1018.8,
+   "rectH": 552.1,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "lecture": {
+    "rectH": 552.1,
+    "lectureCardH": 340.1,
+    "proseWidth": 902,
+    "proseFontPx": 18,
+    "proseChPerLineApprox": 104,
+    "figureW": 200,
+    "figureH": 243,
+    "canvasRects": [
+     {
+      "x": 1071.5,
+      "y": 1202.4,
+      "w": 200,
+      "h": 180
+     }
+    ]
+   },
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 1,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 433.1,
+    "cards": [
+     {
+      "clef": "evolution_1968",
+      "famille": "trajectory",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 1478.5,
+       "w": 768,
+       "h": 92.4
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 1507.5,
+      "chipTop": null,
+      "vintageTop": 1537.1,
+      "fillRatio": 0.82
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [
+  {
+   "where": "etat-de-la-population/structure_age",
+   "h": 327.4
+  },
+  {
+   "where": "etat-de-la-population/densite",
+   "h": 327.4
+  }
+ ],
+ "rowsMisalign": [
+  {
+   "group": "etat-de-la-population",
+   "rowTop": 455,
+   "cards": [
+    "structure_age",
+    "densite"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 200.3,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 163.5,
+   "leftEdgeDelta": 819,
+   "insetLeftDelta": 19
+  }
+ ],
+ "accentEdgeNotes": [
+  {
+   "group": "etat-de-la-population",
+   "rowTop": 455,
+   "cards": [
+    "structure_age",
+    "densite"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 200.3,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 163.5,
+   "leftEdgeDelta": 819,
+   "insetLeftDelta": 19
+  }
+ ],
+ "leftoverX": 120,
+ "spec": {
+  "width": 1440,
+  "height": 900,
+  "mobile": false
+ }
+}

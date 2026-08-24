@@ -1,0 +1,9 @@
+# Only the captures cited by README.md are committed; regenerate the rest:
+#   node docs/audits/2026-08-24-fiche-layout/harness/capture-fiche.mjs
+*.png
+!rennes-mobilite-1440.png
+!rennes-demographie-1440.png
+!rennes-habitat-1440.png
+!rennes-milieux-1440.png
+!rennes-mobilite-1024.png
+!region-economie-1440.png
