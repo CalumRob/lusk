@@ -18,7 +18,7 @@ function pagePourFamille(family: FamilleFigure): IndicatorPageMetadata {
   if (family === 'trajectory') page.trajectory = { endpoints: ['debut', 'fin'] }
   if (family === 'composition') page.composition = { parts: ['total'] }
   if (family === 'distribution') page.distribution = { signature: ['total'] }
-  if (family === 'relationship') page.relationship = { roles: { x: 'x', y: 'y' }, measure: 'measure' }
+  if (family === 'relationship') page.relationship = { roles: { x: { indicator: 'densite', detail: null, label: 'Axe X', unit: 'hab./km²' }, y: { indicator: 'densite', detail: null, label: 'Axe Y', unit: 'hab./km²' } } }
   if (family === 'list') page.list = { categories: ['total'] }
   if (family === 'pyramid') page.pyramid = { dimensions: ['total'] }
   if (family === 'comparison-bars') page.comparisonBars = { series: ['total'] }

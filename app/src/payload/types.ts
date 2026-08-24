@@ -771,7 +771,15 @@ export interface CompositionMetadata { parts: string[] }
  * all-or-nothing pour le territoire sélectionné.
  */
 export interface DistributionMetadata { signature: string[] }
-export interface RelationshipMetadata { roles: { x: string; y: string }; measure: string }
+/**
+ * Une relation n'est JAMAIS un score unique (#441) : la facette scalaire est
+ * la `comparison` déclarée de la page — une clé publiée, son libellé public —
+ * et pilote seule carte, extrêmes et tableau ; le nuage croise deux rôles
+ * déclarés (x × y), chacun une clé publiée du thème portant son libellé et
+ * son unité propres (ADR-0023 : payload-owned, jamais une clé brute au rendu).
+ */
+export interface RelationshipRoleMetadata { indicator: string; detail: string | null; label: string; unit: string }
+export interface RelationshipMetadata { roles: { x: RelationshipRoleMetadata; y: RelationshipRoleMetadata } }
 export interface ListMetadata { categories: string[] }
 export interface PyramidMetadata { dimensions: string[] }
 export interface ComparisonBarsMetadata { series: string[] }

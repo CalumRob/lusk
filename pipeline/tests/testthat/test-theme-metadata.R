@@ -895,3 +895,85 @@ test_that("publier_theme_metadata : les règles structurales des listes sont câ
   expect_no_error(publier_theme_metadata(meta, sortie, theme_attendu = "mobilite"))
   expect_true(file.exists(file.path(sortie, "theme_mobilite.json")))
 })
+
+# La grammaire Repères des relations (issue #441) : la facette scalaire est
+# STRUCTURELLE — comparison déclarée, elle nomme SA clé publiée et son libellé
+# public (le miroir des distributions #440) — et les deux rôles du nuage
+# référencent des clés publiées en portant leurs libellés et unités propres
+# (ADR-0023 : jamais une clé brute au rendu). Le miroir exact vit dans
+# validerThemeMetadata (app/src/payload/validate.ts).
+
+roles_relation_minimaux <- function() {
+  list(
+    x = list(indicator = "densite", detail = NULL, label = "Axe X", unit = "hab/km²"),
+    y = list(indicator = "densite", detail = NULL, label = "Axe Y", unit = "hab/km²")
+  )
+}
+
+page_relation <- function(roles = roles_relation_minimaux(), comparison = list(indicator = "densite", label = "Densité comparée", unit = "%")) {
+  c(page_indicateur_base("densite", "serie_historique"),
+    list(family = "relationship",
+         relationship = list(roles = roles),
+         comparison = comparison))
+}
+
+test_that("valider_theme_metadata : une relation bien formée passe les deux portes (#441)", {
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation())
+  validee <- valider_theme_metadata(meta)
+  expect_identical(validee$indicator_pages$densite$family, "relationship")
+  expect_identical(validee$indicator_pages$densite$relationship$roles$x$label, "Axe X")
+  expect_null(validee$indicator_pages$densite$relationship$roles$x$detail)
+})
+
+test_that("valider_theme_metadata : une relation sans facette scalaire complète échoue fort (#441)", {
+  # pas de facette scalaire du tout
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(comparison = NULL))
+  expect_error(valider_theme_metadata(meta), "comparison.indicator")
+
+  # la facette scalaire ne nomme pas sa clé publiée
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(comparison = list(label = "Densité comparée", unit = "%")))
+  expect_error(valider_theme_metadata(meta), "comparison.indicator")
+
+  # la facette scalaire n'a pas de libellé public — elle serait invisible du visiteur
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(comparison = list(indicator = "densite", unit = "%")))
+  expect_error(valider_theme_metadata(meta), "visible du visiteur")
+})
+
+test_that("valider_theme_metadata : un rôle du nuage muet, fantôme ou à détail inconnu échoue fort (#441)", {
+  # un rôle sans son libellé public — jamais une clé brute au rendu (ADR-0023)
+  roles <- roles_relation_minimaux()
+  roles$y$label <- NULL
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(roles = roles))
+  expect_error(valider_theme_metadata(meta), "libellé et son unité")
+
+  # un rôle qui référence une clé inconnue du thème
+  roles <- roles_relation_minimaux()
+  roles$x$indicator <- "fantome"
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(roles = roles))
+  expect_error(valider_theme_metadata(meta), "indicateur publié")
+
+  # un rôle sans unité — l'axe du nuage est lisible avec la sienne
+  roles <- roles_relation_minimaux()
+  roles$x$unit <- NULL
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(roles = roles))
+  expect_error(valider_theme_metadata(meta), "indicateur publié")
+
+  # les deux rôles sont requis
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(roles = list(x = roles_relation_minimaux()$x)))
+  expect_error(valider_theme_metadata(meta), "deux rôles")
+
+  # un détail déclaré par un rôle doit être connu de SA clé
+  roles <- roles_relation_minimaux()
+  roles$y$detail <- "fantome"
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages <- list(densite = page_relation(roles = roles))
+  expect_error(valider_theme_metadata(meta), "détail inconnu")
+})
