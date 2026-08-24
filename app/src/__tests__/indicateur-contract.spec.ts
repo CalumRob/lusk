@@ -50,6 +50,13 @@ describe('contrat des pages d’indicateur', () => {
       ;(metadata.detail_labels as any).densite = { x: 'Étiquette X' }
       ;(metadata.indicator_pages!.densite as any).comparison = { indicator: 'densite', label: 'Part X', unit: '%' }
     }
+    // #439 : chaque catégorie d'une liste porte son libellé canonical — le
+    // miroir strict de R ; l'axe des catégories est comparison.details quand
+    // la facette est déclarée
+    if (family === 'list') {
+      ;(metadata.detail_labels as any).densite = { a: 'Catégorie A' }
+      ;(metadata.indicator_pages!.densite as any).comparison = { details: ['a'], detail: 'a', unit: '%' }
+    }
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).not.toThrow()
   })
 
@@ -91,7 +98,19 @@ describe('contrat des pages d’indicateur', () => {
       meta.indicator_pages.densite.distribution = { signature: ['x', 'fantome'] }
       meta.indicator_pages.densite.comparison = { indicator: 'densite', label: 'Part X', unit: '%' }
     }],
-  ])('rejette %s — le même verdict que R (#440)', (_nom, muter) => {
+    ['une liste dont une catégorie n\u2019a pas de libellé canonical', (meta: any) => {
+      meta.detail_labels.densite = { x: 'Catégorie X' }
+      meta.indicator_pages.densite.family = 'list'
+      meta.indicator_pages.densite.list = { categories: ['x', 'fantome'] }
+      meta.indicator_pages.densite.comparison = { details: ['x', 'fantome'], detail: 'x', unit: '%' }
+    }],
+    ['une liste dont une catégorie déclarée est absente de comparison.details', (meta: any) => {
+      meta.detail_labels.densite = { x: 'Catégorie X', y: 'Catégorie Y' }
+      meta.indicator_pages.densite.family = 'list'
+      meta.indicator_pages.densite.list = { categories: ['x', 'y'] }
+      meta.indicator_pages.densite.comparison = { details: ['x'], detail: 'x', unit: '%' }
+    }],
+  ])('rejette %s — le même verdict que R (#440/#439)', (_nom, muter) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     muter(metadata)
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()

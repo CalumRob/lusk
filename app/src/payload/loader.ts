@@ -63,6 +63,7 @@ import {
   verifierPariteLibelles,
   verifierPariteTrajectoires,
   verifierPariteDistributions,
+  verifierPariteListes,
 } from './validate'
 
 /** The minimal Response surface the loader needs (fetch() satisfies it). */
@@ -294,6 +295,10 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // La parité distributions ↔ faits publiés (#440) : la signature déclarée
   // couvre exactement les détails publiés de sa clé (miroir R à la publication).
   verifierPariteDistributions(payload)
+  // La parité listes ↔ faits publiés (#439) : les catégories déclarées d'un
+  // profil couvrent exactement les détails publiés de sa clé (miroir R à la
+  // publication) — jamais une ligne morte dans le profil.
+  verifierPariteListes(payload)
 
   return payload
 }

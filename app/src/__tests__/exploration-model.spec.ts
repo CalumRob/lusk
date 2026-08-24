@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -117,6 +117,68 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(modele.serieTerritoire!.map((p) => p.detail)).toEqual(['2020', '2024'])
     const horsScope = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12)], facet, ['2020', '2024'], territoires, { niveau: 'epci', territoire: 'a' })
     expect(horsScope.serieTerritoire).toBeNull()
+  })
+})
+
+// La grammaire Repères des profils/listes (#439) — le modèle du profil
+// complet du territoire sélectionné, à côté de la comparaison
+// inter-territoires que la catégorie comparée pilote (médiane, extrêmes,
+// tableau, carte — la matière modeleExploration existante). Quatre états
+// HONNÊTES, verrouillés par test — jamais un résumé inventé, jamais une
+// réécriture silencieuse de la catégorie demandée :
+//  - null : aucun territoire sélectionné — rien n'est affirmé ;
+//  - 'absent' : le territoire sélectionné n'existe pas à ce niveau — JAMAIS
+//    confondu avec un profil incomplet ;
+//  - 'incomplet' : le territoire EST dans le périmètre mais son profil ne
+//    porte pas toutes les catégories déclarées ;
+//  - 'complet' : les lignes portent les valeurs publiées du territoire,
+//    dans l'ordre DÉCLARÉ des catégories (les métadonnées possèdent l'ordre).
+describe('modèle profil de Page d’indicateur (#439)', () => {
+  const CATEGORIES = ['t_longueur', 't_densite', 'b_longueur', 'b_densite', 'c_longueur', 'c_densite'] as const
+  const pageProfil = structuredClone(metadonneesThemesFixtures.mobilite) as typeof metadonneesThemesFixtures.mobilite
+  pageProfil.indicator_pages = { reseaux: {
+    ...structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite),
+    indicator: 'reseaux',
+    label: 'Réseaux à pied / vélo / voiture',
+    family: 'list',
+    list: { categories: [...CATEGORIES] },
+    comparison: { details: [...CATEGORIES], detail: 'b_longueur', unit: 'km', direction: 'high' },
+  } }
+  const facet = normalizeComparisonFacet(pageProfil.indicator_pages!.reseaux, {}, 'mobilite')
+  const labels = metadonneesThemesFixtures.mobilite.detail_labels.reseaux
+  const faitReseaux = (id: string, detail: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ ...facts(id, value ?? 0, type), theme: 'mobilite', key: 'reseaux', detail, value, unit: detail.endsWith('_longueur') ? 'km' : 'km/km²' })
+  const faitsComplets = CATEGORIES.flatMap((detail) => [faitReseaux('a', detail, 1.5), faitReseaux('b', detail, 2.5)])
+
+  it('rend le profil complet dans l’ordre déclaré — libellés canonical et unité PAR catégorie', () => {
+    const modele = modeleProfil(faitsComplets, facet, pageProfil.indicator_pages!.reseaux, territoires, labels, { niveau: 'commune', territoire: 'a' })
+    expect(modele.etat).toBe('complet')
+    expect(modele.message).toBeNull()
+    expect(modele.lignes.map((ligne) => ligne.detail)).toEqual([...CATEGORIES])
+    expect(modele.lignes.map((ligne) => ligne.label)).toEqual(CATEGORIES.map((detail) => labels[detail]))
+    expect(modele.lignes[0]).toMatchObject({ valeur: 1.5, unite: 'km' })
+    expect(modele.lignes[1]).toMatchObject({ valeur: 1.5, unite: 'km/km²' })
+  })
+
+  it('déclare un profil incomplet quand une catégorie déclarée manque au territoire du périmètre', () => {
+    const sansBDensite = faitsComplets.filter((fait) => !(fait.territoire === 'a' && fait.detail === 'b_densite'))
+    const modele = modeleProfil(sansBDensite, facet, pageProfil.indicator_pages!.reseaux, territoires, labels, { niveau: 'commune', territoire: 'a' })
+    expect(modele.etat).toBe('incomplet')
+    expect(modele.message).toMatch(/Alpha : profil incomplet à ce niveau\./)
+    expect(modele.lignes.find((ligne) => ligne.detail === 'b_densite')!.valeur).toBeNull()
+    // les catégories présentes restent rendues — le profil reste visible entier
+    expect(modele.lignes.find((ligne) => ligne.detail === 'b_longueur')!.valeur).toBe(1.5)
+  })
+
+  it('distingue honnêtement « absent à ce niveau » et le silence sans territoire sélectionné', () => {
+    // Une commune sélectionnée dans une comparaison d'EPCIs : ABSENTE.
+    const absent = modeleProfil(faitsComplets, facet, pageProfil.indicator_pages!.reseaux, territoires, labels, { niveau: 'epci', territoire: 'a' })
+    expect(absent.etat).toBe('absent')
+    expect(absent.message).toMatch(/absent à ce niveau/)
+    expect(absent.message).not.toMatch(/incomplet/)
+    // Aucun territoire sélectionné : rien n'est affirmé.
+    const silence = modeleProfil(faitsComplets, facet, pageProfil.indicator_pages!.reseaux, territoires, labels, { niveau: 'commune' })
+    expect(silence.etat).toBeNull()
+    expect(silence.message).toBeNull()
   })
 })
 

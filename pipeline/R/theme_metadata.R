@@ -166,6 +166,52 @@ verifier_parite_distributions <- function(metadata, indicateurs) {
   invisible(metadata)
 }
 
+# verifier_parite_listes ---------------------------------------------------------
+# La parité listes ↔ faits COMMITTÉS (#439) — le miroir exact de
+# verifierPariteListes (app/src/payload/validate.ts, appelée au chargement).
+# Pour chaque page de famille « list » : les catégories déclarées couvrent
+# EXACTEMENT les détails publiés de la clé — hors la ligne poolée sans détail.
+# Jamais une catégorie morte dans le profil, jamais un détail publié amputé du
+# profil en silence. Le filtre des faits est THÈME × CLÉ, identique à l'app.
+# Les règles STRUCTURELLES (libellés canonical des catégories, couverture par
+# comparison.details) vivent dans valider_theme_metadata (ci-dessus). Cette
+# garde s'exécute sur les artefacts committés — le contrat de payload committé,
+# la même discipline que les trajectoires #438 et les distributions #440.
+verifier_parite_listes <- function(metadata, indicateurs) {
+  manquer <- function(theme, cle, detail) {
+    stop(sprintf(
+      "Parité listes ↔ payload rompue — %s, « %s » : %s.",
+      theme, cle, detail
+    ), call. = FALSE)
+  }
+  if (!is.null(metadata$indicator_pages)) {
+    for (cle in names(metadata$indicator_pages)) {
+      page <- metadata$indicator_pages[[cle]]
+      if (!identical(page$family, "list")) next
+
+      details_publies <- unique(as.character(
+        indicateurs$detail[indicateurs$theme == metadata$theme &
+                             indicateurs$key == cle &
+                             !vapply(indicateurs$detail, function(x) is.null(x) || is.na(x), logical(1L))]
+      ))
+      declarees <- if (is.null(page$list$categories)) character(0L) else
+        unlist(page$list$categories, use.names = FALSE)
+
+      mortes <- setdiff(declarees, details_publies)
+      if (length(mortes) > 0L) {
+        manquer(metadata$theme, cle, paste0(
+          "catégorie(s) déclarée(s) jamais publiée(s) : ", paste(mortes, collapse = ", ")))
+      }
+      absentes <- setdiff(details_publies, declarees)
+      if (length(absentes) > 0L) {
+        manquer(metadata$theme, cle, paste0(
+          "détail(s) publié(s) absent des catégories déclarées : ", paste(absentes, collapse = ", ")))
+      }
+    }
+  }
+  invisible(metadata)
+}
+
 # STORIES_RESOLUES_PAR_THEME ----------------------------------------------------
 # Le registre de la RÉSOLUTION des histoires (issue #312, parent #308) : pour
 # chaque thème, la table qui dit où chaque story vit (le `groupe` de la fiche —
@@ -795,6 +841,18 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
         if (famille == "pyramid" && !all(c("detail", "sex") %in% declarees)) manquer(paste0("indicator_pages.", indicator_key, ".pyramid"), "detail et sex sont requis")
         if (!is.null(comparison) && !is.null(comparison$details) && any(!declarees[declarees %in% names(labels)] %in% comparison$details)) manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"), "les détails déclarés ne sont pas couverts")
         if (famille == "pyramid" && (is.null(comparison$sexes) || !length(comparison$sexes))) manquer(paste0("indicator_pages.", indicator_key, ".comparison.sex"), "le sexe est requis pour une pyramide")
+      }
+      if (famille == "list") {
+        # Le profil/liste (#439) : chaque catégorie déclarée possède son
+        # libellé canonical (#431, le miroir des parts composition), et l'axe
+        # des catégories sélectionnables (comparison.details) les couvre
+        # quand la facette est déclarée — jamais une catégorie morte dans le
+        # profil, jamais une catégorie muette au rendu. Le miroir exact vit
+        # dans validerThemeMetadata (app/src/payload/validate.ts).
+        declarees <- unlist(extension$categories, use.names = FALSE)
+        labels <- if (is.null(metadata$detail_labels[[indicator_key]])) list() else metadata$detail_labels[[indicator_key]]
+        if (any(!vapply(declarees, function(x) !is.null(labels[[x]]), logical(1)))) manquer(paste0("indicator_pages.", indicator_key, ".list"), "une catégorie ne possède pas de libellé canonical")
+        if (!is.null(comparison) && !is.null(comparison$details) && any(!declarees %in% unlist(comparison$details, use.names = FALSE))) manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"), "les catégories déclarées ne sont pas couvertes")
       }
       if (famille == "relationship") {
         if (!is.list(extension$roles) || !est_chaine_non_vide(extension$roles$x) || !est_chaine_non_vide(extension$roles$y) || !est_chaine_non_vide(extension$measure)) manquer("indicator_pages.relationship", "roles et measure sont requis")

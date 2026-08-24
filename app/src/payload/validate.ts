@@ -2148,7 +2148,20 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
             indicator_pages[key] = { ...base, family, relationship: { roles: { x: rolesBrut['x'], y: rolesBrut['y'] }, measure: lireExtensionChaine('measure') } }
             break
           }
-          case 'list': indicator_pages[key] = { ...base, family, list: { categories: lireExtensionChaines('categories') } }; break
+          case 'list': {
+            // Le profil/liste (#439) : chaque catégorie déclarée possède son
+            // libellé canonical (#431, le miroir des parts composition), et
+            // l'axe des catégories sélectionnables (comparison.details) les
+            // couvre quand la facette est déclarée — jamais une catégorie
+            // morte dans le profil, jamais une catégorie muette au rendu.
+            // Le miroir exact vit dans valider_theme_metadata (theme_metadata.R).
+            const categories = lireExtensionChaines('categories')
+            const labelsCategories = detail_labels[key] ?? {}
+            exiger(categories.every((value) => Object.prototype.hasOwnProperty.call(labelsCategories, value)), fichier, 0, `« indicator_pages.${key}.list » référence une catégorie sans libellé canonical`)
+            if (comparison !== undefined && comparison['details'] !== undefined) exiger(Array.isArray(comparison['details']) && categories.every((value) => (comparison['details'] as unknown[]).includes(value)), fichier, 0, `« indicator_pages.${key}.comparison.details » ne couvre pas les catégories déclarées`)
+            indicator_pages[key] = { ...base, family, list: { categories } }
+            break
+          }
           case 'pyramid': indicator_pages[key] = { ...base, family, pyramid: { dimensions: lireExtensionChaines('dimensions') } }; break
           case 'comparison-bars': indicator_pages[key] = { ...base, family, comparisonBars: { series: lireExtensionChaines('series') } }; break
           default: assertNever(family)
@@ -2335,6 +2348,41 @@ export function verifierPariteDistributions(payload: Payload): void {
       'validation',
       'theme_<theme>.json',
       `Parité distributions ↔ payload rompue — ${violations.join(' · ')}`,
+    )
+  }
+}
+
+/**
+ * La parité listes ↔ faits publiés (#439) — la garde de chargement miroir de
+ * verifier_parite_listes (theme_metadata.R) : pour chaque page de famille
+ * « list », les catégories déclarées couvrent EXACTEMENT les détails publiés
+ * de la clé — hors la ligne poolée sans détail. Jamais une catégorie morte
+ * dans le profil, jamais un détail publié amputé du profil en silence. Le
+ * filtre des faits est THÈME × CLÉ, identique au miroir R.
+ */
+export function verifierPariteListes(payload: Payload): void {
+  const violations: string[] = []
+  for (const [theme, meta] of Object.entries(payload.themeMetadata ?? {})) {
+    for (const [key, page] of Object.entries(meta.indicator_pages ?? {})) {
+      if (page.family !== 'list') continue
+
+      const publiees = new Set(
+        payload.indicateurs.filter((i) => i.theme === theme && i.key === key && i.detail !== null).map((i) => i.detail as string),
+      )
+      const declarees = page.list?.categories ?? []
+      for (const detail of declarees) {
+        if (!publiees.has(detail)) violations.push(`${theme}: catégorie « ${detail} » de « ${key} » déclaré jamais publié (liste morte)`)
+      }
+      for (const detail of publiees) {
+        if (!declarees.includes(detail)) violations.push(`${theme}: détail « ${detail} » de « ${key} » publié absent des catégories déclarées`)
+      }
+    }
+  }
+  if (violations.length > 0) {
+    throw new PayloadError(
+      'validation',
+      'theme_<theme>.json',
+      `Parité listes ↔ payload rompue — ${violations.join(' · ')}`,
     )
   }
 }
