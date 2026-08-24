@@ -66,6 +66,10 @@ _Avoid_: summary (English), indicateur pilote, vue de synthèse
 A territory's own within-territory distribution on a distribution page: the closed declared detail list (DPE A→G), rendered all-or-nothing for the selected territory — in its official detail colours where they exist (ADR-0023). Distinct from the between-territory comparison the **Facette résumée** drives; never compared détail par détail across territories.
 _Avoid_: modalités (the replaced generic wording — « détails déclarés »), profil, étiquette par étiquette (the DPE-specific phrase — « détail par détail » is the grammar's wording)
 
+**Profil**:
+The complete category profile of a territory on a **list**-family **Page d'indicateur** (#439): the closed declared category list from the published descriptor (reseaux — longueur et densité per mode), rendered for the selected territory in DECLARED order, each category with its canonical label and its OWN published unit (a list carries heterogeneous units — km and km/km² — categories never sum to a whole). Four honest states like the distribution signature (#440): no selection affirms nothing, a territory outside the level is « absent », missing categories are « incomplet », otherwise « complet ». One declared category doubles as the comparison facet (« Catégorie comparée ») driving median, extremes, table ordering and Carte through the shared wave-0 seams (direction-aware ex-aequo ranks included); the full profile stays visible above — never reduced to an unexplained score. This Repères sense is distinct from the fiche-side Avoid reading of « profil »: a Fiche d'identité has no profile.
+_Avoid_: vue de synthèse (that is the Facette résumée's role, not the profile's), score composite (the rejected reduction of the profile to one number), ordre dérivé des faits (category order is metadata-owned, never fact-derived)
+
 ## Themes & indicators
 
 **Thème**:
