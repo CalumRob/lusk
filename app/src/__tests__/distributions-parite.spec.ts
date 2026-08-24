@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { indicateursHabitatFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import { PayloadError, verifierPariteDistributions } from '../payload/validate'
-import type { Payload } from '../payload/types'
+import type { DistributionPageMetadata, Payload } from '../payload/types'
 
 /**
  * La garde de parité distributions ↔ faits publiés (#440) — le miroir TS de
@@ -10,13 +11,44 @@ import type { Payload } from '../payload/types'
  * Le cas miroir le plus important : un détail de signature déclaré jamais
  * publié échoue FORT — jamais une barre morte dans les Repères.
  */
+
+// La page de distribution minimale du contrat — la même forme que le
+// descripteur épinglé de Habitat (types complets, jamais un littéral partiel).
+const pageDistribution: DistributionPageMetadata = {
+  indicator: 'distribution_dpe',
+  detail: null,
+  label: 'Distribution des étiquettes DPE (A à G)',
+  definition: 'Répartition des diagnostics de performance énergétique par étiquette.',
+  unit: '%',
+  calculation: 'Part de chaque étiquette parmi les diagnostics disponibles.',
+  direction: 'low',
+  caveats: 'La comparaison porte sur la part de passoires thermiques (F/G).',
+  levels: ['commune', 'epci', 'departement'],
+  sources: ['dpe_22'],
+  family: 'distribution',
+  distribution: { signature: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
+}
+
+// Les faits publiés viennent du fixture Habitat typé : ses sept lignes
+// distribution_dpe portent exactement les détails A→G de 22001.
+function payloadAvec(signature: string[]): Payload {
+  return {
+    territoires: [],
+    indicateurs: indicateursHabitatFixture,
+    histoires: [],
+    apercu: null,
+    runReport: null,
+    vintages: null,
+    programmes: null,
+    themeMetadata: { habitat: { ...metadonneesThemesFixtures.habitat, indicator_pages: { distribution_dpe: { ...pageDistribution, distribution: { signature } } } } },
+  }
+}
+
 describe('verifierPariteDistributions — la garde distributions ↔ payload (#440)', () => {
   it('rejette un détail de signature déclaré jamais publié — le même verdict que R', () => {
-    const faits = ['A', 'B', 'C'].map((detail) => ({ territoire: '22001', type: 'commune' as const, theme: 'habitat' as const, key: 'distribution_dpe', detail, value: 0.1, unit: '%', sex: null, dimension: null }))
-    const valide: Payload = { territoires: [], indicateurs: faits, histoires: [], apercu: null, runReport: null, vintages: null, programmes: null, themeMetadata: { habitat: { indicator_pages: { distribution_dpe: { family: 'distribution', distribution: { signature: ['A', 'B', 'C'] } } } } } as Payload['themeMetadata'][keyof Payload['themeMetadata']] }
-    expect(() => verifierPariteDistributions(valide)).not.toThrow()
+    expect(() => verifierPariteDistributions(payloadAvec(['A', 'B', 'C', 'D', 'E', 'F', 'G']))).not.toThrow()
 
-    const mort = { ...valide, themeMetadata: { habitat: { indicator_pages: { distribution_dpe: { family: 'distribution', distribution: { signature: ['A', 'B', 'C', 'Z'] } } } } } as Payload['themeMetadata'][keyof Payload['themeMetadata']] }
+    const mort = payloadAvec(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'Z'])
     expect(() => verifierPariteDistributions(mort)).toThrow(PayloadError)
     try {
       verifierPariteDistributions(mort)
