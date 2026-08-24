@@ -4,6 +4,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
 import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
+import { COULEURS_DPE } from '../fiche/couleursDpe'
 import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/types'
 import { routes } from '../router'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
@@ -174,6 +175,13 @@ describe('IndicateurView — distributions (#440)', () => {
     for (const etiquette of ['A', 'B', 'C', 'D', 'E', 'F', 'G']) {
       expect(initial.wrapper.find(`[data-detail="${etiquette}"]`).exists(), `étiquette ${etiquette}`).toBe(true)
     }
+    // ADR-0023 : les barres DPE portent les couleurs officielles A→G — jamais
+    // le dégradé du thème (le même verrou que la figure compacte de fiche).
+    const styleBarreA = initial.wrapper.find('[data-detail="A"] .barre').attributes('style')!.replace(/\s/g, '').toLowerCase()
+    expect(styleBarreA).toContain(COULEURS_DPE.A.toLowerCase())
+    expect(styleBarreA).not.toContain('indicateur-accent')
+    const styleBarreF = initial.wrapper.find('[data-detail="F"] .barre').attributes('style')!.replace(/\s/g, '').toLowerCase()
+    expect(styleBarreF).toContain(COULEURS_DPE.F.toLowerCase())
 
     // Une étiquette sans valeur publiée : le périmètre PORTE le territoire,
     // la distribution est incomplète ou supprimée — dit comme tel.

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
 import type { ModeleSignature } from '@/indicateurs/explorationModel'
 import { formaterNombreFR } from '@/payload/selectors'
+import { couleurDpe } from '@/fiche/couleursDpe'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'distribution' }>; signature?: ModeleSignature | null }>()
 
@@ -13,22 +14,32 @@ function hauteurDe(valeur: number | null): string {
   if (valeur === null || hauteurMax.value <= 0) return '2px'
   return `${Math.max(2, (valeur / hauteurMax.value) * 100)}%`
 }
+// Les détails DPE portent leurs couleurs officielles A→G (ADR-0023, la seule
+// dérogation de palette sanctionnée) — le MÊME mécanisme que le renderer de
+// composition : lookup sur le détail, repli silencieux sinon. Le dégradé du
+// thème n'habille jamais les étiquettes DPE.
+function styleBarre(detail: string, valeur: number | null): Record<string, string> {
+  const style: Record<string, string> = { height: hauteurDe(valeur) }
+  const officielle = couleurDpe(detail)
+  if (officielle) style.background = officielle
+  return style
+}
 </script>
 <template>
   <figure class="family-renderer distribution-renderer" data-renderer="distribution" :data-state="dispatch.status" aria-label="Repères de distribution">
     <div class="signature-bloc" data-testid="signature-distribution">
       <h2>La signature du territoire sélectionné</h2>
-      <div v-if="signature && signature.etat === 'complet'" class="signature-barres" role="img" :aria-label="`Distribution complète de ${signature.nom} sur ${signature.barres.length} modalités déclarées`">
+      <div v-if="signature && signature.etat === 'complet'" class="signature-barres" role="img" :aria-label="`Distribution complète de ${signature.nom} sur ${signature.barres.length} détails déclarés`">
         <div v-for="barre in signature.barres" :key="barre.detail" class="signature-barre" :data-detail="barre.detail">
           <span class="signature-valeur">{{ formaterNombreFR(barre.valeur!, 2) }}{{ signature.unite ? ` ${signature.unite}` : '' }}</span>
-          <span class="signature-hauteur"><span class="barre" :style="{ height: hauteurDe(barre.valeur) }" /></span>
+          <span class="signature-hauteur"><span class="barre" :style="styleBarre(barre.detail, barre.valeur)" /></span>
           <span class="signature-libelle">{{ barre.label }}</span>
         </div>
       </div>
       <p v-else-if="signature && signature.message" role="status">{{ signature.message }}</p>
       <p v-else role="status">Sélectionnez un territoire pour voir sa signature complète.</p>
     </div>
-    <figcaption>La comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la médiane, la carte, les extrêmes et le tableau ; la signature n’est jamais comparée étiquette par étiquette.</figcaption>
+    <figcaption>La comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la médiane, la carte, les extrêmes et le tableau ; la signature n’est jamais comparée détail par détail.</figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>
