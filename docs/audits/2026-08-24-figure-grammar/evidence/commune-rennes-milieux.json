@@ -1,0 +1,217 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 2400,
+    "dpr": 1
+  },
+  "lecture": [
+    {
+      "groupe": "artificialisation",
+      "present": true,
+      "indisponible": false,
+      "absentTexte": null,
+      "prose": "Entre 2017-2023 et 2020-2023, Rennes grandit en se densifiant (trajectoire 0,94 par habitant). Sources et méthodes",
+      "proseBox": {
+        "x": 161,
+        "y": 480,
+        "width": 902,
+        "height": 58,
+        "fontSizePx": "18px",
+        "fontFamily": "\"Newsreader Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "contexte": null,
+      "source": "Source INSEE — Série historique du recensement · 2023 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Côtes-d'Armor (22), millésime 2021 · 2021 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Côtes-d'Armor (22), millésime 2025 · 2025 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Finistère (29), millésime 2021 · 2021 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Finistère (29), millésime 2024 · 2024 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Ille-et-Vilaine (35), millésime 2020 · 2020 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Ille-et-Vilaine (35), millésime 2023 · 2023 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Morbihan (56), millésime 2022 · 2022 · IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Morbihan (56), millésime 2024 · 2024",
+      "ligneBox": {
+        "x": 161,
+        "y": 480,
+        "width": 1118,
+        "height": 180,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "colonneFigureBox": {
+        "x": 1079,
+        "y": 480,
+        "width": 200,
+        "height": 180,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "canvasBox": {
+        "x": 1079,
+        "y": 480,
+        "width": 200,
+        "height": 180,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false,
+        "cssHeight": "180px"
+      },
+      "listeLQ": null
+    }
+  ],
+  "figuresGrille": [
+    {
+      "groupe": "artificialisation",
+      "clef": "conso_enaf_annuel",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 936,
+        "y": 823,
+        "width": 368,
+        "height": 528,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": null,
+      "valeurBox": null,
+      "unite": null,
+      "libelle": "Consommation d’ENAF — série annuelle",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "2011",
+          "valeur": "6,22",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2012",
+          "valeur": "3",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2013",
+          "valeur": "5,36",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2014",
+          "valeur": "76,09",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2015",
+          "valeur": "1,36",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2016",
+          "valeur": "1,33",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2017",
+          "valeur": "6,68",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2018",
+          "valeur": "1,38",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2019",
+          "valeur": "0,11",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2020",
+          "valeur": "2,93",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2021",
+          "valeur": "3,07",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2022",
+          "valeur": "6,94",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2023",
+          "valeur": "6,11",
+          "unite": "ha"
+        },
+        {
+          "libelle": "2024",
+          "valeur": "2,73",
+          "unite": "ha"
+        }
+      ],
+      "vintage": "Cerema — Consommation d'espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025 : indicateurs communaux (Fichiers Fonciers) · 2025 · réf. 1 janv. 2025 · publ. 24 juil. 2026"
+    }
+  ],
+  "figuresCompactes": [
+    {
+      "groupe": "artificialisation",
+      "famille": "comparison-bars",
+      "clef": "artif_par_habitant",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 823,
+        "width": 768,
+        "height": 194,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Intensité état",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "2020",
+          "valeur": "166,57",
+          "unite": "m²/hab"
+        },
+        {
+          "libelle": "2023",
+          "valeur": "156,86",
+          "unite": "m²/hab"
+        }
+      ],
+      "vintage": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération) — Ille-et-Vilaine (35), millésime 2020 · 2020 · réf. 1 janv. 2020 · publ. 3 mars 2026"
+    }
+  ],
+  "canvases": [
+    {
+      "x": 1079,
+      "y": 480,
+      "width": 200,
+      "height": 180,
+      "fontSizePx": "16px",
+      "fontFamily": "\"Manrope Variable\"",
+      "fontWeight": "400",
+      "color": "rgb(45, 55, 72)",
+      "overflows200": false,
+      "parentClass": ""
+    }
+  ],
+  "titres": [
+    {
+      "groupe": "artificialisation",
+      "titre": "L’artificialisation"
+    }
+  ],
+  "titrePage": "Lusk — Observatoire des territoires bretons"
+}

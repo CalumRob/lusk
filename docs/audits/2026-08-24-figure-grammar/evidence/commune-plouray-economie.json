@@ -1,0 +1,202 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 2400,
+    "dpr": 1
+  },
+  "lecture": [
+    {
+      "groupe": "sante-et-taille",
+      "present": true,
+      "indisponible": false,
+      "absentTexte": null,
+      "prose": "La commune se spécialise dans Agriculture, sylviculture et pêche (rang 1 du top 5). Sources et méthodes",
+      "proseBox": {
+        "x": 161,
+        "y": 480,
+        "width": 902,
+        "height": 29,
+        "fontSizePx": "18px",
+        "fontFamily": "\"Newsreader Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "contexte": null,
+      "source": "Source data.bretagne.bzh — Base SIRENE — Région Bretagne · 2026-04 · réf. 31 mars 2026 · publ. 1 mai 2026",
+      "ligneBox": {
+        "x": 161,
+        "y": 480,
+        "width": 1118,
+        "height": 200,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "colonneFigureBox": {
+        "x": 1079,
+        "y": 480,
+        "width": 200,
+        "height": 200,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "canvasBox": null,
+      "listeLQ": {
+        "box": {
+          "x": 1079,
+          "y": 480,
+          "width": 200,
+          "height": 200,
+          "fontSizePx": "16px",
+          "fontFamily": "\"Manrope Variable\"",
+          "fontWeight": "400",
+          "color": "rgb(45, 55, 72)",
+          "overflows200": false
+        },
+        "entetes": "RangActivité dominanteLocation quotient (LQ)",
+        "lignes": [
+          {
+            "rang": "1",
+            "activite": "Agriculture, sylviculture et pêche",
+            "activiteOverflow": true,
+            "lq": "3"
+          },
+          {
+            "rang": "2",
+            "activite": "Fabrication de denrées alimentaires, de boissons et de produits à base de tabac",
+            "activiteOverflow": true,
+            "lq": "2,5"
+          },
+          {
+            "rang": "3",
+            "activite": "Industries extractives, énergie, eau, gestion des déchets et dépollution",
+            "activiteOverflow": true,
+            "lq": "1,9"
+          },
+          {
+            "rang": "4",
+            "activite": "Fabrication d'autres produits industriels",
+            "activiteOverflow": true,
+            "lq": "1,6"
+          },
+          {
+            "rang": "5",
+            "activite": "Administration publique, enseignement, santé humaine et action sociale",
+            "activiteOverflow": true,
+            "lq": "1,4"
+          }
+        ]
+      }
+    }
+  ],
+  "figuresGrille": [
+    {
+      "groupe": "sante-et-taille",
+      "clef": "chomage",
+      "accentClasse": "carte-figure--accent-faible",
+      "box": {
+        "x": 936,
+        "y": 776,
+        "width": 368,
+        "height": 197,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "11",
+      "valeurBox": {
+        "x": 955,
+        "y": 793,
+        "width": 39,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Chômage (population active)",
+      "puce": {
+        "texte": "▼ 10e/21 de l'EPCI",
+        "aria": "10e/21 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale) · 2023 · réf. 1 janv. 2023 · publ. 15 juil. 2026"
+    }
+  ],
+  "figuresCompactes": [
+    {
+      "groupe": "sante-et-taille",
+      "famille": "scalar",
+      "clef": "effectifs_salaries",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 776,
+        "width": 768,
+        "height": 181,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "296",
+      "unite": "salariés",
+      "libelle": "Effectifs salariés (lieu de travail)",
+      "puce": {
+        "texte": "▲ 5e/21 de l'EPCI",
+        "aria": "5e/21 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88) · 2024 · réf. 31 déc. 2024 · publ. 31 mars 2026"
+    },
+    {
+      "groupe": "structure-verte",
+      "famille": "scalar",
+      "clef": "eco_activites",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 1101,
+        "width": 768,
+        "height": 164,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "39",
+      "unite": "%",
+      "libelle": "Part des éco-activités",
+      "puce": {
+        "texte": "▲ 17e/21 de l'EPCI",
+        "aria": "17e/21 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "data.bretagne.bzh — Base SIRENE — Région Bretagne · 2026-04 · réf. 31 mars 2026 · publ. 1 mai 2026"
+    }
+  ],
+  "canvases": [],
+  "titres": [
+    {
+      "groupe": "sante-et-taille",
+      "titre": "Santé et taille du tissu productif"
+    },
+    {
+      "groupe": "structure-verte",
+      "titre": "La structure verte"
+    }
+  ],
+  "titrePage": "Lusk — Observatoire des territoires bretons"
+}

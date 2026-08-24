@@ -1,0 +1,103 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 2400,
+    "dpr": 1
+  },
+  "lecture": [],
+  "figuresGrille": [
+    {
+      "groupe": "sante-et-taille",
+      "clef": "chomage",
+      "accentClasse": null,
+      "box": {
+        "x": 936,
+        "y": 455,
+        "width": 368,
+        "height": 161,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "9",
+      "valeurBox": {
+        "x": 953,
+        "y": 472,
+        "width": 20,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Chômage (population active)",
+      "puce": null,
+      "tranches": [],
+      "vintage": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale) · 2023 · réf. 1 janv. 2023 · publ. 15 juil. 2026"
+    }
+  ],
+  "figuresCompactes": [
+    {
+      "groupe": "sante-et-taille",
+      "famille": "scalar",
+      "clef": "effectifs_salaries",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 455,
+        "width": 768,
+        "height": 144,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "1 261 149",
+      "unite": "salariés",
+      "libelle": "Effectifs salariés (lieu de travail)",
+      "puce": null,
+      "tranches": [],
+      "vintage": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88) · 2024 · réf. 31 déc. 2024 · publ. 31 mars 2026"
+    },
+    {
+      "groupe": "structure-verte",
+      "famille": "scalar",
+      "clef": "eco_activites",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 743,
+        "width": 768,
+        "height": 127,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "22",
+      "unite": "%",
+      "libelle": "Part des éco-activités",
+      "puce": null,
+      "tranches": [],
+      "vintage": "data.bretagne.bzh — Base SIRENE — Région Bretagne · 2026-04 · réf. 31 mars 2026 · publ. 1 mai 2026"
+    }
+  ],
+  "canvases": [],
+  "titres": [
+    {
+      "groupe": "sante-et-taille",
+      "titre": "Santé et taille du tissu productif"
+    },
+    {
+      "groupe": "structure-verte",
+      "titre": "La structure verte"
+    }
+  ],
+  "titrePage": "Lusk — Observatoire des territoires bretons"
+}

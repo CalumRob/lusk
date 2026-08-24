@@ -1,0 +1,276 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 2400,
+    "dpr": 1
+  },
+  "lecture": [
+    {
+      "groupe": "trajectoire-demographique",
+      "present": true,
+      "indisponible": false,
+      "absentTexte": null,
+      "prose": "Entre 2017-2023, la population de Bretagne attire, mais se meurt : -1,39 par an (naturel), 7,81 (migratoire). Sources et méthodes",
+      "proseBox": {
+        "x": 161,
+        "y": 1103,
+        "width": 902,
+        "height": 58,
+        "fontSizePx": "18px",
+        "fontFamily": "\"Newsreader Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "contexte": "de la Bretagne et de ses communes",
+      "source": "Source INSEE — Base des EPCI à fiscalité propre au 01/01/2025 · 2025 · INSEE — Série historique du recensement · 2023",
+      "ligneBox": {
+        "x": 161,
+        "y": 1103,
+        "width": 1118,
+        "height": 222,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "colonneFigureBox": {
+        "x": 1079,
+        "y": 1103,
+        "width": 200,
+        "height": 222,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "canvasBox": {
+        "x": 1079,
+        "y": 1145,
+        "width": 200,
+        "height": 180,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false,
+        "cssHeight": "180px"
+      },
+      "listeLQ": null
+    }
+  ],
+  "figuresGrille": [
+    {
+      "groupe": "etat-de-la-population",
+      "clef": "densite",
+      "accentClasse": null,
+      "box": {
+        "x": 936,
+        "y": 455,
+        "width": 368,
+        "height": 327,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "126,78",
+      "valeurBox": {
+        "x": 953,
+        "y": 472,
+        "width": 107,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "hab/km²",
+      "libelle": "Densité de population",
+      "puce": null,
+      "tranches": [],
+      "vintage": "INSEE — Série historique du recensement · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    },
+    {
+      "groupe": "etat-de-la-population",
+      "clef": "taille_menages",
+      "accentClasse": null,
+      "box": {
+        "x": 136,
+        "y": 806,
+        "width": 368,
+        "height": 144,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "2,07",
+      "valeurBox": {
+        "x": 153,
+        "y": 823,
+        "width": 68,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "pers./ménage",
+      "libelle": "Taille moyenne des ménages",
+      "puce": null,
+      "tranches": [],
+      "vintage": "INSEE — Ménages (dossier complet) · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    }
+  ],
+  "figuresCompactes": [
+    {
+      "groupe": "etat-de-la-population",
+      "famille": "pyramid",
+      "clef": "structure_age",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 455,
+        "width": 768,
+        "height": 327,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Structure par âge",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Moins de 15 ans",
+          "valeur": "8",
+          "unite": "%"
+        },
+        {
+          "libelle": "15 à 24 ans",
+          "valeur": "6",
+          "unite": "%"
+        },
+        {
+          "libelle": "25 à 39 ans",
+          "valeur": "8",
+          "unite": "%"
+        },
+        {
+          "libelle": "40 à 54 ans",
+          "valeur": "10",
+          "unite": "%"
+        },
+        {
+          "libelle": "55 à 64 ans",
+          "valeur": "7",
+          "unite": "%"
+        },
+        {
+          "libelle": "65 à 79 ans",
+          "valeur": "9",
+          "unite": "%"
+        },
+        {
+          "libelle": "80 ans et plus",
+          "valeur": "4",
+          "unite": "%"
+        },
+        {
+          "libelle": "Moins de 15 ans",
+          "valeur": "8",
+          "unite": "%"
+        },
+        {
+          "libelle": "15 à 24 ans",
+          "valeur": "6",
+          "unite": "%"
+        },
+        {
+          "libelle": "25 à 39 ans",
+          "valeur": "8",
+          "unite": "%"
+        },
+        {
+          "libelle": "40 à 54 ans",
+          "valeur": "10",
+          "unite": "%"
+        },
+        {
+          "libelle": "55 à 64 ans",
+          "valeur": "6",
+          "unite": "%"
+        },
+        {
+          "libelle": "65 à 79 ans",
+          "valeur": "8",
+          "unite": "%"
+        },
+        {
+          "libelle": "80 ans et plus",
+          "valeur": "2",
+          "unite": "%"
+        }
+      ],
+      "vintage": "INSEE — Population par sexe et âge (PRINC) · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    },
+    {
+      "groupe": "trajectoire-demographique",
+      "famille": "trajectory",
+      "clef": "evolution_1968",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 1421,
+        "width": 768,
+        "height": 92,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Évolution de la population depuis 1968",
+      "puce": null,
+      "tranches": [],
+      "vintage": "INSEE — Série historique du recensement · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    }
+  ],
+  "canvases": [
+    {
+      "x": 1079,
+      "y": 1145,
+      "width": 200,
+      "height": 180,
+      "fontSizePx": "16px",
+      "fontFamily": "\"Manrope Variable\"",
+      "fontWeight": "400",
+      "color": "rgb(45, 55, 72)",
+      "overflows200": false,
+      "parentClass": ""
+    }
+  ],
+  "titres": [
+    {
+      "groupe": "etat-de-la-population",
+      "titre": "État de la population"
+    },
+    {
+      "groupe": "trajectoire-demographique",
+      "titre": "Trajectoire démographique"
+    }
+  ],
+  "titrePage": "Lusk — Observatoire des territoires bretons"
+}

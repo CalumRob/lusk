@@ -1,0 +1,691 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 2400,
+    "dpr": 1
+  },
+  "lecture": [
+    {
+      "groupe": "acces-aux-services",
+      "present": true,
+      "indisponible": false,
+      "absentTexte": null,
+      "prose": "Sans voiture, 3 types de services disparaissent de l’accès quotidien de Rennes. Sources et méthodes",
+      "proseBox": {
+        "x": 154,
+        "y": 480,
+        "width": 902,
+        "height": 29,
+        "fontSizePx": "18px",
+        "fontFamily": "\"Newsreader Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "contexte": "de Rennes et des communes de Rennes Métropole",
+      "source": "Source Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026",
+      "ligneBox": {
+        "x": 154,
+        "y": 480,
+        "width": 1118,
+        "height": 243,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "colonneFigureBox": {
+        "x": 1072,
+        "y": 480,
+        "width": 200,
+        "height": 243,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "canvasBox": {
+        "x": 1072,
+        "y": 543,
+        "width": 200,
+        "height": 180,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false,
+        "cssHeight": "180px"
+      },
+      "listeLQ": null
+    }
+  ],
+  "figuresGrille": [
+    {
+      "groupe": "acces-aux-services",
+      "clef": "tot_loss_t",
+      "accentClasse": null,
+      "box": {
+        "x": 929,
+        "y": 819,
+        "width": 368,
+        "height": 235,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "4 331",
+      "valeurBox": {
+        "x": 946,
+        "y": 836,
+        "width": 84,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "accès perdus",
+      "libelle": "Perte totale d’accès — à pied ou en transports en commun",
+      "puce": {
+        "texte": "▼ 39e/43 de l'EPCI",
+        "aria": "39e/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "acces-aux-services",
+      "clef": "tot_loss_b",
+      "accentClasse": null,
+      "box": {
+        "x": 129,
+        "y": 1078,
+        "width": 368,
+        "height": 256,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "2 679",
+      "valeurBox": {
+        "x": 146,
+        "y": 1095,
+        "width": 84,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "accès perdus",
+      "libelle": "Perte totale d’accès — à vélo",
+      "puce": {
+        "texte": "▼ 30e/43 de l'EPCI",
+        "aria": "30e/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "acces-aux-services",
+      "clef": "iso_sante",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 529,
+        "y": 1078,
+        "width": 368,
+        "height": 256,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "0",
+      "valeurBox": {
+        "x": 548,
+        "y": 1095,
+        "width": 20,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+      "puce": {
+        "texte": "▼ 1er/43 de l'EPCI",
+        "aria": "1er/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "acces-aux-services",
+      "clef": "iso_administration",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 929,
+        "y": 1078,
+        "width": 368,
+        "height": 256,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "2",
+      "valeurBox": {
+        "x": 948,
+        "y": 1095,
+        "width": 20,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+      "puce": {
+        "texte": "▼ 2e/43 de l'EPCI",
+        "aria": "2e/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "acces-aux-services",
+      "clef": "iso_ecole",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 129,
+        "y": 1358,
+        "width": 368,
+        "height": 235,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "0",
+      "valeurBox": {
+        "x": 148,
+        "y": 1375,
+        "width": 20,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+      "puce": {
+        "texte": "▼ 1er/43 de l'EPCI",
+        "aria": "1er/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "acces-aux-services",
+      "clef": "iso_banque",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 529,
+        "y": 1358,
+        "width": 368,
+        "height": 235,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "0",
+      "valeurBox": {
+        "x": 548,
+        "y": 1375,
+        "width": 20,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+      "puce": {
+        "texte": "▼ 1er/43 de l'EPCI",
+        "aria": "1er/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "partage-de-lespace-public",
+      "clef": "reseaux",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 129,
+        "y": 1917,
+        "width": 1168,
+        "height": 172,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "valeurBox": null,
+      "unite": null,
+      "libelle": "Réseaux à pied / vélo / voiture",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Densité — à vélo",
+          "valeur": "5,25",
+          "unite": "km/km²"
+        },
+        {
+          "libelle": "Longueur — à vélo",
+          "valeur": "264,06",
+          "unite": "km"
+        },
+        {
+          "libelle": "Densité — en voiture",
+          "valeur": "18,16",
+          "unite": "km/km²"
+        },
+        {
+          "libelle": "Longueur — en voiture",
+          "valeur": "913,55",
+          "unite": "km"
+        },
+        {
+          "libelle": "Densité — à pied ou en transports en commun",
+          "valeur": "10,35",
+          "unite": "km/km²"
+        },
+        {
+          "libelle": "Longueur — à pied ou en transports en commun",
+          "valeur": "520,48",
+          "unite": "km"
+        }
+      ],
+      "vintage": "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001) · 2026-08 · réf. 7 août 2026 · publ. 7 août 2026"
+    },
+    {
+      "groupe": "partage-de-lespace-public",
+      "clef": "places_stationnement_velo_1000",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 129,
+        "y": 2113,
+        "width": 368,
+        "height": 231,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "72,8",
+      "valeurBox": {
+        "x": 148,
+        "y": 2130,
+        "width": 68,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "places / 1 000 hab",
+      "libelle": "Places de stationnement vélo pour 1 000 hab.",
+      "puce": {
+        "texte": "▲ 2e/43 de l'EPCI",
+        "aria": "2e/43 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "Ecolab — Nombre de places de stationnement vélo pour 1 000 hab. (hub d'indicateurs territoriaux de transition écologique ; source OSM : Base Nationale du Stationnement Cyclable) · 2022-2025 · réf. 1 janv. 2025 · publ. 3 févr. 2026"
+    },
+    {
+      "groupe": "partage-de-lespace-public",
+      "clef": "places_stationnement_voiture_1000",
+      "accentClasse": null,
+      "box": {
+        "x": 529,
+        "y": 2113,
+        "width": 368,
+        "height": 231,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "13,76",
+      "valeurBox": {
+        "x": 546,
+        "y": 2130,
+        "width": 87,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "places / 1 000 hab",
+      "libelle": "Places de stationnement voiture pour 1 000 hab.",
+      "puce": {
+        "texte": "▼ 34e/43 de l'EPCI",
+        "aria": "34e/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001) · 2026-08 · réf. 5 août 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "partage-de-lespace-public",
+      "clef": "stationnement_velo_par_voiture",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 929,
+        "y": 2113,
+        "width": 368,
+        "height": 231,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "5,29",
+      "valeurBox": {
+        "x": 948,
+        "y": 2130,
+        "width": 68,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "places vélo / place voiture",
+      "libelle": "Places de stationnement vélo pour 1 place voiture",
+      "puce": {
+        "texte": "▲ 2e/12 de l'EPCI",
+        "aria": "2e/12 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001) · 2026-08 · réf. 5 août 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "motorisation",
+      "clef": "bornes_recharge",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 929,
+        "y": 2471,
+        "width": 368,
+        "height": 214,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": "49",
+      "valeurBox": {
+        "x": 948,
+        "y": 2488,
+        "width": 39,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "bornes",
+      "libelle": "Bornes de recharge pour véhicules électriques",
+      "puce": {
+        "texte": "▲ 1er/43 de l'EPCI",
+        "aria": "1er/43 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "Etalab / data.bretagne.bzh — Fichier consolidé des Bornes de Recharge pour Véhicules Électriques (IRVE), schéma 2.2.0 · 2026-07 · réf. 28 juil. 2026 · publ. 4 août 2026"
+    },
+    {
+      "groupe": "motorisation",
+      "clef": "bornes_ev_par_station_service",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 129,
+        "y": 2709,
+        "width": 368,
+        "height": 197,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "3,5",
+      "valeurBox": {
+        "x": 148,
+        "y": 2726,
+        "width": 48,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "bornes / station",
+      "libelle": "Bornes de recharge par station-service",
+      "puce": {
+        "texte": "▲ 7e/23 de l'EPCI",
+        "aria": "7e/23 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service · 2025 · réf. 1 janv. 2025 · publ. 4 août 2026"
+    }
+  ],
+  "figuresCompactes": [
+    {
+      "groupe": "acces-aux-services",
+      "famille": "comparison-bars",
+      "clef": "iso_alimentation",
+      "tag": "FIGURE",
+      "box": {
+        "x": 129,
+        "y": 819,
+        "width": 768,
+        "height": 181,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "0",
+      "unite": "%",
+      "libelle": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+      "puce": {
+        "texte": "▼ 1er/43 de l'EPCI",
+        "aria": "1er/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07) · 2026-02 · réf. 28 févr. 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "partage-de-lespace-public",
+      "famille": "composition",
+      "clef": "offre_cyclable",
+      "tag": "FIGURE",
+      "box": {
+        "x": 129,
+        "y": 1721,
+        "width": 768,
+        "height": 172,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "L’offre cyclable",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Partagé",
+          "valeur": "0,69",
+          "unite": "km / 1 000 hab"
+        },
+        {
+          "libelle": "Longueur partagée",
+          "valeur": "158,1",
+          "unite": "km"
+        },
+        {
+          "libelle": "Protégé",
+          "valeur": "0,46",
+          "unite": "km / 1 000 hab"
+        },
+        {
+          "libelle": "Longueur protégée",
+          "valeur": "105",
+          "unite": "km"
+        },
+        {
+          "libelle": "Longueur totale",
+          "valeur": "263,11",
+          "unite": "km"
+        }
+      ],
+      "vintage": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001) · 2026-08 · réf. 5 août 2026 · publ. 6 août 2026"
+    },
+    {
+      "groupe": "motorisation",
+      "famille": "composition",
+      "clef": "voitures_menage",
+      "tag": "FIGURE",
+      "box": {
+        "x": 129,
+        "y": 2471,
+        "width": 768,
+        "height": 194,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Voitures par ménage",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Ménages avec 2 voitures ou plus",
+          "valeur": "15",
+          "unite": "%"
+        },
+        {
+          "libelle": "Ménages sans voiture",
+          "valeur": "32",
+          "unite": "%"
+        },
+        {
+          "libelle": "Ménages avec 1 voiture",
+          "valeur": "53",
+          "unite": "%"
+        }
+      ],
+      "vintage": "INSEE — Recensement de la population, exploitations principales (Logements) — tableau LOG T12 « Équipement automobile des ménages » (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS) · 2023 · réf. 1 janv. 2023 · publ. 29 juil. 2026"
+    },
+    {
+      "groupe": "offre-transports-commun",
+      "famille": "scalar",
+      "clef": "offre_tc",
+      "tag": "FIGURE",
+      "box": {
+        "x": 129,
+        "y": 3034,
+        "width": 768,
+        "height": 197,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "100",
+      "unite": "%",
+      "libelle": "Part des bâtiments près d’un arrêt (à 500 m)",
+      "puce": {
+        "texte": "▲ 3e/43 de l'EPCI",
+        "aria": "3e/43 de l'EPCI — plus = mieux"
+      },
+      "tranches": [],
+      "vintage": "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…) · 2026-02 · réf. 3 févr. 2026 · publ. 3 févr. 2026"
+    }
+  ],
+  "canvases": [
+    {
+      "x": 1072,
+      "y": 543,
+      "width": 200,
+      "height": 180,
+      "fontSizePx": "16px",
+      "fontFamily": "\"Manrope Variable\"",
+      "fontWeight": "400",
+      "color": "rgb(45, 55, 72)",
+      "overflows200": false,
+      "parentClass": ""
+    }
+  ],
+  "titres": [
+    {
+      "groupe": "acces-aux-services",
+      "titre": "L’accès aux services"
+    },
+    {
+      "groupe": "partage-de-lespace-public",
+      "titre": "Le partage de l’espace public"
+    },
+    {
+      "groupe": "motorisation",
+      "titre": "La motorisation"
+    },
+    {
+      "groupe": "offre-transports-commun",
+      "titre": "L’offre de transports en commun"
+    }
+  ],
+  "titrePage": "Lusk — Observatoire des territoires bretons"
+}
