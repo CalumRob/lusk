@@ -386,6 +386,36 @@ reference_territoires <- function(territoires) {
     )
 }
 
+# verifier_horloges_vintage ----------------------------------------------------
+# Les DEUX horloges du tampon vintage (#408 — le miroir EXACT de valider-
+# Indicateurs, app/src/payload/validate.ts) : une base roulante n'a pas de
+# référence (DPE — ADR-0009), un suivi continu n'a pas de publication (ORT —
+# le contrat #175 : la page périmée n'est jamais citée). L'une des deux dates
+# peut donc être NA — JAMAIS les deux ensemble : un fait sans aucune horloge
+# ne dit rien de sa fraîcheur, et le pipeline publierait ce que l'app refuse
+# au chargement. Portée IDENTIQUE à la règle TS : TOUTE ligne d'indicateurs
+# publiée, tous thèmes confondus. Mêmes sémantiques de null que le JSON
+# (NA ↔ null, na = "null" des projections).
+verifier_horloges_vintage <- function(indicateurs) {
+  manquantes <- setdiff(c("vintage_date_reference", "vintage_date_publication"),
+                        names(indicateurs))
+  if (length(manquantes) > 0) {
+    stop("Payload invalide : colonne(s) de tampon absente(s) : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  sans_horloge <- is.na(indicateurs$vintage_date_reference) &
+    is.na(indicateurs$vintage_date_publication)
+  if (any(sans_horloge)) {
+    premiere <- which(sans_horloge)[[1L]]
+    stop("Payload invalide : \u00ab vintage_date_reference \u00bb et ",
+         "\u00ab vintage_date_publication \u00bb sont toutes les deux null ",
+         "(\u00e9 ligne ", premiere, " \u2014 ", indicateurs$territoire[[premiere]],
+         " \u00d7 ", indicateurs$key[[premiere]], ") \u2014 un fait porte au ",
+         "moins une horloge de fra\u00eecheur.", call. = FALSE)
+  }
+  invisible(indicateurs)
+}
+
 # validate_payload ------------------------------------------------------------
 # Point 7 : la validation de bon sens du payload. Attrape les dérives de
 # format des sources sur les données réelles — une vague INSEE qui change de
@@ -532,6 +562,10 @@ validate_payload <- function(payload,
     stop("Payload invalide : une estampille ne vient pas de la source de ",
          "référence déclarée.", call. = FALSE)
   }
+
+  # 4bis. les deux horloges du tampon (#408 — le miroir de l'app, TOUTE ligne
+  # d'indicateurs publiée) : au moins une des deux dates existe.
+  verifier_horloges_vintage(ind)
 
   # 5. la table de référence : une ligne par territoire, un nom partout
   if (anyDuplicated(ref$territoire)) {

@@ -117,14 +117,21 @@ test_that("chaque indicateur est estampillé depuis sa source de référence", {
       p$indicateurs$key == "prix_m2"]),
     "2026-05-18"
   )
-  # DPE : la base roulante — pas encore de date de pull dans les tests
+  # DPE : la base roulante — sans pull, l'horloge de publication est celle du
+  # RUN (#408 : au moins une horloge par ligne publiée ; la référence reste NA)
   for (cle in c("part_passoires", "distribution_dpe")) {
     expect_equal(
       unique(p$indicateurs$vintage_source[p$indicateurs$key == cle]),
       "ADEME — Observatoire DPE, logements existants",
       info = cle
     )
-    expect_true(all(is.na(p$indicateurs$vintage_date_publication[
+    expect_equal(
+      unique(p$indicateurs$vintage_date_publication[
+        p$indicateurs$key == cle]),
+      as.character(Sys.Date()),
+      info = cle
+    )
+    expect_true(all(is.na(p$indicateurs$vintage_date_reference[
       p$indicateurs$key == cle])), info = cle)
   }
 })

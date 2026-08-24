@@ -73,6 +73,8 @@ export function accentPositionRang(rang: number | null, taille: number | null): 
  * jamais une devise inventée).
  */
 export function directionIndicateur(theme: Theme, clef: string): DirectionRang | null {
-  const methodes = THEMES_METHODES[theme]
+  // #408 : le sixième thème n'est pas au registre Méthodes (sa documentation
+  // vit dans SA section dédiée) — null = pas de glyphe, jamais une devise.
+  const methodes = THEMES_METHODES[theme as keyof typeof THEMES_METHODES]
   return methodes?.indicateurs[clef]?.direction ?? null
 }

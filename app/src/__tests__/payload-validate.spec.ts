@@ -10,6 +10,7 @@ import {
   indicateursEconomieFixture,
   indicateursMilieuxFixture,
   indicateursMobiliteFixture,
+  indicateursProgrammesFixture,
   membresProgrammesFixture,
   programmesFixture,
   programmesVideFixture,
@@ -935,5 +936,66 @@ describe('parsePayload — the programmes contract (issue #179, ADR-0013)', () =
     const payload = parsePayload(documentsBruts({ programmes: programmesVideFixture }))
 
     expect(payload.programmes).toEqual({ membres: [], subventions: [] })
+  })
+})
+
+describe('parsePayload — les faits du sixième thème Programmes et subventions (#408)', () => {
+  it('accepte les indicateurs du thème — la couverture catégorielle et les subventions numériques', () => {
+    const payload = parsePayload(documentsBruts({ indicateurs: indicateursProgrammesFixture }))
+
+    const programmes = payload.indicateurs.filter((i) => i.theme === 'programmes')
+    expect(programmes).toHaveLength(indicateursProgrammesFixture.length)
+    // l'indicateur CATÉGORIEL : value = 1, unit « adhésion », le rider sur la
+    // ligne du label qui le porte
+    const acv = programmes.find((i) => i.detail === 'ACV')
+    expect(acv).toMatchObject({ key: 'couverture_programmes', value: 1, unit: 'adhésion', rider: 'convention valant ORT' })
+    // les indicateurs NUMÉRIQUES : le total poolé (dimension = l'année) et la
+    // ventilation par domaine
+    expect(programmes.some((i) => i.key === 'subventions_annuelles')).toBe(true)
+    expect(programmes.some((i) => i.key === 'subventions_par_domaine')).toBe(true)
+  })
+
+  it('accepte une ligne ORT sans date de publication (le suivi continu, contrat #175)', () => {
+    const ort = indicateursProgrammesFixture.find((i) => i.detail === 'ORT')
+    expect(ort?.vintage_date_publication ?? null).toBeNull()
+    expect(ort?.vintage_date_reference).toBeTruthy()
+
+    const payload = parsePayload(documentsBruts({ indicateurs: indicateursProgrammesFixture }))
+    const ortValide = payload.indicateurs.find((i) => i.detail === 'ORT')
+    expect(ortValide).toBeDefined()
+  })
+
+  it('rejette un fait SANS AUCUNE horloge (référence ET publication null)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursProgrammesFixture)) as typeof indicateursProgrammesFixture
+    const premiere = indicateurs[0]
+    premiere.vintage_date_reference = null
+    premiere.vintage_date_publication = null
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/horloge/i)
+  })
+
+  it('rejette une date de publication non ISO (la discipline des deux dates)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursProgrammesFixture)) as typeof indicateursProgrammesFixture
+    ;(indicateurs[0] as { vintage_date_publication: unknown }).vintage_date_publication = 'septembre 2025'
+
+    attendErreurValidation(documentsBruts({ indicateurs }))
+  })
+
+  it('rejette une ligne en double (territoire × key × detail × dimension)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursProgrammesFixture)) as typeof indicateursProgrammesFixture
+    const annuelle = indicateurs.find((i) => i.key === 'subventions_annuelles')!
+    indicateurs.push(JSON.parse(JSON.stringify(annuelle)))
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/double/i)
+  })
+
+  it('rejette un thème de fait hors du canon (les six thèmes, #408)', () => {
+    const indicateurs = JSON.parse(JSON.stringify(indicateursProgrammesFixture)) as typeof indicateursProgrammesFixture
+    ;(indicateurs[0] as { theme: string }).theme = 'financements'
+
+    const erreur = attendErreurValidation(documentsBruts({ indicateurs }))
+    expect(erreur.message).toMatch(/theme|thème/i)
   })
 })

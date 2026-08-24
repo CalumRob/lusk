@@ -207,6 +207,27 @@ describe('ThemeTabs — le label du premier onglet (override, ADR-0019 #282)', (
   })
 })
 
+describe('ThemeTabs — le premier onglet masqué (la fiche #408)', () => {
+  it('masque le pseudo-onglet initial : la barre commence au premier thème passé', () => {
+    // La fiche passe « Programmes et subventions » en tête de SES thèmes —
+    // plus de pseudo-onglet Aperçu devant.
+    const wrapper = mount(ThemeTabs, {
+      props: { themes: ['programmes', 'demographie'], selected: 'programmes', masquerOngletInitial: true },
+      attachTo: document.body,
+    })
+    montee = wrapper
+
+    expect(textesOnglets(wrapper)).toEqual(['Programmes et subventions', 'Démographie'])
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('id')).toBe('onglet-programmes')
+  })
+
+  it('garde le premier onglet par défaut quand la prop est absente (la carte et les Méthodes ne bougent pas)', () => {
+    const wrapper = montage(['demographie'])
+
+    expect(textesOnglets(wrapper)).toEqual(['Aperçu', 'Démographie'])
+  })
+})
+
 describe('ThemeTabs — keyboard navigation', () => {
   it('moves selection and focus with ArrowRight', async () => {
     const wrapper = montage(['demographie', 'habitat'])

@@ -1,30 +1,25 @@
 <script setup lang="ts">
 /**
- * ApercuOnglet — the Aperçu tab, the fiche's default landing view (ADR-0007,
- * layouts.md §2, CONTEXT.md §Aperçu). Deliberately not a theme block: it
- * holds the territory's basic stats, rendered from the pipeline's `apercu`
- * table via apercuPourTerritoire (never client-derived), and the Programmes et
- * subventions element. Runs on the general brand ramp — no theme -wash, no
- * theme colors (the shell already keeps the page on the brand background).
+ * BlocProgrammes — le bloc du SIXIÈME thème (#408), l'onglet premier et par
+ * défaut de la fiche : « Programmes et subventions ». La migration de
+ * l'ancien élément d'Aperçu (supprimé — verdict #400 : les ancres d'identité
+ * disparaissent complètement, la fiche passe de ses contrôles d'identité au
+ * premier thème) vers l'anatomie des thèmes, avec SA présentation propre :
+ * les faits d'action publique ne sont ni une courbe ni un classement.
  *
- * The Programmes et subventions element renders REAL data (issue #181): the
- * ladder derivation (programmesPourTerritoire, ADR-0013 — a relational join
- * over the payload's membership rows + the territoires reference, never a
- * computed stat) produces the per-fiche rendering — the three voices
- * (lauréate / couverte / porte / compte / ort), the named lists (full,
- * scrollable, never truncated), the « convention valant ORT » rider as the
- * accessible fact, the vintage stamp on every badge, and the subvention
- * figure (by-policy-area split on commune fiches, single annual total
- * elsewhere, with the Région portal link as drill-down). Badge vocabulary
- * (sigle → French nom) lives in fiche/apercu.ts.
+ * Le bloc lit SES fichiers hermétiques uniquement (#408) :
+ *   - theme_programmes.json — les labels/cadrages des sous-groupes (jamais un
+ *     vocabulaire app-side) ;
+ *   - indicateurs_programmes.json — les faits, via programmesPourTerritoire
+ *     (la dérivation en échelle : jointure relationnelle + voix honnêtes,
+ *     ADR-0013 ; le total poolé est calculé côté pipeline) ;
+ *   - histoires_programmes.json — vide : le thème sans lecture n'en invente
+ *     jamais une.
  *
- * States: the tab receives the already-loaded payload from the parent; the
- * territory-without-stats edge (no apercu rows) shows an honest one-liner.
- * An absent apercu table (404 → null, issue #122 — the pipeline only
- * publishes it when a theme HAS an aperçu) reads as no rows and shows the
- * same honest one-liner. A payload with no programmes (404 → null) or no
- * rows renders the honest empty state — never « under construction »
- * (principles.md §1).
+ * Les états : un territoire sans aucun fait rend l'état vide honnête (« Aucun
+ * programme référencé » / silence sur les subventions) — jamais « under
+ * construction » (principles.md §1). Le top-5 des domaines est listé, le
+ * reste derrière une révélation accessible (aria-expanded, #305).
  */
 import { computed, ref, watch } from 'vue'
 import { ExternalLink } from 'lucide-vue-next'
@@ -34,14 +29,12 @@ import {
   LIEN_SUBVENTIONS,
   formaterMontant,
   formaterPartContexte,
-  formaterValeurApercu,
-  libelleApercu,
   libelleBadge,
   libellePartContexte,
   libelleProvenance,
   phraseVoix,
-} from '@/fiche/apercu'
-import { apercuPourTerritoire, programmesPourTerritoire } from '@/payload/selectors'
+} from '@/fiche/programmesAffichage'
+import { programmesPourTerritoire } from '@/payload/selectors'
 import type { Payload } from '@/payload/types'
 
 const props = defineProps<{
@@ -49,7 +42,18 @@ const props = defineProps<{
   territoire: string
 }>()
 
-const lignes = computed(() => apercuPourTerritoire(props.payload, props.territoire))
+// Les labels du bloc viennent de la métadonnée publiée (theme_programmes.json)
+// — l'overline du thème et les titres/cadrages des sous-groupes, jamais une
+// seconde liste app-side (le contrat #318/#314, validerThemeMetadata garantit
+// la forme ; un thème rendu implique sa métadonnée, #313).
+const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
+
+function groupe(key: string): { label: string; framing: string } {
+  const g = metadata.value?.subgroups.find((sousGroupe) => sousGroupe.key === key)
+  if (!g) throw new Error(`Sous-groupe « ${key} » absent des métadonnées « programmes »`)
+  return { label: g.label, framing: g.framing }
+}
+
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
 const elementVide = computed(
   () => element.value.badges.length === 0 && element.value.subventions === null,
@@ -88,22 +92,33 @@ const lienProvenance = computed(() => {
 </script>
 
 <template>
-  <article class="apercu-onglet">
-    <h2 class="apercu-titre">Aperçu</h2>
+  <!-- Le bloc ne rend qu'avec sa métadonnée publiée (le loader la garantit
+       pour un thème présent, #313 ; dans le chargement progressif du magasin,
+       les faits peuvent atterrir un instant avant elle — on attend, jamais un
+       titre inventé ni un crash de rendu). -->
+  <article v-if="metadata" class="onglet-theme onglet-theme--programmes bloc-programmes">
+    <p class="onglet-theme-overline">{{ metadata?.label ?? '' }}</p>
 
-    <dl v-if="lignes.length > 0" class="apercu-stats">
-      <div v-for="ligne in lignes" :key="ligne.key" class="kpi kpi--marque">
-        <dt class="kpi-valeur">{{ formaterValeurApercu(ligne) }}</dt>
-        <dd class="kpi-libelle">{{ libelleApercu(ligne.key) }}</dd>
-      </div>
-    </dl>
-    <p v-else class="apercu-vide">Aucune donnée disponible pour ce territoire.</p>
+    <template v-if="elementVide">
+      <section class="sous-groupe" data-groupe="couverture">
+        <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
+        <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
+        <p class="programmes-vide">Aucun programme référencé.</p>
+      </section>
+    </template>
+    <template v-else>
+      <!-- Le sous-groupe couverture : les badges à leurs trois voix (lauréate /
+           couverte / porte / compte / ort), la liste nommée complète et
+           scrollable, le rider « convention valant ORT », l'estampille de SA
+           source par badge. -->
+      <section
+        v-if="element.badges.length > 0"
+        class="sous-groupe"
+        data-groupe="couverture"
+      >
+        <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
+        <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
 
-    <section class="apercu-programmes" aria-labelledby="titre-programmes">
-      <h2 class="apercu-titre" id="titre-programmes">Programmes et subventions</h2>
-
-      <p v-if="elementVide" class="programmes-vide">Aucun programme référencé.</p>
-      <template v-else>
         <ul class="programmes-badges">
           <li v-for="badge in element.badges" :key="badge.sigle" class="programme-badge">
             <span class="puce-programme" :aria-label="libelleBadge(badge)" :title="badge.sigle">
@@ -122,8 +137,22 @@ const lienProvenance = computed(() => {
             <p class="programme-vintage">{{ badge.vintage }}</p>
           </li>
         </ul>
+      </section>
 
-        <div v-if="element.subventions" class="programme-subventions">
+      <!-- Le sous-groupe subventions : le total annuel (calculé côté pipeline),
+           la ventilation communale pliée top-5 + révélation, la part de
+           contexte, la provenance, l'estampille hebdomadaire et le lien
+           portail Région. Un territoire sans fait reste silencieux — jamais un
+           zéro inventé, jamais une figure vide. -->
+      <section
+        v-if="element.subventions"
+        class="sous-groupe"
+        data-groupe="subventions"
+      >
+        <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
+        <p class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
+
+        <div class="programme-subventions">
           <p class="subvention-total">
             {{ formaterMontant(element.subventions.total) }}
             <span class="subvention-annee">en {{ element.subventions.annee }}</span>
@@ -162,80 +191,58 @@ const lienProvenance = computed(() => {
           </p>
           <p class="subvention-vintage">{{ element.subventions.vintage }}</p>
         </div>
-      </template>
 
-      <a
-        class="programmes-lien"
-        :href="LIEN_SUBVENTIONS.href"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        {{ LIEN_SUBVENTIONS.libelle }}
-        <AppIcon :icone="ExternalLink" :taille="14" class="programmes-lien-icone" aria-hidden="true" />
-      </a>
-    </section>
+        <a
+          class="programmes-lien"
+          :href="LIEN_SUBVENTIONS.href"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ LIEN_SUBVENTIONS.libelle }}
+          <AppIcon :icone="ExternalLink" :taille="14" class="programmes-lien-icone" aria-hidden="true" />
+        </a>
+      </section>
+    </template>
   </article>
 </template>
 
 <style scoped>
-.apercu-onglet {
+/* Les styles du bloc reprennent la grammaire visuelle de l'ancien élément
+   (les badges, la ventilation pliée, le lien portail) sur la rampe du thème
+   portée par .onglet-theme--programmes (OngletTheme). */
+.bloc-programmes {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
 }
 
-/* The section labels — the overline voice (DESIGN.md §3) on the brand ramp. */
-.apercu-titre {
-  margin: 0;
-  font: var(--text-overline);
-  letter-spacing: var(--text-overline-tracking);
-  text-transform: uppercase;
-  color: var(--brand-500);
-}
-
-/* The basic-stats strip — KPI figures (ui-elements.md §Indicator/KPI figure). */
-.apercu-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-6) var(--space-8);
-  margin: 0;
-}
-
-.kpi {
+.sous-groupe {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-6);
 }
 
-.kpi-valeur {
+.sous-groupe-titre {
   margin: 0;
-  font: var(--text-h2);
-  font-variant-numeric: var(--text-numeric-variant);
-  color: var(--brand-500);
+  font: 600 1.1875rem/1.4 var(--font-serif);
+  color: var(--theme-programmes-strong);
 }
 
-.kpi-libelle {
+.sous-groupe-cadrage {
   margin: 0;
   font: var(--text-body-sm);
   color: var(--text-secondary);
 }
 
-.apercu-vide {
+.programmes-vide {
   margin: 0;
-  font: var(--text-body);
+  font: var(--text-body-sm);
   color: var(--text-secondary);
 }
 
-/* Programmes et subventions — badge chips + the subvention figure + the
-   Région portal link. One .programme-badge per programme: the chip (sigle),
-   the honest voice line, the full named list (scrollable — never truncated,
-   PRD #162-7), the rider when the label carries it, the vintage stamp. */
-.apercu-programmes {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
+/* One .programme-badge per programme: the chip (sigle), the honest voice
+   line, the full named list (scrollable — never truncated, PRD #162-7), the
+   rider when the label carries it, the vintage stamp. */
 .programmes-badges {
   display: flex;
   flex-direction: column;
@@ -255,8 +262,8 @@ const lienProvenance = computed(() => {
   align-self: flex-start;
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-full);
-  background: var(--brand-50);
-  color: var(--brand-700);
+  background: var(--theme-programmes-soft);
+  color: var(--theme-programmes-strong);
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
 }
@@ -268,7 +275,6 @@ const lienProvenance = computed(() => {
   color: var(--text-primary);
 }
 
-/* The full named list — scrollable, never truncated (PRD #162-7 / #162-11). */
 .programme-noms {
   margin: 0;
   padding-left: var(--space-5);
@@ -288,7 +294,7 @@ const lienProvenance = computed(() => {
 .programme-rider {
   margin: 0;
   font: var(--text-caption);
-  color: var(--brand-600);
+  color: var(--theme-programmes-strong);
 }
 
 .programme-vintage,
@@ -296,12 +302,6 @@ const lienProvenance = computed(() => {
   margin: 0;
   font: var(--text-caption);
   color: var(--text-tertiary);
-}
-
-.programmes-vide {
-  margin: 0;
-  font: var(--text-body-sm);
-  color: var(--text-secondary);
 }
 
 /* The subvention figure — the annual total (headline) + the by-policy-area
@@ -313,15 +313,15 @@ const lienProvenance = computed(() => {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--brand-500);
-  background: var(--brand-50);
+  border-left: 3px solid var(--theme-programmes-line);
+  background: var(--theme-programmes-soft);
 }
 
 .subvention-total {
   margin: 0;
   font: var(--text-h3);
   font-variant-numeric: var(--text-numeric-variant);
-  color: var(--brand-700);
+  color: var(--theme-programmes-strong);
 }
 
 .subvention-annee {
@@ -363,7 +363,7 @@ const lienProvenance = computed(() => {
   background: none;
   font: var(--text-body-sm);
   font-weight: 600;
-  color: var(--brand-600);
+  color: var(--theme-programmes-strong);
   cursor: pointer;
 }
 
@@ -384,7 +384,7 @@ const lienProvenance = computed(() => {
 }
 
 .subvention-provenance-lien {
-  color: var(--brand-600);
+  color: var(--theme-programmes-strong);
   font-weight: 600;
 }
 

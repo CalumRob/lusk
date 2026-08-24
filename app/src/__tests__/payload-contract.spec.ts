@@ -167,17 +167,22 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(violations).toEqual([])
   })
 
-  it('stamps each indicator with its two vintage dates (reference + publication)', async () => {
+  it('stamps each indicator with its vintage clocks (at least one of reference/publication, #408)', async () => {
     const payload = obtenirPayload()
 
     const malEstampilles = payload.indicateurs
       .filter((i) => {
-        // la référence est null pour la base DPE roulante (ADR-0009) — jamais
-        // pour la publication (toujours publiée)
+        // Les DEUX horloges du tampon (#408) : la référence est null pour la
+        // base DPE roulante (ADR-0009), la publication est null pour le suivi
+        // continu ORT (le contrat #175 — la page périmée n'est jamais citée).
+        // L'une des deux dates peut manquer — JAMAIS les deux ensemble.
         const referenceOk = i.vintage_date_reference === null ||
           /^\d{4}-\d{2}-\d{2}$/.test(i.vintage_date_reference)
-        const publicationOk = /^\d{4}-\d{2}-\d{2}$/.test(i.vintage_date_publication)
-        return !referenceOk || !publicationOk
+        const publicationOk = i.vintage_date_publication === null ||
+          /^\d{4}-\d{2}-\d{2}$/.test(i.vintage_date_publication)
+        const auMoinsUne = i.vintage_date_reference !== null ||
+          i.vintage_date_publication !== null
+        return !referenceOk || !publicationOk || !auMoinsUne
       })
       .map((i) => `${i.territoire}/${i.key}: réf ${i.vintage_date_reference} · publ ${i.vintage_date_publication}`)
     expect(malEstampilles).toEqual([])

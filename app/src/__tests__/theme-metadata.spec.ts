@@ -14,11 +14,10 @@ import { PayloadError, validerThemeMetadata } from '../payload/validate'
  * référence. La dérive échoue FORT (PayloadError kind 'validation'), jamais
  * silencieuse.
  *
- * Cas couverts (acceptance #309) : fixtures valides des cinq thèmes
- * construits ; échouent — thème absent, sous-groupe invalide, figure
- * invalide, texte riche invalide, référence cross-thème, lien d'histoire
- * inconnu ; la frontière explicite : Programmes est un contrat de publication
- * séparé, jamais un thème.
+ * Cas couverts (acceptance #309) : fixtures valides des SIX thèmes construits
+ * (#408 : Programmes et subventions est le sixième, sans aucune lecture) ;
+ * échouent — thème absent, sous-groupe invalide, figure invalide, texte riche
+ * invalide, référence cross-thème, lien d'histoire inconnu.
  */
 
 function copieBrute(theme: Theme): ThemeMetadata {
@@ -51,7 +50,7 @@ function attendErreur(theme: Theme, muter: (meta: ThemeMetadata) => void): Paylo
 }
 
 describe('validerThemeMetadata — accepte la forme du contrat', () => {
-  it('accepte les fixtures valides des cinq thèmes construits', () => {
+  it('accepte les fixtures valides des six thèmes construits (#408 : Programmes et subventions compris)', () => {
     for (const theme of Object.keys(metadonneesThemesFixtures) as Theme[]) {
       const meta = validerThemeMetadata(metadonneesThemesFixtures[theme], `theme_${theme}.json`)
 
@@ -108,11 +107,42 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
     expect(erreur.message).toMatch(/theme/i)
   })
 
-  it('rejette la frontière Programmes — un contrat séparé, jamais un thème', () => {
+  it('rejette un thème hors du canon (les six thèmes construits, #408)', () => {
     const erreur = attendErreur('demographie', (meta) => {
-      ;(meta as unknown as Record<string, unknown>).theme = 'programmes'
+      ;(meta as unknown as Record<string, unknown>).theme = 'financements'
     })
-    expect(erreur.message).toMatch(/s[ée]par[ée]/i)
+    expect(erreur.message).toMatch(/thème inconnu/i)
+  })
+
+  it('accepte le sixième thème — Programmes et subventions, sans aucune lecture (#408)', () => {
+    // Le verdict #400/#408 : Programmes et subventions EST un thème — le
+    // sixième du contrat canonique. Il publie SON theme_programmes.json avec
+    // un registre d'histoires VIDE : ses sous-groupes portent des indicateurs
+    // catégoriels et numériques et AUCUNE lecture — jamais une lecture
+    // inventée pour remplir le registre.
+    const meta = validerThemeMetadata(metadonneesThemesFixtures.programmes, 'theme_programmes.json')
+    expect(meta.theme).toBe('programmes')
+    expect(meta.label).toBe('Programmes et subventions')
+    expect(meta.story_keys).toEqual([])
+    expect(meta.subgroups.map((g) => g.key)).toEqual(['couverture', 'subventions'])
+    for (const groupe of meta.subgroups) {
+      expect(groupe.reading, `« ${groupe.key} » : aucun sous-groupe ne déclare de lecture`).toBeUndefined()
+    }
+  })
+
+  it('accepte une liste story_keys vide mais refuse une story déclarée hors du registre du thème (#408)', () => {
+    // Le registre VIDE est légitime ; une story déclarée reste tenue à
+    // l'herméticité : Programmes n'en possède aucune — toute déclaration est
+    // soit cross-thème, soit inconnue du contrat.
+    let erreur = attendErreur('programmes', (meta) => {
+      meta.story_keys = ['vingt-minutes-sans-voiture']
+    })
+    expect(erreur.message).toMatch(/cross-th[èe]me/i)
+
+    erreur = attendErreur('programmes', (meta) => {
+      meta.story_keys = ['histoire-inconnue']
+    })
+    expect(erreur.message).toMatch(/inconnue du contrat/i)
   })
 
   it('rejette un sous-groupe invalide', () => {
@@ -282,7 +312,7 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
     expect(erreur.message).toMatch(/param_labels/i)
   })
 
-  it('accepte les cartes de libellés des cinq thèmes — chaque clé a son libellé, chaque libellé sa clé', () => {
+  it('accepte les cartes de libellés des six thèmes — chaque clé a son libellé, chaque libellé sa clé', () => {
     for (const theme of Object.keys(metadonneesThemesFixtures) as Theme[]) {
       const meta = validerThemeMetadata(metadonneesThemesFixtures[theme], `theme_${theme}.json`)
       // indicator_labels : la bijection exacte avec indicator_keys

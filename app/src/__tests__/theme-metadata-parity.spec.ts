@@ -4,7 +4,10 @@ import { describe, expect, it } from 'vitest'
 import { lignesLQPour } from '@/fiche/sousGroupes'
 import { FAMILLES_SEMANTIQUES } from '@/payload/types'
 
-const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
+// Les SIX thèmes construits (#408) : le canon épinglé de Programmes et
+// subventions est soumis à la même parité canon ↔ snapshot public que les
+// cinq autres.
+const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'programmes'] as const
 const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
 const publicDir = join(process.cwd(), '..', 'public', 'data')
 const themeMetadataR = join(process.cwd(), '..', 'pipeline', 'R', 'theme_metadata.R')

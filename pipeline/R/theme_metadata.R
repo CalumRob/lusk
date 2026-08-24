@@ -10,14 +10,16 @@
 # app/src/payload/validate.ts) : la même forme, les mêmes règles, des erreurs
 # bruyantes des deux côtés — jamais une dérive silencieuse.
 #
-# Frontière explicite (parent #308) : Programmes & financements n'est PAS un
-# thème — c'est un contrat de publication SÉPARÉ (programmes.json, ADR-0013)
-# qui ne reçoit JAMAIS de fichier theme_programmes.json fabriqué. Un fichier
-# de métadonnées déclarant theme = "programmes" est rejeté ici.
+# Frontière explicite (#408) : Programmes et subventions est DEPUIS #408 le
+# SIXIÈME thème — il publie SON fichier theme_programmes.json (le canon
+# épinglé), avec un registre d'histoires VIDE : un thème peut porter des
+# indicateurs catégoriels et numériques et AUCUNE lecture, jamais une lecture
+# inventée.
 
-# Les cinq thèmes de données construits qui possèdent un fichier de
-# métadonnées — jamais « programmes ».
-THEMES_METADATA <- c("mobilite", "demographie", "habitat", "economie", "milieux")
+# Les SIX thèmes de données construits qui possèdent un fichier de
+# métadonnées — « programmes » compris depuis #408.
+THEMES_METADATA <- c("mobilite", "demographie", "habitat", "economie", "milieux",
+                     "programmes")
 
 # La petite grammaire partagée des figures (parent #308, ADR-0023) : la
 # grammaire FERMÉE des huit familles prédéfinies — scalar (une valeur),
@@ -60,7 +62,11 @@ CLES_HISTOIRES_PAR_THEME <- list(
   # régionale débranchée — le sous-groupe structure-verte ne déclare plus de
   # lecture, le registre ne porte que ce que la fiche lit).
   economie = "ce-que-la-commune-abrite",
-  milieux = "se-densifier-setaler-ou-sen-aller"
+  milieux = "se-densifier-setaler-ou-sen-aller",
+  # Issue #408 : Programmes et subventions ne possède AUCUNE histoire — un
+  # thème peut porter des indicateurs catégoriels et numériques et aucune
+  # lecture ; le registre vide l'exprime, jamais une lecture inventée.
+  programmes = character(0L)
 )
 
 # lire_theme_metadata / publier_theme_metadata ---------------------------------
@@ -373,16 +379,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
             "le fichier theme_<theme>.json doit être un objet JSON, jamais un tableau")
   }
 
-  # 1. le thème — présent, canonique, jamais « programmes »
+  # 1. le thème — présent et canonique (les SIX thèmes, #408 : Programmes et
+  #    subventions est le sixième, il publie SON theme_programmes.json)
   if (is.null(metadata$theme) || !est_chaine_non_vide(metadata$theme)) {
     manquer("theme", "le thème est absent ou vide")
   }
   theme <- metadata$theme
-  if (theme == "programmes") {
-    manquer("theme", paste0(
-      "« programmes » est un contrat de publication SÉPARÉ (programmes.json, ",
-      "ADR-0013), jamais un thème — aucun fichier theme_programmes.json fabriqué"))
-  }
   if (!theme %in% THEMES_METADATA) {
     manquer("theme", paste0("thème inconnu « ", theme, " » — attendu l'un de ",
                             paste(THEMES_METADATA, collapse = " | ")))
@@ -404,12 +406,17 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
   }
 
   # 4. les story_keys — le registre des histoires du thème, avec la règle
-  #    d'herméticité (ADR-0020) : un thème ne peut lier que SES histoires
-  if (is.null(metadata$story_keys) || length(metadata$story_keys) == 0L) {
-    manquer("story_keys", "la liste des histoires est absente ou vide")
+  #    d'herméticité (ADR-0020) : un thème ne peut lier que SES histoires.
+  #    Issue #408 : la liste peut être VIDE — Programmes et subventions porte
+  #    des indicateurs catégoriels et numériques et AUCUNE lecture ; jamais
+  #    une lecture inventée pour remplir le registre. Une story DÉCLARÉE,
+  #    elle, obéit aux mêmes règles que partout ailleurs.
+  if (is.null(metadata$story_keys)) {
+    manquer("story_keys", "la liste des histoires est absente")
   }
   cles_histoires <- unlist(metadata$story_keys, use.names = FALSE)
-  if (any(!nzchar(cles_histoires)) || anyDuplicated(cles_histoires)) {
+  if (length(cles_histoires) > 0L &&
+      (any(!nzchar(cles_histoires)) || anyDuplicated(cles_histoires))) {
     manquer("story_keys", "une story_key est vide ou en double")
   }
   portees <- CLES_HISTOIRES_PAR_THEME[[theme]]

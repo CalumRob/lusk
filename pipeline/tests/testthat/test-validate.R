@@ -92,6 +92,36 @@ test_that("validate_payload : les estampilles du fixture égalent les vintages d
   expect_no_error(validate_payload(p, vintages = vintages_demographie()))
 })
 
+test_that("validate_payload : un fait SANS AUCUNE horloge (référence ET publication NA) -> erreur (#408, le miroir de l'app)", {
+  # La règle des DEUX horloges : une base roulante n'a pas de référence (DPE,
+  # ADR-0009), un suivi continu n'a pas de publication (ORT, #175) — l'une des
+  # deux dates peut manquer, JAMAIS les deux ensemble. Sans cette garde R, le
+  # pipeline publierait ce que validerIndicateurs refuse au chargement de
+  # l'app (le miroir exact, TOUTE ligne d'indicateurs publiée). Le cas se
+  # produit quand le vintage déclaré LUI-MÊME perd ses deux horloges (l'état
+  # pré-pull d'une base roulante) et que les estampilles le suivent fidèlement.
+  p <- compute_payload(load_fixture())
+  v <- vintages_demographie()
+  cle_ref <- INDICATEURS_DEMOGRAPHIE$source_reference[
+    INDICATEURS_DEMOGRAPHIE$key == "structure_age"]
+  v$date_reference[v$id == cle_ref] <- NA_character_
+  v$date_publication[v$id == cle_ref] <- NA_character_
+  lignes <- p$indicateurs$key == "structure_age"
+  p$indicateurs$vintage_date_reference[lignes] <- NA_character_
+  p$indicateurs$vintage_date_publication[lignes] <- NA_character_
+
+  expect_error(validate_payload(p, vintages = v), "au moins une horloge")
+
+  # le cas valide symétrique : UNE seule horloge manquante reste légitime —
+  # la référence absente (base roulante) passe comme la publication absente
+  p <- compute_payload(load_fixture())
+  v <- vintages_demographie()
+  v$date_reference[v$id == cle_ref] <- NA_character_
+  lignes <- p$indicateurs$key == "structure_age"
+  p$indicateurs$vintage_date_reference[lignes] <- NA_character_
+  expect_no_error(validate_payload(p, vintages = v))
+})
+
 test_that("validate_payload : une colonne epci manquante -> erreur (issue #32)", {
   p <- compute_payload(load_fixture())
   p$territoires$epci <- NULL

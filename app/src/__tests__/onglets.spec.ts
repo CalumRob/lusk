@@ -9,7 +9,7 @@ import { idOnglet, idPanneau, NOMS_THEMES, NOMS_TYPES } from '../fiche/onglets'
  * content slots in behind the same ids and labels.
  */
 
-describe('onglets — the ThemeTabs vocabulary (ADR-0007)', () => {
+describe('onglets — the ThemeTabs vocabulary (ADR-0007, six thèmes #408)', () => {
   it('labels every canonical theme in French', () => {
     expect(NOMS_THEMES).toEqual({
       mobilite: 'Mobilité',
@@ -17,6 +17,8 @@ describe('onglets — the ThemeTabs vocabulary (ADR-0007)', () => {
       habitat: 'Habitat',
       economie: 'Économie',
       milieux: 'Milieux',
+      // le libellé officiel du jeu de données — jamais « Programmes & financements »
+      programmes: 'Programmes et subventions',
     })
   })
 

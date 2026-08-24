@@ -17,13 +17,19 @@
  * - territoires.epci is the SIREN for communes, null otherwise
  */
 
-/** The five themes, in canonical order (ADR-0007 — payload-driven tabs). */
+/**
+ * The six themes, in canonical order (#408 — Programmes et subventions is the
+ * sixth). The FICHE presents Programmes et subventions FIRST and selects it by
+ * default (#408) — the presentation order is the fiche's own concern
+ * (TerritoireView), never a second canonical list.
+ */
 export const THEMES_CANONIQUES = [
   'mobilite',
   'demographie',
   'habitat',
   'economie',
   'milieux',
+  'programmes',
 ] as const
 
 export type Theme = (typeof THEMES_CANONIQUES)[number]
@@ -62,9 +68,14 @@ export interface Territoire {
 export interface VintageStamp {
   vintage_source: string
   vintage_version: string
-  /** The reference date — null for a rolling base (DPE: ADR-0009, spec #12). */
+  /**
+   * The reference date — null for a rolling base (DPE: ADR-0009, spec #12).
+   * #408: publication can be null too (the ORT rows' continuous-follow
+   * contract #175) — one of the two clocks is always present, never both null.
+   */
   vintage_date_reference: string | null
-  vintage_date_publication: string
+  /** The publication date — null for a continuous-follow source (ORT, #175). */
+  vintage_date_publication: string | null
 }
 
 /** One facts row per (territoire × key × detail × sex × dimension). */
@@ -456,9 +467,10 @@ export interface Payload {
  * the payload-declared fiche grammar: subgroup order, labels/framing, figure
  * families, typed rich text, the resolved-histoire linkage and the
  * source-reference policy. The app renders labels, order and figures from
- * this file; it never keeps a second vocabulary. Programmes & financements is
- * NOT a theme — it is a separate publication contract (programmes.json,
- * ADR-0013) and never receives a fabricated theme_<theme>.json file.
+ * this file; it never keeps a second vocabulary. Since #408, Programmes et
+ * subventions IS a theme — the sixth — and publishes its own
+ * theme_programmes.json; its story registry is empty (a theme may hold
+ * categorical and numeric indicators and no lecture).
  *
  * Mirrored in R (CLES_HISTOIRES_PAR_THEME + valider_theme_metadata,
  * pipeline/R/theme_metadata.R) — the same shape, the same rules, loud errors
@@ -515,6 +527,9 @@ export type TypeNoeudTexteRiche = (typeof TYPES_NOEUD_TEXTE_RICHE)[number]
  * The canonical story keys per theme — the hermeticity registry (ADR-0020):
  * a theme's metadata may only link ITS OWN stories, never another theme's —
  * a story key owned by another theme is a cross-theme reference, rejected.
+ * Programmes et subventions owns NONE (#408): a theme may legitimately hold
+ * categorical and numeric indicators and no lecture — the registry is empty,
+ * the theme's fiche subgroups declare no reading, none is invented.
  * Mirrored in R (CLES_HISTOIRES_PAR_THEME, pipeline/R/theme_metadata.R).
  */
 export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
@@ -523,6 +538,7 @@ export const CLES_HISTOIRES_PAR_THEME: Record<Theme, readonly string[]> = {
   habitat: ['etat-energetique-du-parc'],
   economie: ['ce-que-la-commune-abrite'],
   milieux: ['se-densifier-setaler-ou-sen-aller'],
+  programmes: [],
 }
 
 /**
@@ -552,6 +568,7 @@ export const GROUPES_PAR_STORY: Record<Theme, Record<string, string>> = {
   habitat: { 'etat-energetique-du-parc': 'etat-energetique-du-parc' },
   economie: { 'ce-que-la-commune-abrite': 'sante-et-taille' },
   milieux: { 'se-densifier-setaler-ou-sen-aller': 'artificialisation' },
+  programmes: {},
 }
 
 /** A text node — raw HTML in the content is forbidden (chevrons rejected). */
@@ -619,12 +636,15 @@ export interface SousGroupeMetadata {
 
 /**
  * The theme_<theme>.json contract. Validation rules (both sides):
- * - `theme` ∈ THEMES_CANONIQUES, never « programmes » (separate contract);
+ * - `theme` ∈ THEMES_CANONIQUES (the six, Programmes et subventions included
+ *   since #408);
  * - `indicator_keys` / `story_keys` are the theme's registries; each subgroup
  *   indicator ∈ indicator_keys and each reading.story_key ∈ story_keys, and
  *   the bijection holds — every registry entry lives in EXACTLY one subgroup
  *   (nothing orphaned, nothing shared: the unique (territoire × groupe)
- *   identity of the parent #308);
+ *   identity of the parent #308). `story_keys` MAY BE EMPTY (#408): a theme
+ *   may hold categorical and numeric indicators and no lecture — none is
+ *   invented; any story that IS declared obeys the same rules as elsewhere;
  * - story keys must be owned by the theme (CLES_HISTOIRES_PAR_THEME — no
  *   cross-theme reference, ADR-0020);
  * - `sources` declares EXACTLY indicator_keys, each to a non-empty source id
