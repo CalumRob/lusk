@@ -281,3 +281,64 @@ export function modeleSignature(
     ? { etat: 'complet', nom: ref.nom, message: null, unite, barres: barresDe(valeurs) }
     : { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : distribution incomplète ou supprimée à ce niveau.`, unite, barres: barresDe(valeurs) }
 }
+
+/**
+ * Le modèle du profil complet des listes (#439) — les catégories déclarées
+ * (la liste fermée de la page) du territoire sélectionné, à côté de la
+ * comparaison inter-territoires que la catégorie comparée pilote seule (la
+ * matière modeleExploration : médiane, extrêmes, tableau, carte).
+ *
+ * Quatre états HONNÊTES, verrouillés par test — le même contrat que la
+ * signature des distributions (#440), JAMAIS un résumé inventé ni une
+ * réécriture silencieuse d'une catégorie demandée invalide (le défaut du PR
+ * supplanté, qui repliait sur la première catégorie) :
+ *  - null : aucun territoire sélectionné — rien n'est affirmé ;
+ *  - 'absent' : le territoire sélectionné n'existe pas à ce niveau — JAMAIS
+ *    confondu avec un profil incomplet ;
+ *  - 'incomplet' : le territoire EST dans le périmètre mais son profil ne
+ *    porte pas toutes les catégories déclarées ;
+ *  - 'complet' : les lignes portent les valeurs publiées du territoire,
+ *    dans l'ordre DÉCLARÉ des catégories — les métadonnées possèdent l'ordre.
+ */
+export interface LigneProfil { detail: string; label: string; valeur: number | null; /** L'unité PUBLIÉE de la catégorie — les listes portent des unités hétérogènes. */ unite: string | null }
+export interface ModeleProfil {
+  etat: 'complet' | 'incomplet' | 'absent' | null
+  nom: string | null
+  message: string | null
+  lignes: readonly LigneProfil[]
+}
+
+export function modeleProfil(
+  faits: readonly Indicateur[],
+  facet: ComparisonFacet,
+  page: IndicatorPageMetadata,
+  territoires: readonly Territoire[],
+  labels: Record<string, string>,
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): ModeleProfil {
+  // La liste fermée déclarée par la page — l'app rend ce que le payload
+  // déclare (ADR-0023), jamais un vocabulaire dérivé des faits.
+  const categories = page.family === 'list' ? [...page.list.categories] : []
+  const lignesDe = (valeurs: ReadonlyMap<string, number>, unites: ReadonlyMap<string, string>): LigneProfil[] =>
+    categories.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null, unite: unites.get(detail) ?? null }))
+  if (!etat.territoire) return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
+  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
+  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
+    return ref
+      ? { etat: 'absent', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.`, lignes: lignesDe(new Map(), new Map()) }
+      : { etat: 'absent', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.', lignes: lignesDe(new Map(), new Map()) }
+  }
+  // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — le profil
+  // lit la clé PROPRE de la page ; le sexe/dimension suivent la facette.
+  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && categories.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  const valeurs = new Map<string, number>()
+  const unites = new Map<string, string>()
+  for (const ligne of lignes) {
+    if (!categories.includes(ligne.detail as string)) continue
+    unites.set(ligne.detail as string, ligne.unit)
+    if (ligne.value !== null) valeurs.set(ligne.detail as string, ligne.value)
+  }
+  return categories.every((detail) => valeurs.has(detail))
+    ? { etat: 'complet', nom: ref.nom, message: null, lignes: lignesDe(valeurs, unites) }
+    : { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : profil incomplet à ce niveau.`, lignes: lignesDe(valeurs, unites) }
+}
