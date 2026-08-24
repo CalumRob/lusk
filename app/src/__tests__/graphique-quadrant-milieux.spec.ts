@@ -237,13 +237,15 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
     const clicHandler = onSpy.mock.calls.find(([nom]) => nom === 'click')?.[1] as (p: unknown) => void
     expect(clicHandler).toBeTypeOf('function')
 
-    await clicHandler({ data: { territoire: '22002', type: 'commune', nom: 'Commune D' } })
-    await flushPromises()
-    expect(router.currentRoute.value.name).toBe('territoire')
-    expect(router.currentRoute.value.params).toMatchObject({ type: 'commune', id: '22002' })
+      await clicHandler({ data: { territoire: '22002', type: 'commune', nom: 'Commune D' } })
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('territoire')
+      expect(router.currentRoute.value.params).toMatchObject({ type: 'commune', id: '22002' })
+      // #409 : le lien inverse préserve la lentille — le thème du quadrant voyage.
+      expect(router.currentRoute.value.query).toMatchObject({ theme: 'milieux' })
 
-    wrapper.unmount()
-  })
+      wrapper.unmount()
+    })
 
   it('does not navigate on a click of the current point (no territoire on it)', async () => {
     const initMock = vi.mocked(echarts.init)
