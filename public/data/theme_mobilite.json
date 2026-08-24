@@ -270,6 +270,54 @@
           "total_longueur": "Longueur totale"
         }
       }
+    },
+    "reseaux": {
+      "indicator": "reseaux",
+      "label": "Réseaux à pied / vélo / voiture",
+      "definition": "Le profil complet du réseau de la commune : la longueur et la densité du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.",
+      "unit": "km",
+      "calculation": "Longueurs et densités publiées par le pipeline.",
+      "direction": "high",
+      "caveats": "Les catégories portent leurs unités propres (km ou km/km²) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "amenagements_cyclables"
+      ],
+      "family": "list",
+      "list": {
+        "categories": [
+          "t_longueur",
+          "t_densite",
+          "b_longueur",
+          "b_densite",
+          "c_longueur",
+          "c_densite"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "t_longueur",
+          "t_densite",
+          "b_longueur",
+          "b_densite",
+          "c_longueur",
+          "c_densite"
+        ],
+        "detail": "b_longueur",
+        "unit": "km",
+        "labels": {
+          "t_longueur": "Longueur — à pied ou en transports en commun",
+          "t_densite": "Densité — à pied ou en transports en commun",
+          "b_longueur": "Longueur — à vélo",
+          "b_densite": "Densité — à vélo",
+          "c_longueur": "Longueur — en voiture",
+          "c_densite": "Densité — en voiture"
+        }
+      }
     }
   },
   "source_records": {

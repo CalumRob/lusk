@@ -804,3 +804,70 @@ test_that("publier_theme_metadata : les règles structurales des distributions s
   expect_no_error(publier_theme_metadata(meta, sortie, theme_attendu = "habitat"))
   expect_true(file.exists(file.path(sortie, "theme_habitat.json")))
 })
+
+# La parité listes ↔ faits publiés (issue #439) : les pages de famille
+# « list » déclarent des catégories EXACTEMENT égales aux détails publiés de
+# la clé. Le miroir TypeScript vit dans verifierPariteListes (validate.ts,
+# appelée au chargement) ; côté pipeline, les règles STRUCTURELLES (chaque
+# catégorie possède son libellé canonical, l'axe comparison.details couvre les
+# catégories quand la facette est déclarée) vivent dans valider_theme_metadata
+# (donc à chaque publication et cible targets), et la couverture des faits
+# s'exécute sur le payload COMMITTÉ — le contrat de payload committé, comme
+# les trajectoires #438 et les distributions #440.
+
+faits_listes_mobilite <- function(details = c("t_longueur", "t_densite", "b_longueur", "b_densite", "c_longueur", "c_densite")) {
+  tibble::tibble(theme = "mobilite", key = "reseaux", detail = details)
+}
+
+test_that("verifier_parite_listes : une catégorie morte ou un détail publié absent échouent fort (#439)", {
+  meta <- lire_theme_metadata("mobilite")
+  meta$indicator_pages$reseaux$list$categories <-
+    c(unlist(meta$indicator_pages$reseaux$list$categories, use.names = FALSE), "Z")
+  expect_error(verifier_parite_listes(meta, faits_listes_mobilite()),
+               "jamais publié")
+
+  meta <- lire_theme_metadata("mobilite")
+  expect_error(
+    verifier_parite_listes(meta, faits_listes_mobilite(c("t_longueur", "t_densite", "b_longueur", "b_densite", "c_longueur", "c_densite", "Z2"))),
+    "absent des catégories")
+})
+
+test_that("valider_theme_metadata : une liste sans libellé canonical ou hors axe échoue fort (#439)", {
+  meta <- lire_theme_metadata("mobilite")
+
+  # une catégorie sans libellé canonical
+  meta$indicator_pages$reseaux$list$categories <-
+    as.list(c(unlist(meta$indicator_pages$reseaux$list$categories,
+                      use.names = FALSE), "Z"))
+  expect_error(valider_theme_metadata(meta), "libellé canonical")
+  meta <- lire_theme_metadata("mobilite")
+
+  # une catégorie déclarée absente de l'axe comparison.details
+  meta$indicator_pages$reseaux$comparison$details <-
+    as.list(head(unlist(meta$indicator_pages$reseaux$list$categories,
+                        use.names = FALSE), 5L))
+  expect_error(valider_theme_metadata(meta), "couvertes")
+})
+
+test_that("publier_theme_metadata : les règles structurales des listes sont câblées à la publication (#439)", {
+  meta <- lire_theme_metadata("mobilite")
+  meta_casse <- lire_theme_metadata("mobilite")
+  meta_casse$indicator_pages$reseaux$list$categories <-
+    as.list(c(unlist(meta_casse$indicator_pages$reseaux$list$categories,
+                      use.names = FALSE), "Z"))
+
+  sortie <- file.path(tempdir(), "listes-publication")
+  dir.create(sortie, showWarnings = FALSE)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  # un descripteur avec une catégorie morte échoue FORT sans rien écrire
+  expect_error(
+    publier_theme_metadata(meta_casse, sortie, theme_attendu = "mobilite"),
+    "libellé canonical"
+  )
+  expect_false(file.exists(file.path(sortie, "theme_mobilite.json")))
+
+  # le canon épinglé passe la même porte et écrit son fichier
+  expect_no_error(publier_theme_metadata(meta, sortie, theme_attendu = "mobilite"))
+  expect_true(file.exists(file.path(sortie, "theme_mobilite.json")))
+})
