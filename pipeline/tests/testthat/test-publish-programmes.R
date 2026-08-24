@@ -166,9 +166,20 @@ test_that("un run peuplé écrit programmes.json + les parquets par table ; le J
   expect_true(file.exists(file.path(sortie, "programmes.json")))
   expect_true(file.exists(file.path(sortie, "programmes_membres.parquet")))
   expect_true(file.exists(file.path(sortie, "programmes_subventions.parquet")))
-  # Issue #311 : Programmes & financements est un contrat de publication SÉPARÉ
-  # (ADR-0013) — le run ne fabrique JAMAIS de fichier theme_programmes.json
-  expect_false(file.exists(file.path(sortie, "theme_programmes.json")))
+  # Issue #408 : Programmes et subventions est le SIXIÈME thème — le run
+  # publie SON theme_programmes.json (le canon épinglé, via le trait
+  # `metadata` du descripteur) ET sa paire hermétique de faits
+  expect_true(file.exists(file.path(sortie, "theme_programmes.json")))
+  expect_true(file.exists(file.path(sortie, "indicateurs_programmes.json")))
+  expect_true(file.exists(file.path(sortie, "histoires_programmes.json")))
+  # la paire hermétique : les histoires sont VIDES (le thème sans lecture),
+  # les faits portent les trois clés du registre
+  histoires <- jsonlite::fromJSON(file.path(sortie, "histoires_programmes.json"))
+  expect_length(histoires, 0L)
+  faits <- jsonlite::fromJSON(file.path(sortie, "indicateurs_programmes.json"))
+  expect_setequal(unique(faits$key), c("couverture_programmes", "subventions_annuelles",
+                                       "subventions_par_domaine"))
+  expect_true(all(faits$theme == "programmes"))
 
   # la forme du JSON : un OBJET à deux clés (ce que l'app lit — #179)
   js <- jsonlite::fromJSON(file.path(sortie, "programmes.json"))
@@ -295,11 +306,11 @@ test_that("un run à tables VIDES n'écrit RIEN et laisse la sentinelle INTACTE 
   for (i in seq_along(avant)) expect_identical(apres[[i]], avant[[i]])
 })
 
-test_that("un run Programmes laisse INTACT un theme_programmes.json préexistant (issue #311)", {
-  # Issue #311 : Programmes n'est PAS un thème — le run ne fabrique jamais de
-  # fichier theme_programmes.json, et un fichier qui existerait (une relique,
-  # un fichier d'un autre outil) n'est JAMAIS écrasé par le run : la
-  # publication des métadonnées est branchée sur les seuls thèmes construits.
+test_that("un run Programmes publie SON canon par-dessus toute relique (#408)", {
+  # Issue #408 : Programmes et subventions EST un thème — le run publie
+  # theme_programmes.json depuis le canon épinglé (trait `metadata` du
+  # descripteur). Un fichier préexistant (une relique d'un autre outil) est
+  # REMPLACÉ par le contenu validé — jamais conservé en silence.
   racine <- tempfile("pub-prog-sent-meta-")
   dir.create(racine)
   cache <- file.path(racine, "cache")
@@ -307,14 +318,9 @@ test_that("un run Programmes laisse INTACT un theme_programmes.json préexistant
   dir.create(sortie, recursive = TRUE)
   on.exit(unlink(racine, recursive = TRUE), add = TRUE)
 
-  # la sentinelle : un fichier theme_programmes.json préexistant
-  sentinelle <- '{"theme": "programmes", "relique": true}'
-  writeLines(sentinelle, file.path(sortie, "theme_programmes.json"))
-  octets <- function() {
-    readBin(file.path(sortie, "theme_programmes.json"), "raw",
-            n = file.info(file.path(sortie, "theme_programmes.json"))$size)
-  }
-  avant <- octets()
+  # la relique : un fichier theme_programmes.json qui ne vient pas du run
+  writeLines('{"theme": "programmes", "relique": true}',
+             file.path(sortie, "theme_programmes.json"))
 
   executer_run_programmes_pub(
     cache, sortie,
@@ -323,9 +329,13 @@ test_that("un run Programmes laisse INTACT un theme_programmes.json préexistant
     statuts = statuts_programmes_pub()
   )
 
-  # le run Programmes publie SES fichiers partagés, sans toucher à la relique
+  # le run publie SES fichiers partagés, et le canon remplace la relique
   expect_true(file.exists(file.path(sortie, "programmes.json")))
-  expect_identical(octets(), avant)
+  relu <- jsonlite::fromJSON(file.path(sortie, "theme_programmes.json"),
+                             simplifyVector = FALSE)
+  expect_identical(relu$theme, "programmes")
+  expect_null(relu$relique)
+  expect_error(valider_theme_metadata(relu), NA)
 })
 
 test_that("un run à tables vides ne crée JAMAIS les fichiers partagés (issue #178)", {

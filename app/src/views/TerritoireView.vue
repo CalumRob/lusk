@@ -2,13 +2,16 @@
 /**
  * La fiche d'identité — the shell (site-map.md §Fiche + layouts.md §2).
  *
- * The shell's job: the payload-driven tab bar (Aperçu default, then exactly
- * the themes present in the payload), the ?theme= URL state, correct
- * switching, correct theming (the page bg wears the selected theme's -wash),
- * the breadcrumb + H1 with the territory's real name (trouverTerritoire),
- * the type chip and the context switcher. The Aperçu tab (C2) renders the
- * territory's basic stats + Programmes & financements from the payload it
- * receives here; C3 builds the theme blocks' content.
+ * Since #408 the shell's payload-driven tab bar opens on « Programmes et
+ * subventions » — the SIXTH theme, first and selected by default — then the
+ * other themes present in the payload; there is NO Aperçu tab anymore (the
+ * #400 verdict: its identity anchors disappear completely, the fiche goes
+ * from its identity/title controls straight into the first theme block). The
+ * ?theme= URL state selects a tab; absent or invalid falls back to the
+ * programmes default. Each theme block renders from ITS OWN hermetic pair;
+ * the page bg wears the selected theme's -wash. The breadcrumb + H1 with the
+ * territory's real name (trouverTerritoire), the type chip and the context
+ * switcher form the fiche header.
  *
  * States: skeleton while the payload loads; typed PayloadError with a Retry
  * button (ui-elements.md §Loading/empty/error — never a raw error string);
@@ -19,7 +22,7 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
-import ApercuOnglet from '@/components/fiche/ApercuOnglet.vue'
+import BlocProgrammes from '@/components/fiche/BlocProgrammes.vue'
 import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
@@ -36,31 +39,37 @@ import { usePayload } from '@/payload/usePayload'
 const route = useRoute()
 const router = useRouter()
 
+/** Le thème DÉFAUT de la fiche (#408) : « Programmes et subventions », le
+ *  sixième thème du contrat canonique, présenté en premier et sélectionné par
+ *  défaut — il remplace l'Aperçu retiré. */
+const THEME_DEFAUT: Theme = 'programmes'
+
 /**
  * Le wait-set de la fiche, dérivé de l'URL au montage (PRD #296 — la table par
  * route, ticket #302) : ?theme=X → territoires + run-report + la paire du
  * thème demandé (indicateurs_X + histoires_X — les thèmes hermétiques,
  * ADR-0020) + la métadonnée du thème (theme_X — le bloc est piloté par le
  * contrat theme_<theme>.json depuis #314, un thème présent la REQUIERT,
- * #313) ; sans ?theme → territoires + run-report + apercu + programmes +
- * vintages (l'Aperçu par défaut). Le magasin récupère TOUS les fichiers en
+ * #313) ; sans ?theme → le set du thème DÉFAUT (#408 : Programmes et
+ * subventions — sa paire hermétique, jamais l'ancien set apercu+programmes+
+ * vintages de l'Aperçu retiré). Le magasin récupère TOUS les fichiers en
  * parallèle dès le premier chargement — ce tableau n'est que la porte de
  * rendu du premier affichage, jamais un déclencheur de fetch. Un thème non
  * canonique ne peut jamais rendre (themesPresent n'en sait rien) : il retombe
- * sur le set de l'Aperçu, et la normalisation d'URL nettoiera le paramètre.
+ * sur le set du défaut, et la normalisation d'URL nettoiera le paramètre.
  */
 function attendreDeUrl(theme: unknown): Fichier[] {
-  if (typeof theme === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(theme)) {
-    const demande = theme as Theme
-    return [
-      'territoires',
-      'run-report',
-      `indicateurs_${demande}`,
-      `histoires_${demande}`,
-      `theme_${demande}`,
-    ]
-  }
-  return ['territoires', 'run-report', 'apercu', 'programmes', 'vintages']
+  const demande =
+    typeof theme === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(theme)
+      ? (theme as Theme)
+      : THEME_DEFAUT
+  return [
+    'territoires',
+    'run-report',
+    `indicateurs_${demande}`,
+    `histoires_${demande}`,
+    `theme_${demande}`,
+  ]
 }
 
 const { payload, erreur, chargement, recharger } = usePayload({
@@ -95,6 +104,15 @@ const listeLien = computed(() =>
 
 const themes = computed(() => (payload.value ? themesPresent(payload.value) : []))
 
+/**
+ * Les onglets de la fiche : « Programmes et subventions » PREMIER (#408),
+ * puis les autres thèmes présents dans l'ordre canonique.
+ */
+const ongletsFiche = computed<Theme[]>(() => {
+  if (!themes.value.includes(THEME_DEFAUT)) return themes.value
+  return [THEME_DEFAUT, ...themes.value.filter((t) => t !== THEME_DEFAUT)]
+})
+
 const selection = computed<Theme | null>(() => {
   const demande = route.query.theme
   if (
@@ -104,7 +122,11 @@ const selection = computed<Theme | null>(() => {
   ) {
     return demande as Theme
   }
-  return null
+  // Le défaut (#408) : « Programmes et subventions » — tant qu'il est publié.
+  // Un payload restreint sans lui retombe sur le premier thème présent (jamais
+  // un bloc fantôme) ; aucun thème du tout → pas de panneau.
+  if (themes.value.includes(THEME_DEFAUT)) return THEME_DEFAUT
+  return themes.value[0] ?? null
 })
 
 const echelons = computed(() =>
@@ -112,22 +134,22 @@ const echelons = computed(() =>
 )
 
 /** The active theme's block needs the payload — narrowed together (both are
- *  non-null exactly when a theme is selected). */
+ *  non-null exactly when a published theme is selected). */
 const ongletTheme = computed<{ theme: Theme; payload: Payload } | null>(() =>
-  selection.value && payload.value
+  selection.value !== null && payload.value
     ? { theme: selection.value, payload: payload.value }
     : null,
 )
 
 const classesFond = computed(() =>
-  selection.value ? `fiche--theme-${selection.value}` : 'fiche--theme-apercu',
+  selection.value ? `fiche--theme-${selection.value}` : '',
 )
 
 function choisirOnglet(slug: SlugOnglet): void {
-  // 'programmes' n'existe que sur la carte (le premier onglet renommé, #282) —
-  // la fiche n'émet jamais ce slug, la garde garde la jointure de type.
-  if (slug === 'programmes') return
-  router.replace({ query: slug ? { theme: slug } : {} })
+  // La fiche n'émet que des slugs de thème (pas de pseudo-onglet depuis
+  // #408) — la garde garde la jointure de type pour les autres shells.
+  if (slug === null || !(THEMES_CANONIQUES as readonly string[]).includes(slug)) return
+  router.replace({ query: { theme: slug } })
 }
 
 watch(
@@ -198,8 +220,9 @@ watch(
       </div>
       <ThemeTabs
         v-if="typeValide"
-        :themes="themes"
+        :themes="ongletsFiche"
         :selected="selection"
+        masquer-onglet-initial
         @select="choisirOnglet"
       />
     </div>
@@ -226,15 +249,20 @@ watch(
              chaque changement d'onglet (remount via :key), figé pour la durée
              du montage. -->
         <template v-else>
-          <FiligraneFiche :key="selection ?? 'apercu'" :theme="selection" />
+          <FiligraneFiche v-if="selection" :key="selection" :theme="selection" />
           <div
+            v-if="selection"
             class="fiche-contenu"
             role="tabpanel"
             :id="idPanneau(selection)"
             :aria-labelledby="idOnglet(selection)"
           >
-            <ApercuOnglet
-              v-if="payload && selection === null"
+            <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
+                 sa présentation propre (badges à trois voix, ventilation
+                 pliée) lit SA paire hermétique ; les autres thèmes passent
+                 par la boucle partagée des sous-groupes. -->
+            <BlocProgrammes
+              v-if="selection === 'programmes' && payload"
               :payload="payload"
               :territoire="String(route.params.id)"
             />
@@ -272,6 +300,11 @@ watch(
 
 .fiche--theme-economie {
   background: var(--theme-economie-wash);
+}
+
+/* #408 : le sixième thème — l'onglet premier et par défaut de la fiche. */
+.fiche--theme-programmes {
+  background: var(--theme-programmes-wash);
 }
 
 .fiche-en-tete {

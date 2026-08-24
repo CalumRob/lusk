@@ -957,6 +957,36 @@ export const programmesFixture: ProgrammesPayload = {
   subventions: subventionsProgrammesFixture,
 }
 
+/**
+ * Les FAITS DU THÈME Programmes et subventions (#408) — le miroir app de la
+ * publication R (construire_indicateurs_programmes) : les adhésions deviennent
+ * l'indicateur catégoriel `couverture_programmes` (detail = sigle, value 1,
+ * le rider « convention valant ORT » porté par la colonne rider, l'estampille
+ * de SA source par ligne — les lignes ORT gardent leur actualisation par ligne
+ * SANS date de publication), et les agrégats SCDL deviennent les deux clés
+ * numériques `subventions_annuelles` (le total annuel poolé, dimension =
+ * l'année) et `subventions_par_domaine` (la ventilation communale COMPLÈTE).
+ * Les valeurs reprennent EXACTEMENT celles des tables membres/subventions du
+ * fixture — la migration ne perd aucune valeur. Aucun rang : les faits
+ * d'action publique ne sont pas un classement de désirabilité.
+ */
+export const indicateursProgrammesFixture: Indicateur[] = [
+  // ---- couverture_programmes : les lignes d'adhésion au niveau d'ancrage
+  { territoire: '22001', type: 'commune', theme: 'programmes', key: 'couverture_programmes', detail: 'ACV', value: 1, unit: 'adhésion', rider: 'convention valant ORT', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageAcv },
+  { territoire: '22002', type: 'commune', theme: 'programmes', key: 'couverture_programmes', detail: 'PVD', value: 1, unit: 'adhésion', rider: null, rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintagePvd },
+  { territoire: '200000001', type: 'epci', theme: 'programmes', key: 'couverture_programmes', detail: 'CRTE', value: 1, unit: 'adhésion', rider: null, rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageCrte },
+  // ORT — l'actualisation PAR LIGNE comme référence, publication null (contrat)
+  { territoire: '29001', type: 'commune', theme: 'programmes', key: 'couverture_programmes', detail: 'ORT', value: 1, unit: 'adhésion', rider: null, rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOrt, vintage_date_reference: '2026-07-15', vintage_date_publication: null },
+  // ---- subventions_annuelles : le total annuel poolé (dimension = l'année)
+  { territoire: '22001', type: 'commune', theme: 'programmes', key: 'subventions_annuelles', detail: null, dimension: '2025', value: 45000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '200000001', type: 'epci', theme: 'programmes', key: 'subventions_annuelles', detail: null, dimension: '2025', value: 45000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '22', type: 'departement', theme: 'programmes', key: 'subventions_annuelles', detail: null, dimension: '2025', value: 300000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '53', type: 'region', theme: 'programmes', key: 'subventions_annuelles', detail: null, dimension: '2025', value: 2000000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  // ---- subventions_par_domaine : la ventilation communale COMPLÈTE (#305)
+  { territoire: '22001', type: 'commune', theme: 'programmes', key: 'subventions_par_domaine', detail: 'Agriculture', dimension: '2025', value: 15000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+  { territoire: '22001', type: 'commune', theme: 'programmes', key: 'subventions_par_domaine', detail: 'Développement économique', dimension: '2025', value: 30000, unit: '€', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageSubventions },
+]
+
 /** Le payload programmes vide — l'état honnête quand le fichier est absent. */
 export const programmesVideFixture: ProgrammesPayload = {
   membres: [],
@@ -1074,7 +1104,12 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         if (fichier.startsWith('histoires_')) {
           const theme = fichier.slice('histoires_'.length) as Theme
           const lignes = payload.histoires.filter((l) => l.theme === theme)
-          return lignes.length > 0 ? lignes : null
+          if (lignes.length > 0) return lignes
+          // Le thème PRÉSENT (ses faits sont dans le payload) publie SA table
+          // d'histoires même vide — le sixième thème n'a AUCUNE lecture
+          // (#408, la paire hermétique complète) ; un thème absent reste null.
+          const presente = payload.indicateurs.some((l) => l.theme === theme)
+          return presente ? [] : null
         }
         const theme = fichier.slice('theme_'.length) as Theme
         const declaree = payload.themeMetadata?.[theme]
@@ -1096,8 +1131,8 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
  * Économie a deux stories → deux sous-groupes (l'ordre des sous-groupes est
  * l'ordre de la fiche). Les clés d'indicateurs, les story_keys et les sources
  * de référence reprennent les registres réels des thèmes construits.
- * Programmes n'a PAS de fixture ici : c'est un contrat de publication séparé,
- * jamais un thème.
+ * Programmes et subventions est le SIXIÈME thème (#408) : deux sous-groupes
+ * (couverture + subventions), AUCUNE story — le registre vide est le contrat.
  */
 export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
   demographie: {
@@ -1534,6 +1569,89 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       div_loss_t: 'Types de services perdus à pied ou en transports en commun',
       pct_iso_full_t: 'Part des bâtiments perdant tout accès',
       classification_saillance: 'Classification de saillance',
+    },
+  },
+  programmes: {
+    theme: 'programmes',
+    label: 'Programmes et subventions',
+    subgroups: [
+      {
+        key: 'couverture',
+        label: 'Programmes et contrats',
+        framing:
+          'Les programmes de l’État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d’action publique, jamais des résultats.',
+        indicators: ['couverture_programmes'],
+        figure: { family: 'list', indicator: 'couverture_programmes' },
+      },
+      {
+        key: 'subventions',
+        label: 'Subventions attribuées',
+        framing:
+          'Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.',
+        indicators: ['subventions_annuelles', 'subventions_par_domaine'],
+        figure: { family: 'scalar', indicator: 'subventions_annuelles' },
+      },
+    ],
+    indicator_keys: ['couverture_programmes', 'subventions_annuelles', 'subventions_par_domaine'],
+    story_keys: [],
+    sources: {
+      couverture_programmes: 'acv',
+      subventions_annuelles: 'subventions_scdl',
+      subventions_par_domaine: 'subventions_scdl',
+    },
+    indicator_labels: {
+      couverture_programmes: 'Couverture programmatique',
+      subventions_annuelles: 'Subventions régionales attribuées (année de référence)',
+      subventions_par_domaine: 'Subventions régionales par domaine',
+    },
+    detail_labels: {
+      couverture_programmes: {
+        ACV: 'Action Cœur de Ville',
+        PVD: 'Petites Villes de Demain',
+        CRTE: 'Contrat de Relance et de Transition Écologique',
+        "Territoires d'industrie": "Territoires d'industrie",
+        ORT: 'Opération de revitalisation de territoire',
+      },
+      subventions_par_domaine: {
+        Agriculture: 'Agriculture',
+        'Développement économique': 'Développement économique',
+      },
+    },
+    param_labels: {},
+    indicator_pages: {
+      subventions_annuelles: {
+        indicator: 'subventions_annuelles',
+        label: 'Subventions régionales attribuées',
+        definition:
+          'Total annuel des subventions attribuées par la Région Bretagne au territoire, toutes politiques confondues (données SCDL).',
+        unit: '€',
+        calculation:
+          'Somme des subventions attribuées au territoire pour son année de référence, calculée par le pipeline.',
+        direction: 'high',
+        caveats:
+          'Un montant attribué est un fait d’action publique, jamais une mesure de résultat ; l’absence de ligne signifie qu’aucune subvention n’est enregistrée pour ce territoire dans le jeu source.',
+        levels: ['commune', 'epci', 'departement'],
+        sources: ['subventions_scdl'],
+        family: 'scalar',
+      },
+    },
+    source_records: {
+      subventions_scdl: {
+        dataset: 'Région Bretagne — subventions attribuées (SCDL)',
+        publisher: 'Région Bretagne',
+        url: 'https://data.bretagne.bzh/explore/dataset/subventions-attribuees/',
+        licence: 'Licence Ouverte 2.0',
+        vintage: '2026-08-05',
+        freshness: 'hebdomadaire',
+      },
+      acv: {
+        dataset: 'ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)',
+        publisher: 'ANCT',
+        url: 'https://www.data.gouv.fr/fr/datasets/programme-action-coeur-de-ville/',
+        licence: 'Licence Ouverte 2.0',
+        vintage: 'COG 2025',
+        freshness: '24 septembre 2025',
+      },
     },
   },
 }

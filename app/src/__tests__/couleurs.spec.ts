@@ -21,13 +21,14 @@ import {
  */
 
 describe('ANCRAGES_THEMES — the DESIGN.md §2 anchors, mirrored for the map', () => {
-  it('uses the four theme anchors locked by DESIGN.md §2', () => {
+  it('uses the six theme anchors locked by DESIGN.md §2 (#408 : le sixième thème)', () => {
     expect(ANCRAGES_THEMES).toEqual({
       mobilite: '#6BA3B5', // teal
       demographie: '#8E85C4', // indigo
       habitat: '#C98F6E', // terracotta
       economie: '#D9A441', // amber — or/ambre, hors du vert-bleu de marque (#214)
       milieux: '#A99A5E', // olive/kaki — l'axe terre, l'ancrage provisoire du cinquième thème (ADR-0014)
+      programmes: '#C46A8F', // rose — l'action publique, l'ancrage du sixième thème (#408)
     })
   })
 })

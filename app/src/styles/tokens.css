@@ -70,6 +70,7 @@
   --theme-habitat: #C98F6E;      /* terracotta */
   --theme-economie: #D9A441;     /* amber — or/ambre */
   --theme-milieux: #A99A5E;      /* olive/kaki — le cinquième thème (ADR-0014), l'axe terre */
+  --theme-programmes: #C46A8F;   /* rose — le sixième thème (#408), l'action publique */
 
   /* wash — page bg whisper */
   --theme-mobilite-wash: color-mix(in oklab, var(--theme-mobilite) 8%, var(--surface-secondary));
@@ -77,6 +78,7 @@
   --theme-habitat-wash: color-mix(in oklab, var(--theme-habitat) 8%, var(--surface-secondary));
   --theme-economie-wash: color-mix(in oklab, var(--theme-economie) 8%, var(--surface-secondary));
   --theme-milieux-wash: color-mix(in oklab, var(--theme-milieux) 8%, var(--surface-secondary));
+  --theme-programmes-wash: color-mix(in oklab, var(--theme-programmes) 8%, var(--surface-secondary));
 
   /* soft — fills, chips, hover */
   --theme-mobilite-soft: color-mix(in oklab, var(--theme-mobilite) 16%, var(--surface-primary));
@@ -84,6 +86,7 @@
   --theme-habitat-soft: color-mix(in oklab, var(--theme-habitat) 16%, var(--surface-primary));
   --theme-economie-soft: color-mix(in oklab, var(--theme-economie) 16%, var(--surface-primary));
   --theme-milieux-soft: color-mix(in oklab, var(--theme-milieux) 16%, var(--surface-primary));
+  --theme-programmes-soft: color-mix(in oklab, var(--theme-programmes) 16%, var(--surface-primary));
 
   /* line — underline, icons, legend */
   --theme-mobilite-line: var(--theme-mobilite);
@@ -91,6 +94,7 @@
   --theme-habitat-line: var(--theme-habitat);
   --theme-economie-line: var(--theme-economie);
   --theme-milieux-line: var(--theme-milieux);
+  --theme-programmes-line: var(--theme-programmes);
 
   /* strong — text, selected (darkened for contrast) */
   --theme-mobilite-strong: color-mix(in oklab, var(--theme-mobilite) 62%, #0C1B19);
@@ -98,6 +102,7 @@
   --theme-habitat-strong: color-mix(in oklab, var(--theme-habitat) 62%, #0C1B19);
   --theme-economie-strong: color-mix(in oklab, var(--theme-economie) 62%, #0C1B19);
   --theme-milieux-strong: color-mix(in oklab, var(--theme-milieux) 62%, #0C1B19);
+  --theme-programmes-strong: color-mix(in oklab, var(--theme-programmes) 62%, #0C1B19);
 
   /* ------------------------------------------------------------------------
    * §2 Color — Modes (semantic, preserved from the original)

@@ -15,9 +15,9 @@
 #     présente dans les vintages quand la table est passée ;
 #   - échouent FORT : thème absent, sous-groupe invalide, figure invalide,
 #     texte riche invalide, référence cross-thème et lien d'histoire inconnu ;
-#   - la frontière explicite : Programmes & financements est un contrat de
-#     publication SÉPARÉ (programmes.json, ADR-0013) — jamais un thème, aucun
-#     fichier theme_programmes.json fabriqué.
+#   - le sixième thème (#408) : Programmes et subventions EST un thème — il
+#     publie SON theme_programmes.json avec un registre d'histoires VIDE
+#     (des indicateurs catégoriels et numériques, aucune lecture inventée).
 
 lire_metadata <- function(nom) {
   jsonlite::fromJSON(
@@ -28,7 +28,7 @@ lire_metadata <- function(nom) {
 
 test_that("valider_theme_metadata : les fixtures valides passent", {
   for (nom in c("theme-demographie-valide.json", "theme-economie-valide.json",
-                "theme-mobilite-valide.json")) {
+                "theme-mobilite-valide.json", "theme-programmes-valide.json")) {
     expect_no_error(valider_theme_metadata(lire_metadata(nom)))
   }
 })
@@ -59,16 +59,42 @@ test_that("valider_theme_metadata : les sources de référence existent dans les
   )
 })
 
-test_that("valider_theme_metadata : un thème absent est rejeté", {
+test_that("valider_theme_metadata : un thème hors du canon est rejeté (les six thèmes, #408)", {
   meta <- lire_metadata("theme-demographie-valide.json")
   meta$theme <- NULL
   expect_error(valider_theme_metadata(meta), "theme")
+
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$theme <- "financements"
+  expect_error(valider_theme_metadata(meta), "thème inconnu")
 })
 
-test_that("valider_theme_metadata : la frontière Programmes — jamais un thème", {
-  meta <- lire_metadata("theme-demographie-valide.json")
-  meta$theme <- "programmes"
-  expect_error(valider_theme_metadata(meta), "SÉPARÉ")
+test_that("valider_theme_metadata : le sixième thème — Programmes et subventions sans aucune lecture (#408)", {
+  # Le verdict #400/#408 : Programmes et subventions EST un thème — le sixième
+  # du contrat canonique. Il publie SON theme_programmes.json avec un registre
+  # d'histoires VIDE : ses sous-groupes portent des indicateurs catégoriels et
+  # numériques et AUCUNE lecture — jamais une lecture inventée pour remplir
+  # le registre.
+  meta <- lire_metadata("theme-programmes-valide.json")
+  validee <- valider_theme_metadata(meta)
+  expect_identical(validee$theme, "programmes")
+  expect_length(validee$story_keys, 0L)
+  cles <- vapply(validee$subgroups, function(g) g$key, character(1L))
+  expect_identical(cles, c("couverture", "subventions"))
+  for (groupe in validee$subgroups) {
+    expect_null(groupe$reading)
+  }
+
+  # Le registre VIDE est légitime ; une story déclarée reste tenue à
+  # l'herméticité : Programmes n'en possède aucune — toute déclaration est
+  # soit cross-thème, soit inconnue du contrat.
+  meta <- lire_metadata("theme-programmes-valide.json")
+  meta$story_keys <- list("vingt-minutes-sans-voiture")
+  expect_error(valider_theme_metadata(meta), "cross-thème")
+
+  meta <- lire_metadata("theme-programmes-valide.json")
+  meta$story_keys <- list("histoire-inconnue")
+  expect_error(valider_theme_metadata(meta), "inconnue du contrat")
 })
 
 test_that("valider_theme_metadata : un sous-groupe invalide est rejeté", {
@@ -378,17 +404,18 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
   }
 })
 
-# La décomposition des sous-groupes (issue #370, parent #367) : les CINQ thèmes
-# déclarent leurs sous-groupes en ordre de fiche — Mobilité ×4, Démographie ×2,
-# Habitat ×3, Économie ×2, Milieux ×1 (douze sous-groupes : le « 13 » des
-# tickets #367/#370 est une coquille de comptage, la décomposition énumérée
-# fait foi). Le fichier épinglé est le contrat : les clés exactes, l'ordre,
-# les libellés et l'appartenance des indicateurs — la parité registres ↔
-# sous-groupes (chaque indicateur dans EXACTEMENT un sous-groupe, chaque story
-# lue par EXACTEMENT un sous-groupe ou candidate déclarée) reste vérifiée par
-# valider_theme_metadata. `structure-verte` ne déclare AUCUNE lecture — le
-# sous-groupe silencieux de la grammaire (#370).
-test_that("sous-groupes : la décomposition #370 — douze sous-groupes, ordre de fiche exact, familles des huit", {
+# La décomposition des sous-groupes (issue #370, parent #367 ; étendue par
+# #408) : les SIX thèmes déclarent leurs sous-groupes en ordre de fiche —
+# Mobilité ×4, Démographie ×2, Habitat ×3, Économie ×2, Milieux ×1,
+# Programmes et subventions ×2 (QUATORZE sous-groupes). Le fichier épinglé
+# est le contrat : les clés exactes, l'ordre, les libellés et l'appartenance
+# des indicateurs — la parité registres ↔ sous-groupes (chaque indicateur dans
+# EXACTEMENT un sous-groupe, chaque story lue par EXACTEMENT un sous-groupe ou
+# candidate déclarée) reste vérifiée par valider_theme_metadata.
+# `structure-verte` ne déclare AUCUNE lecture — le sous-groupe silencieux de
+# la grammaire (#370) ; les DEUX sous-groupes Programmes (#408) n'en
+# déclarent aucun non plus (le thème sans lecture).
+test_that("sous-groupes : la décomposition #370 + #408 — quatorze sous-groupes, ordre de fiche exact, familles des huit", {
   attendu <- list(
     mobilite = list(
       c("acces-aux-services", "partage-de-lespace-public",
@@ -410,6 +437,10 @@ test_that("sous-groupes : la décomposition #370 — douze sous-groupes, ordre d
     milieux = list(
       c("artificialisation"),
       c("comparison-bars")
+    ),
+    programmes = list(
+      c("couverture", "subventions"),
+      c("list", "scalar")
     )
   )
   familles_contractuelles <- c(
@@ -726,7 +757,7 @@ test_that("verifier_parite_distributions : le payload COMMITTÉ est en parité e
   # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
   # verifierPariteDistributions au chargement de l'app. L'énumération est le
   # devoir : distribution_dpe (Habitat) est la SEULE page de famille
-  # « distribution » publiée à travers les cinq thèmes — jamais une famille
+  # « distribution » publiée à travers les six thèmes — jamais une famille
   # orpheline, jamais une seconde distribution non déclarée.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
@@ -985,7 +1016,7 @@ test_that("valider_theme_metadata : un rôle du nuage muet, fantôme ou à déta
 # rendu existent et sont testés sur des fixtures ; le premier descripteur
 # épinglé viendra avec ses faits. Ce verrou force la mise à jour CONSCIENTE
 # du compte quand elle arrivera — jamais une famille orpheline en silence.
-test_that("l'énumération des relations publiées est connue — aucune page relation à travers les cinq thèmes (#441)", {
+test_that("l'énumération des relations publiées est connue — aucune page relation à travers les six thèmes (#441)", {
   pages_relations <- 0L
   pour_theme <- character(0)
   for (theme in THEMES_METADATA) {

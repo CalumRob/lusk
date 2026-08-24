@@ -26,6 +26,7 @@ export const ANCRAGES_THEMES: Record<Theme, string> = {
   habitat: '#C98F6E', // terracotta
   economie: '#D9A441', // amber — or/ambre, hors du vert-bleu de marque (#214)
   milieux: '#A99A5E', // olive/kaki — l'axe terre (ADR-0014), ancrage provisoire
+  programmes: '#C46A8F', // rose — le sixième thème (#408), l'action publique
 }
 
 /** The programmes tab's anchor (ADR-0019 #282) — the brand anchor

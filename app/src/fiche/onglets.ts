@@ -8,18 +8,21 @@
  * active panel (the shell's contract with C2/C3).
  */
 
-import { Building2, Home, LayoutDashboard, Route, Trees, Users } from 'lucide-vue-next'
+import { Building2, Home, Landmark, LayoutDashboard, Route, Trees, Users } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 import type { TerritoireType, Theme } from '@/payload/types'
 
-/** The theme tabs' French labels (canonical order lives in the payload types). */
+/** The theme tabs' French labels (canonical order lives in the payload types).
+ *  #408 : « Programmes et subventions » est le sixième thème — le libellé
+ *  officiel du jeu de données, jamais « Programmes & financements ». */
 export const NOMS_THEMES: Record<Theme, string> = {
   mobilite: 'Mobilité',
   demographie: 'Démographie',
   habitat: 'Habitat',
   economie: 'Économie',
   milieux: 'Milieux',
+  programmes: 'Programmes et subventions',
 }
 
 /** One lucide icon per theme tab (ui-elements.md: « lucide icon + label »). */
@@ -29,6 +32,8 @@ export const ICONES_THEMES: Record<Theme, Component> = {
   habitat: Home,
   economie: Building2,
   milieux: Trees,
+  // le même vocabulaire d'icône que l'onglet dédié de Méthodes (#332)
+  programmes: Landmark,
 }
 
 /** The Aperçu tab's icon — the cross-theme default, on the brand ramp. */

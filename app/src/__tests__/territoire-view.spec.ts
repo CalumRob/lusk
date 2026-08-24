@@ -6,15 +6,14 @@ import { describe, expect, it } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import {
-  apercuAvecNAFixture,
   chargerAvec,
   histoiresDemographieFixture,
   histoiresHabitatFixture,
   indicateursDemographieFixture,
   indicateursHabitatFixture,
+  indicateursProgrammesFixture,
   runReportFraisFixture,
   territoiresFixture,
-  vintagesFixture,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import type { ChargerFichier } from '../payload/usePayload'
@@ -25,26 +24,30 @@ import { routes } from '../router'
 /**
  * La fiche d'identité — the shell (site-map.md §Fiche): breadcrumb, H1 with
  * the territory's real name (trouverTerritoire), type chip, context
- * switcher, then the payload-driven ThemeTabs with Aperçu as default and the
- * ?theme= URL state, the page bg wearing the selected theme's -wash.
+ * switcher, then the payload-driven ThemeTabs with « Programmes et
+ * subventions » FIRST AND DEFAULT (#408 — l'Aperçu est retiré, verdict #400)
+ * and the ?theme= URL state, the page bg wearing the selected theme's -wash.
  * Loading → skeleton; PayloadError → icon + message + Retry; unknown
- * territory → honest empty state. C2/C3 slot their content into the Aperçu
- * and theme placeholders.
+ * territory → honest empty state.
  */
 
 const payloadDemographie: Payload = {
   territoires: territoiresFixture,
-  indicateurs: indicateursDemographieFixture,
+  indicateurs: [...indicateursDemographieFixture, ...indicateursProgrammesFixture],
   histoires: histoiresDemographieFixture,
-  apercu: apercuAvecNAFixture,
+  apercu: null,
   runReport: runReportFraisFixture,
-  vintages: vintagesFixture,
+  vintages: null,
   programmes: null,
 }
 
 const payloadAvecHabitat: Payload = {
   ...payloadDemographie,
-  indicateurs: [...indicateursDemographieFixture, ...indicateursHabitatFixture],
+  indicateurs: [
+    ...indicateursDemographieFixture,
+    ...indicateursHabitatFixture,
+    ...indicateursProgrammesFixture,
+  ],
   histoires: [...histoiresDemographieFixture, ...histoiresHabitatFixture],
 }
 
@@ -149,33 +152,47 @@ describe('TerritoireView — l’en-tête de la fiche', () => {
   })
 })
 
-describe('TerritoireView — les onglets (ADR-0007)', () => {
-  it('renders only the themes present in the payload, Aperçu first', async () => {
+describe('TerritoireView — les onglets (#408 : Programmes et subventions premier et défaut)', () => {
+  it('renders the sixième thème FIRST, then the other themes present, in canonical order', async () => {
     const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
 
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Aperçu', 'Démographie'])
+    expect(onglets).toEqual(['Programmes et subventions', 'Démographie'])
   })
 
-  it('renders every payload theme in canonical order when several exist', async () => {
-    const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadAvecHabitat))
-
-    const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Aperçu', 'Démographie', 'Habitat'])
-  })
-
-  it('opens on Aperçu by default (absent ?theme=) and renders its content', async () => {
+  it('opens on Programmes et subventions by default (absent ?theme=) and renders ITS block', async () => {
     const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
 
-    const apercu = wrapper.findAll('[role="tab"]')[0]
-    expect(apercu.attributes('aria-selected')).toBe('true')
-    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-apercu')
-    // the Aperçu tab's real content: basic stats + Programmes et subventions
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Population')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Programmes et subventions')
+    const programmes = wrapper.findAll('[role="tab"]')[0]
+    expect(programmes.attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-programmes')
+    // le bloc du sixième thème : l'overline publiée + les sous-groupes du canon
+    const panneau = wrapper.find('[role="tabpanel"]')
+    expect(panneau.text()).toContain('Programmes et subventions')
+    expect(panneau.text()).toContain('Programmes et contrats')
+    // l'état vide honnête de la commune 29002 (aucune adhésion, aucune
+    // subvention) — jamais « under construction », jamais une figure inventée
+    expect(panneau.text()).toContain('Aucun programme référencé.')
   })
 
-  it('selects the theme from ?theme= and renders its block', async () => {
+  it('renders the badges and the honest voices on a covered commune (?theme=programmes explicite)', async () => {
+    // 22001 : lauréate ACV (rider convention valant ORT) + CRTE de son EPCI
+    const { wrapper } = await monter(
+      '/territoire/commune/22001?theme=programmes',
+      chargerAvec(payloadDemographie),
+    )
+
+    const panneau = wrapper.find('[role="tabpanel"]')
+    expect(panneau.text()).toContain('Commune lauréate du programme')
+    expect(panneau.text()).toContain('Territoire couvert par le contrat')
+    // des faits d'action publique — jamais un vocabulaire de résultat (le
+    // cadrage du canon, lui, ÉNONCE l'interdit : « jamais des résultats »)
+    expect(panneau.text()).toContain('45\u202F000 €')
+    expect(panneau.text()).toContain('jamais des résultats')
+    expect(panneau.text()).not.toMatch(/impact|efficacité|grâce à|améliore|mesuré/)
+  })
+
+  it('selects another theme from ?theme= and renders its block', async () => {
     const { wrapper } = await monter(
       '/territoire/commune/29002?theme=demographie',
       chargerAvec(payloadDemographie),
@@ -203,20 +220,20 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
     expect(router.currentRoute.value.query.theme).toBe('demographie')
   })
 
-  it('clears ?theme= from the URL when Aperçu is chosen', async () => {
+  it('writes ?theme=programmes when the default theme tab is clicked (un lien partagé reste déterministe)', async () => {
     const { router, wrapper } = await monter(
-      '/territoire/commune/29002?theme=demographie',
+      '/territoire/commune/29002',
       chargerAvec(payloadDemographie),
     )
 
     await wrapper.findAll('[role="tab"]')[0].trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.query.theme).toBeUndefined()
+    expect(router.currentRoute.value.query.theme).toBe('programmes')
     expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
   })
 
-  it('falls back to Aperçu and cleans the URL for a theme absent from the payload', async () => {
+  it('falls back to Programmes et subventions and cleans the URL for a theme absent from the payload', async () => {
     const { router, wrapper } = await monter(
       '/territoire/commune/29002?theme=habitat',
       chargerAvec(payloadDemographie),
@@ -229,7 +246,7 @@ describe('TerritoireView — les onglets (ADR-0007)', () => {
 })
 
 describe('TerritoireView — la coloration de la page (le -wash du thème)', () => {
-  it('wears the selected theme’s wash; Aperçu stays on the brand ramp', async () => {
+  it('wears the selected theme’s wash', async () => {
     const { wrapper } = await monter(
       '/territoire/commune/29002?theme=demographie',
       chargerAvec(payloadDemographie),
@@ -238,21 +255,23 @@ describe('TerritoireView — la coloration de la page (le -wash du thème)', () 
     expect(wrapper.find('.fiche').classes()).toContain('fiche--theme-demographie')
   })
 
-  it('uses the general (brand) state on Aperçu', async () => {
+  it('wears the programmes wash on the default tab (#408)', async () => {
     const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
 
-    expect(wrapper.find('.fiche').classes()).toContain('fiche--theme-apercu')
+    expect(wrapper.find('.fiche').classes()).toContain('fiche--theme-programmes')
   })
 })
 
 describe('TerritoireView — le filigrane de la fiche', () => {
-  it('renders the watermark behind the Aperçu tab, accents on the brand anchor', async () => {
+  it('renders the watermark behind the default tab, accents on the programmes anchor', async () => {
     const { wrapper } = await monter('/territoire/commune/29002', chargerAvec(payloadDemographie))
 
     const filigrane = wrapper.find('.filigrane-fiche')
     expect(filigrane.exists()).toBe(true)
     expect(filigrane.attributes('aria-hidden')).toBe('true')
-    expect(filigrane.attributes('style')).toContain('--filigrane-accent: var(--brand-500)')
+    expect(filigrane.attributes('style')).toContain(
+      '--filigrane-accent: var(--theme-programmes-line)',
+    )
   })
 
   it('wears the theme’s anchor on a theme tab', async () => {
@@ -279,11 +298,10 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
       if (
-        fichier === 'apercu' ||
-        fichier === 'programmes' ||
-        fichier === 'vintages' ||
         fichier.startsWith('indicateurs_') ||
-        fichier.startsWith('histoires_')
+        fichier.startsWith('histoires_') ||
+        fichier === 'apercu' ||
+        fichier === 'vintages'
       ) {
         return enAttente
       }
@@ -302,23 +320,29 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     expect(wrapper.find('[role="tabpanel"]').exists()).toBe(false)
   })
 
-  it('sans ?theme= rend l’onglet Aperçu dès que territoires + apercu + programmes + vintages sont réglés, les paires de thèmes encore pendantes', async () => {
+  it('sans ?theme= rend le bloc du sixième thème dès que SA paire hermétique est réglée, les autres thèmes encore pendants', async () => {
     const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
-      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      if (
+        fichier === 'indicateurs_demographie' ||
+        fichier === 'histoires_demographie' ||
+        fichier === 'theme_demographie'
+      ) {
+        return enAttente
+      }
       return chargerAvec(payloadDemographie)(fichier)
     }
     const { wrapper } = await monter('/territoire/commune/29002', charger)
 
-    // Le wait-set de l'Aperçu est réglé → l'onglet Aperçu rend, sans squelette.
+    // Le wait-set du DÉFAUT (#408 : la paire programmes) est réglé → son bloc
+    // rend, sans squelette.
     expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(false)
     const panneau = wrapper.find('[role="tabpanel"]')
-    expect(panneau.attributes('id')).toBe('panneau-apercu')
-    expect(panneau.text()).toContain('Population')
-    expect(panneau.text()).toContain('Programmes et subventions')
-    // Les thèmes pendent encore → aucun onglet de thème (le tab bar honnête).
+    expect(panneau.attributes('id')).toBe('panneau-programmes')
+    expect(panneau.text()).toContain('Aucun programme référencé.')
+    // Les thèmes pendent encore → aucun onglet de thème de plus (le tab bar honnête).
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Aperçu'])
+    expect(onglets).toEqual(['Programmes et subventions'])
   })
 
   it('avec ?theme=habitat rend le bloc habitat dès que sa paire est réglée, les autres thèmes encore pendants', async () => {
@@ -347,11 +371,11 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     expect(panneau.text()).toContain('L’état du parc')
     expect(panneau.text()).toContain('performant')
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Aperçu', 'Habitat'])
-    expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
+    expect(onglets).toEqual(['Habitat'])
+    expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
   })
 
-  it('fait apparaître les onglets de thème progressivement, chacun dès que SA paire atterrit — jamais avant ses données', async () => {
+  it('fait apparaître les onglets de thème progressivement — « Programmes et subventions » d’abord (sa paire), les suivants dans l’ordre', async () => {
     let resoudreIndicateursDemo: (v: unknown) => void = () => {}
     let resoudreHistoiresDemo: (v: unknown) => void = () => {}
     let resoudreIndicateursHabitat: (v: unknown) => void = () => {}
@@ -384,15 +408,17 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     }
     const { wrapper } = await monter('/territoire/commune/22001', charger)
 
-    // Aucun thème encore → l'Aperçu seul.
-    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual(['Aperçu'])
+    // Le sixième thème est là (sa paire est servie), aucun autre thème encore.
+    expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual([
+      'Programmes et subventions',
+    ])
 
-    // La paire démographie atterrit → son onglet apparaît, seul.
+    // La paire démographie atterrit → son onglet apparaît après le défaut.
     resoudreIndicateursDemo(indicateursDemographieFixture)
     resoudreHistoiresDemo(histoiresDemographieFixture)
     await flushPromises()
     expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual([
-      'Aperçu',
+      'Programmes et subventions',
       'Démographie',
     ])
 
@@ -401,7 +427,7 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     resoudreHistoiresHabitat(histoiresHabitatFixture)
     await flushPromises()
     expect(wrapper.findAll('[role="tab"]').map((o) => o.text().trim())).toEqual([
-      'Aperçu',
+      'Programmes et subventions',
       'Démographie',
       'Habitat',
     ])
@@ -416,13 +442,13 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     }
     const { wrapper } = await monter('/territoire/commune/29002', charger)
 
-    // La fiche vit : l'Aperçu rend, l'échec d'arrière-plan ne remonte pas.
+    // La fiche vit : le bloc défaut rend, l'échec d'arrière-plan ne remonte pas.
     expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Impossible de charger les données')
-    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Population')
+    expect(wrapper.find('[role="tabpanel"]').text()).toContain('Aucun programme référencé.')
     // L'onglet habitat n'existe tout simplement pas (l'absence honnête).
     const onglets = wrapper.findAll('[role="tab"]').map((o) => o.text().trim())
-    expect(onglets).toEqual(['Aperçu', 'Démographie'])
+    expect(onglets).toEqual(['Programmes et subventions', 'Démographie'])
   })
 
   it('un échec dans le wait-set (la paire du thème demandé) montre l’erreur typée avec Retry, et Retry remet la fiche debout', async () => {
@@ -464,20 +490,26 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
     expect(router.currentRoute.value.query.theme).toBe('habitat')
   })
 
-  it('élimine le squelette du corps quand le wait-set se règle, même si des thèmes d’arrière-plan pendent encore (l’Aperçu d’abord)', async () => {
+  it('élimine le squelette du corps quand le wait-set se règle, même si des thèmes d’arrière-plan pendent encore (le défaut d’abord)', async () => {
     const enAttente = new Promise<unknown>(() => {})
     const charger: ChargerFichier = async (fichier) => {
-      if (fichier.startsWith('indicateurs_') || fichier.startsWith('histoires_')) return enAttente
+      if (
+        fichier === 'indicateurs_demographie' ||
+        fichier === 'histoires_demographie' ||
+        fichier === 'theme_demographie'
+      ) {
+        return enAttente
+      }
       return chargerAvec(payloadDemographie)(fichier)
     }
     const { wrapper } = await monter('/territoire/commune/29002', charger)
 
     expect(wrapper.find('.fiche-chargement-contenu').exists()).toBe(false)
-    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-apercu')
+    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-programmes')
     expect(wrapper.find('.squelette').exists()).toBe(false)
   })
 
-  it('un thème non canonique demandé retombe sur le set de l’Aperçu et l’URL est nettoyée (la normalisation d’avant, toujours en vie)', async () => {
+  it('un thème non canonique demandé retombe sur le set du DÉFAUT et l’URL est nettoyée (la normalisation d’avant, toujours en vie)', async () => {
     const { router, wrapper } = await monter(
       '/territoire/commune/29002?theme=bidule',
       chargerAvec(payloadDemographie),
@@ -485,6 +517,7 @@ describe('TerritoireView — la fiche progressive (le wait-set dérivé de l’U
 
     await flushPromises()
     expect(wrapper.findAll('[role="tab"]')[0].attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[role="tabpanel"]').attributes('id')).toBe('panneau-programmes')
     expect(router.currentRoute.value.query.theme).toBeUndefined()
   })
 })

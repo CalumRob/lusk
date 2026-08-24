@@ -27,7 +27,8 @@ import type {
 } from './types'
 import { THEMES_CANONIQUES } from './types'
 import { SOURCES_METHODES, datasetDeSource } from '@/methodes/sources'
-import { THEMES_METHODES } from '@/methodes/indicateurs'
+import { THEMES_CONSTRUITS, THEMES_METHODES } from '@/methodes/indicateurs'
+import type { ThemeConstruit } from '@/methodes/indicateurs'
 
 /**
  * Which themes exist in the payload, in canonical order (ADR-0007: Aperçu
@@ -298,7 +299,7 @@ export function estampilleSnapshot(payload: Payload): string | null {
     return `Analyse calculée le ${formaterDateFrancaise(snap.date_publication)} — se rafraîchit sur un rythme lent`
   }
   const histoire = payload.histoires.find((h) => h.theme === 'mobilite')
-  if (histoire?.theme === 'mobilite') {
+  if (histoire?.theme === 'mobilite' && histoire.vintage_date_publication) {
     return `Analyse calculée le ${formaterDateFrancaise(histoire.vintage_date_publication)} — se rafraîchit sur un rythme lent`
   }
   return null
@@ -685,7 +686,10 @@ export function formaterLicence(code: string): string {
 export interface SourceConsumerRecord {
   key: string
   label: string
-  theme: Theme
+  /** Le thème construit du consommateur — le registre Méthodes only (#408 :
+   *  la matrice Sources documente les thèmes du registre, la section dédiée
+   *  de Programmes et subventions porte les siennes). */
+  theme: ThemeConstruit
   caveat: string | null
 }
 
@@ -810,20 +814,24 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
     })
   }
 
-  const metadataConsumers: Array<{ theme: Theme; key: string; primary: string; secondary: string[] }> = []
+  const metadataConsumers: Array<{ theme: ThemeConstruit; key: string; primary: string; secondary: string[] }> = []
   const canonicalThemes = new Set<Theme>()
   for (const [theme, metadata] of Object.entries(payload.themeMetadata ?? {})) {
     if (!metadata?.source_records) continue
+    // #408 : la matrice Sources documente les thèmes du registre Méthodes —
+    // les sources de Programmes et subventions vivent dans SA section dédiée
+    // (methodes/programmes.ts), jamais dans cette jointure générique.
+    if (!(THEMES_CONSTRUITS as readonly string[]).includes(theme)) continue
     canonicalThemes.add(theme as Theme)
     for (const [key, primary] of Object.entries(metadata?.sources ?? {})) {
-      metadataConsumers.push({ theme: theme as Theme, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })
+      metadataConsumers.push({ theme: theme as ThemeConstruit, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })
     }
   }
   // Old fixtures and pre-migration payloads have no source_records metadata;
   // this adapter is deliberately the only remaining static fallback.
   if (options.includeUnpublished || metadataConsumers.length === 0) {
     const fallbackThemes = options.includeUnpublished
-      ? (Object.keys(THEMES_METHODES) as Theme[]).filter((theme) => !canonicalThemes.has(theme))
+      ? (Object.keys(THEMES_METHODES) as ThemeConstruit[]).filter((theme) => !canonicalThemes.has(theme as Theme))
       : []
     for (const theme of fallbackThemes) {
       for (const [key, documentation] of Object.entries(THEMES_METHODES[theme].indicateurs)) {
@@ -832,8 +840,12 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
     }
     if (metadataConsumers.length === 0 && !options.includeUnpublished) {
       for (const line of payload.indicateurs) {
-        const documentation = THEMES_METHODES[line.theme as keyof typeof THEMES_METHODES]?.indicateurs[line.key]
-        if (documentation?.sourceId) metadataConsumers.push({ theme: line.theme, key: line.key, primary: documentation.sourceId, secondary: [] })
+        // #408 : seuls les thèmes du registre Méthodes alimentent la matrice —
+        // les faits hors registre (le sixième thème) vivent dans SA section.
+        const themeConstruit = THEMES_CONSTRUITS.find((t) => t === line.theme)
+        if (!themeConstruit) continue
+        const documentation = THEMES_METHODES[themeConstruit]?.indicateurs[line.key]
+        if (documentation?.sourceId) metadataConsumers.push({ theme: themeConstruit, key: line.key, primary: documentation.sourceId, secondary: [] })
       }
     }
   }
@@ -990,6 +1002,11 @@ const SIGLES_LABELS: readonly SigleProgramme[] = ['ACV', 'PVD']
 /** Les deux contrats EPCI-anchored (l'intercommunalité signataire). */
 const SIGLES_CONTRATS: readonly SigleProgramme[] = ['CRTE', "Territoires d'industrie"]
 
+/** Les trois clés du registre du sixième thème (#408 — le miroir du canon épinglé). */
+const CLE_COUVERTURE_PROGRAMMES = 'couverture_programmes'
+const CLE_SUBVENTIONS_ANNUELLES = 'subventions_annuelles'
+const CLE_SUBVENTIONS_DOMAINES = 'subventions_par_domaine'
+
 /**
  * La voix d'un badge — le verbe honnête de l'ancrage (PRD #162-13, les verbes
  * ne sur-réclament jamais) : « lauréate » (la commune, ses propres labels),
@@ -1113,12 +1130,12 @@ function communesDe(payload: Payload, epci: string): Territoire[] {
 }
 
 /**
- * La part de contexte d'une fiche (issue #305) — dérivée app-side depuis les
- * lignes d'agrégat existantes (le seam « dans l'EPCI : X % » d'ADR-0015) :
- * une commune → le total de SON EPCI (du référentiel, jamais un champ de la
- * ligne commune), un EPCI/département → le total de la région. Même année de
- * référence, uniquement là où un total parent existe (le parent sans ligne,
- * ou le total nul, gardent la part silencieuse — jamais une part inventée).
+ * La part de contexte d'une fiche (issue #305) — dérivée app-side depuis le
+ * total poolé DU THÈME (#408, la clé `subventions_annuelles`) : une commune →
+ * le total de SON EPCI (du référentiel, jamais un champ de la ligne commune),
+ * un EPCI/département → le total de la région. Même année de référence,
+ * uniquement là où un total parent existe (le parent sans fait, ou le total
+ * nul, gardent la part silencieuse — jamais une part inventée).
  * La région n'a pas de parent — pas de part.
  */
 function partContextePour(
@@ -1135,18 +1152,18 @@ function partContextePour(
       : payload.territoires.find((t) => t.type === 'region')?.territoire ?? null
   if (idParent === null) return null
   const typeParent = parent === 'epci' ? 'epci' : 'region'
-  // La ligne du parent DOIT être une ligne d'agrégat (type du niveau +
-  // programme_libl null) — jamais une ligne communale qui partagerait son
-  // identifiant (la garde de contrat, la même que validate.ts)
-  const ligne = payload.programmes?.subventions.find(
+  // Le total du parent DOIT être une ligne poolée du thème (la clé annuelles,
+  // dimension = l'année) — le pipeline l'a calculée, l'app ne somme jamais.
+  const ligne = payload.indicateurs.find(
     (s) =>
+      s.theme === 'programmes' &&
+      s.key === CLE_SUBVENTIONS_ANNUELLES &&
       s.territoire === idParent &&
       s.type === typeParent &&
-      s.programme_libl === null &&
-      s.annee === annee,
+      s.dimension === String(annee),
   )
-  if (!ligne || ligne.montant <= 0) return null
-  return { part: total / ligne.montant, parent }
+  if (!ligne || ligne.value === null || ligne.value <= 0) return null
+  return { part: total / ligne.value, parent }
 }
 
 /**
@@ -1164,11 +1181,12 @@ function provenancePour(ref: Territoire): ProvenanceSubventions | null {
 }
 
 /**
- * LA DÉRIVATION EN ÉCHELLE (issue #181, ADR-0013) — le rendu de l'élément
- * Programmes & financements d'une fiche, depuis les lignes d'adhésion du
- * payload + le référentiel `territoires` (la jointure relationnelle que le
- * contexte switcher fait déjà — les jointures sont l'affaire de l'app). Les
- * trois voix :
+ * LA DÉRIVATION EN ÉCHELLE (issue #181, ADR-0013 ; re-sourcée par #408) — le
+ * rendu du bloc Programmes et subventions d'une fiche, depuis LES FAITS
+ * HERMÉTIQUES DU THÈME (indicateurs_programmes.json — la paire du sixième
+ * thème, jamais la table partagée programmes.json ni une lecture cross-thème)
+ * + le référentiel `territoires` (la jointure relationnelle que le contexte
+ * switcher fait déjà — les jointures sont l'affaire de l'app). Les trois voix :
  *   - COMMUNE : ses labels (lauréate, le rider « convention valant ORT » comme
  *     fait accessible — jamais un badge ORT en plus), la couverture descendante
  *     des contrats de SON EPCI (l'EPCI nommé), et l'ORT d'une commune NON
@@ -1180,48 +1198,83 @@ function provenancePour(ref: Territoire): ProvenanceSubventions | null {
  *     nommés, des labels et de l'ORT avec les communes nommées, jamais un badge
  *     plat que le niveau n'a pas signé ; un EPCI transversal compte dans les
  *     deux départements.
- * Les subventions (contrat révisé #305) : la ventilation COMPLÈTE par domaine
- * sur les fiches communales — le pipeline publie chaque domaine (jamais une
- * ligne « autres »), ce sélecteur la trie par montant décroissant (le libellé
- * en départage) et le composant plie le top-5 + la révélation. Le total annuel
- * unique ailleurs, avec la part de contexte (commune → son EPCI,
- * EPCI/département → la région — dérivée app-side, ADR-0015) et la provenance
- * (la somme des communes, niveau agrégé seulement). Chaque badge et chaque
- * figure portent leur estampille vintage. Un payload absent (404 → null) ou un
- * territoire inconnu rendent l'état vide.
+ * Les subventions (contrat révisé #305, calculées côté pipeline depuis #408) :
+ * le total annuel poolé de l'année de référence (`subventions_annuelles`,
+ * dimension = l'année) et, sur les fiches communales, la ventilation COMPLÈTE
+ * par domaine (`subventions_par_domaine`) triée par montant décroissant ici —
+ * le top-5 + la révélation sont l'affaire du composant. La part de contexte
+ * (commune → son EPCI, EPCI/département → la région) et la provenance (la
+ * somme des communes, niveau agrégé seulement) suivent. Chaque badge et
+ * chaque figure portent leur estampille vintage. Un territoire sans aucun
+ * fait rend l'état vide.
  */
 export function programmesPourTerritoire(payload: Payload, territoire: string): RenderingProgrammes {
-  const programmes = payload.programmes
-  if (!programmes) return { badges: [], subventions: null }
-
   const ref = trouverTerritoire(payload, territoire)
   if (!ref) return { badges: [], subventions: null }
 
-  const membres = programmes.membres
+  // les adhésions du thème (#408) : les lignes catégorielles re-forment la
+  // table des ancrages (sigle, rider, estampille de SA source par ligne) —
+  // la migration ne perd aucune valeur. Le contrat garantit la date de
+  // référence de CHAQUE ligne d'adhésion (l'actualisation par ligne pour
+  // l'ORT, le millésime du manifeste pour les autres — verifier_membres_
+  // programmes côté pipeline) : une ligne sans elle est une dérive, nommée.
+  const membres: MembreProgramme[] = payload.indicateurs
+    .filter((l) => l.theme === 'programmes' && l.key === CLE_COUVERTURE_PROGRAMMES)
+    .map((ligne) => {
+      if (ligne.vintage_date_reference === null) {
+        throw new Error(
+          `Fait « couverture_programmes » de « ${ligne.territoire} » sans date de référence — la dérive ne rend jamais.`,
+        )
+      }
+      return {
+        territoire: ligne.territoire,
+        type: ligne.type as 'commune' | 'epci',
+        sigle: ligne.detail as SigleProgramme,
+        convention_valant_ort: ligne.rider === 'convention valant ORT',
+        vintage_source: ligne.vintage_source,
+        vintage_version: ligne.vintage_version,
+        vintage_date_reference: ligne.vintage_date_reference,
+        vintage_date_publication: ligne.vintage_date_publication,
+      }
+    })
+
   const badges: BadgeProgramme[] = []
-  const subventions = programmes.subventions.filter((s) => s.territoire === territoire)
+
+  // le total annuel poolé DU THÈME : dimension porte l'année de référence
+  const annuelles = payload.indicateurs.filter(
+    (l) =>
+      l.theme === 'programmes' &&
+      l.key === CLE_SUBVENTIONS_ANNUELLES &&
+      l.territoire === territoire,
+  )
 
   let subventionsFiche: SubventionsFiche | null = null
-  if (subventions.length > 0) {
+  if (annuelles.length > 0) {
     // L'année de référence : la plus récente présente — le total et la part
-    // de contexte ne mélangent JAMAIS deux millésimes (un payload dérivé qui
-    // porterait plusieurs années lirait la seule année de référence)
-    const annee = Math.max(...subventions.map((s) => s.annee))
-    const subventionsAnnee = subventions.filter((s) => s.annee === annee)
-    const total = subventionsAnnee.reduce((somme, s) => somme + s.montant, 0)
+    // de contexte ne mélangent JAMAIS deux millésimes
+    const annee = Math.max(...annuelles.map((l) => Number(l.dimension)))
+    const ligneAnnee = annuelles.find((l) => Number(l.dimension) === annee)!
+    const total = ligneAnnee.value ?? 0
     // la ventilation COMPLÈTE du pipeline, triée ici par montant décroissant
     // (le libellé en départage) — le top-5 + la révélation sont l'affaire du
     // composant, le sélecteur reste pur (issue #305)
     const axes = ref.type === 'commune'
-      ? subventionsAnnee
-          .map((s) => ({ libelle: s.programme_libl ?? '', montant: s.montant }))
+      ? payload.indicateurs
+          .filter(
+            (l) =>
+              l.theme === 'programmes' &&
+              l.key === CLE_SUBVENTIONS_DOMAINES &&
+              l.territoire === territoire &&
+              l.dimension === String(annee),
+          )
+          .map((l) => ({ libelle: l.detail ?? '', montant: l.value ?? 0 }))
           .sort((a, b) => b.montant - a.montant || a.libelle.localeCompare(b.libelle, 'fr'))
       : null
     subventionsFiche = {
       annee,
       axes,
       total,
-      vintage: formaterVintage(subventionsAnnee[0]),
+      vintage: formaterVintage(ligneAnnee),
       partContexte: partContextePour(payload, ref, annee, total),
       provenance: provenancePour(ref),
     }

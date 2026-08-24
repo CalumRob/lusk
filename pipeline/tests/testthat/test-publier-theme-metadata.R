@@ -4,8 +4,8 @@
 # inst/extdata/theme-metadata/ (le contrat #309, la même forme que l'app
 # valide côté TypeScript) ; run_pipeline le publie vers la cible que l'app lit
 # par le seam publier_theme_metadata. Ce qui est verrouillé ici (acceptance
-# #311) :
-#   - les CINQ thèmes construits publient chacun theme_<thème>.json, relu
+# #311, étendue par #408) :
+#   - les SIX thèmes construits publient chacun theme_<thème>.json, relu
 #     valide, avec la politique de source de référence croisée contre SES
 #     vintages (le run réel — des projections pures du manifeste, jamais le
 #     réseau) ;
@@ -16,8 +16,8 @@
 #     histoires_/territoires restent byte-identical) ;
 #   - une collision de thème (le contenu déclare le fichier d'un AUTRE thème)
 #     échoue FORT, sans rien écrire — la garde theme_attendu du run ;
-#   - Programmes & financements n'a PAS de métadonnées : jamais un fichier
-#     theme_programmes.json fabriqué (testé dans test-publish-programmes.R).
+#   - le sixième thème (#408) : Programmes et subventions épingle SON canon et
+#     publie SON theme_programmes.json, comme les cinq autres.
 
 # publier_metadata_theme --------------------------------------------------------
 # Le run réel minimal du seam : les métadonnées épinglées du thème, ses
@@ -29,7 +29,7 @@ publier_metadata_theme <- function(theme, cible) {
                          theme_attendu = theme)
 }
 
-test_that("les cinq thèmes publient theme_<thème>.json — relu valide, sources croisées avec leurs vintages", {
+test_that("les six thèmes publient theme_<thème>.json — relu valide, sources croisées avec leurs vintages", {
   cible <- tempfile("pub-meta-")
   on.exit(unlink(cible, recursive = TRUE))
 
@@ -123,20 +123,26 @@ test_that("une collision de thème échoue FORT et n'écrit RIEN", {
   expect_false(file.exists(file.path(cible, "theme_demographie.json")))
 })
 
-test_that("la frontière Programmes : jamais un fichier theme_programmes.json fabriqué", {
+test_that("le sixième thème : le canon épinglé de Programmes et subventions publie SON fichier (#408)", {
   cible <- tempfile("pub-meta-")
   on.exit(unlink(cible, recursive = TRUE))
 
-  # le validateur (#309) refuse le thème « programmes » — le seam hérite de la
-  # frontière : un contenu qui déclarerait Programmes échoue, rien n'est écrit
+  # Le verdict #408 : Programmes et subventions EST un thème — son canon
+  # épinglé passe la même porte que les cinq autres et écrit SON
+  # theme_programmes.json (registre d'histoires vide, jamais une lecture
+  # inventée). Un contenu qui déclarerait le thème d'un AUTRE échoue toujours.
+  meta_programmes <- lire_theme_metadata("programmes")
+  expect_no_error(
+    publier_theme_metadata(meta_programmes, cible, theme_attendu = "programmes")
+  )
+  expect_true(file.exists(file.path(cible, "theme_programmes.json")))
+
   meta <- lire_theme_metadata("demographie")
-  meta$theme <- "programmes"
-  expect_error(publier_theme_metadata(meta, cible), "SÉPARÉ")
-  expect_false(file.exists(file.path(cible, "theme_programmes.json")))
+  meta$theme <- "financements"
+  expect_error(publier_theme_metadata(meta, cible), "thème inconnu")
 })
 
 test_that("lire_theme_metadata : un thème sans fichier épinglé s'arrête bruyamment", {
-  expect_error(lire_theme_metadata("programmes"), "introuvable")
   expect_error(lire_theme_metadata("theme-inexistant"), "introuvable")
 })
 
@@ -148,6 +154,8 @@ test_that("la parité registre ↔ métadonnées : chaque thème déclare les st
   # sans le déclarer) ni plus (une story déclarée que la résolution ne peut
   # jamais émettre). Le registre est la source de vérité de ce que le
   # pipeline peut résoudre ; les métadonnées déclarent ce que la fiche lit.
+  # #408 : Programmes n'a ni story déclarée ni registre de résolution — le
+  # thème sans lecture fait la preuve des deux côtés vides.
   for (theme in THEMES_METADATA) {
     meta <- lire_theme_metadata(theme)
     declarees <- unlist(meta$story_keys, use.names = FALSE)

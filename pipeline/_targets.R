@@ -707,6 +707,28 @@ programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN) {
                       vintages = vintages_table_programmes,
                       sortie = .(sortie))
       })
+    ),
+    # les métadonnées du sixième thème (#408) : le canon épinglé est une
+    # DÉPENDANCE SUIVIE (format = "file", fraîcheur par contenu — la même
+    # mécanique que fichier_metadata_<thème> des cinq thèmes), la publication
+    # passe par le trait `metadata` du descripteur et la garde theme_attendu.
+    # Chaînée sur publie_programmes : les écritures de la cible partagée se
+    # sérialisent, jamais une course entre deux targets du bloc.
+    tar_target_raw(
+      "fichier_metadata_programmes",
+      bquote(system.file("extdata", "theme-metadata", "theme_programmes.json",
+                         package = "lusk")),
+      format = "file"
+    ),
+    tar_target_raw(
+      "metadata_programmes",
+      bquote({
+        publie_programmes
+        fichier_metadata_programmes
+        publier_theme_metadata(theme_programmes()$metadata(), .(sortie),
+                               vintages = vintages_table_programmes,
+                               theme_attendu = theme_programmes()$theme)
+      })
     )
   )
 }

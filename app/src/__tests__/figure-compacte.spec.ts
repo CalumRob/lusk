@@ -28,6 +28,9 @@ function lignes(theme: Theme, clef: string, territoire = '22001'): Indicateur[] 
     milieux: indicateursMilieuxFixture,
     mobilite: indicateursMobiliteFixture,
     economie: [],
+    // #408 : le sixième thème ne passe PAS par la grammaire des figures
+    // (sa présentation propre lit ses faits via BlocProgrammes).
+    programmes: [],
   }
   return fixtures[theme].filter((l) => l.territoire === territoire && l.key === clef)
 }

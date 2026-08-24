@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { SOURCES_PROGRAMMES } from '../methodes/programmes'
 import { THEMES_CONSTRUITS } from '../methodes/indicateurs'
 import type { ThemeConstruit } from '../methodes/indicateurs'
 
@@ -11,8 +12,15 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
  * theme is not "built" until its sources and variables are documented here,
  * never an afterthought »). Un thème présent dans la payload commise
  * (public/data/indicateurs_<theme>.json) DOIT avoir sa documentation Méthodes
- * dans le registre (app/src/methodes/indicateurs.ts, THEMES_CONSTRUITS) — la
- * section Méthodes d'un thème expédie avec son payload, jamais après.
+ * — la section Méthodes d'un thème expédie avec son payload, jamais après.
+ *
+ * #408 : la documentation de Programmes et subventions vit dans SA SECTION
+ * DÉDIÉE de Méthodes (l'onglet « Programmes et subventions », #332 —
+ * MethodesProgrammes.vue + methodes/programmes.ts : les six sources du
+ * manifeste, les trois sortes de couverture, la règle du badge ORT et la
+ * ligne « jamais les résultats »), pas dans le registre des indicateurs des
+ * cinq thèmes de tension. La parité reconnaît les DEUX formes — et prouve
+ * que le registre dédié ne part jamais à vide.
  *
  * Direction de l'assertion : bidirectionnelle.
  * - payload ⊆ registre (la règle de l'issue #130, l'essentiel) : un thème dont
@@ -34,6 +42,14 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
 
+/**
+ * Les thèmes documentés par une SECTION DÉDIÉE de Méthodes plutôt que par le
+ * registre des indicateurs (#408). L'existence de la section est prouvée ICI
+ * par son registre dédié : six sources documentées (les cinq jeux ANCT/DGALN
+ * + la source SCDL), jamais une section qui ne cite rien.
+ */
+const THEMES_DOCUMENTATION_DEDIEE = ['programmes'] as const
+
 /** Les thèmes dont un payload est commis — l'existence du fichier, jamais son contenu. */
 function themesDeLaPayload(): string[] {
   const themes: string[] = []
@@ -46,10 +62,15 @@ function themesDeLaPayload(): string[] {
 
 /**
  * Le cœur de l'enforcement : les thèmes de payload sans documentation
- * Méthodes — tout ce qui n'est pas dans le registre des thèmes construits.
+ * Méthodes — tout ce qui n'est ni dans le registre des thèmes construits,
+ * ni dans les sections dédiées.
  */
 function themesSansDocumentation(payloadThemes: string[]): string[] {
-  return payloadThemes.filter((theme) => !THEMES_CONSTRUITS.includes(theme as ThemeConstruit))
+  return payloadThemes.filter(
+    (theme) =>
+      !THEMES_CONSTRUITS.includes(theme as ThemeConstruit) &&
+      !(THEMES_DOCUMENTATION_DEDIEE as readonly string[]).includes(theme),
+  )
 }
 
 describe('contrat Méthodes — chaque thème de la payload a sa documentation', () => {
@@ -65,11 +86,23 @@ describe('contrat Méthodes — chaque thème de la payload a sa documentation',
     ).toEqual(['eau'])
   })
 
-  it('découvre les payloads commis — les thèmes construits du registre, ni plus ni moins', () => {
-    // L'ancre de la découverte : le registre lui-même, jamais une liste
-    // dupliquée. Un fichier indicateurs_<theme>.json de plus (ou de moins)
-    // fait échouer ce test en nommant le thème dans le diff.
-    expect(new Set(themesDeLaPayload())).toEqual(new Set(THEMES_CONSTRUITS))
+  it('la section dédiée de Programmes et subventions existe et documente SES sources (#408)', () => {
+    // La preuve que la documentation dédiée n'est pas une clause de sortie :
+    // le registre de la section porte les SIX sources du manifeste complet
+    // (les cinq jeux ANCT/DGALN + la source SCDL des subventions).
+    expect(Object.keys(SOURCES_PROGRAMMES).sort()).toEqual(
+      ['acv', 'crte', 'ort', 'pvd', 'subventions_scdl', 'territoires_industrie'].sort(),
+    )
+  })
+
+  it('découvre les payloads commis — les thèmes construits du registre plus la section dédiée, ni plus ni moins', () => {
+    // L'ancre de la découverte : le registre lui-même (plus la section
+    // dédiée #408), jamais une liste dupliquée. Un fichier
+    // indicateurs_<theme>.json de plus (ou de moins) fait échouer ce test en
+    // nommant le thème dans le diff.
+    expect(new Set(themesDeLaPayload())).toEqual(
+      new Set([...THEMES_CONSTRUITS, ...THEMES_DOCUMENTATION_DEDIEE]),
+    )
   })
 
   it('chaque thème présent dans la payload a sa section Méthodes (payload ⊆ registre)', () => {
@@ -84,7 +117,7 @@ describe('contrat Méthodes — chaque thème de la payload a sa documentation',
 
   it('le registre ne documente aucun thème sans payload commise (registre ⊆ payload)', () => {
     const payload = new Set(themesDeLaPayload())
-    for (const theme of THEMES_CONSTRUITS) {
+    for (const theme of [...THEMES_CONSTRUITS, ...THEMES_DOCUMENTATION_DEDIEE]) {
       expect(
         payload.has(theme),
         `« ${theme} » est documenté dans le registre Méthodes mais n'a pas de payload commise (indicateurs_${theme}.json) — une section Méthodes n'expédie qu'avec son payload.`,

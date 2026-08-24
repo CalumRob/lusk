@@ -527,8 +527,12 @@ construire_analytiques_programmes <- function(donnees, base_epci,
 #     (le calcul, estampillé hebdomadaire) ;
 # — assemble le payload `list(membres, subventions)`, publie le FICHIER
 # PARTAGÉ programmes.json + les parquets par table (ecrire_programmes_partage —
-# le contrat « 404 = table absente », le précédent apercu #116) et retourne le
-# payload, comme run_pipeline l'attend.
+# le contrat « 404 = table absente », le précédent apercu #116), publie la
+# PAIRE HERMÉTIQUE du sixième thème (#408 : indicateurs_programmes.json +
+# histoires_programmes.json — l'app rend son onglet par défaut de SES propres
+# faits, jamais d'une lecture cross-thème) et retourne le payload, comme
+# run_pipeline l'attend. Les métadonnées (theme_programmes.json) sont publiées
+# par run_pipeline via le trait `metadata` du descripteur.
 publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
                                sortie = "public/data",
                                sortie_analytiques = file.path(dirname(cache),
@@ -560,6 +564,11 @@ publier_programmes <- function(donnees, cache = "data/raw", vintages = NULL,
   # le fichier PARTAGÉ : écrit SEULEMENT quand une table porte des lignes — un
   # run vide ne doit JAMAIS clobber la publication existante (issue #178)
   ecrire_programmes_partage(payload, sortie)
+
+  # la paire hermétique du sixième thème (#408) : zéro fait → rien n'est
+  # écrit (l'absence honnête du thème — jamais un thème inventé)
+  indicateurs_theme <- construire_indicateurs_programmes(membres, subventions)
+  ecrire_theme_programmes(indicateurs_theme, sortie)
 
   payload
 }
@@ -607,7 +616,7 @@ ecrire_programmes_partage <- function(payload, sortie = "public/data") {
 # incomplet échoue FORT, en nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_PROGRAMMES <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier"
+  "construire_analytiques", "publier", "metadata"
 )
 
 # verifier_descripteur_programmes ------------------------------------------------
@@ -625,8 +634,11 @@ verifier_descripteur_programmes <- function(descripteur) {
 }
 
 # theme_programmes ---------------------------------------------------------------
-# Le descripteur du thème Programmes & financements : la même forme de contrat
-# que theme_mobilite() / theme_economie(), avec les pièces du thème. Le
+# Le descripteur du thème Programmes et subventions : la même forme de contrat
+# que theme_mobilite() / theme_economie(), avec les pièces du thème. Depuis
+# #408, le thème est le SIXIÈME du contrat : il expose `metadata` comme les
+# cinq autres — run_pipeline publie SON theme_programmes.json (le canon
+# épinglé, le registre d'histoires vide) après la publication des faits. Le
 # descripteur est validé à la construction (verifier_descripteur_programmes) :
 # un membre manquant échoue là où il est construit, jamais plus tard dans la
 # machinerie.
@@ -637,7 +649,10 @@ theme_programmes <- function() {
     vintages = vintages_programmes,
     construire_donnees = construire_donnees_programmes,
     construire_analytiques = construire_analytiques_programmes,
-    publier = publier_programmes
+    publier = publier_programmes,
+    # inst/extdata/theme-metadata/ — publiées par run_pipeline après le seam
+    # `publier` (le même trait que les cinq autres thèmes)
+    metadata = function() lire_theme_metadata("programmes")
   )
   verifier_descripteur_programmes(descripteur)
   descripteur

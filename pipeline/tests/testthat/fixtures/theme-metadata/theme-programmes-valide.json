@@ -1,0 +1,83 @@
+{
+  "theme": "programmes",
+  "label": "Programmes et subventions",
+  "subgroups": [
+    {
+      "key": "couverture",
+      "label": "Programmes et contrats",
+      "framing": "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
+      "indicators": ["couverture_programmes"],
+      "figure": { "family": "list", "indicator": "couverture_programmes" }
+    },
+    {
+      "key": "subventions",
+      "label": "Subventions attribuées",
+      "framing": "Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.",
+      "indicators": ["subventions_annuelles", "subventions_par_domaine"],
+      "figure": { "family": "scalar", "indicator": "subventions_annuelles" }
+    }
+  ],
+  "indicator_keys": [
+    "couverture_programmes",
+    "subventions_annuelles",
+    "subventions_par_domaine"
+  ],
+  "story_keys": [],
+  "sources": {
+    "couverture_programmes": "acv",
+    "subventions_annuelles": "subventions_scdl",
+    "subventions_par_domaine": "subventions_scdl"
+  },
+  "indicator_labels": {
+    "couverture_programmes": "Couverture programmatique",
+    "subventions_annuelles": "Subventions régionales attribuées (année de référence)",
+    "subventions_par_domaine": "Subventions régionales par domaine"
+  },
+  "detail_labels": {
+    "couverture_programmes": {
+      "ACV": "Action Cœur de Ville",
+      "PVD": "Petites Villes de Demain",
+      "CRTE": "Contrat de Relance et de Transition Écologique",
+      "Territoires d'industrie": "Territoires d'industrie",
+      "ORT": "Opération de revitalisation de territoire"
+    },
+    "subventions_par_domaine": {
+      "Agriculture": "Agriculture",
+      "Culture": "Culture",
+      "Développement économique": "Développement économique"
+    }
+  },
+  "param_labels": {},
+  "indicator_pages": {
+    "subventions_annuelles": {
+      "indicator": "subventions_annuelles",
+      "label": "Subventions régionales attribuées",
+      "definition": "Total annuel des subventions attribuées par la Région Bretagne au territoire, toutes politiques confondues (données SCDL).",
+      "unit": "€",
+      "calculation": "Somme des subventions attribuées au territoire pour son année de référence, calculée par le pipeline.",
+      "direction": "high",
+      "caveats": "Un montant attribué est un fait d'action publique, jamais une mesure de résultat ; l'absence de ligne signifie qu'aucune subvention n'est enregistrée pour ce territoire dans le jeu source.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["subventions_scdl"],
+      "family": "scalar"
+    }
+  },
+  "source_records": {
+    "subventions_scdl": {
+      "dataset": "Région Bretagne — subventions attribuées (SCDL)",
+      "publisher": "Région Bretagne",
+      "url": "https://data.bretagne.bzh/explore/dataset/subventions-attribuees/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2026-08-05",
+      "freshness": "hebdomadaire"
+    },
+    "acv": {
+      "dataset": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
+      "publisher": "ANCT",
+      "url": "https://www.data.gouv.fr/fr/datasets/programme-action-coeur-de-ville/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "COG 2025",
+      "freshness": "24 septembre 2025"
+    }
+  }
+}

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 /**
  * ThemeTabs — the payload-driven theme subheader (ADR-0007 + ui-elements.md
- * §ThemeTabs): Aperçu always first, then exactly the themes present in the
- * payload (themesPresent), in canonical order. The selected tab wears its
- * theme ramp (-strong text + -line underline; hover -soft); Aperçu and any
- * no-theme state run on the general brand ramp. The view owns the ?theme=
- * URL: this component only emits the chosen slug (null = Aperçu).
+ * §ThemeTabs). The bar renders exactly the themes present in the payload
+ * (themesPresent) in the order the caller passes them; the selected tab wears
+ * its theme ramp (-strong text + -line underline; hover -soft). A leading
+ * pseudo-tab (Aperçu on the legacy fiche, the carte's renamed first tab,
+ * Méthodes' Sources) is rendered unless `masquerOngletInitial` — since #408
+ * the fiche hides it: « Programmes et subventions » is a REAL theme, passed
+ * first by the view. The view owns the URL state (?theme= / ?onglet= /
+ * ?section=); this component only emits the chosen slug.
  *
  * A11y: role="tablist" / role="tab" with aria-selected and aria-controls
  * pointing at the active panel, roving tabindex + arrow-key navigation
@@ -60,6 +63,11 @@ const props = withDefaults(
     /** The tablist's accessible name — defaults to « Thèmes de la fiche »
      *  (fiche); the carte/Méthodes bars name their own tablist. */
     ariaLabel?: string
+    /** #408 : masquer le premier pseudo-onglet (Aperçu / renommé). La fiche
+     *  n'en a plus — « Programmes et subventions » est un VRAI thème, rendu
+     *  premier par l'ordre des thèmes passés ; la carte et les Méthodes
+     *  conservent leur premier onglet renommé. */
+    masquerOngletInitial?: boolean
   }>(),
   { ariaLabel: 'Thèmes de la fiche' },
 )
@@ -69,11 +77,17 @@ const emit = defineEmits<{
 }>()
 
 const onglets = computed(() => [
-  {
-    slug: props.premierSlug ?? null,
-    nom: props.libellePremier ?? 'Aperçu',
-    icone: props.iconePremier ?? ICONE_APERCU,
-  },
+  // #408 : le fiche masque le pseudo-onglet initial — ses thèmes commencent
+  // à « Programmes et subventions », premier thème canonique de la barre.
+  ...(props.masquerOngletInitial
+    ? []
+    : [
+        {
+          slug: props.premierSlug ?? null,
+          nom: props.libellePremier ?? 'Aperçu',
+          icone: props.iconePremier ?? ICONE_APERCU,
+        },
+      ]),
   ...(props.ongletsSupplementaires ?? []),
   ...props.themes.map((theme) => ({
     slug: theme,

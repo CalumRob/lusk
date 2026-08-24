@@ -519,8 +519,12 @@ export function validerIndicateurs(
     const vintage_version = lireChaine(ligne, 'vintage_version', fichier, ligneIndexee)
     const vintage_date_reference = ligne['vintage_date_reference']
     const vintage_date_publication = ligne['vintage_date_publication']
-    // La date de référence est null pour une base roulante (DPE — ADR-0009,
-    // spec #12 : date_reference NA, date_publication = date du pull).
+    // Les DEUX horloges du tampon (#408 — le miroir exact du contrat des
+    // lignes ORT de MembreProgramme) : une base roulante n'a pas de référence
+    // (DPE — ADR-0009), un suivi continu n'a pas de publication (ORT — le
+    // contrat #175 : la page périmée n'est jamais citée). L'une des deux dates
+    // peut donc être null — JAMAIS les deux ensemble (un fait sans aucune
+    // horloge ne dit rien de sa fraîcheur).
     exiger(
       vintage_date_reference === null || estDateIso(vintage_date_reference),
       fichier,
@@ -528,10 +532,16 @@ export function validerIndicateurs(
       '« vintage_date_reference » doit être une date ISO (AAAA-MM-JJ) ou null',
     )
     exiger(
-      estDateIso(vintage_date_publication),
+      vintage_date_publication === null || estDateIso(vintage_date_publication),
       fichier,
       ligneIndexee,
-      '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ)',
+      '« vintage_date_publication » doit être une date ISO (AAAA-MM-JJ) ou null',
+    )
+    exiger(
+      vintage_date_reference !== null || vintage_date_publication !== null,
+      fichier,
+      ligneIndexee,
+      '« vintage_date_reference » et « vintage_date_publication » sont toutes les deux null — un fait porte au moins une horloge de fraîcheur',
     )
 
     return {
@@ -1693,20 +1703,17 @@ function validerSubventionsProgrammes(
  * labels/framing, figure families, typed rich text, the resolved-histoire
  * linkage and the source-reference policy. Raw JSON in, typed ThemeMetadata
  * out; drift is a loud, typed PayloadError — never silent wrong figures.
- * Programmes is rejected: it is a separate publication contract, never a
- * theme.
+ * Since #408, « programmes » is a canonical theme (the sixth): it publishes
+ * its own theme_programmes.json with an EMPTY story registry — a theme may
+ * hold categorical and numeric indicators and no lecture, none invented.
  */
 export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetadata {
   exiger(estObjet(brut), fichier, 0, 'le fichier theme_<theme>.json doit être un objet JSON, jamais un tableau')
   const meta = brut as LigneBrute
 
-  // 1. le thème — présent, canonique, jamais « programmes » (la frontière
-  //    explicite du parent #308 : Programmes est un contrat de publication
-  //    séparé, il ne reçoit pas de fichier theme_programmes.json fabriqué)
+  // 1. le thème — présent et canonique (les SIX thèmes, #408 : Programmes et
+  //    subventions est le sixième, il publie SON theme_programmes.json)
   const theme = lireChaine(meta, 'theme', fichier, 0)
-  if (theme === 'programmes') {
-    throw erreur(fichier, 0, '« programmes » est un contrat de publication SÉPARÉ (programmes.json, ADR-0013), jamais un thème — aucun fichier theme_programmes.json fabriqué')
-  }
   exiger(
     estUneDe(theme, THEMES_CANONIQUES),
     fichier,
@@ -1723,9 +1730,12 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   exiger(indicator_keys.length > 0, fichier, 0, '« indicator_keys » : la liste des clés d\u2019indicateurs est vide')
 
   // 4. les story_keys — le registre des histoires, avec la règle
-  //    d'herméticité (ADR-0020) : un thème ne peut lier que SES histoires
+  //    d'herméticité (ADR-0020) : un thème ne peut lier que SES histoires.
+  //    #408 : la liste peut être VIDE — Programmes et subventions porte des
+  //    indicateurs catégoriels et numériques et AUCUNE lecture ; jamais une
+  //    lecture inventée pour remplir le registre. Une story DÉCLARÉE, elle,
+  //    obéit aux mêmes règles que partout ailleurs.
   const story_keys = lireTableauChaines(meta, 'story_keys', fichier, 0)
-  exiger(story_keys.length > 0, fichier, 0, '« story_keys » : la liste des histoires est vide')
   const portees = CLES_HISTOIRES_PAR_THEME[theme]
   const autres = new Set(
     (Object.keys(CLES_HISTOIRES_PAR_THEME) as Theme[])
