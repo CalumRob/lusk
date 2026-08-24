@@ -2,7 +2,7 @@
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, beforeEach } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
-import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
+import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { COULEURS_DPE } from '../fiche/couleursDpe'
 import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/types'
@@ -136,6 +136,99 @@ describe('IndicateurView — trajectoires (#438)', () => {
     expect(texte).toContain('Détail (actif)')
     expect(texte.toLowerCase()).not.toContain('endpoint')
     expect(texte.toLowerCase()).not.toContain('spread')
+  })
+})
+
+// La grammaire Repères des profils/listes (#439) — la page routée rend le
+// profil COMPLET du territoire sélectionné (l'ordre vient des métadonnées,
+// jamais des faits) et la catégorie comparée pilote médiane/extrêmes/tableau
+// à travers le seam existant : les contrôles de tri marchent, le rang est
+// directionnel, extrêmes et lignes portent des liens de fiche qui résolvent,
+// et une catégorie demandée inconnue est surfacée honnêtement — JAMAIS
+// réécrite en silence vers la première catégorie (le défaut du PR supplanté).
+describe('IndicateurView — profils/listes (#439)', () => {
+  const CATEGORIES = ['t_longueur', 't_densite', 'b_longueur', 'b_densite', 'c_longueur', 'c_densite'] as const
+  function metadataListe(): typeof metadonneesThemesFixtures.mobilite {
+    const metadata = structuredClone(metadonneesThemesFixtures.mobilite)
+    metadata.indicator_pages = { reseaux: {
+      indicator: 'reseaux', detail: null, label: 'Réseaux à pied / vélo / voiture',
+      definition: 'Le profil complet du réseau par mode.', unit: 'km',
+      calculation: 'Longueurs et densités publiées par le pipeline.', direction: 'high',
+      caveats: 'Les catégories portent leurs unités propres.',
+      levels: ['commune', 'epci', 'departement'], sources: ['amenagements_cyclables'],
+      family: 'list',
+      list: { categories: [...CATEGORIES] },
+      comparison: { details: [...CATEGORIES], detail: 'b_longueur', unit: 'km', direction: 'high', labels: { ...metadata.detail_labels.reseaux } },
+    } }
+    return metadata
+  }
+  // Les faits reseaux du fixture typé, clonés sur quatre communes avec des
+  // b_longueur DISTINCTS (le reste des catégories suit la source clonée).
+  function faitsReseaux(): ReturnType<typeof indicateursMobiliteFixture.filter> {
+    const source = indicateursMobiliteFixture.filter((fait) => fait.key === 'reseaux' && fait.territoire === '22001')
+    const clones = ([['22001', 0], ['22002', 10], ['29001', 5], ['29002', 3]] as const).flatMap(([territoire, bLongueur]) =>
+      source.map((fait) => ({ ...fait, territoire, value: fait.detail === 'b_longueur' ? bLongueur : fait.value })),
+    )
+    return [...indicateursMobiliteFixture.filter((fait) => fait.key !== 'reseaux' || fait.type !== 'commune'), ...clones] as ReturnType<typeof indicateursMobiliteFixture.filter>
+  }
+
+  it('rend le profil complet dans l’ordre déclaré, nomme la catégorie comparée et porte l’unité PAR catégorie', async () => {
+    const { wrapper, router } = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), faitsReseaux(), 'mobilite')
+    expect(wrapper.find('[data-renderer="list"]').exists()).toBe(true)
+    // Le profil complet : six catégories déclarées, dans L'ORDRE DU CANON.
+    const lignes = wrapper.findAll('[data-ligne-profil]')
+    expect(lignes.map((ligne) => ligne.attributes('data-ligne-profil'))).toEqual([...CATEGORIES])
+    // L'unité est PAR catégorie (km pour les longueurs, km/km² pour les densités).
+    expect(lignes[0].text()).toContain(' km')
+    expect(lignes[1].text()).toContain('km/km²')
+    expect(wrapper.text()).toContain('Longueur — à vélo')
+    // La catégorie comparée est explicite et sélectionnable — copie française.
+    const selectCategorie = wrapper.find('select[aria-label="Catégorie comparée"]')
+    expect(selectCategorie.exists()).toBe(true)
+    expect(selectCategorie.findAll('option')).toHaveLength(CATEGORIES.length)
+    expect(router.currentRoute.value.query.detail).toBe('b_longueur')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it('trie par valeur via les contrôles existants — le rang est directionnel et les liens de fiche résolvent', async () => {
+    const { wrapper, router } = await monter('/indicateurs/mobilite/reseaux', [], metadataListe(), faitsReseaux(), 'mobilite')
+    await wrapper.findAll('thead button')[1].trigger('click')
+    await flushPromises()
+    // Tri par valeur ascendant : la plus petite longueur vélo d'abord…
+    expect(router.currentRoute.value.query.tri).toBe('valeur')
+    expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune A1')
+    // …et le rang DIRECTIONNEL : la plus grande valeur porte « 1er / 4 ».
+    await wrapper.findAll('thead button')[1].trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.ordre).toBe('desc')
+    expect(wrapper.findAll('tbody tr')[0].text()).toContain('Commune D')
+    expect(wrapper.findAll('tbody tr')[0].text()).toContain('1er / 4')
+    // Les extrêmes uniques et les lignes portent des liens de fiche RÉSOLVABLES.
+    const extreme = wrapper.find('.extremes a[href*="/territoire/commune/22002"]')
+    expect(extreme.exists()).toBe(true)
+    expect(extreme.attributes('href')).toContain('theme=mobilite')
+    expect(wrapper.find('tbody a[href*="/territoire/commune/29002"]').exists()).toBe(true)
+  })
+
+  it('reste honnête : silence sans sélection, profil incomplet et territoire absent distingués, catégorie résolue JAMAIS en silence', async () => {
+    // Sans territoire sélectionné : rien n'est affirmé.
+    const initial = await monter('/indicateurs/mobilite/reseaux', [], metadataListe(), faitsReseaux(), 'mobilite')
+    expect(initial.wrapper.text()).toContain('Sélectionnez un territoire pour voir son profil complet.')
+    // Un territoire du périmètre dont une catégorie manque : profil incomplet —
+    // jamais confondu avec une absence.
+    const ampute = faitsReseaux().filter((fait) => !(fait.territoire === '22001' && fait.detail === 'c_densite'))
+    const incomplet = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), ampute, 'mobilite')
+    expect(incomplet.wrapper.text()).toContain('Commune A1 : profil incomplet à ce niveau.')
+    expect(incomplet.wrapper.text()).not.toContain('absent')
+    // Un EPCI sélectionné dans une comparaison de communes : ABSENT à ce niveau.
+    const absent = await monter('/indicateurs/mobilite/reseaux?territoire=200000001', [], metadataListe(), faitsReseaux(), 'mobilite')
+    expect(absent.wrapper.find('[role="status"]').text()).toContain('EPCI X : territoire absent à ce niveau de comparaison.')
+    // Une catégorie demandée hors contrat est RÉSOLUE EXPLICITEMENT vers la
+    // catégorie canonique (URL + sélecteur) — jamais un repli silencieux sur
+    // la première catégorie sans que le visiteur voie laquelle est active.
+    const inconnue = await monter('/indicateurs/mobilite/reseaux?detail=stale', [], metadataListe(), faitsReseaux(), 'mobilite')
+    expect(inconnue.router.currentRoute.value.query.detail).toBe('b_longueur')
+    expect((inconnue.wrapper.find('select[aria-label="Catégorie comparée"]').element as HTMLSelectElement).value).toBe('b_longueur')
   })
 })
 
