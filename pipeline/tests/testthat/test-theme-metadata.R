@@ -977,3 +977,25 @@ test_that("valider_theme_metadata : un rôle du nuage muet, fantôme ou à déta
   meta$indicator_pages <- list(densite = page_relation(roles = roles))
   expect_error(valider_theme_metadata(meta), "détail inconnu")
 })
+
+# L'énumération des relations publiées (issue #441) — le devoir de recensement
+# comme pour les trajectoires (#438), les listes (#439) et les distributions
+# (#440) : AUCUNE page de famille « relationship » n'est encore publiée à
+# travers les cinq thèmes. La grammaire, le contrat des deux miroirs et le
+# rendu existent et sont testés sur des fixtures ; le premier descripteur
+# épinglé viendra avec ses faits. Ce verrou force la mise à jour CONSCIENTE
+# du compte quand elle arrivera — jamais une famille orpheline en silence.
+test_that("l'énumération des relations publiées est connue — aucune page relation à travers les cinq thèmes (#441)", {
+  pages_relations <- 0L
+  pour_theme <- character(0)
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    cles <- names(meta$indicator_pages)
+    if (is.null(cles)) next
+    relations_theme <- cles[vapply(meta$indicator_pages, function(p) identical(p$family, "relationship"), logical(1L))]
+    pages_relations <- pages_relations + length(relations_theme)
+    if (length(relations_theme)) pour_theme <- c(pour_theme, paste(theme, relations_theme, sep = ":"))
+  }
+  expect_identical(pages_relations, 0L)
+  expect_length(pour_theme, 0L)
+})
