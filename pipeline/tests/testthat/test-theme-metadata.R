@@ -832,6 +832,30 @@ test_that("verifier_parite_listes : une catégorie morte ou un détail publié a
     "absent des catégories")
 })
 
+test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et reseaux est LA SEULE liste publiée (#439)", {
+  # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
+  # verifierPariteListes au chargement de l'app. L'énumération est le devoir :
+  # reseaux (Mobilité) est la SEULE page de famille « list » publiée à travers
+  # les cinq thèmes — jamais une famille orpheline, jamais une seconde liste
+  # non déclarée.
+  racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
+  expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
+
+  pages_listes <- list()
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    cles <- names(meta$indicator_pages)
+    if (is.null(cles)) next
+    pour_theme <- cles[vapply(meta$indicator_pages, function(p) identical(p$family, "list"), logical(1L))]
+    if (!length(pour_theme)) next
+    faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
+    verifier_parite_listes(meta, faits)
+    pages_listes[[paste(theme, pour_theme, sep = ":")]] <- pour_theme
+  }
+  expect_length(pages_listes, 1L)
+  expect_identical(names(pages_listes), "mobilite:reseaux")
+})
+
 test_that("valider_theme_metadata : une liste sans libellé canonical ou hors axe échoue fort (#439)", {
   meta <- lire_theme_metadata("mobilite")
 

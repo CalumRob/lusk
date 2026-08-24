@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { indicateursMobiliteFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import { PayloadError, verifierPariteListes } from '../payload/validate'
-import type { ListPageMetadata, Payload } from '../payload/types'
+import type { Indicateur, ListPageMetadata, Payload, ThemeMetadata } from '../payload/types'
 
 /**
  * La garde de parité listes ↔ faits publiés (#439) — le miroir TS de
@@ -68,5 +70,31 @@ describe('verifierPariteListes — la garde listes ↔ payload (#439)', () => {
     } catch (e) {
       expect((e as PayloadError).message).toMatch(/détail « c_densite » de « reseaux » publié absent des catégories déclarées/)
     }
+  })
+})
+
+// La garde sur le payload COMMITTÉ (#439) — le miroir du bloc R
+// « verifier_parite_listes : le payload COMMITTÉ est en parité… »
+// (test-theme-metadata.R) : les artefacts que l'app fetch réellement, lus
+// depuis public/data et le canon épinglé par le motif établi
+// (theme-metadata-parity.spec.ts). L'énumération y est le devoir : reseaux
+// (Mobilité) est la SEULE page de famille « list » publiée à travers les cinq
+// thèmes — jamais une famille orpheline, jamais une seconde liste.
+describe('verifierPariteListes — le payload committé (#439)', () => {
+  const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
+  const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
+  const publicDir = join(process.cwd(), '..', 'public', 'data')
+
+  it('est en parité et reseaux est LA SEULE liste publiée à travers les cinq thèmes', () => {
+    const pagesListes: string[] = []
+    for (const theme of themes) {
+      const metadata = JSON.parse(readFileSync(join(canonicalDir, `theme_${theme}.json`), 'utf8')) as ThemeMetadata
+      const cles = Object.entries(metadata.indicator_pages ?? {}).filter(([, page]) => page.family === 'list').map(([cle]) => cle)
+      if (!cles.length) continue
+      const faits = JSON.parse(readFileSync(join(publicDir, `indicateurs_${theme}.json`), 'utf8')) as unknown as Indicateur[]
+      verifierPariteListes({ territoires: [], indicateurs: faits, histoires: [], apercu: null, runReport: null, vintages: null, programmes: null, themeMetadata: { [theme]: metadata } })
+      pagesListes.push(`${theme}:${cles.join(',')}`)
+    }
+    expect(pagesListes).toEqual(['mobilite:reseaux'])
   })
 })
