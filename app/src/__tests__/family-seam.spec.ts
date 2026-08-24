@@ -29,7 +29,7 @@ describe('seam des familles de Repères', () => {
     ['pyramid', 'pyramid'], ['comparison-bars', 'comparison-bars'],
   ] as const)('dispatches %s through one renderer identity', (family, renderer) => {
     const page = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, family, indicator: `fixture_${family}` }
-    if (family !== 'scalar') (page as any)[family === 'comparison-bars' ? 'comparisonBars' : family] = family === 'relationship' ? { roles: { x: 'x', y: 'y' }, measure: 'm' } : family === 'distribution' ? { signature: 's', summary: 'm' } : { [family === 'trajectory' ? 'endpoints' : family === 'composition' ? 'parts' : family === 'list' ? 'categories' : family === 'pyramid' ? 'dimensions' : 'series']: ['x'] }
+    if (family !== 'scalar') (page as any)[family === 'comparison-bars' ? 'comparisonBars' : family] = family === 'relationship' ? { roles: { x: 'x', y: 'y' }, measure: 'm' } : family === 'distribution' ? { signature: ['s'] } : { [family === 'trajectory' ? 'endpoints' : family === 'composition' ? 'parts' : family === 'list' ? 'categories' : family === 'pyramid' ? 'dimensions' : 'series']: ['x'] }
     const result = dispatchIndicatorFamily(page as any, {})
     expect(result.family).toBe(family)
     expect(result.renderer).toBe(renderer)
@@ -45,5 +45,16 @@ describe('seam des familles de Repères', () => {
     expect(invalid.status).toBe('invalid'); expect(invalid.resolvedUrl).toContain('detail=total')
     const fact = { territoire: 'a', type: 'commune', theme: 'demographie', key: 'densite', detail: null, value: null, unit: 'hab./km²', rang_epci: null, rang_dep: null, rang_reg: null, rang_epci_n: null, rang_dep_n: null, rang_reg_n: null, vintage_source: 'x', vintage_version: 'x', vintage_date_reference: null, vintage_date_publication: 'x' } satisfies Indicateur
     expect(dispatchIndicatorFamily(metadonneesThemesFixtures.demographie.indicator_pages!.densite, { facts: [fact] }).status).toBe('incomplete')
+  })
+
+  // La facette résumée d'une distribution (#440) : elle lit une AUTRE clé
+  // publiée que la page (part_passoires résume distribution_dpe) et son
+  // libellé + unité déclarés sont CE QUE LE VISITEUR VOIT — jamais le libellé
+  // de la page sur des valeurs d'une autre clé.
+  it('résout la facette résumée d\u2019une distribution : clé croisée, libellé public, unité déclarée', () => {
+    const page = { ...metadonneesThemesFixtures.demographie.indicator_pages!.densite, indicator: 'distribution_dpe', family: 'distribution' as const, distribution: { signature: ['A'] }, comparison: { indicator: 'part_passoires', label: 'Part de passoires thermiques', unit: '%', direction: 'low' as const } }
+    const facet = normalizeComparisonFacet(page, {}, 'habitat')
+    expect(facet).toMatchObject({ indicator: 'part_passoires', label: 'Part de passoires thermiques', unit: '%', direction: 'low', detail: null })
+    expect(dispatchIndicatorFamily(page as any, { theme: 'habitat', facts: [] })).toMatchObject({ family: 'distribution', status: 'unavailable' })
   })
 })

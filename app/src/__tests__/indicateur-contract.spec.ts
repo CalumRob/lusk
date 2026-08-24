@@ -31,7 +31,7 @@ describe('contrat des pages d’indicateur', () => {
   it.each(['scalar', 'trajectory', 'composition', 'distribution', 'relationship', 'list', 'pyramid', 'comparison-bars'] as const)('accepte la famille %s', (family) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     metadata.indicator_pages!.densite.family = family
-    const extensions: Record<string, unknown> = { trajectory: { endpoints: ['debut', 'fin'] }, composition: { parts: ['a'] }, distribution: { signature: 'x', summary: 'y' }, relationship: { roles: { x: 'a', y: 'b' }, measure: 'r' }, list: { categories: ['a'] }, pyramid: { dimensions: ['detail', 'sex'] }, 'comparison-bars': { series: ['a'] } }
+    const extensions: Record<string, unknown> = { trajectory: { endpoints: ['debut', 'fin'] }, composition: { parts: ['a'] }, distribution: { signature: ['x'] }, relationship: { roles: { x: 'a', y: 'b' }, measure: 'r' }, list: { categories: ['a'] }, pyramid: { dimensions: ['detail', 'sex'] }, 'comparison-bars': { series: ['a'] } }
     if (family !== 'scalar') (metadata.indicator_pages!.densite as any)[family === 'comparison-bars' ? 'comparison-bars' : family] = extensions[family]
     // #431 : le contrat composition/pyramid est complet dans les DEUX miroirs
     // (R + app) — chaque part porte son libellé canonical, la pyramide déclare
@@ -44,17 +44,56 @@ describe('contrat des pages d’indicateur', () => {
     // #438 : l'axe fermé comparison.details est requis pour une trajectoire,
     // et ses bornes sont des détails déclarés — le miroir strict de R
     if (family === 'trajectory') (metadata.indicator_pages!.densite as any).comparison = { details: ['debut', 'fin'], detail: 'fin', unit: '%' }
+    // #440 : la facette résumée d'une distribution nomme sa clé publiée et
+    // son libellé public ; chaque détail de la signature a son libellé canonical
+    if (family === 'distribution') {
+      ;(metadata.detail_labels as any).densite = { x: 'Étiquette X' }
+      ;(metadata.indicator_pages!.densite as any).comparison = { indicator: 'densite', label: 'Part X', unit: '%' }
+    }
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).not.toThrow()
   })
 
   it.each([
     ['trajectory', { endpoints: ['', 'fin'] }], ['composition', { parts: [] }],
-    ['distribution', { signature: 'x', summary: '' }], ['list', { categories: [''] }],
+    ['distribution', { signature: [] }], ['list', { categories: [''] }],
     ['pyramid', { dimensions: [''] }], ['comparison-bars', { series: [''] }],
   ] as const)('rejette les extensions %s vides', (family, extension) => {
     const metadata = structuredClone(metadonneesThemesFixtures.demographie)
     metadata.indicator_pages!.densite.family = family
+    ;(metadata.detail_labels as any).densite = { ...(metadata.detail_labels as any).densite, x: 'Étiquette X' }
+    if (family === 'distribution') (metadata.indicator_pages!.densite as any).comparison = { indicator: 'densite', label: 'Part X', unit: '%' }
     ;(metadata.indicator_pages!.densite as any)[family === 'comparison-bars' ? 'comparison-bars' : family] = extension
+    expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
+  })
+
+  it.each([
+    ['une distribution sans facette résumée', (meta: any) => {
+      meta.detail_labels.densite = { x: 'Étiquette X' }
+      meta.indicator_pages.densite.family = 'distribution'
+      meta.indicator_pages.densite.distribution = { signature: ['x'] }
+      delete meta.indicator_pages.densite.comparison
+    }],
+    ['une distribution dont la facette résumée ne nomme pas sa clé', (meta: any) => {
+      meta.detail_labels.densite = { x: 'Étiquette X' }
+      meta.indicator_pages.densite.family = 'distribution'
+      meta.indicator_pages.densite.distribution = { signature: ['x'] }
+      meta.indicator_pages.densite.comparison = { label: 'Part X', unit: '%' }
+    }],
+    ['une distribution sans libellé public de facette résumée', (meta: any) => {
+      meta.detail_labels.densite = { x: 'Étiquette X' }
+      meta.indicator_pages.densite.family = 'distribution'
+      meta.indicator_pages.densite.distribution = { signature: ['x'] }
+      meta.indicator_pages.densite.comparison = { indicator: 'densite', unit: '%' }
+    }],
+    ['une distribution dont un détail de signature n\u2019a pas de libellé canonical', (meta: any) => {
+      meta.detail_labels.densite = { x: 'Étiquette X' }
+      meta.indicator_pages.densite.family = 'distribution'
+      meta.indicator_pages.densite.distribution = { signature: ['x', 'fantome'] }
+      meta.indicator_pages.densite.comparison = { indicator: 'densite', label: 'Part X', unit: '%' }
+    }],
+  ])('rejette %s — le même verdict que R (#440)', (_nom, muter) => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    muter(metadata)
     expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
   })
 

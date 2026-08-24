@@ -391,6 +391,41 @@
           "2025": "2025"
         }
       }
+    },
+    "distribution_dpe": {
+      "indicator": "distribution_dpe",
+      "label": "Distribution des étiquettes DPE (A à G)",
+      "definition": "Répartition des diagnostics de performance énergétique du territoire par étiquette, de A à G.",
+      "unit": "%",
+      "calculation": "Part de chaque étiquette parmi les diagnostics disponibles du territoire.",
+      "direction": "low",
+      "caveats": "La base DPE surreprésente les logements vendus ou loués ; la comparaison entre territoires porte sur la part de passoires thermiques (F/G), jamais sur les étiquettes une à une.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "dpe_22"
+      ],
+      "family": "distribution",
+      "distribution": {
+        "signature": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E",
+          "F",
+          "G"
+        ]
+      },
+      "comparison": {
+        "indicator": "part_passoires",
+        "label": "Part de passoires thermiques",
+        "unit": "%",
+        "direction": "low"
+      }
     }
   },
   "source_records": {

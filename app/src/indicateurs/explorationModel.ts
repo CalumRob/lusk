@@ -1,5 +1,6 @@
 import type { Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
+import type { IndicatorPageMetadata } from '@/payload/types'
 
 export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
 export type DirectionIndicateur = 'high' | 'low'
@@ -222,4 +223,61 @@ export function modeleTrajectoire(
     : null
 
   return { etapes: lignes, domaineValeurs, serieTerritoire }
+}
+
+/**
+ * Le modèle de la signature intra-territoire des distributions (#440) — les
+ * détails déclarés (la signature fermée) du territoire sélectionné, à côté de
+ * la comparaison inter-territoires que la facette résumée pilote seule.
+ *
+ * Quatre états HONNÊTES, verrouillés par test — jamais un résumé inventé :
+ *  - null : aucun territoire sélectionné — rien n'est affirmé ;
+ *  - 'absent' : le territoire sélectionné n'existe pas à ce niveau (une
+ *    commune dans une comparaison d'EPCIs…) — JAMAIS confondu avec une
+ *    suppression (le défaut du PR supplanté, qui inventait un motif) ;
+ *  - 'incomplet' : le territoire EST dans le périmètre mais sa distribution
+ *    est incomplète ou supprimée (complétude all-or-nothing déclarée) ;
+ *  - 'complet' : les barres portent les valeurs publiées du territoire.
+ */
+export interface BarreSignature { detail: string; label: string; valeur: number | null }
+export interface ModeleSignature {
+  etat: 'complet' | 'incomplet' | 'absent' | null
+  nom: string | null
+  message: string | null
+  /** L'unité déclarée des faits de la signature — la facette ne pilote PAS ce bloc. */
+  unite: string | null
+  barres: readonly BarreSignature[]
+}
+
+export function modeleSignature(
+  faits: readonly Indicateur[],
+  facet: ComparisonFacet,
+  page: IndicatorPageMetadata,
+  territoires: readonly Territoire[],
+  labels: Record<string, string>,
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): ModeleSignature {
+  const details = page.family === 'distribution' ? [...page.distribution.signature] : []
+  const barresDe = (valeurs: ReadonlyMap<string, number>): BarreSignature[] => details.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null }))
+  if (!etat.territoire) return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
+  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
+  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
+    return ref
+      ? { etat: 'absent', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.`, unite: null, barres: barresDe(new Map()) }
+      : { etat: 'absent', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.', unite: null, barres: barresDe(new Map()) }
+  }
+  // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — les clés
+  // ne sont pas uniques entre thèmes ; le sexe/dimension suivent la facette.
+  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && details.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  const valeurs = new Map<string, number>()
+  let unite: string | null = null
+  for (const ligne of lignes) {
+    if (ligne.value !== null) {
+      valeurs.set(ligne.detail as string, ligne.value)
+      unite ??= ligne.unit ?? null
+    }
+  }
+  return details.every((detail) => valeurs.has(detail))
+    ? { etat: 'complet', nom: ref.nom, message: null, unite, barres: barresDe(valeurs) }
+    : { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : distribution incomplète ou supprimée à ce niveau.`, unite, barres: barresDe(valeurs) }
 }

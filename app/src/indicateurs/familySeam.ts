@@ -87,7 +87,11 @@ export function normalizeComparisonFacet(page: IndicatorPageMetadata, requested:
   if (sex.value !== null) params.set('sex', sex.value)
   if (dimension.value !== null) params.set('dimension', dimension.value)
   const labels = comparison.labels ?? {}
-  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, label: detail.value !== null && labels[detail.value] ? labels[detail.value] : page.label, labels, details: comparison.details ?? [], url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
+  // Le libellé public unique de la facette (#440) : déclaré par la facette
+  // (obligatoire quand elle lit une autre clé que la page — le validateur
+  // l'exige), sinon le libellé du détail résolu, sinon celui de la page.
+  const label = comparison.label ?? (detail.value !== null && labels[detail.value] ? labels[detail.value] : page.label)
+  return { theme, levels: page.levels, indicator, detail: detail.value, sex: sex.value as Sexe | null, dimension: dimension.value, direction: comparison.direction ?? page.direction, unit: comparison.unit ?? page.unit, label, labels, details: comparison.details ?? [], url: params.toString() ? `?${params.toString()}` : '', valid: indicatorValid && detail.valid && sex.valid && dimension.valid }
 }
 
 function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensionMissing: boolean): FamilyStatus {
@@ -113,7 +117,14 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
       return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, extension: page.trajectory }, status }
     }
      case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
-    case 'distribution': return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: rows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
+    case 'distribution': {
+      // La signature intra-territoire vit dans les faits PROPRES de la page
+      // (#440) — jamais dans les rows de la facette résumée : allFacts porte
+      // la clé de la facette (souvent une AUTRE clé publiée), la signature
+      // lit la clé de la page dans les faits bruts.
+      const signatureRows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === page.indicator)
+      return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: signatureRows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
+    }
     case 'list': return { ...common, family: 'list', renderer: 'list', rendererIdentity: familyRegistry.list, representation: { kind: 'list', rows, territories, entries: rows, extension: page.list }, status: statusFor(facet, rows, page.list === undefined) }
     case 'relationship': return { ...common, family: 'relationship', renderer: 'relationship', rendererIdentity: familyRegistry.relationship, representation: { kind: 'relationship', rows, territories, points: rows, extension: page.relationship }, status: statusFor(facet, rows, page.relationship === undefined) }
      case 'pyramid': return { ...common, family: 'pyramid', renderer: 'pyramid', rendererIdentity: familyRegistry.pyramid, representation: { kind: 'pyramid', rows, territories, parts: allFacts, extension: page.pyramid }, status: statusFor(facet, rows, page.pyramid === undefined) }

@@ -700,3 +700,107 @@ test_that("publier_theme_metadata : les bornes structurales sont câblées à la
   expect_no_error(publier_theme_metadata(meta, sortie, theme_attendu = "milieux"))
   expect_true(file.exists(file.path(sortie, "theme_milieux.json")))
 })
+
+# La parité distributions ↔ faits publiés (issue #440) : les pages de famille
+# « distribution » déclarent une signature EXACTEMENT égale aux détails
+# publiés de la clé. Le miroir TypeScript vit dans verifierPariteDistributions
+# (validate.ts, appelée au chargement) ; côté pipeline, les règles
+# STRUCTURELLES (la facette résumée nomme sa clé et son libellé public, les
+# détails de la signature ont leurs libellés canonical) vivent dans
+# valider_theme_metadata (donc à chaque publication et cible targets), et la
+# couverture des faits s'exécute sur le payload COMMITTÉ (le contrat de
+# payload committé, comme les trajectoires #438) — jamais du code mort,
+# jamais une signature qui ment.
+
+faits_distributions_habitat <- function(details = c("A", "B", "C", "D", "E", "F", "G")) {
+  tibble::tibble(theme = "habitat", key = "distribution_dpe", detail = details)
+}
+
+test_that("verifier_parite_distributions : le canon Habitat épinglé est en parité avec ses faits (#440)", {
+  meta <- lire_theme_metadata("habitat")
+  expect_identical(meta$indicator_pages$distribution_dpe$family, "distribution")
+  expect_no_error(verifier_parite_distributions(meta, faits_distributions_habitat()))
+})
+
+test_that("verifier_parite_distributions : le payload COMMITTÉ est en parité et distribution_dpe est LA SEULE distribution publiée (#440)", {
+  # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
+  # verifierPariteDistributions au chargement de l'app. L'énumération est le
+  # devoir : distribution_dpe (Habitat) est la SEULE page de famille
+  # « distribution » publiée à travers les cinq thèmes — jamais une famille
+  # orpheline, jamais une seconde distribution non déclarée.
+  racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
+  expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
+
+  pages_distribution <- list()
+  for (theme in THEMES_METADATA) {
+    meta <- lire_theme_metadata(theme)
+    cles <- names(meta$indicator_pages)
+    if (is.null(cles)) next
+    pour_theme <- cles[vapply(meta$indicator_pages, function(p) identical(p$family, "distribution"), logical(1L))]
+    if (!length(pour_theme)) next
+    faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
+    verifier_parite_distributions(meta, faits)
+    pages_distribution[[paste(theme, pour_theme, sep = ":")]] <- pour_theme
+  }
+  expect_length(pages_distribution, 1L)
+  expect_identical(names(pages_distribution), "habitat:distribution_dpe")
+})
+
+test_that("verifier_parite_distributions : un détail mort ou une étiquette publiée absente échouent fort (#440)", {
+  meta <- lire_theme_metadata("habitat")
+  meta$indicator_pages$distribution_dpe$distribution$signature <-
+    c(unlist(meta$indicator_pages$distribution_dpe$distribution$signature, use.names = FALSE), "Z")
+  expect_error(verifier_parite_distributions(meta, faits_distributions_habitat()),
+               "jamais publié")
+
+  meta <- lire_theme_metadata("habitat")
+  expect_error(
+    verifier_parite_distributions(meta, faits_distributions_habitat(c("A", "B", "C", "D", "E", "F", "G", "H"))),
+    "absent de la signature")
+})
+
+test_that("valider_theme_metadata : une distribution sans facette résumée complète échoue fort (#440)", {
+  meta <- lire_theme_metadata("habitat")
+
+  # pas de facette résumée du tout
+  meta$indicator_pages$distribution_dpe$comparison <- NULL
+  expect_error(valider_theme_metadata(meta), "requise pour une distribution")
+  meta <- lire_theme_metadata("habitat")
+
+  # la facette résumée ne nomme pas sa clé publiée
+  meta$indicator_pages$distribution_dpe$comparison$indicator <- NULL
+  expect_error(valider_theme_metadata(meta), "est requise")
+  meta <- lire_theme_metadata("habitat")
+
+  # la facette résumée n'a pas de libellé public — elle serait invisible du visiteur
+  meta$indicator_pages$distribution_dpe$comparison$label <- NULL
+  expect_error(valider_theme_metadata(meta), "visible du visiteur")
+  meta <- lire_theme_metadata("habitat")
+
+  # un détail de la signature sans libellé canonical
+  meta$indicator_pages$distribution_dpe$distribution$signature <-
+    as.list(c(unlist(meta$indicator_pages$distribution_dpe$distribution$signature,
+                      use.names = FALSE), "Z"))
+  expect_error(valider_theme_metadata(meta), "libellé canonical")
+})
+
+test_that("publier_theme_metadata : les règles structurales des distributions sont câblées à la publication (#440)", {
+  meta <- lire_theme_metadata("habitat")
+  meta_casse <- lire_theme_metadata("habitat")
+  meta_casse$indicator_pages$distribution_dpe$comparison$label <- NULL
+
+  sortie <- file.path(tempdir(), "distributions-publication")
+  dir.create(sortie, showWarnings = FALSE)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+
+  # un descripteur dont la facette résumée est muette échoue FORT sans rien écrire
+  expect_error(
+    publier_theme_metadata(meta_casse, sortie, theme_attendu = "habitat"),
+    "visible du visiteur"
+  )
+  expect_false(file.exists(file.path(sortie, "theme_habitat.json")))
+
+  # le canon épinglé passe la même porte et écrit son fichier
+  expect_no_error(publier_theme_metadata(meta, sortie, theme_attendu = "habitat"))
+  expect_true(file.exists(file.path(sortie, "theme_habitat.json")))
+})

@@ -747,6 +747,8 @@ export interface IndicatorPageMetadataBase {
 
 export interface ComparisonFacetMetadata {
   indicator?: string
+  /** Le libellé public unique de la facette — requis quand elle lit une autre clé que la page (#440). */
+  label?: string
   detail?: string | null
   /** Allowed URL values; absent means this dimension is not declared. */
   details?: string[]
@@ -760,7 +762,15 @@ export interface ComparisonFacetMetadata {
 }
 export interface TrajectoryMetadata { endpoints: string[] }
 export interface CompositionMetadata { parts: string[] }
-export interface DistributionMetadata { signature: string; summary: string }
+/**
+ * Une distribution ne se compare JAMAIS par ses bins (#440) : la facette
+ * inter-territoires est la `comparison` déclarée de la page — une clé publiée,
+ * souvent une AUTRE que la page (part_passoires résume distribution_dpe) — et
+ * pilote carte, extrêmes et tableau avec son unité déclarée. La signature
+ * déclare les détails fermés de la distribution intra-territoire, rendue
+ * all-or-nothing pour le territoire sélectionné.
+ */
+export interface DistributionMetadata { signature: string[] }
 export interface RelationshipMetadata { roles: { x: string; y: string }; measure: string }
 export interface ListMetadata { categories: string[] }
 export interface PyramidMetadata { dimensions: string[] }

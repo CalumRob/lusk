@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -117,5 +117,62 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(modele.serieTerritoire!.map((p) => p.detail)).toEqual(['2020', '2024'])
     const horsScope = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12)], facet, ['2020', '2024'], territoires, { niveau: 'epci', territoire: 'a' })
     expect(horsScope.serieTerritoire).toBeNull()
+  })
+})
+
+// La grammaire Repères des distributions (#440) — la signature intra-territoire
+// à côté de la comparaison inter-territoires : la facette résumée (une AUTRE
+// clé publiée) pilote médiane, extrêmes, tableau et carte avec SON unité ; les
+// quatre états de la signature sont honnêtes — jamais un résumé inventé, et
+// « absent à ce niveau » n'est JAMAIS confondu avec « incomplète ou supprimée »
+// (le défaut du PR supplanté).
+describe('modèle distribution de Page d’indicateur (#440)', () => {
+  const ETIQUETTES = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
+  const pageDistribution = structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite) as any
+  pageDistribution.indicator = 'distribution_dpe'
+  pageDistribution.family = 'distribution'
+  pageDistribution.distribution = { signature: ETIQUETTES }
+  pageDistribution.comparison = { indicator: 'part_passoires', label: 'Part de passoires thermiques', unit: '%', direction: 'low' }
+  const facet = normalizeComparisonFacet(pageDistribution, {}, 'habitat')
+  const faitPart = (id: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ ...facts(id, value ?? 0, type), theme: 'habitat', key: 'part_passoires', unit: '%' })
+  const etiquette = (id: string, detail: string, value: number | null): Indicateur => ({ ...facts(id, value ?? 0), theme: 'habitat', key: 'distribution_dpe', detail, value, unit: '%' })
+  const faitsComplets = [...ETIQUETTES.map((detail, i) => etiquette('a', detail, [0.05, 0.1, 0.15, 0.2, 0.2, 0.15, 0.15][i]!)), faitPart('a', 0.3)]
+
+  it('rend la signature complète du territoire sélectionné — l’unité vient des faits de la signature, pas de la facette', () => {
+    const modele = modeleSignature(faitsComplets, facet, pageDistribution, territoires, { A: 'A' }, { niveau: 'commune', territoire: 'a' })
+    expect(modele.etat).toBe('complet')
+    expect(modele.message).toBeNull()
+    expect(modele.barres.map((barre) => barre.detail)).toEqual(ETIQUETTES)
+    expect(modele.barres[0]).toMatchObject({ label: 'A', valeur: 0.05 })
+    expect(modele.unite).toBe('%')
+  })
+
+  it('comparaison inter-territoriale : la facette résumée pilote rangs et extrêmes sur SA clé, jamais les bins', () => {
+    const rows = [faitPart('a', 0.3), faitPart('b', 0.1), faitPart('c', 0.5)]
+    const modele = modeleExploration(rows, facet, territoires, { niveau: 'commune' })
+    // direction low : la part la plus BASSE est la meilleure (rang 1) ;
+    // l'ordre des lignes reste le tri par nom par défaut.
+    expect(modele.rows.map((row) => [row.territoire.territoire, row.rang])).toEqual([['a', 2], ['b', 1], ['c', 3]])
+    expect(modele.high.count).toBe(1)
+    expect(modele.median).toBeCloseTo(0.3, 10)
+  })
+
+  it('déclare une distribution incomplète ou supprimée quand le périmètre porte le territoire mais pas sa signature', () => {
+    const sansG = faitsComplets.filter((fact) => fact.detail !== 'G')
+    const modele = modeleSignature(sansG, facet, pageDistribution, territoires, {}, { niveau: 'commune', territoire: 'a' })
+    expect(modele.etat).toBe('incomplet')
+    expect(modele.message).toMatch(/distribution incomplète ou supprimée/)
+  })
+
+  it('distingue honnêtement « absent à ce niveau » — jamais un motif de suppression inventé', () => {
+    // Une commune sélectionnée dans une comparaison d'EPCIs : ABSENTE, pas supprimée.
+    const absent = modeleSignature(faitsComplets, facet, pageDistribution, territoires, {}, { niveau: 'epci', territoire: 'a' })
+    expect(absent.etat).toBe('absent')
+    expect(absent.message).toMatch(/absent à ce niveau/)
+    expect(absent.message).not.toMatch(/supprimée|incomplète/)
+    // Aucun territoire sélectionné : rien n'est affirmé.
+    const silence = modeleSignature(faitsComplets, facet, pageDistribution, territoires, {}, { niveau: 'commune' })
+    expect(silence.etat).toBeNull()
+    expect(silence.message).toBeNull()
   })
 })
