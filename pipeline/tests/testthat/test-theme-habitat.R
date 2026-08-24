@@ -104,13 +104,14 @@ test_that("vintages_habitat : une ligne par source, dates de référence DVF", {
   expect_equal(v$date_publication[v$id == "logements"], "2026-06-30")
 })
 
-test_that("vintages_habitat : les DPE (base roulante) n'ont pas encore de date de pull", {
+test_that("vintages_habitat : les DPE (base roulante) portent l'horloge du run sans pull (#408)", {
   v <- vintages_habitat()
-  # base roulante : version = date du pull (écrite sur le cache au pull) — tant
-  # que le pull n'a pas eu lieu (le cas des tests), la date est NA : honnête,
-  # jamais inventée
+  # base roulante : version = date du pull (écrite sur le cache au pull). Sans
+  # pull (le cas des tests), l'horloge de publication est celle du RUN — la
+  # règle des deux horloges (#408) interdit une ligne sans AUCUNE date ; la
+  # référence reste NA, la sémantique roulante d'ADR-0009 intacte.
   for (id in MANIFEST_HABITAT_DPE$id) {
-    expect_true(is.na(v$version[v$id == id]), info = id)
-    expect_true(is.na(v$date_publication[v$id == id]), info = id)
+    expect_equal(v$version[v$id == id], as.character(Sys.Date()), info = id)
+    expect_equal(v$date_publication[v$id == id], as.character(Sys.Date()), info = id)
   }
 })

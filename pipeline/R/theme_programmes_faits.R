@@ -219,6 +219,11 @@ construire_indicateurs_programmes <- function(membres, subventions) {
          any(!is.na(ort$vintage_date_publication)))) {
       manquer("vintage", "une ligne ORT sans actualisation par ligne ou avec une date de publication inventée")
     }
+    # les deux horloges du tampon (#408 — le miroir de l'app, TOUTE ligne
+    # publiée : le seam ne passe PAS par validate_payload, la règle vient à
+    # lui — au moins une des deux dates existe, sinon l'app refuserait au
+    # chargement ce que le pipeline aurait publié)
+    verifier_horloges_vintage(ind)
   }
 
   # l'ordre déterministe du fichier publié (les projections sont stables)

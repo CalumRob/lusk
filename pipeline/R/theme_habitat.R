@@ -680,8 +680,12 @@ validations_habitat <- list(
 # Le builder de vintages du thème ---------------------------------------------
 # Les vintages se projettent depuis le manifeste (vintages_depuis_manifest,
 # vintage.R). Les sources DPE sont une base ROULANTE : leur vintage est la date
-# du pull — lue sur le cache (.rds écrit au pull). Tant que le pull n'a pas eu
-# lieu (premier run), les dates restent NA : honnête, jamais inventé.
+# du pull — lue sur le cache (.rds écrit au pull). Sans pull (premier run,
+# fixtures), l'horloge de publication devient celle du RUN (#408 : la règle des
+# deux horloges interdit de publier une ligne sans AUCUNE date — l'app
+# refuserait au chargement ce que le pipeline aurait écrit ; la fraîcheur
+# déclarée reste celle du jour où CE payload est construit, jamais une date de
+# source inventée ; la référence reste NA, la sémantique roulante d'ADR-0009).
 vintages_habitat <- function(cache = "data/raw") {
   v <- vintages_depuis_manifest(MANIFEST_HABITAT)
   dpe_ids <- MANIFEST_HABITAT$id[MANIFEST_HABITAT$type == "api"]
@@ -689,9 +693,11 @@ vintages_habitat <- function(cache = "data/raw") {
     chemin <- file.path(cache, MANIFEST_HABITAT$fichier[MANIFEST_HABITAT$id == id])
     if (file.exists(chemin)) {
       date_pull <- as.character(as.Date(file.info(chemin)$mtime))
-      v$version[v$id == id] <- date_pull
-      v$date_publication[v$id == id] <- date_pull
+    } else {
+      date_pull <- as.character(Sys.Date())
     }
+    v$version[v$id == id] <- date_pull
+    v$date_publication[v$id == id] <- date_pull
   }
   v
 }

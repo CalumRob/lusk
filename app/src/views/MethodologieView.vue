@@ -153,10 +153,6 @@ import { THEMES_CANONIQUES } from '@/payload/types'
 // Méthodes, dans l'ordre canonique — la section Programmes et subventions
 // reste l'onglet dédié (ongletsInterieurs), jamais un thème de plus dans la
 // boucle.
-// #408 : les barres intérieures portent les CINQ thèmes documentés du registre
-// Méthodes, dans l'ordre canonique — la section Programmes et subventions
-// reste l'onglet dédié (ongletsInterieurs), jamais un thème de plus dans la
-// boucle.
 const themesMethodes = THEMES_CANONIQUES.filter((theme) => theme !== 'programmes')
 
 const route = useRoute()

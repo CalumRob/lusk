@@ -3,8 +3,9 @@
 #   - RP Logements : millésime annuel (les dates du manifeste) ;
 #   - DVF : livraisons semestrielles (les dates de publication du manifeste) ;
 #   - DPE : base roulante — pas de date de référence unique ; version et
-#     date_publication = la date du pull, lue sur le mtime du cache .rds,
-#     NA tant que le pull n'a pas eu lieu (jamais inventé).
+#     date_publication = la date du pull, lue sur le mtime du cache .rds ;
+#     sans pull (premier run, fixtures), l'horloge devient celle du RUN
+#     (#408 — jamais une ligne publiée sans AUCUNE horloge).
 # Chaque indicateur du payload est estampillé depuis le vintage de SA source de
 # référence déclarée (le mécanisme partagé, issue #9 — assembler_indicateurs).
 
@@ -29,12 +30,12 @@ test_that("les vintages Habitat sont par source : RP annuel, DVF semestriel, DPE
     paste0("dvf_", max(ANNEE_DVF), "_dep22")
   )
 
-  # DPE : la base roulante — pas de date de référence unique, version et
-  # publication = la date du pull (NA avant le premier pull)
+  # DPE : la base roulante — pas de date de référence unique ; sans pull,
+  # l'horloge de publication est celle du RUN (#408 : au moins une horloge)
   dpe <- v[v$id %in% MANIFEST_HABITAT_DPE$id, ]
   expect_true(all(is.na(dpe$date_reference)))
-  expect_true(all(is.na(dpe$version)))
-  expect_true(all(is.na(dpe$date_publication)))
+  expect_true(all(dpe$version == as.character(Sys.Date())))
+  expect_true(all(dpe$date_publication == as.character(Sys.Date())))
 })
 
 test_that("la date de pull des DPE est lue sur le mtime du cache, pas inventée", {
@@ -68,9 +69,11 @@ test_that("chaque estampille du payload vient de la source de référence décla
   # source de référence de chaque clé ; les vintages sont différenciés par
   # source — chaque indicateur doit porter le vintage de SA référence.
   vintages <- vintages_habitat()
-  # on différencie les dates de publication des trois familles
+  # on différencie les dates de publication des trois familles (#408 : la DPE
+  # aussi porte SON horloge — jamais une ligne sans aucune date)
   vintages$date_publication[vintages$id == "logements"] <- "2026-01-15"
   vintages$date_publication[vintages$id == "dvf_2025_dep22"] <- "2026-02-20"
+  vintages$date_publication[vintages$id %in% MANIFEST_HABITAT_DPE$id] <- "2026-03-01"
 
   p <- compute_payload(load_fixture_habitat(), theme = theme_habitat(),
                        vintages = vintages)
@@ -83,7 +86,7 @@ test_that("chaque estampille du payload vient de la source de référence décla
                "ADEME — Observatoire DPE, logements existants",
                "ADEME — Observatoire DPE, logements existants"),
     publication = c("2026-01-15", "2026-01-15", "2026-01-15", "2026-01-15",
-                    "2026-02-20", NA_character_, NA_character_)
+                    "2026-02-20", "2026-03-01", "2026-03-01")
   )
   for (i in seq_len(nrow(attendus))) {
     cle <- attendus$key[i]
