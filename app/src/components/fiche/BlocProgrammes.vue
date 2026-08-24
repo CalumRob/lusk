@@ -25,6 +25,7 @@ import { computed, ref, watch } from 'vue'
 import { ExternalLink } from 'lucide-vue-next'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { LIBELLE_HANDOFF, handoffExploration } from '@/fiche/explorationHandoff'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
@@ -34,7 +35,7 @@ import {
   libelleProvenance,
   phraseVoix,
 } from '@/fiche/programmesAffichage'
-import { programmesPourTerritoire } from '@/payload/selectors'
+import { programmesPourTerritoire, trouverTerritoire } from '@/payload/selectors'
 import type { Payload } from '@/payload/types'
 
 const props = defineProps<{
@@ -55,6 +56,22 @@ function groupe(key: string): { label: string; framing: string } {
 }
 
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
+
+/**
+ * La passarelle « Explorer cet indicateur » (#409) : le total annuel publié
+ * (`subventions_annuelles` a SA Page d'indicateur) emporte le territoire et
+ * son niveau. Les autres faits du bloc (couverture_programmes,
+ * subventions_par_domaine) n'ont pas de page — aucune passarelle, jamais un
+ * lien mort.
+ */
+const passarelleSubventions = computed(() =>
+  handoffExploration(
+    metadata.value ?? undefined,
+    'subventions_annuelles',
+    trouverTerritoire(props.payload, props.territoire),
+  ),
+)
+const libelleHandoff = LIBELLE_HANDOFF
 const elementVide = computed(
   () => element.value.badges.length === 0 && element.value.subventions === null,
 )
@@ -191,6 +208,13 @@ const lienProvenance = computed(() => {
           </p>
           <p class="subvention-vintage">{{ element.subventions.vintage }}</p>
         </div>
+
+        <!-- #409 : la passarelle vers la Page d'indicateur du total annuel. -->
+        <RouterLink
+          v-if="passarelleSubventions"
+          class="passarelle-exploration"
+          :to="passarelleSubventions"
+        >{{ libelleHandoff }}</RouterLink>
 
         <a
           class="programmes-lien"
@@ -374,6 +398,17 @@ const lienProvenance = computed(() => {
 .subvention-axes--reste {
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--space-2);
+}
+
+/* La passarelle « Explorer cet indicateur » (#409) — la rampe du thème. */
+.passarelle-exploration {
+  width: fit-content;
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  font-weight: 600;
+  color: var(--theme-programmes-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .subvention-contexte,

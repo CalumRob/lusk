@@ -31,6 +31,7 @@ import {
   sousGroupesPourTerritoire,
 } from '@/fiche/sousGroupes'
 import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
+import { LIBELLE_HANDOFF, handoffExploration } from '@/fiche/explorationHandoff'
 import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
 
@@ -50,6 +51,9 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
 // The theme's published label rides in the metadata (theme_<theme>.json) — the
 // overline never falls back to an app-side dictionary.
 const nomTheme = computed(() => props.payload.themeMetadata?.[props.theme]?.label ?? props.theme)
+
+/** Le libellé unique du handoff (#409) — la copie française du produit. */
+const libelleHandoff = LIBELLE_HANDOFF
 
 // Les libellés payload-owned (issue #318) : la fiche lit indicator_labels /
 // detail_labels de la métadonnée du thème — jamais une clé brute. Un sous-groupe
@@ -98,6 +102,17 @@ function libelleIndicateurMetier(clef: string): string {
     throw new Error(`Métadonnées « ${props.theme} » absentes — la fiche ne rend jamais de clé brute`)
   }
   return libelleIndicateur(metadata.value, clef)
+}
+
+/**
+ * La passarelle « Explorer cet indicateur » (#409) — la route de la Page
+ * d'indicateur publiée qui emporte le territoire (et son niveau comparable).
+ * null pour un indicateur sans page publiée : jamais de lien mort.
+ */
+const refTerritoire = computed(() => trouverTerritoire(props.payload, props.territoire))
+
+function passarelle(clef: string) {
+  return handoffExploration(metadata.value, clef, refTerritoire.value)
 }
 
 /** The wide figures of the grid (the multi-detail groups). */
@@ -260,18 +275,33 @@ const lignesReseaux = computed(
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
             />
+            <!-- #409 : la passarelle vers la Page d'indicateur publiée. -->
+            <RouterLink
+              v-if="groupe.figureCompacte && passarelle(groupe.figureCompacte.clef)"
+              class="passarelle-exploration"
+              :to="passarelle(groupe.figureCompacte.clef)!"
+            >{{ libelleHandoff }}</RouterLink>
           </div>
-          <IndicatorFigure
+          <div
             v-for="figure in figuresGrille(groupe)"
             :key="figure.key"
-            :clef="figure.key"
-            :lignes="figure.lignes"
-            :libelle="libelleIndicateurMetier(figure.key)"
-            :labels-detail="labelsDetailPour(figure.key)"
-            :large="figureLarge(figure.key)"
-            :signe="figureSigne(figure.key)"
-            :theme="theme"
-          />
+            class="figure-cellule"
+          >
+            <IndicatorFigure
+              :clef="figure.key"
+              :lignes="figure.lignes"
+              :libelle="libelleIndicateurMetier(figure.key)"
+              :labels-detail="labelsDetailPour(figure.key)"
+              :large="figureLarge(figure.key)"
+              :signe="figureSigne(figure.key)"
+              :theme="theme"
+            />
+            <RouterLink
+              v-if="passarelle(figure.key)"
+              class="passarelle-exploration"
+              :to="passarelle(figure.key)!"
+            >{{ libelleHandoff }}</RouterLink>
+          </div>
         </div>
       </section>
     </template>
@@ -436,6 +466,23 @@ const lignesReseaux = computed(
    the subgroup's matter rendered first in the grid. */
 .figure-compacte {
   grid-column: span 2;
+}
+
+/* La passarelle « Explorer cet indicateur » (#409) — discrète, sous la
+   figure qu'elle prolonge ; la rampe du thème la porte. */
+.passarelle-exploration {
+  width: fit-content;
+  margin-top: var(--space-1);
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
+  font-weight: 600;
+  color: var(--couleur-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.passarelle-exploration:hover {
+  color: var(--couleur-nuage);
 }
 
 @media (max-width: 1024px) {
