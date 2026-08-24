@@ -226,6 +226,34 @@ export function modeleTrajectoire(
 }
 
 /**
+ * Le squelette partagé des modèles multi-états Repères (#441) — la leçon de
+ * la revue #453 : la trame null/absent vivait en DEUX exemplaires identiques
+ * (modeleSignature #440, modeleProfil #439) ; la relation (#441) en aurait
+ * fait un troisième. La résolution de la sélection est UNE — silence (aucun
+ * territoire demandé), hors périmètre (« absent à ce niveau », JAMAIS habillé
+ * en suppression), territoire actif — et chaque famille décide ensuite seule
+ * de son complet/incomplet sur sa propre matière.
+ */
+export type SelectionTerritoire =
+  | { kind: 'silence' }
+  | { kind: 'horsScope'; nom: string | null; message: string }
+  | { kind: 'active'; ref: Territoire }
+
+export function selectionTerritoire(
+  territoires: readonly Territoire[],
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): SelectionTerritoire {
+  if (!etat.territoire) return { kind: 'silence' }
+  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
+  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
+    return ref
+      ? { kind: 'horsScope', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.` }
+      : { kind: 'horsScope', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.' }
+  }
+  return { kind: 'active', ref }
+}
+
+/**
  * Le modèle de la signature intra-territoire des distributions (#440) — les
  * détails déclarés (la signature fermée) du territoire sélectionné, à côté de
  * la comparaison inter-territoires que la facette résumée pilote seule.
@@ -259,13 +287,11 @@ export function modeleSignature(
 ): ModeleSignature {
   const details = page.family === 'distribution' ? [...page.distribution.signature] : []
   const barresDe = (valeurs: ReadonlyMap<string, number>): BarreSignature[] => details.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null }))
-  if (!etat.territoire) return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
-  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
-  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
-    return ref
-      ? { etat: 'absent', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.`, unite: null, barres: barresDe(new Map()) }
-      : { etat: 'absent', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.', unite: null, barres: barresDe(new Map()) }
-  }
+  // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
+  const selection = selectionTerritoire(territoires, etat)
+  if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
+  if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, barres: barresDe(new Map()) }
+  const ref = selection.ref
   // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — les clés
   // ne sont pas uniques entre thèmes ; le sexe/dimension suivent la facette.
   const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && details.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
@@ -321,13 +347,11 @@ export function modeleProfil(
   const categories = page.family === 'list' ? [...page.list.categories] : []
   const lignesDe = (valeurs: ReadonlyMap<string, number>, unites: ReadonlyMap<string, string>): LigneProfil[] =>
     categories.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null, unite: unites.get(detail) ?? null }))
-  if (!etat.territoire) return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
-  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
-  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
-    return ref
-      ? { etat: 'absent', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.`, lignes: lignesDe(new Map(), new Map()) }
-      : { etat: 'absent', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.', lignes: lignesDe(new Map(), new Map()) }
-  }
+  // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
+  const selection = selectionTerritoire(territoires, etat)
+  if (selection.kind === 'silence') return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
+  if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, lignes: lignesDe(new Map(), new Map()) }
+  const ref = selection.ref
   // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — le profil
   // lit la clé PROPRE de la page ; le sexe/dimension suivent la facette.
   const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && categories.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
