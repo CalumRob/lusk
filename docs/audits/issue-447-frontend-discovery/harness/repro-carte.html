@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Repro minimal maplibre — style positron local</title>
+<style>body{margin:0}#carte{width:800px;height:600px}</style>
+<script src="./maplibre.js"></script>
+</head>
+<body>
+<div id="carte"></div>
+<script>
+const log = (m) => { const p = document.createElement('pre'); p.textContent = m; document.body.appendChild(p) }
+const carte = new maplibregl.Map({
+  container: 'carte',
+  style: '/positron-nolabels.json',
+  transformRequest: (url) => ({ url }),
+  center: [-2.8, 48.2],
+  zoom: 8,
+})
+carte.on('load', () => log('ÉVÉNEMENT load déclenché'))
+carte.on('error', (e) => log('ÉVÉNEMENT error : ' + (e.error?.message ?? e.message)))
+carte.on('styledata', () => log('styledata — isStyleLoaded=' + carte.isStyleLoaded() + ' isSourceLoaded(openmaptiles)=' + carte.isSourceLoaded('openmaptiles')))
+window.__etat = () => ({ loaded: carte.loaded(), styleLoaded: carte.isStyleLoaded(), sourceLoaded: carte.isSourceLoaded('openmaptiles'), zoom: carte.getZoom(), center: carte.getCenter() })
+</script>
+</body>
+</html>

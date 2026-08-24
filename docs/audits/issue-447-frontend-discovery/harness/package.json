@@ -1,0 +1,13 @@
+{
+  "name": "lusk-audit-smoke-harness",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Loop de fumée navigateur déterministe — audit #447 (défauts frontend hors fiche et figures). Ne fait jamais partie du build de l'app : dépendances isolées ici.",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

@@ -1,0 +1,3144 @@
+{
+  "meta": {
+    "date": "2026-08-24T02:17:17.392Z",
+    "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "baseUrl": "http://localhost:5447",
+    "largeurs": [
+      "desktop 1440x900",
+      "mobile 390x844"
+    ],
+    "fixtures": {
+      "commune": "35238",
+      "epci": "243500139",
+      "departement": "35",
+      "region": "53"
+    }
+  },
+  "pages": [
+    {
+      "route": "accueil",
+      "url": "http://localhost:5447/",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "accueil-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 16
+      },
+      "captures": "accueil-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 16,
+      "stopsSansIndicateurFocus": [
+        {
+          "tag": "input",
+          "classe": "global-search__champ",
+          "nom": "Rechercher un territoire par son nom",
+          "outline": false,
+          "ombre": false
+        }
+      ]
+    },
+    {
+      "route": "carte",
+      "url": "http://localhost:5447/carte",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": false
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "MapLibre",
+            "w": 50,
+            "h": 14
+          }
+        ],
+        "focusables": 24
+      },
+      "captures": "carte-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 23,
+      "stopsSansIndicateurFocus": [
+        {
+          "tag": "input",
+          "classe": "global-search__champ",
+          "nom": "Rechercher un territoire par son nom",
+          "outline": false,
+          "ombre": false
+        }
+      ]
+    },
+    {
+      "route": "carte-programmes",
+      "url": "http://localhost:5447/carte?onglet=programmes",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": false
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "MapLibre",
+            "w": 50,
+            "h": 14
+          }
+        ],
+        "focusables": 28
+      },
+      "captures": "carte-programmes-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 27,
+      "stopsSansIndicateurFocus": [
+        {
+          "tag": "input",
+          "classe": "global-search__champ",
+          "nom": "Rechercher un territoire par son nom",
+          "outline": false,
+          "ombre": false
+        }
+      ]
+    },
+    {
+      "route": "communes",
+      "url": "http://localhost:5447/communes",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Les communes"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri entete-tri--actif",
+            "texte": "Nom",
+            "w": 49,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri",
+            "texte": "Code",
+            "w": 54,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri",
+            "texte": "EPCI",
+            "w": 49,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Acigné",
+            "w": 46,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Voir la fiche",
+            "w": 69,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Explorer sur la carte",
+            "w": 118,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Allaire",
+            "w": 42,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Voir la fiche",
+            "w": 69,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Explorer sur la carte",
+            "w": 118,
+            "h": 17
+          }
+        ],
+        "focusables": 3628
+      },
+      "captures": "communes-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "epcis",
+      "url": "http://localhost:5447/epcis",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Les EPCI"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri entete-tri--actif",
+            "texte": "Nom",
+            "w": 49,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri",
+            "texte": "Code",
+            "w": 54,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri",
+            "texte": "Département",
+            "w": 108,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Blavet Bellevue Océan Communauté",
+            "w": 242,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Voir la fiche",
+            "w": 69,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Explorer sur la carte",
+            "w": 118,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Brest Métropole",
+            "w": 108,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Voir la fiche",
+            "w": 69,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Explorer sur la carte",
+            "w": 118,
+            "h": 17
+          }
+        ],
+        "focusables": 204
+      },
+      "captures": "epcis-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "departements",
+      "url": "http://localhost:5447/departements",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Les départements"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri entete-tri--actif",
+            "texte": "Nom",
+            "w": 49,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "entete-tri",
+            "texte": "Code",
+            "w": 54,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Côtes-d'Armor",
+            "w": 97,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Voir la fiche",
+            "w": 69,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Explorer sur la carte",
+            "w": 118,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Finistère",
+            "w": 59,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Voir la fiche",
+            "w": 69,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "action",
+            "texte": "Explorer sur la carte",
+            "w": 118,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "lien-fiche",
+            "texte": "Ille-et-Vilaine",
+            "w": 89,
+            "h": 19
+          }
+        ],
+        "focusables": 28
+      },
+      "captures": "departements-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 28,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-commune",
+      "url": "http://localhost:5447/territoire/commune/35238",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Rennes"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Les communes",
+            "w": 87,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Rennes Métropole",
+            "w": 120,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Ille-et-Vilaine",
+            "w": 87,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Bretagne",
+            "w": 61,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "subvention-reveler",
+            "texte": "Voir les 33 autres domaines",
+            "w": 181,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          }
+        ],
+        "focusables": 25
+      },
+      "captures": "fiche-commune-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-epci",
+      "url": "http://localhost:5447/territoire/epci/243500139",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Rennes Métropole"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Les EPCI",
+            "w": 50,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Ille-et-Vilaine",
+            "w": 87,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Bretagne",
+            "w": 61,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "subvention-provenance-lien",
+            "texte": "communes de l'EPCI",
+            "w": 134,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          }
+        ],
+        "focusables": 24
+      },
+      "captures": "fiche-epci-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 19,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-departement",
+      "url": "http://localhost:5447/territoire/departement/35",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Ille-et-Vilaine"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Les départements",
+            "w": 106,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Bretagne",
+            "w": 61,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "subvention-provenance-lien",
+            "texte": "communes du département",
+            "w": 184,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 23
+      },
+      "captures": "fiche-departement-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 21,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-region",
+      "url": "http://localhost:5447/territoire/region/53",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Bretagne"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "subvention-provenance-lien",
+            "texte": "communes de Bretagne",
+            "w": 158,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 21
+      },
+      "captures": "fiche-region-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 21,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "indicateur-densite",
+      "url": "http://localhost:5447/indicateurs/demographie/densite",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Densité de population"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "button",
+            "classe": "active",
+            "texte": "Repères",
+            "w": 65,
+            "h": 20
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Carte",
+            "w": 45,
+            "h": 20
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "L’indicateur",
+            "w": 79,
+            "h": 20
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Territoire",
+            "w": 64,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Valeur",
+            "w": 50,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Rang",
+            "w": 44,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Acigné",
+            "w": 51,
+            "h": 22
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Voir sur la distribution",
+            "w": 139,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Allaire",
+            "w": 45,
+            "h": 22
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Voir sur la distribution",
+            "w": 139,
+            "h": 17
+          }
+        ],
+        "focusables": 2428
+      },
+      "captures": "indicateur-densite-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "indicateur-inconnu",
+      "url": "http://localhost:5447/indicateurs/demographie/cle-inexistante",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 12
+      },
+      "captures": "indicateur-inconnu-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 12,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "methodologie",
+      "url": "http://localhost:5447/methodologie",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Sources & Méthodes"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "lien-depot",
+            "texte": "github.com/CalumRob/lusk",
+            "w": 210,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "router-link-active router-link-exact-active pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "router-link-active router-link-exact-active",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 22
+      },
+      "captures": "methodologie-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 30,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "sources",
+      "url": "http://localhost:5447/sources",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Sources"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Densité de population",
+            "w": 168,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Évolution de la population depuis 1968",
+            "w": 291,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Taille moyenne des ménages",
+            "w": 218,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Structure par âge",
+            "w": 134,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Mix de logements",
+            "w": 134,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Statut d’occupation",
+            "w": 152,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Âge du bâti",
+            "w": 86,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Type de logement",
+            "w": 135,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Médiane prix au m²",
+            "w": 144,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Part de passoires thermiques",
+            "w": 223,
+            "h": 22
+          }
+        ],
+        "focusables": 63
+      },
+      "captures": "sources-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "a-propos",
+      "url": "http://localhost:5447/a-propos",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "À propos"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "router-link-active router-link-exact-active",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 13
+      },
+      "captures": "a-propos-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 13,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "route-inexistante",
+      "url": "http://localhost:5447/cette-route-nexiste-pas",
+      "largeur": "desktop",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "pied-fraicheur",
+            "texte": "Actualisation partielle du 23 août 2026 ",
+            "w": 391,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 12
+      },
+      "captures": "route-inexistante-desktop.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 12,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "accueil",
+      "url": "http://localhost:5447/",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 12
+      },
+      "captures": "accueil-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 12,
+      "stopsSansIndicateurFocus": [
+        {
+          "tag": "input",
+          "classe": "global-search__champ",
+          "nom": "Rechercher un territoire par son nom",
+          "outline": false,
+          "ombre": false
+        }
+      ]
+    },
+    {
+      "route": "carte",
+      "url": "http://localhost:5447/carte",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": false
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "MapLibre",
+            "w": 50,
+            "h": 14
+          }
+        ],
+        "focusables": 21
+      },
+      "captures": "carte-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 20,
+      "stopsSansIndicateurFocus": [
+        {
+          "tag": "input",
+          "classe": "global-search__champ",
+          "nom": "Rechercher un territoire par son nom",
+          "outline": false,
+          "ombre": false
+        }
+      ]
+    },
+    {
+      "route": "carte-programmes",
+      "url": "http://localhost:5447/carte?onglet=programmes",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": false
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "MapLibre",
+            "w": 50,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "© DINUM (data.gouv.fr)",
+            "w": 125,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "© OpenMapTiles",
+            "w": 90,
+            "h": 14
+          }
+        ],
+        "focusables": 28
+      },
+      "captures": "carte-programmes-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 24,
+      "stopsSansIndicateurFocus": [
+        {
+          "tag": "input",
+          "classe": "global-search__champ",
+          "nom": "Rechercher un territoire par son nom",
+          "outline": false,
+          "ombre": false
+        }
+      ]
+    },
+    {
+      "route": "communes",
+      "url": "http://localhost:5447/communes",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Les communes"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          }
+        ],
+        "focusables": 3621
+      },
+      "captures": "communes-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "epcis",
+      "url": "http://localhost:5447/epcis",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Les EPCI"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          }
+        ],
+        "focusables": 197
+      },
+      "captures": "epcis-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "departements",
+      "url": "http://localhost:5447/departements",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Les départements"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Voir la fiche",
+            "w": 77,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Explorer sur la carte",
+            "w": 132,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          }
+        ],
+        "focusables": 22
+      },
+      "captures": "departements-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 22,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-commune",
+      "url": "http://localhost:5447/territoire/commune/35238",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Rennes"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Les communes",
+            "w": 87,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Rennes Métropole",
+            "w": 120,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Ille-et-Vilaine",
+            "w": 87,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Bretagne",
+            "w": 61,
+            "h": 21
+          },
+          {
+            "tag": "button",
+            "classe": "subvention-reveler",
+            "texte": "Voir les 33 autres domaines",
+            "w": 181,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          }
+        ],
+        "focusables": 21
+      },
+      "captures": "fiche-commune-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 32,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-epci",
+      "url": "http://localhost:5447/territoire/epci/243500139",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Rennes Métropole"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Les EPCI",
+            "w": 50,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Ille-et-Vilaine",
+            "w": 87,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Bretagne",
+            "w": 61,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "subvention-provenance-lien",
+            "texte": "communes de l'EPCI",
+            "w": 134,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 20
+      },
+      "captures": "fiche-epci-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 15,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-departement",
+      "url": "http://localhost:5447/territoire/departement/35",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Ille-et-Vilaine"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Les départements",
+            "w": 106,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "contexte-switcher-lien",
+            "texte": "Bretagne",
+            "w": 61,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "subvention-provenance-lien",
+            "texte": "communes du département",
+            "w": 184,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 19
+      },
+      "captures": "fiche-departement-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 17,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "fiche-region",
+      "url": "http://localhost:5447/territoire/region/53",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Bretagne"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Accueil",
+            "w": 43,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "subvention-provenance-lien",
+            "texte": "communes de Bretagne",
+            "w": 158,
+            "h": 19
+          },
+          {
+            "tag": "a",
+            "classe": "programmes-lien",
+            "texte": "Subventions de la Région Bretagne",
+            "w": 254,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 17
+      },
+      "captures": "fiche-region-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 17,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "indicateur-densite",
+      "url": "http://localhost:5447/indicateurs/demographie/densite",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Densité de population"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "button",
+            "classe": "active",
+            "texte": "Repères",
+            "w": 65,
+            "h": 20
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Carte",
+            "w": 45,
+            "h": 20
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "L’indicateur",
+            "w": 79,
+            "h": 20
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Territoire",
+            "w": 64,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Valeur",
+            "w": 50,
+            "h": 17
+          },
+          {
+            "tag": "button",
+            "classe": "",
+            "texte": "Rang",
+            "w": 44,
+            "h": 17
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Acigné",
+            "w": 43,
+            "h": 18
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Allaire",
+            "w": 38,
+            "h": 18
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Allineuc",
+            "w": 50,
+            "h": 18
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Amanlis",
+            "w": 49,
+            "h": 18
+          }
+        ],
+        "focusables": 2424
+      },
+      "captures": "indicateur-densite-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "indicateur-inconnu",
+      "url": "http://localhost:5447/indicateurs/demographie/cle-inexistante",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 8
+      },
+      "captures": "indicateur-inconnu-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 16,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "methodologie",
+      "url": "http://localhost:5447/methodologie",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Sources & Méthodes"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "lien-depot",
+            "texte": "github.com/CalumRob/lusk",
+            "w": 210,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "router-link-active router-link-exact-active",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 18
+      },
+      "captures": "methodologie-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 11,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "sources",
+      "url": "http://localhost:5447/sources",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "Sources"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Densité de population",
+            "w": 168,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Taille moyenne des ménages",
+            "w": 218,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Structure par âge",
+            "w": 134,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Mix de logements",
+            "w": 134,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Statut d’occupation",
+            "w": 152,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Âge du bâti",
+            "w": 86,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Type de logement",
+            "w": 135,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Médiane prix au m²",
+            "w": 144,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Part de passoires thermiques",
+            "w": 223,
+            "h": 22
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Part des éco-activités",
+            "w": 168,
+            "h": 22
+          }
+        ],
+        "focusables": 59
+      },
+      "captures": "sources-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 40,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "a-propos",
+      "url": "http://localhost:5447/a-propos",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [
+          "À propos"
+        ],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "router-link-active router-link-exact-active",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 9
+      },
+      "captures": "a-propos-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 9,
+      "stopsSansIndicateurFocus": []
+    },
+    {
+      "route": "route-inexistante",
+      "url": "http://localhost:5447/cette-route-nexiste-pas",
+      "largeur": "mobile",
+      "console": [
+        {
+          "niveau": "warning",
+          "texte": "[VUE_ROUTER_R0004] No match found for location with path \"/cette-route-nexiste-pas\"\n├▶ fix: Add a route matching this path or check for typos in the location.\n╰▶ see: https://router.vuejs.org/guide/essentials/dynamic-matching.html#Catch-all-404-Not-found-Route"
+        }
+      ],
+      "pageerrors": [],
+      "requetesEchecs": [],
+      "http": [],
+      "probe": {
+        "titre": "Lusk — Observatoire des territoires bretons",
+        "langue": "fr",
+        "h1": [],
+        "jalons": {
+          "header": true,
+          "nav": true,
+          "main": true,
+          "footer": true
+        },
+        "controlesSansNom": [],
+        "imagesSansAlt": 0,
+        "debordeX": 0,
+        "ciblesTropPetites": [
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Calum Robertson",
+            "w": 104,
+            "h": 14
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "Sources & Méthodes",
+            "w": 134,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "À propos",
+            "w": 57,
+            "h": 21
+          },
+          {
+            "tag": "a",
+            "classe": "",
+            "texte": "calumrobertson.fr",
+            "w": 117,
+            "h": 21
+          }
+        ],
+        "focusables": 8
+      },
+      "captures": "route-inexistante-mobile.png",
+      "premierTab": {
+        "tag": "a",
+        "classe": "lien-evitement",
+        "nom": "Passer au contenu",
+        "outline": true,
+        "ombre": false
+      },
+      "parcoursClavier": 8,
+      "stopsSansIndicateurFocus": []
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "combobox-recherche",
+      "largeur": "desktop",
+      "pageerrors": [],
+      "console": [],
+      "requetesEchecs": [],
+      "http": [],
+      "urlApresEntree": "http://localhost:5447/territoire/commune/35238",
+      "optionsProposees": 4,
+      "succes": true
+    },
+    {
+      "scenario": "menu-donnees",
+      "largeur": "desktop",
+      "pageerrors": [],
+      "console": [],
+      "requetesEchecs": [],
+      "http": [],
+      "ouvertAuClic": true,
+      "fermeParEscape": true,
+      "navigationSousMenu": "http://localhost:5447/communes",
+      "succes": true
+    },
+    {
+      "scenario": "overlay-rechercher",
+      "largeur": "desktop",
+      "pageerrors": [],
+      "console": [],
+      "requetesEchecs": [],
+      "http": [],
+      "panneauVisible": true,
+      "focusDansChamp": true,
+      "fermeParEscape": true,
+      "focusRenduAuBouton": true,
+      "succes": true
+    },
+    {
+      "scenario": "tiroir-mobile",
+      "largeur": "mobile",
+      "pageerrors": [],
+      "console": [],
+      "requetesEchecs": [],
+      "http": [],
+      "tiroirOuvert": true,
+      "focusDansTiroir": true,
+      "pageDefileDerriere": false,
+      "fermeApresNavigation": true,
+      "urlFinale": "http://localhost:5447/departements",
+      "fermeParEscape": true,
+      "succes": true
+    },
+    {
+      "scenario": "etat-erreur-territoires-abortes",
+      "pageerrors": [],
+      "console": [
+        {
+          "niveau": "error",
+          "texte": "Failed to load resource: net::ERR_FAILED"
+        }
+      ],
+      "requetesEchecs": [
+        {
+          "url": "http://localhost:5447/data/territoires.json",
+          "erreur": "net::ERR_FAILED"
+        }
+      ],
+      "http": [],
+      "messageErreurVisible": true,
+      "boutonReessayer": true,
+      "enTeteUtilisable": true,
+      "capture": "etat-erreur-accueil.png",
+      "succes": true
+    },
+    {
+      "scenario": "recherche-sans-resultat",
+      "pageerrors": [],
+      "console": [],
+      "requetesEchecs": [],
+      "http": [],
+      "etatVideVisible": true,
+      "succes": true
+    },
+    {
+      "scenario": "theme-milieux-absent-404",
+      "pageerrors": [],
+      "console": [
+        {
+          "niveau": "error",
+          "texte": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+        }
+      ],
+      "requetesEchecs": [],
+      "http": [
+        {
+          "statut": 404,
+          "url": "http://localhost:5447/data/indicateurs_milieux.json"
+        }
+      ],
+      "ongletsPresents": [
+        "Aperçu",
+        "Mobilité",
+        "Démographie",
+        "Habitat",
+        "Économie",
+        "Voir les 33 autres domaines"
+      ],
+      "milieuAbsent": true,
+      "succes": true
+    }
+  ]
+}

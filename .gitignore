@@ -28,3 +28,9 @@
 !/docs/
 /docs/*
 !/docs/adr/
+
+# Audit reports + repeatable harness/evidence (docs/audits/, issue #447 and
+# the audit lanes) — the diagnosis artifacts are deliverables, their
+# dependencies are not.
+!/docs/audits/
+/docs/audits/*/harness/node_modules/
