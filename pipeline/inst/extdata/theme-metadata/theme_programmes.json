@@ -112,7 +112,116 @@
       "sources": [
         "subventions_scdl"
       ],
-      "family": "scalar"
+      "family": "scalar",
+      "comparison": {
+        "dimension": "2025"
+      }
+    },
+    "subventions_par_domaine": {
+      "indicator": "subventions_par_domaine",
+      "label": "Subventions régionales par domaine",
+      "definition": "Le profil complet des subventions régionales attribuées au territoire : le montant annuel ventilé par domaine des politiques régionales (données SCDL).",
+      "unit": "€",
+      "calculation": "Somme des subventions attribuées au territoire pour son année de référence, publiée par domaine (`programme_libl`) ; la ventilation complète est publiée, jamais un top-N.",
+      "direction": "high",
+      "caveats": "Un montant attribué est un fait d'action publique, jamais une mesure de résultat. L'absence d'un domaine signifie qu'aucune subvention n'est enregistrée pour ce territoire dans ce domaine dans le jeu source, pas que le montant vaut zéro. La ventilation est publiée au niveau communal ; l'année de référence est déclarée dans l'URL.",
+      "levels": [
+        "commune"
+      ],
+      "sources": [
+        "subventions_scdl"
+      ],
+      "family": "list",
+      "list": {
+        "categories": [
+          "Accompagnement de projets éducatifs des lycées et des initiatives des jeunes",
+          "Accompagnement des dynamiques territoriales emploi formation",
+          "Accompagnement des entreprises et de l'emploi",
+          "Accompagnement des investissements immobiliers des établissements privés",
+          "Actions européennes et internationales",
+          "Agriculture, filière bois et alimentation",
+          "Apprentissage",
+          "Biodiversité",
+          "Cinéma, livre, radio et pratiques culturelles",
+          "Contractualisation avec les territoires",
+          "Création, développement et transmission d'entreprises",
+          "Dynamiques territoriales",
+          "Développement des secteurs clés de l'économie bretonne",
+          "Eau",
+          "Economie sociale et solidaire et innovation sociale",
+          "Energie et ressources",
+          "Enseignement supérieur et vie étudiante",
+          "Equipements des lycées publics",
+          "Fonctionnement des lycées publics",
+          "Fonds d'intervention régional",
+          "Formation qualifiante",
+          "Formations sanitaires et sociales",
+          "Information et promotion",
+          "Infrastructures de mobilités",
+          "Innovation et économie de la connaissance",
+          "Inventaire et valorisation du patrimoine",
+          "Jeunesse, égalité des droits et vie associative",
+          "Langues de Bretagne",
+          "Orientation et information sur les métiers",
+          "Participation au fonctionnement des établissements privés",
+          "Projets individuels de formation et qualification",
+          "Pêche, aquaculture et développement maritime",
+          "Recherche",
+          "Spectacle vivant, arts plastiques et pratiques culturelles",
+          "Sports",
+          "Structuration de l'économie bretonne et économie circulaire",
+          "Tourisme",
+          "Usages numériques et cybersécurité",
+          "Vie des stagiaires de la formation professionnelle"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "Accompagnement de projets éducatifs des lycées et des initiatives des jeunes",
+          "Accompagnement des dynamiques territoriales emploi formation",
+          "Accompagnement des entreprises et de l'emploi",
+          "Accompagnement des investissements immobiliers des établissements privés",
+          "Actions européennes et internationales",
+          "Agriculture, filière bois et alimentation",
+          "Apprentissage",
+          "Biodiversité",
+          "Cinéma, livre, radio et pratiques culturelles",
+          "Contractualisation avec les territoires",
+          "Création, développement et transmission d'entreprises",
+          "Dynamiques territoriales",
+          "Développement des secteurs clés de l'économie bretonne",
+          "Eau",
+          "Economie sociale et solidaire et innovation sociale",
+          "Energie et ressources",
+          "Enseignement supérieur et vie étudiante",
+          "Equipements des lycées publics",
+          "Fonctionnement des lycées publics",
+          "Fonds d'intervention régional",
+          "Formation qualifiante",
+          "Formations sanitaires et sociales",
+          "Information et promotion",
+          "Infrastructures de mobilités",
+          "Innovation et économie de la connaissance",
+          "Inventaire et valorisation du patrimoine",
+          "Jeunesse, égalité des droits et vie associative",
+          "Langues de Bretagne",
+          "Orientation et information sur les métiers",
+          "Participation au fonctionnement des établissements privés",
+          "Projets individuels de formation et qualification",
+          "Pêche, aquaculture et développement maritime",
+          "Recherche",
+          "Spectacle vivant, arts plastiques et pratiques culturelles",
+          "Sports",
+          "Structuration de l'économie bretonne et économie circulaire",
+          "Tourisme",
+          "Usages numériques et cybersécurité",
+          "Vie des stagiaires de la formation professionnelle"
+        ],
+        "detail": "Contractualisation avec les territoires",
+        "dimension": "2025",
+        "unit": "€",
+        "direction": "high"
+      }
     }
   },
   "source_records": {

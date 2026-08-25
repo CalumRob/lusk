@@ -78,14 +78,15 @@ describe('verifierPariteListes — la garde listes ↔ payload (#439)', () => {
 // (test-theme-metadata.R) : les artefacts que l'app fetch réellement, lus
 // depuis public/data et le canon épinglé par le motif établi
 // (theme-metadata-parity.spec.ts). L'énumération y est le devoir : reseaux
-// (Mobilité) est la SEULE page de famille « list » publiée à travers les cinq
-// thèmes — jamais une famille orpheline, jamais une seconde liste.
+// (Mobilité) puis subventions_par_domaine (#462) sont LES DEUX pages de
+// famille « list » publiées à travers les six thèmes — jamais une famille
+// orpheline, jamais une liste non déclarée.
 describe('verifierPariteListes — le payload committé (#439)', () => {
-  const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
+  const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'programmes'] as const
   const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
   const publicDir = join(process.cwd(), '..', 'public', 'data')
 
-  it('est en parité et reseaux est LA SEULE liste publiée à travers les cinq thèmes', () => {
+  it('est en parité et les DEUX listes publiées sont déclarées à travers les six thèmes (#462)', () => {
     const pagesListes: string[] = []
     for (const theme of themes) {
       const metadata = JSON.parse(readFileSync(join(canonicalDir, `theme_${theme}.json`), 'utf8')) as ThemeMetadata
@@ -95,6 +96,6 @@ describe('verifierPariteListes — le payload committé (#439)', () => {
       verifierPariteListes({ territoires: [], indicateurs: faits, histoires: [], apercu: null, runReport: null, vintages: null, programmes: null, themeMetadata: { [theme]: metadata } })
       pagesListes.push(`${theme}:${cles.join(',')}`)
     }
-    expect(pagesListes).toEqual(['mobilite:reseaux'])
+    expect(pagesListes).toEqual(['mobilite:reseaux', 'programmes:subventions_par_domaine'])
   })
 })

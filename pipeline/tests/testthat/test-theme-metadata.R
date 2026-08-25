@@ -863,12 +863,12 @@ test_that("verifier_parite_listes : une catégorie morte ou un détail publié a
     "absent des catégories")
 })
 
-test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et reseaux est LA SEULE liste publiée (#439)", {
+test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et les DEUX listes publiées sont déclarées (#439, #462)", {
   # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
   # verifierPariteListes au chargement de l'app. L'énumération est le devoir :
-  # reseaux (Mobilité) est la SEULE page de famille « list » publiée à travers
-  # les cinq thèmes — jamais une famille orpheline, jamais une seconde liste
-  # non déclarée.
+  # reseaux (Mobilité) puis subventions_par_domaine (#462) sont LES DEUX pages
+  # de famille « list » publiées à travers les SIX thèmes — jamais une famille
+  # orpheline, jamais une liste non déclarée.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
 
@@ -883,8 +883,82 @@ test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et resea
     verifier_parite_listes(meta, faits)
     pages_listes[[paste(theme, pour_theme, sep = ":")]] <- pour_theme
   }
-  expect_length(pages_listes, 1L)
-  expect_identical(names(pages_listes), "mobilite:reseaux")
+  expect_length(pages_listes, 2L)
+  expect_identical(names(pages_listes), c("mobilite:reseaux", "programmes:subventions_par_domaine"))
+})
+
+# La Page d'indicateur « profil/liste » de subventions_par_domaine (#462) :
+# le descripteur épinglé de Programmes et subventions publie la ventilation
+# par domaine comme page de famille « list » — le profil COMPLET des 39
+# domaines canoniques reste visible et la catégorie comparée pilote médiane,
+# extrêmes, tableau et carte par les seams partagés (#439). Le contrat est
+# prouvé ici contre le payload COMMITTÉ : la parité listes ↔ faits, le compte
+# des domaines verrouillé bruyamment, la facette déclarée dans l'axe, et la
+# publication RÉELLE du canon (le trait `metadata` du descripteur).
+
+test_that("la page liste subventions_par_domaine publie valablement contre le payload committé (#462)", {
+  meta <- lire_theme_metadata("programmes")
+  page <- meta$indicator_pages$subventions_par_domaine
+
+  # la famille « list » est déclarée, au SEUL niveau publié de la clé — la
+  # ventilation par domaine est un fait communal, jamais inventé à un autre
+  expect_identical(page$family, "list")
+  expect_identical(unlist(page$levels, use.names = FALSE), "commune")
+
+  racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
+  skip_if_not(dir.exists(racine_public), "public/data absent - la racine du dépôt est introuvable")
+  faits <- jsonlite::fromJSON(file.path(racine_public, "indicateurs_programmes.json"))
+
+  # la parité listes ↔ faits COMMITTÉS — le miroir exact de
+  # verifierPariteListes au chargement de l'app
+  expect_error(verifier_parite_listes(meta, faits), NA)
+
+  # l'énumération LOUDE : les 39 domaines déclarés SONT les détails publiés,
+  # la catégorie comparée vit dans l'axe fermé qui couvre les catégories
+  declarees <- unlist(page$list$categories, use.names = FALSE)
+  details_publies <- unique(as.character(faits$detail[faits$key == "subventions_par_domaine" &
+                                                         !is.na(faits$detail)]))
+  expect_length(declarees, 39L)
+  expect_setequal(declarees, details_publies)
+  expect_setequal(unlist(page$comparison$details, use.names = FALSE), declarees)
+  expect_true(page$comparison$detail %in% declarees)
+
+  # la page scalaire existante déclare SA dimension publiée — sans elle la
+  # facette résout « toute dimension » côté modèle mais AUCUNE ligne côté
+  # dispatch (le filtre strict), et ses Repères rendraient « indisponible »
+  dimension_publiee <- unique(as.character(faits$dimension[faits$key == "subventions_annuelles"]))
+  expect_identical(unlist(meta$indicator_pages$subventions_annuelles$comparison$dimension,
+                          use.names = FALSE), dimension_publiee)
+
+  # la publication RÉELLE du canon : le trait `metadata` passe la porte de
+  # validation (sources croisées contre SES vintages) et écrit SON fichier
+  descripteur <- theme_programmes()
+  sortie <- file.path(tempdir(), "programmes-pages-462")
+  dir.create(sortie, showWarnings = FALSE)
+  on.exit(unlink(sortie, recursive = TRUE), add = TRUE)
+  expect_no_error(
+    publier_theme_metadata(descripteur$metadata(), sortie,
+                           vintages = descripteur$vintages(),
+                           theme_attendu = "programmes")
+  )
+  relu <- jsonlite::fromJSON(file.path(sortie, "theme_programmes.json"),
+                             simplifyVector = FALSE)
+  expect_error(valider_theme_metadata(relu), NA)
+
+  # la stabilité BYTE du contrat (#462) : le canon republié par le trait
+  # `metadata` est BIT À BIT l'artefact COMMITTÉ que l'app fetch — jamais un
+  # écart de sérialisation entre ce qui est validé et ce qui est publié
+  publie <- readBin(file.path(sortie, "theme_programmes.json"), "raw",
+                    n = file.info(file.path(sortie, "theme_programmes.json"))$size)
+  commis <- readBin(file.path(racine_public, "theme_programmes.json"), "raw",
+                    n = file.info(file.path(racine_public, "theme_programmes.json"))$size)
+  expect_identical(
+    publie, commis,
+    info = paste0("Programmes — le canon republié n'est PAS bit à bit ",
+                  "public/data/theme_programmes.json : régénérer l'artefact ",
+                  "committé par le seam (publier_theme_metadata, trait ",
+                  "`metadata`) après toute modification du canon épinglé")
+  )
 })
 
 test_that("valider_theme_metadata : une liste sans libellé canonical ou hors axe échoue fort (#439)", {
