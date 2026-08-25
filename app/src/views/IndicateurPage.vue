@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
-import { modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
+import { modeleComposition, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { NiveauIndicateur, OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
 import { useGeometrie } from '@/geo/useGeometrie'
@@ -82,6 +82,15 @@ const relation = computed(() => {
   const { niveau, departement, epci, territoire } = model.value.state
   return modeleRelation(model.value.rows, facts.value, familyDispatch.value.facet, page.value, payload.value.territoires, { niveau, departement, epci, territoire })
 })
+// La composition contextualisée (#472), dans le MÊME périmètre résolu que la
+// comparaison — les parts du territoire mis en avant face à la médiane du
+// périmètre ; les libellés canonical viennent des métadonnées du thème
+// (payload-owned, jamais codés en dur).
+const composition = computed(() => {
+  if (!familyDispatch.value || familyDispatch.value.family !== 'composition' || !page.value || !model.value) return null
+  const { niveau, departement, epci, territoire } = model.value.state
+  return modeleComposition(facts.value, familyDispatch.value.facet, page.value, payload.value.territoires, metadata.value?.detail_labels?.[indicator.value] ?? {}, { niveau, departement, epci, territoire })
+})
 const themeVars = computed(() => themeValide.value ? themeStyle(theme.value as Theme) : undefined)
 const directionGlyph = computed(() => familyDispatch.value?.facet.direction === 'low' ? '▼' : '▲')
 const directionText = computed(() => familyDispatch.value?.facet.direction === 'low' ? 'moins = mieux' : 'plus = mieux')
@@ -123,7 +132,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
            les familles, dérivée de l'état résolu — vivante aux changements d'URL. -->
       <NoteContexteIndicateur :etat="model.state" :territoires="payload.territoires" />
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
-       <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch" :modele="trajectoire" :signature="distribution" :profil="profil" :relation="relation">
+        <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch" :modele="trajectoire" :signature="distribution" :profil="profil" :relation="relation" :composition="composition">
          <template #default>
           <div class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterValeur({ value: model!.median, unit: familyDispatch.facet.unit }) }} <small>{{ familyDispatch.facet.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
           <div class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>

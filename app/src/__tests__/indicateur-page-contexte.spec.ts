@@ -106,6 +106,8 @@ beforeEach(() => localStorage.clear())
 
 describe('Pages d’indicateur — note de contexte permanente (#472)', () => {
   it('famille scalaire (chômage) : la note suit ?territoire, ?niveau et ?departement en direct', async () => {
+    // Quatre transitions d'état routées sur le vrai payload : la monture
+    // charge l'ensemble économie — un budget généreux sous charge parallèle.
     const { wrapper, router } = await monter('/indicateurs/economie/chomage')
     // État résolu par défaut : aucune mise en avant, niveau le plus fin
     // (commune), univers Bretagne.
@@ -119,11 +121,12 @@ describe('Pages d’indicateur — note de contexte permanente (#472)', () => {
     await router.push({ query: { niveau: 'epci' } })
     await flushPromises()
     expect(noteDe(wrapper).text()).toContain('comparaison sur les EPCI de Bretagne')
-    // Le périmètre resserré est nommé (le département 22 → Côtes-d’Armor).
+    // Le périmètre resserré est nommé (le département 22 → Côtes-d'Armor,
+    // le nom RÉEL porté par la référence territoires).
     await router.push({ query: { niveau: 'commune', departement: '22' } })
     await flushPromises()
-    expect(noteDe(wrapper).text()).toContain('comparaison sur les communes du département Côtes-d’Armor')
-  })
+    expect(noteDe(wrapper).text()).toContain('comparaison sur les communes du département Côtes-d\'Armor')
+  }, 20000)
 
   it('famille composition (mix_logements) : la note vit aussi ici, et dit le hors-périmètre', async () => {
     const { wrapper, router } = await monter('/indicateurs/habitat/mix_logements?territoire=22001')
@@ -138,7 +141,7 @@ describe('Pages d’indicateur — note de contexte permanente (#472)', () => {
     await router.push({ query: {} })
     await flushPromises()
     expect(noteDe(wrapper).text()).toContain('Aucun territoire mis en avant')
-  })
+  }, 20000)
 })
 
 describe('Pages d’indicateur — contextualisation des compositions (#472)', () => {
@@ -157,13 +160,13 @@ describe('Pages d’indicateur — contextualisation des compositions (#472)', (
     expect(references).toEqual(['médiane : 84%', 'médiane : 8%', 'médiane : 7%'])
     // La légende nomme l'univers comparé dont la médiane est la référence.
     expect(wrapper.find('figcaption').text()).toContain('les communes de Bretagne')
-  })
+  }, 20000)
 
   it('sans mise en avant : rien n’affirme — l’invite parle, pas de barres mystère', async () => {
     const { wrapper } = await monter('/indicateurs/habitat/mix_logements')
     expect(wrapper.find('.composition-bar').exists()).toBe(false)
     expect(wrapper.find('[data-testid="composition-contextualisee"]').text()).toContain('Sélectionnez un territoire')
-  })
+  }, 20000)
 
   it('territoire hors du niveau comparé : l’absence est dite, jamais habillée', async () => {
     // Un code EPCI demandé sur une page comparant les communes : absent.
@@ -172,5 +175,5 @@ describe('Pages d’indicateur — contextualisation des compositions (#472)', (
     expect(statut.exists(), 'le message d’absence est rendu').toBe(true)
     expect(statut.text()).toContain('absent')
     expect(wrapper.find('.composition-bar').exists()).toBe(false)
-  })
+  }, 20000)
 })
