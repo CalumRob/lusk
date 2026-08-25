@@ -690,10 +690,11 @@ export function formaterLicence(code: string): string {
 export interface SourceConsumerRecord {
   key: string
   label: string
-  /** Le thème construit du consommateur — le registre Méthodes only (#408 :
-   *  la matrice Sources documente les thèmes du registre, la section dédiée
-   *  de Programmes et subventions porte les siennes). */
-  theme: ThemeConstruit
+  /** Le thème du consommateur — tout thème publiant source_records (#467 :
+   *  les Pages d'indicateur de Programmes et subventions déclarent leurs
+   *  sources par le MÊME contrat, la jointure ne les exclut plus ; le
+   *  registre éditorial Méthodes (THEMES_METHODES) reste le sien). */
+  theme: Theme
   caveat: string | null
 }
 
@@ -818,17 +819,18 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
     })
   }
 
-  const metadataConsumers: Array<{ theme: ThemeConstruit; key: string; primary: string; secondary: string[] }> = []
+  const metadataConsumers: Array<{ theme: Theme; key: string; primary: string; secondary: string[] }> = []
   const canonicalThemes = new Set<Theme>()
   for (const [theme, metadata] of Object.entries(payload.themeMetadata ?? {})) {
     if (!metadata?.source_records) continue
-    // #408 : la matrice Sources documente les thèmes du registre Méthodes —
-    // les sources de Programmes et subventions vivent dans SA section dédiée
-    // (methodes/programmes.ts), jamais dans cette jointure générique.
-    if (!(THEMES_CONSTRUITS as readonly string[]).includes(theme)) continue
+    // #408, supplanté #467 : la jointure couvre TOUT thème publiant
+    // source_records — les Pages d'indicateur du sixième thème déclarent
+    // leurs sources par le même contrat et l'autorité publiée doit les
+    // résoudre (L'indicateur, la page Sources). Le registre éditorial des
+    // cinq thèmes (THEMES_METHODES, la matrice /methodologie) reste inchangé.
     canonicalThemes.add(theme as Theme)
     for (const [key, primary] of Object.entries(metadata?.sources ?? {})) {
-      metadataConsumers.push({ theme: theme as ThemeConstruit, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })
+      metadataConsumers.push({ theme: theme as Theme, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })
     }
   }
   // Old fixtures and pre-migration payloads have no source_records metadata;
