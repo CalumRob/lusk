@@ -105,6 +105,28 @@
     "family": "pyramid",
     "pyramid": { "dimensions": ["detail", "sex"] },
     "comparison": { "details": ["<15", "15-24", "25-39", "40-54", "55-64", "65-79", "80+"], "detail": "<15", "sexes": ["F", "M"], "sex": "F", "unit": "%", "labels": { "<15": "Moins de 15 ans", "15-24": "15 à 24 ans", "25-39": "25 à 39 ans", "40-54": "40 à 54 ans", "55-64": "55 à 64 ans", "65-79": "65 à 79 ans", "80+": "80 ans et plus" } }
+  },
+  "evolution_1968": {
+    "indicator": "evolution_1968",
+    "label": "Évolution de la population depuis 1968",
+    "definition": "Variation relative de la population du territoire entre les recensements de 1968 et de 2023.",
+    "unit": "%",
+    "calculation": "Population 2023 moins population 1968, divisée par la population 1968.",
+    "direction": "high",
+    "caveats": "La valeur est signée : négative, elle traduit une population en recul depuis 1968. La comparaison entre territoires lit des écarts de valeurs, jamais un rapport ou un multiple entre valeurs signées.",
+    "levels": ["commune", "epci", "departement"],
+    "sources": ["serie_historique"]
+  },
+  "taille_menages": {
+    "indicator": "taille_menages",
+    "label": "Taille moyenne des ménages",
+    "definition": "Le nombre moyen de personnes par ménage : la population des ménages rapportée au nombre de ménages du territoire.",
+    "unit": "pers./ménage",
+    "calculation": "Population des ménages divisée par le nombre de ménages du territoire.",
+    "direction": "high",
+    "caveats": "Un ménage regroupe les occupants d’une même résidence principale ; la moyenne ne décrit pas les configurations familiales d’un territoire.",
+    "levels": ["commune", "epci", "departement"],
+    "sources": ["menages"]
   }},
   "source_records": {
     "serie_historique": {

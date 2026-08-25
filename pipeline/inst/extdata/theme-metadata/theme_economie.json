@@ -59,6 +59,41 @@
     "lq": "Location quotient (LQ)",
     "n": "Nombre d'établissements"
   },
+  "indicator_pages": {
+    "effectifs_salaries": {
+      "indicator": "effectifs_salaries",
+      "label": "Effectifs salariés (lieu de travail)",
+      "definition": "L'emploi salarié au lieu de travail : le total des effectifs salariés des établissements du territoire, tous secteurs confondus.",
+      "unit": "salariés",
+      "calculation": "Somme des effectifs salariés des établissements du territoire ; un EPCI ou un département porte la somme de ses communes.",
+      "direction": "high",
+      "caveats": "Les effectifs se localisent au lieu de travail, jamais au domicile ; une cellule source non diffusée laisse le territoire sans valeur.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["flores_a88"]
+    },
+    "chomage": {
+      "indicator": "chomage",
+      "label": "Chômage (population active)",
+      "definition": "La part de la population active âgée de 15 à 64 ans au chômage au sens du recensement.",
+      "unit": "%",
+      "calculation": "Chômeurs au sens du recensement divisés par la population active de 15 à 64 ans ; aux niveaux supérieurs, la somme des chômeurs divisée par la somme des actifs.",
+      "direction": "low",
+      "caveats": "Un taux au sens du recensement : ni la mesure BIT de l'enquête Emploi, ni celle de France Travail. La collecte est lissée sur cinq ans et les petits effectifs appellent la prudence.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["rp_chomage"]
+    },
+    "eco_activites": {
+      "indicator": "eco_activites",
+      "label": "Part des éco-activités",
+      "definition": "La place des éco-activités dans le tissu productif : la part des établissements actifs relevant des classes d'éco-activités (EGSS).",
+      "unit": "%",
+      "calculation": "Établissements actifs des classes d'éco-activités divisés par le nombre total d'établissements actifs ; aux niveaux supérieurs, les sommes des deux côtés.",
+      "direction": "high",
+      "caveats": "La part mesure le tissu d'établissements, jamais l'emploi ni les compétences ; sous le plancher communal de cinq établissements actifs, elle reste déclarée mais manquante.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["sirene_snapshot"]
+    }
+  },
   "source_records": {
     "flores_a88": { "dataset": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/statistiques/8266010", "licence": "Licence Ouverte 2.0", "vintage": "2024", "freshness": "31 mars 2026", "vintages": [{ "id": "flores_a88", "label": "Millésime 2024", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-03-31" }] },
     "rp_chomage": { "dataset": "INSEE — Population active et chômage (dossier complet)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/statistiques/9002680", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "rp_chomage", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }] },
