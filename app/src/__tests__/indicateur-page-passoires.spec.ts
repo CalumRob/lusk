@@ -3,7 +3,13 @@ import { join } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Les montures ROUTÉES ci-dessous lisent le VRAI payload habitat (~9 000
+// lignes validées au premier chargement) : sous charge parallèle le premier
+// monture dépasse parfois le timeout par défaut — le même flake #185 que
+// payload-contract. On relève le plafond du fichier, jamais les verrous.
+vi.setConfig({ testTimeout: 30_000 })
 
 import IndicateurView from '../views/IndicateurView.vue'
 import { chargerFichier } from '../payload/loader'
