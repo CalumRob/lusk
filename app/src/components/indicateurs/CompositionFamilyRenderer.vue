@@ -49,7 +49,7 @@ function barStyle(partie: PartieComposition): Record<string, string> {
         <p v-if="manquantes.length" class="composition-note" role="note">Composition incomplète — sans valeur publiée à ce niveau : {{ manquantes.join(', ') }}.</p>
       </template>
     </div>
-    <figcaption><template v-if="composition?.nom">Les segments portent la composition de {{ composition.nom }} — votre territoire, mis en avant depuis l’URL.</template>Chaque segment se lit face à la médiane du périmètre comparé ({{ composition?.univers ?? '' }}). La comparaison entre territoires reste pilotée par « {{ dispatch.facet.label }} »<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span>.</figcaption>
+    <figcaption><template v-if="composition?.nom">Les segments portent la composition de {{ composition.nom }} — votre territoire, mis en avant depuis l’URL.</template> Chaque segment se lit face à la médiane du périmètre comparé ({{ composition?.univers ?? '' }}). La comparaison entre territoires reste pilotée par « {{ dispatch.facet.label }} »<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span>.</figcaption>
   </figure>
 </template>
 <style scoped>
