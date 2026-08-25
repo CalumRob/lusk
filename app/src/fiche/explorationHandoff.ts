@@ -1,5 +1,6 @@
 /**
- * La passarelle « Explorer cet indicateur » (#409) — le handoff fiche → Page
+ * La passarelle « Explorer » (#409 ; le libellé compact est #468) — le
+ * handoff fiche → Page
  * d'indicateur. Le contrat (CONTEXT.md, Page d'indicateur) : la passarelle
  * emporte SON territoire comme état explicite de l'URL — il reste mis en
  * avant à travers Repères et Carte jusqu'à ce qu'il soit effacé ou remplacé —
@@ -12,14 +13,17 @@
  *
  * Règle d'honnêteté verrouillée par test : un indicateur SANS page publiée
  * (`indicator_pages`) ne porte AUCUNE passarelle — jamais un lien mort vers
- * une famille de page non supportée.
+ * une famille de page non supportée. L'affordance rendue (libellé compact,
+ * nouvelle fenêtre, vraie ancre) vit dans PassarelleExploration.vue (#468).
  */
 
 import type { TerritoireType, ThemeMetadata } from '@/payload/types'
 import type { RouteLocationRaw } from 'vue-router'
 
-/** Le libellé unique du handoff — la copie française du produit. */
-export const LIBELLE_HANDOFF = 'Explorer cet indicateur'
+/** Le libellé unique du handoff — la microcopie compacte (#468), la copie
+ *  française du produit ; le composant partagé PassarelleExploration la rend
+ *  à l'identique sur chaque site. */
+export const LIBELLE_HANDOFF = 'Explorer'
 
 /** Les niveaux comparables d'une Page d'indicateur (la Région n'y figure pas). */
 const NIVEAUX_COMPARABLES: ReadonlySet<string> = new Set(['commune', 'epci', 'departement'])
