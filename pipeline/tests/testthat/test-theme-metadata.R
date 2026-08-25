@@ -944,6 +944,21 @@ test_that("la page liste subventions_par_domaine publie valablement contre le pa
   relu <- jsonlite::fromJSON(file.path(sortie, "theme_programmes.json"),
                              simplifyVector = FALSE)
   expect_error(valider_theme_metadata(relu), NA)
+
+  # la stabilité BYTE du contrat (#462) : le canon republié par le trait
+  # `metadata` est BIT À BIT l'artefact COMMITTÉ que l'app fetch — jamais un
+  # écart de sérialisation entre ce qui est validé et ce qui est publié
+  publie <- readBin(file.path(sortie, "theme_programmes.json"), "raw",
+                    n = file.info(file.path(sortie, "theme_programmes.json"))$size)
+  commis <- readBin(file.path(racine_public, "theme_programmes.json"), "raw",
+                    n = file.info(file.path(racine_public, "theme_programmes.json"))$size)
+  expect_identical(
+    publie, commis,
+    info = paste0("Programmes — le canon republié n'est PAS bit à bit ",
+                  "public/data/theme_programmes.json : régénérer l'artefact ",
+                  "committé par le seam (publier_theme_metadata, trait ",
+                  "`metadata`) après toute modification du canon épinglé")
+  )
 })
 
 test_that("valider_theme_metadata : une liste sans libellé canonical ou hors axe échoue fort (#439)", {
