@@ -16,6 +16,7 @@ import { formaterValeur } from '@/payload/selectors'
 import { sourceRecords } from '@/payload/selectors'
 import { ancreSource, datasetDeSource } from '@/methodes/sources'
 import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
+import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
@@ -118,6 +119,9 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
     <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.</div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
+      <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
+           les familles, dérivée de l'état résolu — vivante aux changements d'URL. -->
+      <NoteContexteIndicateur :etat="model.state" :territoires="payload.territoires" />
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
        <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch" :modele="trajectoire" :signature="distribution" :profil="profil" :relation="relation">
          <template #default>

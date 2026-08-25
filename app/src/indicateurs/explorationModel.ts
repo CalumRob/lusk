@@ -54,6 +54,32 @@ export function dansScope(territoire: Territoire, niveau: NiveauIndicateur, depa
   return territoire.type === niveau && (niveau !== 'commune' || ((!departement || territoire.departement === departement) && (!epci || territoire.epci === epci)))
 }
 
+const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes', epci: 'EPCI', departement: 'départements' }
+
+/**
+ * La situation résolue d'une Page d'indicateur (#472) — LA source unique de la
+ * note de contexte permanente ET de la référence de périmètre des compositions :
+ * le territoire mis en avant (nom, présence, appartenance au périmètre) et
+ * l'univers comparé dérivent de l'état résolu de l'URL, jamais d'une prose
+ * par famille. L'univers suit la règle de la page : Bretagne par défaut,
+ * resserré au département ou à l'EPCI au niveau commune seulement.
+ */
+export function situationContexte(territoires: readonly Territoire[], etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string }): { ref: Territoire | null; nom: string | null; horsPerimetre: boolean; introuvable: boolean; univers: string } {
+  const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
+  const ref = etat.territoire ? refs.get(etat.territoire) ?? null : null
+  const horsPerimetre = Boolean(ref && !dansScope(ref, etat.niveau, etat.departement, etat.epci))
+  const niveau = LIBELLES_NIVEAU[etat.niveau]
+  let univers = `les ${niveau} de Bretagne`
+  if (etat.niveau === 'commune' && etat.departement) {
+    const departement = territoires.find((t) => t.type === 'departement' && t.departement === etat.departement)
+    univers = departement ? `les communes du département ${departement.nom}` : `les communes du département ${etat.departement}`
+  } else if (etat.niveau === 'commune' && etat.epci) {
+    const epci = refs.get(etat.epci)
+    univers = epci ? `les communes de l’EPCI ${epci.nom}` : `les communes de l’EPCI ${etat.epci}`
+  }
+  return { ref, nom: ref?.nom ?? null, horsPerimetre, introuvable: Boolean(etat.territoire) && !ref, univers }
+}
+
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat: { niveau: NiveauIndicateur; departement?: string; epci?: string }): Payload {
   const { niveau, departement, epci } = etat
   const ids = new Set(payload.territoires.filter((territory) => dansScope(territory, niveau, departement, epci)).map((territory) => territory.territoire))
