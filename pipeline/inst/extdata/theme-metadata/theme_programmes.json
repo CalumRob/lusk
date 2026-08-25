@@ -114,7 +114,10 @@
       ],
       "family": "scalar",
       "comparison": {
-        "dimension": "2025"
+        "dimension": "2025",
+        "dimensions": [
+          "2025"
+        ]
       }
     },
     "subventions_par_domaine": {

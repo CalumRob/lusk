@@ -35,6 +35,7 @@
 
 import { slugifierAncre } from '@/methodes/ancres'
 import { datasetDeSource } from '@/methodes/sources'
+import type { Theme } from '@/payload/types'
 
 /** Les thèmes construits — la section Méthodes ne couvre que ce qui est construit. */
 export const THEMES_CONSTRUITS = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux'] as const
@@ -176,8 +177,9 @@ export interface IndicateurConsommateur {
   clef: string
   /** Le label d'affichage (le même que le bloc). */
   label: string
-  /** Le thème construit de l'indicateur — le filtre des onglets Sources · <thème>. */
-  theme: ThemeConstruit
+  /** Le thème de l'indicateur — le filtre des onglets Sources · <thème>
+   *  (#467 : tout thème publié, le sixième compris). */
+  theme: Theme
 }
 
 /**
