@@ -311,10 +311,14 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): voi
     )
     .join('')
 
+  // #409 : le lien inverse préserve la lentille — le thème actif de la carte
+  // voyage en query (la fiche s'ouvre sur CE bloc) ; l'état neutre n'en invente
+  // jamais un.
   const lienFiche = fiche
     ? `<a class="popup-carte-lien" href="${router.resolve({
         name: 'territoire',
         params: { type: fiche.type, id: fiche.territoire },
+        query: props.theme ? { theme: props.theme } : undefined,
       }).href}">Voir la fiche</a>`
     : ''
 

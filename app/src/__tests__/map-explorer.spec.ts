@@ -370,6 +370,8 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('Commune A1')
     expect(popup?.contenu).toContain('Voir la fiche')
+    // #409 : le lien fiche préserve la lentille — le thème actif voyage en query.
+    expect(popup?.contenu).toContain('theme=demographie')
     // la valeur de la couche active, formatée en français, avec son rang-en-contexte
     expect(popup?.contenu).toContain('Densité de population')
     expect(popup?.contenu).toContain('200')
@@ -434,6 +436,8 @@ describe('MapExplorer — la popup par couche (ADR-0019, #281)', () => {
     const popup = maplibreMock.instancesPopups.at(-1)
     expect(popup?.contenu).toContain('99999')
     expect(popup?.contenu).not.toContain('Voir la fiche')
+    // #409 : sans thème actif (l'état neutre), aucun paramètre de thème inventé.
+    expect(popup?.contenu).not.toContain('theme=')
   })
 })
 

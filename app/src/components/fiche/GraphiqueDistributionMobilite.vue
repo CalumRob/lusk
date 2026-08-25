@@ -242,7 +242,7 @@ function gererClic(params: unknown): void {
   const territoire = p.data?.territoire
   const type = p.data?.type
   if (!territoire || !type || type === 'region') return
-  router.push({ name: 'territoire', params: { type, id: territoire } })
+  router.push({ name: 'territoire', params: { type, id: territoire }, query: { theme: 'mobilite' } })
 }
 
 onMounted(async () => {

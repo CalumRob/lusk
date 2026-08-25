@@ -23,6 +23,8 @@ describe('router — route table', () => {
       '/methodologie',
       '/sources',
       '/a-propos',
+      // Le catalogue (#409) — la route exacte AVANT sa sœur paramétrée.
+      '/indicateurs',
       '/indicateurs/:theme/:indicator',
     ])
   })
@@ -50,6 +52,7 @@ describe('router — navigation resolves to the French placeholder views', () =>
     '/methodologie',
     '/sources',
     '/a-propos',
+    '/indicateurs',
     '/indicateurs/demographie/densite',
   ])('resolves "%s" to a registered component', async (path) => {
     const router = createRouter({ history: createMemoryHistory(), routes })

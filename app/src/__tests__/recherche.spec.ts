@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { territoiresFixture } from '../payload/fixtures'
 import type { Territoire } from '../payload/types'
-import { libelleType, normaliserTexte, rechercherTerritoires } from '../search/recherche'
+import {
+  libelleType,
+  normaliserTexte,
+  rechercherIndicateurs,
+  rechercherTerritoires,
+} from '../search/recherche'
+import type { EntreeRechercheIndicateur } from '../search/recherche'
 
 /**
  * The search scoring/matching logic — pure functions, locked in isolation
@@ -131,5 +137,61 @@ describe('libelleType — the French type chip label', () => {
     expect(libelleType('epci')).toBe('EPCI')
     expect(libelleType('departement')).toBe('Département')
     expect(libelleType('region')).toBe('Région')
+  })
+})
+
+/**
+ * La recherche groupée (#409) : les entrées Indicateurs du catalogue partagent
+ * la même mécanique d'appariement que les territoires — insensible aux
+ * accents, préfixe avant sous-chaîne, borne de résultat.
+ */
+describe('rechercherIndicateurs — la moitié Indicateurs de la recherche groupée', () => {
+  const entrees: EntreeRechercheIndicateur[] = [
+    {
+      theme: 'demographie',
+      themeLabel: 'Démographie',
+      label: 'Densité de population',
+      href: '/indicateurs/demographie/densite',
+    },
+    {
+      theme: 'habitat',
+      themeLabel: 'Habitat',
+      label: 'Distribution des étiquettes DPE (A à G)',
+      href: '/indicateurs/habitat/distribution_dpe',
+    },
+    {
+      theme: 'mobilite',
+      themeLabel: 'Mobilité',
+      label: "L'offre cyclable",
+      href: '/indicateurs/mobilite/offre_cyclable',
+    },
+    {
+      theme: 'programmes',
+      themeLabel: 'Programmes et subventions',
+      label: 'Subventions régionales attribuées',
+      href: '/indicateurs/programmes/subventions_annuelles',
+    },
+  ]
+
+  it('trouve par libellé, insensible aux accents et à la casse', () => {
+    const resultats = rechercherIndicateurs(entrees, 'densite')
+    expect(resultats.map((entree) => entree.href)).toEqual(['/indicateurs/demographie/densite'])
+  })
+
+  it('apparie un fragment au milieu du libellé (« cycl » → L’offre cyclable)', () => {
+    const resultats = rechercherIndicateurs(entrees, 'cycl')
+    expect(resultats.map((entree) => entree.label)).toEqual(["L'offre cyclable"])
+  })
+
+  it('classe les correspondances par qualité et borne le résultat demandé', () => {
+    const resultats = rechercherIndicateurs(entrees, 'd')
+    expect(resultats.length).toBeLessThanOrEqual(4)
+    expect(resultats[0]!.label).toBe('Densité de population')
+  })
+
+  it('ne retourne rien pour une requête vide ou sans correspondance', () => {
+    expect(rechercherIndicateurs(entrees, '')).toEqual([])
+    expect(rechercherIndicateurs(entrees, '   ')).toEqual([])
+    expect(rechercherIndicateurs(entrees, 'zzzz')).toEqual([])
   })
 })

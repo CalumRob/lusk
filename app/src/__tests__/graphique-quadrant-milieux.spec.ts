@@ -241,6 +241,8 @@ describe('GraphiqueQuadrantMilieux — the Milieux quadrant story chart', () => 
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('territoire')
     expect(router.currentRoute.value.params).toMatchObject({ type: 'commune', id: '22002' })
+    // #409 : le lien inverse préserve la lentille — le thème du quadrant voyage.
+    expect(router.currentRoute.value.query).toMatchObject({ theme: 'milieux' })
 
     wrapper.unmount()
   })
