@@ -1,10 +1,13 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 
+import { createMemoryHistory, createRouter } from 'vue-router'
+
 import { describe, expect, it } from 'vitest'
 
 import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import { LIBELLE_HANDOFF, handoffExploration } from '../fiche/explorationHandoff'
+import { routes } from '../router'
 import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
@@ -20,12 +23,13 @@ import {
 import type { Payload } from '../payload/types'
 
 /**
- * La passarelle « Explorer cet indicateur » (#409) : chaque indicateur de
- * fiche dont la Page d'indicateur est PUBLIÉE porte une passarelle vers sa
- * page, qui emporte le territoire comme état explicite de l'URL (+ son niveau
- * quand il est comparable — la Région est hors comparaison data-first) et
- * laisse la page résoudre SA facette canon. Un indicateur sans page publiée ne
- * porte AUCUNE passarelle — jamais un lien mort vers une page non supportée.
+ * La passarelle « Explorer » (#409 ; le libellé compact est #468) : chaque
+ * indicateur de fiche dont la Page d'indicateur est PUBLIÉE porte une
+ * passarelle vers sa page, qui emporte le territoire comme état explicite de
+ * l'URL (+ son niveau quand il est comparable — la Région est hors comparaison
+ * data-first) et laisse la page résoudre SA facette canon. Un indicateur sans
+ * page publiée ne porte AUCUNE passarelle — jamais un lien mort vers une page
+ * non supportée.
  */
 
 describe('handoffExploration — le seam pur', () => {
@@ -83,8 +87,89 @@ function payloadOnglet(): Payload {
   }
 }
 
+function payloadProgrammes(): Payload {
+  return {
+    territoires: territoiresFixture,
+    indicateurs: indicateursProgrammesFixture,
+    histoires: [],
+    apercu: null,
+    runReport: null,
+    vintages: null,
+    programmes: null,
+    themeMetadata: { programmes: structuredClone(metadonneesThemesFixtures.programmes) },
+  }
+}
+
+/**
+ * La fenêtre et l'ancre (#468) : le handoff change l'axe du visiteur — chaque
+ * passarelle s'ouvre dans une NOUVELLE FENÊTRE (target="_blank" + le rel du
+ * precedent du repo, noopener noreferrer) depuis une VRAIE ancre routée : le
+ * href résolu porte exactement l'état d'aujourd'hui (territoire/niveau/thème),
+ * le milieu-clic et le long-press restent natifs — jamais un gestionnaire JS.
+ * Le libellé est la microcopie compacte « Explorer », identique sur chaque
+ * site de handoff.
+ */
+describe('la fenêtre et l’ancre de la passarelle (#468)', () => {
+  it('OngletTheme : figure compacte ET figure de grille rendent la même ancre nouvelle fenêtre avec le href résolu', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(
+      OngletTheme,
+      {
+        props: { theme: 'habitat', payload: payloadOnglet(), territoire: '22001' },
+        global: { plugins: [router] },
+      },
+    )
+    await flushPromises()
+
+    const ancres = wrapper.findAll('a.passarelle-exploration')
+    expect(ancres).toHaveLength(2)
+
+    for (const ancre of ancres) {
+      expect(ancre.text()).toBe(LIBELLE_HANDOFF)
+      // La microcopie compacte (#468) — jamais la prose lourde d'avant.
+      expect(ancre.text()).toBe('Explorer')
+      expect(ancre.attributes('target')).toBe('_blank')
+      const rel = (ancre.attributes('rel') ?? '').split(' ')
+      expect(rel).toContain('noopener')
+      expect(rel).toContain('noreferrer')
+    }
+
+    // Le vrai href routé, l'état identique à aujourd'hui (territoire + niveau).
+    const hrefs = ancres.map((ancre) => ancre.attributes('href'))
+    expect(hrefs).toContain('/indicateurs/habitat/distribution_dpe?territoire=22001&niveau=commune')
+    expect(hrefs).toContain('/indicateurs/habitat/statut?territoire=22001&niveau=commune')
+  })
+
+  it('BlocProgrammes : le total annuel porte la même ancre nouvelle fenêtre avec le href résolu', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(BlocProgrammes, {
+      props: { payload: payloadProgrammes(), territoire: '22001' },
+      global: { plugins: [router] },
+    })
+
+    const ancres = wrapper.findAll('a.passarelle-exploration')
+    expect(ancres).toHaveLength(1)
+
+    const ancre = ancres[0]!
+    expect(ancre.text()).toBe('Explorer')
+    expect(ancre.attributes('target')).toBe('_blank')
+    const rel = (ancre.attributes('rel') ?? '').split(' ')
+    expect(rel).toContain('noopener')
+    expect(rel).toContain('noreferrer')
+    expect(ancre.attributes('href')).toBe(
+      '/indicateurs/programmes/subventions_annuelles?territoire=22001&niveau=commune',
+    )
+
+    // L'autre lien du bloc (le portail Région) reste une ancre externe honnête
+    // — la passarelle n'a pas absorbé sa cible.
+    const portail = wrapper.find('a.programmes-lien')
+    expect(portail.attributes('target')).toBe('_blank')
+    expect(portail.attributes('href')).not.toContain('/indicateurs/')
+  })
+})
+
 describe('le câblage fiche de la passarelle (#409)', () => {
-  it('OngletTheme : chaque figure publiée porte « Explorer cet indicateur » avec l’état du territoire — la figure compacte comprise', async () => {
+  it('OngletTheme : chaque figure publiée porte « Explorer » avec l’état du territoire — la figure compacte comprise', async () => {
     const wrapper = mount(OngletTheme, {
       props: { theme: 'habitat', payload: payloadOnglet(), territoire: '22001' },
       global: { stubs: { RouterLink: RouterLinkStub } },
@@ -114,19 +199,7 @@ describe('le câblage fiche de la passarelle (#409)', () => {
 
   it('BlocProgrammes : le total annuel publié porte la passarelle du sixième thème', () => {
     const wrapper = mount(BlocProgrammes, {
-      props: {
-        payload: {
-          territoires: territoiresFixture,
-          indicateurs: indicateursProgrammesFixture,
-          histoires: [],
-          apercu: null,
-          runReport: null,
-          vintages: null,
-          programmes: null,
-          themeMetadata: { programmes: structuredClone(metadonneesThemesFixtures.programmes) },
-        },
-        territoire: '22001',
-      },
+      props: { payload: payloadProgrammes(), territoire: '22001' },
       global: {
         stubs: {
           RouterLink: RouterLinkStub,

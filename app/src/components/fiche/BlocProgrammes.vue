@@ -25,7 +25,8 @@ import { computed, ref, watch } from 'vue'
 import { ExternalLink } from 'lucide-vue-next'
 
 import AppIcon from '@/components/AppIcon.vue'
-import { LIBELLE_HANDOFF, handoffExploration } from '@/fiche/explorationHandoff'
+import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
+import { handoffExploration } from '@/fiche/explorationHandoff'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
@@ -58,7 +59,7 @@ function groupe(key: string): { label: string; framing: string } {
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
 
 /**
- * La passarelle « Explorer cet indicateur » (#409) : le total annuel publié
+ * La passarelle « Explorer » (#409 ; compacte #468) : le total annuel publié
  * (`subventions_annuelles` a SA Page d'indicateur) emporte le territoire et
  * son niveau. Les autres faits du bloc (couverture_programmes,
  * subventions_par_domaine) n'ont pas de page — aucune passarelle, jamais un
@@ -71,7 +72,6 @@ const passarelleSubventions = computed(() =>
     trouverTerritoire(props.payload, props.territoire),
   ),
 )
-const libelleHandoff = LIBELLE_HANDOFF
 const elementVide = computed(
   () => element.value.badges.length === 0 && element.value.subventions === null,
 )
@@ -209,12 +209,9 @@ const lienProvenance = computed(() => {
           <p class="subvention-vintage">{{ element.subventions.vintage }}</p>
         </div>
 
-        <!-- #409 : la passarelle vers la Page d'indicateur du total annuel. -->
-        <RouterLink
-          v-if="passarelleSubventions"
-          class="passarelle-exploration"
-          :to="passarelleSubventions"
-        >{{ libelleHandoff }}</RouterLink>
+        <!-- #409/#468 : la passarelle compacte partagée vers la Page
+             d'indicateur du total annuel — nouvelle fenêtre, vraie ancre. -->
+        <PassarelleExploration v-if="passarelleSubventions" :to="passarelleSubventions" />
 
         <a
           class="programmes-lien"
@@ -400,15 +397,11 @@ const lienProvenance = computed(() => {
   padding-top: var(--space-2);
 }
 
-/* La passarelle « Explorer cet indicateur » (#409) — la rampe du thème. */
+/* La passarelle « Explorer » (#409, #468) — le composant partagé
+   PassarelleExploration porte le balisage et la typographie ; la rampe du
+   thème programmes porte sa couleur via les variables du composant. */
 .passarelle-exploration {
-  width: fit-content;
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  font-weight: 600;
-  color: var(--theme-programmes-strong);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  --passarelle-couleur: var(--theme-programmes-strong);
 }
 
 .subvention-contexte,

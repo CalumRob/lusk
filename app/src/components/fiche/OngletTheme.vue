@@ -23,6 +23,7 @@ import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
 import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
+import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
 import {
   figureLecturePour,
@@ -31,7 +32,7 @@ import {
   sousGroupesPourTerritoire,
 } from '@/fiche/sousGroupes'
 import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
-import { LIBELLE_HANDOFF, handoffExploration } from '@/fiche/explorationHandoff'
+import { handoffExploration } from '@/fiche/explorationHandoff'
 import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
 
@@ -51,9 +52,6 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
 // The theme's published label rides in the metadata (theme_<theme>.json) — the
 // overline never falls back to an app-side dictionary.
 const nomTheme = computed(() => props.payload.themeMetadata?.[props.theme]?.label ?? props.theme)
-
-/** Le libellé unique du handoff (#409) — la copie française du produit. */
-const libelleHandoff = LIBELLE_HANDOFF
 
 // Les libellés payload-owned (issue #318) : la fiche lit indicator_labels /
 // detail_labels de la métadonnée du thème — jamais une clé brute. Un sous-groupe
@@ -105,7 +103,7 @@ function libelleIndicateurMetier(clef: string): string {
 }
 
 /**
- * La passarelle « Explorer cet indicateur » (#409) — la route de la Page
+ * La passarelle « Explorer » (#409 ; compacte #468) — la route de la Page
  * d'indicateur publiée qui emporte le territoire (et son niveau comparable).
  * null pour un indicateur sans page publiée : jamais de lien mort.
  */
@@ -275,12 +273,12 @@ const lignesReseaux = computed(
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
             />
-            <!-- #409 : la passarelle vers la Page d'indicateur publiée. -->
-            <RouterLink
+            <!-- #409/#468 : la passarelle compacte partagée vers la Page
+                 d'indicateur publiée — nouvelle fenêtre, vraie ancre. -->
+            <PassarelleExploration
               v-if="groupe.figureCompacte && passarelle(groupe.figureCompacte.clef)"
-              class="passarelle-exploration"
               :to="passarelle(groupe.figureCompacte.clef)!"
-            >{{ libelleHandoff }}</RouterLink>
+            />
           </div>
           <div
             v-for="figure in figuresGrille(groupe)"
@@ -296,11 +294,7 @@ const lignesReseaux = computed(
               :signe="figureSigne(figure.key)"
               :theme="theme"
             />
-            <RouterLink
-              v-if="passarelle(figure.key)"
-              class="passarelle-exploration"
-              :to="passarelle(figure.key)!"
-            >{{ libelleHandoff }}</RouterLink>
+            <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />
           </div>
         </div>
       </section>
@@ -468,21 +462,13 @@ const lignesReseaux = computed(
   grid-column: span 2;
 }
 
-/* La passarelle « Explorer cet indicateur » (#409) — discrète, sous la
-   figure qu'elle prolonge ; la rampe du thème la porte. */
+/* La passarelle « Explorer » (#409, #468) — le composant partagé
+   PassarelleExploration porte le balisage et la typographie ; la rampe du
+   thème (posée par l'article) porte sa couleur via les variables du
+   composant. */
 .passarelle-exploration {
-  width: fit-content;
-  margin-top: var(--space-1);
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  font-weight: 600;
-  color: var(--couleur-strong);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.passarelle-exploration:hover {
-  color: var(--couleur-nuage);
+  --passarelle-couleur: var(--couleur-strong);
+  --passarelle-survol: var(--couleur-nuage);
 }
 
 @media (max-width: 1024px) {
