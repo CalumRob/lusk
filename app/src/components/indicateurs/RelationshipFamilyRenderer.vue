@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
 import type { AxeRelation, ModeleRelation } from '@/indicateurs/explorationModel'
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterValeur } from '@/payload/selectors'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'relationship' }>; relation?: ModeleRelation | null }>()
 
@@ -24,7 +24,7 @@ const traces = computed(() => {
     selection: point.highlighted,
     cx: positionDe(point.x!, relation.axeX),
     cy: 100 - positionDe(point.y!, relation.axeY),
-    titre: `${point.territoire.nom} · ${formaterNombreFR(point.x!, 2)} ${relation.axeX.unit} · ${formaterNombreFR(point.y!, 2)} ${relation.axeY.unit}`,
+    titre: `${point.territoire.nom} · ${formaterValeur({ value: point.x!, unit: relation.axeX.unit })} ${relation.axeX.unit} · ${formaterValeur({ value: point.y!, unit: relation.axeY.unit })} ${relation.axeY.unit}`,
   }))
 })
 const libelleNuage = computed(() => props.relation ? `Nuage de ${traces.value.length} territoires : ${props.relation.axeX.label} (${props.relation.axeX.unit}) et ${props.relation.axeY.label} (${props.relation.axeY.unit})` : '')

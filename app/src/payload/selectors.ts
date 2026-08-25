@@ -569,13 +569,17 @@ export function formaterNombreFR(x: number, decimalesMax: number): string {
 }
 
 /**
- * The display value, French. A "%" unit means the payload value is a fraction
- * in [0,1] (0.3 → "30"). Null → null (non calculable pour ce territoire — the
- * figure shows an honest "—", never a made-up number). Accepts any value line
- * (an Indicateur row or the map's joined ValeurLigne) — the shape it reads is
- * `{ value, unit }`.
+ * The display value, French — THE shared percentage-aware display seam
+ * (#466) : every indicator-page site that renders a value alongside its
+ * declared unit routes through it, keyed on the unit string being « % ».
+ * A "%" unit means the payload value is a fraction in [0,1] (0.3 → "30").
+ * A null/absent unit renders raw (never scaled). Null value → null
+ * (non calculable pour ce territoire — the figure shows an honest "—",
+ * never a made-up number). Accepts any value line (an Indicateur row, a
+ * signature bar, a profile category or the map's joined ValeurLigne) —
+ * the shape it reads is `{ value, unit }`.
  */
-export function formaterValeur(ligne: { value: number | null; unit: string }): string | null {
+export function formaterValeur(ligne: { value: number | null; unit: string | null }): string | null {
   if (ligne.value === null) return null
   const estPourcent = ligne.unit === '%'
   const brut = estPourcent ? ligne.value * 100 : ligne.value
