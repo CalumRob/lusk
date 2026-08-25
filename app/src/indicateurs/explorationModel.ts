@@ -54,6 +54,32 @@ export function dansScope(territoire: Territoire, niveau: NiveauIndicateur, depa
   return territoire.type === niveau && (niveau !== 'commune' || ((!departement || territoire.departement === departement) && (!epci || territoire.epci === epci)))
 }
 
+const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes', epci: 'EPCI', departement: 'départements' }
+
+/**
+ * La situation résolue d'une Page d'indicateur (#472) — LA source unique de la
+ * note de contexte permanente ET de la référence de périmètre des compositions :
+ * le territoire mis en avant (nom, présence, appartenance au périmètre) et
+ * l'univers comparé dérivent de l'état résolu de l'URL, jamais d'une prose
+ * par famille. L'univers suit la règle de la page : Bretagne par défaut,
+ * resserré au département ou à l'EPCI au niveau commune seulement.
+ */
+export function situationContexte(territoires: readonly Territoire[], etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string }): { ref: Territoire | null; nom: string | null; horsPerimetre: boolean; introuvable: boolean; univers: string } {
+  const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
+  const ref = etat.territoire ? refs.get(etat.territoire) ?? null : null
+  const horsPerimetre = Boolean(ref && !dansScope(ref, etat.niveau, etat.departement, etat.epci))
+  const niveau = LIBELLES_NIVEAU[etat.niveau]
+  let univers = `les ${niveau} de Bretagne`
+  if (etat.niveau === 'commune' && etat.departement) {
+    const departement = territoires.find((t) => t.type === 'departement' && t.departement === etat.departement)
+    univers = departement ? `les communes du département ${departement.nom}` : `les communes du département ${etat.departement}`
+  } else if (etat.niveau === 'commune' && etat.epci) {
+    const epci = refs.get(etat.epci)
+    univers = epci ? `les communes de l’EPCI ${epci.nom}` : `les communes de l’EPCI ${etat.epci}`
+  }
+  return { ref, nom: ref?.nom ?? null, horsPerimetre, introuvable: Boolean(etat.territoire) && !ref, univers }
+}
+
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat: { niveau: NiveauIndicateur; departement?: string; epci?: string }): Payload {
   const { niveau, departement, epci } = etat
   const ids = new Set(payload.territoires.filter((territory) => dansScope(territory, niveau, departement, epci)).map((territory) => territory.territoire))
@@ -436,4 +462,87 @@ export function modeleProfil(
   return categories.every((detail) => valeurs.has(detail))
     ? { etat: 'complet', nom: ref.nom, message: null, lignes: lignesDe(valeurs, unites) }
     : { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : profil incomplet à ce niveau.`, lignes: lignesDe(valeurs, unites) }
+}
+
+/**
+ * Le modèle de la composition contextualisée des pages composition (#472) —
+ * les parts déclarées du territoire mis en avant, chacune lue face à la
+ * référence du périmètre comparé, à côté de la comparaison inter-territoires
+ * que la facette pilote seule.
+ *
+ * La référence d'un segment est la MÉDIANE du périmètre comparé pour ce
+ * segment — le même périmètre que modeleExploration (type=niveau × dansScope)
+ * et le même calcul mediane que la facette résumée (#437). L'app ne
+ * ré-agrège JAMAIS des parts (une moyenne de parts ment sur le tout) ; la
+ * médiane est la statistique honnête qui suit ?niveau/?departement/?epci.
+ *
+ * Les quatre états honnêtes du squelette partagé (#441) — jamais une barre
+ * mystère : null (aucune mise en avant — rien n'est affirmé), 'absent' (le
+ * territoire n'existe pas à ce niveau), 'incomplet' (des parts sans valeur
+ * publiée), 'complet' (les parts portent les valeurs publiées).
+ */
+export interface PartieComposition {
+  detail: string
+  label: string
+  /** La valeur publiée du territoire mis en avant — null sans valeur. */
+  valeur: number | null
+  /** La médiane du périmètre comparé pour CE segment — la référence #472. */
+  reference: number | null
+}
+export interface ModeleComposition {
+  etat: 'complet' | 'incomplet' | 'absent' | null
+  nom: string | null
+  message: string | null
+  /** L'unité publiée des parts — la facette ne pilote PAS ce bloc. */
+  unite: string | null
+  /** La description résolue de l'univers comparé (« les communes de Bretagne »…). */
+  univers: string
+  parties: readonly PartieComposition[]
+}
+
+export function modeleComposition(
+  faits: readonly Indicateur[],
+  facet: ComparisonFacet,
+  page: IndicatorPageMetadata,
+  territoires: readonly Territoire[],
+  labels: Record<string, string>,
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): ModeleComposition {
+  // La liste fermée déclarée par la page — l'app rend ce que le payload
+  // déclare (ADR-0023), jamais un vocabulaire dérivé des faits. Une extension
+  // absente (page invalide, verrouillé par le statut du dispatch) reste un
+  // état fini : liste vide, jamais une exception au rendu.
+  const partiesDeclarees = page.family === 'composition' ? [...(page.composition?.parts ?? [])] : []
+  const situation = situationContexte(territoires, etat)
+  const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
+  const lignesDe = (valeurs: ReadonlyMap<string, number>): PartieComposition[] =>
+    partiesDeclarees.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null, reference: references.get(detail) ?? null }))
+  // La référence par segment : la médiane du PÉRIMÈTRE comparé — le même
+  // périmètre et le même calcul que la facette résumée, jamais une moyenne
+  // de parts recomposée côté app.
+  const references = new Map<string, number | null>(partiesDeclarees.map((detail) => {
+    const valeurs = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.detail === detail && fact.type === etat.niveau && fact.value !== null && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension)).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci))).map((row) => row.value)
+    return [detail, mediane(valeurs)] as const
+  }))
+  // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
+  const selection = selectionTerritoire(territoires, etat)
+  if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, univers: situation.univers, parties: lignesDe(new Map()) }
+  if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, univers: situation.univers, parties: lignesDe(new Map()) }
+  const ref = selection.ref
+  // Le filtre des faits est THÈME × CLÉ PROPRE de la page (la leçon de parité
+  // #438 — les clés ne sont pas uniques entre thèmes) ; le sexe/dimension
+  // suivent la facette.
+  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && partiesDeclarees.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  const valeurs = new Map<string, number>()
+  let unite: string | null = null
+  for (const ligne of lignes) {
+    if (!partiesDeclarees.includes(ligne.detail as string)) continue
+    if (ligne.value !== null) {
+      valeurs.set(ligne.detail as string, ligne.value)
+      unite ??= ligne.unit ?? null
+    }
+  }
+  return partiesDeclarees.every((detail) => valeurs.has(detail))
+    ? { etat: 'complet', nom: ref.nom, message: null, unite, univers: situation.univers, parties: lignesDe(valeurs) }
+    : { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : composition incomplète à ce niveau.`, unite, univers: situation.univers, parties: lignesDe(valeurs) }
 }
