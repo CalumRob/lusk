@@ -546,3 +546,79 @@ export function modeleComposition(
     ? { etat: 'complet', nom: ref.nom, message: null, unite, univers: situation.univers, parties: lignesDe(valeurs) }
     : { etat: 'incomplet', nom: ref.nom, message: `${ref.nom} : composition incomplète à ce niveau.`, unite, univers: situation.univers, parties: lignesDe(valeurs) }
 }
+
+/**
+ * L'ensemble de comparaison des distributions (#474) — le profil agrégé du
+ * périmètre actif, face auquel la signature du territoire sélectionné se lit.
+ * La médiane scalaire n'a pas de sens pour une distribution de catégories :
+ * la référence honnête est une DISTRIBUTION agrégée — la MOYENNE des parts
+ * publiées de chaque détail, sur tous les territoires du périmètre qui en
+ * portent une. Une vue d'ensemble étiquetée (« ensemble de comparaison »),
+ * JAMAIS un autre territoire : pas de nom, pas de fiche, pas de rang.
+ *
+ * Distinction d'avec la référence composition (#472) : les détails d'une
+ * distribution sont des parts INDÉPENDANTES d'une même base (le DPE) — leur
+ * moyenne est la statistique honnête ; les parts d'une composition somment
+ * vers un tout — leur médiane seule, jamais une moyenne recomposée.
+ *
+ * L'honnêteté de l'assiette est verrouillée par test :
+ *  - les territoires sans aucune donnée (DPE supprimé sous le seuil…) sont
+ *    COMPTÉS (`nSansDonnee`) et dits — jamais fondus dans zéro ;
+ *  - un détail sans valeur publiée dans le périmètre sort null (jamais 0) ;
+ *  - le libellé de portée suit le même vocabulaire que le modèle par détail
+ *    (Bretagne / Département X / EPCI X).
+ *
+ * Performance : UN passage sur les faits du thème (déjà scopés par la page)
+ * + le comptage du périmètre — O(faits + territoires), recalculé par état
+ * réactif comme les autres modèles Repères.
+ */
+export interface BarreEnsembleComparaison { detail: string; label: string; valeur: number | null }
+export interface ModeleEnsembleComparaison {
+  /** Le libellé de portée du périmètre agrégé — JAMAIS le nom d'un territoire. */
+  porteeLabel: string
+  /** Les territoires du périmètre portant AU MOINS une part publiée — l'assiette réelle de la moyenne. */
+  nTerritoires: number
+  /** Les territoires du périmètre sans aucune donnée — dits, jamais fondus dans zéro. */
+  nSansDonnee: number
+  /** L'unité déclarée des faits agrégés — la facette ne pilote PAS ce bloc. */
+  unite: string | null
+  barres: readonly BarreEnsembleComparaison[]
+}
+
+export function modeleEnsembleComparaison(
+  faits: readonly Indicateur[],
+  facet: ComparisonFacet,
+  page: IndicatorPageMetadata,
+  territoires: readonly Territoire[],
+  labels: Record<string, string>,
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string },
+): ModeleEnsembleComparaison {
+  const details = page.family === 'distribution' ? [...page.distribution.signature] : []
+  const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
+  const sommes = new Map<string, number>()
+  const comptes = new Map<string, number>()
+  const contributeurs = new Set<string>()
+  let unite: string | null = null
+  for (const fact of faits) {
+    if (fact.theme !== facet.theme || fact.key !== page.indicator || fact.detail === null || !details.includes(fact.detail)) continue
+    if ((facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau && fact.value !== null) {
+      const ref = refs.get(fact.territoire)
+      if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) continue
+      sommes.set(fact.detail, (sommes.get(fact.detail) ?? 0) + fact.value)
+      comptes.set(fact.detail, (comptes.get(fact.detail) ?? 0) + 1)
+      contributeurs.add(fact.territoire)
+      unite ??= fact.unit ?? null
+    }
+  }
+  const totalScope = territoires.filter((territoire) => dansScope(territoire, etat.niveau, etat.departement, etat.epci)).length
+  return {
+    porteeLabel: etat.departement ? `Département ${etat.departement}` : etat.epci ? `EPCI ${etat.epci}` : 'Bretagne',
+    nTerritoires: contributeurs.size,
+    nSansDonnee: Math.max(totalScope - contributeurs.size, 0),
+    unite,
+    barres: details.map((detail) => {
+      const compte = comptes.get(detail) ?? 0
+      return { detail, label: labels[detail] ?? detail, valeur: compte > 0 ? sommes.get(detail)! / compte : null }
+    }),
+  }
+}
