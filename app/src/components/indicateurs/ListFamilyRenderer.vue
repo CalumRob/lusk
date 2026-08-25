@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
 import type { ModeleProfil } from '@/indicateurs/explorationModel'
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterValeur } from '@/payload/selectors'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'list' }>; profil?: ModeleProfil | null }>()
 
@@ -22,7 +22,7 @@ const categoriesManquantes = computed(() => props.profil?.etat === 'incomplet' ?
       <div v-if="afficheLignes && lignesVisibles.length" class="profil-lignes" role="img" :aria-label="`Profil de ${profil!.nom} sur ${profil!.lignes.length} catégories déclarées`">
         <div v-for="ligne in lignesVisibles" :key="ligne.detail" class="profil-ligne" :class="{ active: ligne.detail === dispatch.facet.detail }" :data-ligne-profil="ligne.detail">
           <span class="profil-libelle">{{ ligne.label }}</span>
-          <span class="profil-valeur">{{ formaterNombreFR(ligne.valeur!, 2) }} <small>{{ ligne.unite }}</small></span>
+          <span class="profil-valeur">{{ formaterValeur({ value: ligne.valeur!, unit: ligne.unite }) }} <small>{{ ligne.unite }}</small></span>
         </div>
       </div>
       <p v-if="categoriesManquantes.length" class="profil-note" role="note">Profil incomplet — sans valeur publiée à ce niveau : {{ categoriesManquantes.join(', ') }}.</p>

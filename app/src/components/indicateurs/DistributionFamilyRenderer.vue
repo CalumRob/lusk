@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
 import type { ModeleSignature } from '@/indicateurs/explorationModel'
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterValeur } from '@/payload/selectors'
 import { couleurDpe } from '@/fiche/couleursDpe'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'distribution' }>; signature?: ModeleSignature | null }>()
@@ -31,7 +31,7 @@ function styleBarre(detail: string, valeur: number | null): Record<string, strin
       <h2>La signature du territoire sélectionné</h2>
       <div v-if="signature && signature.etat === 'complet'" class="signature-barres" role="img" :aria-label="`Distribution complète de ${signature.nom} sur ${signature.barres.length} détails déclarés`">
         <div v-for="barre in signature.barres" :key="barre.detail" class="signature-barre" :data-detail="barre.detail">
-          <span class="signature-valeur">{{ formaterNombreFR(barre.valeur!, 2) }}{{ signature.unite ? ` ${signature.unite}` : '' }}</span>
+          <span class="signature-valeur">{{ formaterValeur({ value: barre.valeur!, unit: signature.unite }) }}{{ signature.unite ? ` ${signature.unite}` : '' }}</span>
           <span class="signature-hauteur"><span class="barre" :style="styleBarre(barre.detail, barre.valeur)" /></span>
           <span class="signature-libelle">{{ barre.label }}</span>
         </div>

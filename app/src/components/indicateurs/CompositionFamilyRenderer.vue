@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
 import { couleurDpe } from '@/fiche/couleursDpe'
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterValeur } from '@/payload/selectors'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'composition' }> }>()
 const territory = computed(() => props.dispatch.selected?.territoire ?? props.dispatch.representation.territories[0]?.territoire)
@@ -13,7 +13,10 @@ const parts = computed(() => {
 const total = computed(() => parts.value.reduce((sum, part) => sum + (part.value ?? 0), 0))
 const palette = computed(() => props.dispatch.facet.labels)
 function colour(detail: string | null) { return detail && couleurDpe(detail) ? couleurDpe(detail) : undefined }
-function value(value: number | null, unit: string) { return value === null ? '—' : `${formaterNombreFR(value * (unit === '%' ? 100 : 1), 2)}${unit}` }
+// La valeur affichée lit LE formatage partagé (#466) — l'échelle % est la
+// sienne (×100 une fois, unité « % » collée à la convention du bloc), jamais
+// une multiplication locale de plus.
+function value(value: number | null, unit: string) { return value === null ? '—' : `${formaterValeur({ value, unit })}${unit}` }
 function label(detail: string | null) { return detail === null ? 'Valeur totale' : palette.value[detail] ?? detail }
 function barStyle(part: (typeof parts.value)[number]): Record<string, string> {
   const style: Record<string, string> = { width: `${total.value > 0 && part.value !== null ? part.value / total.value * 100 : 0}%` }

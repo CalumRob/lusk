@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
 import type { ModeleTrajectoire } from '@/indicateurs/explorationModel'
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterValeur } from '@/payload/selectors'
 
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'trajectory' }>; modele?: ModeleTrajectoire | null }>()
 
@@ -49,7 +49,7 @@ const libelleActif = computed(() => { const detail = props.dispatch.facet.detail
       <title>Trajectoire complète</title>
       <desc>Les détails sont positionnés à leur place réelle dans la fenêtre ; les valeurs manquantes créent une rupture de trait.</desc>
       <g v-for="etape in modele.etapes" :key="etape.detail" :data-etape="etape.detail" :data-etat="etape.mediane === null ? 'sans-valeur' : 'valeurs'">
-        <line v-if="etape.min !== null && etape.max !== null" class="trajectoire-etalement" :x1="xDe(etape.x)" :x2="xDe(etape.x)" :y1="yDe(etape.max)" :y2="yDe(etape.min)" /><circle v-if="etape.mediane !== null" class="trajectoire-mediane-point" :cx="xDe(etape.x)" :cy="yDe(etape.mediane)" r="4"><title>{{ `${etape.label} · médiane ${formaterNombreFR(etape.mediane, 2)} ${dispatch.facet.unit}` }}</title></circle><text :x="xDe(etape.x)" y="228" text-anchor="middle">{{ etape.label }}</text>
+        <line v-if="etape.min !== null && etape.max !== null" class="trajectoire-etalement" :x1="xDe(etape.x)" :x2="xDe(etape.x)" :y1="yDe(etape.max)" :y2="yDe(etape.min)" /><circle v-if="etape.mediane !== null" class="trajectoire-mediane-point" :cx="xDe(etape.x)" :cy="yDe(etape.mediane)" r="4"><title>{{ `${etape.label} · médiane ${formaterValeur({ value: etape.mediane, unit: dispatch.facet.unit })} ${dispatch.facet.unit}` }}</title></circle><text :x="xDe(etape.x)" y="228" text-anchor="middle">{{ etape.label }}</text>
       </g>
       <path v-if="cheminMediane" class="trajectoire-mediane" :d="cheminMediane" />
       <path v-if="cheminTerritoire" class="trajectoire-territoire" :d="cheminTerritoire" />

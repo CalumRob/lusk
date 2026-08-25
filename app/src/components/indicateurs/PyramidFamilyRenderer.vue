@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FamilyDispatch } from '@/indicateurs/familySeam'
-import { formaterNombreFR } from '@/payload/selectors'
+import { formaterValeur } from '@/payload/selectors'
 const props = defineProps<{ dispatch: Extract<FamilyDispatch, { family: 'pyramid' }> }>()
 const territory = computed(() => props.dispatch.selected?.territoire ?? props.dispatch.representation.territories[0]?.territoire)
 const parts = computed(() => props.dispatch.representation.parts.filter((fact) => fact.territoire === territory.value))
 const details = computed(() => [...new Set(parts.value.map((part) => part.detail).filter((detail): detail is string => detail !== null))])
 const labels = computed(() => props.dispatch.facet.labels)
-function value(part: { value: number | null; unit: string }) { return part.value === null ? '—' : `${formaterNombreFR(part.value * (part.unit === '%' ? 100 : 1), 2)}${part.unit}` }
+// La valeur affichée lit LE formatage partagé (#466) — l'échelle % est la
+// sienne (×100 une fois, unité « % » collée à la convention du bloc), jamais
+// une multiplication locale de plus.
+function value(part: { value: number | null; unit: string }) { return part.value === null ? '—' : `${formaterValeur({ value: part.value, unit: part.unit })}${part.unit}` }
 </script>
 <template>
   <figure class="family-renderer pyramid-renderer" data-renderer="pyramid" :data-state="dispatch.status" aria-label="Repères en pyramide des âges">
