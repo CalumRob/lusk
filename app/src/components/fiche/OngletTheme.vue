@@ -32,7 +32,8 @@ import {
   sousGroupesPourTerritoire,
 } from '@/fiche/sousGroupes'
 import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
-import { handoffExploration } from '@/fiche/explorationHandoff'
+import { LIBELLE_HANDOFF, handoffExploration, passarellesLecture } from '@/fiche/explorationHandoff'
+import type { PassarelleLecture } from '@/fiche/explorationHandoff'
 import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
 
@@ -47,6 +48,8 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
   figureLecture: FigureLecture | null
   source: string | null
   lignesLQ: ReturnType<typeof lignesLQPour>
+  /** Les passarelles des constituants publiés de la lecture (#473). */
+  passarellesDeLecture: PassarelleLecture[]
 }
 
 // The theme's published label rides in the metadata (theme_<theme>.json) — the
@@ -59,6 +62,10 @@ const nomTheme = computed(() => props.payload.themeMetadata?.[props.theme]?.labe
 // lookups ne retombent jamais, ils échouent fort (le contrat, validé au load).
 const metadata = computed(() => props.payload.themeMetadata?.[props.theme] ?? null)
 
+/** La passarelle « Explorer » (#409 ; compacte #468) emporte SON territoire —
+ *  le référent partagé des figures de grille ET des grandes lectures (#473). */
+const refTerritoire = computed(() => trouverTerritoire(props.payload, props.territoire))
+
 const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
   sousGroupesPourTerritoire(props.payload, props.theme, props.territoire).map((groupe) => ({
     ...groupe,
@@ -67,6 +74,9 @@ const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
       : null,
     source: groupe.lecture ? sourceLecture(props.payload, groupe.lecture) : null,
     lignesLQ: groupe.lecture ? lignesLQPour(groupe.lecture) : [],
+    passarellesDeLecture: groupe.lecture
+      ? passarellesLecture(metadata.value, groupe.lecture.story_key, refTerritoire.value)
+      : [],
   })),
 )
 
@@ -107,8 +117,6 @@ function libelleIndicateurMetier(clef: string): string {
  * d'indicateur publiée qui emporte le territoire (et son niveau comparable).
  * null pour un indicateur sans page publiée : jamais de lien mort.
  */
-const refTerritoire = computed(() => trouverTerritoire(props.payload, props.territoire))
-
 function passarelle(clef: string) {
   return handoffExploration(metadata.value, clef, refTerritoire.value)
 }
@@ -240,6 +248,24 @@ const lignesReseaux = computed(
             <span class="lecture-etiquette">Source</span>
             {{ groupe.source }}
           </p>
+
+          <!-- #473 : les passarelles des constituants PUBLIÉS de la lecture —
+               l'affordance compacte partagée (#468), en fermeture de carte pour
+               ne jamais concurrencer le récit. Un constituant sans page publiée
+               ne rend RIEN (passarellesLecture le laisse tomber). -->
+          <nav
+            v-if="groupe.passarellesDeLecture.length > 0"
+            class="lecture-passarelles"
+            aria-label="Explorer les indicateurs de cette lecture"
+          >
+            <span class="lecture-passarelles-etiquette">{{ LIBELLE_HANDOFF }}</span>
+            <PassarelleExploration
+              v-for="passarelleLecture in groupe.passarellesDeLecture"
+              :key="passarelleLecture.clef"
+              :to="passarelleLecture.to"
+              :libelle="passarelleLecture.libelle"
+            />
+          </nav>
         </div>
 
         <!-- The honest absence (the pipeline's declared no-reading states: the
@@ -469,6 +495,24 @@ const lignesReseaux = computed(
 .passarelle-exploration {
   --passarelle-couleur: var(--couleur-strong);
   --passarelle-survol: var(--couleur-nuage);
+}
+
+/* La rangée des passarelles d'une grande lecture (#473) — la même voix
+   caption discrète que la source : elle ferme la carte, sous le récit et sa
+   figure, sans jamais rivaliser avec eux. */
+.lecture-passarelles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+}
+
+.lecture-passarelles-etiquette {
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
+  text-transform: uppercase;
+  color: var(--couleur-strong);
 }
 
 @media (max-width: 1024px) {

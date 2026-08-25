@@ -43,3 +43,65 @@ export function handoffExploration(
   }
   return { name: 'indicateur', params: { theme, indicator: clef }, query }
 }
+
+/**
+ * Les constituants PUBLIÉS de chaque grande lecture (#473, l'audit du ticket)
+ * : la lecture Mobilité interprète les pertes totales et les cinq parts sans
+ * accès de son sous-groupe ; la lecture Milieux trace la trajectoire des états
+ * par habitant que « Intensité état » publie (M2→M3). Les quantités calculées
+ * pour la SEULE lecture — div_loss_* et la signature dens/dec, les deux taux
+ * de solde, le top-N LQ, taux_variation_population — ne sont pas des
+ * indicateurs publiés : elles n'apparaissent ici JAMAIS (aucune page
+ * inventée), elles sont consignées hors périmètre sur le ticket.
+ */
+const CONSTITUANTS_PUBLIES_PAR_STORY: Readonly<Record<string, readonly string[]>> = {
+  'vingt-minutes-sans-voiture': [
+    'tot_loss_t',
+    'tot_loss_b',
+    'iso_alimentation',
+    'iso_sante',
+    'iso_administration',
+    'iso_ecole',
+    'iso_banque',
+  ],
+  'ce-que-le-velo-preserve': [
+    'tot_loss_t',
+    'tot_loss_b',
+    'iso_alimentation',
+    'iso_sante',
+    'iso_administration',
+    'iso_ecole',
+    'iso_banque',
+  ],
+  'se-densifier-setaler-ou-sen-aller': ['artif_par_habitant'],
+}
+
+/** Une passarelle d'une grande lecture : sa clé publiée, son libellé publié
+ *  (indicator_labels — jamais une clé brute, #318) et sa route résolue. */
+export interface PassarelleLecture {
+  clef: string
+  libelle: string
+  to: RouteLocationRaw
+}
+
+/**
+ * Les passarelles d'une grande lecture (#473) : chaque constituant déclaré ci-
+ * dessus qui POSÈDE une page publiée devient une route handoffExploration —
+ * le même contrat que la grille (territoire + niveau comparables emportés).
+ * Un constituant sans page publiée est LAISSÉ TOMBER (la règle d'honnêteté
+ * verrouillée par test) : jamais un lien mort vers une page non supportée.
+ */
+export function passarellesLecture(
+  metadata: ThemeMetadata | null | undefined,
+  storyKey: string,
+  territoire: { territoire: string; type: TerritoireType } | null | undefined,
+): PassarelleLecture[] {
+  const resultats: PassarelleLecture[] = []
+  for (const clef of CONSTITUANTS_PUBLIES_PAR_STORY[storyKey] ?? []) {
+    const to = handoffExploration(metadata, clef, territoire)
+    const libelle = metadata?.indicator_labels?.[clef]
+    if (!to || !libelle) continue
+    resultats.push({ clef, libelle, to })
+  }
+  return resultats
+}
