@@ -17,6 +17,7 @@ import type { Fichier } from './loader'
 import type {
   ApercuRow,
   Histoire,
+  IndicatorPageMetadata,
   Indicateur,
   MembreProgramme,
   Payload,
@@ -1654,4 +1655,74 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       },
     },
   },
+}
+
+/**
+ * Les descripteurs de Page d'indicateur du fixture habitat (#409) — le canon
+ * `metadonneesThemesFixtures.habitat` n'en publie AUCUNE (seul le payload réel
+ * en porte) : les specs du catalogue et de la passarelle les demandent à
+ * L'UNITÉ via metadonneesHabitatAvecPagesFixture, chaque spec choisissant son
+ * jeu exact. Trois familles exercées : la distribution (la figure COMPACTE du
+ * sous-groupe état-energetique), la composition de grille (statut) et le
+ * scalaire (prix_m2).
+ */
+type ClePageHabitatFixture = 'distribution_dpe' | 'statut' | 'prix_m2'
+
+const DESCRIPTEURS_HABITAT_FIXTURE: Record<ClePageHabitatFixture, IndicatorPageMetadata> = {
+  distribution_dpe: {
+    indicator: 'distribution_dpe',
+    detail: null,
+    label: 'Distribution des étiquettes DPE (A à G)',
+    definition: 'Répartition des diagnostics par étiquette.',
+    unit: '%',
+    calculation: 'Part de chaque étiquette.',
+    direction: 'low',
+    caveats: 'Comparaison par la part de passoires.',
+    levels: ['commune', 'epci', 'departement'],
+    sources: ['dpe_22'],
+    family: 'distribution',
+    distribution: { signature: ['A', 'G'] },
+  },
+  statut: {
+    indicator: 'statut',
+    detail: null,
+    label: 'Statut d’occupation',
+    definition: 'Résidences principales par statut d’occupation.',
+    unit: '%',
+    calculation: 'Parts du parc.',
+    direction: 'high',
+    caveats: '',
+    levels: ['commune', 'epci', 'departement'],
+    sources: ['logements'],
+    family: 'composition',
+    composition: { parts: ['proprietaire'] },
+  },
+  prix_m2: {
+    indicator: 'prix_m2',
+    detail: null,
+    label: 'Médiane prix au m²',
+    definition: 'Prix médian déclaré au m².',
+    unit: '€/m²',
+    calculation: 'Médiane des ventes.',
+    direction: 'high',
+    caveats: 'Supprimée pour petites n.',
+    levels: ['commune', 'epci', 'departement'],
+    sources: ['dvf_2025_dep22'],
+    family: 'scalar',
+  },
+}
+
+/**
+ * Le clone TYPÉ de la métadonnée habitat enrichi des SEULES pages demandées —
+ * l'appelant contrôle son jeu exact (les assertions de comptage restent
+ * stables), le reste du canon est intact.
+ */
+export function metadonneesHabitatAvecPagesFixture(
+  cles: readonly ClePageHabitatFixture[],
+): ThemeMetadata {
+  const clone = structuredClone(metadonneesThemesFixtures.habitat)
+  clone.indicator_pages = Object.fromEntries(
+    cles.map((cle) => [cle, structuredClone(DESCRIPTEURS_HABITAT_FIXTURE[cle])]),
+  )
+  return clone
 }

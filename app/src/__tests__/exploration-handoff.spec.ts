@@ -11,12 +11,13 @@ import {
   indicateursDemographieFixture,
   indicateursHabitatFixture,
   indicateursProgrammesFixture,
+  metadonneesHabitatAvecPagesFixture,
   metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Payload, ThemeMetadata } from '../payload/types'
+import type { Payload } from '../payload/types'
 
 /**
  * La passarelle « Explorer cet indicateur » (#409) : chaque indicateur de
@@ -67,40 +68,7 @@ describe('handoffExploration — le seam pur', () => {
  * exclue de la grille) et statut (une figure de grille) — mix_logements reste
  * sans page pour exercer l'absence.
  */
-const habitatAvecPages: ThemeMetadata = (() => {
-  const clone = structuredClone(metadonneesThemesFixtures.habitat)
-  clone.indicator_pages = {
-    distribution_dpe: {
-      indicator: 'distribution_dpe',
-      detail: null,
-      label: 'Distribution des étiquettes DPE (A à G)',
-      definition: 'Répartition des diagnostics par étiquette.',
-      unit: '%',
-      calculation: 'Part de chaque étiquette.',
-      direction: 'low',
-      caveats: 'Comparaison par la part de passoires.',
-      levels: ['commune', 'epci', 'departement'],
-      sources: ['dpe_22'],
-      family: 'distribution',
-      distribution: { signature: ['A', 'G'] },
-    },
-    statut: {
-      indicator: 'statut',
-      detail: null,
-      label: 'Statut d’occupation',
-      definition: 'Résidences principales par statut d’occupation.',
-      unit: '%',
-      calculation: 'Parts du parc.',
-      direction: 'high',
-      caveats: '',
-      levels: ['commune', 'epci', 'departement'],
-      sources: ['logements'],
-      family: 'composition',
-      composition: { parts: ['proprietaire'] },
-    },
-  }
-  return clone
-})()
+const habitatAvecPages = metadonneesHabitatAvecPagesFixture(['distribution_dpe', 'statut'])
 
 function payloadOnglet(): Payload {
   return {

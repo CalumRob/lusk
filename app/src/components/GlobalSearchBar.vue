@@ -28,8 +28,8 @@ import { useRouter } from 'vue-router'
 import { CircleAlert, Loader2, Search, SearchX, X } from 'lucide-vue-next'
 
 import type { Territoire } from '../payload/types'
+import GlobalSearchOptionRecherche from './GlobalSearchOptionRecherche.vue'
 import {
-  libelleType,
   rechercherIndicateurs,
   rechercherTerritoires,
 } from '../search/recherche'
@@ -269,79 +269,47 @@ function surFocusout(e: FocusEvent) {
             role="group"
             aria-label="Territoires"
           >
-            <component
-              :is="props.sansNavigation ? 'button' : 'router-link'"
+            <GlobalSearchOptionRecherche
               v-for="(resultat, i) in resultatsTerritoires"
               :id="`gsb-option-${i}`"
               :key="resultat.territoire"
-              role="option"
-              :aria-selected="actif === i ? 'true' : 'false'"
-              class="global-search__option"
-              :class="{ 'is-actif': actif === i }"
-              :type="props.sansNavigation ? 'button' : undefined"
-              :to="
-                props.sansNavigation
-                  ? undefined
-                  : { name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }
-              "
+              genre="territoire"
+              :resultat="resultat"
+              :actif="actif === i"
+              :sans-navigation="props.sansNavigation"
               @click="surSelection(resultat)"
-            >
-              <span class="global-search__nom">{{ resultat.nom }}</span>
-              <span class="global-search__chip">{{ libelleType(resultat.type) }}</span>
-              <span class="global-search__action">
-                {{ props.sansNavigation ? 'Sur la carte' : 'Voir la page' }}
-              </span>
-            </component>
+            />
           </div>
           <div
             v-if="resultatsIndicateurs.length > 0"
             role="group"
             aria-label="Indicateurs"
           >
-            <RouterLink
+            <GlobalSearchOptionRecherche
               v-for="(entree, j) in resultatsIndicateurs"
               :id="`gsb-option-${decalageIndicateurs + j}`"
               :key="entree.href"
-              role="option"
-              :aria-selected="actif === decalageIndicateurs + j ? 'true' : 'false'"
-              class="global-search__option global-search__option--indicateur"
-              :class="{ 'is-actif': actif === decalageIndicateurs + j }"
-              :to="entree.href"
+              genre="indicateur"
+              :entree="entree"
+              :actif="actif === decalageIndicateurs + j"
               @click="surSelectionIndicateur(entree)"
-            >
-              <span class="global-search__nom">{{ entree.label }}</span>
-              <span class="global-search__chip">{{ entree.themeLabel }}</span>
-              <span class="global-search__action">Voir l’indicateur</span>
-            </RouterLink>
+            />
           </div>
         </template>
 
         <!-- Le mode territoire-only (héros de l'accueil, recherche de la
              carte #283) — le comportement historique, inchangé. -->
         <template v-else>
-          <component
-            :is="props.sansNavigation ? 'button' : 'router-link'"
+          <GlobalSearchOptionRecherche
             v-for="(resultat, i) in resultatsTerritoires"
             :id="`gsb-option-${i}`"
             :key="resultat.territoire"
-            role="option"
-            :aria-selected="actif === i ? 'true' : 'false'"
-            class="global-search__option"
-            :class="{ 'is-actif': actif === i }"
-            :type="props.sansNavigation ? 'button' : undefined"
-            :to="
-              props.sansNavigation
-                ? undefined
-                : { name: 'territoire', params: { type: resultat.type, id: resultat.territoire } }
-            "
+            genre="territoire"
+            :resultat="resultat"
+            :actif="actif === i"
+            :sans-navigation="props.sansNavigation"
             @click="surSelection(resultat)"
-          >
-            <span class="global-search__nom">{{ resultat.nom }}</span>
-            <span class="global-search__chip">{{ libelleType(resultat.type) }}</span>
-            <span class="global-search__action">
-              {{ props.sansNavigation ? 'Sur la carte' : 'Voir la page' }}
-            </span>
-          </component>
+          />
         </template>
       </div>
       <p v-else-if="props.erreur" class="global-search__etat global-search__etat--erreur">
@@ -475,59 +443,8 @@ function surFocusout(e: FocusEvent) {
   padding: var(--space-1);
 }
 
-.global-search__option {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  text-decoration: none;
-  transition: background-color 120ms ease-out;
-}
-
-/* Le mode sans navigation (#283) : les résultats sont des boutons — la carte
-   zoome sur l'entité au lieu d'ouvrir la fiche. Même look que la ligne lien. */
-button.global-search__option {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  font: var(--text-body);
-  text-align: start;
-  cursor: pointer;
-}
-
-.global-search__option:hover,
-.global-search__option.is-actif {
-  background: var(--surface-tertiary);
-}
-
-.global-search__nom {
-  font: var(--text-body);
-  font-weight: 600;
-}
-
-.global-search__chip {
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--surface-tertiary);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.global-search__action {
-  margin-left: auto;
-  font: var(--text-caption);
-  letter-spacing: var(--text-caption-tracking);
-  color: var(--accent-primary);
-  white-space: nowrap;
-}
-
-.global-search__option:hover .global-search__action {
-  color: var(--accent-hover);
-}
+/* Les styles des lignes d'option voyagent avec le fragment partagé
+   (GlobalSearchOptionRecherche) — aucun doublon ici. */
 
 /* ---- Empty / error states ---- */
 .global-search__etat {

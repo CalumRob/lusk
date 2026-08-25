@@ -9,6 +9,7 @@ import {
   indicateursDemographieFixture,
   indicateursHabitatFixture,
   indicateursProgrammesFixture,
+  metadonneesHabitatAvecPagesFixture,
   metadonneesThemesFixtures,
 } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
@@ -23,39 +24,11 @@ import type { Fichier } from '../payload/loader'
  * routées : le charger injecté (PAYLOAD_CHARGER_KEY) + un routeur mémoire.
  */
 
-// Le fixture habitat ne publie aucune page (seul le payload réel en porte) —
-// la vue est exercée sur un clone enrichi de DEUX descripteurs publiés, la
-// couverture « every and only » complète vivant dans catalogue.spec × payload réel.
-const habitatAvecPages = structuredClone(metadonneesThemesFixtures.habitat)
-habitatAvecPages.indicator_pages = {
-  distribution_dpe: {
-    indicator: 'distribution_dpe',
-    detail: null,
-    label: 'Distribution des étiquettes DPE (A à G)',
-    definition: 'Répartition des diagnostics par étiquette.',
-    unit: '%',
-    calculation: 'Part de chaque étiquette.',
-    direction: 'low',
-    caveats: 'Comparaison par la part de passoires.',
-    levels: ['commune', 'epci', 'departement'],
-    sources: ['dpe_22'],
-    family: 'distribution',
-    distribution: { signature: ['A', 'G'] },
-  },
-  prix_m2: {
-    indicator: 'prix_m2',
-    detail: null,
-    label: 'Médiane prix au m²',
-    definition: 'Prix médian déclaré au m².',
-    unit: '€/m²',
-    calculation: 'Médiane des ventes.',
-    direction: 'high',
-    caveats: 'Supprimée pour petites n.',
-    levels: ['commune', 'epci', 'departement'],
-    sources: ['dvf_2025_dep22'],
-    family: 'scalar',
-  },
-}
+// Le fixture habitat canon ne publie aucune page (seul le payload réel en
+// porte) — la vue est exercée sur un clone enrichi de DEUX descripteurs
+// publiés (le fixture partagé), la couverture « every and only » complète
+// vivant dans catalogue.spec × payload réel.
+const habitatAvecPages = metadonneesHabitatAvecPagesFixture(['distribution_dpe', 'prix_m2'])
 
 const payload: Payload = {
   territoires: [],
