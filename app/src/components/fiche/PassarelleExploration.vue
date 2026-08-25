@@ -27,6 +27,14 @@ import type { RouteLocationRaw } from 'vue-router'
 defineProps<{
   /** La route résolue par handoffExploration — l'état d'URL du contrat #409. */
   to: RouteLocationRaw
+  /**
+   * Le libellé du site (#473) : sous une grande lecture, plusieurs passarelles
+   * cohabitent — chaque ancre porte le nom PUBLIÉ de son indicateur pour
+   * rester discernable (des intitulés de liens uniques, accessibilité).
+   * Défaut : le libellé compact unique « Explorer » des sites à ancre seule
+   * (#468) — tous les sites existants restent inchangés.
+   */
+  libelle?: string
 }>()
 </script>
 
@@ -37,7 +45,7 @@ defineProps<{
     target="_blank"
     rel="noopener noreferrer"
   >
-    {{ LIBELLE_HANDOFF }}
+    {{ libelle ?? LIBELLE_HANDOFF }}
     <AppIcon :icone="ArrowRight" :taille="12" aria-hidden="true" />
   </RouterLink>
 </template>
