@@ -78,7 +78,7 @@ describe('bascule #410 — l’hygiène des liens internes', () => {
   })
 
   it('enregistre les destinations de la nouvelle architecture', () => {
-    const chemins = new Set(routes.map((r) => r.path))
+    const chemins = new Set<string>(routes.map((r) => r.path))
     for (const chemin of ['/', '/sources', '/a-propos', '/indicateurs']) {
       expect(chemins.has(chemin), chemin).toBe(true)
     }

@@ -14,7 +14,7 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 |---|---|
 | `npm install` | Install dependencies (lockfile: `package-lock.json`) |
 | `npm run dev` | Vite dev server (hot reload) |
-| `npm run test` | Vitest, one run (payload contract + fiche/carte/méthodes + tokens + router — 1 092 tests) |
+| `npm run test` | Vitest, one run (payload contract + fiche/carte + bascule + tokens + router) |
 | `npm run build` | `vue-tsc` type-check + `vite build` → `dist/` |
 | `npm run preview` | Serve the built `dist/` locally |
 

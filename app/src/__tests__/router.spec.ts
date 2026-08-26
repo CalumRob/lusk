@@ -32,8 +32,10 @@ describe('router — route table', () => {
   })
 
   it('retires /methodologie — no partial alias survives the cutover (#410)', () => {
-    expect(routes.some((r) => r.path === '/methodologie')).toBe(false)
-    expect(routes.some((r) => r.name === 'methodologie')).toBe(false)
+    const chemins: string[] = routes.map((r) => r.path)
+    const noms: string[] = routes.map((r) => String(r.name))
+    expect(chemins).not.toContain('/methodologie')
+    expect(noms).not.toContain('methodologie')
   })
 
   it('keeps /carte routed — épargnée par ruling PO (2026-08-26), outil sans lien (#410)', () => {
