@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
+import { indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture } from '../payload/fixtures'
 import type { HistoireMobilite, Payload } from '../payload/types'
 import {
   apercuPourTerritoire,
@@ -132,6 +133,17 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(themes.has('milieux')).toBe(true)
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}|${i.sex ?? ''}|${i.dimension ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
+  })
+
+  it('mirrors the raccordement scalar/curve/reference contract before artefact promotion (#487)', () => {
+    const keys = new Set(indicateursRaccordementFixture.map((ligne) => ligne.key))
+    expect(keys).toEqual(new Set(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']))
+    expect(metadonneesMobiliteRaccordementFixture.indicator_keys).toEqual(
+      expect.arrayContaining(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']),
+    )
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail !== null)).toHaveLength(549)
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(61)
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe').every((ligne) => ligne.rang_epci === null && ligne.rang_dep === null && ligne.rang_reg === null)).toBe(true)
   })
 
   it('keeps every rank an ordinal ≥ 1 with its group size, or null (ADR-0015)', async () => {

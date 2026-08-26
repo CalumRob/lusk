@@ -586,6 +586,36 @@ export function formaterValeur(ligne: { value: number | null; unit: string | nul
   return formaterNombreFR(brut, estPourcent ? 0 : 2)
 }
 
+/**
+ * The approved public sentence for the raccordement scalar (#487). The
+ * pipeline publishes fractions with unit "%"; this selector is the single
+ * place where that fraction becomes the reader-facing percentage. A null
+ * scalar stays null so an unrouted territory never gets an invented claim.
+ */
+export function phraseRaccordement(
+  nomTerritoire: string,
+  ligne: { key: string; value: number | null; unit: string },
+): string | null {
+  if (ligne.key !== 'raccordement_tc' || ligne.value === null) return null
+  const valeur = formaterValeur(ligne)
+  if (valeur === null) return null
+  return `Un mercredi de période scolaire, ${valeur} % de la population bretonne peut rejoindre ${nomTerritoire} en moins de 90 minutes en train, en car ou en bus de mairie à mairie.`
+}
+
+/** The cumulative raccordement rows for one territory, in payload order. */
+export function courbeRaccordementPourTerritoire(payload: Payload, territoire: string): Indicateur[] {
+  return payload.indicateurs.filter(
+    (ligne) => ligne.theme === 'mobilite' && ligne.key === 'raccordement_courbe' && ligne.territoire === territoire,
+  )
+}
+
+/** The median-Breton-commune reference curve (published on the region row). */
+export function referenceRaccordement(payload: Payload): Indicateur[] {
+  return payload.indicateurs.filter(
+    (ligne) => ligne.theme === 'mobilite' && ligne.key === 'raccordement_reference' && ligne.territoire === '53',
+  )
+}
+
 /** A signed integer — the Démographie story's soldes ("+70", "-380", "0"). */
 export function formaterSolde(x: number): string {
   const signe = x > 0 ? '+' : ''

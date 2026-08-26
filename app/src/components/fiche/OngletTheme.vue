@@ -21,6 +21,7 @@ import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieu
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
 import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
+import FigureRaccordement from '@/components/fiche/FigureRaccordement.vue'
 import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
@@ -34,7 +35,13 @@ import {
 import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
 import { LIBELLE_HANDOFF, handoffExploration, passarellesLecture } from '@/fiche/explorationHandoff'
 import type { PassarelleLecture } from '@/fiche/explorationHandoff'
-import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
+import {
+  courbeRaccordementPourTerritoire,
+  descriptionNuage,
+  estampilleSnapshot,
+  referenceRaccordement,
+  trouverTerritoire,
+} from '@/payload/selectors'
 import type { Payload, Theme } from '@/payload/types'
 
 const props = defineProps<{
@@ -102,7 +109,10 @@ const descriptionNuageComputed = computed(() =>
 
 /** The grid figures of a subgroup — the compact figure renders first, never twice. */
 function figuresGrille(groupe: SousGroupeRenduComplet) {
-  return groupe.figures.filter((figure) => figure.key !== groupe.figureCompacte?.clef)
+  return groupe.figures.filter(
+    (figure) =>
+      figure.key !== groupe.figureCompacte?.clef && figure.key !== 'raccordement_reference',
+  )
 }
 
 /** The detail labels of a multi-detail figure — the metadata's detail_labels
@@ -144,6 +154,14 @@ const lignesReseaux = computed(
   () =>
     sousGroupes.value.flatMap((groupe) => groupe.figures).find((figure) => figure.key === 'reseaux')
       ?.lignes ?? [],
+)
+
+/** The median reference curve is published once, on the regional row. */
+const lignesRaccordementReference = computed(() => referenceRaccordement(props.payload))
+
+/** The current territory's curve, exposed to the dedicated chart renderer. */
+const lignesRaccordement = computed(() =>
+  courbeRaccordementPourTerritoire(props.payload, props.territoire),
 )
 </script>
 
@@ -319,13 +337,22 @@ const lignesReseaux = computed(
             :key="figure.key"
             class="figure-cellule"
           >
+            <FigureRaccordement
+              v-if="figure.key === 'raccordement_courbe'"
+              :lignes="lignesRaccordement.length > 0 ? lignesRaccordement : figure.lignes"
+              :reference="lignesRaccordementReference"
+              :nom="nomTerritoire"
+              :libelle="libelleIndicateurMetier(figure.key)"
+            />
             <IndicatorFigure
+              v-else
               :clef="figure.key"
               :lignes="figure.lignes"
               :libelle="libelleIndicateurMetier(figure.key)"
               :labels-detail="labelsDetailPour(figure.key)"
               :large="figureLarge(figure.key)"
               :signe="figureSigne(figure.key)"
+              :nom-territoire="nomTerritoire"
               :theme="theme"
             />
             <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />

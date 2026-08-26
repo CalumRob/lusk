@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { couchesDuTheme } from '../carte/coucheModel'
-import type { EntreeCouches } from '../carte/coucheModel'
+import type { Couche, EntreeCouches } from '../carte/coucheModel'
 import {
   histoiresDemographieFixture,
   histoiresEconomieFixture,
@@ -13,6 +13,8 @@ import {
   indicateursHabitatFixture,
   indicateursMilieuxFixture,
   indicateursMobiliteFixture,
+  indicateursRaccordementFixture,
+  metadonneesMobiliteRaccordementFixture,
   metadonneesThemesFixtures,
   territoiresFixture,
   vintagesFixture,
@@ -205,6 +207,31 @@ describe('couchesDuTheme — Mobilité (fixture)', () => {
       'Ménages sans voiture',
       'Ménages avec 1 voiture',
     ])
+  })
+})
+
+describe('couchesDuTheme — raccordement (fixture)', () => {
+  const payload = payloadAvec(
+    indicateursRaccordementFixture,
+    [],
+    'mobilite',
+  )
+  payload.themeMetadata = { mobilite: metadonneesMobiliteRaccordementFixture }
+
+  it('publie le scalaire à 90 minutes comme couche, mais garde courbe et référence dans la figure', () => {
+    const couches = couchesDuTheme(payload, 'mobilite')
+    const couchesIndicateurs: Couche[] = couches.entrees.flatMap((entree) => {
+      if (entree.type === 'groupe') return entree.groupe.couches
+      return entree.couche.source === 'indicateur' ? [entree.couche] : []
+    })
+
+    expect(couchesIndicateurs).toContainEqual(expect.objectContaining({
+      clef: 'raccordement_tc',
+      source: 'indicateur',
+      libelle: 'Population bretonne joignable en 90 minutes en TC',
+    }))
+    expect(couchesIndicateurs.map((couche) => couche.clef)).not.toContain('raccordement_courbe')
+    expect(couchesIndicateurs.map((couche) => couche.clef)).not.toContain('raccordement_reference')
   })
 })
 

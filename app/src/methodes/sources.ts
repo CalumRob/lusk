@@ -376,6 +376,15 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     caveat:
       'Licence Ouverte 2.0 \u2014 paternit\u00e9 \u00ab Service-Public.gouv.fr / DILA \u00bb + URL de t\u00e9l\u00e9chargement + nom du fichier + date du fichier.',
   },
+  matrice_temps_mairies: {
+    nom: 'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+    libelle: 'Matrice figée du mercredi 16 septembre 2026',
+    editeur: 'Lusk',
+    url: 'https://github.com/CalumRob/lusk',
+    themes: ['mobilite'],
+    caveat:
+      'Le résultat est figé sur un mercredi réel de période scolaire, avec le meilleur départ de la fenêtre 07:00–20:00 et une marche plafonnée à 40 minutes aux deux extrémités. La matrice combine SNCF Voyageurs national (seule source ferroviaire, TGV et maritime inclus quand publiés), KorrigoBret hors SNCF et les mairies DILA.',
+  },
   batiments_residentiels: {
     nom: 'BDNB (Base Nationale des B\u00e2timents) \u2014 couche des b\u00e2timents r\u00e9sidentiels de Bretagne, port\u00e9e pour l\u2019offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)',
     libelle: 'Extrait 2025-07',

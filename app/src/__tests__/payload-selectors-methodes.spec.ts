@@ -83,7 +83,7 @@ function vintagesOcsGe(): Vintage[] {
 }
 
 describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () => {
-  it('groupe les 59 lignes du registre en 27 jeux de données, dans l\u2019ordre du registre', () => {
+  it('groupe les 60 lignes du registre en 28 jeux de données, dans l\u2019ordre du registre', () => {
     const { jeux } = sourcesMethodes(payloadAvec(vintagesFixture))
 
     const attendus = [
@@ -91,8 +91,9 @@ describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () =>
     ]
     expect(jeux.map((j) => j.id)).toEqual(attendus)
     // osm_reseaux porte le stationnement ; BPE ajoute un seul jeu ; #485
-    // ajoute le rail SNCF national et la DILA BDL.
-    expect(jeux.length).toBe(27)
+    // ajoute le rail SNCF national et la DILA BDL ; #487 ajoute la matrice
+    // publiée du raccordement.
+    expect(jeux.length).toBe(28)
   })
 
   it('porte les faits éditoriaux du jeu sur l\u2019en-tête (nom, éditeur, URL, thèmes)', () => {
@@ -240,8 +241,9 @@ describe('sourcesMethodes — vintages absents (404)', () => {
 
     expect(vintagesAbsents).toBe(true)
     // les aires OSM partagent l'identité osm_reseaux ; seul BPE ajoute un jeu ;
-    // #485 ajoute le rail SNCF national et la DILA BDL.
-    expect(jeux.length).toBe(27)
+    // #485 ajoute le rail SNCF national et la DILA BDL ; #487 ajoute la
+    // matrice publiée du raccordement.
+    expect(jeux.length).toBe(28)
     for (const jeu of jeux) {
       expect(jeu.replie).toBe(true)
       expect(jeu.vintages[0].version).toBeNull()

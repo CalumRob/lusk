@@ -705,6 +705,117 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   ...indicateursOffreCyclableFixture,
 ]
 
+/**
+ * A small raccordement fixture for the app seam (#487). The production
+ * payload publishes one curve point every ten minutes through t0600 and the
+ * reference on the regional row; these four territories exercise the three
+ * requested fiche levels plus the reference. It is intentionally separate
+ * from the historical Mobilité fixture: the committed public payload is still
+ * the pre-raccordement snapshot until the pipeline artefact is promoted.
+ */
+const vintageRaccordementMobilite = {
+  vintage_source: 'Lusk — matrice temps mairie à mairie du raccordement',
+  vintage_version: '2026-09-16',
+  vintage_date_reference: '2026-08-25',
+  vintage_date_publication: '2026-08-26',
+}
+
+function courbeRaccordementFixture(
+  territoire: string,
+  type: Indicateur['type'],
+  a90: number | null,
+  a600: number | null,
+  key: 'raccordement_courbe' | 'raccordement_reference' = 'raccordement_courbe',
+): Indicateur[] {
+  return Array.from({ length: 61 }, (_, index) => {
+    const minute = index * 10
+    const progress = index <= 9 ? index / 9 : (index - 9) / 51
+    const value = a90 === null || a600 === null
+      ? null
+      : index <= 9
+        ? a90 * progress
+        : a90 + (a600 - a90) * progress
+    return {
+      territoire,
+      type,
+      theme: 'mobilite' as const,
+      key,
+      detail: `t${String(minute).padStart(4, '0')}`,
+      value,
+      unit: '%',
+      rider: null,
+      rang_epci: null,
+      rang_epci_n: null,
+      rang_dep: null,
+      rang_dep_n: null,
+      rang_reg: null,
+      rang_reg_n: null,
+      ...vintageRaccordementMobilite,
+    }
+  })
+}
+
+function scalaireRaccordementFixture(
+  territoire: string,
+  type: Indicateur['type'],
+  value: number | null,
+  rang: Pick<Indicateur, 'rang_epci' | 'rang_epci_n' | 'rang_dep' | 'rang_dep_n' | 'rang_reg' | 'rang_reg_n'> = {
+    rang_epci: null,
+    rang_epci_n: null,
+    rang_dep: null,
+    rang_dep_n: null,
+    rang_reg: null,
+    rang_reg_n: null,
+  },
+): Indicateur {
+  return {
+    territoire,
+    type,
+    theme: 'mobilite',
+    key: 'raccordement_tc',
+    detail: null,
+    value,
+    unit: '%',
+    rider: value === null ? 'Non routée — géocode DILA aberrant.' : null,
+    ...rang,
+    ...vintageRaccordementMobilite,
+  }
+}
+
+export const indicateursRaccordementFixture: Indicateur[] = [
+  scalaireRaccordementFixture('22001', 'commune', 0.31, {
+    rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+  }),
+  scalaireRaccordementFixture('22002', 'commune', 0.2, {
+    rang_epci: 2, rang_epci_n: 2, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+  }),
+  scalaireRaccordementFixture('29001', 'commune', 0.5),
+  scalaireRaccordementFixture('29002', 'commune', null),
+  scalaireRaccordementFixture('200000001', 'epci', 0.42, {
+    rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 2, rang_reg_n: 2,
+  }),
+  scalaireRaccordementFixture('200000002', 'epci', 0.3, {
+    rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 1, rang_reg_n: 2,
+  }),
+  scalaireRaccordementFixture('22', 'departement', 0.4, {
+    rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 1, rang_reg_n: 2,
+  }),
+  scalaireRaccordementFixture('29', 'departement', 0.35, {
+    rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 2, rang_reg_n: 2,
+  }),
+  scalaireRaccordementFixture('53', 'region', 1),
+  ...courbeRaccordementFixture('22001', 'commune', 0.31, 0.96),
+  ...courbeRaccordementFixture('22002', 'commune', 0.2, 0.9),
+  ...courbeRaccordementFixture('29001', 'commune', 0.5, 0.98),
+  ...courbeRaccordementFixture('29002', 'commune', null, null),
+  ...courbeRaccordementFixture('200000001', 'epci', 0.42, 0.92),
+  ...courbeRaccordementFixture('200000002', 'epci', 0.3, 0.88),
+  ...courbeRaccordementFixture('22', 'departement', 0.4, 0.94),
+  ...courbeRaccordementFixture('29', 'departement', 0.35, 0.91),
+  ...courbeRaccordementFixture('53', 'region', 1, 1),
+  ...courbeRaccordementFixture('53', 'region', 0.31, 0.91, 'raccordement_reference'),
+]
+
 /** Les Stories Mobilité (issue #142, RÉSOLUES par #312) — UNE lecture par
  * territoire : le défaut « vingt-minutes-sans-voiture » (div_loss_t + la
  * signature de distribution) pour 22001 / 200000001 / 22 / 53, et — pour la
@@ -1726,3 +1837,56 @@ export function metadonneesHabitatAvecPagesFixture(
   )
   return clone
 }
+
+/**
+ * The future Mobilité metadata seam with the three raccordement facts from
+ * pipeline #486. The historical metadata fixture stays unchanged so older
+ * figure/card tests continue to describe the committed pre-raccordement
+ * payload; raccordement tests opt into this explicit contract.
+ */
+export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
+  const base = structuredClone(metadonneesThemesFixtures.mobilite)
+  const detailsCourbe = Object.fromEntries(
+    Array.from({ length: 61 }, (_, index) => {
+      const minute = index * 10
+      return [`t${String(minute).padStart(4, '0')}`, `${minute} minutes`]
+    }),
+  )
+  const subgroup = base.subgroups.find((groupe) => groupe.key === 'acces-aux-services')!
+  subgroup.indicators = [...subgroup.indicators, 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']
+  subgroup.framing =
+    'La part des bâtiments à moins de 500 mètres d’un arrêt et le raccordement du territoire au réseau de transports en commun breton, de mairie à mairie.'
+  base.indicator_keys = [
+    ...base.indicator_keys,
+    'raccordement_tc',
+    'raccordement_courbe',
+    'raccordement_reference',
+  ]
+  base.sources = {
+    ...base.sources,
+    raccordement_tc: 'matrice_temps_mairies',
+    raccordement_courbe: 'matrice_temps_mairies',
+    raccordement_reference: 'matrice_temps_mairies',
+  }
+  base.indicator_labels = {
+    ...base.indicator_labels,
+    raccordement_tc: 'Population bretonne joignable en 90 minutes en TC',
+    raccordement_courbe: 'Courbe cumulative — population bretonne joignable en TC',
+    raccordement_reference: 'Référence médiane — commune bretonne',
+  }
+  base.detail_labels = {
+    ...base.detail_labels,
+    raccordement_courbe: detailsCourbe,
+    raccordement_reference: detailsCourbe,
+  }
+  base.indicator_caveats = {
+    ...base.indicator_caveats,
+    raccordement_tc:
+      'Aux niveaux agrégés, les communes non routées sont exclues du dénominateur et la couverture réellement mesurée est signalée.',
+    raccordement_courbe:
+      'La courbe est calculée depuis la matrice de temps mairie à mairie figée ; une commune non routée reste indisponible.',
+    raccordement_reference:
+      'La référence est la courbe médiane des communes bretonnes routées.',
+  }
+  return base
+})()
