@@ -1,0 +1,326 @@
+{
+  "viewport": {
+    "w": 1440,
+    "h": 2400,
+    "dpr": 1
+  },
+  "lecture": [
+    {
+      "groupe": "etat-energetique-du-parc",
+      "present": true,
+      "indisponible": false,
+      "absentTexte": null,
+      "prose": "Le parc de Rennes est intermédiaire : 5,4 de passoires thermiques. Sources et méthodes",
+      "proseBox": {
+        "x": 161,
+        "y": 1128,
+        "width": 902,
+        "height": 29,
+        "fontSizePx": "18px",
+        "fontFamily": "\"Newsreader Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "contexte": null,
+      "source": null,
+      "ligneBox": {
+        "x": 161,
+        "y": 1128,
+        "width": 1118,
+        "height": 29,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "colonneFigureBox": {
+        "x": 1079,
+        "y": 1128,
+        "width": 200,
+        "height": 0,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "canvasBox": null,
+      "listeLQ": null
+    }
+  ],
+  "figuresGrille": [
+    {
+      "groupe": "composition-du-parc",
+      "clef": "statut",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 936,
+        "y": 455,
+        "width": 368,
+        "height": 303,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": null,
+      "valeurBox": null,
+      "unite": null,
+      "libelle": "Statut d’occupation",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Propriétaires",
+          "valeur": "34",
+          "unite": "%"
+        },
+        {
+          "libelle": "Locataires HLM (parc social)",
+          "valeur": "20",
+          "unite": "%"
+        },
+        {
+          "libelle": "Locataires du parc privé",
+          "valeur": "44",
+          "unite": "%"
+        },
+        {
+          "libelle": "Logés gratuitement",
+          "valeur": "2",
+          "unite": "%"
+        }
+      ],
+      "vintage": "INSEE — Logements (dossier complet) · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    },
+    {
+      "groupe": "composition-du-parc",
+      "clef": "type",
+      "accentClasse": "carte-figure--accent-fort",
+      "box": {
+        "x": 136,
+        "y": 781,
+        "width": 368,
+        "height": 194,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "valeurBox": null,
+      "unite": null,
+      "libelle": "Type de logement",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Maisons",
+          "valeur": "13",
+          "unite": "%"
+        },
+        {
+          "libelle": "Appartements",
+          "valeur": "87",
+          "unite": "%"
+        }
+      ],
+      "vintage": "INSEE — Logements (dossier complet) · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    },
+    {
+      "groupe": "etat-energetique-du-parc",
+      "clef": "part_passoires",
+      "accentClasse": null,
+      "box": {
+        "x": 936,
+        "y": 1206,
+        "width": 368,
+        "height": 181,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": "5",
+      "valeurBox": {
+        "x": 953,
+        "y": 1223,
+        "width": 20,
+        "height": 35,
+        "fontSizePx": "32px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "600",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "unite": "%",
+      "libelle": "Part de passoires thermiques",
+      "puce": {
+        "texte": "▼ 32e/43 de l'EPCI",
+        "aria": "32e/43 de l'EPCI — moins = mieux"
+      },
+      "tranches": [],
+      "vintage": "ADEME — Observatoire DPE, logements existants · 2026-08-11 · publ. 11 août 2026"
+    },
+    {
+      "groupe": "etat-energetique-du-parc",
+      "clef": "age_du_bati",
+      "accentClasse": null,
+      "box": {
+        "x": 136,
+        "y": 1410,
+        "width": 368,
+        "height": 286,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": true
+      },
+      "valeur": null,
+      "valeurBox": null,
+      "unite": null,
+      "libelle": "Âge du bâti",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Avant 1919",
+          "valeur": "4",
+          "unite": "%"
+        },
+        {
+          "libelle": "De 1919 à 1945",
+          "valeur": "6",
+          "unite": "%"
+        },
+        {
+          "libelle": "De 1946 à 1970",
+          "valeur": "25",
+          "unite": "%"
+        },
+        {
+          "libelle": "De 1971 à 1990",
+          "valeur": "30",
+          "unite": "%"
+        },
+        {
+          "libelle": "De 1991 à 2005",
+          "valeur": "17",
+          "unite": "%"
+        },
+        {
+          "libelle": "De 2006 à aujourd’hui",
+          "valeur": "18",
+          "unite": "%"
+        }
+      ],
+      "vintage": "INSEE — Logements (dossier complet) · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    }
+  ],
+  "figuresCompactes": [
+    {
+      "groupe": "composition-du-parc",
+      "famille": "composition",
+      "clef": "mix_logements",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 455,
+        "width": 768,
+        "height": 177,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Mix de logements",
+      "puce": null,
+      "tranches": [
+        {
+          "libelle": "Résidences principales",
+          "valeur": "89",
+          "unite": "%"
+        },
+        {
+          "libelle": "Résidences secondaires",
+          "valeur": "5",
+          "unite": "%"
+        },
+        {
+          "libelle": "Logements vacants",
+          "valeur": "6",
+          "unite": "%"
+        }
+      ],
+      "vintage": "INSEE — Logements (dossier complet) · 2023 · réf. 1 janv. 2023 · publ. 30 juin 2026"
+    },
+    {
+      "groupe": "etat-energetique-du-parc",
+      "famille": "composition",
+      "clef": "distribution_dpe",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 1206,
+        "width": 768,
+        "height": 166,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Distribution des étiquettes DPE (A à G)",
+      "puce": null,
+      "tranches": [],
+      "vintage": "ADEME — Observatoire DPE, logements existants · 2026-08-11 · publ. 11 août 2026"
+    },
+    {
+      "groupe": "marche",
+      "famille": "trajectory",
+      "clef": "prix_m2",
+      "tag": "FIGURE",
+      "box": {
+        "x": 136,
+        "y": 1824,
+        "width": 768,
+        "height": 158,
+        "fontSizePx": "16px",
+        "fontFamily": "\"Manrope Variable\"",
+        "fontWeight": "400",
+        "color": "rgb(45, 55, 72)",
+        "overflows200": false
+      },
+      "valeur": null,
+      "unite": null,
+      "libelle": "Médiane prix au m²",
+      "puce": null,
+      "tranches": [],
+      "vintage": "Etalab — DVF géolocalisées · 2025 · réf. 31 déc. 2025 · publ. 18 mai 2026"
+    }
+  ],
+  "canvases": [],
+  "titres": [
+    {
+      "groupe": "composition-du-parc",
+      "titre": "La composition du parc"
+    },
+    {
+      "groupe": "etat-energetique-du-parc",
+      "titre": "L’état énergétique du parc"
+    },
+    {
+      "groupe": "marche",
+      "titre": "Le marché"
+    }
+  ],
+  "titrePage": "Lusk — Observatoire des territoires bretons"
+}
