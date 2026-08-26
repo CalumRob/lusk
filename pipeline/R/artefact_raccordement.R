@@ -26,9 +26,11 @@
 # 600 min, r5r schedule-based, élévation NONE, aucun tronçon voiture.
 #
 # LE CONTRAT REFUSE TOUT SUBSTITUT (la garde du snapshot porté, durcie) : le
-# nom de fichier épinglé ET l'empreinte sha256 des fichiers migrés verbatim
-# sont constants — une copie renommée, un autre millésime structurellement
-# valide ou une cellule modifiée échouent bruyamment en nommant la règle.
+# nom de fichier épinglé est constant et l'empreinte sha256 est RECALCULÉE
+# SUR LE DISQUE à chaque vérification (openssl hache les OCTETS du fichier
+# relu — jamais la seule métadonnée déclarée par l'enveloppe) : une copie
+# renommée, un fichier illisible ou un seul octet modifié échouent bruyamment
+# en nommant la règle.
 #
 # Les DEUX CAVEATS constatés à la migration sont documentés, jamais corrigés
 # en silence (la fidélité au figé d'abord ; l'alignement COG est le travail du
@@ -53,7 +55,9 @@ MATRICE_TEMPS_MAIRIES_FICHIER <- "matrice_temps_mairies.csv.gz"
 # MAIRIES_BRETAGNE_SHA256 / MATRICE_TEMPS_MAIRIES_SHA256 ----------------------------
 # Les empreintes des fichiers migrés VERBATIM depuis la recherche vérifiée
 # (E:\Temp\opencode\e1-r5r, constats §5a/§5c) — la trace du refus de tout
-# substitut de contenu, recalculée et comparée à chaque vérification.
+# substitut de contenu : à chaque vérification du contrat, les octets du
+# fichier épinglé sont relus du disque, hachés (openssl) et comparés à CETTE
+# constante.
 MAIRIES_BRETAGNE_SHA256 <-
   "37cf11addb965dccfb82877ee92864587932fe4bb0937a21df66771f5cfe42be"
 MATRICE_TEMPS_MAIRIES_SHA256 <-
@@ -214,11 +218,13 @@ NOTE_ARTEFACT_MATRICE_TEMPS <- paste0(
 )
 
 # verifier_contrat_mairies_bretagne --------------------------------------------------------
-# Le contrat de la table des mairies : le fichier épinglé (nom + empreinte),
-# les colonnes, la couverture constatée (1 213 lignes, ids uniques, les quatre
-# départements, coordonnées numériques finies). Toute violation échoue FORT en
-# nommant le champ fautif et la règle.
-verifier_contrat_mairies_bretagne <- function(artefact) {
+# Le contrat de la table des mairies : le fichier épinglé (nom + empreinte
+# RECALCULÉE SUR LE DISQUE), les colonnes, la couverture constatée (1 213
+# lignes, ids uniques, les quatre départements, coordonnées numériques
+# finies). Toute violation échoue FORT en nommant le champ fautif et la règle.
+# `chemin` permet aux tests de passer une copie altérée du fichier ; par
+# défaut, la ressource épinglée du package (le même pattern que les lecteurs).
+verifier_contrat_mairies_bretagne <- function(artefact, chemin = NULL) {
   manquer <- function(champ, detail) stop(sprintf(
     "Contrat mairies Bretagne violé — %s : %s.", champ, detail),
     call. = FALSE)
@@ -240,16 +246,30 @@ verifier_contrat_mairies_bretagne <- function(artefact) {
       MAIRIES_BRETAGNE_FICHIER))
   }
 
-  # l'empreinte du contenu migré verbatim — un autre contenu, même bien nommé,
-  # est refusé
+  # l'empreinte VÉRIFIÉE SUR LE DISQUE : les OCTETS du fichier épinglé sont
+  # relus et hachés (openssl) à chaque vérification — jamais la seule
+  # métadonnée déclarée par l'enveloppe ; un contenu corrompu ou substitué
+  # échoue là où le fichier est lu. openssl::sha256 exige une CONNEXION
+  # BINAIRE (« rb ») : un chemin passé en caractère hacherait la CHAÎNE du
+  # chemin, pas le fichier.
   if (!is.character(artefact$sha256) ||
       !grepl("^[0-9a-f]{64}$", artefact$sha256)) {
     manquer("sha256", "empreinte absente ou mal formée")
   }
-  if (!identical(artefact$sha256, MAIRIES_BRETAGNE_SHA256)) {
+  if (is.null(chemin)) {
+    chemin <- system.file("extdata", MAIRIES_BRETAGNE_FICHIER, package = "lusk")
+  }
+  if (is.na(chemin) || !nzchar(chemin) || !file.exists(chemin)) {
+    manquer("fichier", paste0(
+      MAIRIES_BRETAGNE_FICHIER,
+      " introuvable ou illisible sur le disque — l'empreinte du fichier ",
+      "épinglé doit rester recalculable"))
+  }
+  calculee <- paste(openssl::sha256(file(chemin, "rb")))
+  if (!identical(calculee, MAIRIES_BRETAGNE_SHA256)) {
     manquer("sha256", sprintf(
-      "empreinte attendue %s — le fichier n'est pas la table migrée verbatim",
-      MAIRIES_BRETAGNE_SHA256))
+      "empreinte recalculée sur le fichier lu (%s…) ≠ empreinte épinglée %s — le contenu n'est pas la table migrée verbatim",
+      substr(calculee, 1, 8), MAIRIES_BRETAGNE_SHA256))
   }
 
   table <- artefact$table
@@ -289,12 +309,15 @@ verifier_contrat_mairies_bretagne <- function(artefact) {
 }
 
 # verifier_contrat_matrice_temps -------------------------------------------------------------
-# Le contrat de la matrice temps : le fichier épinglé (nom + empreinte), les
-# colonnes, la forme figée (250 482 paires, 1200×1200, ids ⊆ mairies, pas de
-# paire dupliquée, p01 complet dans [0, cap], la diagonale présente) et la
-# recette exacte (chaque paramètre de la spécification, jamais une valeur
-# approchante). Toute violation échoue FORT en nommant la règle.
-verifier_contrat_matrice_temps <- function(artefact) {
+# Le contrat de la matrice temps : le fichier épinglé (nom + empreinte
+# RECALCULÉE SUR LE DISQUE), les colonnes, la forme figée (250 482 paires,
+# 1200×1200, ids ⊆ mairies, pas de paire dupliquée, p01 complet dans [0, cap],
+# la diagonale présente) et la recette exacte (chaque paramètre de la
+# spécification, jamais une valeur approchante). Toute violation échoue FORT
+# en nommant la règle. `chemin` permet aux tests de passer une copie altérée
+# du fichier ; par défaut, la ressource épinglée du package (le même pattern
+# que les lecteurs).
+verifier_contrat_matrice_temps <- function(artefact, chemin = NULL) {
   manquer <- function(champ, detail) stop(sprintf(
     "Contrat matrice temps violé — %s : %s.", champ, detail), call. = FALSE)
 
@@ -313,15 +336,31 @@ verifier_contrat_matrice_temps <- function(artefact) {
       MATRICE_TEMPS_MAIRIES_FICHIER))
   }
 
-  # l'empreinte du contenu figé — toute substitution de contenu est refusée
+  # l'empreinte VÉRIFIÉE SUR LE DISQUE : les OCTETS du fichier épinglé sont
+  # relus et hachés (openssl) à chaque vérification — jamais la seule
+  # métadonnée déclarée par l'enveloppe ; un contenu corrompu ou substitué
+  # échoue là où le fichier est lu. openssl::sha256 exige une CONNEXION
+  # BINAIRE (« rb ») : un chemin passé en caractère hacherait la CHAÎNE du
+  # chemin, pas le fichier.
   if (!is.character(artefact$sha256) ||
       !grepl("^[0-9a-f]{64}$", artefact$sha256)) {
     manquer("sha256", "empreinte absente ou mal formée")
   }
-  if (!identical(artefact$sha256, MATRICE_TEMPS_MAIRIES_SHA256)) {
+  if (is.null(chemin)) {
+    chemin <- system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER,
+                          package = "lusk")
+  }
+  if (is.na(chemin) || !nzchar(chemin) || !file.exists(chemin)) {
+    manquer("fichier", paste0(
+      MATRICE_TEMPS_MAIRIES_FICHIER,
+      " introuvable ou illisible sur le disque — l'empreinte du fichier ",
+      "épinglé doit rester recalculable"))
+  }
+  calculee <- paste(openssl::sha256(file(chemin, "rb")))
+  if (!identical(calculee, MATRICE_TEMPS_MAIRIES_SHA256)) {
     manquer("sha256", sprintf(
-      "empreinte attendue %s — le fichier n'est pas la matrice figée",
-      MATRICE_TEMPS_MAIRIES_SHA256))
+      "empreinte recalculée sur le fichier lu (%s…) ≠ empreinte épinglée %s — le contenu n'est pas la matrice figée",
+      substr(calculee, 1, 8), MATRICE_TEMPS_MAIRIES_SHA256))
   }
 
   # la recette EXACTE — chaque paramètre de la spécification
