@@ -120,7 +120,8 @@ export function resoudreEtatUrl({ query, territoires, niveauxPublies, niveauMemo
  *  - le niveau résolu s'écrit SUR PLACE s'il existe, EN DERNIER s'il manque ;
  *  - un état non encore résoluble (`niveau: null`) n'écrit RIEN (#474) ;
  *  - le périmètre département/EPCI ne vit qu'au niveau communal — il part dès
- *    que le niveau quitte communal, même VALIDE ;
+ *    que le niveau RÉSOLU quitte communal, mais reste intact tant que le
+ *    niveau n'est pas encore connu ;
  *  - le périmètre devenu invalide est purgé dès que les territoires sont
  *    publiés — JAMAIS pendant la fenêtre où ils manquent encore
  *    (`scopeValide: null`) ;
@@ -130,7 +131,7 @@ export function resoudreEtatUrl({ query, territoires, niveauxPublies, niveauMemo
 export function queryCanonique(query: LocationQuery, etat: EtatUrlIndicateur, extras: LocationQueryRaw = {}): LocationQueryRaw {
   const next: LocationQueryRaw = { ...query, ...extras }
   if (etat.niveau !== null) next[PARAM_NIVEAU] = etat.niveau
-  if (next[PARAM_NIVEAU] !== 'commune') {
+  if (etat.niveau !== null && etat.niveau !== 'commune') {
     delete next.departement
     delete next.epci
   }

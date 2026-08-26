@@ -171,8 +171,26 @@ describe('query canonique depuis un état — ce qui s’écrit, ce qui se suppr
     expect(serialise(next)).toBe('niveau=epci')
   })
 
-  it('le périmètre ne vit QU’au niveau commune — même valide, il part dès que le niveau quitte communal', () => {
-    const next = queryCanonique({ niveau: 'epci', departement: '22' } as LocationQuery, { scopeValide: { ...SCOPE_VALIDE }, niveau: null })
+  it.each([
+    {
+      nom: 'niveau absent : un scope valide reste porté jusqu’à la résolution des métadonnées',
+      query: { departement: '22' },
+      niveau: null,
+      attendu: 'departement=22',
+    },
+    {
+      nom: 'niveau brut inconnu : un scope valide reste porté jusqu’à la résolution',
+      query: { niveau: 'inconnu', departement: '22' },
+      niveau: null,
+      attendu: 'niveau=inconnu&departement=22',
+    },
+  ])('$nom', ({ query, niveau, attendu }) => {
+    const next = queryCanonique(query as LocationQuery, { scopeValide: { ...SCOPE_VALIDE }, niveau })
+    expect(serialise(next)).toBe(attendu)
+  })
+
+  it('le périmètre ne vit QU’au niveau commune — une fois le niveau résolu, il part dès que le niveau quitte communal', () => {
+    const next = queryCanonique({ niveau: 'epci', departement: '22' } as LocationQuery, { scopeValide: { ...SCOPE_VALIDE }, niveau: 'epci' })
     expect(next.departement).toBeUndefined()
     expect(serialise(next)).toBe('niveau=epci')
   })
@@ -183,7 +201,7 @@ describe('query canonique depuis un état — ce qui s’écrit, ce qui se suppr
   })
 
   it('garde le périmètre valide', () => {
-    const next = queryCanonique({ niveau: 'commune', departement: '22', epci: 'e' } as LocationQuery, { scopeValide: { departement: '22', epci: 'e' }, niveau: null })
+    const next = queryCanonique({ niveau: 'commune', departement: '22', epci: 'e' } as LocationQuery, { scopeValide: { departement: '22', epci: 'e' }, niveau: 'commune' })
     expect(serialise(next)).toBe('niveau=commune&departement=22&epci=e')
   })
 
