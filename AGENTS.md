@@ -14,6 +14,36 @@ Issues move through the five default triage labels: `needs-triage`, `needs-info`
 
 Single-context layout: `CONTEXT.md` at the repo root, ADRs in `docs/adr/`. See `docs/agents/domain.md`.
 
+### UI/UX workflow (impeccable + intent) — READ BEFORE ANY UI WORK ON `app/`
+
+`.opencode/skills/` holds **impeccable** (design craft + a deterministic anti-slop detector) and five
+**intent** skills (`intent`, `include`, `fortify`, `articulate`, `evaluate`). They are deliberately
+UNTRACKED — the whitelist `.gitignore` keeps them out of the repo; never commit them. Refresh via
+`npx impeccable install --providers=opencode --scope=project`, and selective copy from `ghaida/intent`.
+
+Layers, cheapest first:
+
+1. **Always-on, zero tokens.** `npx impeccable detect app/src` (~1 s warm). MUST come back clean
+   before any PR touching `app/` UI. Workers get this as a dispatch-brief line; reviewers run it
+   scoped to the diff. It parses `.vue` SFCs natively.
+2. **Design standards + review.** Root `DESIGN.md` is the single source of truth for visual
+   decisions; `/code-review`'s Standards axis cites it plus detector findings. `code-review` runs on
+   EVERY UI-touching merge — orchestrator's job during wave review, not ad hoc.
+   **`DESIGN.md` is human-owned:** never let `/impeccable init` or `/impeccable document` write over
+   it. Pre-campaign backup: `E:\Temp\opencode\lusk-DESIGN-v1-backup.md`.
+3. **Expensive craft passes.** Orchestrator session ONLY — never workers, no standing agent. One
+   scoped `/impeccable critique <surface>` when an issue ships a genuinely NEW screen/tab/surface;
+   otherwise on demand only.
+
+Intent usage policy — *enforce-in-docs, method-as-skills*: intent skills are invoked at milestones
+by the orchestrator, never standing. `fortify` = edge-state inventory → issue generator;
+`include` = accessibility / RGAA; `articulate` = UX copy; `evaluate` = reserved for the
+DESIGN.md v2 audit (#511). Mechanically checkable rules get vendored into repo docs so code-review
+can cite them; method depth stays in the skills. No intent personas/subagents.
+
+**Known baseline:** 10 detector findings on current code (mostly `[side-tab]` theme accent lines)
+are deliberately NOT ignore-listed — they open the evidence base of the DESIGN.md v2 campaign (#511).
+
 ### R / renv in worktrees (pipeline) — READ BEFORE RUNNING ANY R
 
 The R pipeline (`pipeline/`) uses renv, which stores each project's package library at
