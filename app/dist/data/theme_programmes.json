@@ -1,0 +1,362 @@
+{
+  "theme": "programmes",
+  "label": "Programmes et subventions",
+  "subgroups": [
+    {
+      "key": "couverture",
+      "label": "Programmes et contrats",
+      "framing": "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
+      "indicators": [
+        "couverture_programmes"
+      ],
+      "figure": {
+        "family": "list",
+        "indicator": "couverture_programmes"
+      }
+    },
+    {
+      "key": "subventions",
+      "label": "Subventions attribuées",
+      "framing": "Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.",
+      "indicators": [
+        "subventions_annuelles",
+        "subventions_par_domaine"
+      ],
+      "figure": {
+        "family": "scalar",
+        "indicator": "subventions_annuelles"
+      }
+    }
+  ],
+  "indicator_keys": [
+    "couverture_programmes",
+    "subventions_annuelles",
+    "subventions_par_domaine"
+  ],
+  "story_keys": [],
+  "sources": {
+    "couverture_programmes": "acv",
+    "subventions_annuelles": "subventions_scdl",
+    "subventions_par_domaine": "subventions_scdl"
+  },
+  "indicator_labels": {
+    "couverture_programmes": "Couverture programmatique",
+    "subventions_annuelles": "Subventions régionales attribuées (année de référence)",
+    "subventions_par_domaine": "Subventions régionales par domaine"
+  },
+  "detail_labels": {
+    "couverture_programmes": {
+      "ACV": "Action Cœur de Ville",
+      "PVD": "Petites Villes de Demain",
+      "CRTE": "Contrat de Relance et de Transition Écologique",
+      "Territoires d'industrie": "Territoires d'industrie",
+      "ORT": "Opération de revitalisation de territoire"
+    },
+    "subventions_par_domaine": {
+      "Accompagnement de projets éducatifs des lycées et des initiatives des jeunes": "Accompagnement de projets éducatifs des lycées et des initiatives des jeunes",
+      "Accompagnement des dynamiques territoriales emploi formation": "Accompagnement des dynamiques territoriales emploi formation",
+      "Accompagnement des entreprises et de l'emploi": "Accompagnement des entreprises et de l'emploi",
+      "Accompagnement des investissements immobiliers des établissements privés": "Accompagnement des investissements immobiliers des établissements privés",
+      "Actions européennes et internationales": "Actions européennes et internationales",
+      "Agriculture, filière bois et alimentation": "Agriculture, filière bois et alimentation",
+      "Apprentissage": "Apprentissage",
+      "Biodiversité": "Biodiversité",
+      "Cinéma, livre, radio et pratiques culturelles": "Cinéma, livre, radio et pratiques culturelles",
+      "Contractualisation avec les territoires": "Contractualisation avec les territoires",
+      "Création, développement et transmission d'entreprises": "Création, développement et transmission d'entreprises",
+      "Dynamiques territoriales": "Dynamiques territoriales",
+      "Développement des secteurs clés de l'économie bretonne": "Développement des secteurs clés de l'économie bretonne",
+      "Eau": "Eau",
+      "Economie sociale et solidaire et innovation sociale": "Economie sociale et solidaire et innovation sociale",
+      "Energie et ressources": "Energie et ressources",
+      "Enseignement supérieur et vie étudiante": "Enseignement supérieur et vie étudiante",
+      "Equipements des lycées publics": "Equipements des lycées publics",
+      "Fonctionnement des lycées publics": "Fonctionnement des lycées publics",
+      "Fonds d'intervention régional": "Fonds d'intervention régional",
+      "Formation qualifiante": "Formation qualifiante",
+      "Formations sanitaires et sociales": "Formations sanitaires et sociales",
+      "Information et promotion": "Information et promotion",
+      "Infrastructures de mobilités": "Infrastructures de mobilités",
+      "Innovation et économie de la connaissance": "Innovation et économie de la connaissance",
+      "Inventaire et valorisation du patrimoine": "Inventaire et valorisation du patrimoine",
+      "Jeunesse, égalité des droits et vie associative": "Jeunesse, égalité des droits et vie associative",
+      "Langues de Bretagne": "Langues de Bretagne",
+      "Orientation et information sur les métiers": "Orientation et information sur les métiers",
+      "Participation au fonctionnement des établissements privés": "Participation au fonctionnement des établissements privés",
+      "Projets individuels de formation et qualification": "Projets individuels de formation et qualification",
+      "Pêche, aquaculture et développement maritime": "Pêche, aquaculture et développement maritime",
+      "Recherche": "Recherche",
+      "Spectacle vivant, arts plastiques et pratiques culturelles": "Spectacle vivant, arts plastiques et pratiques culturelles",
+      "Sports": "Sports",
+      "Structuration de l'économie bretonne et économie circulaire": "Structuration de l'économie bretonne et économie circulaire",
+      "Tourisme": "Tourisme",
+      "Usages numériques et cybersécurité": "Usages numériques et cybersécurité",
+      "Vie des stagiaires de la formation professionnelle": "Vie des stagiaires de la formation professionnelle"
+    }
+  },
+  "param_labels": {},
+  "indicator_pages": {
+    "subventions_annuelles": {
+      "indicator": "subventions_annuelles",
+      "label": "Subventions régionales attribuées",
+      "definition": "Total annuel des subventions attribuées par la Région Bretagne au territoire, toutes politiques confondues (données SCDL).",
+      "unit": "€",
+      "calculation": "Somme des subventions attribuées au territoire pour son année de référence, calculée par le pipeline ; les fiches communales portent en plus la ventilation complète par domaine.",
+      "direction": "high",
+      "caveats": "Un montant attribué est un fait d'action publique, jamais une mesure de résultat ; l'absence de ligne signifie qu'aucune subvention n'est enregistrée pour ce territoire dans le jeu source, pas que le montant vaut zéro. La Région n'est pas comparée aux autres niveaux.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "subventions_scdl"
+      ],
+      "family": "scalar",
+      "comparison": {
+        "dimension": "2025",
+        "dimensions": [
+          "2025"
+        ]
+      }
+    },
+    "subventions_par_domaine": {
+      "indicator": "subventions_par_domaine",
+      "label": "Subventions régionales par domaine",
+      "definition": "Le profil complet des subventions régionales attribuées au territoire : le montant annuel ventilé par domaine des politiques régionales (données SCDL).",
+      "unit": "€",
+      "calculation": "Somme des subventions attribuées au territoire pour son année de référence, publiée par domaine (`programme_libl`) ; la ventilation complète est publiée, jamais un top-N.",
+      "direction": "high",
+      "caveats": "Un montant attribué est un fait d'action publique, jamais une mesure de résultat. L'absence d'un domaine signifie qu'aucune subvention n'est enregistrée pour ce territoire dans ce domaine dans le jeu source, pas que le montant vaut zéro. La ventilation est publiée au niveau communal ; l'année de référence est déclarée dans l'URL.",
+      "levels": [
+        "commune"
+      ],
+      "sources": [
+        "subventions_scdl"
+      ],
+      "family": "list",
+      "list": {
+        "categories": [
+          "Accompagnement de projets éducatifs des lycées et des initiatives des jeunes",
+          "Accompagnement des dynamiques territoriales emploi formation",
+          "Accompagnement des entreprises et de l'emploi",
+          "Accompagnement des investissements immobiliers des établissements privés",
+          "Actions européennes et internationales",
+          "Agriculture, filière bois et alimentation",
+          "Apprentissage",
+          "Biodiversité",
+          "Cinéma, livre, radio et pratiques culturelles",
+          "Contractualisation avec les territoires",
+          "Création, développement et transmission d'entreprises",
+          "Dynamiques territoriales",
+          "Développement des secteurs clés de l'économie bretonne",
+          "Eau",
+          "Economie sociale et solidaire et innovation sociale",
+          "Energie et ressources",
+          "Enseignement supérieur et vie étudiante",
+          "Equipements des lycées publics",
+          "Fonctionnement des lycées publics",
+          "Fonds d'intervention régional",
+          "Formation qualifiante",
+          "Formations sanitaires et sociales",
+          "Information et promotion",
+          "Infrastructures de mobilités",
+          "Innovation et économie de la connaissance",
+          "Inventaire et valorisation du patrimoine",
+          "Jeunesse, égalité des droits et vie associative",
+          "Langues de Bretagne",
+          "Orientation et information sur les métiers",
+          "Participation au fonctionnement des établissements privés",
+          "Projets individuels de formation et qualification",
+          "Pêche, aquaculture et développement maritime",
+          "Recherche",
+          "Spectacle vivant, arts plastiques et pratiques culturelles",
+          "Sports",
+          "Structuration de l'économie bretonne et économie circulaire",
+          "Tourisme",
+          "Usages numériques et cybersécurité",
+          "Vie des stagiaires de la formation professionnelle"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "Accompagnement de projets éducatifs des lycées et des initiatives des jeunes",
+          "Accompagnement des dynamiques territoriales emploi formation",
+          "Accompagnement des entreprises et de l'emploi",
+          "Accompagnement des investissements immobiliers des établissements privés",
+          "Actions européennes et internationales",
+          "Agriculture, filière bois et alimentation",
+          "Apprentissage",
+          "Biodiversité",
+          "Cinéma, livre, radio et pratiques culturelles",
+          "Contractualisation avec les territoires",
+          "Création, développement et transmission d'entreprises",
+          "Dynamiques territoriales",
+          "Développement des secteurs clés de l'économie bretonne",
+          "Eau",
+          "Economie sociale et solidaire et innovation sociale",
+          "Energie et ressources",
+          "Enseignement supérieur et vie étudiante",
+          "Equipements des lycées publics",
+          "Fonctionnement des lycées publics",
+          "Fonds d'intervention régional",
+          "Formation qualifiante",
+          "Formations sanitaires et sociales",
+          "Information et promotion",
+          "Infrastructures de mobilités",
+          "Innovation et économie de la connaissance",
+          "Inventaire et valorisation du patrimoine",
+          "Jeunesse, égalité des droits et vie associative",
+          "Langues de Bretagne",
+          "Orientation et information sur les métiers",
+          "Participation au fonctionnement des établissements privés",
+          "Projets individuels de formation et qualification",
+          "Pêche, aquaculture et développement maritime",
+          "Recherche",
+          "Spectacle vivant, arts plastiques et pratiques culturelles",
+          "Sports",
+          "Structuration de l'économie bretonne et économie circulaire",
+          "Tourisme",
+          "Usages numériques et cybersécurité",
+          "Vie des stagiaires de la formation professionnelle"
+        ],
+        "detail": "Contractualisation avec les territoires",
+        "dimension": "2025",
+        "unit": "€",
+        "direction": "high"
+      }
+    }
+  },
+  "source_records": {
+    "acv": {
+      "dataset": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
+      "publisher": "ANCT",
+      "url": "https://www.data.gouv.fr/fr/datasets/programme-action-coeur-de-ville/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "COG 2025",
+      "freshness": "24 septembre 2025",
+      "vintages": [
+        {
+          "id": "acv",
+          "label": "Liste COG 2025",
+          "version": "2025",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2025-01-01",
+          "datePublication": "2025-09-24"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Liste ACV",
+          "frequency": "à chaque édition du référentiel communal",
+          "reference": "Liste des communes sélectionnées (COG 2025)",
+          "trigger": "Quand l'ANCT publie une nouvelle liste, le badge se rafraîchit."
+        }
+      ]
+    },
+    "pvd": {
+      "dataset": "ANCT — Programme Petites villes de demain : liste des communes sélectionnées (COG 2025)",
+      "publisher": "ANCT",
+      "url": "https://www.data.gouv.fr/fr/datasets/programme-petites-villes-de-demain/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "COG 2025",
+      "freshness": "27 avril 2026",
+      "vintages": [
+        {
+          "id": "pvd",
+          "label": "Liste COG 2025",
+          "version": "2025",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2025-01-01",
+          "datePublication": "2026-04-27"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Liste PVD",
+          "frequency": "à chaque édition du référentiel communal",
+          "reference": "Liste des communes sélectionnées (COG 2025)",
+          "trigger": "Quand l'ANCT publie une nouvelle liste, le badge se rafraîchit."
+        }
+      ]
+    },
+    "crte": {
+      "dataset": "ANCT — Contrat de relance et de transition écologique : suivi du périmètre (COG 2025)",
+      "publisher": "ANCT",
+      "url": "https://www.data.gouv.fr/fr/datasets/contrats-de-relance-et-de-transition-ecologique-crte/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "COG 2025",
+      "freshness": "24 septembre 2025",
+      "vintages": [
+        {
+          "id": "crte",
+          "label": "Suivi du périmètre (COG 2025)",
+          "version": "2025",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2025-07-17",
+          "datePublication": "2025-09-24"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Périmètres CRTE",
+          "frequency": "au rythme du suivi ANCT",
+          "reference": "Groupements couverts par un CRTE (COG 2025)",
+          "trigger": "Quand l'ANCT met à jour le suivi, la couverture se rafraîchit."
+        }
+      ]
+    },
+    "territoires_industrie": {
+      "dataset": "ANCT/Banque des Territoires — liste des Territoires d'industrie et des communes concernées",
+      "publisher": "ANCT / Banque des Territoires",
+      "url": "https://www.data.gouv.fr/fr/datasets/territoires-dindustrie/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "territoires arrêtés fin 2022",
+      "freshness": "30 septembre 2025",
+      "vintages": [
+        {
+          "id": "territoires_industrie",
+          "label": "Territoires arrêtés fin 2022",
+          "version": "2022",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2022-12-31",
+          "datePublication": "2025-09-30"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Territoires d'industrie",
+          "frequency": "liste arrêtée (fin 2022)",
+          "reference": "Les territoires arrêtés fin 2022",
+          "trigger": "La liste n'évolue qu'à une nouvelle vague du programme."
+        }
+      ]
+    },
+    "subventions_scdl": {
+      "dataset": "Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh",
+      "publisher": "Région Bretagne",
+      "url": "https://data.bretagne.bzh/explore/dataset/subventions-attribuees/",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2026-08-05",
+      "freshness": "5 août 2026 — rafraîchi chaque semaine",
+      "vintages": [
+        {
+          "id": "subventions_scdl",
+          "label": "Attributions 2025 (extrait hebdomadaire)",
+          "version": "2026-08-05",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2026-08-05",
+          "datePublication": "2026-08-05"
+        }
+      ],
+      "clocks": [
+        {
+          "name": "Subventions SCDL",
+          "frequency": "hebdomadaire",
+          "reference": "L'extraction hebdomadaire du jeu SCDL régional",
+          "trigger": "Le cron hebdomadaire retélécharge le jeu ; l'estampille suit."
+        }
+      ]
+    }
+  }
+}
