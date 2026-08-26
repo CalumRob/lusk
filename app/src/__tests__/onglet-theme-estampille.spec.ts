@@ -93,7 +93,7 @@ describe("OngletTheme — l'estampille snapshot reste propre à la Mobilité (#5
       const wrapper = await monter(theme)
 
       // le bloc de thème se rend VRAIMENT — l'absence de l'estampille n'est
-      // jamais vacue (l'overline publiée et au moins une figure de grille)
+      // jamais vaine (l'overline publiée et au moins une figure de grille)
       expect(wrapper.find('.onglet-theme-overline').text()).toBe(libelle)
       expect(wrapper.findAll('.figure-indicateur').length).toBeGreaterThan(0)
 
