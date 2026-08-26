@@ -580,6 +580,10 @@ MANIFEST_MOBILITE_COG_PASSAGE <- tibble::tribble(
 # (« Open Data Commons Open Database License ») et par la page SNCF Open Data
 # elle-même (pied de page « FAQ/Licence ODbL »). L'attente « Licence Ouverte
 # 2.0 » de la recherche (#3a) est RÉFUTÉE : documentée ici, jamais devinée.
+# DÉCISION (2026-08-26) : le mainteneur ACCEPTE l'ODbL comme licence de la
+# provenance de la matrice figée (#485) — et toute republication future de
+# données réseau dérivées respectera la clause de partage à l'identique
+# (share-alike) de l'ODbL (le port de routage, issue #488, en attente).
 #
 # Pin-on-acquisition (research §3a) : un export roulant ~quotidien (horizon
 # 151 jours, refresh quasi journalier au fil de l'eau) n'a PAS de promesse de
@@ -607,13 +611,17 @@ MANIFEST_MOBILITE_SNCF_VOYAGEURS <- tibble::tribble(
     "acquis et vérifié pendant la recherche (sha256 816d172f1f36babc…, ",
     "4,4 Mo, research §5a) — PIN-ON-ACQUISITION : l'export roule ~quotidien, ",
     "aucune promesse d'auto-refresh, chaque millésime est ré-épinglé à la ",
-    "main (mode manuel). LICENCE ODbL CONSTATÉE (2026-08-26) sur ",
-    "transport.data.gouv.fr (« odc-odbl and specific usage conditions »), la ",
-    "fiche data.gouv.fr miroir et la page SNCF Open Data elle-même — ",
-    "l'attente « Licence Ouverte 2.0 » de la recherche est RÉFUTÉE, ",
-    "documentée pas devinée. Caveat portail (accepté par décision #12) : une ",
-    "production SNCF Voyageurs qui ne remplace pas les données des AOM — des ",
-    "« petites divergences » possibles avec les feeds régionaux."
+    "main (mode manuel). LICENCE ODbL CONFIRMÉE ET ACCEPTÉE (constat du ",
+    "2026-08-26 sur transport.data.gouv.fr (« odc-odbl and specific usage ",
+    "conditions »), la fiche data.gouv.fr miroir et la page SNCF Open Data ",
+    "elle-même — l'attente « Licence Ouverte 2.0 » de la recherche est ",
+    "RÉFUTÉE, documentée pas devinée ; DÉCISION DU MAINTENEUR : ODbL accepté ",
+    "comme licence de la provenance de la matrice figée). PARTAGE À ",
+    "L'IDENTIQUE : toute future republication de données réseau dérivées de ",
+    "ce feed (le port de routage, issue #488, en attente) devra respecter la ",
+    "clause share-alike de l'ODbL. Caveat portail (accepté par décision #12) : ",
+    "une production SNCF Voyageurs qui ne remplace pas les données des AOM — ",
+    "des « petites divergences » possibles avec les feeds régionaux."
   ),
   "manuel", "fichier"
 )
