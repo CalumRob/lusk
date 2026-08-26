@@ -118,6 +118,18 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     const horsScope = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12)], facet, ['2020', '2024'], territoires, { niveau: 'epci', territoire: 'a' })
     expect(horsScope.serieTerritoire).toBeNull()
   })
+
+  it('épingle la série du territoire au niveau résolu quand une même clé existe à plusieurs niveaux', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const modele = modeleTrajectoire([
+      point('a', '2020', 900, 'epci'),
+      point('a', '2020', 10, 'commune'),
+      point('a', '2024', 901, 'epci'),
+      point('a', '2024', 12, 'commune'),
+    ], facet, ['2020', '2024'], territoires, { niveau: 'commune', territoire: 'a' })
+
+    expect(modele.serieTerritoire!.map((p) => p.value)).toEqual([10, 12])
+  })
 })
 
 // La grammaire Repères des profils/listes (#439) — le modèle du profil

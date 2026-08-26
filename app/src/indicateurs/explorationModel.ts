@@ -265,7 +265,7 @@ export function modeleTrajectoire(
     ? lignes.map((ligne) => {
         // Le point du territoire mis en avant : le même prédicat unique
         // (#507) épinglé au territoire, valeurs manquantes comprises.
-        const row = facts.find((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, detail: ligne.detail, sexe: facet.sex, dimension: facet.dimension, territoire: refSelectionne.territoire }, CORRESPONDANCE_STRICTE))
+        const row = facts.find((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, detail: ligne.detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau, territoire: refSelectionne.territoire }, CORRESPONDANCE_STRICTE))
         return { detail: ligne.detail, label: ligne.label, x: ligne.x, value: row ? row.value : null } satisfies PointTrajectoire
       })
     : null
