@@ -210,6 +210,14 @@ groupes_comparaison <- function(territoires) {
 # `directions` : la déclaration par clé de la désirabilité (ADR-0015) — une
 # liste nommée clé -> "low" (la plus petite valeur est la meilleure : iso_*,
 # part de passoires, chômage) ; une clé non déclarée est high-is-good.
+# La direction effective d'une clé : la déclaration du registre du module,
+# sinon « high ». LE défaut de la machinerie de rangs, défini UNE fois pour
+# que compute_ranks et le validateur de métadonnées (#506) ne puissent plus
+# diverger en silence.
+direction_de <- function(cle, registre) {
+  if (!is.null(registre[[cle]])) registre[[cle]] else "high"
+}
+
 compute_ranks <- function(territoires, indicateurs, scalaires = list(),
                           directions = list()) {
   groupes <- groupes_comparaison(territoires)
@@ -221,7 +229,7 @@ compute_ranks <- function(territoires, indicateurs, scalaires = list(),
     } else {
       tab$value
     }
-    direction <- if (!is.null(directions[[cle]])) directions[[cle]] else "high"
+    direction <- direction_de(cle, directions)
     tibble::tibble(
       code = unique(tab$code),
       key = cle,

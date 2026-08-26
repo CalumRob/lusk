@@ -752,16 +752,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     # La concordance des directions (#506) : la direction déclarée par la
     # page (le glyphe ▲▼ et les rangs Repères de la Page d'indicateur) doit
     # ÉGALER celle du module de thème qui classe les rangs publiés lus par
-    # les chips de fiche (theme_<theme>()$directions -> compute_ranks). Une
-    # clé absente du registre du module vaut « high » — le défaut EXACT de
+    # les chips de fiche (theme_<theme>()$directions -> compute_ranks).
+    # La règle de défaut vit dans direction_de() — LA MÊME fonction que
     # compute_ranks : jamais un « moins = mieux » qui signifierait deux
     # choses selon la surface, la dérive meurt à l'écriture.
     if (!is.null(directions_module)) {
-      direction_module <- if (!is.null(directions_module[[indicator_key]])) {
-        directions_module[[indicator_key]]
-      } else {
-        "high"
-      }
+      direction_module <- direction_de(indicator_key, directions_module)
       if (!identical(page$direction, direction_module)) {
         manquer(paste0("indicator_pages.", indicator_key, ".direction"),
                 paste0(
