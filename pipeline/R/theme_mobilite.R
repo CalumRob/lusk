@@ -1222,7 +1222,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
 # nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_MOBILITE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier", "directions", "metadata"
+  "construire_analytiques", "publier", "directions", "metadata",
+  "raccordement"
 )
 
 # verifier_descripteur_mobilite -------------------------------------------------
@@ -1270,6 +1271,11 @@ DIRECTIONS_MOBILITE <- list(
   div_loss_t = "low",
   div_loss_b = "low",
   raccordement_tc = "high",
+  # les deux clés de MATIÈRE DE FIGURE du raccordement (#486) : déclarées
+  # pour l'audit directions↔registre (la bijection du contrat), jamais
+  # consommées — des courbes ne sont classées nulle part
+  raccordement_courbe = "high",
+  raccordement_reference = "high",
   iso_alimentation = "low", iso_sante = "low",
   iso_administration = "low", iso_ecole = "low", iso_banque = "low"
 )
@@ -1295,7 +1301,13 @@ theme_mobilite <- function() {
     # Issue #311 : les métadonnées du thème (le fichier épinglé
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
-    metadata = function() lire_theme_metadata("mobilite")
+    metadata = function() lire_theme_metadata("mobilite"),
+    # LE TRAIT RACCORDEMENT (issue #486) : le graphe le voit et câble la
+    # chaîne de calcul — les épingles du package en cibles de fichiers, la
+    # cible raccordement_mobilite (le calcul, persisté), la publication
+    # chaînée derrière. Le mode cron pose cue = "never" sur la chaîne :
+    # l'horloge légère ne paie JAMAIS le raccordement.
+    raccordement = TRUE
   )
   verifier_descripteur_mobilite(descripteur)
   descripteur

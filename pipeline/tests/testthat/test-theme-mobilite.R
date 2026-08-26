@@ -2564,6 +2564,15 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
   expect_true(is.na(non_routee$value))
   expect_match(non_routee$rider, "Non routée")
   expect_true(all(is.na(racc_ind$rang_epci[racc_ind$territoire %in% c("29002")])))
+  # la direction HIGH passe par la machinerie partagée : les parts classées
+  # en ordinaux (1 = la plus grande part, ADR-0015), une commune ne se classe
+  # que dans son EPCI
+  expect_true(all(racc_ind$rang_epci[!is.na(racc_ind$value) &
+                                       !is.na(racc_ind$rang_epci)] >= 1))
+  # une commune ne se classe que dans son EPCI (ADR-0021 : pas de rang
+  # départemental ni régional)
+  expect_true(is.na(racc_ind$rang_dep[racc_ind$territoire == "22001"]))
+  expect_true(is.na(racc_ind$rang_reg[racc_ind$territoire == "22001"]))
   ref_matrice <- vintages_mobilite()$source[
     vintages_mobilite()$id == "matrice_temps_mairies"]
   expect_true(all(racc_ind$vintage_source == ref_matrice))

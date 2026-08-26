@@ -445,9 +445,8 @@ empreinte_fichier_raccordement <- function(chemin) {
 # Déterministe : l'enveloppe ne porte AUCUN horodatage — deux exécutions sur
 # les mêmes entrées produisent le même fichier octet pour octet (le skip du
 # graphe en dépend).
-preparer_raccordement <- function(zip_cog, sortie = "data/processed/mobilite") {
-  chemin_matrice <- system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER,
-                                package = "lusk")
+preparer_raccordement <- function(zip_cog, chemin_base_epci = NULL,
+                                  sortie = "data/processed/mobilite") {
   matrice <- lire_matrice_temps_mairies()
   stopifnot(identical(
     verifier_contrat_matrice_temps(artefact_matrice_temps()), TRUE))
@@ -463,11 +462,19 @@ preparer_raccordement <- function(zip_cog, sortie = "data/processed/mobilite") {
     file.path(extrait, "table_passage_annuelle_2025.xlsx"))
   codes_cog <- resoudre_codes_cog(sort(unique(matrice$from_id)), large)
 
+  # les niveaux agrégés : le référentiel partagé extrait (fichier_epci_
+  # extrait du graphe) — sans lui, l'enveloppe ne porte que le niveau
+  # communal et la publication s'arrêtera bruyamment à l'assemblage (jamais
+  # un payload amputé en silence)
   base <- NULL
-  chemin_epci <- file.path(dirname(zip_cog), "extracted",
-                           "EPCI_au_01-01-2025.xlsx")
-  if (file.exists(chemin_epci)) {
-    base <- lire_epci(chemin_epci)
+  if (!is.null(chemin_base_epci) && !is.na(chemin_base_epci) &&
+      nzchar(chemin_base_epci)) {
+    if (!file.exists(chemin_base_epci)) {
+      stop("Le référentiel des EPCI est introuvable (", chemin_base_epci,
+           ") — le calcul du raccordement en a besoin pour ses niveaux ",
+           "agrégés.", call. = FALSE)
+    }
+    base <- suppressWarnings(lire_epci(chemin_base_epci))
   }
 
   calcul <- calculer_raccordement(matrice, population, codes_cog,
