@@ -1,9 +1,15 @@
 <script setup lang="ts">
 /**
- * AppHeader (DESIGN.md §5 + site-map.md §Navigation): sticky 60px chrome,
+ * AppHeader (DESIGN.md §5 + #410 — la bascule atomique): sticky 60px chrome,
  * Lusk wordmark (serif → /) — the sole home affordance (#61) — centered nav
- * Carte · Données · Méthodes with a 2px underline on the active route,
- * Contact → calumrobertson.fr (external). No locale toggle (French-only v1).
+ * **Territoires · Indicateurs · Sources · À propos** with a 2px underline on
+ * the active route, Contact → calumrobertson.fr (external). No locale toggle
+ * (French-only v1).
+ *
+ * La bascule (#410) : Carte et Méthodes ont quitté la navigation — AUCUN lien
+ * vers /carte ni /methodologie ne vit ici. /carte reste routée (outil du PO,
+ * ruling 2026-08-26) mais sans aucune entrée face-utilisateur ; Méthodes est
+ * retirée, son contenu vivant dans Sources et À propos.
  *
  * F3 (#53) + #61: search works everywhere, but the header's always-open
  * compact bar collapses into a « Rechercher » button; clicking it expands
@@ -13,7 +19,7 @@
  * the mobile drawer.
  *
  * Mobile (<768px): full-screen drawer — transform-only, scroll-lock, focus
- * trap, Escape closes. Données renders as a non-link group label with the
+ * trap, Escape closes. Territoires renders as a non-link group label with the
  * three lists nested beneath it (desktop keeps the disclosure dropdown).
  *
  * #205: the drawer is a sibling of <header>, never a child — the header's
@@ -65,14 +71,19 @@ function correspond(prefixes: readonly string[], chemin: string): boolean {
   )
 }
 
-const carteActif = computed(() => correspond(['/carte'], route.path))
-const methodesActif = computed(() => correspond(['/methodologie'], route.path))
-const donneesActif = computed(() =>
+const territoiresActif = computed(() =>
   correspond(['/communes', '/epcis', '/departements', '/territoire'], route.path),
 )
+const indicateursActif = computed(() => correspond(['/indicateurs'], route.path))
+const sourcesActif = computed(() => correspond(['/sources'], route.path))
+const aProposActif = computed(() => correspond(['/a-propos'], route.path))
 
+/* Les liens simples de la bascule (#410) — Territoires vit à part comme
+   menu déroulant (bureau) / étiquette de groupe (tiroir). */
 const liensSimples = computed(() => [
-  { label: 'Carte', chemin: '/carte', actif: carteActif.value },
+  { label: 'Indicateurs', chemin: '/indicateurs', actif: indicateursActif.value },
+  { label: 'Sources', chemin: '/sources', actif: sourcesActif.value },
+  { label: 'À propos', chemin: '/a-propos', actif: aProposActif.value },
 ])
 
 /* ---- Menu Données (disclosure) ---- */
@@ -211,25 +222,17 @@ onUnmounted(() => {
       </RouterLink>
 
       <nav class="nav-bureau" aria-label="Navigation principale">
-        <RouterLink
-          v-for="lien in liensSimples"
-          :key="lien.chemin"
-          :to="lien.chemin"
-          class="nav-lien"
-          :class="{ 'nav-lien--actif': lien.actif }"
-        >{{ lien.label }}</RouterLink>
-
-        <div ref="conteneurDonnees" class="nav-item" :class="{ 'nav-item--actif': donneesActif }">
+        <div ref="conteneurDonnees" class="nav-item" :class="{ 'nav-item--actif': territoiresActif }">
           <button
             type="button"
             class="nav-lien"
-            :class="{ 'nav-lien--actif': donneesActif }"
+            :class="{ 'nav-lien--actif': territoiresActif }"
             :aria-expanded="donneesOuvert ? 'true' : 'false'"
             aria-haspopup="true"
             @click="donneesOuvert = !donneesOuvert"
             @keydown.escape="donneesOuvert = false"
           >
-            Données
+            Territoires
             <AppIcon
               :icone="ChevronDown"
               :taille="16"
@@ -249,10 +252,12 @@ onUnmounted(() => {
         </div>
 
         <RouterLink
-          to="/methodologie"
+          v-for="lien in liensSimples"
+          :key="lien.chemin"
+          :to="lien.chemin"
           class="nav-lien"
-          :class="{ 'nav-lien--actif': methodesActif }"
-        >Méthodes</RouterLink>
+          :class="{ 'nav-lien--actif': lien.actif }"
+        >{{ lien.label }}</RouterLink>
       </nav>
 
       <div ref="conteneurRecherche" class="en-tete-recherche">
@@ -355,11 +360,10 @@ onUnmounted(() => {
       />
     </div>
     <nav class="nav-tiroir" aria-label="Navigation principale">
-      <RouterLink to="/carte" class="tiroir-lien" @click="fermer()">Carte</RouterLink>
-
-      <!-- Données is a non-link group label in the drawer (never a deep link to
-           /communes) — the three lists sit directly beneath it. -->
-      <span class="tiroir-lien tiroir-groupe-titre">Données</span>
+      <!-- La bascule (#410) : ni Carte ni Méthodes dans le tiroir — Territoires
+           est une étiquette de groupe (jamais un lien profond vers /communes),
+           les trois listes juste en dessous. -->
+      <span class="tiroir-lien tiroir-groupe-titre">Territoires</span>
       <RouterLink
         v-for="sous in SOUS_LIENS_DONNEES"
         :key="sous.chemin"
@@ -368,7 +372,13 @@ onUnmounted(() => {
         @click="fermer()"
       >{{ sous.label }}</RouterLink>
 
-      <RouterLink to="/methodologie" class="tiroir-lien" @click="fermer()">Méthodes</RouterLink>
+      <RouterLink
+        v-for="lien in liensSimples"
+        :key="lien.chemin"
+        :to="lien.chemin"
+        class="tiroir-lien"
+        @click="fermer()"
+      >{{ lien.label }}</RouterLink>
       <a
         class="tiroir-lien"
         href="https://calumrobertson.fr"

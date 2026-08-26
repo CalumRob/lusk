@@ -72,13 +72,16 @@ describe('App shell', () => {
     expect(wrapper.text()).toContain('Lusk transforme les données publiques éparses')
   })
 
-  it('navigates to the Carte placeholder', async () => {
+  it('navigates to the spared /carte tool (ruling PO 2026-08-26 — routée, sans lien)', async () => {
     const { router, wrapper } = await mountApp('/')
 
     await router.push('/carte')
-    await wrapper.vm.$nextTick()
+    await flushPromises()
 
-    expect(wrapper.text()).toContain('Carte')
+    // La route reste enregistrée et sa vue (paresseuse) se monte — même si
+    // plus aucun lien de navigation ne mène à elle (#410).
+    expect(wrapper.find('.carte').exists()).toBe(true)
+    expect(router.currentRoute.value.name).toBe('carte')
   })
 
   it('hides the footer on the carte route (full-bleed tool page)', async () => {
