@@ -28,3 +28,7 @@
 !/docs/
 /docs/*
 !/docs/adr/
+# Le prototype #499 (jetable) : son dossier de revue — README + captures —
+# est l'artefact de décision versionné, comme les rapports d'audit des
+# PRs #451/#452/#455/#491.
+!/docs/prototypes/
