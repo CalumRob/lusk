@@ -273,8 +273,8 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
 # MANIFEST_MOBILITE_KORRIGO ----------------------------------------------------
 # Le fragment KORRIGO (issue #140, le sous-bloc « Offre TC ») : la base
 # multimodale GTFS Korrigo (Bretagne Mobilité, data.bretagne.bzh) — le zip GTFS
-# est le cache ; le stops.txt de la fédération (27 297 arrêts, dont 2 919 du
-# réseau STAR de Rennes) est LA source des arrêts de l'offre TC.
+# est le cache ; le stops.txt de la fédération est LA source des arrêts de
+# l'offre TC.
 #
 # DÉCISION DE SOURCE (la correction de la première passe, 2026-08-06) :
 # mobibreizh-stops (24 380 arrêts, Région Bretagne) ne porte AUCUN arrêt STAR
@@ -288,17 +288,30 @@ MANIFEST_MOBILITE_COMMUNES_LIMITES <- tibble::tribble(
 # items et ADR-0012) : « part des bâtiments près d'un arrêt » = la fraction
 # des BÂTIMENTS de la commune (la couche batiments_residentiels, geom_adresse
 # POINT EPSG:2154, code_commune_insee) à moins de 500 m à vol d'oiseau d'un
-# arrêt GTFS — la VRAIE part, jamais un proxy de superficie communale (la
-# première passe proxyait par la part de surface : Rennes superficie 0,40 vs
-# bâtiments 0,996 — la divergence massive des communes denses a fait rejeter
-# la passe). La distance de 500 m est le rayon classique « 10 minutes à pied »
-# (la famille du « stop coverage ») ; verrouillée dans le code
-# (DISTANCE_ARRET_M, analytics_mobilite.R) et documentée dans la Méthodes.
+# arrêt GTFS — la VRAIE part, jamais un proxy de superficie communale. La
+# distance de 500 m est le rayon classique « 10 minutes à pied » ; verrouillée
+# dans le code (DISTANCE_ARRET_M, analytics_mobilite.R).
 #
-# Dates : le vintage de l'export GTFS (2026-02 — la date d'extraction du jeu,
-# jamais « aujourd'hui » ; le feed porte feed_version « 80195 », valide à
-# partir du 2025-09-19). ODbL (ADR-0001) : attribution « © OpenStreetMap
-# contributors » portée par l'indicateur et la Méthodes.
+# JOURNAL DU MILLÉSIME (le changelog de la source, issue #485) :
+#   - 2026-02 (v80195→v80223) : le cache initial du pin (arrêts seuls lus par
+#     offre_tc) ;
+#   - 2026-08 (v80335) : LE RE-PIN — l'agrégat périmé laissait DOUZE réseaux
+#     sombres sur toute date de septembre (la leçon fondatrice de la porte de
+#     présence, research §5a) ; il cède la place au millésime frais acquis et
+#     vérifié pendant la recherche du raccordement (sha256 du zip brut
+#     663d7db62ba6751333240d5aaee9142c74f3e8b9f654601bea35d13f8aa74969,
+#     feed_version « 80335 », validité 2025-12-14 → 2034-01-20, 32 agences).
+#     CE PIN EST PARTAGÉ : il alimente aussi l'indicateur offre_tc (part des
+#     bâtiments près d'un arrêt) — son PREMIER PASSAGE À LA FRAÎCHEUR y
+#     déplacera les valeurs publiées (les arrêts bougent avec les réseaux) ;
+#     les verrous données réelles de l'offre TC (Rennes 0,9957 · Ille-et-
+#     Vilaine 0,5731 · EPCI 0,9412 · Finistère 0,6761) devront être réétablis
+#     sur le premier run frais, le déplacement étant DOCUMENTÉ ici plutôt que
+#     tu dans le silence. Les deux réseaux sombres documentés du millésime
+#     (Coralie Concarneau, LinéotimL30) vivent dans
+#     RESEAUX_SANS_SERVICE_ACCEPTES_KORRIGO_80335 (presence_reseaux_tc.R). ODbL
+#     (ADR-0001) : attribution « © OpenStreetMap contributors » portée par
+#     l'indicateur et la Méthodes.
 MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
   ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
   ~date_publication, ~licence, ~note, ~mode, ~type,
@@ -306,27 +319,33 @@ MANIFEST_MOBILITE_KORRIGO <- tibble::tribble(
   "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
   "https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo",
   "korrigo-gtfs.zip",
-  "2026-02", "2026-02-03", "2026-02-03",
+  "2026-08", "2026-08-25", "2026-08-25",
   "odbl",
   paste0(
     "La base multimodale GTFS Korrigo (Bretagne Mobilité, data.bretagne.bzh) : ",
     "le réseau de transport public breton — la fédération des réseaux (STAR, ",
     "Bibus, QUB, TUB, MAT, TBK, Kicéo… + BreizhGo TER/car/maritime). Le zip ",
-    "GTFS est le cache ; son stops.txt (27 297 arrêts, dont 2 919 du réseau ",
-    "STAR de Rennes) est LA source des arrêts de l'offre TC. DÉCISION DE ",
-    "SOURCE (la correction de la première passe, 2026-08-06) : mobibreizh-",
-    "stops (24 380 arrêts) ne porte AUCUN arrêt STAR — le réseau métro+bus de ",
-    "Rennes y est absent (vérifié en direct : CTRL, KICEO, PENNARBED, QUB, ",
-    "BIBUS… présents, STAR non). Le stops.txt GTFS est la fédération COMPLÈTE — ",
-    "source autoritaire ; mobibreizh-stops n'est plus une source du thème. ",
-    "DÉCISION DE MÉTHODE (l'item 🔶 du contrat) : « part des bâtiments près ",
-    "d'un arrêt » = la fraction des BÂTIMENTS de la commune à moins de 500 m à ",
-    "vol d'oiseau d'un arrêt GTFS (la couche batiments_residentiels, ",
-    "geom_adresse POINT EPSG:2154) — la VRAIE part, jamais un proxy de ",
-    "superficie (la première passe proxyait par la surface : Rennes 0,40 vs ",
-    "bâtiments 0,996 — rejetée). Le 500 m = le rayon « 10 minutes à pied » du ",
-    "stop coverage, verrouillé dans le code et la Méthodes. ODbL (ADR-0001) : ",
-    "attribution « © OpenStreetMap contributors » portée par l'indicateur."
+    "GTFS est le cache ; son stops.txt est LA source des arrêts de l'offre ",
+    "TC. DÉCISION DE SOURCE (la correction de la première passe, 2026-08-06) : ",
+    "mobibreizh-stops ne porte AUCUN arrêt STAR — le stops.txt GTFS est la ",
+    "fédération COMPLÈTE, source autoritaire. JOURNAL DU MILLÉSIME (#485, le ",
+    "re-pin) : 2026-02 (v80195-v80223, le cache initial) → 2026-08 (v80335, ",
+    "l'agrégat frais vérifié pendant la recherche du raccordement — sha256 ",
+    "663d7db6…, validité 2025-12-14 → 2034-01-20, 32 agences ; le millésime ",
+    "périmé laissait douze réseaux sombres sur septembre, la leçon de la ",
+    "porte de présence). CE PIN EST PARTAGÉ avec l'indicateur offre_tc : son ",
+    "PREMIER PASSAGE À LA FRAÎCHEUR déplacera les valeurs publiées de cette ",
+    "part des bâtiments près d'un arrêt — les verrous données réelles ",
+    "(Rennes 0,9957 · 35 : 0,5731 · EPCI 0,9412 · 29 : 0,6761) seront ",
+    "rétablis sur le premier run frais, le déplacement documenté ici, jamais ",
+    "tu. Réseaux sombres documentés du millésime : Coralie Concarneau et ",
+    "LinéotimL30 (RESEAUX_SANS_SERVICE_ACCEPTES_KORRIGO_80335). DÉCISION DE ",
+    "MÉTHODE (l'item 🔶 du contrat) : « part des bâtiments près d'un arrêt » ",
+    "= la fraction des BÂTIMENTS de la commune à moins de 500 m à vol ",
+    "d'oiseau d'un arrêt GTFS (la couche batiments_residentiels, geom_adresse ",
+    "POINT EPSG:2154) — la VRAIE part, jamais un proxy de superficie. ODbL ",
+    "(ADR-0001) : attribution « © OpenStreetMap contributors » portée par ",
+    "l'indicateur."
   ),
   "cron", "fichier"
 )
@@ -546,6 +565,109 @@ MANIFEST_MOBILITE_COG_PASSAGE <- tibble::tribble(
   "cron", "fichier"
 )
 
+# MANIFEST_MOBILITE_SNCF_VOYAGEURS -----------------------------------------------
+# Le fragment SNCF VOYAGEURS (issue #485, parent #482 — le raccordement) :
+# l'export GTFS national « Réseau SNCF TGV, Intercités et TER », l'AUTORITÉ
+# FERROVIAIRE SEULE du raccordement. La raison (décision #12 de la recherche,
+# vérifiée en direct) : l'agrégat Korrigo ne porte AUCUNE agence TGV — son
+# unique entrée SNCF est « TER BreizhGo » ; exclure le TGV sous-estimerait
+# gravement les corridors (Lamballe–Rennes ≈ 30 min en TGV contre ~1 h TER).
+# Korrigo est allégé de son agence SNCF au routage ; le rail entre
+# exclusivement par CE feed.
+#
+# Licence : ODbL — CONSTATÉE (2026-08-26) sur transport.data.gouv.fr (« odc-
+# odbl and specific usage conditions »), sur la fiche data.gouv.fr miroir
+# (« Open Data Commons Open Database License ») et par la page SNCF Open Data
+# elle-même (pied de page « FAQ/Licence ODbL »). L'attente « Licence Ouverte
+# 2.0 » de la recherche (#3a) est RÉFUTÉE : documentée ici, jamais devinée.
+#
+# Pin-on-acquisition (research §3a) : un export roulant ~quotidien (horizon
+# 151 jours, refresh quasi journalier au fil de l'eau) n'a PAS de promesse de
+# fraîcheur automatique — chaque millésime est acquis et ré-épinglé à la main,
+# sha256 à l'acquisition, estampillé dans les vintages ; mode « manuel ».
+MANIFEST_MOBILITE_SNCF_VOYAGEURS <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "sncf_voyageurs",
+  "SNCF Voyageurs — export GTFS national « Réseau SNCF TGV, Intercités et TER » (l'autorité ferroviaire seule du raccordement : TER + Intercités + TGV)",
+  "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip",
+  "sncf-national.zip",
+  "2026-08", "2026-08-24", "2026-08-25",
+  "odbl",
+  paste0(
+    "L'autorité ferroviaire SEULE du raccordement (issue #485, parent #482, ",
+    "recherche docs/research/accessibilite-extra-communale.md §3a) : les ",
+    "horaires théoriques des lignes TER, Intercités et TGV opérées par SNCF ",
+    "Voyageurs, horizon roulant de 151 jours. La raison : l'agrégat Korrigo ",
+    "ne porte aucune agence TGV (son unique entrée SNCF est « TER BreizhGo », ",
+    "vérifié en direct) — exclure le TGV sous-estimerait gravement les ",
+    "corridors (Lamballe–Rennes ≈ 30 min en TGV). Korrigo est allégé de son ",
+    "agence SNCF au routage ; le rail n'entre QUE par ce feed. MILLÉSIME ",
+    "ÉPINGLÉ : feed_version 2026-08-24 (validité 2026-08-24 → 2027-01-31), ",
+    "acquis et vérifié pendant la recherche (sha256 816d172f1f36babc…, ",
+    "4,4 Mo, research §5a) — PIN-ON-ACQUISITION : l'export roule ~quotidien, ",
+    "aucune promesse d'auto-refresh, chaque millésime est ré-épinglé à la ",
+    "main (mode manuel). LICENCE ODbL CONSTATÉE (2026-08-26) sur ",
+    "transport.data.gouv.fr (« odc-odbl and specific usage conditions »), la ",
+    "fiche data.gouv.fr miroir et la page SNCF Open Data elle-même — ",
+    "l'attente « Licence Ouverte 2.0 » de la recherche est RÉFUTÉE, ",
+    "documentée pas devinée. Caveat portail (accepté par décision #12) : une ",
+    "production SNCF Voyageurs qui ne remplace pas les données des AOM — des ",
+    "« petites divergences » possibles avec les feeds régionaux."
+  ),
+  "manuel", "fichier"
+)
+
+# MANIFEST_MOBILITE_DILA_BDL -------------------------------------------------------
+# Le fragment DILA BDL (issue #485, parent #482 — le raccordement) : l'archive
+# v4 de la « Base de données locales » de Service-public.gouv.fr (DILA) — le
+# géocodage MAIRIE À Mairie du raccordement. L'entrée « Mairie » de chaque
+# commune porte latitude/longitude : 35 800 mairies parsées pendant la
+# recherche, 1 213 entrées bretonnes, AUCUNE des 1 202 communes COG 2025
+# manquante — les îles comprises (la raison d'être de la géométrie mairie :
+# aucun territoire rendu vide, là où les centroïdes BDNB perdaient deux îles).
+#
+# Licence Ouverte 2.0 constatée sur la page data.gouv.fr du jeu (« Les données
+# sont réutilisables gratuitement sous licence ouverte v2.0 ») avec sa
+# discipline d'attribution explicite : paternité Service-Public.gouv.fr/DILA +
+# URL de téléchargement + nom du fichier + date du fichier.
+#
+# ~348 Mo reconstruits presque chaque jour : horloge lente, mode « manuel »
+# (jamais un cron) — l'édition épinglée est celle du 2026-08-25 (last-modified
+# serveur), celle vérifiée pendant la recherche (sha256 54da4f0bd418c59a…).
+MANIFEST_MOBILITE_DILA_BDL <- tibble::tribble(
+  ~id, ~source, ~url, ~fichier, ~vintage, ~date_reference,
+  ~date_publication, ~licence, ~note, ~mode, ~type,
+  "dila_bdl",
+  "DILA — « Base de données locales » de Service-public.gouv.fr (Annuaire de l'administration, v4) : l'annuaire des guichets publics locaux, dont l'entrée « Mairie » de chaque commune (géocodage lat/lon)",
+  "https://lecomarquage.service-public.gouv.fr/donnees_locales_v4/all_latest.tar.bz2",
+  "all_latest.tar.bz2",
+  "2026-08", "2026-08-25", "2026-08-25",
+  "lov2",
+  paste0(
+    "Le géocodage mairie à mairie du raccordement (issue #485, parent #482, ",
+    "recherche §5c) : l'archive v4 de la « Base de données locales » (DILA, ",
+    "Service-public.gouv.fr). L'entrée « Mairie » de chaque commune porte son ",
+    "géocodage lat/lon — 1 213 entrées bretonnes dans l'édition épinglée, ",
+    "couverture COMPLÈTE des 1 202 communes COG 2025, les îles comprises ",
+    "(Ouessant, Houat… : aucun territoire rendu vide, là où les centroïdes ",
+    "BDNB perdaient deux îles sans bâtiment géocodé). ÉDITION ÉPINGLÉE : le ",
+    "2026-08-25 (last-modified serveur, l'édition téléchargée et vérifiée ",
+    "pendant la recherche — sha256 de l'archive 54da4f0bd418c59a…) ; l'archive ",
+    "(~348 Mo) est reconstruite presque chaque jour : horloge lente, mode ",
+    "manuel, jamais un cron. CAVEATS documentés (jamais corrigés en silence, ",
+    "voir artefact_raccordement.R) : 13 entrées portent un géocode aberrant à ",
+    "l'est de la Bretagne (un défaut de géocodage DILA) — exactement les 13 ",
+    "communes non routées de la matrice figée ; 11 entrées portent un code ",
+    "pré-fusion 2022→2025 — la projection COG 2025 est le travail du ",
+    "consommateur (passage_cog). LICENCE OUVERTE 2.0 constatée sur la page ",
+    "data.gouv du jeu, attribution exigée : paternité ",
+    "« Service-Public.gouv.fr / DILA » + URL de téléchargement + nom du ",
+    "fichier + date du fichier — la Méthodes les portera."
+  ),
+  "manuel", "fichier"
+)
+
 # MANIFEST_MOBILITE -------------------------------------------------------------
 # Le manifeste CONCATÉNÉ du thème (la même forme que MANIFEST_ECONOMIE) : les
 # fragments, dans l'ordre — le snapshot porté (l'horloge lente du flagship), les
@@ -554,11 +676,12 @@ MANIFEST_MOBILITE_COG_PASSAGE <- tibble::tribble(
 # « L'offre de mobilité alternative » (issue #140 : korrigo GTFS,
 # batiments_residentiels, bornes-recharges, stationnement-velo). Depuis l'issue
 # #222 (ticket #227), le manifeste porte aussi la table de passage COG partagée
-# (cog_passage — le composant qui projette les codes 2022 du jeu Geovelo vers
-# le COG 2025 du squelette) ; depuis le ticket #228, le mode `b` de `reseaux`
-# est alimenté par le jeu Geovelo (amenagements_cyclables, cron mensuel) —
-# osm_reseaux reste le fragment des modes t/c. DIX lignes, dix ids uniques,
-# chaque source garde SON vintage. Validé par verifier_contrat_manifest_mobilite.
+# (cog_passage) ; depuis le ticket #228, le mode `b` de `reseaux` est alimenté
+# par le jeu Geovelo (amenagements_cyclables) ; depuis l'issue #485 (le
+# raccordement), les DEUX sources ferroviaires/géocodage de la fondation
+# données : sncf_voyageurs (le rail national, TGV inclus) et dila_bdl (les
+# points mairie). TREIZE lignes, treize ids uniques, chaque source garde SON
+# vintage. Validé par verifier_contrat_manifest_mobilite.
 MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_SNAPSHOT,
   MANIFEST_MOBILITE_RP_LOGEMENT,
@@ -570,7 +693,9 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_BORNES,
   MANIFEST_MOBILITE_STATIONNEMENT_VELO,
   MANIFEST_MOBILITE_BPE_B316,
-  MANIFEST_MOBILITE_COG_PASSAGE
+  MANIFEST_MOBILITE_COG_PASSAGE,
+  MANIFEST_MOBILITE_SNCF_VOYAGEURS,
+  MANIFEST_MOBILITE_DILA_BDL
 )
 
 # verifier_contrat_mobilite_snapshot ---------------------------------------------
@@ -809,6 +934,10 @@ verifier_contrat_mobilite_demande_reseaux <- function(manifest) {
 # est le zip GTFS (jamais mobibreizh-stops — le constat STAR y est documenté,
 # plus une source du thème). Mode cron, type fichier, dates ISO bien formées
 # (publication ≥ référence), licence odbl.
+# Depuis l'issue #485 (le re-pin), le contrat épingle AUSSI le millésime frais
+# v80335 : un retour en arrière vers le cache périmé est un échec — un nouveau
+# millésime exigera de faire évoluer CE contrat explicitement, jamais un
+# passage en silence.
 verifier_contrat_mobilite_korrigo <- function(fragment) {
   manquer <- function(champ, detail) {
     stop(sprintf("Contrat Mobilité Korrigo violé — %s : %s.", champ, detail),
@@ -828,6 +957,12 @@ verifier_contrat_mobilite_korrigo <- function(fragment) {
   }
   if (fragment$mode != "cron" || fragment$type != "fichier") {
     manquer("mode/type", "mode 'cron' et type 'fichier'")
+  }
+  if (fragment$vintage != "2026-08") {
+    manquer("vintage", paste0(
+      "millésime épinglé '2026-08' (le re-pin frais v80335, issue #485) — ",
+      "tout autre valeur est un substitut refusé ; un NOUVEAU millésime fait ",
+      "évoluer le contrat explicitement"))
   }
   if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
       !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
@@ -874,6 +1009,104 @@ verifier_contrat_mobilite_cog_passage <- function(fragment) {
       !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
       as.Date(fragment$date_publication) < as.Date(fragment$date_reference)) {
     manquer("dates", "dates ISO bien formées, publication jamais antérieure à la référence")
+  }
+  invisible(TRUE)
+}
+
+# verifier_contrat_mobilite_sncf_voyageurs ---------------------------------------
+# Le contrat du fragment SNCF VOYAGEURS (issue #485) : UNE source —
+# sncf_voyageurs, l'export GTFS national épinglé. La licence ODbL est le
+# CONSTAT des portails (la LO-2.0 attendue par la recherche est réfutée — un
+# « lov2 » ici serait une licence devinée, refusée). Le mode « manuel » est la
+# règle du pin-on-acquisition : un export roulant quasi quotidien ne se
+# ré-télécharge JAMAIS tout seul.
+verifier_contrat_mobilite_sncf_voyageurs <- function(fragment) {
+  manquer <- function(champ, detail) {
+    stop(sprintf("Contrat Mobilité SNCF Voyageurs violé — %s : %s.", champ,
+                 detail), call. = FALSE)
+  }
+  if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) {
+    manquer("forme", "le fragment SNCF Voyageurs porte UNE source")
+  }
+  if (fragment$id != "sncf_voyageurs") {
+    manquer("id", "id attendu : 'sncf_voyageurs'")
+  }
+  if (fragment$fichier != "sncf-national.zip") {
+    manquer("fichier", paste0(
+      "fichier de cache attendu : sncf-national.zip (l'export GTFS national ",
+      "« Réseau SNCF TGV, Intercités et TER » — jamais NeTEx, jamais un flux ",
+      "temps réel)"))
+  }
+  if (fragment$url != paste0(
+        "https://eu.ftp.opendatasoft.com/sncf/plandata/",
+        "Export_OpenData_SNCF_GTFS_NewTripId.zip")) {
+    manquer("url", "l'URL de l'export GTFS national épinglé")
+  }
+  if (fragment$licence != "odbl") {
+    manquer("licence", paste0(
+      "licence attendue : 'odbl' (le CONSTAT des portails transport.data.gouv.fr ",
+      "/ data.gouv.fr / SNCF Open Data — jamais une licence devinée)"))
+  }
+  if (fragment$mode != "manuel" || fragment$type != "fichier") {
+    manquer("mode/type", paste0(
+      "mode 'manuel' et type 'fichier' (pin-on-acquisition : un export roulant ",
+      "~quotidien ne se ré-télécharge pas tout seul)"))
+  }
+  if (fragment$vintage != "2026-08") {
+    manquer("vintage", paste0(
+      "millésime épinglé '2026-08' (feed_version 2026-08-24, acquis pendant la ",
+      "recherche #485)"))
+  }
+  if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
+      !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
+      as.Date(fragment$date_publication) < as.Date(fragment$date_reference)) {
+    manquer("dates", "dates ISO bien formées, publication jamais antérieure à la référence")
+  }
+  invisible(TRUE)
+}
+
+# verifier_contrat_mobilite_dila_bdl ----------------------------------------------
+# Le contrat du fragment DILA BDL (issue #485) : UNE source — dila_bdl,
+# l'archive v4 « all_latest.tar.bz2 » de la Base de données locales (jamais
+# l'extraction CSV « Base de données locales - Service-public.fr », un autre
+# jeu). Licence Ouverte 2.0 (lov2), mode manuel (~348 Mo reconstruits presque
+# chaque jour — horloge lente, jamais un cron).
+verifier_contrat_mobilite_dila_bdl <- function(fragment) {
+  manquer <- function(champ, detail) {
+    stop(sprintf("Contrat Mobilité DILA BDL violé — %s : %s.", champ, detail),
+         call. = FALSE)
+  }
+  if (!inherits(fragment, "tbl_df") || nrow(fragment) != 1L) {
+    manquer("forme", "le fragment DILA BDL porte UNE source")
+  }
+  if (fragment$id != "dila_bdl") {
+    manquer("id", "id attendu : 'dila_bdl'")
+  }
+  if (fragment$fichier != "all_latest.tar.bz2") {
+    manquer("fichier", paste0(
+      "fichier de cache attendu : all_latest.tar.bz2 (l'archive v4 de la ",
+      "Base de données locales — jamais l'extraction CSV du même nom, un ",
+      "autre jeu data.gouv)"))
+  }
+  if (fragment$url != paste0(
+        "https://lecomarquage.service-public.gouv.fr/donnees_locales_v4/",
+        "all_latest.tar.bz2")) {
+    manquer("url", "l'URL officielle de l'archive v4 (lecomarquage.service-public.gouv.fr)")
+  }
+  if (fragment$licence != "lov2") {
+    manquer("licence", "licence attendue : 'lov2' (Licence Ouverte 2.0, constatée sur la page data.gouv)")
+  }
+  if (fragment$mode != "manuel" || fragment$type != "fichier") {
+    manquer("mode/type", paste0(
+      "mode 'manuel' et type 'fichier' (~348 Mo reconstruits presque chaque ",
+      "jour — horloge lente, jamais un cron)"))
+  }
+  if (!grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_reference) ||
+      !grepl("^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$", fragment$date_publication) ||
+      as.Date(fragment$date_publication) < as.Date(fragment$date_reference)) {
+    manquer("dates", paste0(
+      "dates ISO bien formées, publication jamais antérieure à la référence ",
+      "(l'édition épinglée est celle du last-modified serveur)"))
   }
   invisible(TRUE)
 }
@@ -982,16 +1215,16 @@ verifier_contrat_mobilite_stationnement_velo <- function(fragment) {
 
 
 # verifier_contrat_manifest_mobilite --------------------------------------------
-# Le contrat du MANIFESTE CONCATÉNÉ du thème (issues #139 + #140 + #222, la
-# même idée que les contrats de manifeste des fragments) : DIX lignes, dix ids
-# uniques et exacts (le snapshot porté + les quatre sources de l'étage
-# demande/réseaux + les quatre sources du sous-bloc + la table de passage COG
-# partagée), chaque fragment passe SON contrat, les dates du manifeste sont
-# bien formées (la publication jamais antérieure à la référence) et chaque id
-# de la table des indicateurs du thème est couvert par une source du manifeste.
-# Un manifeste corrompu — une source manquante, un id dupliqué, une licence
-# hors contrat, un fragment incohérent — échoue bruyamment en nommant le champ
-# fautif.
+# Le contrat du MANIFESTE CONCATÉNÉ du thème (issues #139 + #140 + #222 + #485,
+# la même idée que les contrats de manifeste des fragments) : TREIZE lignes,
+# treize ids uniques et exacts (le snapshot porté + les quatre sources de
+# l'étage demande/réseaux + les quatre sources du sous-bloc + la BPE B316 et la
+# table de passage COG partagée + les deux sources du raccordement), chaque
+# fragment passe SON contrat, les dates du manifeste sont bien formées (la
+# publication jamais antérieure à la référence) et chaque id de la table des
+# indicateurs du thème est couvert par une source du manifeste. Un manifeste
+# corrompu — une source manquante, un id dupliqué, une licence hors contrat,
+# un fragment incohérent — échoue bruyamment en nommant le champ fautif.
 verifier_contrat_manifest_mobilite <- function(manifest) {
   manquer <- function(champ, detail) {
     stop(sprintf("Contrat Mobilité manifeste violé — %s : %s.", champ, detail),
@@ -1000,18 +1233,21 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 11L) {
-    manquer("forme", paste0("le manifeste concaténé porte ONZE sources (le ",
+  if (nrow(manifest) != 13L) {
+    manquer("forme", paste0("le manifeste concaténé porte TREIZE sources (le ",
                             "snapshot + les quatre de l'étage demande/réseaux ",
                             "(#139) + les quatre du sous-bloc (#140) + la ",
-                             "BPE B316 et la table de passage COG partagée), pas ",
+                            "BPE B316 et la table de passage COG partagée + ",
+                            "les deux sources du raccordement (#485 : le rail ",
+                            "SNCF national et la DILA BDL)), pas ",
                             nrow(manifest)))
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
                 "amenagements_cyclables", "communes_limites", "korrigo",
                 "batiments_residentiels", "bornes-recharges",
-                "stationnement-velo", "bpe_b316", "cog_passage")
+                "stationnement-velo", "bpe_b316", "cog_passage",
+                "sncf_voyageurs", "dila_bdl")
   if (!setequal(manifest$id, attendus)) {
     manquer("id", paste0("ids attendus : ", paste(attendus, collapse = " / ")))
   }
@@ -1031,6 +1267,10 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   verifier_contrat_mobilite_bpe_b316(manifest[manifest$id == "bpe_b316", ])
   verifier_contrat_mobilite_cog_passage(
     manifest[manifest$id == "cog_passage", ])
+  verifier_contrat_mobilite_sncf_voyageurs(
+    manifest[manifest$id == "sncf_voyageurs", ])
+  verifier_contrat_mobilite_dila_bdl(
+    manifest[manifest$id == "dila_bdl", ])
 
   # les dates de tout le manifeste — ISO, publication jamais antérieure à la
   # référence (l'horloge lente du snapshot et les vintages du sous-bloc). La

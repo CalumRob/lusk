@@ -48,13 +48,8 @@ test_that("la couverture des deux artefacts est celle constatée à la migration
 
 test_that("TRIPWIRE — une copie RENOMMÉE de la matrice est refusée", {
   # la garde du snapshot porté : le contrat épingle LE fichier, jamais « un »
-  faux <- list(
-    id = "matrice_temps_mairies",
-    fichier = "matrice_recherche_autre.csv.gz", # substitut renommé
-    sha256 = MATRICE_TEMPS_MAIRIES_SHA256,
-    vintage = "2026-09-16",
-    recette = RECETTE_MATRICE_TEMPS_MAIRIES,
-    table = lire_matrice_temps_mairies())
+  faux <- artefact_matrice_temps()
+  faux$fichier <- "matrice_recherche_autre.csv.gz" # substitut renommé
   expect_error(verifier_contrat_matrice_temps(faux),
                "matrice_temps_mairies\\.csv\\.gz")
 })
@@ -64,30 +59,46 @@ test_that("TRIPWIRE — un contenu SUBSTITUÉ (même nom) est refusé par l'empr
   # l'empreinte sha256 calculée sur le fichier réel ne colle plus — refus
   chemin <- tempfile("matrice-substituee-", fileext = ".csv.gz")
   on.exit(unlink(chemin), add = TRUE)
-  vraie <- lire_matrice_temps_mairies()
-  falsifiee <- vraie[vraie$travel_time_p01 != min(vraie$travel_time_p01), ]
+  falsifiee <- lire_matrice_temps_mairies()
+  falsifiee$travel_time_p01[1] <- falsifiee$travel_time_p01[1] + 1
   readr::write_csv(falsifiee, chemin)
-  faux <- list(
-    id = "matrice_temps_mairies",
-    fichier = MATRICE_TEMPS_MAIRIES_FICHIER,
-    sha256 = openssl::sha256(file(chemin)),
-    vintage = "2026-09-16",
-    recette = RECETTE_MATRICE_TEMPS_MAIRIES,
-    table = falsifiee)
+  faux <- artefact_matrice_temps()
+  faux$sha256 <- paste(openssl::sha256(file(chemin, "rb")))
+  faux$table <- falsifiee
   expect_error(verifier_contrat_matrice_temps(faux), "sha256")
 })
 
 test_that("TRIPWIRE — une matrice hors cap ou sans diagonale échoue en nommant la règle", {
   base <- artefact_matrice_temps()
 
+  # une cellule au-delà du cap 600 : la sémantique du figé casse
   hors_cap <- base
-  hors_cap$table <- hors_cap$table
   hors_cap$table$travel_time_p01[1] <- 601
   expect_error(verifier_contrat_matrice_temps(hors_cap), "cap")
 
+  # la diagonale amputée SANS changer le nombre de paires ni créer de doublon :
+  # une paire diagonale devient une paire orientée absente. On choisit une
+  # diagonale dont l'origine porte AUSSI d'autres lignes (une île sans aucune
+  # paire joignable n'a QUE sa diagonale — retirer celle-là ferait chuter la
+  # couverture, un autre contrat)
   sans_diagonale <- base
-  sans_diagonale$table <- sans_diagonale$table[sans_diagonale$table$from_id !=
-                                                 sans_diagonale$table$to_id, ]
+  sorties <- table(sans_diagonale$table$from_id)
+  existantes <- paste(sans_diagonale$table$from_id,
+                      sans_diagonale$table$to_id)
+  diag_multi <- with(sans_diagonale$table,
+                     which(from_id == to_id & sorties[from_id] > 1)[1])
+  stopifnot(!is.na(diag_multi))
+  existantes <- existantes[-diag_multi]
+  candidates <- expand.grid(u = names(sorties)[1:50],
+                            v = names(sorties)[1:50],
+                            stringsAsFactors = FALSE)
+  candidates <- candidates[candidates$u != candidates$v, ]
+  candidates$paires <- paste(candidates$u, candidates$v)
+  candidates <- candidates[!candidates$paires %in% existantes, ]
+  stopifnot(nrow(candidates) > 0)
+  sans_diagonale$table$from_id[diag_multi] <- candidates$u[[1]]
+  sans_diagonale$table$to_id[diag_multi] <- candidates$v[[1]]
+  expect_equal(nrow(sans_diagonale$table), 250482L)
   expect_error(verifier_contrat_matrice_temps(sans_diagonale),
                "diagonale")
 })
@@ -117,13 +128,16 @@ test_that("la recette estampillée porte EXACTEMENT les paramètres de la spéci
 test_that("les empreintes épinglées sont celles des fichiers migrés verbatim", {
   # la migration est UNE COPIE OCTET PAR OCTET des fichiers vérifiés de la
   # recherche (E:\Temp\opencode\e1-r5r) — les empreintes constantes sont la
-  # trace de cette vérification, refaites ici depuis le disque épinglé
+  # trace de cette vérification, refaites ici depuis le disque épinglé.
+  # openssl::sha256 exige une CONNEXION BINAIRE (« rb ») : un mode texte
+  # altérerait les octets sous Windows, et un chemin passé en caractère
+  # hacherait la CHAÎNE du chemin, pas le fichier.
   chemin_mai <- system.file("extdata", MAIRIES_BRETAGNE_FICHIER, package = "lusk")
   chemin_mat <- system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER, package = "lusk")
   expect_true(nzchar(chemin_mai))
   expect_true(nzchar(chemin_mat))
-  expect_equal(as.character(openssl::sha256(file(chemin_mai))),
+  expect_equal(paste(openssl::sha256(file(chemin_mai, "rb"))),
                MAIRIES_BRETAGNE_SHA256)
-  expect_equal(as.character(openssl::sha256(file(chemin_mat))),
+  expect_equal(paste(openssl::sha256(file(chemin_mat, "rb"))),
                MATRICE_TEMPS_MAIRIES_SHA256)
 })

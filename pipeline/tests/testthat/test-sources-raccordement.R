@@ -41,7 +41,7 @@ test_that("MANIFEST_MOBILITE_KORRIGO : re-pinné sur le millésime frais v80335"
   # valeurs publiées (verrous données réelles à réétalonner au run frais)
   expect_match(frag$note, "80335", fixed = TRUE)
   expect_match(frag$note, "offre_tc", fixed = TRUE)
-  expect_match(frag$note, "premier passage", fixed = TRUE)
+  expect_match(frag$note, "PREMIER PASSAGE", fixed = TRUE)
   expect_match(frag$note, "663d7db6", fixed = TRUE)
 
   expect_true(verifier_contrat_mobilite_korrigo(frag))
@@ -96,8 +96,8 @@ test_that("MANIFEST_MOBILITE_DILA_BDL : l'archive des mairies, Licence Ouverte 2
   # fichier + date) et la couverture empirique (1 213 entrées bretonnes,
   # aucune des 1 202 communes COG 2025 manquante)
   expect_match(frag$note, "DILA", fixed = TRUE)
-  expect_match(frag$note, "1213", fixed = TRUE)
-  expect_match(frag$note, "1202", fixed = TRUE)
+  expect_match(frag$note, "1\u00a0213|1 213|1213")
+  expect_match(frag$note, "1\u00a0202|1 202|1202")
   expect_match(frag$note, "54da4f0b", fixed = TRUE)
   expect_true(verifier_contrat_mobilite_dila_bdl(frag))
 })

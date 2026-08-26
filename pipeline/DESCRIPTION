@@ -16,6 +16,7 @@ Imports:
     jsonlite,
     magrittr,
     nanoparquet,
+    openssl,
     osmextract,
     readr,
     readxl,
