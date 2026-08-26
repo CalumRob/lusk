@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo, selectionTerritoire, situationContexte } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -40,6 +40,36 @@ describe('helpers partagés rang ex-aequo et médiane (#437)', () => {
     expect(mediane([30, 10, 20])).toBe(20)
     expect(mediane([40, 10, 30, 20])).toBe(25)
     expect(mediane([])).toBeNull()
+  })
+})
+
+describe('résolution du territoire mis en avant — note et Repères', () => {
+  it('conserve les mêmes états honnêtes et les mêmes formulations selon le consommateur', () => {
+    const horsPerimetre = { niveau: 'commune' as const, departement: '29', territoire: 'a' }
+    expect(situationContexte(territoires, horsPerimetre)).toMatchObject({
+      ref: territoires[0],
+      nom: 'Alpha',
+      horsPerimetre: true,
+      introuvable: false,
+    })
+    expect(selectionTerritoire(territoires, horsPerimetre)).toEqual({
+      kind: 'horsScope',
+      nom: 'Alpha',
+      message: 'Alpha : territoire absent à ce niveau de comparaison.',
+    })
+
+    const introuvable = { niveau: 'commune' as const, territoire: 'inconnu' }
+    expect(situationContexte(territoires, introuvable)).toMatchObject({
+      ref: null,
+      nom: null,
+      horsPerimetre: false,
+      introuvable: true,
+    })
+    expect(selectionTerritoire(territoires, introuvable)).toEqual({
+      kind: 'horsScope',
+      nom: null,
+      message: 'Territoire sélectionné absent à ce niveau de comparaison.',
+    })
   })
 })
 
