@@ -84,11 +84,12 @@ function ordinalFrancais(n: number): string {
 export function formaterRang(
   rang: number | null,
   taille: number | null,
-  colonne: ColonneRang,
+  colonne?: ColonneRang,
 ): string | null {
   if (rang === null) return null
-  const sur = taille === null ? '' : `/${taille}`
-  return `${ordinalFrancais(rang)}${sur} ${SUFFIXE_RANG[colonne]}`
+  const sur = taille === null ? '' : colonne ? `/${taille}` : ` / ${taille}`
+  const suffixe = colonne ? ` ${SUFFIXE_RANG[colonne]}` : ''
+  return `${ordinalFrancais(rang)}${sur}${suffixe}`
 }
 
 const MOIS_FRANCAIS = [
