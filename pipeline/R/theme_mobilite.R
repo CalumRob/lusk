@@ -673,16 +673,31 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
 
   # le scalaire classé du raccordement : la part @90 aux QUATRE niveaux —
   # les communes non routées portent NA + leur motif nommé dans `rider`
-  # (l'alignement sur la référence garantit une ligne par territoire)
+  # (l'alignement sur la référence garantit une ligne par territoire) ;
+  # les agrégats portent dans `rider` la phrase de COUVERTURE précalculée
+  # quand une part de leur population n'est pas mesurable par le réseau
+  # (sémantique routés-seuls — rien n'est caché)
+  rider_couverture <- function(couverture) {
+    dplyr::if_else(
+      !is.na(couverture) & couverture < 1,
+      paste0("Part de la population réellement mesurée par le réseau : ",
+             sub(".", ",",
+                 sprintf("%.1f", 100 * couverture), fixed = TRUE),
+             " % (les communes non routées sont exclues du calcul)."),
+      NA_character_)
+  }
   racc_scalaire <- dplyr::bind_rows(
     racc$calcul$communes %>%
       dplyr::transmute(code = code, value = part_90, rider = motif),
     racc$calcul$epcis %>%
-      dplyr::transmute(code = code, value = part_90, rider = NA_character_),
+      dplyr::transmute(code = code, value = part_90,
+                       rider = rider_couverture(couverture)),
     racc$calcul$departements %>%
-      dplyr::transmute(code = code, value = part_90, rider = NA_character_),
+      dplyr::transmute(code = code, value = part_90,
+                       rider = rider_couverture(couverture)),
     racc$calcul$region %>%
-      dplyr::transmute(code = code, value = part_90, rider = NA_character_)
+      dplyr::transmute(code = code, value = part_90,
+                       rider = rider_couverture(couverture))
   )
   tables$raccordement_tc <- aligner(racc_scalaire, "raccordement_tc", "%")
   rangs <- compute_ranks(territoires, tables, scalaires = list(),

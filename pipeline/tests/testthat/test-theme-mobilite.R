@@ -2305,7 +2305,10 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
 # #486) : la forme EXACTE de lire_raccordement()$calcul sur l'univers du
 # fixture — 4 communes (29002 « non routée » : NA + motif nommé), les deux
 # EPCIs, les deux départements, la région — et la grille complète de la
-# recette figée pour les deux clés de matière de figure.
+# recette figée pour les deux clés de matière de figure. Les agrégats portent
+# leur COUVERTURE (la part de population réellement mesurée par le routage —
+# sémantique routés-seuls) : 200000002 / 22 / la région sont volontairement
+# incomplets pour exercer la phrase de couverture du payload.
 fixture_raccordement <- function() {
   minutes <- as.integer(sub("^t", "", grille_raccordement()))
   grille <- grille_raccordement()
@@ -2328,10 +2331,12 @@ fixture_raccordement <- function() {
                                  part_mediane = 0.001 * seq_along(minutes)),
       exclusions = tibble::tibble(code = "29002"),
       epcis = tibble::tibble(code = c("200000001", "200000002"),
-                             part_90 = c(0.42, 0.11)),
+                             part_90 = c(0.42, 0.11),
+                             couverture = c(1, 0.9)),
       departements = tibble::tibble(code = c("22", "29"),
-                                    part_90 = c(0.43, 0.28)),
-      region = tibble::tibble(code = "53", part_90 = 1),
+                                    part_90 = c(0.43, 0.28),
+                                    couverture = c(0.85, 1)),
+      region = tibble::tibble(code = "53", part_90 = 1, couverture = 0.99),
       courbes_epcis = tidyr::crossing(code = c("200000001", "200000002"),
                                       minute = minutes) %>%
         dplyr::mutate(part = 0.002 * dplyr::row_number()),
@@ -2560,6 +2565,11 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
   non_routee <- racc_ind[racc_ind$territoire == "29002", ]
   expect_true(is.na(non_routee$value))
   expect_match(non_routee$rider, "Non routée")
+  # la COUVERTURE des agrégats (revue pass 2 — sémantique routés-seuls) :
+  # l'agrégat à population partiellement mesurée porte la phrase précalculée
+  # dans `rider`, jamais une part amputée en silence
+  expect_match(racc_ind$rider[racc_ind$territoire == "200000002"],
+               "réellement mesurée par le réseau", fixed = TRUE)
   expect_true(all(is.na(racc_ind$rang_epci[racc_ind$territoire %in% c("29002")])))
   # la direction HIGH passe par la machinerie partagée : les parts classées
   # en ordinaux (1 = la plus grande part, ADR-0015), une commune ne se classe

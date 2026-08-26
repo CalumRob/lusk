@@ -141,8 +141,12 @@ verifier_passage_cog_reel <- function(zip) {
 #     (l'ensemble mairies − matrice, recalculé des artefacts épinglés) en NA
 #     avec motif, 1 189 parts calculées ;
 #   - LES DOMAINES de valeur : parts dans [0, 1] partout (communes, EPCIs,
-#     départements), la région à exactement 1 (chacun se rejoint soi-même),
-#     les courbes monotones couvrant la grille complète ;
+#     départements), les agrégats portant leur COUVERTURE dans ]0, 1] (la
+#     sémantique routés-seuls de la revue pass 2 : la région suit LA MÊME
+#     règle — sa couverture est exactement la population routée ÷ population
+#     totale des artefacts épinglés ; sa part reste 1 par la diagonale de
+#     SES communes routées, jamais par une identité spéciale), les courbes
+#     monotones couvrant la grille complète ;
 #   - LES ESTAMPILLES : l'enveloppe porte les empreintes de SES entrées et
 #     lire_raccordement les fait coïncider avec les fichiers épinglés
 #     actuels (une enveloppe périmée échoue AVANT toute assertion) ;
@@ -177,10 +181,30 @@ verifier_raccordement_reel <- function(artefact) {
 
   verifier_vrai(all(calcul$epcis$part_90 >= 0 & calcul$epcis$part_90 <= 1),
                 "raccordement", "une part EPCI hors [0, 1]")
+  # les agrégats portent leur COUVERTURE (la part de population réellement
+  # mesurée par le routage — les non routées sont hors dénominateur, jamais
+  # cachées)
+  verifier_vrai(all(calcul$epcis$couverture > 0 &
+                      calcul$epcis$couverture <= 1) &&
+                  all(calcul$departements$couverture > 0 &
+                        calcul$departements$couverture <= 1),
+                "raccordement", "une couverture d'agrégat hors ]0, 1]")
   verifier_egale(nrow(calcul$departements), 4L,
                  "raccordement — les quatre départements")
+  # la région suit la RÈGLE ROUTÉS-SEULS comme tout autre territoire : sa
+  # couverture est EXACTEMENT la population routée ÷ la population totale,
+  # recalculée ici des artefacts épinglés (les 13 non routées en sortent)
+  population <- lire_population_raccordement()
+  couverture_attendue <-
+    sum(population$population[
+      !population$code_commune %in% non_routees]) /
+    sum(population$population)
+  verifier_egale(calcul$region$couverture[[1]], couverture_attendue,
+                 paste("raccordement — la couverture régionale",
+                       "(population routée ÷ population totale)"))
   verifier_egale(calcul$region$part_90[[1]], 1,
-                 "raccordement — la région joignable à 100 %")
+                 paste("raccordement — chaque commune routée rejoint le",
+                       "réseau régional par SA diagonale (t = 0)"))
 
   grille <- seq(0, enveloppe$entrees$recette$cap_duree_min,
                 by = enveloppe$entrees$pas)

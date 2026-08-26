@@ -141,27 +141,38 @@ test_that("calculer_raccordement : la courbe cumulative, l'inclusion propre et l
   expect_false(any(calcul$courbes_communes$code == "44444"))
 })
 
-test_that("calculer_raccordement : les niveaux EPCI et département (l'union, jamais une moyenne)", {
+test_that("calculer_raccordement : les niveaux EPCI et département (l'union des ROUTÉES, jamais une moyenne)", {
   calcul <- calculer_raccordement(
     fixture_matrice_micro(), fixture_population_micro(),
     fixture_codes_cog_micro(), base_epci = fixture_base_epci_micro()
   )
   part <- function(table, code) table$part_90[table$code == code]
   # EPCI 200000001 {A, B} : on peut rejoindre L'EPCI en atteignant A OU B —
-  # C n'y entre qu'à min(100, 30) = 30 min. Part @90 = A + B + C = 0.6.
+  # C n'y entre qu'à min(100, 30) = 30 min. Part @90 = A + B + C sur la
+  # population ROUTÉE seule = 600/600 = 1.
   # (Une moyenne pondérée donnerait (0.3×100 + 0.4×200)/300 ≈ 0.367 — JAMAIS ça.)
-  expect_equal(part(calcul$epcis, "200000001"), 600 / 1000)
-  # EPCI 200000002 {C} : elle-même + B à 30 ; A à 150 hors seuil
-  expect_equal(part(calcul$epcis, "200000002"), 500 / 1000)
-  # département 22 {A, B, D} : l'union + l'inclusion propre de D — le
-  # territoire de D fait partie du département, chacun se rejoint soi-même :
-  # A, B et D à t = 0, C les rejoint à 30 min → TOUTE la population
-  expect_equal(part(calcul$departements, "22"), 1000 / 1000)
+  expect_equal(part(calcul$epcis, "200000001"), 600 / 600)
+  # EPCI 200000002 {C} : elle-même + B à 30 ; A à 150 hors seuil — et le
+  # dénominateur est la population routée seule : 500/600, plus jamais
+  # /1000 (les 400 habitants de D ne pèsent pas dans un agrégat qu'ils
+  # ne peuvent pas mesurer)
+  expect_equal(part(calcul$epcis, "200000002"), 500 / 600)
+  # département 22 {A, B, D} : D est NON ROUTÉE — elle sort du calcul
+  # (plus d'inclusion propre à t = 0 dans SON département) : A, B et C
+  # (à 30 min) portent seuls la part, sur W_routé = 600
+  expect_equal(part(calcul$departements, "22"), 600 / 600)
   # département 35 {C}
-  expect_equal(part(calcul$departements, "35"), 500 / 1000)
-  # région {A, B, C, D} : chacun se rejoint soi-même — routée ou non, tout
-  # Breton habite la Bretagne : la part vaut exactement 1
-  expect_equal(part(calcul$region, "53"), 1000 / 1000)
+  expect_equal(part(calcul$departements, "35"), 500 / 600)
+  # région {A, B, C, D} : la même règle routés-seuls — chaque commune
+  # routée se rejoint soi-même par la diagonale de la matrice, les non
+  # routées sont hors dénominateur : la part reste 1, mais PAR CE CALCUL
+  # (jamais une identité spéciale)
+  expect_equal(part(calcul$region, "53"), 600 / 600)
+  # LA COUVERTURE : chaque agrégat publie, à côté de sa part, la part de
+  # SA population réellement mesurée par le routage — D (400 habitants)
+  # sort de la population mesurée de la région comme de son département
+  expect_equal(calcul$region$couverture[calcul$region$code == "53"],
+               600 / 1000)
   # les courbes existent aux trois niveaux (la grille complète de la recette)
   expect_true(nrow(calcul$courbes_epcis[
     calcul$courbes_epcis$code == "200000001", ]) ==
@@ -170,10 +181,11 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union, ja
     calcul$courbes_departements$code == "22", ]) ==
     length(grille_raccordement()))
   expect_true(nrow(calcul$courbe_region) == length(grille_raccordement()))
-  # la courbe EPCI saute à 30 (l'union ouvre plus tôt que chaque commune)
+  # la courbe EPCI saute à 30 (l'union ouvre plus tôt que chaque commune),
+  # sur le dénominateur routé seul
   e1 <- calcul$courbes_epcis[calcul$courbes_epcis$code == "200000001", ]
-  expect_equal(e1$part[e1$minute == 20], 300 / 1000)
-  expect_equal(e1$part[e1$minute == 30], 600 / 1000)
+  expect_equal(e1$part[e1$minute == 20], 300 / 600)
+  expect_equal(e1$part[e1$minute == 30], 600 / 600)
 })
 
 test_that("calculer_raccordement : la courbe de référence médiane bretonne", {

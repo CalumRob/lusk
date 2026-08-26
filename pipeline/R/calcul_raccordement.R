@@ -17,12 +17,21 @@
 #
 # (on peut rejoindre une commune en atteignant N'IMPORTE lequel de ses
 # points ; on peut en partir de n'importe lequel). L'inclusion propre t = 0
-# est la diagonale de la matrice figée ; elle vaut AUSSI pour une commune
-# non routée dans SON propre territoire (chacun se rejoint soi-même — le
-# principe #6 du parent : sa propre commune compte, même sans routage).
-# Les paires absentes ne sont jamais joignables. Le dénominateur W est TOUTE
-# la population bretonne RP 2023, y compris les communes non routées (leurs
-# habitants restent des Bretons).
+# est la diagonale de la matrice figée. Les paires absentes ne sont jamais
+# joignables.
+#
+# LES DÉNOMINATEURS (revue pass 2 — sémantique ROUTÉS-SEULS pour les
+# agrégats) :
+#   - niveau COMMUN : W est TOUTE la population bretonne RP 2023, y compris
+#     les communes non routées (leurs habitants restent des Bretons ; leur
+#     propre part reste NA avec un motif nommé) ;
+#   - niveaux EPCI / département / région : le dénominateur ne compte que la
+#     population ROUTÉE du territoire — une commune non routable n'y entre
+#     ni par ses poids ni par une auto-inclusion à t = 0 (le départements
+#     n'est plus structurellement boosté, la région n'est plus une identité)
+#     et la COUVERTURE — la part de la population du territoire réellement
+#     mesurée par le routage — est publiée à côté de chaque scalaire
+#     d'agrégat : rien n'est caché.
 #
 # LES DEUX CAVEATS DE LA MATRICE FIGÉE se résolvent ICI, jamais en silence :
 #   - les identités pré-fusion portées par la matrice sont PROJETÉES vers
@@ -246,9 +255,11 @@ part_cumulee <- function(mins, xs, w, W) {
 # territoire et courbe de référence médiane. AUCUN routage : la matrice est
 # l'entrée figée (#485).
 #
-# Les niveaux EPCI/département/région lisent l'UNION des communes membres —
-# on peut rejoindre le territoire en atteignant n'importe laquelle, la
-# sienne comprise (t = 0) — JAMAIS une moyenne des parts communales.
+# Les niveaux EPCI/département/région lisent l'UNION des communes membres
+# ROUTÉES — on peut rejoindre le territoire en atteignant n'importe laquelle,
+# la sienne comprise (la diagonale) — JAMAIS une moyenne des parts communales.
+# Le dénominateur est la population routée seule et chaque scalaire d'agrégat
+# porte SA couverture (la part de population réellement mesurée).
 calculer_raccordement <- function(matrice, population, codes_cog,
                                    base_epci = NULL,
                                    seuil = SEUIL_RACCORDEMENT_MIN,
@@ -307,6 +318,11 @@ calculer_raccordement <- function(matrice, population, codes_cog,
   w <- stats::setNames(population$population, communes)
   W <- sum(w)
   routed <- sort(unique(S_long$to_commune))
+  # LE DÉNOMINATEUR ROUTÉ-SEUL des agrégats : la population des communes
+  # réellement mesurables par le réseau — les non routées en sortent (leur
+  # poids ne pèse dans aucun agrégat ; leur part communale reste NA + motif)
+  w_route <- w[routed]
+  W_route <- sum(w_route)
   inconnues <- setdiff(routed, communes)
   if (length(inconnues) > 0) {
     manquer("population", sprintf(
@@ -370,10 +386,12 @@ calculer_raccordement <- function(matrice, population, codes_cog,
     w_total = W
   )
 
-  # les niveaux agrégés : l'UNION des communes membres — S(j → E) = min sur
-  # les colonnes des membres routés, ET 0 dès que l'origine j est ELLE-MÊME
-  # membre (chacun se rejoint soi-même, routée ou non). La région = toutes
-  # les communes.
+  # les niveaux agrégés (sémantique ROUTÉS-SEULS) : S(j → E) = min sur les
+  # colonnes des membres routés — une commune non routée ne compte NI comme
+  # origine (aucune paire, tout-Inf) NI par auto-inclusion à t = 0 dans SON
+  # territoire ; le dénominateur est W_route et la couverture du groupe (la
+  # part de sa population réellement mesurée) voyage à côté de chaque
+  # scalaire. La région suit LA MÊME RÈGLE qu'un territoire quelconque.
   if (!is.null(base_epci)) {
     requis <- c("CODGEO", "EPCI", "DEP")
     manquantes_base <- setdiff(requis, names(base_epci))
@@ -383,17 +401,19 @@ calculer_raccordement <- function(matrice, population, codes_cog,
     }
     mins_groupe <- function(membres_codes) {
       colonnes <- match(intersect(membres_codes, routed), routed)
-      mins <- if (length(colonnes) > 1) {
+      if (length(colonnes) > 1) {
         apply(M[, colonnes, drop = FALSE], 1, min)
       } else if (length(colonnes) == 1) {
         M[, colonnes]
       } else {
         stats::setNames(rep(Inf, length(communes)), communes)
       }
-      # l'inclusion propre : un MEMBRE (même non routé) se rejoint à t = 0
-      soi <- intersect(membres_codes, communes)
-      mins[soi] <- pmin(mins[soi], 0)
-      mins
+    }
+    # la couverture d'un groupe : le poids de SES membres routés sur le
+    # poids de TOUS ses membres (les non routées sont nommées, pas cachées)
+    couverture_de <- function(groupes, groupe) {
+      membres <- intersect(names(groupes[groupes == groupe]), communes)
+      sum(w[intersect(membres, routed)]) / sum(w[membres])
     }
 
     agreger_niveau <- function(groupes) {
@@ -401,11 +421,15 @@ calculer_raccordement <- function(matrice, population, codes_cog,
       f <- f[!is.na(f)]
       part_par_groupe <- vapply(f, function(groupe) {
         mins <- mins_groupe(names(groupes[groupes == groupe]))
-        # une grille d'UN point : la part au seuil
-        part_cumulee(mins, seuil, w, W)[[1]]
+        # une grille d'UN point : la part au seuil, dénominateur routé seul
+        part_cumulee(mins, seuil, w, W_route)[[1]]
+      }, numeric(1))
+      couverture_par_groupe <- vapply(f, function(groupe) {
+        couverture_de(groupes, groupe)
       }, numeric(1))
       tibble::tibble(code = names(part_par_groupe),
-                     part_90 = unname(part_par_groupe))
+                     part_90 = unname(part_par_groupe),
+                     couverture = unname(couverture_par_groupe))
     }
     courbe_niveau <- function(groupes) {
       f <- sort(unique(groupes[routed]))
@@ -413,7 +437,7 @@ calculer_raccordement <- function(matrice, population, codes_cog,
       do.call(rbind, lapply(f, function(groupe) {
         mins <- mins_groupe(names(groupes[groupes == groupe]))
         tibble::tibble(code = groupe, minute = xs,
-                       part = part_cumulee(mins, xs, w, W))
+                       part = part_cumulee(mins, xs, w, W_route))
       }))
     }
 
@@ -427,9 +451,11 @@ calculer_raccordement <- function(matrice, population, codes_cog,
     resultat$courbes_epcis <- courbe_niveau(epci)
 
     mins_region <- mins_groupe(communes)
-    part_region <- part_cumulee(mins_region, xs, w, W)
+    part_region <- part_cumulee(mins_region, xs, w, W_route)
     resultat$region <- tibble::tibble(
-      code = "53", part_90 = part_region[[match(seuil, xs)]])
+      code = "53",
+      part_90 = part_region[[match(seuil, xs)]],
+      couverture = W_route / W)
     resultat$courbe_region <- tibble::tibble(
       code = "53", minute = xs, part = part_region)
   }
