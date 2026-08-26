@@ -149,11 +149,12 @@ describe('OngletTheme — the reading slot (the metadata template + the flagship
     expect(texte.exists()).toBe(true)
     expect(texte.text()).toContain('Sans voiture, 38 types de services disparaissent')
     expect(texte.text()).toContain("de l’accès quotidien de Commune A1")
-    // the template's Méthodes link renders as a RouterLink
+    // the template's link renders as a RouterLink — vers Sources depuis la
+    // bascule #410 (Méthodes est retirée, la provenance vit sur /sources)
     const liens = wrapper
       .findAllComponents(RouterLinkStub)
       .map((l) => l.props('to'))
-    expect(liens).toContain('/methodologie#mobilite')
+    expect(liens).toContain('/sources')
   })
 
   it('feeds the reading’s figure the distribution (signature), the median and the same-scale cloud', async () => {

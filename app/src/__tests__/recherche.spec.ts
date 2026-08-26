@@ -194,4 +194,20 @@ describe('rechercherIndicateurs — la moitié Indicateurs de la recherche group
     expect(rechercherIndicateurs(entrees, '   ')).toEqual([])
     expect(rechercherIndicateurs(entrees, 'zzzz')).toEqual([])
   })
+
+  it('aucune entrée (territoire ni indicateur) ne cible une surface retirée — /carte épargnée sans lien, /methodologie retirée (#410)', () => {
+    // Les hrefs des indicateurs viennent du catalogue (contract-driven) ; les
+    // territoires mènent aux fiches. Le verrou : aucune entrée de recherche
+    // ne peut jamais mener à la carte standalone ni à Méthodes.
+    const toutes = [
+      ...entrees,
+      ...rechercherTerritoires(territoiresFixture, 'a').map((t) => ({
+        href: `/territoire/${t.type}/${t.territoire}`,
+      })),
+    ]
+    for (const entree of toutes) {
+      expect(entree.href.startsWith('/carte'), entree.href).toBe(false)
+      expect(entree.href.startsWith('/methodologie'), entree.href).toBe(false)
+    }
+  })
 })

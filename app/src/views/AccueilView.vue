@@ -1,12 +1,18 @@
 <script setup lang="ts">
 /**
- * L'accueil — the landing (layouts.md §1 + site-map.md). The visitor's
- * decision path: brand → claim → prove → entice → trust. The hero opens with
- * the LuskBrand lockup and the title « lusk · Intelligence territoriale en
- * Bretagne » (mock/brand/iterations/v8.html — the brand moment, DESIGN.md §1);
- * the GlobalSearchBar is the way into any fiche; the freshness line makes the
- * "alive" promise literal (ligneFraicheur from the run report); the outro
- * closes with the thesis-as-evidence teaser and Sources & Méthodes.
+ * L'accueil — the landing (#410 — la bascule atomique). The visitor chooses
+ * between TWO equal primary calls to action: territory-first (the
+ * GlobalSearchBar, deliberately territory-only — PRD #398 story 42) and
+ * indicator-first (« Explorer les indicateurs » → /indicateurs). The hero
+ * opens with the LuskBrand lockup and the title « lusk · Intelligence
+ * territoriale en Bretagne » (mock/brand/iterations/v8.html — the brand
+ * moment, DESIGN.md §1); the freshness line makes the "alive" promise literal
+ * (ligneFraicheur from the run report) and leads to Sources; the outro closes
+ * with the thesis-as-evidence teaser and Sources.
+ *
+ * La carte n'est plus proposée (#410) : épargnée par ruling produit
+ * (2026-08-26) comme outil personnel du PO, mais SANS AUCUN lien depuis
+ * l'accueil.
  *
  * The hero is its own full-bleed band on --surface-hero, separated vertically
  * from the plain page surface by the band edge + border (DESIGN.md §7) — the
@@ -15,12 +21,12 @@
  *
  * States (ui-elements.md): the wait-set gate (#300) — the hero renders as
  * soon as territoires + run-report have settled (the search usable after one
- * round-trip); the theme tables, apercu, programmes and vintages stream in the
+ * round-trip); the theme tables, programmes and vintages stream in the
  * background and never gate the first paint. Typed PayloadError with a Retry
  * button when the wait-set fails; honest static-rhythm freshness fallback
  * until the run report lands.
  */
-import { AlertCircle, ArrowRight, Map } from 'lucide-vue-next'
+import { AlertCircle, ArrowRight } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -60,23 +66,38 @@ const messagesErreur = computed(() =>
             lisible, sourcée et datée.
           </p>
 
-          <GlobalSearchBar
-            class="accueil-recherche"
-            :territoires="territoires"
-            :chargement="chargement"
-            :erreur="messagesErreur"
-          />
+          <!-- Les deux portes d'entrée (#410) : le territoire d'abord (la
+               recherche, délibérément territoires-seule) et les indicateurs à
+               égalité — deux chemins primaires, jamais une hiérarchie. -->
+          <nav class="accueil-portes" aria-label="Les deux chemins d’exploration">
+            <div class="porte porte--territoires">
+              <h2 class="porte-titre">Territoires</h2>
+              <p class="porte-texte">
+                La fiche d'identité de chaque commune, EPCI et département de Bretagne.
+              </p>
+              <GlobalSearchBar
+                class="porte-recherche"
+                :territoires="territoires"
+                :chargement="chargement"
+                :erreur="messagesErreur"
+              />
+            </div>
+            <RouterLink to="/indicateurs" class="porte porte--indicateurs">
+              <h2 class="porte-titre">Indicateurs</h2>
+              <p class="porte-texte">
+                Chaque indicateur publié, lu à travers tous les territoires comparables.
+              </p>
+              <span class="porte-action">
+                Explorer les indicateurs
+                <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
+              </span>
+            </RouterLink>
+          </nav>
 
           <div class="accueil-produit">
-            <RouterLink to="/carte" class="accueil-carte">
-              <AppIcon :icone="Map" :taille="18" aria-hidden="true" />
-              La carte interactive
-              <AppIcon :icone="ArrowRight" :taille="16" aria-hidden="true" />
-            </RouterLink>
-
             <RouterLink
               v-if="fraicheur"
-              :to="{ path: '/methodologie' }"
+              to="/sources"
               class="accueil-fraicheur"
             >{{ fraicheur }}</RouterLink>
             <div
@@ -97,7 +118,7 @@ const messagesErreur = computed(() =>
 
     <div class="accueil-interieur">
       <footer class="accueil-outro">
-        <RouterLink to="/methodologie" class="accueil-methodes">Sources &amp; Méthodes</RouterLink>
+        <RouterLink to="/sources" class="accueil-sources">Sources</RouterLink>
         <p class="accueil-teaser">
           Derrière chaque fiche, des données publiques sourcées, datées et reproductibles —
           la preuve, plutôt que la promesse.
@@ -214,8 +235,72 @@ const messagesErreur = computed(() =>
   max-width: 52ch;
 }
 
-.accueil-recherche {
+/* ---- Les deux portes d'entrée (#410) : deux chemins primaires de même
+   poids — la recherche (territoires) et le catalogue (indicateurs). ---- */
+.accueil-portes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-6);
   margin-top: var(--space-4);
+}
+
+.porte {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface-primary);
+}
+
+.porte-titre {
+  margin: 0;
+  font: 600 1.375rem/1.3 var(--font-serif);
+  color: var(--text-primary);
+}
+
+.porte-texte {
+  margin: 0;
+  font: var(--text-body-sm);
+  color: var(--text-secondary);
+  max-width: 46ch;
+}
+
+.porte-recherche {
+  margin-top: auto;
+}
+
+/* La porte indicateurs est un lien-bloc entier — même poids visuel que la
+   porte territoires, l'action explicite en bas (aligné sur la recherche). */
+.porte--indicateurs {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 150ms ease-out;
+}
+
+.porte--indicateurs:hover {
+  border-color: var(--brand-500);
+}
+
+.porte-action {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font: var(--text-body);
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.porte--indicateurs:hover .porte-action {
+  color: var(--accent-hover);
+}
+
+@media (max-width: 767.98px) {
+  .accueil-portes {
+    grid-template-columns: 1fr;
+  }
 }
 
 .accueil-produit {
@@ -223,20 +308,6 @@ const messagesErreur = computed(() =>
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4) var(--space-8);
-}
-
-.accueil-carte {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font: var(--text-body);
-  font-weight: 600;
-  color: var(--accent-primary);
-  transition: color 150ms ease-out;
-}
-
-.accueil-carte:hover {
-  color: var(--accent-hover);
 }
 
 .accueil-fraicheur {
@@ -259,7 +330,7 @@ const messagesErreur = computed(() =>
   padding-top: var(--space-8);
 }
 
-.accueil-methodes {
+.accueil-sources {
   width: fit-content;
   font: var(--text-body);
   font-weight: 600;

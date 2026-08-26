@@ -5,20 +5,17 @@ import AProposView from '../views/AProposView.vue'
 import CommunesView from '../views/CommunesView.vue'
 import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
-import MethodologieView from '../views/MethodologieView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
 import IndicateursView from '../views/IndicateursView.vue'
 import IndicateurView from '../views/IndicateurView.vue'
 import SourcesView from '../views/SourcesView.vue'
 
 /**
- * The site map (site-map.md, /, /carte, /communes, /epcis, /departements,
- * /territoire/:type/:id, /methodologie, /a-propos) as a route table.
- *
- * History mode (createWebHistory) matches the deploy path: nginx serves
- * dist/ at the site root with `try_files $uri /index.html` (SPA fallback,
- * docs/self-hosting.md). Later tickets replace the placeholder views —
- * names and paths are the contract, do not rename them.
+ * The site map (#410 — la bascule atomique) : /, /carte, /communes, /epcis,
+ * /departements, /territoire/:type/:id, /sources, /a-propos et le catalogue
+ * /indicateurs. History mode (createWebHistory) matches the deploy path: the
+ * SPA fallback serves dist/ at the site root (nginx try_files / Vercel
+ * rewrites).
  *
  * La carte est chargée paresseusement : maplibre-gl (~230 ko gzip) ne pèse
  * que sur /carte, jamais dans le bundle initial (issue #39).
@@ -32,6 +29,12 @@ export const routes = [
     meta: { title: 'Accueil' },
   },
   {
+    // ⚠️ ÉPARGNÉE par ruling produit (2026-08-26, ticket #410) : la route
+    // standalone /carte NE retire PAS. Elle reste routée et fonctionnelle
+    // comme outil d'exploration personnel du PO — mais AUCUN lien face-
+    // utilisateur ne doit pointer vers elle (ni header, ni footer, ni accueil,
+    // ni recherche, ni listes). Seule Méthodes est retirée par #410 ; les AC
+    // « no standalone map shell » sont amendés en conséquence.
     path: '/carte',
     name: 'carte',
     component: CarteView,
@@ -63,12 +66,10 @@ export const routes = [
     meta: { title: 'Fiche d’identité' },
   },
   {
-    path: '/methodologie',
-    name: 'methodologie',
-    component: MethodologieView,
-    meta: { title: 'Méthodologie' },
-  },
-  {
+    // /methodologie — RETIRÉE (#410) : Méthodes n'est plus une destination.
+    // Son contenu vit dans Sources (#406) et À propos ; les liens internes
+    // (y compris ceux possédés par le payload, theme_<theme>.json) pointent
+    // désormais vers leurs nouvelles maisons. Aucun alias partiel ne survit.
     path: '/sources',
     name: 'sources',
     component: SourcesView,

@@ -108,13 +108,14 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
     expect(texte.classes()).toContain('voix-recit')
   })
 
-  it('renders the template link node as a RouterLink to the Méthodes anchor', async () => {
+  it('renders the template link node as a RouterLink to Sources (la maison de la provenance, #410)', async () => {
     const wrapper = await monter('22001')
 
     const liens = wrapper
       .findAllComponents(RouterLinkStub)
       .map((l) => l.props('to'))
-    expect(liens).toContain('/methodologie#demographie')
+    expect(liens).toContain('/sources')
+    expect(liens).not.toContain('/methodologie#demographie')
   })
 
   it('changes the reading with the territory — the same template, the row’s own values (vide-meurt)', async () => {

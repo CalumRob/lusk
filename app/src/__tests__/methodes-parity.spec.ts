@@ -3,7 +3,6 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { SOURCES_PROGRAMMES } from '../methodes/programmes'
 import { THEMES_CONSTRUITS } from '../methodes/indicateurs'
 import type { ThemeConstruit } from '../methodes/indicateurs'
 
@@ -11,22 +10,22 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
  * Le contrat Méthodes de parité (issue #130, CONTEXT.md → Méthodes : « a
  * theme is not "built" until its sources and variables are documented here,
  * never an afterthought »). Un thème présent dans la payload commise
- * (public/data/indicateurs_<theme>.json) DOIT avoir sa documentation Méthodes
- * — la section Méthodes d'un thème expédie avec son payload, jamais après.
+ * (public/data/indicateurs_<theme>.json) DOIT avoir sa documentation —
+ * la section d'un thème expédie avec son payload, jamais après.
  *
- * #408 : la documentation de Programmes et subventions vit dans SA SECTION
- * DÉDIÉE de Méthodes (l'onglet « Programmes et subventions », #332 —
- * MethodesProgrammes.vue + methodes/programmes.ts : les six sources du
- * manifeste, les trois sortes de couverture, la règle du badge ORT et la
- * ligne « jamais les résultats »), pas dans le registre des indicateurs des
- * cinq thèmes de tension. La parité reconnaît les DEUX formes — et prouve
- * que le registre dédié ne part jamais à vide.
+ * #408 : Programmes et subventions est le SIXIÈME thème du contrat canonique
+ * et vit dans SON descripteur publié theme_programmes.json. Depuis la bascule
+ * (#410), c'est CE DESCRIPTEUR — publié par publier_theme_metadata, verrouillé
+ * côté app par theme-metadata-parity.spec.ts (parité canon ↔ snapshot) — qui
+ * prouve la parité du sixième thème ; sa provenance vit dans ses
+ * source_records (#471). Ce fichier ne garde que l'enforcement générique :
+ * tout indicateurs_<theme>.json commis doit correspondre à un thème connu.
  *
  * Direction de l'assertion : bidirectionnelle.
  * - payload ⊆ registre (la règle de l'issue #130, l'essentiel) : un thème dont
  *   le payload est commis sans section Méthodes échoue en le nommant. C'est
  *   l'enforcement : quand le payload de la Mobilité part, ce test force sa
- *   documentation Méthodes à partir avec lui.
+ *   documentation à partir avec lui.
  * - registre ⊆ payload (l'inverse, gratuit à asserter) : le registre est
  *   « thèmes construits uniquement » par construction, mais rien ne vérifie à
  *   l'exécution qu'un thème documenté a bien un payload commis — l'inverse
@@ -43,10 +42,10 @@ import type { ThemeConstruit } from '../methodes/indicateurs'
 const dataDir = join(process.cwd(), '..', 'public', 'data')
 
 /**
- * Les thèmes documentés par une SECTION DÉDIÉE de Méthodes plutôt que par le
- * registre des indicateurs (#408). L'existence de la section est prouvée ICI
- * par son registre dédié : six sources documentées (les cinq jeux ANCT/DGALN
- * + la source SCDL), jamais une section qui ne cite rien.
+ * Les thèmes hors registre des thèmes construits mais dont la payload est
+ * légitimement commise (#408). L'exemption garde l'ancre de découverte
+ * exacte ; la documentation DU sixième thème est prouvée par son descripteur
+ * publié (theme_programmes.json, source_records #471), pas ici.
  */
 const THEMES_DOCUMENTATION_DEDIEE = ['programmes'] as const
 
@@ -84,15 +83,6 @@ describe('contrat Méthodes — chaque thème de la payload a sa documentation',
     expect(
       themesSansDocumentation(['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'eau']),
     ).toEqual(['eau'])
-  })
-
-  it('la section dédiée de Programmes et subventions existe et documente SES sources (#408)', () => {
-    // La preuve que la documentation dédiée n'est pas une clause de sortie :
-    // le registre de la section porte les SIX sources du manifeste complet
-    // (les cinq jeux ANCT/DGALN + la source SCDL des subventions).
-    expect(Object.keys(SOURCES_PROGRAMMES).sort()).toEqual(
-      ['acv', 'crte', 'ort', 'pvd', 'subventions_scdl', 'territoires_industrie'].sort(),
-    )
   })
 
   it('découvre les payloads commis — les thèmes construits du registre plus la section dédiée, ni plus ni moins', () => {

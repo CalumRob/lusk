@@ -34,8 +34,8 @@
           { "type": "text", "content": " : " },
           { "type": "param", "key": "part_passoires" },
           { "type": "text", "content": " de passoires thermiques. " },
-          { "type": "link", "href": "/methodologie#habitat", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
+          { "type": "link", "href": "/sources", "children": [
+            { "type": "text", "content": "Sources" }
           ] }
         ]
       }

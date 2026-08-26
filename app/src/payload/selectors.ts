@@ -827,7 +827,8 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
     // source_records — les Pages d'indicateur du sixième thème déclarent
     // leurs sources par le même contrat et l'autorité publiée doit les
     // résoudre (L'indicateur, la page Sources). Le registre éditorial des
-    // cinq thèmes (THEMES_METHODES, la matrice /methodologie) reste inchangé.
+    // cinq thèmes (THEMES_METHODES — l'ancienne matrice de Méthodes, retirée
+    // par #410) ne sert plus que de repli statique ci-dessous.
     canonicalThemes.add(theme as Theme)
     for (const [key, primary] of Object.entries(metadata?.sources ?? {})) {
       metadataConsumers.push({ theme: theme as Theme, key, primary, secondary: metadata?.indicator_pages?.[key]?.sources ?? [] })

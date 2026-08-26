@@ -20,14 +20,19 @@ import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 
 /**
- * AppHeader (DESIGN.md §5 + site-map.md §Navigation): sticky 60px chrome,
- * Lusk wordmark (serif → /) — the sole home affordance (#61) — centered nav
- * Carte · Données · Méthodes with a 2px underline on the active route,
- * Contact → calumrobertson.fr, and (F3, #53 + #61) the search collapsed into
- * a « Rechercher » button that expands an overlay below the header. Mobile
- * (<768px): full-screen drawer (transform-only, scroll-lock, focus trap,
- * Escape closes); a select inside the search closes the drawer. Données is a
- * small disclosure dropdown to the three lists.
+ * AppHeader (#410 — la bascule atomique): sticky 60px chrome, Lusk wordmark
+ * (serif → /) — the sole home affordance (#61) — centered nav
+ * **Territoires · Indicateurs · Sources · À propos** with a 2px underline on
+ * the active route, Contact → calumrobertson.fr, and (F3, #53 + #61) the
+ * search collapsed into a « Rechercher » button that expands an overlay below
+ * the header. Mobile (<768px): full-screen drawer (transform-only,
+ * scroll-lock, focus trap, Escape closes); a select inside the search closes
+ * the drawer. Territoires is a disclosure dropdown to the three lists.
+ *
+ * La bascule (#410) : Carte et Méthodes ne sont plus des destinations de la
+ * navigation — AUCUN lien vers /carte ni /methodologie ne survit ici
+ * (/carte reste routée comme outil du PO sans lien face-utilisateur,
+ * ruling 2026-08-26).
  */
 
 const payload: Payload = {
@@ -68,7 +73,7 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-const LIENS_NAV = ['Carte', 'Données', 'Méthodes']
+const LIENS_NAV = ['Territoires', 'Indicateurs', 'Sources', 'À propos']
 
 describe('AppHeader — le mot-clé et la navigation', () => {
   it('renders the locked brand lockup — ermine + italic "lusk" — linking to /', async () => {
@@ -92,24 +97,55 @@ describe('AppHeader — le mot-clé et la navigation', () => {
   })
 
   it('underlines the active nav item for the current route', async () => {
-    const { router, wrapper } = await montage('/carte')
+    const { router, wrapper } = await montage('/sources')
 
-    const carte = wrapper.findAll('.nav-lien')[0]
-    expect(carte.classes()).toContain('nav-lien--actif')
+    const sources = wrapper.findAll('.nav-lien')[2]
+    expect(sources.classes()).toContain('nav-lien--actif')
 
     await router.push('/communes')
     await wrapper.vm.$nextTick()
-    expect(wrapper.findAll('.nav-lien')[0].classes()).not.toContain('nav-lien--actif')
-    expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[2].classes()).not.toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[0].classes()).toContain('nav-lien--actif')
   })
 
-  it('keeps Données active on the three list routes and the fiche', async () => {
+  it('keeps Territoires active on the three list routes and the fiche', async () => {
     const { router, wrapper } = await montage('/communes')
-    expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
+    expect(wrapper.findAll('.nav-lien')[0].classes()).toContain('nav-lien--actif')
 
     await router.push('/territoire/commune/29002')
     await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.nav-lien')[0].classes()).toContain('nav-lien--actif')
+  })
+
+  it('keeps Indicateurs active on the catalogue and its parameterized pages', async () => {
+    const { router, wrapper } = await montage('/indicateurs')
     expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
+
+    await router.push('/indicateurs/demographie/densite')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.nav-lien')[1].classes()).toContain('nav-lien--actif')
+  })
+
+  it('keeps À propos active on its own route only', async () => {
+    const { router, wrapper } = await montage('/a-propos')
+    expect(wrapper.findAll('.nav-lien')[3].classes()).toContain('nav-lien--actif')
+
+    await router.push('/')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.nav-lien')[3].classes()).not.toContain('nav-lien--actif')
+  })
+
+  it('exposes no link to /carte — épargnée mais sans lien (ruling PO, #410)', async () => {
+    const { wrapper } = await montage()
+
+    expect(wrapper.find('a[href="/carte"]').exists()).toBe(false)
+  })
+
+  it('exposes no Méthodes entry nor /methodologie link anywhere (#410)', async () => {
+    const { wrapper } = await montage()
+
+    expect(wrapper.find('.nav-bureau').text()).not.toContain('Méthodes')
+    expect(wrapper.find('a[href="/methodologie"]').exists()).toBe(false)
   })
 
   it('has no Accueil link in the desktop nav or the mobile drawer', async () => {
@@ -138,13 +174,19 @@ describe('AppHeader — le mot-clé et la navigation', () => {
 })
 
 describe('AppHeader — les cibles de navigation résolvent', () => {
-  it('points Méthodes at the registered /methodologie route', async () => {
+  it('points Indicateurs, Sources and À propos at their registered routes (#410)', async () => {
     const { wrapper } = await montage()
 
-    const methodes = wrapper.find('.nav-bureau a[href="/methodologie"]')
-    expect(methodes.exists()).toBe(true)
-    expect(methodes.text()).toBe('Méthodes')
-    expect(routes.some((r) => r.path === '/methodologie')).toBe(true)
+    for (const [chemin, libelle] of [
+      ['/indicateurs', 'Indicateurs'],
+      ['/sources', 'Sources'],
+      ['/a-propos', 'À propos'],
+    ] as const) {
+      const lien = wrapper.find(`.nav-bureau a[href="${chemin}"]`)
+      expect(lien.exists(), chemin).toBe(true)
+      expect(lien.text()).toBe(libelle)
+      expect(routes.some((r) => r.path === chemin), chemin).toBe(true)
+    }
   })
 
   it('resolves every internal nav target against the route table', async () => {
@@ -163,15 +205,15 @@ describe('AppHeader — les cibles de navigation résolvent', () => {
   })
 })
 
-describe('AppHeader — le menu Données', () => {
+describe('AppHeader — le menu Territoires', () => {
   it('opens the three data-list links on click', async () => {
     const { wrapper } = await montage()
 
-    const donnees = wrapper.findAll('.nav-lien')[1]
-    expect(donnees.attributes('aria-expanded')).toBe('false')
+    const territoires = wrapper.findAll('.nav-lien')[0]
+    expect(territoires.attributes('aria-expanded')).toBe('false')
 
-    await donnees.trigger('click')
-    expect(donnees.attributes('aria-expanded')).toBe('true')
+    await territoires.trigger('click')
+    expect(territoires.attributes('aria-expanded')).toBe('true')
     const sous = wrapper.findAll('.sous-nav-lien')
     expect(sous.map((l) => l.text())).toEqual(['Les communes', 'Les EPCI', 'Les départements'])
     expect(sous[0].attributes('href')).toBe('/communes')
@@ -182,10 +224,10 @@ describe('AppHeader — le menu Données', () => {
   it('closes the menu when a list link is chosen', async () => {
     const { wrapper } = await montage()
 
-    await wrapper.findAll('.nav-lien')[1].trigger('click')
+    await wrapper.findAll('.nav-lien')[0].trigger('click')
     await wrapper.findAll('.sous-nav-lien')[0].trigger('click')
 
-    expect(wrapper.findAll('.nav-lien')[1].attributes('aria-expanded')).toBe('false')
+    expect(wrapper.findAll('.nav-lien')[0].attributes('aria-expanded')).toBe('false')
   })
 })
 
@@ -246,25 +288,26 @@ describe('AppHeader — le tiroir mobile', () => {
     }
   })
 
-  it('renders Données as a non-link group label, with the three lists nested directly beneath it', async () => {
+  it('renders Territoires as a non-link group label, with the three lists nested directly beneath it', async () => {
     const { wrapper } = await montage()
 
     await wrapper.find('.bouton-menu').trigger('click')
     const nav = wrapper.find('.nav-tiroir')
 
-    expect(nav.findAll('a').filter((a) => a.text().trim() === 'Données')).toHaveLength(0)
+    expect(nav.findAll('a').filter((a) => a.text().trim() === 'Territoires')).toHaveLength(0)
     const etiquette = nav.find('.tiroir-groupe-titre')
     expect(etiquette.exists()).toBe(true)
     expect(etiquette.element.tagName).toBe('SPAN')
-    expect(etiquette.text().trim()).toBe('Données')
+    expect(etiquette.text().trim()).toBe('Territoires')
 
     const liens = nav.findAll('a').map((a) => a.text().trim())
     expect(liens).toEqual([
-      'Carte',
       'Les communes',
       'Les EPCI',
       'Les départements',
-      'Méthodes',
+      'Indicateurs',
+      'Sources',
+      'À propos',
       'Contact',
     ])
   })
@@ -273,7 +316,7 @@ describe('AppHeader — le tiroir mobile', () => {
     const { wrapper } = await montage()
 
     await wrapper.find('.bouton-menu').trigger('click')
-    await wrapper.find('.tiroir a[href="/carte"]').trigger('click')
+    await wrapper.find('.tiroir a[href="/sources"]').trigger('click')
 
     expect(wrapper.find('.bouton-menu').attributes('aria-expanded')).toBe('false')
   })

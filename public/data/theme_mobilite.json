@@ -51,11 +51,11 @@
           },
           {
             "type": "link",
-            "href": "/methodologie#mobilite",
+            "href": "/sources",
             "children": [
               {
                 "type": "text",
-                "content": "Sources et méthodes"
+                "content": "Sources"
               }
             ]
           }

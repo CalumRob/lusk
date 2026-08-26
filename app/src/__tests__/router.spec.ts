@@ -5,28 +5,43 @@ import { describe, expect, it } from 'vitest'
 import { routes } from '../router'
 
 /**
- * The route table is the app's skeleton — it must match the site map
- * (site-map.md, /, /carte, /communes, /epcis, /departements,
- * /territoire/:type/:id, /methodologie, /a-propos) so later tickets slot
- * their views in without renaming anything.
+ * The route table is the app's skeleton (#410 — la bascule atomique) : les
+ * fiches, les listes, le catalogue des Pages d'indicateur, Sources et À
+ * propos. `/methodologie` est RETIRÉ (Méthodes vit désormais dans Sources et
+ * À propos — #406) ; `/carte` reste routé mais SANS AUCUN LIEN face-utilisateur
+ * (ruling produit 2026-08-26 : outil d'exploration personnel du PO).
  */
+
+const CARTES_ATTENDUES = [
+  '/',
+  '/carte',
+  '/communes',
+  '/epcis',
+  '/departements',
+  '/territoire/:type/:id',
+  '/sources',
+  '/a-propos',
+  // Le catalogue (#409) — la route exacte AVANT sa sœur paramétrée.
+  '/indicateurs',
+  '/indicateurs/:theme/:indicator',
+]
 
 describe('router — route table', () => {
   it('registers every site-map route, in order', () => {
-    expect(routes.map((r) => r.path)).toEqual([
-      '/',
-      '/carte',
-      '/communes',
-      '/epcis',
-      '/departements',
-      '/territoire/:type/:id',
-      '/methodologie',
-      '/sources',
-      '/a-propos',
-      // Le catalogue (#409) — la route exacte AVANT sa sœur paramétrée.
-      '/indicateurs',
-      '/indicateurs/:theme/:indicator',
-    ])
+    expect(routes.map((r) => r.path)).toEqual(CARTES_ATTENDUES)
+  })
+
+  it('retires /methodologie — no partial alias survives the cutover (#410)', () => {
+    const chemins: string[] = routes.map((r) => r.path)
+    const noms: string[] = routes.map((r) => String(r.name))
+    expect(chemins).not.toContain('/methodologie')
+    expect(noms).not.toContain('methodologie')
+  })
+
+  it('keeps /carte routed — épargnée par ruling PO (2026-08-26), outil sans lien (#410)', () => {
+    const carte = routes.find((r) => r.path === '/carte')
+    expect(carte).toBeDefined()
+    expect(carte?.name).toBe('carte')
   })
 
   it('gives each route a stable name', () => {
@@ -49,7 +64,6 @@ describe('router — navigation resolves to the French placeholder views', () =>
     '/epcis',
     '/departements',
     '/territoire/commune/35000',
-    '/methodologie',
     '/sources',
     '/a-propos',
     '/indicateurs',
