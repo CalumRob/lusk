@@ -275,7 +275,10 @@ function choisirEpci(code: string): void {
               <td class="colonne-actions">
                 <div class="colonne-actions-contenu">
                   <RouterLink :to="cheminFiche(t)" class="action">Voir la fiche</RouterLink>
-                  <RouterLink to="/carte" class="action">Explorer sur la carte</RouterLink>
+                  <!-- #410 : plus aucun lien « Explorer sur la carte » — la
+                       carte reste routée (ruling PO 2026-08-26) mais sans lien
+                       face-utilisateur ; l'exploration spatiale d'un indicateur
+                       vit sur SA Page d'indicateur (vue Carte). -->
                 </div>
               </td>
             </tr>
@@ -294,7 +297,6 @@ function choisirEpci(code: string): void {
             </RouterLink>
             <div class="carte-actions">
               <RouterLink :to="cheminFiche(t)">Voir la fiche</RouterLink>
-              <RouterLink to="/carte">Explorer sur la carte</RouterLink>
             </div>
           </li>
         </ul>

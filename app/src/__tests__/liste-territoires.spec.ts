@@ -247,7 +247,7 @@ describe('ListeTerritoires — le tableau triable', () => {
     expect(premieresEpci).toEqual(['EPCI X', 'EPCI Y'])
   })
 
-  it('renders the row actions: the fiche link and the map link', async () => {
+  it('renders the row action: the fiche link — plus aucun lien vers /carte (#410)', async () => {
     const { wrapper } = await monter('/communes', chargerAvec(payloadDemographie))
 
     const premiereLigne = wrapper.find('tbody tr')
@@ -255,10 +255,9 @@ describe('ListeTerritoires — le tableau triable', () => {
       '/territoire/commune/22001',
     )
     const actions = premiereLigne.findAll('.colonne-actions a')
+    expect(actions).toHaveLength(1)
     expect(actions[0].text()).toBe('Voir la fiche')
     expect(actions[0].attributes('href')).toBe('/territoire/commune/22001')
-    expect(actions[1].text()).toBe('Explorer sur la carte')
-    expect(actions[1].attributes('href')).toBe('/carte')
   })
 })
 
@@ -366,7 +365,7 @@ describe('ListeTerritoires — les cartes mobiles', () => {
     expect(cartes[0].find('.carte-code').text()).toBe('22001')
     expect(cartes[0].find('.carte-epci').text()).toBe('EPCI X')
     expect(cartes[0].find('a[href="/territoire/commune/22001"]').exists()).toBe(true)
-    expect(cartes[0].find('a[href="/carte"]').exists()).toBe(true)
+    expect(cartes[0].find('a[href="/carte"]').exists()).toBe(false)
   })
 
   it('filters the cards exactly like the table', async () => {
