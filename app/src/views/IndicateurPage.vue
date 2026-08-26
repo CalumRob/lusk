@@ -4,8 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
 import { modeleComposition, modeleExploration, modeleEnsembleComparaison, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
-import type { NiveauIndicateur, OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
+import type { OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
+import { PARAM_NIVEAU, estNiveauComparable, lireTerritoirePorte } from '@/fiche/contratExploration'
 import { useGeometrie } from '@/geo/useGeometrie'
 import type { NiveauMasque } from '@/geo/types'
 import type { Couche } from '@/carte/coucheModel'
@@ -20,6 +21,9 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
+// L'état que la page REÇOIT de la passarelle (#505) — les deux paramètres
+// portés, lus et validés UNE fois par le contrat d'exploration.
+const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
@@ -28,7 +32,7 @@ const { payload, erreur, chargement } = usePayload({ attendre })
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
 const page = computed(() => metadata.value?.indicator_pages?.[indicator.value])
-const familyDispatch = computed(() => page.value ? dispatchIndicatorFamily(page.value, { theme: theme.value as Theme, facts: facts.value, territories: payload.value.territoires, selected: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, facet: route.query }) : null)
+const familyDispatch = computed(() => page.value ? dispatchIndicatorFamily(page.value, { theme: theme.value as Theme, facts: facts.value, territories: payload.value.territoires, selected: porte.value.territoire, facet: route.query }) : null)
 const sources = computed(() => {
   if (!page.value || !payload.value) return []
   const authority = sourceRecords(payload.value)
@@ -38,7 +42,7 @@ const sources = computed(() => {
 // facette résumée d'une distribution lit souvent une AUTRE clé publiée que
 // la page, #440 ; les trajectoires et le modèle par détail filtrent déjà).
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value))
-const niveauRoute = computed(() => ['commune', 'epci', 'departement'].includes(String(route.query.niveau)) ? route.query.niveau as NiveauIndicateur : undefined)
+const niveauRoute = computed(() => porte.value.niveau)
 const validScope = computed(() => {
   if (payload.value.territoires.length === 0) return { departement: typeof route.query.departement === 'string' ? route.query.departement : undefined, epci: typeof route.query.epci === 'string' ? route.query.epci : undefined }
   const communes = payload.value.territoires.filter((territory) => territory.type === 'commune')
@@ -47,7 +51,7 @@ const validScope = computed(() => {
   if (departement && epci && !communes.some((territory) => territory.departement === departement && territory.epci === epci)) return { departement: undefined, epci }
   return { departement, epci }
 })
-const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: typeof route.query.territoire === 'string' ? route.query.territoire : undefined, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
+const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
 const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined) : null)
 // Le chemin complet de la trajectoire (#438), dans le MÊME périmètre résolu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
@@ -116,7 +120,7 @@ const payloadCarte = computed(() => {
 const vue = computed(() => route.query.vue === 'carte' || route.query.vue === 'indicateur' ? route.query.vue : 'reperes')
 const couche = computed<Couche | null>(() => page.value && familyDispatch.value ? ({ source: 'indicateur', clef: familyDispatch.value.facet.indicator, detail: familyDispatch.value.facet.detail, libelle: familyDispatch.value.facet.label, parDefaut: true, sousGroupe: null, storyKey: null }) : null)
 const niveauMasque = computed<NiveauMasque>(() => model.value?.state.niveau === 'epci' ? 'epcis' : model.value?.state.niveau === 'departement' ? 'departements' : 'communes')
-const territoireCible = computed(() => payload.value.territoires.find((t) => t.territoire === route.query.territoire && t.type === model.value?.state.niveau) ?? null)
+const territoireCible = computed(() => { const cible = porte.value.territoire; return cible ? payload.value.territoires.find((t) => t.territoire === cible && t.type === model.value?.state.niveau) ?? null : null })
 function normalizedQuery(extra: Record<string, string | undefined> = {}) { const next = { ...route.query, ...extra }; if (next.niveau !== 'commune') { delete next.departement; delete next.epci }; if (payload.value.territoires.length > 0) { if (next.departement !== validScope.value.departement) delete next.departement; if (next.epci !== validScope.value.epci) delete next.epci }; return next }
 function setQuery(key: string, value: string) { router.replace({ query: normalizedQuery({ [key]: value || undefined }) }) }
 function setVue(value: 'reperes' | 'carte' | 'indicateur') { router.replace({ query: normalizedQuery({ vue: value === 'reperes' ? undefined : value }) }) }
@@ -129,8 +133,8 @@ watch(() => [route.params.theme, route.params.indicator, route.query.recherche],
 // branche de purge et STRIPPAIT silencieusement un departement/EPCI valide de
 // l'URL (verrouillé par test contre le payload réel).
 watch(() => [route.query.niveau, route.query.departement, route.query.epci, payload.value.territoires.length], () => { if (!payload.value.territoires.length) return; const query = model.value?.state ? normalizedQuery({ niveau: model.value.state.niveau }) : normalizedQuery({}); if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query }) }, { immediate: true })
-watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query.niveau === undefined) router.replace({ query: normalizedQuery({ niveau }) }) }, { immediate: true })
-watch(() => route.query.niveau, (niveau) => { if (typeof niveau === 'string' && ['commune', 'epci', 'departement'].includes(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
+watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query[PARAM_NIVEAU] === undefined) router.replace({ query: normalizedQuery({ niveau }) }) }, { immediate: true })
+watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
 watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   if (resolved === undefined || !page.value) return
   const canonical = new URLSearchParams(resolved.slice(1)); const next = { ...route.query }
