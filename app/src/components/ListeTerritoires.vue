@@ -273,13 +273,11 @@ function choisirEpci(code: string): void {
                 <template v-else>{{ valeurCellule(t, col.cle) }}</template>
               </td>
               <td class="colonne-actions">
-                <div class="colonne-actions-contenu">
-                  <RouterLink :to="cheminFiche(t)" class="action">Voir la fiche</RouterLink>
-                  <!-- #410 : plus aucun lien « Explorer sur la carte » — la
-                       carte reste routée (ruling PO 2026-08-26) mais sans lien
-                       face-utilisateur ; l'exploration spatiale d'un indicateur
-                       vit sur SA Page d'indicateur (vue Carte). -->
-                </div>
+                <!-- #410 : plus aucun lien « Explorer sur la carte » — la
+                     carte reste routée (ruling PO 2026-08-26) mais sans lien
+                     face-utilisateur ; l'exploration spatiale d'un indicateur
+                     vit sur SA Page d'indicateur (vue Carte). -->
+                <RouterLink :to="cheminFiche(t)" class="action">Voir la fiche</RouterLink>
               </td>
             </tr>
           </tbody>
@@ -518,13 +516,9 @@ function choisirEpci(code: string): void {
 }
 
 .colonne-actions {
+  /* Une seule action par ligne depuis le retrait du lien carte (#410) :
+     l'alignement à droite + nowrap suffisent, plus besoin de conteneur flex. */
   text-align: right;
-}
-
-.colonne-actions-contenu {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-4);
   white-space: nowrap;
 }
 

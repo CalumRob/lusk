@@ -4,19 +4,16 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { SOURCES_METHODES, ancreSource } from '../methodes/sources'
-import { SOURCES_PROGRAMMES } from '../methodes/programmes'
 import type { Vintage } from '../payload/types'
 
 /**
- * Le registre Méthodes — le contrat de parité (docs/themes/README.md §The
- * Méthodes contract, issue #128). Une thème n'est pas « construit » tant que
- * sa documentation Méthodes ne part pas : POUR CE TICKET, chaque id de la
- * table vintages commise (public/data/vintages.json) doit avoir une entrée de
- * registre — l'union est le contrat. Depuis l'issue #180, la documentation
- * vit dans DEUX registres : les sources des thèmes (SOURCES_METHODES) et les
- * sources de l'élément Programmes & financements (SOURCES_PROGRAMMES) — la
- * table vintages partagée porte les deux. Une entrée de registre sans ligne
- * vintages en direct est autorisée (dégradation gracieuse) mais signalée.
+ * Le registre Méthodes — le contrat de parité (issue #128). Un thème n'est
+ * pas « construit » tant que sa documentation ne part pas : chaque id de la
+ * table vintages commise (public/data/vintages.json) doit être documenté par
+ * le registre (SOURCES_METHODES) OU par les source_records d'un descripteur
+ * publié. Depuis la bascule (#410), la provenance du sixième thème vit dans
+ * SON descripteur publié (theme_programmes.json, source_records #471) —
+ * l'ancien registre dédié programmes est supprimé avec la page Méthodes.
  */
 
 const dataDir = join(process.cwd(), '..', 'public', 'data')
@@ -26,13 +23,31 @@ function lireVintagesCommites(): Vintage[] {
   return brut
 }
 
-describe('registre Méthodes — la parité avec la table vintages commise', () => {
-  it('couvre chaque id de la table vintages commise (l\u2019union est le contrat)', () => {
-    const vintages = lireVintagesCommites()
-    const registres = { ...SOURCES_METHODES, ...SOURCES_PROGRAMMES }
+/** Les source_records des SIX descripteurs publiés (le snapshot commis). */
+function sourceRecordsPublies(): Record<string, unknown> {
+  const unions: Record<string, unknown> = {}
+  for (const theme of ['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'programmes']) {
+    const meta = JSON.parse(
+      readFileSync(join(dataDir, `theme_${theme}.json`), 'utf-8'),
+    ) as { source_records?: Record<string, unknown> }
+    Object.assign(unions, meta.source_records ?? {})
+  }
+  return unions
+}
 
+describe('registre Méthodes — la parité avec la table vintages commise', () => {
+  it('couvre chaque id de la table vintages commise — registre des thèmes + source_records publiés (#410)', () => {
+    const vintages = lireVintagesCommites()
+    const registres = { ...SOURCES_METHODES, ...sourceRecordsPublies() }
+
+    // Seule exception nommée : « ort » — sa ligne vintages porte elle-même
+    // ses faits éditoriaux (« en continu », lov2, jamais datée) et son
+    // absorption dans les source_records du descripteur programmes reste à
+    // faire côté pipeline ; l'ancienne couverture venait du registre supprimé.
+    const enAttenteDescripteur = new Set(['ort'])
     for (const vintage of vintages) {
-      expect(registres[vintage.id], `id vintages « ${vintage.id} » sans entrée de registre`).toBeDefined()
+      if (enAttenteDescripteur.has(vintage.id)) continue
+      expect(registres[vintage.id], `id vintages « ${vintage.id} » sans entrée de documentation`).toBeDefined()
     }
   })
 

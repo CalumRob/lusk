@@ -174,7 +174,13 @@ describe('ListeTerritoires — l’en-tête', () => {
     const { wrapper } = await monter('/communes', chargerAvec(payloadDemographie))
 
     expect(wrapper.find('thead .colonne-actions').element.tagName).toBe('TH')
-    expect(wrapper.find('tbody .colonne-actions-contenu').exists()).toBe(true)
+    // Depuis le retrait du lien carte (#410), la cellule porte l'action
+    // directement — plus aucun conteneur flex résiduel.
+    const cellule = wrapper.find('tbody .colonne-actions')
+    expect(cellule.exists()).toBe(true)
+    expect(cellule.find('.colonne-actions-contenu').exists()).toBe(false)
+    expect(cellule.findAll('a')).toHaveLength(1)
+    expect(cellule.find('a.action').exists()).toBe(true)
   })
 })
 
