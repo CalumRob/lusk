@@ -1,0 +1,27 @@
+{
+  "page": "/indicateurs/mobilite/tot_loss_t",
+  "largeur": 1920,
+  "viewport": {
+    "innerWidth": 1920,
+    "innerHeight": 1080
+  },
+  "scrollLargeurDoc": 1920,
+  "clientLargeurDoc": 1920,
+  "debordementHorizontal": 0,
+  "coquilleDroite": null,
+  "maxDroiteContenu": 0,
+  "pireContenu": "",
+  "debordementCoquille": null,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 62143,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [],
+  "titrePage": "Perte totale d’accès — à pied ou en transports en commun",
+  "url": "/indicateurs/mobilite/tot_loss_t?niveau=commune"
+}
