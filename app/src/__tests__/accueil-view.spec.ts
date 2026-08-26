@@ -19,10 +19,11 @@ import type { Payload, RunReport } from '../payload/types'
 import { routes } from '../router'
 
 /**
- * L'accueil — the landing (layouts.md §1 + site-map.md): the claim → subtitle →
- * search → carte link + freshness line → OUTRO (Sources & Méthodes + the
- * thesis teaser). Order rationale: claim → prove → entice → trust. Loading →
- * skeleton; error → icon + message + Retry.
+ * L'accueil (#410 — la bascule atomique): the claim → subtitle → the TWO
+ * primary calls to action (territory-first via the search, indicator-first
+ * via the catalogue) → freshness line → OUTRO (Sources + the thesis teaser).
+ * La carte n'est plus proposée : épargnée par ruling mais sans aucun lien.
+ * Loading → skeleton; error → icon + message + Retry.
  */
 
 const payload: Payload = {
@@ -129,13 +130,44 @@ describe('Accueil — le héros', () => {
     expect(input.attributes('aria-label')).toBe('Rechercher un territoire par son nom')
   })
 
-  it('propose le lien vers la carte interactive', async () => {
+  it('ne propose AUCUN lien vers /carte — épargnée par ruling, sans lien face-utilisateur (#410)', async () => {
     const { wrapper } = await monter(chargerAvec(payload))
 
-    const lien = wrapper.find('a.accueil-carte')
-    expect(lien.exists()).toBe(true)
-    expect(lien.attributes('href')).toBe('/carte')
-    expect(lien.text()).toMatch(/[Cc]arte/)
+    expect(wrapper.find('a[href="/carte"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/la carte interactive/i)
+  })
+})
+
+describe('Accueil — les deux portes d\u2019entrée égales (#410)', () => {
+  it('présente exactement deux portes primaires : territoires d\u2019abord, indicateurs à égalité', async () => {
+    const { wrapper } = await monter(chargerAvec(payload))
+
+    const portes = wrapper.findAll('.accueil-portes .porte')
+    expect(portes).toHaveLength(2)
+    // La porte territoire porte la recherche (le chemin territory-first)…
+    expect(portes[0].find('input[role="combobox"]').exists()).toBe(true)
+    // …et la porte indicateurs est le chemin indicator-first, de même poids.
+    const porteIndicateurs = wrapper.find('a.porte--indicateurs')
+    expect(porteIndicateurs.exists()).toBe(true)
+    expect(porteIndicateurs.attributes('href')).toBe('/indicateurs')
+    expect(porteIndicateurs.element.parentElement).toBe(
+      portes[0].element.parentElement,
+    )
+  })
+
+  it('nomme les deux chemins avec le vocabulaire du produit', async () => {
+    const { wrapper } = await monter(chargerAvec(payload))
+
+    const titres = wrapper.findAll('.accueil-portes .porte-titre').map((t) => t.text().trim())
+    expect(titres).toEqual(['Territoires', 'Indicateurs'])
+  })
+
+  it('mène la porte indicateurs au catalogue avec une action explicite', async () => {
+    const { wrapper } = await monter(chargerAvec(payload))
+
+    const action = wrapper.find('.porte--indicateurs .porte-action')
+    expect(action.exists()).toBe(true)
+    expect(action.text()).toMatch(/Explorer les indicateurs/)
   })
 })
 
@@ -189,12 +221,22 @@ describe('Accueil — le carrousel est retiré (#204)', () => {
 })
 
 describe('Accueil — l’outro', () => {
-  it('propose le lien Sources & Méthodes', async () => {
+  it('mène le lien de fraîcheur à la page Sources (#410)', async () => {
     const { wrapper } = await monter(chargerAvec(payload))
 
-    const lien = wrapper.find('a.accueil-methodes')
+    const lien = wrapper.find('a.accueil-fraicheur')
     expect(lien.exists()).toBe(true)
-    expect(lien.attributes('href')).toBe('/methodologie')
+    expect(lien.attributes('href')).toBe('/sources')
+  })
+
+  it('propose le lien Sources — plus de « Sources & Méthodes » (#410)', async () => {
+    const { wrapper } = await monter(chargerAvec(payload))
+
+    const lien = wrapper.find('a.accueil-sources')
+    expect(lien.exists()).toBe(true)
+    expect(lien.attributes('href')).toBe('/sources')
+    expect(lien.text()).toBe('Sources')
+    expect(wrapper.text()).not.toContain('Sources & Méthodes')
   })
 
   it('porte le teaser de la thèse en serif', async () => {
