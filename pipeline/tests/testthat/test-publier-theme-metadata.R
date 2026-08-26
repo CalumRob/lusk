@@ -21,12 +21,15 @@
 
 # publier_metadata_theme --------------------------------------------------------
 # Le run réel minimal du seam : les métadonnées épinglées du thème, ses
-# vintages réels (projections pures du manifeste — déterministe).
+# vintages réels (projections pures du manifeste — déterministe) et les
+# directions de SON module (la croisée des directions #506, ce que run_pipeline
+# et le graphe targets passent au seam).
 publier_metadata_theme <- function(theme, cible) {
   descripteur <- get(paste0("theme_", theme))()
   publier_theme_metadata(descripteur$metadata(), cible,
                          vintages = descripteur$vintages(),
-                         theme_attendu = theme)
+                         theme_attendu = theme,
+                         directions_module = descripteur$directions)
 }
 
 test_that("les six thèmes publient theme_<thème>.json — relu valide, sources croisées avec leurs vintages", {
@@ -140,6 +143,48 @@ test_that("le sixième thème : le canon épinglé de Programmes et subventions 
   meta <- lire_theme_metadata("demographie")
   meta$theme <- "financements"
   expect_error(publier_theme_metadata(meta, cible), "thème inconnu")
+})
+
+# La concordance des directions à la publication (issue #506) : le seam reçoit
+# les directions du module et refuse FORT un descripteur qui contredit les
+# rangs publiés — sans rien écrire ; les cas concordants publient à l'identique
+# (octets stables, aucun changement du payload publié).
+test_that("publier_theme_metadata : une direction contradictoire échoue FORT sans rien écrire (#506)", {
+  cible <- tempfile("pub-meta-directions-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  # le canon Habitat épinglé, UN descripteur retourné (prix_m2 : le module
+  # Habitat déclare « low » — un prix élevé pèse sur l'accès au logement)
+  meta_casse <- lire_theme_metadata("habitat")
+  meta_casse$indicator_pages$prix_m2$direction <- "high"
+
+  erreur <- expect_error(
+    publier_theme_metadata(meta_casse, cible,
+                           directions_module = theme_habitat()$directions),
+    "indicator_pages\\.prix_m2\\.direction")
+  expect_match(conditionMessage(erreur),
+               "descripteur (« high »)", fixed = TRUE)
+  expect_false(file.exists(file.path(cible, "theme_habitat.json")))
+})
+
+test_that("publier_theme_metadata : les cas concordants publient à l'identique — octets stables (#506)", {
+  cible_sans <- tempfile("pub-meta-sans-")
+  cible_avec <- tempfile("pub-meta-avec-")
+  on.exit(unlink(c(cible_sans, cible_avec), recursive = TRUE))
+
+  # le MÊME contenu publié avec et sans la croisée des directions : le happy
+  # path est BIT À BIT identique — la garde n'ajoute rien au payload publié
+  meta <- lire_theme_metadata("habitat")
+  publier_theme_metadata(meta, cible_sans)
+  publier_theme_metadata(meta, cible_avec,
+                         directions_module = theme_habitat()$directions)
+
+  octets <- function(chemin) {
+    readBin(chemin, "raw", n = file.info(chemin)$size)
+  }
+  expect_identical(
+    octets(file.path(cible_avec, "theme_habitat.json")),
+    octets(file.path(cible_sans, "theme_habitat.json")))
 })
 
 test_that("lire_theme_metadata : un thème sans fichier épinglé s'arrête bruyamment", {

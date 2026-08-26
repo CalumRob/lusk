@@ -404,6 +404,72 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
   }
 })
 
+# La concordance des directions (issue #506) : la direction DÉCLARÉE par le
+# descripteur de la Page d'indicateur (`indicator_pages.<clé>.direction` — le
+# glyphe ▲▼ et les rangs Repères) doit ÉGALER celle du module de thème qui
+# calcule les rangs publiés lus par les chips de fiche
+# (`theme_<theme>()$directions` -> compute_ranks -> rang_epci/rang_dep/
+# rang_reg). Une clé absente du registre du module vaut « high » — le défaut
+# EXACT de compute_ranks : jamais un « moins = mieux » qui signifierait deux
+# choses selon la surface, la dérive meurt à l'écriture.
+test_that("valider_theme_metadata : un descripteur contradictoire au module est rejeté (#506)", {
+  directions_demographie <- theme_demographie()$directions
+
+  # le cas concordant passe : la fixture déclare « high » comme le module
+  meta <- lire_metadata("theme-demographie-valide.json")
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = directions_demographie))
+
+  # la contradiction : le descripteur déclare « low » là où le module déclare
+  # « high » — le message nomme l'indicateur, les DEUX directions et les DEUX
+  # sources de vérité (le descripteur vs le module de thème)
+  meta$indicator_pages$densite$direction <- "low"
+  erreur <- expect_error(
+    valider_theme_metadata(meta, directions_module = directions_demographie),
+    "indicator_pages\\.densite\\.direction")
+  expect_match(conditionMessage(erreur),
+               paste0("la direction du descripteur (« low ») contredit ",
+                      "celle du module de thème (« high »)"),
+               fixed = TRUE)
+})
+
+test_that("valider_theme_metadata : une clé absente du registre du module vaut high — le défaut exact de compute_ranks (#506)", {
+  # le descripteur déclare « low », le module ne déclare RIEN pour la clé :
+  # les rangs publiés classeraient high-is-good — la contradiction est rejetée
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages$densite$direction <- "low"
+  expect_error(valider_theme_metadata(meta, directions_module = list()),
+               "module de thème")
+
+  # le module qui DÉCLARE « low » rend le descripteur concordant
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = list(densite = "low")))
+})
+
+test_that("valider_theme_metadata : sans registre de directions, la croisée ne s'applique pas (#506)", {
+  # l'appel historique sans le paramètre reste valide — Programmes et
+  # subventions (le thème non classé, ses rangs tous NA) ne se voit pas
+  # imposer une croisée vide : la règle ne vit que là où LES DEUX
+  # déclarations existent
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages$densite$direction <- "low"
+  expect_no_error(valider_theme_metadata(meta))
+})
+
+test_that("concordance des directions : les SIX canons épinglés passent telle quelle (#506)", {
+  # La porte de régression : ZÉRO faux positif sur le canon COMMITTÉ — chaque
+  # thème épinglé est croisé contre SON module réel et passe sans une seule
+  # exception ; Programmes (sans registre de directions) traverse la porte
+  # vide, rien à contredire
+  for (theme in THEMES_METADATA) {
+    descripteur <- get(paste0("theme_", theme))()
+    expect_error(
+      valider_theme_metadata(lire_theme_metadata(theme),
+                             directions_module = descripteur$directions),
+      NA, info = theme)
+  }
+})
+
 # La décomposition des sous-groupes (issue #370, parent #367 ; étendue par
 # #408) : les SIX thèmes déclarent leurs sous-groupes en ordre de fiche —
 # Mobilité ×4, Démographie ×2, Habitat ×3, Économie ×2, Milieux ×1,
