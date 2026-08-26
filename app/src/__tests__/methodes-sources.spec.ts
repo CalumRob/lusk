@@ -46,13 +46,13 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     }
   })
 
-  it('déclare 25 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
+  it('déclare 27 jeux de données — les trois familles générées (OCS-GE un seul jeu, états + patchs) et les sources uniques (ADR-0022)', () => {
     const idsJeux = new Set(
       Object.entries(SOURCES_METHODES).map(([id, source]) => source.dataset ?? id),
     )
     // osm_reseaux porte aussi les aires de stationnement ; BPE est le seul
-    // nouveau jeu autonome.
-    expect(idsJeux.size).toBe(25)
+    // nouveau jeu autonome ; #485 ajoute le rail SNCF national et la DILA BDL.
+    expect(idsJeux.size).toBe(27)
   })
 
   it('les familles générées partagent le nom du jeu et portent un libellé vintage dédié (ADR-0022)', () => {
@@ -109,8 +109,8 @@ describe('registre Méthodes — la parité avec la table vintages commise', () 
     })
   })
 
-  it('déclare 57 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369)', () => {
-    expect(Object.keys(SOURCES_METHODES).length).toBe(57)
+  it('déclare 59 sources — l\u2019union commise (demographie + habitat + economie + mobilite + milieux + les 8 OCS-GE millésimés + les 3 patchs correctifs M2 + le jeu Geovelo + la table de passage COG + les 2 sources de #369 + les 2 sources du raccordement #485)', () => {
+    expect(Object.keys(SOURCES_METHODES).length).toBe(59)
   })
 
   it('documente la source Geovelo des aménagements cyclables — URL data.gouv.fr, ODbL (issue #233)', () => {

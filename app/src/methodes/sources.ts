@@ -345,10 +345,36 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
   },
   korrigo: {
     nom: 'Bretagne Mobilit\u00e9 \u2014 Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ r\u00e9seaux : BreizhGo TER/car/maritime + les r\u00e9seaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kic\u00e9o\u2026)',
-    libelle: 'Snapshot 2026-02',
+    libelle: 'Snapshot 2026-08',
     editeur: 'Bretagne Mobilit\u00e9',
     url: 'https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/korrigo/alternative_exports/korrigo',
     themes: ['mobilite'],
+  },
+  // Les deux sources du raccordement (#485, parent #482) : le rail SNCF
+  // Voyageurs national (l'autorit\u00e9 ferroviaire seule du raccordement \u2014
+  // le TGV n'existe pas dans l'agr\u00e9gat Korrigo) et la DILA \u00ab Base de
+  // donn\u00e9es locales \u00bb (le g\u00e9ocodage mairie \u00e0 mairie, Licence
+  // Ouverte 2.0). La ligne vintages arrive avec la publication pipeline :
+  // d\u00e9gradation gracieuse jusqu'alors (faits \u00e9ditoriaux rendus, dates
+  // jamais invent\u00e9es). La licence SNCF est un CONSTAT (ODbL sur les trois
+  // portails), jamais une attente.
+  sncf_voyageurs: {
+    nom: 'SNCF Voyageurs \u2014 export GTFS national \u00ab R\u00e9seau SNCF TGV, Intercit\u00e9s et TER \u00bb (l\u2019autorit\u00e9 ferroviaire seule du raccordement)',
+    libelle: 'Export 2026-08-24',
+    editeur: 'SNCF Voyageurs',
+    url: 'https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip',
+    themes: ['mobilite'],
+    caveat:
+      'Licence ODbL constat\u00e9e sur transport.data.gouv.fr et data.gouv.fr (et FAQ SNCF Open Data) \u2014 pas Licence Ouverte. Export roulant quasi quotidien : pin-on-acquisition.',
+  },
+  dila_bdl: {
+    nom: 'DILA \u2014 \u00ab Base de donn\u00e9es locales \u00bb de Service-public.gouv.fr (Annuaire de l\u2019administration, v4) : l\u2019entr\u00e9e \u00ab Mairie \u00bb de chaque commune',
+    libelle: '\u00c9dition 2026-08-25',
+    editeur: 'DILA / Service-Public.gouv.fr',
+    url: 'https://lecomarquage.service-public.gouv.fr/donnees_locales_v4/all_latest.tar.bz2',
+    themes: ['mobilite'],
+    caveat:
+      'Licence Ouverte 2.0 \u2014 paternit\u00e9 \u00ab Service-Public.gouv.fr / DILA \u00bb + URL de t\u00e9l\u00e9chargement + nom du fichier + date du fichier.',
   },
   batiments_residentiels: {
     nom: 'BDNB (Base Nationale des B\u00e2timents) \u2014 couche des b\u00e2timents r\u00e9sidentiels de Bretagne, port\u00e9e pour l\u2019offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)',
