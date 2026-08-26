@@ -106,13 +106,14 @@ describe('OngletTheme — the reading slot (la Story, jamais un indicateur)', ()
     const texte = wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .lecture-texte')
     expect(texte.exists()).toBe(true)
     expect(texte.text()).toBe(
-      'La commune se spécialise dans Élevage de volailles (rang 1 du top 5). Sources et méthodes',
+      'La commune se spécialise dans Élevage de volailles (rang 1 du top 5). Sources',
     )
-    // the template's Méthodes link renders as a RouterLink
+    // the template's link renders as a RouterLink — vers Sources depuis la
+    // bascule #410 (Méthodes est retirée, la provenance vit sur /sources)
     const liens = wrapper
       .findAllComponents(RouterLinkStub)
       .map((l) => l.props('to'))
-    expect(liens).toContain('/methodologie#economie')
+    expect(liens).toContain('/sources')
   })
 
   it('shows the reading’s own vintage under the sentence (issue #74)', async () => {

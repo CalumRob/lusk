@@ -38,8 +38,8 @@
           { "type": "text", "content": " par an (naturel), " },
           { "type": "param", "key": "taux_solde_migratoire" },
           { "type": "text", "content": " (migratoire). " },
-          { "type": "link", "href": "/methodologie#demographie", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
+          { "type": "link", "href": "/sources", "children": [
+            { "type": "text", "content": "Sources" }
           ] }
         ]
       }

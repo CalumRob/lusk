@@ -72,11 +72,11 @@
           },
           {
             "type": "link",
-            "href": "/methodologie#habitat",
+            "href": "/sources",
             "children": [
               {
                 "type": "text",
-                "content": "Sources et méthodes"
+                "content": "Sources"
               }
             ]
           }

@@ -24,6 +24,18 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     for (const theme of themes) expect(lire(publicDir, theme), theme).toEqual(lire(canonicalDir, theme))
   })
 
+  it('ne porte AUCUN lien vers /methodologie — Méthodes est retirée par la bascule (#410)', () => {
+    // Le verrou d'énumération de la bascule : les lectures possédées par le
+    // payload pointent leur nouvelle maison (/sources) dans le CANON et le
+    // SNAPSHOT — une résurgence du lien retiré échoue ici, des deux côtés.
+    for (const theme of themes) {
+      const canon = readFileSync(join(canonicalDir, `theme_${theme}.json`), 'utf8')
+      expect(canon, `canon ${theme}`).not.toContain('/methodologie')
+      const snapshot = readFileSync(join(publicDir, `theme_${theme}.json`), 'utf8')
+      expect(snapshot, `snapshot ${theme}`).not.toContain('/methodologie')
+    }
+  })
+
   it('porte la MÊME liste fermée des six familles sémantiques que le pipeline (#437)', () => {
     // La parité app/pipeline du vocabulaire des familles de Repères : la
     // constante TS (FAMILLES_SEMANTIQUES, types.ts) doit être IDENTIQUE — même

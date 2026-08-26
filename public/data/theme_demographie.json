@@ -86,11 +86,11 @@
           },
           {
             "type": "link",
-            "href": "/methodologie#demographie",
+            "href": "/sources",
             "children": [
               {
                 "type": "text",
-                "content": "Sources et méthodes"
+                "content": "Sources"
               }
             ]
           }

@@ -23,8 +23,8 @@
           { "type": "text", "content": " (rang " },
           { "type": "param", "key": "rang" },
           { "type": "text", "content": " du top 5). " },
-          { "type": "link", "href": "/methodologie#economie", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
+          { "type": "link", "href": "/sources", "children": [
+            { "type": "text", "content": "Sources" }
           ] }
         ]
       }

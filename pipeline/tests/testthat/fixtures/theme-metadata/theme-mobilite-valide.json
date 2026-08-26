@@ -26,8 +26,8 @@
           { "type": "text", "content": " types de services disparaissent de l’accès quotidien de " },
           { "type": "territoire" },
           { "type": "text", "content": ". " },
-          { "type": "link", "href": "/methodologie#mobilite", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
+          { "type": "link", "href": "/sources", "children": [
+            { "type": "text", "content": "Sources" }
           ] }
         ]
       }

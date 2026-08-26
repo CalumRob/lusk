@@ -28,8 +28,8 @@
           { "type": "text", "content": " (trajectoire " },
           { "type": "param", "key": "trajectoire_artif_par_habitant" },
           { "type": "text", "content": " par habitant). " },
-          { "type": "link", "href": "/methodologie#milieux", "children": [
-            { "type": "text", "content": "Sources et méthodes" }
+          { "type": "link", "href": "/sources", "children": [
+            { "type": "text", "content": "Sources" }
           ] }
         ]
       }
