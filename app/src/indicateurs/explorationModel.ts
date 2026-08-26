@@ -2,6 +2,7 @@ import { estNiveauComparable, lienFiche, NIVEAUX_COMPARABLES } from '@/fiche/con
 import type { NiveauComparable } from '@/fiche/contratExploration'
 import type { Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
+import { correspondFait, filtrerFaits, CORRESPONDANCE_CARTE, CORRESPONDANCE_STRICTE } from './correspondFait'
 import type { IndicatorPageMetadata } from '@/payload/types'
 
 /** Alias du comparable du contrat d'exploration (#505) — l'ensemble vit là-bas, une seule fois. */
@@ -86,17 +87,19 @@ export function situationContexte(territoires: readonly Territoire[], etat: { ni
  * Le payload de la vue Carte : les faits de la facette résolue, dans le périmètre.
  *
  * Le sexe n'est PAS filtré ici alors même que la facette peut en déclarer un
- * (pyramide) : `resoudreGroupeSexe` (fusion.ts, #390) agrège F + M en une ligne
- * par territoire et JETTE par contrat tout groupe unisexe — peindre la moitié
- * d'une pyramide comme si c'était le tout est un mensonge cartographique. Un
- * pré-filtrage par `facet.sex` l'affamerait (0 ligne « M ») et ferait planter
- * le watcher de peinture : l'onglet Carte mourrait sur les pages pyramides.
- * L'agrégation par sexes appartient à la fusion, au moment de la peinture.
+ * (pyramide) — l'exception DÉCLARÉE du prédicat unique (`ignorerSexe`,
+ * CORRESPONDANCE_CARTE, #507) : `resoudreGroupeSexe` (fusion.ts, #390) agrège
+ * F + M en une ligne par territoire et JETTE par contrat tout groupe unisexe
+ * — peindre la moitié d'une pyramide comme si c'était le tout est un mensonge
+ * cartographique (#483). Un pré-filtrage par `facet.sex` l'affamerait
+ * (0 ligne « M ») et ferait planter le watcher de peinture : l'onglet Carte
+ * mourrait sur les pages pyramides. L'agrégation par sexes appartient à la
+ * fusion, au moment de la peinture.
  */
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat: { niveau: NiveauIndicateur; departement?: string; epci?: string }): Payload {
   const { niveau, departement, epci } = etat
   const ids = new Set(payload.territoires.filter((territory) => dansScope(territory, niveau, departement, epci)).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (fact.dimension ?? null) === facet.dimension && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: filtrerFaits(payload.indicateurs, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, dimension: facet.dimension, niveau }, CORRESPONDANCE_CARTE).filter((fact) => ids.has(fact.territoire)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
@@ -137,7 +140,9 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   const supported = facet.levels.filter((level): level is NiveauIndicateur => estNiveauComparable(level))
   const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
+  // La population facet-comparable : LE prédicat unique (#507), configuré
+  // strict — la même jointure que le statut de famille, par construction.
+  const all = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, sexe: facet.sex, dimension: facet.dimension, niveau, avecValeur: true }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
   const values = all.map((row) => row.value)
   // La série triée du modèle (la comparaison inter-territoires de Repères) :
   // la médiane et la densité lisent la même série triée que avant #437.
@@ -236,7 +241,9 @@ export function modeleTrajectoire(
   }
 
   const lignes = details.map((detail) => {
-    const rows = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
+    // La jointure du détail : le prédicat unique (#507), strict sur le
+    // sexe/dimension comme le statut et la facette résumée.
+    const rows = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
     const valeurs = rows.filter((row) => row.value !== null).map((row) => row.value as number)
     return {
       detail,
@@ -256,7 +263,9 @@ export function modeleTrajectoire(
   const refSelectionne = etat.territoire ? refs.get(etat.territoire) : undefined
   const serieTerritoire = refSelectionne && dansScope(refSelectionne, etat.niveau, etat.departement, etat.epci)
     ? lignes.map((ligne) => {
-        const row = facts.find((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === ligne.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.territoire === refSelectionne.territoire)
+        // Le point du territoire mis en avant : le même prédicat unique
+        // (#507) épinglé au territoire, valeurs manquantes comprises.
+        const row = facts.find((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, detail: ligne.detail, sexe: facet.sex, dimension: facet.dimension, territoire: refSelectionne.territoire }, CORRESPONDANCE_STRICTE))
         return { detail: ligne.detail, label: ligne.label, x: ligne.x, value: row ? row.value : null } satisfies PointTrajectoire
       })
     : null
@@ -298,13 +307,14 @@ export function modeleRelation(
 ): ModeleRelation {
   const roles = page.family === 'relationship' ? page.relationship.roles : null
   // La coordonnée d'un rôle : THÈME × CLÉ × DÉTAIL du rôle (la leçon de
-  // parité #438), le sexe/dimension suivant la facette, au niveau demandé.
+  // parité #438), le sexe/dimension suivant la facette — le prédicat unique
+  // (#507), strict comme le reste des modèles, au niveau demandé.
   const coordonneesDe = (role: { indicator: string; detail: string | null }): Map<string, number> => {
     const valeurs = new Map<string, number>()
     if (!roles) return valeurs
     for (const fact of faits) {
-      if (fact.theme !== facet.theme || fact.key !== role.indicator || (fact.detail ?? null) !== role.detail) continue
-      if ((facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau && fact.value !== null) valeurs.set(fact.territoire, fact.value)
+      if (!correspondFait(fact, { theme: facet.theme, cle: role.indicator, detail: role.detail ?? null, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau, avecValeur: true }, CORRESPONDANCE_STRICTE)) continue
+      valeurs.set(fact.territoire, fact.value as number)
     }
     return valeurs
   }
@@ -402,9 +412,10 @@ export function modeleSignature(
   if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
   if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, barres: barresDe(new Map()) }
   const ref = selection.ref
-  // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — les clés
-  // ne sont pas uniques entre thèmes ; le sexe/dimension suivent la facette.
-  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && details.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  // La jointure des faits de la signature : le prédicat unique (#507) —
+  // THÈME × CLÉ (la leçon de parité #438), appartenance aux détails DÉCLARÉS
+  // (jamais un fait sans détail), sexe/dimension stricts comme partout.
+  const lignes = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, details, niveau: etat.niveau, territoire: ref.territoire, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)
   const valeurs = new Map<string, number>()
   let unite: string | null = null
   for (const ligne of lignes) {
@@ -462,9 +473,10 @@ export function modeleProfil(
   if (selection.kind === 'silence') return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
   if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, lignes: lignesDe(new Map(), new Map()) }
   const ref = selection.ref
-  // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — le profil
-  // lit la clé PROPRE de la page ; le sexe/dimension suivent la facette.
-  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && categories.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  // La jointure des faits du profil : le prédicat unique (#507) — THÈME × CLÉ
+  // (la leçon de parité #438), la clé PROPRE de la page, appartenance aux
+  // catégories DÉCLARÉES, sexe/dimension stricts comme partout.
+  const lignes = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, details: categories, niveau: etat.niveau, territoire: ref.territoire, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)
   const valeurs = new Map<string, number>()
   const unites = new Map<string, string>()
   for (const ligne of lignes) {
@@ -532,9 +544,9 @@ export function modeleComposition(
     partiesDeclarees.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null, reference: references.get(detail) ?? null }))
   // La référence par segment : la médiane du PÉRIMÈTRE comparé — le même
   // périmètre et le même calcul que la facette résumée, jamais une moyenne
-  // de parts recomposée côté app.
+  // de parts recomposée côté app. La jointure : le prédicat unique (#507).
   const references = new Map<string, number | null>(partiesDeclarees.map((detail) => {
-    const valeurs = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.detail === detail && fact.type === etat.niveau && fact.value !== null && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension)).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci))).map((row) => row.value)
+    const valeurs = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, detail, niveau: etat.niveau, avecValeur: true, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci))).map((row) => row.value)
     return [detail, mediane(valeurs)] as const
   }))
   // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
@@ -542,10 +554,11 @@ export function modeleComposition(
   if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, univers: situation.univers, parties: lignesDe(new Map()) }
   if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, univers: situation.univers, parties: lignesDe(new Map()) }
   const ref = selection.ref
-  // Le filtre des faits est THÈME × CLÉ PROPRE de la page (la leçon de parité
-  // #438 — les clés ne sont pas uniques entre thèmes) ; le sexe/dimension
-  // suivent la facette.
-  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && partiesDeclarees.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  // La jointure des parts du territoire : le prédicat unique (#507) — THÈME ×
+  // CLÉ PROPRE de la page (la leçon de parité #438 — les clés ne sont pas
+  // uniques entre thèmes), appartenance aux parties DÉCLARÉES, sexe/dimension
+  // stricts comme partout.
+  const lignes = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, details: partiesDeclarees, niveau: etat.niveau, territoire: ref.territoire, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)
   const valeurs = new Map<string, number>()
   let unite: string | null = null
   for (const ligne of lignes) {
@@ -613,15 +626,15 @@ export function modeleEnsembleComparaison(
   const contributeurs = new Set<string>()
   let unite: string | null = null
   for (const fact of faits) {
-    if (fact.theme !== facet.theme || fact.key !== page.indicator || fact.detail === null || !details.includes(fact.detail)) continue
-    if ((facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau && fact.value !== null) {
-      const ref = refs.get(fact.territoire)
-      if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) continue
-      sommes.set(fact.detail, (sommes.get(fact.detail) ?? 0) + fact.value)
-      comptes.set(fact.detail, (comptes.get(fact.detail) ?? 0) + 1)
-      contributeurs.add(fact.territoire)
-      unite ??= fact.unit ?? null
-    }
+    // La jointure : le prédicat unique (#507) — THÈME × CLÉ, appartenance aux
+    // détails DÉCLARÉS, sexe/dimension stricts, valeur publiée exigée.
+    if (!correspondFait(fact, { theme: facet.theme, cle: page.indicator, details, niveau: etat.niveau, avecValeur: true, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)) continue
+    const ref = refs.get(fact.territoire)
+    if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) continue
+    sommes.set(fact.detail as string, (sommes.get(fact.detail as string) ?? 0) + (fact.value as number))
+    comptes.set(fact.detail as string, (comptes.get(fact.detail as string) ?? 0) + 1)
+    contributeurs.add(fact.territoire)
+    unite ??= fact.unit ?? null
   }
   const totalScope = territoires.filter((territoire) => dansScope(territoire, etat.niveau, etat.departement, etat.epci)).length
   return {

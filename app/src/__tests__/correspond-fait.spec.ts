@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { dispatchIndicatorFamily, normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { modeleExploration } from '../indicateurs/explorationModel'
+import { correspondFait, CORRESPONDANCE_CARTE, CORRESPONDANCE_STRICTE } from '../indicateurs/correspondFait'
+import type { CriteresFait, OptionsCorrespondance } from '../indicateurs/correspondFait'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
 
@@ -94,5 +96,97 @@ describe('parité de population : dispatch de famille × modèles Repères (#507
     expect(modele.rows.map((row) => row.territoire.territoire).sort()).toEqual(['a'])
     expect(modele.median).toBe(10)
     expect(modele.high.count).toBe(1)
+  })
+})
+
+// Les units du prédicat unique (#507) : la sémantique de chaque composante de
+// la clé thème × clé × détail × sexe × dimension, et les choix explicites
+// (sexe strict vs tolérant, l'exception carte `ignorerSexe`) documentés à
+// l'interface de correspondFait.
+describe('correspondFait — le prédicat unique de jointure des faits Repères (#507)', () => {
+  const faitBase = {
+    territoire: 'a', type: 'commune' as const, theme: 'demographie' as const, key: 'densite',
+    detail: null as string | null, value: 10, unit: 'hab./km²', vintage_source: 'INSEE',
+    vintage_version: '2023', vintage_date_reference: '2023-01-01', vintage_date_publication: '2024-01-01',
+    rang_epci: null, rang_dep: null, rang_reg: null, rang_epci_n: null, rang_dep_n: null, rang_reg_n: null,
+  }
+  const crit = (extra: Partial<CriteresFait> = {}): CriteresFait => ({ theme: 'demographie', cle: 'densite', ...extra })
+  const ok = (fait: Indicateur, criteres: Parameters<typeof correspondFait>[1], options: OptionsCorrespondance = CORRESPONDANCE_STRICTE) => correspondFait(fait, criteres, options)
+
+  it('joint par THÈME × CLÉ — les clés ne sont pas uniques entre thèmes (#383/#438)', () => {
+    expect(ok({ ...faitBase }, { theme: 'demographie', cle: 'densite' })).toBe(true)
+    // même clé, autre thème : jamais lu
+    expect(ok({ ...faitBase, theme: 'habitat' }, { theme: 'demographie', cle: 'densite' })).toBe(false)
+    // même thème, autre clé : jamais lu
+    expect(ok({ ...faitBase, key: 'part_65_plus' }, { theme: 'demographie', cle: 'densite' })).toBe(false)
+  })
+
+  it('sexe STRICT : un critère null n’accepte que les lignes non-sexées — jamais un total inventé', () => {
+    const criteres = crit({ sexe: null })
+    expect(ok({ ...faitBase }, criteres)).toBe(true)
+    expect(ok({ ...faitBase, sex: undefined }, criteres)).toBe(true) // absent ≡ non-sexé
+    expect(ok({ ...faitBase, sex: 'F' }, criteres)).toBe(false)
+    expect(ok({ ...faitBase, sex: 'M' }, criteres)).toBe(false)
+    const femmes = crit({ sexe: 'F' })
+    expect(ok({ ...faitBase, sex: 'F' }, femmes)).toBe(true)
+    expect(ok({ ...faitBase }, femmes)).toBe(false)
+    expect(ok({ ...faitBase, sex: 'M' }, femmes)).toBe(false)
+  })
+
+  it('sexe TOLÉRANT : un critère null accepte toute ligne ; un critère nommé reste exact', () => {
+    const options: OptionsCorrespondance = { sexe: 'tolerante', dimension: 'stricte' }
+    const criteres = crit({ sexe: null })
+    expect(correspondFait({ ...faitBase }, criteres, options)).toBe(true)
+    expect(correspondFait({ ...faitBase, sex: 'F' }, criteres, options)).toBe(true)
+    expect(correspondFait({ ...faitBase, sex: 'M' }, criteres, options)).toBe(true)
+    const femmes = crit({ sexe: 'F' })
+    expect(correspondFait({ ...faitBase, sex: 'F' }, femmes, options)).toBe(true)
+    expect(correspondFait({ ...faitBase }, femmes, options)).toBe(false)
+  })
+
+  it('ignorerSexe — l’exception DÉCLARÉE de la Carte (#483) : la clause sexe sort du filtre', () => {
+    const criteres = crit({ detail: '<15', sexe: 'F', niveau: 'commune' })
+    // la facette pyramide déclare « F » mais la carte doit porter F ET M
+    expect(correspondFait({ ...faitBase, detail: '<15', sex: 'F' }, criteres, CORRESPONDANCE_CARTE)).toBe(true)
+    expect(correspondFait({ ...faitBase, detail: '<15', sex: 'M' }, criteres, CORRESPONDANCE_CARTE)).toBe(true)
+    // … alors que la configuration stricte ne lit que F
+    expect(correspondFait({ ...faitBase, detail: '<15', sex: 'M' }, criteres, CORRESPONDANCE_STRICTE)).toBe(false)
+  })
+
+  it('détail absent : un critère null matche les faits sans détail (null ≡ absent)', () => {
+    const criteres = crit({ detail: null })
+    expect(ok({ ...faitBase, detail: null }, criteres)).toBe(true)
+    expect(ok({ ...faitBase }, criteres)).toBe(true)
+    expect(ok({ ...faitBase, detail: '<15' }, criteres)).toBe(false)
+    const tranche = crit({ detail: '<15' })
+    expect(ok({ ...faitBase, detail: '<15' }, tranche)).toBe(true)
+    expect(ok({ ...faitBase }, tranche)).toBe(false)
+  })
+
+  it('multi-détail : l’appartenance aux détails DÉCLARÉS — un fait sans détail n’y appartient jamais', () => {
+    const criteres = crit({ details: ['2020', '2024'] })
+    expect(ok({ ...faitBase, detail: '2020' }, criteres)).toBe(true)
+    expect(ok({ ...faitBase, detail: '2024' }, criteres)).toBe(true)
+    expect(ok({ ...faitBase, detail: '2019' }, criteres)).toBe(false)
+    expect(ok({ ...faitBase, detail: null }, criteres)).toBe(false)
+  })
+
+  it('dimension suit le même mode que le sexe ; niveau, territoire et avecValeur resserrent la lecture', () => {
+    const criteres = crit({ dimension: null, niveau: 'commune', territoire: 'a', avecValeur: true })
+    expect(ok({ ...faitBase }, criteres)).toBe(true)
+    expect(ok({ ...faitBase, dimension: 'women' }, criteres)).toBe(false)
+    expect(ok({ ...faitBase, type: 'epci' }, criteres)).toBe(false)
+    expect(ok({ ...faitBase, territoire: 'b' }, criteres)).toBe(false)
+    expect(ok({ ...faitBase, value: null }, criteres)).toBe(false)
+    // dimension tolérante : critère null, toute dimension passe
+    const tolerant: OptionsCorrespondance = { sexe: 'stricte', dimension: 'tolerante' }
+    expect(correspondFait({ ...faitBase, dimension: 'women' }, crit(), tolerant)).toBe(true)
+  })
+
+  it('la configuration partagée est figée — les sites appelants ne peuvent pas la faire dériver', () => {
+    expect(Object.isFrozen(CORRESPONDANCE_STRICTE)).toBe(true)
+    expect(Object.isFrozen(CORRESPONDANCE_CARTE)).toBe(true)
+    expect(CORRESPONDANCE_STRICTE).toMatchObject({ sexe: 'stricte', dimension: 'stricte' })
+    expect(CORRESPONDANCE_CARTE).toMatchObject({ sexe: 'stricte', dimension: 'stricte', ignorerSexe: true })
   })
 })
