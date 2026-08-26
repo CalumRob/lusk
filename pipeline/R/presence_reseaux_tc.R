@@ -150,12 +150,13 @@ RESEAUX_SANS_SERVICE_ACCEPTES_KORRIGO_80335 <- c("CORALIE", "LINEOTIML30")
 # verifier_presence_reseaux ---------------------------------------------------------
 # LA PORTE : les réseaux sans service non-documentés bloquent la promotion.
 # `presence` est la sortie de compter_trajets_actifs_par_reseau() ;
-# `acceptes` les agency_ids sombres documentés (par défaut la liste v80335).
-# Un écart non listé échoue en NOMMANT chaque réseau fautif — l'acquisition
-# d'un vintage avec des réseaux sombres non déclarés s'arrête là, jamais plus
-# loin dans la machinerie.
-verifier_presence_reseaux <- function(presence,
-                                      acceptes = RESEAUX_SANS_SERVICE_ACCEPTES_KORRIGO_80335) {
+# `acceptes` est OBLIGATOIRE — les agency_ids sombres DOCUMENTÉS du millésime,
+# déclarés explicitement À L'APPEL : aucune liste n'est héritée par défaut,
+# chaque millésime re-fait son constat et nomme SES écarts (jamais celui d'un
+# autre). Un écart non listé échoue en NOMMANT chaque réseau fautif —
+# l'acquisition d'un vintage avec des réseaux sombres non déclarés s'arrête
+# là, jamais plus loin dans la machinerie.
+verifier_presence_reseaux <- function(presence, acceptes) {
   if (!inherits(presence, "tbl_df") ||
       !all(c("agency_id", "n_trajets_actifs") %in% names(presence))) {
     stop("Porte de présence des réseaux TC — table de présence invalide.",
