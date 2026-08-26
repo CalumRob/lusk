@@ -119,12 +119,13 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   expect_error(verifier_descripteur_mobilite(sans_directions), "directions")
 })
 
-test_that("vintages_mobilite : treize sources, chacune avec SA référence et SA publication", {
+test_that("vintages_mobilite : quinze sources (les treize du manifeste + les deux faits construits du raccordement), chacune avec SA référence et SA publication", {
   v <- vintages_mobilite()
 
-  # treize sources (issues #139+#140+#222+#485), la forme du contrat — jamais
-  # alignées
-  expect_equal(nrow(v), 13L)
+  # treize sources manifestées (issues #139+#140+#222+#485) + les DEUX faits
+  # construits du raccordement (#486 : la matrice figée + la population RP
+  # 2023 épinglées sous inst/extdata), la forme du contrat — jamais alignées
+  expect_equal(nrow(v), 15L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
@@ -132,7 +133,20 @@ test_that("vintages_mobilite : treize sources, chacune avec SA référence et SA
                     "amenagements_cyclables", "communes_limites", "korrigo",
                     "batiments_residentiels", "bornes-recharges",
                    "stationnement-velo", "bpe_b316", "cog_passage",
-                   "sncf_voyageurs", "dila_bdl"))
+                   "sncf_voyageurs", "dila_bdl",
+                   "matrice_temps_mairies", "population_raccordement"))
+
+  # le raccordement : l'horloge du FIGÉ — la production de la matrice
+  # (le run vérifié du 25 août) comme référence, la migration comme
+  # publication ; la version porte l'identité de la recette (le mercredi
+  # mesuré, 2026-09-16). La population porte son millésime RP.
+  mat <- v[v$id == "matrice_temps_mairies", ]
+  expect_equal(mat$version, "2026-09-16")
+  expect_equal(mat$date_reference, "2026-08-25")
+  expect_equal(mat$date_publication, "2026-08-26")
+  pop_rac <- v[v$id == "population_raccordement", ]
+  expect_equal(pop_rac$version, "2023")
+  expect_equal(pop_rac$date_reference, "2023-01-01")
 
   # le snapshot porté : SA référence (l'instantané) et SA publication (le portage)
   snap <- v[v$id == "mobilite_snapshot", ]
@@ -2196,7 +2210,7 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
 })
 
 # INDICATEURS_MOBILITE -----------------------------------------------------------
-test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retiré), chacune estampillée de SA source de référence", {
+test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retiré), chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
 
   # les clés multi-mesures de l'étage demande/réseaux (issue #139 :
@@ -2206,7 +2220,10 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retir�
   # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
   # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
-   expect_equal(nrow(ind), 16L)
+  # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
+  # la référence médiane — multiplicités 1 / 61 / NA, la référence ne vit
+  # que sur la région)
+   expect_equal(nrow(ind), 19L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
                               "places_stationnement_velo_1000",
@@ -2216,7 +2233,9 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retir�
                               "tot_loss_t", "tot_loss_b",
                              "offre_cyclable",
                              "iso_alimentation", "iso_sante",
-                             "iso_administration", "iso_ecole", "iso_banque"))
+                             "iso_administration", "iso_ecole", "iso_banque",
+                             "raccordement_tc", "raccordement_courbe",
+                             "raccordement_reference"))
   # `nb_buildings` QUITTE le payload (issue #368, décision #196) — jamais
   # publié, la « Taille » reste la pondération interne du thème
   expect_false("nb_buildings" %in% ind$key)
@@ -2231,6 +2250,14 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retir�
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$multiplicite[ind$key == cle], 1L, info = cle)
   }
+  # le raccordement (issue #486) : 1 / 61 / NA (la référence est variable —
+  # la seule région la porte)
+  grille_raccordement <- length(seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
+                                    by = PAS_COURBE_RACCORDEMENT))
+  expect_equal(ind$multiplicite[ind$key == "raccordement_tc"], 1L)
+  expect_equal(ind$multiplicite[ind$key == "raccordement_courbe"],
+               grille_raccordement)
+  expect_true(is.na(ind$multiplicite[ind$key == "raccordement_reference"]))
 
   # chaque clé est estampillée du vintage de SA source de référence :
   #   - voitures_menage           -> le cube RP exploitation principale (le
@@ -2260,15 +2287,70 @@ test_that("INDICATEURS_MOBILITE : les onze clés du payload (nb_buildings retir�
   expect_equal(ind$source_reference[ind$key == "places_stationnement_velo_1000"],
                "stationnement-velo")
   expect_equal(ind$source_reference[ind$key == "offre_cyclable"], "osm_reseaux")
+  # le raccordement (issue #486) -> le fait construit matrice_temps_mairies
+  # (l'horloge du figé — la recette du mercredi 2026-09-16)
+  expect_equal(ind$source_reference[ind$key == "raccordement_tc"],
+               "matrice_temps_mairies")
+  expect_equal(ind$source_reference[ind$key == "raccordement_courbe"],
+               "matrice_temps_mairies")
+  expect_equal(ind$source_reference[ind$key == "raccordement_reference"],
+               "matrice_temps_mairies")
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$source_reference[ind$key == cle], "mobilite_snapshot",
                  info = cle)
   }
 })
 
+# fixture_raccordement ------------------------------------------------------------
+# L'enveloppe du raccordement MOCKÉE pour l'assemblage des indicateurs (issue
+# #486) : la forme EXACTE de lire_raccordement()$calcul sur l'univers du
+# fixture — 4 communes (29002 « non routée » : NA + motif nommé), les deux
+# EPCIs, les deux départements, la région — et la grille complète de la
+# recette figée pour les deux clés de matière de figure.
+fixture_raccordement <- function() {
+  minutes <- seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
+                 by = PAS_COURBE_RACCORDEMENT)
+  grille <- paste0("t", sprintf("%04d", minutes))
+  codes <- c("22001", "22002", "29001", "29002")
+  part_communes <- c(0.31, 0.62, 0.11, NA_real_)
+  courbes <- tidyr::crossing(
+    code = codes[1:3], minute = minutes
+  ) %>%
+    dplyr::mutate(part = 0.001 * dplyr::row_number())
+  list(
+    calcul = list(
+      communes = tibble::tibble(
+        code = codes,
+        part_90 = part_communes,
+        motif = c(NA_character_, NA_character_, NA_character_,
+                  "Non routée — géocode DILA aberrant")
+      ),
+      courbes_communes = dplyr::rename(courbes, code = code),
+      reference = tibble::tibble(minute = minutes,
+                                 part_mediane = 0.001 * seq_along(minutes)),
+      exclusions = tibble::tibble(code = "29002"),
+      epcis = tibble::tibble(code = c("200000001", "200000002"),
+                             part_90 = c(0.42, 0.11)),
+      departements = tibble::tibble(code = c("22", "29"),
+                                    part_90 = c(0.43, 0.28)),
+      region = tibble::tibble(code = "53", part_90 = 1),
+      courbes_epcis = tidyr::crossing(code = c("200000001", "200000002"),
+                                      minute = minutes) %>%
+        dplyr::mutate(part = 0.002 * dplyr::row_number()),
+      courbes_departements = tidyr::crossing(code = c("22", "29"),
+                                             minute = minutes) %>%
+        dplyr::mutate(part = 0.003 * dplyr::row_number()),
+      courbe_region = tibble::tibble(code = "53", minute = minutes,
+                                     part = 1),
+      seuil = SEUIL_RACCORDEMENT_MIN, pas = PAS_COURBE_RACCORDEMENT
+    ),
+    entrees = list(recette = RECETTE_MATRICE_TEMPS_MAIRIES)
+  )
+}
+
 # fixture_indicateurs_mobilite ---------------------------------------------------
-# La liste des artefacts analytiques pour l'assemblage des indicateurs (le seam
-# construire_indicateurs_mobilite, issue #141) : la « Taille », les 5 parts
+ # La liste des artefacts analytiques pour l'assemblage des indicateurs (le seam
+ # construire_indicateurs_mobilite, issue #141) : la « Taille », les 5 parts
 # d'isolation et LEURS RANGS (mocked — la forme exacte des artefacts que le
 # chaînon persiste : isolation_territoires.rds et isolation_rangs.rds), l'étage
 # demande/réseaux et le sous-bloc. La forme de chaque table est celle des
@@ -2356,11 +2438,12 @@ fixture_indicateurs_mobilite <- function() {
     voitures_territoires = voitures_territoires,
     reseaux_territoires = reseaux_territoires,
     offre_territoires = offre_territoires,
-    tot_loss_territoires = tot_loss_territoires
+    tot_loss_territoires = tot_loss_territoires,
+    raccordement = fixture_raccordement()
   )
 }
 
-test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retiré, #368), avec les 5 parts d'isolation, leurs rangs et l'estampille snapshot", {
+test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retiré, #368), avec les 5 parts d'isolation et LE RACCORDEMENT (#486), leurs rangs et leurs estampilles", {
   fx <- fixture_indicateurs_mobilite()
   base <- base_epci_mini_analytique()
   poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
@@ -2371,10 +2454,10 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
 
   ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
 
-  # les onze clés : la demande/réseaux + le sous-bloc
-  # (issue #140 + #231) + les 5 parts d'isolation (issue #141) — une ligne
-  # par (territoire × détail) (9 territoires × 22 détails) ; `nb_buildings`
-  # n'est PLUS publié (issue #368, décision #196)
+  # les seize clés : la demande/réseaux + le sous-bloc
+  # (issue #140 + #231) + les 5 parts d'isolation (issue #141) + le
+  # raccordement (issue #486) — une ligne par (territoire × détail) ;
+  # `nb_buildings` n'est PLUS publié (issue #368, décision #196)
   expect_setequal(unique(ind$key), c(
     "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
@@ -2382,9 +2465,14 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
     "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
     "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
-    "iso_ecole", "iso_banque"
+    "iso_ecole", "iso_banque",
+    "raccordement_tc", "raccordement_courbe", "raccordement_reference"
   ))
-  expect_equal(nrow(ind), 243)
+  grille_n <- length(seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
+                         by = PAS_COURBE_RACCORDEMENT))
+  # 9 territoires × 27 lignes historiques = 243 ; + le raccordement :
+  # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
+  expect_equal(nrow(ind), 243 + 9 + 9 * grille_n + grille_n)
   expect_false("nb_buildings" %in% ind$key)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
@@ -2463,6 +2551,45 @@ test_that("construire_indicateurs_mobilite : les onze clés (nb_buildings retir�
   expect_true(all(cyclable_ind$vintage_source == ref_osm))
   expect_true(all(cyclable_ind$vintage_date_reference == "2026-08-05"))
   expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
+
+  # LE RACCORDEMENT (issue #486) : le scalaire porte la valeur mockée, le
+  # motif nommé du non-routé dans `rider`, la direction HIGH aux rangs ; les
+  # deux clés de matière ne portent AUCUN rang (des courbes ne se classent
+  # pas) ; les estampilles viennent du fait construit matrice_temps_mairies
+  racc_ind <- ind[ind$key == "raccordement_tc", ]
+  expect_equal(racc_ind$value[racc_ind$territoire == "22001"], 0.31)
+  expect_equal(racc_ind$value[racc_ind$territoire == "200000001"], 0.42)
+  expect_equal(racc_ind$value[racc_ind$territoire == "53"], 1)
+  non_routee <- racc_ind[racc_ind$territoire == "29002", ]
+  expect_true(is.na(non_routee$value))
+  expect_match(non_routee$rider, "Non routée")
+  expect_true(all(is.na(racc_ind$rang_epci[racc_ind$territoire %in% c("29002")])))
+  ref_matrice <- vintages_mobilite()$source[
+    vintages_mobilite()$id == "matrice_temps_mairies"]
+  expect_true(all(racc_ind$vintage_source == ref_matrice))
+  expect_true(all(racc_ind$vintage_date_reference == "2026-08-25"))
+  expect_true(all(racc_ind$vintage_version == "2026-09-16"))
+
+  courbe_ind <- ind[ind$key == "raccordement_courbe", ]
+  expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
+  grille_attendue <- paste0("t", sprintf(
+    "%04d", seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
+                by = PAS_COURBE_RACCORDEMENT)))
+  expect_setequal(courbe_ind$detail[courbe_ind$territoire == "22001"],
+                  grille_attendue)
+  expect_equal(courbe_ind$value[courbe_ind$territoire == "22001" &
+                                  courbe_ind$detail == "t0090"],
+               0.001 * 10)
+  # la commune NON ROUTÉE garde ses 61 détails à NA (jamais une ligne
+  # manquante — la multiplicité déclarée)
+  expect_equal(sum(courbe_ind$territoire == "29002"), grille_n)
+  expect_true(all(is.na(courbe_ind$value[courbe_ind$territoire == "29002"])))
+  # jamais classée : aucun rang sur la courbe
+  expect_true(all(is.na(courbe_ind$rang_epci)) && all(is.na(courbe_ind$rang_reg)))
+
+  reference_ind <- ind[ind$key == "raccordement_reference", ]
+  expect_setequal(unique(reference_ind$territoire), "53")
+  expect_equal(nrow(reference_ind), grille_n)
 })
 
 test_that("construire_indicateurs_mobilite : un territoire absent du snapshot garde ses deux clés tot_loss", {
@@ -2604,6 +2731,55 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
     validations = validations_mobilite,
     apercu = APERCU_MOBILITE
   ), "offre cyclable")
+})
+
+test_that("validations_mobilite : le raccordement hors domaine ou hors grille fait échouer la validation bruyamment (#486)", {
+  fx <- fixture_indicateurs_mobilite()
+  base <- base_epci_mini_analytique()
+  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
+                          nb_buildings = c(100, 300, 200, 400))
+  territoires <- construire_territoires_mobilite(
+    base, list(mobilite_communes = poids)
+  )
+  fabriquer_payload <- function() list(
+    indicateurs = construire_indicateurs_mobilite(fx, territoires,
+                                                  vintages_mobilite()),
+    histoires = resoudre_histoires(
+      compute_histoires_mobilite(analytiques_mobilite_fixture(),
+                                 vintages_mobilite()), "mobilite"),
+    territoires = reference_territoires(territoires),
+    apercu = assemble_apercu(territoires, list())
+  )
+
+  # une part joignable > 1 (une corruption du calcul) fait échouer
+  payload <- fabriquer_payload()
+  payload$indicateurs$value[
+    payload$indicateurs$key == "raccordement_tc" &
+      payload$indicateurs$territoire == "22001"] <- 1.5
+  expect_error(validate_payload(
+    payload, indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(), validations = validations_mobilite,
+    apercu = APERCU_MOBILITE), "population joignable")
+
+  # un détail de courbe HORS GRILLE (un point d'axe inventé) fait échouer
+  payload <- fabriquer_payload()
+  courbe <- which(payload$indicateurs$key == "raccordement_courbe" &
+                    payload$indicateurs$detail == "t0090")
+  payload$indicateurs$detail[courbe[1]] <- "t0095"
+  expect_error(validate_payload(
+    payload, indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(), validations = validations_mobilite,
+    apercu = APERCU_MOBILITE), "recette figée")
+
+  # un détail MAL FORMÉ fait échouer
+  payload <- fabriquer_payload()
+  courbe <- which(payload$indicateurs$key == "raccordement_reference" &
+                    payload$indicateurs$detail == "t0000")
+  payload$indicateurs$detail[courbe[1]] <- "90 minutes"
+  expect_error(validate_payload(
+    payload, indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(), validations = validations_mobilite,
+    apercu = APERCU_MOBILITE), "recette figée")
 })
 
 # =============================================================================

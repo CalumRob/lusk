@@ -51,9 +51,9 @@
     {
       "key": "offre-transports-commun",
       "label": "L’offre de transports en commun",
-      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt de transports en commun.",
-      "indicators": ["offre_tc"],
-      "figure": { "family": "scalar", "indicator": "offre_tc" }
+      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
+      "indicators": ["offre_tc", "raccordement_tc", "raccordement_courbe", "raccordement_reference"],
+      "figure": { "family": "scalar", "indicator": "raccordement_tc" }
     }
   ],
   "indicator_keys": [
@@ -72,7 +72,10 @@
     "iso_sante",
     "iso_administration",
     "iso_ecole",
-    "iso_banque"
+    "iso_banque",
+    "raccordement_tc",
+    "raccordement_courbe",
+    "raccordement_reference"
   ],
   "story_keys": ["vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"],
   "sources": {
@@ -91,7 +94,10 @@
     "iso_sante": "mobilite_snapshot",
     "iso_administration": "mobilite_snapshot",
     "iso_ecole": "mobilite_snapshot",
-    "iso_banque": "mobilite_snapshot"
+    "iso_banque": "mobilite_snapshot",
+    "raccordement_tc": "matrice_temps_mairies",
+    "raccordement_courbe": "matrice_temps_mairies",
+    "raccordement_reference": "matrice_temps_mairies"
   },
   "indicator_labels": {
     "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
@@ -109,7 +115,10 @@
     "stationnement_velo_par_voiture": "Places de stationnement vélo pour 1 place voiture",
     "tot_loss_t": "Perte totale d’accès — à pied ou en transports en commun",
     "tot_loss_b": "Perte totale d’accès — à vélo",
-    "offre_cyclable": "L’offre cyclable"
+    "offre_cyclable": "L’offre cyclable",
+    "raccordement_tc": "Population bretonne joignable en 90 minutes en TC",
+    "raccordement_courbe": "Courbe cumulative — population bretonne joignable en TC",
+    "raccordement_reference": "Référence médiane — commune bretonne"
   },
   "detail_labels": {
     "reseaux": {
@@ -167,6 +176,8 @@
     "stationnement-velo": { "dataset": "Ecolab — Stationnement vélo", "publisher": "Ecolab", "url": "https://static.data.gouv.fr/resources/nombre-de-places-de-stationnement-velo-pour-1000-hab/20260203-170506/nombre-de-places-de-stationnement-velo-pour-1000-hab-commune.csv", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "2022-2025", "freshness": "3 février 2026", "vintages": [{ "id": "stationnement-velo", "label": "Snapshot 2022-2025", "version": "2022-2025", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2025-01-01", "datePublication": "2026-02-03" }] },
     "osm_reseaux": { "dataset": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)", "publisher": "OpenStreetMap", "url": "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "2026-08", "freshness": "5 août 2026", "vintages": [{ "id": "osm_reseaux", "label": "Extrait 2026-08", "version": "2026-08", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2026-08-05", "datePublication": "2026-08-06" }], "clocks": [{ "name": "Réseau routier", "frequency": "extrait reconstruit chaque jour, figé sur un rythme lent", "reference": "extrait du 5 août 2026", "trigger": "La figure se recalcule quand l’une des deux horloges bouge." }] },
     "mobilite_snapshot": { "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »", "publisher": "Lusk", "url": "https://github.com/CalumRob/lusk", "licence": "ODbL — © OpenStreetMap contributors", "vintage": "Snapshot 2026-02", "freshness": "6 août 2026", "vintages": [{ "id": "mobilite_snapshot", "label": "Snapshot 2026-02", "version": "2026-02", "licence": "ODbL — © OpenStreetMap contributors", "dateReference": "2026-02-28", "datePublication": "2026-08-06" }], "clocks": [{ "name": "Équipements de proximité", "frequency": "annuelle — un nouveau millésime publié chaque année", "reference": "BPE 2024", "trigger": "Recalcul manuel sur décision après un nouveau millésime significatif." }, { "name": "Bâtiments résidentiels", "frequency": "par campagnes espacées", "reference": "BDNB juillet 2025", "trigger": "Recalcul manuel sur décision après une actualisation majeure." }] },
-    "bpe_b316": { "dataset": "INSEE — Base permanente des équipements (B316)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s1168", "licence": "Licence Ouverte 2.0", "vintage": "2024", "freshness": "30 juin 2026", "vintages": [{ "id": "bpe_b316", "label": "Millésime 2024", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-06-30" }] }
+    "bpe_b316": { "dataset": "INSEE — Base permanente des équipements (B316)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s1168", "licence": "Licence Ouverte 2.0", "vintage": "2024", "freshness": "30 juin 2026", "vintages": [{ "id": "bpe_b316", "label": "Millésime 2024", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-06-30" }] },
+    "matrice_temps_mairies": { "dataset": "Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)", "publisher": "Lusk", "url": "https://github.com/CalumRob/lusk", "licence": "ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)", "vintage": "2026-08", "freshness": "26 août 2026", "vintages": [{ "id": "matrice_temps_mairies", "label": "Matrice figée du mercredi 16 septembre 2026", "version": "2026-09-16", "licence": "ODbL + Licence Ouverte 2.0", "dateReference": "2026-08-25", "datePublication": "2026-08-26" }], "clocks": [{ "name": "Le meilleur départ de la journée", "frequency": "figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)", "reference": "mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01", "trigger": "Recalcul manuel sur décision après une nouvelle acquisition des feeds." }] },
+    "population_raccordement": { "dataset": "INSEE — Recensement de la population 2023 (population totale des communes bretonnes)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s099", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "26 août 2026", "vintages": [{ "id": "population_raccordement", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-08-26" }] }
   }
 }
