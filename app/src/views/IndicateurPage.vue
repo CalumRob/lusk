@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
@@ -20,6 +20,19 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
+// ── Prototype #501 — JETABLE, développement UNIQUEMENT ──────────────────
+// ?variant=A|B|C rend trois shells Repères radicalement différents dans CE
+// gabarit de route. L'import dynamique vit derrière un garde import.meta.env.DEV
+// (remplacé par `false` à la compilation → branche morte éliminée) : aucune
+// trace du prototype dans le bundle ni le runtime de production.
+const PrototypeIndicateur = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('@/components/indicateurs/prototype/PrototypeIndicateur.vue'))
+  : undefined
+const variantePrototype = computed(() => {
+  if (!import.meta.env.DEV) return null
+  const v = String(route.query.variant ?? '')
+  return v === 'A' || v === 'B' || v === 'C' ? v : null
+})
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
@@ -143,6 +156,34 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.</div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
+      <!-- Prototype #501 (dev seul) : les trois shells Repères expérimentaux. -->
+      <PrototypeIndicateur
+        v-if="PrototypeIndicateur && variantePrototype && familyDispatch"
+        :variante="variantePrototype"
+        :theme="selectedTheme"
+        :page="page"
+        :metadata="metadata"
+        :dispatch="familyDispatch"
+        :model="model"
+        :trajectoire="trajectoire"
+        :signature="distribution"
+        :ensemble="ensemble"
+        :profil="profil"
+        :relation="relation"
+        :composition="composition"
+        :sources="sources"
+        :territoires="payload.territoires"
+        :masques="geometrie.masques.value"
+        :payload-carte="payloadCarte"
+        :couche="couche"
+        :niveau-masque="niveauMasque"
+        :territoire-cible="territoireCible"
+        :vue="vue"
+        :set-query="(cle: string, valeur?: string) => setQuery(cle, valeur ?? '')"
+        :set-sort="setSort"
+        :set-vue="setVue"
+      />
+      <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
            les familles, dérivée de l'état résolu — vivante aux changements d'URL. -->
@@ -158,6 +199,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
        </RepereFamilyOutlet></main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="Number(Boolean(route.query.territoire))" /></div><div v-else role="status">Chargement de la carte…</div></section>
        <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
+      </template>
     </template>
   </section>
 </template>
