@@ -1,0 +1,116 @@
+{
+  "genre": "handoff",
+  "ficheUrl": "http://localhost:5481/territoire/departement/35?theme=milieux",
+  "theme": "milieux",
+  "spec": {
+    "type": "departement",
+    "id": "35",
+    "nom": "Ille-et-Vilaine",
+    "sansNiveau": false
+  },
+  "inventaire": {
+    "total": 3,
+    "ancres": [
+      {
+        "libelle": "Intensité état",
+        "accessibleName": "Intensité état",
+        "href": "/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 97,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.503977 -0.0130459 0.0496109)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.503977 -0.0130459 0.0496109)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/milieux/conso_enaf_annuel?territoire=35&niveau=departement",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.503977 -0.0130459 0.0496109)",
+        "textDecoration": "underline"
+      }
+    ],
+    "navLectures": [
+      {
+        "ariaLabel": "Explorer les indicateurs de cette lecture",
+        "etiquettes": [
+          "Explorer"
+        ],
+        "liens": [
+          "Intensité état"
+        ]
+      }
+    ],
+    "grilleGroupes": [
+      {
+        "groupe": "artificialisation",
+        "passarelles": [
+          {
+            "href": "/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement",
+            "libelle": "Intensité état",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/milieux/conso_enaf_annuel?territoire=35&niveau=departement",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      }
+    ]
+  },
+  "survol": {
+    "avant": "oklab(0.503977 -0.0130459 0.0496109)",
+    "apres": "rgb(169, 154, 94)",
+    "change": true,
+    "focus": {
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": null
+    }
+  },
+  "arrivee": {
+    "url": "http://localhost:5481/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement&detail=2025",
+    "queryTerritoire": "35",
+    "queryNiveau": "departement",
+    "note": "Votre territoire : Ille-et-Vilaine — comparaison sur les départements de Bretagne.",
+    "noteContientNom": true,
+    "horsPerimetre": false,
+    "tablePresente": true,
+    "ligneSurlignee": false,
+    "memeOrigine": true
+  },
+  "inversesEchantillon": [
+    "/territoire/departement/22?theme=milieux",
+    "/territoire/departement/22?theme=milieux"
+  ]
+}

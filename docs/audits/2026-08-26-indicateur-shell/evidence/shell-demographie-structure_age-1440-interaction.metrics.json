@@ -1,0 +1,25 @@
+{
+  "genre": "interaction-vues",
+  "interaction": {
+    "apresCarte": {
+      "url": "http://localhost:5481/indicateurs/demographie/structure_age?detail=%3C15&sex=F&niveau=commune&vue=carte",
+      "urlContientVueCarte": true,
+      "etat": {
+        "wrapPresent": true,
+        "canvas": 1,
+        "maplibreCanvas": 1,
+        "enChargement": false,
+        "texteChargement": null
+      }
+    },
+    "apresIndicateur": {
+      "url": "http://localhost:5481/indicateurs/demographie/structure_age?detail=%3C15&sex=F&niveau=commune&vue=indicateur",
+      "urlContientVueIndicateur": true,
+      "asideTitre": "L’indicateur"
+    },
+    "retourRepere": {
+      "url": "http://localhost:5481/indicateurs/demographie/structure_age?detail=%3C15&sex=F&niveau=commune",
+      "urlSansVue": true
+    }
+  }
+}

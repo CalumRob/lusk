@@ -1,0 +1,517 @@
+{
+  "genre": "handoff",
+  "ficheUrl": "http://localhost:5481/territoire/commune/22001?theme=mobilite",
+  "theme": "mobilite",
+  "spec": {
+    "type": "commune",
+    "id": "22001",
+    "nom": "Allineuc",
+    "sansNiveau": false
+  },
+  "inventaire": {
+    "total": 23,
+    "ancres": [
+      {
+        "libelle": "Perte totale d’accès — à pied ou en transports en commun",
+        "accessibleName": "Perte totale d’accès — à pied ou en transports en commun",
+        "href": "/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 358,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Perte totale d’accès — à vélo",
+        "accessibleName": "Perte totale d’accès — à vélo",
+        "href": "/indicateurs/mobilite/tot_loss_b?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 185,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+        "accessibleName": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+        "href": "/indicateurs/mobilite/iso_alimentation?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 513,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+        "accessibleName": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+        "href": "/indicateurs/mobilite/iso_sante?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 478,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+        "accessibleName": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+        "href": "/indicateurs/mobilite/iso_administration?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 582,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+        "accessibleName": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+        "href": "/indicateurs/mobilite/iso_ecole?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 470,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+        "accessibleName": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+        "href": "/indicateurs/mobilite/iso_banque?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 489,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": true,
+        "etiquetteGroupe": "Explorer",
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/iso_alimentation?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/tot_loss_b?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/iso_sante?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/iso_administration?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/iso_ecole?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/iso_banque?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/offre_cyclable?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/reseaux?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/places_stationnement_velo_1000?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/places_stationnement_voiture_1000?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/stationnement_velo_par_voiture?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/voitures_menage?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/bornes_recharge?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/bornes_ev_par_station_service?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/mobilite/offre_tc?territoire=22001&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.502599 -0.0384263 -0.0263984)",
+        "textDecoration": "underline"
+      }
+    ],
+    "navLectures": [
+      {
+        "ariaLabel": "Explorer les indicateurs de cette lecture",
+        "etiquettes": [
+          "Explorer"
+        ],
+        "liens": [
+          "Perte totale d’accès — à pied ou en transports en commun",
+          "Perte totale d’accès — à vélo",
+          "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+          "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+          "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+          "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+          "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
+        ]
+      }
+    ],
+    "grilleGroupes": [
+      {
+        "groupe": "acces-aux-services",
+        "passarelles": [
+          {
+            "href": "/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune",
+            "libelle": "Perte totale d’accès — à pied ou en transports en commun",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/tot_loss_b?territoire=22001&niveau=commune",
+            "libelle": "Perte totale d’accès — à vélo",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_alimentation?territoire=22001&niveau=commune",
+            "libelle": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_sante?territoire=22001&niveau=commune",
+            "libelle": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_administration?territoire=22001&niveau=commune",
+            "libelle": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_ecole?territoire=22001&niveau=commune",
+            "libelle": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_banque?territoire=22001&niveau=commune",
+            "libelle": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+            "lecture": true
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_alimentation?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/tot_loss_b?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_sante?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_administration?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_ecole?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/iso_banque?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "partage-de-lespace-public",
+        "passarelles": [
+          {
+            "href": "/indicateurs/mobilite/offre_cyclable?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/reseaux?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/places_stationnement_velo_1000?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/places_stationnement_voiture_1000?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/stationnement_velo_par_voiture?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "motorisation",
+        "passarelles": [
+          {
+            "href": "/indicateurs/mobilite/voitures_menage?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/bornes_recharge?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/mobilite/bornes_ev_par_station_service?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "offre-transports-commun",
+        "passarelles": [
+          {
+            "href": "/indicateurs/mobilite/offre_tc?territoire=22001&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      }
+    ]
+  },
+  "survol": {
+    "avant": "oklab(0.502599 -0.0384263 -0.0263984)",
+    "apres": "rgb(107, 163, 181)",
+    "change": true,
+    "focus": {
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": null
+    }
+  },
+  "arrivee": {
+    "url": "http://localhost:5481/indicateurs/mobilite/tot_loss_t?territoire=22001&niveau=commune",
+    "queryTerritoire": "22001",
+    "queryNiveau": "commune",
+    "note": "Votre territoire : Allineuc — comparaison sur les communes de Bretagne.",
+    "noteContientNom": true,
+    "horsPerimetre": false,
+    "tablePresente": true,
+    "ligneSurlignee": true,
+    "memeOrigine": true
+  },
+  "inversesEchantillon": [
+    "/territoire/commune/35281?theme=mobilite",
+    "/territoire/commune/56085?theme=mobilite"
+  ]
+}
