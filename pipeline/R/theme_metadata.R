@@ -359,13 +359,16 @@ valider_template <- function(template, params, cle, manquer) {
 # jsonlite :: fromJSON(simplifyVector = FALSE) — des listes imbriquées).
 # vintages, quand elle est passée (le run réel), vérifie la politique de
 # source de référence : chaque source déclarée existe dans la table partagée.
-# directions_module, quand il est passé (le run réel — theme_<theme>()$
-# directions), croise les DIRECTIONS : la direction déclarée par chaque page
-# d'indicateur doit égaler celle du module de thème qui calcule les rangs
-# publiés (compute_ranks) — une clé absente du registre vaut « high », le
-# défaut exact de la machinerie de rangs (#506).
-# Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
-# faux publié silencieusement.
+ # directions_module, quand il est passé (le run réel — theme_<theme>()$
+ # directions), croise les DIRECTIONS : la direction déclarée par chaque page
+ # d'indicateur doit égaler celle du module de thème qui calcule les rangs
+ # publiés (compute_ranks) — une clé absente du registre vaut « high », le
+ # défaut exact de la machinerie de rangs (#506). La facette résumée suit la
+ # même règle pour SA clé (#516) : comparison.direction déclarée, elle égale
+ # directions_module[[comparison.indicator]] — jamais la clé de la page, ce
+ # sont deux indicateurs différents.
+ # Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
+ # faux publié silencieusement.
 valider_theme_metadata <- function(metadata, vintages = NULL,
                                    directions_module = NULL) {
   manquer <- function(champ, detail) {
@@ -837,6 +840,37 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
       for (champ in c("detail", "dimension", "unit", "label")) if (!is.null(comparison[[champ]]) && !est_chaine_non_vide(comparison[[champ]])) manquer(paste0("indicator_pages.comparison.", champ), "la valeur est invalide")
       if (!is.null(comparison$sex) && !comparison$sex %in% c("F", "M")) manquer("indicator_pages.comparison.sex", "le sexe doit être F ou M")
       if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
+      # La concordance de la facette résumée (#516, le trou #506) : le glyphe
+      # ▲▼ et l'ordonnancement Repères d'une page distribution sont pilotés
+      # par la facette résumée — l'app lit `comparison.direction ??
+      # page.direction` (familySeam.ts). Déclarée, elle doit égaler celle du
+      # module de thème pour LA CLÉ DE LA FACETTE (`comparison.indicator`,
+      # sinon la clé de la page — le même « ?? » que l'app) : souvent une
+      # AUTRE clé publiée que la page (part_passoires résume
+      # distribution_dpe), croiser la clé de la page serait faux. Une clé
+      # absente du registre vaut « high », le défaut exact de compute_ranks —
+      # la règle de défaut vit dans direction_de(), LA MÊME fonction que la
+      # croisée de la page ci-dessus.
+      if (!is.null(comparison$direction) && !is.null(directions_module)) {
+        cle_facette <- if (!is.null(comparison$indicator)) {
+          comparison$indicator
+        } else {
+          indicator_key
+        }
+        direction_module <- direction_de(cle_facette, directions_module)
+        if (!identical(comparison$direction, direction_module)) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".comparison.direction"),
+                  paste0(
+                    "la direction de la facette résumée (« ",
+                    comparison$direction,
+                    " », clé « ", cle_facette,
+                    " ») contredit celle du module de thème (« ",
+                    direction_module,
+                    " ») — le glyphe et l'ordonnancement Repères diraient ",
+                    "l'inverse des rangs publiés de la fiche"))
+        }
+      }
       if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
     }
     extensions_tableaux <- list(
