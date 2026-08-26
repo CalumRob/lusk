@@ -32,7 +32,7 @@
 
 import { PARAM_NIVEAU, NIVEAUX_COMPARABLES, estNiveauComparable, lireTerritoirePorte } from '@/fiche/contratExploration'
 import type { NiveauComparable } from '@/fiche/contratExploration'
-import type { LocationQuery } from 'vue-router'
+import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 import type { Territoire, TerritoireType } from '@/payload/types'
 
 /**
@@ -127,8 +127,8 @@ export function resoudreEtatUrl({ query, territoires, niveauxPublies, niveauMemo
  *  - les `extras` (tri, ordre, recherche, vue…) passent D'ABORD, les règles
  *    de canonisation ENSUITE.
  */
-export function queryCanonique(query: LocationQuery, etat: EtatUrlIndicateur, extras: Record<string, unknown> = {}): Record<string, unknown> {
-  const next: Record<string, unknown> = { ...query, ...extras }
+export function queryCanonique(query: LocationQuery, etat: EtatUrlIndicateur, extras: LocationQueryRaw = {}): LocationQueryRaw {
+  const next: LocationQueryRaw = { ...query, ...extras }
   if (etat.niveau !== null) next[PARAM_NIVEAU] = etat.niveau
   if (next[PARAM_NIVEAU] !== 'commune') {
     delete next.departement
@@ -150,9 +150,9 @@ const CLES_FACETTE = ['facet', 'detail', 'sex', 'dimension'] as const
  * remplacées SUR PLACE, le paramètre `facet` divergent supprimé, les clés
  * que la query ne porte pas encore ajoutées EN DERNIER.
  */
-export function fusionnerFacette(query: LocationQuery, urlResolue: string): Record<string, unknown> {
+export function fusionnerFacette(query: LocationQuery, urlResolue: string): LocationQueryRaw {
   const canonique = new URLSearchParams(urlResolue.slice(1))
-  const next: Record<string, unknown> = { ...query }
+  const next: LocationQueryRaw = { ...query }
   for (const cle of CLES_FACETTE) delete next[cle]
   canonique.forEach((valeur, cle) => {
     next[cle] = valeur

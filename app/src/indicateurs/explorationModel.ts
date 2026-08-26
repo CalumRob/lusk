@@ -1,6 +1,7 @@
-import { estNiveauComparable, lienFiche, NIVEAUX_COMPARABLES } from '@/fiche/contratExploration'
+import { lienFiche } from '@/fiche/contratExploration'
 import type { NiveauComparable } from '@/fiche/contratExploration'
-import type { Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
+import { resoudreNiveau } from './etatUrl'
+import type { Indicateur, Payload, Territoire } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
 import type { IndicatorPageMetadata } from '@/payload/types'
 
@@ -14,8 +15,6 @@ export interface DensitePoint { x: number; density: number; y: number }
 export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
 export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
-
-export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => NIVEAUX_COMPARABLES.find((n) => supported.includes(n)) ?? 'commune'
 
 /**
  * La médiane d'une série — null pour une série vide. L'unique implémentation
@@ -134,8 +133,9 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
 }
 
 export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
-  const supported = facet.levels.filter((level): level is NiveauIndicateur => estNiveauComparable(level))
-  const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
+  // La cascade explicite → mémorisé → repli est l'unique règle de la machine
+  // URL (#508), partagée avec l'applier de la Page d'indicateur.
+  const niveau = resoudreNiveau(requested.niveau, remembered, facet.levels)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
   const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
   const values = all.map((row) => row.value)

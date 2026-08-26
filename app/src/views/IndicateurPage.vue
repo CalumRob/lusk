@@ -19,8 +19,13 @@ import { ancreSource, datasetDeSource } from '@/methodes/sources'
 import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
 import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
+import { fusionnerFacette, queryCanonique, resoudreEtatUrl } from '@/indicateurs/etatUrl'
 
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
+// La lecture du niveau mémorisé reste une fine couture d'effet de bord (#508) :
+// elle se fait au montage, puis l'applier de persistance la tient à jour. Les
+// fonctions pures reçoivent cette valeur ; aucun computed ne lit localStorage.
+const niveauMemorise = ref<string | undefined>(localStorage.getItem('lusk:niveau-indicateur') ?? undefined)
 // L'état que la page REÇOIT de la passarelle (#505) — les deux paramètres
 // portés, lus et validés UNE fois par le contrat d'exploration.
 const porte = computed(() => lireTerritoirePorte(route.query))
@@ -42,17 +47,14 @@ const sources = computed(() => {
 // facette résumée d'une distribution lit souvent une AUTRE clé publiée que
 // la page, #440 ; les trajectoires et le modèle par détail filtrent déjà).
 const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme === theme.value))
+// La machine à états URL (#508) — résolution pure de la cascade de niveaux
+// et validation du périmètre. Le composant ne fait que lui fournir la query,
+// les territoires publiés, les niveaux de la facette et la mémoire lue à la
+// couture ; ses watchers ci-dessous n'en appliquent que le résultat.
+const etatUrl = computed(() => resoudreEtatUrl({ query: route.query, territoires: payload.value.territoires, niveauxPublies: familyDispatch.value?.facet.levels, niveauMemorise: niveauMemorise.value }))
 const niveauRoute = computed(() => porte.value.niveau)
-const validScope = computed(() => {
-  if (payload.value.territoires.length === 0) return { departement: typeof route.query.departement === 'string' ? route.query.departement : undefined, epci: typeof route.query.epci === 'string' ? route.query.epci : undefined }
-  const communes = payload.value.territoires.filter((territory) => territory.type === 'commune')
-  const departement = typeof route.query.departement === 'string' && communes.some((territory) => territory.departement === route.query.departement) ? route.query.departement : undefined
-  const epci = typeof route.query.epci === 'string' && communes.some((territory) => territory.epci === route.query.epci) ? route.query.epci : undefined
-  if (departement && epci && !communes.some((territory) => territory.departement === departement && territory.epci === epci)) return { departement: undefined, epci }
-  return { departement, epci }
-})
-const requested = computed(() => ({ niveau: niveauRoute.value, ...validScope.value, territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
-const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, localStorage.getItem('lusk:niveau-indicateur') ?? undefined) : null)
+const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value.scopeValide ?? {}), territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
+const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, niveauMemorise.value) : null)
 // Le chemin complet de la trajectoire (#438), dans le MÊME périmètre résolu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
 // sans replier la trajectoire.
@@ -124,25 +126,21 @@ const territoireCible = computed(() => { const cible = porte.value.territoire; r
 // La demande de zoom de la carte (#505, le contrat) : un territoire porté par
 // l'URL — la même lecture validée que le reste de la page.
 const requeteZoom = computed(() => Number(Boolean(porte.value.territoire)))
-function normalizedQuery(extra: Record<string, string | undefined> = {}) { const next = { ...route.query, ...extra }; if (next.niveau !== 'commune') { delete next.departement; delete next.epci }; if (payload.value.territoires.length > 0) { if (next.departement !== validScope.value.departement) delete next.departement; if (next.epci !== validScope.value.epci) delete next.epci }; return next }
+function normalizedQuery(extra: Record<string, string | undefined> = {}) { return queryCanonique(route.query, { niveau: null, scopeValide: etatUrl.value.scopeValide }, extra) }
 function setQuery(key: string, value: string) { router.replace({ query: normalizedQuery({ [key]: value || undefined }) }) }
 function setVue(value: 'reperes' | 'carte' | 'indicateur') { router.replace({ query: normalizedQuery({ vue: value === 'reperes' ? undefined : value }) }) }
 watch(() => [route.params.theme, route.params.indicator, route.query.recherche], () => { recherche.value = String(route.query.recherche ?? '') }, { immediate: true })
-// #474 : la réécriture canonique se DÉCOUPE en deux temps — la purge des
-// paramètres de périmètre invalides court dès que les territoires sont là,
-// SANS attendre le modèle ; l'injection du niveau résolu n'arrive qu'une fois
-// le modèle résoluble. Avant le découpage, la fenêtre « territoires chargés,
-// métadonnées pas encore » écrivait « niveau: undefined », entrait dans la
-// branche de purge et STRIPPAIT silencieusement un departement/EPCI valide de
-// l'URL (verrouillé par test contre le payload réel).
-watch(() => [route.query[PARAM_NIVEAU], route.query.departement, route.query.epci, payload.value.territoires.length], () => { if (!payload.value.territoires.length) return; const query = model.value?.state ? normalizedQuery({ [PARAM_NIVEAU]: model.value.state.niveau }) : normalizedQuery({}); if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query }) }, { immediate: true })
-watch(() => model.value?.state.niveau, (niveau) => { if (niveau && route.query[PARAM_NIVEAU] === undefined) router.replace({ query: normalizedQuery({ [PARAM_NIVEAU]: niveau }) }) }, { immediate: true })
-watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niveau)) localStorage.setItem('lusk:niveau-indicateur', niveau) }, { immediate: true })
+// #474/#508 : un seul applier réactif. La fonction pure garde les deux temps
+// de chargement : le scope se purge dès les territoires publiés ; le niveau
+// ne s'injecte qu'avec les métadonnées de la facette. Avant l'extraction, les
+// deux watchers mutuellement réactifs écrivaient « niveau: undefined » dans la
+// fenêtre « territoires chargés, métadonnées pas encore » et STRIPPAIENT un
+// departement/EPCI valide.
+watch(etatUrl, (etat) => { if (!payload.value.territoires.length) return; const query = queryCanonique(route.query, etat); if (JSON.stringify(query) !== JSON.stringify(route.query)) router.replace({ query }) }, { immediate: true })
+watch(() => route.query[PARAM_NIVEAU], (niveau) => { if (estNiveauComparable(niveau)) { localStorage.setItem('lusk:niveau-indicateur', niveau); niveauMemorise.value = niveau } }, { immediate: true })
 watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   if (resolved === undefined || !page.value) return
-  const canonical = new URLSearchParams(resolved.slice(1)); const next = { ...route.query }
-  for (const key of ['facet', 'detail', 'sex', 'dimension']) delete next[key]
-  canonical.forEach((value, key) => { next[key] = value })
+  const next = fusionnerFacette(route.query, resolved)
   if (JSON.stringify(next) !== JSON.stringify(route.query)) router.replace({ query: next })
 }, { immediate: true })
 </script>

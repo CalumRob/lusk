@@ -227,10 +227,14 @@ describe('fusion de la facette résolue dans la query (#508, le watcher #474/#43
     expect(serialise(next)).toBe('vue=carte&detail=2025')
   })
 
-  it('supprime le paramètre facet divergent — la facette canonique vient du descripteur', () => {
+  it('supprime le paramètre facet divergent ; une clé supprimée puis réécrite part EN DERNIER (l’historique octet pour octet)', () => {
+    // Le comportement historique du watcher (#438/#474) : {...query} →
+    // suppression des clés de facette → réassignation. En JavaScript, une clé
+    // supprimée puis réassignée se replace à la FIN de l'ordre d'insertion —
+    // l'URL écrite a toujours reflété ce déplacement, on le verrouille tel quel.
     const next = fusionnerFacette({ facet: 'autre', detail: 'stale', tri: 'nom' } as LocationQuery, '?detail=t')
     expect(next.facet).toBeUndefined()
-    expect(serialise(next)).toBe('detail=t&tri=nom')
+    expect(serialise(next)).toBe('tri=nom&detail=t')
   })
 
   it('est PUR : la query d’entrée n’est jamais mutée', () => {
