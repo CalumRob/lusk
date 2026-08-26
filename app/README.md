@@ -24,14 +24,18 @@ The site map lives in `src/router/index.ts`. The **fiche d'identité** (`/territ
 
 | Route | Name | Status |
 |---|---|---|
-| `/` | `accueil` | **Built** — landing (#41) |
-| `/carte` | `carte` | **Built** — map (#39) |
+| `/` | `accueil` | **Built** — landing (#41, deux portes Territoires · Indicateurs #410) |
+| `/carte` | `carte` | **Built** — map (#39) ; épargnée par ruling PO (2026-08-26, #410) : routée et fonctionnelle mais SANS aucun lien face-utilisateur |
 | `/communes` | `communes` | **Built** — link directory (#40) |
 | `/epcis` | `epcis` | **Built** — link directory (#40) |
 | `/departements` | `departements` | **Built** — link directory (#40) |
-| `/territoire/:type/:id` | `territoire` | **Built** — fiche (#35, manifest-driven #308/#314) |
-| `/methodologie` | `methodologie` | **Built** — Sources & Méthodes (#42, sections sources #128 · indicateurs & Stories #129 · Programmes #180) |
+| `/territoire/:type/:id` | `territoire` | **Built** — fiche (#35, manifest-driven #308/#314, Programmes et subventions premier #408) |
+| `/sources` | `sources` | **Built** — la page Sources (#406) |
 | `/a-propos` | `a-propos` | **Shell** — À propos (#42) |
+| `/indicateurs` | `indicateurs` | **Built** — le catalogue des Pages d'indicateur (#409) |
+| `/indicateurs/:theme/:indicator` | `indicateur` | **Built** — une Page d'indicateur (#409 et suites) |
+
+La route `/methodologie` est **retirée** par la bascule atomique #410 : Méthodes n'est plus une destination — l'explication par indicateur vit sur « L'indicateur » de chaque Page d'indicateur, la provenance des jeux de données sur Sources (#406), le propos du projet sur À propos. Aucun alias ne subsiste.
 
 ## Deploy path
 
