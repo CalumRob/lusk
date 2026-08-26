@@ -53,7 +53,7 @@
       "label": "L’offre de transports en commun",
       "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
       "indicators": ["offre_tc", "raccordement_tc", "raccordement_courbe", "raccordement_reference"],
-      "figure": { "family": "scalar", "indicator": "raccordement_tc" }
+      "figure": { "family": "scalar", "indicator": "offre_tc" }
     }
   ],
   "indicator_keys": [
