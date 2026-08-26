@@ -265,7 +265,9 @@ verifier_contrat_mairies_bretagne <- function(artefact, chemin = NULL) {
       " introuvable ou illisible sur le disque — l'empreinte du fichier ",
       "épinglé doit rester recalculable"))
   }
-  calculee <- paste(openssl::sha256(file(chemin, "rb")))
+  con <- file(chemin, "rb")
+  calculee <- paste(openssl::sha256(con))
+  close(con)
   if (!identical(calculee, MAIRIES_BRETAGNE_SHA256)) {
     manquer("sha256", sprintf(
       "empreinte recalculée sur le fichier lu (%s…) ≠ empreinte épinglée %s — le contenu n'est pas la table migrée verbatim",
@@ -356,7 +358,9 @@ verifier_contrat_matrice_temps <- function(artefact, chemin = NULL) {
       " introuvable ou illisible sur le disque — l'empreinte du fichier ",
       "épinglé doit rester recalculable"))
   }
-  calculee <- paste(openssl::sha256(file(chemin, "rb")))
+  con <- file(chemin, "rb")
+  calculee <- paste(openssl::sha256(con))
+  close(con)
   if (!identical(calculee, MATRICE_TEMPS_MAIRIES_SHA256)) {
     manquer("sha256", sprintf(
       "empreinte recalculée sur le fichier lu (%s…) ≠ empreinte épinglée %s — le contenu n'est pas la matrice figée",
