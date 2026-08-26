@@ -392,6 +392,30 @@
         }
       }
     },
+    "part_passoires": {
+      "indicator": "part_passoires",
+      "label": "Part de passoires thermiques",
+      "definition": "La part des passoires thermiques — les logements d’étiquette F ou G — parmi les diagnostics de performance énergétique disponibles sur le territoire.",
+      "unit": "%",
+      "calculation": "Nombre de diagnostics d’étiquette F ou G divisé par le nombre de diagnostics disponibles du territoire ; supprimée sous 30 diagnostics.",
+      "direction": "low",
+      "caveats": "La base DPE surreprésente les logements vendus ou loués : cette part se lit sur la base DPE, jamais sur l’ensemble du parc de logements.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "dpe_22"
+      ],
+      "family": "scalar",
+      "comparison": {
+        "indicator": "part_passoires",
+        "label": "Part de passoires thermiques",
+        "unit": "%",
+        "direction": "low"
+      }
+    },
     "distribution_dpe": {
       "indicator": "distribution_dpe",
       "label": "Distribution des étiquettes DPE (A à G)",

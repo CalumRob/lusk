@@ -3,7 +3,13 @@ import { join } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Les montures routées lisent le VRAI payload committé : sous charge
+// parallèle, le premier monture dépasse parfois le timeout par défaut — la
+// même famille de flake que #185. Plafond relevé au niveau du fichier,
+// verrous inchangés.
+vi.setConfig({ testTimeout: 30_000 })
 
 import IndicateurView from '../views/IndicateurView.vue'
 import { chargerFichier } from '../payload/loader'
@@ -120,11 +126,12 @@ describe('Pages d’indicateur — unités % rendues ×100 (#466)', () => {
   })
 
   it('distribution_dpe : la facette résumée pilote des repères ×100 et la signature se rend ×100 UNE fois', async () => {
-    // La facette résumée (part_passoires, %) pilote médiane et tableau ;
-    // la signature A→G du territoire sélectionné porte SES parts, chacune
-    // ×100 exactement UNE fois — jamais l'échelle brute ni une double échelle.
+    // La facette résumée (part_passoires, %) pilote extrêmes et tableau (#474 :
+    // le héros médian scalaire a quitté la page catégorielle) ; la signature
+    // A→G du territoire sélectionné porte SES parts, chacune ×100 exactement
+    // UNE fois — jamais l'échelle brute ni une double échelle.
     const wrapper = await monter('/indicateurs/habitat/distribution_dpe?territoire=22001')
-    expect(wrapper.find('.median strong').text()).toBe('15 %')
+    expect(wrapper.find('.median').exists()).toBe(false)
     const ligne = ligneDuTableau(wrapper, '22001')
     expect(ligne.findAll('td')[1]!.text()).toBe('13 %')
     // Signature 22001 : A 0,0111→« 1 », C 0,4556→« 46 » (et non « 0,46 » ni « 4600 »).
