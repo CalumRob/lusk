@@ -1,0 +1,144 @@
+{
+ "url": "http://localhost:5173/territoire/departement/35?theme=milieux",
+ "viewport": {
+  "w": 1440,
+  "h": 900
+ },
+ "content": {
+  "rect": {
+   "x": 120,
+   "y": 289,
+   "w": 1200,
+   "h": 1189.3
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "artificialisation",
+   "rectTop": 359.3,
+   "rectH": 992,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "lecture": {
+    "rectH": 992,
+    "lectureCardH": 344.3,
+    "proseWidth": 902,
+    "proseFontPx": 18,
+    "proseChPerLineApprox": 104,
+    "figureW": 200,
+    "figureH": 180,
+    "canvasRects": [
+     {
+      "x": 1079,
+      "y": 479.9,
+      "w": 200,
+      "h": 180
+     }
+    ]
+   },
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 2,
+    "lastRowEmptyCells": 1,
+    "gapTitleToGrid": 437.3,
+    "cards": [
+     {
+      "clef": "artif_par_habitant",
+      "famille": "comparison-bars",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 823.2,
+       "w": 768,
+       "h": 528.1
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 933.3,
+      "chipTop": null,
+      "vintageTop": 966.3,
+      "fillRatio": 0.33
+     },
+     {
+      "clef": "conso_enaf_annuel",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 936,
+       "y": 823.2,
+       "w": 368,
+       "h": 528.1
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 953,
+      "insetLeftPx": 17,
+      "valueTop": null,
+      "labelTop": 1234.1,
+      "chipTop": null,
+      "vintageTop": 1267.1,
+      "fillRatio": 0.97
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [
+  {
+   "where": "artificialisation/artif_par_habitant",
+   "h": 528.1
+  },
+  {
+   "where": "artificialisation/conso_enaf_annuel",
+   "h": 528.1
+  }
+ ],
+ "rowsMisalign": [
+  {
+   "group": "artificialisation",
+   "rowTop": 823,
+   "cards": [
+    "artif_par_habitant",
+    "conso_enaf_annuel"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 300.8,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 300.8,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  }
+ ],
+ "accentEdgeNotes": [
+  {
+   "group": "artificialisation",
+   "rowTop": 823,
+   "cards": [
+    "artif_par_habitant",
+    "conso_enaf_annuel"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 300.8,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 300.8,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  }
+ ],
+ "leftoverX": 120,
+ "spec": {
+  "width": 1440,
+  "height": 900,
+  "mobile": false
+ }
+}

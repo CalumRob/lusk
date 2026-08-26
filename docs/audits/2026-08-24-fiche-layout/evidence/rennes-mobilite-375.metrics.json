@@ -1,0 +1,502 @@
+{
+ "url": "http://localhost:5173/territoire/commune/35238?theme=mobilite",
+ "viewport": {
+  "w": 375,
+  "h": 740
+ },
+ "content": {
+  "rect": {
+   "x": 0,
+   "y": 342.2,
+   "w": 375,
+   "h": 5740.8
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "acces-aux-services",
+   "rectTop": 412.5,
+   "rectH": 2465.7,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "lecture": {
+    "rectH": 2465.7,
+    "lectureCardH": 471.9,
+    "proseWidth": 293,
+    "proseFontPx": 18,
+    "proseChPerLineApprox": 34,
+    "figureW": 293,
+    "figureH": 222,
+    "canvasRects": [
+     {
+      "x": 41,
+      "y": 740.5,
+      "w": 293,
+      "h": 180
+     }
+    ]
+   },
+   "grid": {
+    "columns": 1,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 7,
+    "lastRowEmptyCells": 0,
+    "gapTitleToGrid": 627.9,
+    "cards": [
+     {
+      "clef": "iso_alimentation",
+      "famille": "comparison-bars",
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 1067,
+       "w": 343,
+       "h": 256.2
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 16,
+      "insetLeftPx": 0,
+      "valueTop": 1084,
+      "labelTop": 1127.1,
+      "chipTop": 1202.1,
+      "vintageTop": 1238.9,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "tot_loss_t",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 1347.1,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 33,
+      "insetLeftPx": 17,
+      "valueTop": 1364.1,
+      "labelTop": 1407.3,
+      "chipTop": 1461.3,
+      "vintageTop": 1498.1,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "tot_loss_b",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 1606.3,
+       "w": 343,
+       "h": 214.2
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 33,
+      "insetLeftPx": 17,
+      "valueTop": 1623.3,
+      "labelTop": 1666.5,
+      "chipTop": 1699.5,
+      "vintageTop": 1736.3,
+      "fillRatio": 0.92
+     },
+     {
+      "clef": "iso_sante",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 1844.5,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 1861.5,
+      "labelTop": 1904.7,
+      "chipTop": 1958.7,
+      "vintageTop": 1995.5,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "iso_administration",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 2103.6,
+       "w": 343,
+       "h": 256.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 2120.6,
+      "labelTop": 2163.8,
+      "chipTop": 2238.8,
+      "vintageTop": 2275.6,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "iso_ecole",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 2383.8,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 2400.8,
+      "labelTop": 2444,
+      "chipTop": 2498,
+      "vintageTop": 2534.8,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "iso_banque",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 2643,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 2660,
+      "labelTop": 2703.2,
+      "chipTop": 2757.2,
+      "vintageTop": 2794,
+      "fillRatio": 0.93
+     }
+    ]
+   }
+  },
+  {
+   "key": "partage-de-lespace-public",
+   "rectTop": 2910.2,
+   "rectH": 1663.2,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 1,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 5,
+    "lastRowEmptyCells": 0,
+    "gapTitleToGrid": 111,
+    "cards": [
+     {
+      "clef": "offre_cyclable",
+      "famille": "composition",
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 3047.8,
+       "w": 343,
+       "h": 355.8
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 16,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 3286.3,
+      "chipTop": null,
+      "vintageTop": 3319.3,
+      "fillRatio": 0.95
+     },
+     {
+      "clef": "reseaux",
+      "famille": null,
+      "large": true,
+      "rect": {
+       "x": 16,
+       "y": 3427.5,
+       "w": 343,
+       "h": 372.5
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": null,
+      "labelTop": 3682.9,
+      "chipTop": null,
+      "vintageTop": 3715.9,
+      "fillRatio": 0.95
+     },
+     {
+      "clef": "places_stationnement_velo_1000",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 3824,
+       "w": 343,
+       "h": 231
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 3841,
+      "labelTop": 3884.2,
+      "chipTop": 3917.2,
+      "vintageTop": 3954,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "places_stationnement_voiture_1000",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 4079,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 33,
+      "insetLeftPx": 17,
+      "valueTop": 4096,
+      "labelTop": 4139.2,
+      "chipTop": 4193.2,
+      "vintageTop": 4230,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "stationnement_velo_par_voiture",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 4338.2,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 4355.2,
+      "labelTop": 4398.4,
+      "chipTop": 4452.4,
+      "vintageTop": 4489.2,
+      "fillRatio": 0.93
+     }
+    ]
+   }
+  },
+  {
+   "key": "motorisation",
+   "rectTop": 4605.4,
+   "rectH": 950.1,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 1,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 3,
+    "lastRowEmptyCells": 0,
+    "gapTitleToGrid": 90,
+    "cards": [
+     {
+      "clef": "voitures_menage",
+      "famille": "composition",
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 4722,
+       "w": 343,
+       "h": 336.2
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 16,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 4924.1,
+      "chipTop": null,
+      "vintageTop": 4957.1,
+      "fillRatio": 0.95
+     },
+     {
+      "clef": "bornes_recharge",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 5082.1,
+       "w": 343,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 5099.1,
+      "labelTop": 5142.3,
+      "chipTop": 5196.3,
+      "vintageTop": 5233.1,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "bornes_ev_par_station_service",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 5341.3,
+       "w": 343,
+       "h": 214.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 35,
+      "insetLeftPx": 19,
+      "valueTop": 5358.3,
+      "labelTop": 5401.5,
+      "chipTop": 5434.5,
+      "vintageTop": 5471.3,
+      "fillRatio": 0.92
+     }
+    ]
+   }
+  },
+  {
+   "key": "offre-transports-commun",
+   "rectTop": 5587.5,
+   "rectH": 347.6,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 23.9,
+   "grid": {
+    "columns": 1,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 1,
+    "lastRowEmptyCells": 0,
+    "gapTitleToGrid": 89.9,
+    "cards": [
+     {
+      "clef": "offre_tc",
+      "famille": "scalar",
+      "large": false,
+      "rect": {
+       "x": 16,
+       "y": 5704,
+       "w": 343,
+       "h": 231
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 16,
+      "insetLeftPx": 0,
+      "valueTop": 5721,
+      "labelTop": 5764.2,
+      "chipTop": 5797.2,
+      "vintageTop": 5834,
+      "fillRatio": 0.93
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [
+  {
+   "where": "acces-aux-services/iso_alimentation",
+   "h": 256.2
+  },
+  {
+   "where": "acces-aux-services/tot_loss_t",
+   "h": 235.2
+  },
+  {
+   "where": "acces-aux-services/iso_sante",
+   "h": 235.2
+  },
+  {
+   "where": "acces-aux-services/iso_administration",
+   "h": 256.2
+  },
+  {
+   "where": "acces-aux-services/iso_ecole",
+   "h": 235.2
+  },
+  {
+   "where": "acces-aux-services/iso_banque",
+   "h": 235.2
+  },
+  {
+   "where": "partage-de-lespace-public/offre_cyclable",
+   "h": 355.8
+  },
+  {
+   "where": "partage-de-lespace-public/places_stationnement_velo_1000",
+   "h": 231
+  },
+  {
+   "where": "partage-de-lespace-public/places_stationnement_voiture_1000",
+   "h": 235.2
+  },
+  {
+   "where": "partage-de-lespace-public/stationnement_velo_par_voiture",
+   "h": 235.2
+  },
+  {
+   "where": "motorisation/voitures_menage",
+   "h": 336.2
+  },
+  {
+   "where": "motorisation/bornes_recharge",
+   "h": 235.2
+  },
+  {
+   "where": "offre-transports-commun/offre_tc",
+   "h": 231
+  }
+ ],
+ "rowsMisalign": [],
+ "accentEdgeNotes": [],
+ "leftoverX": 0,
+ "spec": {
+  "width": 375,
+  "height": 740,
+  "mobile": true
+ }
+}

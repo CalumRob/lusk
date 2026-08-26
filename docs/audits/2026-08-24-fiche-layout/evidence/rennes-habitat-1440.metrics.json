@@ -1,0 +1,316 @@
+{
+ "url": "http://localhost:5173/territoire/commune/35238?theme=habitat",
+ "viewport": {
+  "w": 1440,
+  "h": 900
+ },
+ "content": {
+  "rect": {
+   "x": 112.5,
+   "y": 289,
+   "w": 1200,
+   "h": 1819.5
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "composition-du-parc",
+   "rectTop": 359.3,
+   "rectH": 615.9,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 3,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 69,
+    "cards": [
+     {
+      "clef": "mix_logements",
+      "famille": "composition",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 454.9,
+       "w": 768,
+       "h": 302.6
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 565.1,
+      "chipTop": null,
+      "vintageTop": 598.1,
+      "fillRatio": 0.53
+     },
+     {
+      "clef": "statut",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 928.5,
+       "y": 454.9,
+       "w": 368,
+       "h": 302.6
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 947.5,
+      "insetLeftPx": 19,
+      "valueTop": null,
+      "labelTop": 673.8,
+      "chipTop": null,
+      "vintageTop": 706.8,
+      "fillRatio": 0.94
+     },
+     {
+      "clef": "type",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 781.4,
+       "w": 368,
+       "h": 193.8
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 147.5,
+      "insetLeftPx": 19,
+      "valueTop": null,
+      "labelTop": 891.6,
+      "chipTop": null,
+      "vintageTop": 924.6,
+      "fillRatio": 0.91
+     }
+    ]
+   }
+  },
+  {
+   "key": "etat-energetique-du-parc",
+   "rectTop": 1007.2,
+   "rectH": 688.7,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "lecture": {
+    "rectH": 688.7,
+    "lectureCardH": 78.8,
+    "proseWidth": 902,
+    "proseFontPx": 18,
+    "proseChPerLineApprox": 104,
+    "figureW": 200,
+    "figureH": 0,
+    "canvasRects": []
+   },
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 3,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 171.8,
+    "cards": [
+     {
+      "clef": "distribution_dpe",
+      "famille": "composition",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 1205.6,
+       "w": 768,
+       "h": 180.6
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 1307.8,
+      "chipTop": null,
+      "vintageTop": 1337.4,
+      "fillRatio": 0.82
+     },
+     {
+      "clef": "part_passoires",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 928.5,
+       "y": 1205.6,
+       "w": 368,
+       "h": 180.6
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 945.5,
+      "insetLeftPx": 17,
+      "valueTop": 1222.6,
+      "labelTop": 1265.8,
+      "chipTop": 1298.8,
+      "vintageTop": 1335.6,
+      "fillRatio": 0.91
+     },
+     {
+      "clef": "age_du_bati",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 1410.2,
+       "w": 368,
+       "h": 285.8
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 145.5,
+      "insetLeftPx": 17,
+      "valueTop": null,
+      "labelTop": 1612.4,
+      "chipTop": null,
+      "vintageTop": 1645.4,
+      "fillRatio": 0.94
+     }
+    ]
+   }
+  },
+  {
+   "key": "marche",
+   "rectTop": 1728,
+   "rectH": 253.6,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32.1,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 23.9,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 1,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 68.9,
+    "cards": [
+     {
+      "clef": "prix_m2",
+      "famille": "trajectory",
+      "large": false,
+      "rect": {
+       "x": 128.5,
+       "y": 1823.5,
+       "w": 768,
+       "h": 158
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 128.5,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 1918.1,
+      "chipTop": null,
+      "vintageTop": 1947.7,
+      "fillRatio": 0.89
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [
+  {
+   "where": "composition-du-parc/mix_logements",
+   "h": 302.6
+  },
+  {
+   "where": "composition-du-parc/statut",
+   "h": 302.6
+  },
+  {
+   "where": "etat-energetique-du-parc/age_du_bati",
+   "h": 285.8
+  }
+ ],
+ "rowsMisalign": [
+  {
+   "group": "composition-du-parc",
+   "rowTop": 455,
+   "cards": [
+    "mix_logements",
+    "statut"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 108.7,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 108.7,
+   "leftEdgeDelta": 819,
+   "insetLeftDelta": 19
+  },
+  {
+   "group": "etat-energetique-du-parc",
+   "rowTop": 1206,
+   "cards": [
+    "distribution_dpe",
+    "part_passoires"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 42,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 1.8,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  }
+ ],
+ "accentEdgeNotes": [
+  {
+   "group": "composition-du-parc",
+   "rowTop": 455,
+   "cards": [
+    "mix_logements",
+    "statut"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 108.7,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 108.7,
+   "leftEdgeDelta": 819,
+   "insetLeftDelta": 19
+  },
+  {
+   "group": "etat-energetique-du-parc",
+   "rowTop": 1206,
+   "cards": [
+    "distribution_dpe",
+    "part_passoires"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 42,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 1.8,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  }
+ ],
+ "leftoverX": 120,
+ "spec": {
+  "width": 1440,
+  "height": 900,
+  "mobile": false
+ }
+}

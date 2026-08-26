@@ -1,0 +1,593 @@
+{
+ "url": "http://localhost:5173/territoire/epci/243500139?theme=mobilite",
+ "viewport": {
+  "w": 1440,
+  "h": 900
+ },
+ "content": {
+  "rect": {
+   "x": 120,
+   "y": 289,
+   "w": 1200,
+   "h": 3069.7
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "acces-aux-services",
+   "rectTop": 359.3,
+   "rectH": 1234.2,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "lecture": {
+    "rectH": 1234.2,
+    "lectureCardH": 340.1,
+    "proseWidth": 902,
+    "proseFontPx": 18,
+    "proseChPerLineApprox": 104,
+    "figureW": 200,
+    "figureH": 243,
+    "canvasRects": [
+     {
+      "x": 1079,
+      "y": 542.9,
+      "w": 200,
+      "h": 180
+     }
+    ]
+   },
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 7,
+    "lastRowEmptyCells": 1,
+    "gapTitleToGrid": 433.1,
+    "cards": [
+     {
+      "clef": "iso_alimentation",
+      "famille": "comparison-bars",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 819,
+       "w": 768,
+       "h": 235.2
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": 836,
+      "labelTop": 879.2,
+      "chipTop": 912.2,
+      "vintageTop": 949,
+      "fillRatio": 0.7
+     },
+     {
+      "clef": "tot_loss_t",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 936,
+       "y": 819,
+       "w": 368,
+       "h": 235.2
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 953,
+      "insetLeftPx": 17,
+      "valueTop": 836,
+      "labelTop": 879.2,
+      "chipTop": 933.2,
+      "vintageTop": 970,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "tot_loss_b",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 1078.1,
+       "w": 368,
+       "h": 256.2
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 153,
+      "insetLeftPx": 17,
+      "valueTop": 1095.1,
+      "labelTop": 1138.3,
+      "chipTop": 1171.3,
+      "vintageTop": 1208.1,
+      "fillRatio": 0.77
+     },
+     {
+      "clef": "iso_sante",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 536,
+       "y": 1078.1,
+       "w": 368,
+       "h": 256.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 555,
+      "insetLeftPx": 19,
+      "valueTop": 1095.1,
+      "labelTop": 1138.3,
+      "chipTop": 1192.3,
+      "vintageTop": 1229.1,
+      "fillRatio": 0.85
+     },
+     {
+      "clef": "iso_administration",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 936,
+       "y": 1078.1,
+       "w": 368,
+       "h": 256.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 955,
+      "insetLeftPx": 19,
+      "valueTop": 1095.1,
+      "labelTop": 1138.3,
+      "chipTop": 1213.3,
+      "vintageTop": 1250.1,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "iso_ecole",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 1358.3,
+       "w": 368,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 155,
+      "insetLeftPx": 19,
+      "valueTop": 1375.3,
+      "labelTop": 1418.5,
+      "chipTop": 1472.5,
+      "vintageTop": 1509.3,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "iso_banque",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 536,
+       "y": 1358.3,
+       "w": 368,
+       "h": 235.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 555,
+      "insetLeftPx": 19,
+      "valueTop": 1375.3,
+      "labelTop": 1418.5,
+      "chipTop": 1472.5,
+      "vintageTop": 1509.3,
+      "fillRatio": 0.93
+     }
+    ]
+   }
+  },
+  {
+   "key": "partage-de-lespace-public",
+   "rectTop": 1625.5,
+   "rectH": 718.1,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 5,
+    "lastRowEmptyCells": 0,
+    "gapTitleToGrid": 69,
+    "cards": [
+     {
+      "clef": "offre_cyclable",
+      "famille": "composition",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 1721.1,
+       "w": 768,
+       "h": 171.8
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 1809.3,
+      "chipTop": null,
+      "vintageTop": 1842.3,
+      "fillRatio": 0.9
+     },
+     {
+      "clef": "reseaux",
+      "famille": null,
+      "large": true,
+      "rect": {
+       "x": 136,
+       "y": 1916.9,
+       "w": 1168,
+       "h": 171.8
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 155,
+      "insetLeftPx": 19,
+      "valueTop": null,
+      "labelTop": 2021.8,
+      "chipTop": null,
+      "vintageTop": 2054.8,
+      "fillRatio": 0.9
+     },
+     {
+      "clef": "places_stationnement_velo_1000",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 2112.6,
+       "w": 368,
+       "h": 231
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 155,
+      "insetLeftPx": 19,
+      "valueTop": 2129.6,
+      "labelTop": 2172.8,
+      "chipTop": 2205.8,
+      "vintageTop": 2242.6,
+      "fillRatio": 0.93
+     },
+     {
+      "clef": "places_stationnement_voiture_1000",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 536,
+       "y": 2112.6,
+       "w": 368,
+       "h": 231
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 553,
+      "insetLeftPx": 17,
+      "valueTop": 2129.6,
+      "labelTop": 2172.8,
+      "chipTop": 2205.8,
+      "vintageTop": 2242.6,
+      "fillRatio": 0.85
+     },
+     {
+      "clef": "stationnement_velo_par_voiture",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 936,
+       "y": 2112.6,
+       "w": 368,
+       "h": 231
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 955,
+      "insetLeftPx": 19,
+      "valueTop": 2129.6,
+      "labelTop": 2172.8,
+      "chipTop": 2205.8,
+      "vintageTop": 2242.6,
+      "fillRatio": 0.85
+     }
+    ]
+   }
+  },
+  {
+   "key": "motorisation",
+   "rectTop": 2375.6,
+   "rectH": 531.1,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 3,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 69,
+    "cards": [
+     {
+      "clef": "voitures_menage",
+      "famille": "composition",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 2471.2,
+       "w": 768,
+       "h": 214.2
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": null,
+      "labelTop": 2581.4,
+      "chipTop": null,
+      "vintageTop": 2614.4,
+      "fillRatio": 0.83
+     },
+     {
+      "clef": "bornes_recharge",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 936,
+       "y": 2471.2,
+       "w": 368,
+       "h": 214.2
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 955,
+      "insetLeftPx": 19,
+      "valueTop": 2488.2,
+      "labelTop": 2531.4,
+      "chipTop": 2564.4,
+      "vintageTop": 2601.2,
+      "fillRatio": 0.92
+     },
+     {
+      "clef": "bornes_ev_par_station_service",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 2709.4,
+       "w": 368,
+       "h": 197.4
+      },
+      "borderLeftPx": 3,
+      "contentLeftEdge": 155,
+      "insetLeftPx": 19,
+      "valueTop": 2726.4,
+      "labelTop": 2769.6,
+      "chipTop": 2802.6,
+      "vintageTop": 2839.4,
+      "fillRatio": 0.91
+     }
+    ]
+   }
+  },
+  {
+   "key": "offre-transports-commun",
+   "rectTop": 2938.8,
+   "rectH": 293,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32.1,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 23.9,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 1,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 68.9,
+    "cards": [
+     {
+      "clef": "offre_tc",
+      "famille": "scalar",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 3034.3,
+       "w": 768,
+       "h": 197.4
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": 3051.3,
+      "labelTop": 3094.5,
+      "chipTop": 3127.5,
+      "vintageTop": 3164.3,
+      "fillRatio": 0.91
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [
+  {
+   "where": "acces-aux-services/iso_alimentation",
+   "h": 235.2
+  },
+  {
+   "where": "acces-aux-services/tot_loss_t",
+   "h": 235.2
+  },
+  {
+   "where": "acces-aux-services/tot_loss_b",
+   "h": 256.2
+  },
+  {
+   "where": "acces-aux-services/iso_sante",
+   "h": 256.2
+  },
+  {
+   "where": "acces-aux-services/iso_administration",
+   "h": 256.2
+  },
+  {
+   "where": "acces-aux-services/iso_ecole",
+   "h": 235.2
+  },
+  {
+   "where": "acces-aux-services/iso_banque",
+   "h": 235.2
+  },
+  {
+   "where": "partage-de-lespace-public/places_stationnement_velo_1000",
+   "h": 231
+  },
+  {
+   "where": "partage-de-lespace-public/places_stationnement_voiture_1000",
+   "h": 231
+  },
+  {
+   "where": "partage-de-lespace-public/stationnement_velo_par_voiture",
+   "h": 231
+  }
+ ],
+ "rowsMisalign": [
+  {
+   "group": "acces-aux-services",
+   "rowTop": 819,
+   "cards": [
+    "iso_alimentation",
+    "tot_loss_t"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 21,
+   "vintageTopDelta": 21,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  },
+  {
+   "group": "acces-aux-services",
+   "rowTop": 1078,
+   "cards": [
+    "tot_loss_b",
+    "iso_sante",
+    "iso_administration"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 42,
+   "vintageTopDelta": 42,
+   "leftEdgeDelta": 802,
+   "insetLeftDelta": 2
+  },
+  {
+   "group": "motorisation",
+   "rowTop": 2471,
+   "cards": [
+    "voitures_menage",
+    "bornes_recharge"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 50,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 13.2,
+   "leftEdgeDelta": 819,
+   "insetLeftDelta": 19
+  }
+ ],
+ "accentEdgeNotes": [
+  {
+   "group": "acces-aux-services",
+   "rowTop": 819,
+   "cards": [
+    "iso_alimentation",
+    "tot_loss_t"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 21,
+   "vintageTopDelta": 21,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  },
+  {
+   "group": "acces-aux-services",
+   "rowTop": 1078,
+   "cards": [
+    "tot_loss_b",
+    "iso_sante",
+    "iso_administration"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 42,
+   "vintageTopDelta": 42,
+   "leftEdgeDelta": 802,
+   "insetLeftDelta": 2
+  },
+  {
+   "group": "partage-de-lespace-public",
+   "rowTop": 2113,
+   "cards": [
+    "places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000",
+    "stationnement_velo_par_voiture"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 0,
+   "leftEdgeDelta": 800,
+   "insetLeftDelta": 2
+  },
+  {
+   "group": "motorisation",
+   "rowTop": 2471,
+   "cards": [
+    "voitures_menage",
+    "bornes_recharge"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 50,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 13.2,
+   "leftEdgeDelta": 819,
+   "insetLeftDelta": 19
+  }
+ ],
+ "leftoverX": 120,
+ "spec": {
+  "width": 1440,
+  "height": 900,
+  "mobile": false
+ }
+}

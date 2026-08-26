@@ -1,0 +1,148 @@
+{
+ "url": "http://localhost:5173/territoire/region/53?theme=economie",
+ "viewport": {
+  "w": 1440,
+  "h": 900
+ },
+ "content": {
+  "rect": {
+   "x": 120,
+   "y": 289,
+   "w": 1200,
+   "h": 708
+  },
+  "maxWidthPx": 1200
+ },
+ "subgroups": [
+  {
+   "key": "sante-et-taille",
+   "rectTop": 359.3,
+   "rectH": 256.2,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": null,
+   "prevGridGaps": null,
+   "gapTitleToCadrage": 24,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 2,
+    "lastRowEmptyCells": 1,
+    "gapTitleToGrid": 69,
+    "cards": [
+     {
+      "clef": "effectifs_salaries",
+      "famille": "scalar",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 454.9,
+       "w": 768,
+       "h": 160.6
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": 471.9,
+      "labelTop": 515.1,
+      "chipTop": null,
+      "vintageTop": 548.1,
+      "fillRatio": 0.79
+     },
+     {
+      "clef": "chomage",
+      "famille": null,
+      "large": false,
+      "rect": {
+       "x": 936,
+       "y": 454.9,
+       "w": 368,
+       "h": 160.6
+      },
+      "borderLeftPx": 1,
+      "contentLeftEdge": 953,
+      "insetLeftPx": 17,
+      "valueTop": 471.9,
+      "labelTop": 515.1,
+      "chipTop": null,
+      "vintageTop": 548.1,
+      "fillRatio": 0.89
+     }
+    ]
+   }
+  },
+  {
+   "key": "structure-verte",
+   "rectTop": 647.5,
+   "rectH": 222.6,
+   "boundary": {
+    "borderTopPx": 0,
+    "background": "rgba(0, 0, 0, 0)",
+    "paddingTopPx": 0
+   },
+   "gapFromPrevGroup": 32,
+   "prevGridGaps": {
+    "rowGap": 24,
+    "colGap": 32
+   },
+   "gapTitleToCadrage": 23.9,
+   "grid": {
+    "columns": 3,
+    "columnGap": 32,
+    "rowGap": 24,
+    "cells": 1,
+    "lastRowEmptyCells": 2,
+    "gapTitleToGrid": 68.9,
+    "cards": [
+     {
+      "clef": "eco_activites",
+      "famille": "scalar",
+      "large": false,
+      "rect": {
+       "x": 136,
+       "y": 743,
+       "w": 768,
+       "h": 127
+      },
+      "borderLeftPx": 0,
+      "contentLeftEdge": 136,
+      "insetLeftPx": 0,
+      "valueTop": 760,
+      "labelTop": 803.2,
+      "chipTop": null,
+      "vintageTop": 836.2,
+      "fillRatio": 0.87
+     }
+    ]
+   }
+  }
+ ],
+ "figureOverCap": [],
+ "rowsMisalign": [],
+ "accentEdgeNotes": [
+  {
+   "group": "sante-et-taille",
+   "rowTop": 455,
+   "cards": [
+    "effectifs_salaries",
+    "chomage"
+   ],
+   "valueTopDelta": 0,
+   "labelTopDelta": 0,
+   "chipTopDelta": 0,
+   "vintageTopDelta": 0,
+   "leftEdgeDelta": 817,
+   "insetLeftDelta": 17
+  }
+ ],
+ "leftoverX": 120,
+ "spec": {
+  "width": 1440,
+  "height": 900,
+  "mobile": false
+ }
+}
