@@ -84,8 +84,16 @@ const nomTerritoire = computed(
   () => trouverTerritoire(props.payload, props.territoire)?.nom ?? props.territoire,
 )
 
-/** The flagship's snapshot stamp (ADR-0012) — the honest freshness claim. */
-const estampille = computed(() => estampilleSnapshot(props.payload))
+/**
+ * The flagship's snapshot stamp (ADR-0012) — the honest freshness claim,
+ * Mobilité's ALONE (issue #504): the payload store eagerly loads every theme
+ * and the selector reads only Mobilité snapshot facts, so a Démographie or
+ * Habitat tab would claim the flagship's slow clock unless the stamp is gated
+ * on the tab's own theme.
+ */
+const estampille = computed(() =>
+  props.theme === 'mobilite' ? estampilleSnapshot(props.payload) : null,
+)
 
 /** The chart's context subtitle — the current territory vs its same-scale group (ADR-0011). */
 const descriptionNuageComputed = computed(() =>
