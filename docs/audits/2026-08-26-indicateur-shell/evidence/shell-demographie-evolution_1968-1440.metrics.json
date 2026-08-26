@@ -1,0 +1,92 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/demographie/evolution_1968",
+  "viewport": {
+    "nom": "bureau",
+    "width": 1440,
+    "height": 900
+  },
+  "famille": "generique",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Évolution de la population depuis 1968",
+    "h1FontSize": "32px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Démographie",
+    "surTitreCouleur": "oklab(0.481401 0.0118893 -0.054955)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(142, 133, 196)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": true,
+    "medianFontFamily": "\"Newsreader Variable\"",
+    "medianFontSizePx": "112px",
+    "densitySvgPresente": true,
+    "extremesLiens": [
+      "/territoire/commune/35334?theme=demographie",
+      "/territoire/commune/29083?theme=demographie"
+    ],
+    "tableLignes": 1202,
+    "tableLigneSelection": null,
+    "tableScrollW": 1200,
+    "tableClientW": 1200,
+    "tableParentOverflowX": "visible",
+    "controlsFlexWrap": "wrap",
+    "paddingGaucheSection": "120px",
+    "paddingDroiteSection": "120px",
+    "contentMaxWidth": 1440,
+    "innerW": 1440,
+    "docScrollW": 1440,
+    "accentVar": "#8E85C4",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [
+      "commune",
+      "epci",
+      "departement"
+    ],
+    "heroColonnes": "592px 592px",
+    "heroColonneUnique": false
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}

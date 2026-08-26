@@ -1,0 +1,84 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/demographie/structure_age",
+  "viewport": {
+    "nom": "bureau",
+    "width": 1440,
+    "height": 900
+  },
+  "famille": "pyramid",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Structure par âge",
+    "h1FontSize": "32px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Démographie",
+    "surTitreCouleur": "oklab(0.481401 0.0118893 -0.054955)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(142, 133, 196)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": false,
+    "medianFontFamily": null,
+    "medianFontSizePx": null,
+    "densitySvgPresente": false,
+    "extremesLiens": [],
+    "tableLignes": 0,
+    "tableLigneSelection": null,
+    "tableScrollW": null,
+    "tableClientW": null,
+    "tableParentOverflowX": null,
+    "controlsFlexWrap": null,
+    "paddingGaucheSection": "120px",
+    "paddingDroiteSection": "120px",
+    "contentMaxWidth": 1440,
+    "innerW": 1440,
+    "docScrollW": 1440,
+    "accentVar": "#8E85C4",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [],
+    "heroColonnes": null
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}

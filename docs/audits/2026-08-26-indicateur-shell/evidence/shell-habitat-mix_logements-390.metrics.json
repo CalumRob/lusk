@@ -1,0 +1,84 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/habitat/mix_logements",
+  "viewport": {
+    "nom": "mobile",
+    "width": 390,
+    "height": 844
+  },
+  "famille": "composition",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Mix de logements",
+    "h1FontSize": "28px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Habitat",
+    "surTitreCouleur": "oklab(0.512421 0.0252774 0.0397027)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(201, 143, 110)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": false,
+    "medianFontFamily": null,
+    "medianFontSizePx": null,
+    "densitySvgPresente": false,
+    "extremesLiens": [],
+    "tableLignes": 0,
+    "tableLigneSelection": null,
+    "tableScrollW": null,
+    "tableClientW": null,
+    "tableParentOverflowX": null,
+    "controlsFlexWrap": null,
+    "paddingGaucheSection": "16px",
+    "paddingDroiteSection": "16px",
+    "contentMaxWidth": 390,
+    "innerW": 390,
+    "docScrollW": 390,
+    "accentVar": "#C98F6E",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [],
+    "heroColonnes": null
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}
