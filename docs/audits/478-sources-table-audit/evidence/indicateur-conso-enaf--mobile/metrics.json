@@ -1,0 +1,153 @@
+{
+  "page": "/indicateurs/milieux/conso_enaf_annuel",
+  "largeur": 375,
+  "viewport": {
+    "innerWidth": 375,
+    "innerHeight": 812
+  },
+  "scrollLargeurDoc": 375,
+  "clientLargeurDoc": 375,
+  "debordementHorizontal": 0,
+  "coquilleDroite": null,
+  "maxDroiteContenu": 0,
+  "pireContenu": "",
+  "debordementCoquille": null,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "div.tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.tiroir-tete",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.en-tete-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "span.lusk-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "svg.lusk-marque__ermine",
+      "left": 399,
+      "right": 425
+    },
+    {
+      "sel": "path",
+      "left": 403,
+      "right": 409
+    },
+    {
+      "sel": "span.lusk-marque__mot",
+      "left": 433,
+      "right": 473
+    },
+    {
+      "sel": "button.tiroir-fermer",
+      "left": 682,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.lucide-x-icon.lucide-x",
+      "left": 692,
+      "right": 716
+    },
+    {
+      "sel": "div.tiroir-recherche",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.global-search",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "div.global-search__bar",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.global-search__icone.lucide-search-icon",
+      "left": 412,
+      "right": 430
+    },
+    {
+      "sel": "circle",
+      "left": 414,
+      "right": 426
+    },
+    {
+      "sel": "input.global-search__champ",
+      "left": 430,
+      "right": 725
+    },
+    {
+      "sel": "nav.nav-tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "span.tiroir-lien.tiroir-groupe-titre",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.tiroir-lien.tiroir-lien--sous",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "table",
+      "left": 81,
+      "right": 443
+    },
+    {
+      "sel": "caption",
+      "left": 81,
+      "right": 443
+    },
+    {
+      "sel": "thead",
+      "left": 81,
+      "right": 443
+    },
+    {
+      "sel": "tr",
+      "left": 81,
+      "right": 443
+    },
+    {
+      "sel": "th",
+      "left": 342,
+      "right": 443
+    },
+    {
+      "sel": "tbody",
+      "left": 81,
+      "right": 443
+    }
+  ],
+  "hauteurPagePx": 85043,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [],
+  "titrePage": "Consommation d’ENAF — série annuelle",
+  "url": "/indicateurs/milieux/conso_enaf_annuel?detail=2024&niveau=commune"
+}

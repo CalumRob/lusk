@@ -1,0 +1,336 @@
+{
+  "note": "Associations attendues = jointure publiée theme_*.json (mêmes règles que sourceRecords). Les jeux sans consommateur sont filtrés HORS de /sources par SourcesView.",
+  "jeux": {
+    "rp_logement_princ": {
+      "nom": "INSEE — Recensement de la population, logements (LOG T12)",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/voitures_menage (sources (primaire))"
+      ]
+    },
+    "amenagements_cyclables": {
+      "nom": "Geovelo — Aménagements cyclables France Métropolitaine",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/reseaux (sources (primaire))"
+      ]
+    },
+    "korrigo": {
+      "nom": "Bretagne Mobilité — Korrigo",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/offre_tc (sources (primaire))"
+      ]
+    },
+    "bornes-recharges": {
+      "nom": "Etalab — Bornes de recharge pour véhicules électriques",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/bornes_recharge (sources (primaire))",
+        "mobilite/bornes_ev_par_station_service (indicator_pages.sources (secondaire))"
+      ]
+    },
+    "stationnement-velo": {
+      "nom": "Ecolab — Stationnement vélo",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/places_stationnement_velo_1000 (sources (primaire))",
+        "mobilite/stationnement_velo_par_voiture (indicator_pages.sources (secondaire))"
+      ]
+    },
+    "osm_reseaux": {
+      "nom": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/places_stationnement_voiture_1000 (sources (primaire))",
+        "mobilite/stationnement_velo_par_voiture (sources (primaire))",
+        "mobilite/offre_cyclable (sources (primaire))"
+      ]
+    },
+    "mobilite_snapshot": {
+      "nom": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/tot_loss_t (sources (primaire))",
+        "mobilite/tot_loss_b (sources (primaire))",
+        "mobilite/iso_alimentation (sources (primaire))",
+        "mobilite/iso_sante (sources (primaire))",
+        "mobilite/iso_administration (sources (primaire))",
+        "mobilite/iso_ecole (sources (primaire))",
+        "mobilite/iso_banque (sources (primaire))"
+      ]
+    },
+    "bpe_b316": {
+      "nom": "INSEE — Base permanente des équipements (B316)",
+      "themesConsommateurs": [
+        "mobilite"
+      ],
+      "themesAvecRecordAutorite": [
+        "mobilite"
+      ],
+      "consommateurs": [
+        "mobilite/bornes_ev_par_station_service (sources (primaire))"
+      ]
+    },
+    "serie_historique": {
+      "nom": "INSEE — Série historique du recensement",
+      "themesConsommateurs": [
+        "demographie"
+      ],
+      "themesAvecRecordAutorite": [
+        "demographie",
+        "milieux"
+      ],
+      "consommateurs": [
+        "demographie/densite (sources (primaire))",
+        "demographie/evolution_1968 (sources (primaire))"
+      ]
+    },
+    "age_detail": {
+      "nom": "INSEE — Population par sexe et âge (PRINC)",
+      "themesConsommateurs": [
+        "demographie"
+      ],
+      "themesAvecRecordAutorite": [
+        "demographie"
+      ],
+      "consommateurs": [
+        "demographie/structure_age (sources (primaire))"
+      ]
+    },
+    "menages": {
+      "nom": "INSEE — Ménages (dossier complet)",
+      "themesConsommateurs": [
+        "demographie"
+      ],
+      "themesAvecRecordAutorite": [
+        "demographie"
+      ],
+      "consommateurs": [
+        "demographie/taille_menages (sources (primaire))"
+      ]
+    },
+    "epci": {
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "themesConsommateurs": [],
+      "themesAvecRecordAutorite": [
+        "demographie"
+      ],
+      "consommateurs": []
+    },
+    "logements": {
+      "nom": "INSEE — Logements (dossier complet)",
+      "themesConsommateurs": [
+        "habitat"
+      ],
+      "themesAvecRecordAutorite": [
+        "habitat"
+      ],
+      "consommateurs": [
+        "habitat/mix_logements (sources (primaire))",
+        "habitat/statut (sources (primaire))",
+        "habitat/age_du_bati (sources (primaire))",
+        "habitat/type (sources (primaire))"
+      ]
+    },
+    "dvf": {
+      "nom": "Étalab — DVF géolocalisées",
+      "themesConsommateurs": [
+        "habitat"
+      ],
+      "themesAvecRecordAutorite": [
+        "habitat"
+      ],
+      "consommateurs": [
+        "habitat/prix_m2 (sources (primaire))"
+      ]
+    },
+    "dpe": {
+      "nom": "ADEME — Observatoire DPE, logements existants",
+      "themesConsommateurs": [
+        "habitat"
+      ],
+      "themesAvecRecordAutorite": [
+        "habitat"
+      ],
+      "consommateurs": [
+        "habitat/part_passoires (sources (primaire))",
+        "habitat/distribution_dpe (sources (primaire))"
+      ]
+    },
+    "flores_a88": {
+      "nom": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",
+      "themesConsommateurs": [
+        "economie"
+      ],
+      "themesAvecRecordAutorite": [
+        "economie"
+      ],
+      "consommateurs": [
+        "economie/effectifs_salaries (sources (primaire))"
+      ]
+    },
+    "rp_chomage": {
+      "nom": "INSEE — Population active et chômage (dossier complet)",
+      "themesConsommateurs": [
+        "economie"
+      ],
+      "themesAvecRecordAutorite": [
+        "economie"
+      ],
+      "consommateurs": [
+        "economie/chomage (sources (primaire))"
+      ]
+    },
+    "sirene_snapshot": {
+      "nom": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+      "themesConsommateurs": [
+        "economie"
+      ],
+      "themesAvecRecordAutorite": [
+        "economie"
+      ],
+      "consommateurs": [
+        "economie/eco_activites (sources (primaire))"
+      ]
+    },
+    "consoenaf": {
+      "nom": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025",
+      "themesConsommateurs": [
+        "milieux"
+      ],
+      "themesAvecRecordAutorite": [
+        "milieux"
+      ],
+      "consommateurs": [
+        "milieux/conso_enaf_annuel (sources (primaire))"
+      ]
+    },
+    "ocsge_artificialisation": {
+      "nom": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)",
+      "themesConsommateurs": [
+        "milieux"
+      ],
+      "themesAvecRecordAutorite": [
+        "milieux"
+      ],
+      "consommateurs": [
+        "milieux/artif_par_habitant (sources (primaire))"
+      ]
+    },
+    "acv": {
+      "nom": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
+      "themesConsommateurs": [
+        "programmes"
+      ],
+      "themesAvecRecordAutorite": [
+        "programmes"
+      ],
+      "consommateurs": [
+        "programmes/couverture_programmes (sources (primaire))"
+      ]
+    },
+    "pvd": {
+      "nom": "ANCT — Programme Petites villes de demain : liste des communes sélectionnées (COG 2025)",
+      "themesConsommateurs": [],
+      "themesAvecRecordAutorite": [
+        "programmes"
+      ],
+      "consommateurs": []
+    },
+    "crte": {
+      "nom": "ANCT — Contrat de relance et de transition écologique : suivi du périmètre (COG 2025)",
+      "themesConsommateurs": [],
+      "themesAvecRecordAutorite": [
+        "programmes"
+      ],
+      "consommateurs": []
+    },
+    "territoires_industrie": {
+      "nom": "ANCT/Banque des Territoires — liste des Territoires d'industrie et des communes concernées",
+      "themesConsommateurs": [],
+      "themesAvecRecordAutorite": [
+        "programmes"
+      ],
+      "consommateurs": []
+    },
+    "subventions_scdl": {
+      "nom": "Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh",
+      "themesConsommateurs": [
+        "programmes"
+      ],
+      "themesAvecRecordAutorite": [
+        "programmes"
+      ],
+      "consommateurs": [
+        "programmes/subventions_annuelles (sources (primaire))",
+        "programmes/subventions_par_domaine (sources (primaire))"
+      ]
+    }
+  },
+  "autoriteSansConsommateur_filtresHorsPage": [
+    {
+      "jeu": "crte",
+      "nom": "ANCT — Contrat de relance et de transition écologique : suivi du périmètre (COG 2025)",
+      "themesAutorite": [
+        "programmes"
+      ]
+    },
+    {
+      "jeu": "epci",
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "themesAutorite": [
+        "demographie"
+      ]
+    },
+    {
+      "jeu": "pvd",
+      "nom": "ANCT — Programme Petites villes de demain : liste des communes sélectionnées (COG 2025)",
+      "themesAutorite": [
+        "programmes"
+      ]
+    },
+    {
+      "jeu": "territoires_industrie",
+      "nom": "ANCT/Banque des Territoires — liste des Territoires d'industrie et des communes concernées",
+      "themesAutorite": [
+        "programmes"
+      ]
+    }
+  ]
+}
