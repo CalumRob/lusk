@@ -147,14 +147,6 @@ compter_trajets_actifs_par_reseau <- function(agences, lignes, trajets,
 # millésime devra re-faire ce constat et re-déclarer SA liste.
 RESEAUX_SANS_SERVICE_ACCEPTES_KORRIGO_80335 <- c("CORALIE", "LINEOTIML30")
 
-NOTE_RESEAUX_SANS_SERVICE_ACCEPTES <- paste0(
-  "Réseaux sans service documentés du millésime KorrigoBret v80335 ",
-  "(constat E2b, research note accessibilite-extra-communale.md §5b) : ",
-  "CORALIE « Réseau Coralie (Concarneau Cornouaille Agglomération) » et ",
-  "LINEOTIML30 « LinéotimL30 (Morlaix) » — aucun trajet publié à l'horizon ",
-  "chargé. Acceptés par décision, jamais silencieux : tout AUTRE réseau ",
-  "sombre bloque la promotion.")
-
 # verifier_presence_reseaux ---------------------------------------------------------
 # LA PORTE : les réseaux sans service non-documentés bloquent la promotion.
 # `presence` est la sortie de compter_trajets_actifs_par_reseau() ;
