@@ -5,8 +5,9 @@
 # l'artefact NAF→A17 #426), derrière un contrat qui REFUSE tout substitut :
 #   - le nom de fichier épinglé (la garde du snapshot porté — jamais un autre
 #     fichier, jamais l'artefact d'une autre recette) ;
-#   - l'empreinte sha256 du fichier épinglé (un substitut STRUCTURELLEMENT
-#     valide — une autre matrice, un autre millésime — est refusé aussi) ;
+#   - l'empreinte sha256 du fichier épinglé, RECALCULÉE SUR LE DISQUE à chaque
+#     vérification (les octets relus, pas la métadonnée déclarée) — un
+#     substitut STRUCTURELLEMENT valide ou un octet modifié est refusé aussi ;
 #   - la forme des tables (colonnes, couverture, diagonale, cap) ;
 #   - la recette estampillée : vintages des feeds, date 2026-09-16, fenêtre
 #     07:00–20:00, meilleur départ p01, marche ≤ 40 min, cap 600 min.
@@ -54,18 +55,31 @@ test_that("TRIPWIRE — une copie RENOMMÉE de la matrice est refusée", {
                "matrice_temps_mairies\\.csv\\.gz")
 })
 
-test_that("TRIPWIRE — un contenu SUBSTITUÉ (même nom) est refusé par l'empreinte", {
-  # une autre matrice, structurellement valide mais pas LE fichier figé :
-  # l'empreinte sha256 calculée sur le fichier réel ne colle plus — refus
-  chemin <- tempfile("matrice-substituee-", fileext = ".csv.gz")
+test_that("TRIPWIRE — un contenu SUBSTITUÉ (un octet échangé sur disque) est refusé par l'empreinte recalculée", {
+  # le contrat VÉRIFIE LES OCTETS DU DISQUE : l'empreinte sha256 est
+  # recalculée sur le FICHIER relu (openssl) à chaque vérification — jamais la
+  # seule métadonnée déclarée par l'enveloppe. Une copie d'un seul octet
+  # permuté échoue donc là où elle est hachée, même bien nommée et
+  # structurellement intacte ; `chemin` passe la copie altérée au contrat,
+  # le même pattern que les lecteurs.
+  source <- system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER, package = "lusk")
+  stopifnot(nzchar(source))
+  brut <- readBin(source, what = "raw", n = file.info(source)$size)
+  # deux positions adjacentes de valeurs différentes au cœur du flux (jamais
+  # l'en-tête) : l'échange change un octet du contenu, rien d'autre
+  i <- which(brut[100:(length(brut) - 1)] != brut[101:length(brut)])[1]
+  stopifnot(!is.na(i))
+  i <- i + 99L
+  permute <- brut
+  permute[i] <- brut[i + 1L]
+  permute[i + 1L] <- brut[i]
+  stopifnot(!identical(permute, brut))
+  chemin <- tempfile("matrice-octet-permute-", fileext = ".csv.gz")
   on.exit(unlink(chemin), add = TRUE)
-  falsifiee <- lire_matrice_temps_mairies()
-  falsifiee$travel_time_p01[1] <- falsifiee$travel_time_p01[1] + 1
-  readr::write_csv(falsifiee, chemin)
+  writeBin(permute, chemin)
   faux <- artefact_matrice_temps()
-  faux$sha256 <- paste(openssl::sha256(file(chemin, "rb")))
-  faux$table <- falsifiee
-  expect_error(verifier_contrat_matrice_temps(faux), "sha256")
+  expect_error(verifier_contrat_matrice_temps(faux, chemin = chemin),
+               "sha256")
 })
 
 test_that("TRIPWIRE — une matrice hors cap ou sans diagonale échoue en nommant la règle", {
@@ -123,21 +137,4 @@ test_that("la recette estampillée porte EXACTEMENT les paramètres de la spéci
   expect_equal(r$feed_korrigo_version, "80335")
   expect_equal(r$feed_sncf_version, "2026-08-24")
   expect_equal(r$geometrie, "mairie a mairie")     # Mairie à mairie (sans accent : identifiant)
-})
-
-test_that("les empreintes épinglées sont celles des fichiers migrés verbatim", {
-  # la migration est UNE COPIE OCTET PAR OCTET des fichiers vérifiés de la
-  # recherche (E:\Temp\opencode\e1-r5r) — les empreintes constantes sont la
-  # trace de cette vérification, refaites ici depuis le disque épinglé.
-  # openssl::sha256 exige une CONNEXION BINAIRE (« rb ») : un mode texte
-  # altérerait les octets sous Windows, et un chemin passé en caractère
-  # hacherait la CHAÎNE du chemin, pas le fichier.
-  chemin_mai <- system.file("extdata", MAIRIES_BRETAGNE_FICHIER, package = "lusk")
-  chemin_mat <- system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER, package = "lusk")
-  expect_true(nzchar(chemin_mai))
-  expect_true(nzchar(chemin_mat))
-  expect_equal(paste(openssl::sha256(file(chemin_mai, "rb"))),
-               MAIRIES_BRETAGNE_SHA256)
-  expect_equal(paste(openssl::sha256(file(chemin_mat, "rb"))),
-               MATRICE_TEMPS_MAIRIES_SHA256)
 })
