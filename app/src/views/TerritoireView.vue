@@ -27,6 +27,11 @@ import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
+// [PROTOTYPE #499 — JETABLE] le registre des variantes de lecture — dev seul.
+import {
+  CommutateurPrototype,
+  varianteDeUrl,
+} from '@/fiche/prototype/variantes'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -145,11 +150,24 @@ const classesFond = computed(() =>
   selection.value ? `fiche--theme-${selection.value}` : '',
 )
 
+/**
+ * [PROTOTYPE #499 — JETABLE] La variante de lecture demandée par
+ * ?variant=A|B|C — null hors développement ou sans paramètre valide. Le
+ * chargement et l'état restent CI-DESSUS : la variante reçoit le payload
+ * déjà réglé et ne fetch jamais. L'onglet « Programmes et subventions »
+ * garde SA présentation propre (BlocProgrammes) dans toutes les variantes —
+ * le prototype explore les cinq thèmes éditoriaux.
+ */
+const variante = computed(() => varianteDeUrl(route.query.variant))
+const prototypeActif = import.meta.env.DEV
+
 function choisirOnglet(slug: SlugOnglet): void {
   // La fiche n'émet que des slugs de thème (pas de pseudo-onglet depuis
   // #408) — la garde garde la jointure de type pour les autres shells.
   if (slug === null || !(THEMES_CANONIQUES as readonly string[]).includes(slug)) return
-  router.replace({ query: { theme: slug } })
+  // Les AUTRES paramètres de requête sont conservés (?variant= du prototype
+  // #499 survit au changement d'onglet).
+  router.replace({ query: { ...route.query, theme: slug } })
 }
 
 watch(
@@ -169,7 +187,11 @@ watch(
 </script>
 
 <template>
-  <section class="fiche" :class="classesFond" :aria-busy="chargement ? 'true' : 'false'">
+  <section
+    class="fiche"
+    :class="[classesFond, { 'fiche--prototype': prototypeActif }]"
+    :aria-busy="chargement ? 'true' : 'false'"
+  >
     <div class="fiche-en-tete-surface">
       <div class="fiche-en-tete">
       <div
@@ -266,6 +288,15 @@ watch(
               :payload="payload"
               :territoire="String(route.params.id)"
             />
+            <!-- [PROTOTYPE #499] la variante remplace OngletTheme sur les
+                 cinq thèmes éditoriaux — même props, zéro fetch propre. -->
+            <component
+              :is="variante.composant"
+              v-else-if="ongletTheme && variante"
+              :theme="ongletTheme.theme"
+              :payload="ongletTheme.payload"
+              :territoire="String(route.params.id)"
+            />
             <OngletTheme
               v-else-if="ongletTheme"
               :theme="ongletTheme.theme"
@@ -276,6 +307,9 @@ watch(
         </template>
       </div>
     </template>
+
+    <!-- [PROTOTYPE #499] le commutateur fixe du bas — dev uniquement. -->
+    <CommutateurPrototype v-if="prototypeActif && CommutateurPrototype" />
   </section>
 </template>
 
@@ -466,5 +500,10 @@ watch(
   max-width: var(--content-max-width);
   margin-inline: auto;
   padding: var(--space-6) var(--grid-margin-mobile) var(--space-12);
+}
+
+/* [PROTOTYPE #499] la place du commutateur fixe du bas. */
+.fiche--prototype {
+  padding-bottom: 96px;
 }
 </style>
