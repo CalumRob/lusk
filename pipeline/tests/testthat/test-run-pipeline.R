@@ -94,15 +94,17 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
     },
     # issue #311 : la publication des métadonnées (theme_<theme>.json) est une
     # étape SÉPARÉE du payload — le run la branche après les faits, avec les
-    # vintages du thème et la garde theme_attendu (le seam lui-même est testé
-    # dans test-publier-theme-metadata.R)
+    # vintages du thème, la garde theme_attendu et les directions du module
+    # (#506) (le seam lui-même est testé dans test-publier-theme-metadata.R)
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,
-                                      theme_attendu = NULL) {
+                                      theme_attendu = NULL,
+                                      directions_module = NULL) {
       appels$meta <- appels$meta + 1
       appels$meta_metadata <- metadata
       appels$meta_cible <- sortie
       appels$meta_vintages <- vintages
       appels$meta_attendu <- theme_attendu
+      appels$meta_directions <- directions_module
       invisible(metadata)
     },
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
@@ -171,6 +173,9 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   expect_equal(appels$meta_cible, "public/data")
   expect_identical(appels$meta_vintages, faux_vintages)
   expect_equal(appels$meta_attendu, "demographie")
+  # issue #506 : le run transmet les directions du module — la croisée
+  # descripteur ↔ module vit à la publication
+  expect_identical(appels$meta_directions, theme_demographie()$directions)
 
   # issue #10 : le rapport de run est écrit avec les statuts capturés depuis
   # download_sources(), le mode du run et la même cible que le payload
@@ -208,7 +213,8 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,
-                                      theme_attendu = NULL)
+                                      theme_attendu = NULL,
+                                      directions_module = NULL)
       invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
@@ -261,7 +267,8 @@ test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapp
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,
-                                      theme_attendu = NULL)
+                                      theme_attendu = NULL,
+                                      directions_module = NULL)
       invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL) {
