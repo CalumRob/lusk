@@ -1,17 +1,20 @@
 <script setup lang="ts">
 /**
- * AppFooter (site-map.md §Footer): one serif attribution line, the freshness
- * line computed from the payload via ligneFraicheur (the payload is fetched
- * once per session by usePayload — shared with the fiche view), links to
- * Méthodes, À propos and calumrobertson.fr.
+ * AppFooter (#410): one serif attribution line, the freshness line computed
+ * from the payload via ligneFraicheur (the payload is fetched once per
+ * session by usePayload — shared with the fiche view), links to Sources,
+ * À propos and calumrobertson.fr.
+ *
+ * La bascule (#410) : ni Méthodes ni Carte ici — le pied de page ne porte
+ * plus aucun lien vers les surfaces retirées. La ligne de fraîcheur et le
+ * lien « Sources » mènent à la page Sources (#406).
  *
  * The wait-set of the shell (T3, #299) — territoires + run-report — gates
  * nothing visible here (the footer never renders a skeleton), but it scopes
  * `erreur` to the shell's own files: a background failure elsewhere can never
  * mask the real freshness line. The freshness line degrades honestly: the
  * static-rhythm claim while run-report hasn't landed and on error (never a
- * pretend freshness). The line links to the vintage table section of
- * /methodologie (site-map.md §Cross-links).
+ * pretend freshness).
  */
 import { computed } from 'vue'
 
@@ -43,13 +46,13 @@ const ligneFraicheurAffichée = computed(() => {
 
       <RouterLink
         v-if="ligneFraicheurAffichée"
-        :to="{ path: '/methodologie' }"
+        to="/sources"
         class="pied-fraicheur"
       >{{ ligneFraicheurAffichée }}</RouterLink>
       <div v-else class="squelette squelette--fraicheur" role="status" aria-label="Chargement des données" />
 
       <nav class="pied-liens" aria-label="Liens du pied de page">
-        <RouterLink to="/methodologie">Sources &amp; Méthodes</RouterLink>
+        <RouterLink to="/sources">Sources</RouterLink>
         <RouterLink to="/a-propos">À propos</RouterLink>
         <a
           href="https://calumrobertson.fr"

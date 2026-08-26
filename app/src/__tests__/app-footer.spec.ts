@@ -20,11 +20,14 @@ import { PayloadError } from '../payload/validate'
 import { routes } from '../router'
 
 /**
- * AppFooter (site-map.md §Footer): one serif attribution line (« Conçu par
- * Calum Robertson — Docteur en économie urbaine. »), the freshness line
- * computed from the payload via ligneFraicheur, links to Méthodes, À propos
- * and calumrobertson.fr. The freshness line degrades honestly: skeleton
- * while loading, the static-rhythm claim on error.
+ * AppFooter (#410): one serif attribution line (« Conçu par Calum Robertson
+ * — Docteur en économie urbaine. »), the freshness line computed from the
+ * payload via ligneFraicheur, links to Sources, À propos and
+ * calumrobertson.fr. The freshness line degrades honestly: skeleton while
+ * loading, the static-rhythm claim on error.
+ *
+ * La bascule (#410) : le pied de page ne pointe plus ni /methodologie ni
+ * /carte — la fraîcheur et « Sources » mènent à la page Sources (#406).
  */
 
 const payload: Payload = {
@@ -59,17 +62,36 @@ describe('AppFooter — la ligne d’attribution', () => {
     expect(lien.attributes('href')).toBe('https://calumrobertson.fr')
   })
 
-  it('links to Méthodes, À propos and calumrobertson.fr', async () => {
+  it('links to Sources, À propos and calumrobertson.fr — plus jamais Méthodes (#410)', async () => {
     const wrapper = await monter(chargerAvec(payload))
 
     const liens = wrapper.findAll('a').map((l) => l.attributes('href'))
-    expect(liens).toContain('/methodologie')
+    expect(liens).toContain('/sources')
     expect(liens).toContain('/a-propos')
     expect(liens).toContain('https://calumrobertson.fr')
+    expect(liens).not.toContain('/methodologie')
+    expect(liens).not.toContain('/carte')
+  })
+
+  it('labels the Sources link « Sources » — la copie produit ne survit pas à l’architecture retirée', async () => {
+    const wrapper = await monter(chargerAvec(payload))
+
+    const liens = wrapper.findAll('.pied-liens a').map((l) => l.text().trim())
+    expect(liens).toEqual(['Sources', 'À propos', 'calumrobertson.fr'])
   })
 })
 
 describe('AppFooter — la ligne de fraîcheur', () => {
+  it('mène la ligne de fraîcheur à la page Sources (#406, #410)', async () => {
+    const wrapper = await monter(chargerAvec(payload))
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const fraicheur = wrapper.find('a.pied-fraicheur')
+    expect(fraicheur.exists()).toBe(true)
+    expect(fraicheur.attributes('href')).toBe('/sources')
+  })
+
   it('shows the honest static-rhythm claim while run-report hasn\u2019t landed (the payload grows)', async () => {
     const enAttente = new Promise<unknown>(() => {})
     const wrapper = await monter(() => enAttente)
