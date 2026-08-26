@@ -58,6 +58,44 @@ export function dansScope(territoire: Territoire, niveau: NiveauIndicateur, depa
 
 const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes', epci: 'EPCI', departement: 'départements' }
 
+type ResolutionTerritoire =
+  | { statut: 'silence'; ref: null; nom: null; message: null }
+  | { statut: 'introuvable'; ref: null; nom: null; message: string }
+  | { statut: 'horsPerimetre'; ref: Territoire; nom: string; message: string }
+  | { statut: 'actif'; ref: Territoire; nom: string; message: null }
+
+/**
+ * La jointure commune du territoire mis en avant (#472/#441) : une seule
+ * recherche de référence, un seul verdict d'appartenance au niveau demandé
+ * et les formulations d'absence qui en découlent. Les modèles gardent leurs
+ * formes publiques propres, mais ne recalculent jamais ces états.
+ */
+function resoudreTerritoire(
+  territoires: readonly Territoire[],
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): ResolutionTerritoire {
+  if (!etat.territoire) return { statut: 'silence', ref: null, nom: null, message: null }
+
+  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
+  if (!ref) {
+    return {
+      statut: 'introuvable',
+      ref: null,
+      nom: null,
+      message: 'Territoire sélectionné absent à ce niveau de comparaison.',
+    }
+  }
+  if (!dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
+    return {
+      statut: 'horsPerimetre',
+      ref,
+      nom: ref.nom,
+      message: `${ref.nom} : territoire absent à ce niveau de comparaison.`,
+    }
+  }
+  return { statut: 'actif', ref, nom: ref.nom, message: null }
+}
+
 /**
  * La situation résolue d'une Page d'indicateur (#472) — LA source unique de la
  * note de contexte permanente ET de la référence de périmètre des compositions :
@@ -67,9 +105,8 @@ const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes',
  * resserré au département ou à l'EPCI au niveau commune seulement.
  */
 export function situationContexte(territoires: readonly Territoire[], etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string }): { ref: Territoire | null; nom: string | null; horsPerimetre: boolean; introuvable: boolean; univers: string } {
+  const resolution = resoudreTerritoire(territoires, etat)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const ref = etat.territoire ? refs.get(etat.territoire) ?? null : null
-  const horsPerimetre = Boolean(ref && !dansScope(ref, etat.niveau, etat.departement, etat.epci))
   const niveau = LIBELLES_NIVEAU[etat.niveau]
   let univers = `les ${niveau} de Bretagne`
   if (etat.niveau === 'commune' && etat.departement) {
@@ -79,7 +116,7 @@ export function situationContexte(territoires: readonly Territoire[], etat: { ni
     const epci = refs.get(etat.epci)
     univers = epci ? `les communes de l’EPCI ${epci.nom}` : `les communes de l’EPCI ${etat.epci}`
   }
-  return { ref, nom: ref?.nom ?? null, horsPerimetre, introuvable: Boolean(etat.territoire) && !ref, univers }
+  return { ref: resolution.ref, nom: resolution.nom, horsPerimetre: resolution.statut === 'horsPerimetre', introuvable: resolution.statut === 'introuvable', univers }
 }
 
 /**
@@ -363,14 +400,10 @@ export function selectionTerritoire(
   territoires: readonly Territoire[],
   etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
 ): SelectionTerritoire {
-  if (!etat.territoire) return { kind: 'silence' }
-  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
-  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
-    return ref
-      ? { kind: 'horsScope', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.` }
-      : { kind: 'horsScope', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.' }
-  }
-  return { kind: 'active', ref }
+  const resolution = resoudreTerritoire(territoires, etat)
+  if (resolution.statut === 'silence') return { kind: 'silence' }
+  if (resolution.statut === 'actif') return { kind: 'active', ref: resolution.ref }
+  return { kind: 'horsScope', nom: resolution.nom, message: resolution.message }
 }
 
 /**

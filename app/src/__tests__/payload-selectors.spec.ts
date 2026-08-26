@@ -104,6 +104,11 @@ describe('formaterRang — the rank-in-context chip (ADR-0015)', () => {
     expect(formaterRang(null, null, 'rang_epci')).toBeNull()
     expect(formaterRang(null, null, 'rang_reg')).toBeNull()
   })
+
+  it('formats a page-table rank without adding a comparison-group suffix', () => {
+    expect(formaterRang(1, 41)).toBe('1er / 41')
+    expect(formaterRang(41, 41)).toBe('41e / 41')
+  })
 })
 
 describe('ligneFraicheur — the freshness line', () => {
