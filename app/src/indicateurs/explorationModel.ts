@@ -80,10 +80,21 @@ export function situationContexte(territoires: readonly Territoire[], etat: { ni
   return { ref, nom: ref?.nom ?? null, horsPerimetre, introuvable: Boolean(etat.territoire) && !ref, univers }
 }
 
+/**
+ * Le payload de la vue Carte : les faits de la facette résolue, dans le périmètre.
+ *
+ * Le sexe n'est PAS filtré ici alors même que la facette peut en déclarer un
+ * (pyramide) : `resoudreGroupeSexe` (fusion.ts, #390) agrège F + M en une ligne
+ * par territoire et JETTE par contrat tout groupe unisexe — peindre la moitié
+ * d'une pyramide comme si c'était le tout est un mensonge cartographique. Un
+ * pré-filtrage par `facet.sex` l'affamerait (0 ligne « M ») et ferait planter
+ * le watcher de peinture : l'onglet Carte mourrait sur les pages pyramides.
+ * L'agrégation par sexes appartient à la fusion, au moment de la peinture.
+ */
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat: { niveau: NiveauIndicateur; departement?: string; epci?: string }): Payload {
   const { niveau, departement, epci } = etat
   const ids = new Set(payload.territoires.filter((territory) => dansScope(territory, niveau, departement, epci)).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (fact.dimension ?? null) === facet.dimension && fact.type === niveau && ids.has(fact.territoire)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
