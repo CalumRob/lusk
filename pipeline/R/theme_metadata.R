@@ -359,9 +359,15 @@ valider_template <- function(template, params, cle, manquer) {
 # jsonlite :: fromJSON(simplifyVector = FALSE) — des listes imbriquées).
 # vintages, quand elle est passée (le run réel), vérifie la politique de
 # source de référence : chaque source déclarée existe dans la table partagée.
+# directions_module, quand il est passé (le run réel — theme_<theme>()$
+# directions), croise les DIRECTIONS : la direction déclarée par chaque page
+# d'indicateur doit égaler celle du module de thème qui calcule les rangs
+# publiés (compute_ranks) — une clé absente du registre vaut « high », le
+# défaut exact de la machinerie de rangs (#506).
 # Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
 # faux publié silencieusement.
-valider_theme_metadata <- function(metadata, vintages = NULL) {
+valider_theme_metadata <- function(metadata, vintages = NULL,
+                                   directions_module = NULL) {
   manquer <- function(champ, detail) {
     stop(sprintf("Métadonnées du thème invalides — %s : %s.", champ, detail),
          call. = FALSE)
@@ -742,6 +748,29 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     }
     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
       manquer("indicator_pages.direction", "la direction doit être high ou low")
+    }
+    # La concordance des directions (#506) : la direction déclarée par la
+    # page (le glyphe ▲▼ et les rangs Repères de la Page d'indicateur) doit
+    # ÉGALER celle du module de thème qui classe les rangs publiés lus par
+    # les chips de fiche (theme_<theme>()$directions -> compute_ranks). Une
+    # clé absente du registre du module vaut « high » — le défaut EXACT de
+    # compute_ranks : jamais un « moins = mieux » qui signifierait deux
+    # choses selon la surface, la dérive meurt à l'écriture.
+    if (!is.null(directions_module)) {
+      direction_module <- if (!is.null(directions_module[[indicator_key]])) {
+        directions_module[[indicator_key]]
+      } else {
+        "high"
+      }
+      if (!identical(page$direction, direction_module)) {
+        manquer(paste0("indicator_pages.", indicator_key, ".direction"),
+                paste0(
+                  "la direction du descripteur (« ", page$direction,
+                  " ») contredit celle du module de thème (« ",
+                  direction_module,
+                  " ») — la Page d'indicateur et les rangs publiés de la ",
+                  "fiche diraient l'inverse du même territoire"))
+      }
     }
     if (is.null(page$levels) || length(page$levels) == 0L ||
         anyDuplicated(unlist(page$levels, use.names = FALSE)) ||

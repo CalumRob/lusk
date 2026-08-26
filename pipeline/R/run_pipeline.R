@@ -91,11 +91,15 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # métadonnées ne recompute JAMAIS les tables de faits : l'étape n'écrit que
   # theme_<theme>.json. Le nom du fichier dérive du thème VALIDÉ du contenu
   # (jamais d'un paramètre) et la garde theme_attendu refuse qu'un thème
-  # écrive le fichier d'un autre — la collision est impossible.
+  # écrive le fichier d'un autre — la collision est impossible. Issue #506 :
+  # le run passe AUSSI les directions du module (theme$directions) — la
+  # direction déclarée par chaque page d'indicateur est croisée contre celle
+  # qui classe les rangs publiés, la contradiction échoue à l'écriture.
   if ("metadata" %in% names(theme)) {
     publier_theme_metadata(theme$metadata(), sortie,
                            vintages = vintages,
-                           theme_attendu = theme$theme)
+                           theme_attendu = theme$theme,
+                           directions_module = theme$directions)
   }
   # Issue #60 : la géométrie du fond de carte (ADR-0008) est un artefact
   # partagé, pas une table du thème — le run la publie vers la MÊME cible que

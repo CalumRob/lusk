@@ -293,7 +293,8 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
           theme_ <- .(theme_descripteur)
           publier_theme_metadata(theme_$metadata(), .(sortie),
                                  vintages = .(vintages),
-                                 theme_attendu = theme_$theme)
+                                 theme_attendu = theme_$theme,
+                                 directions_module = theme_$directions)
         })
       )
     ))
@@ -725,9 +726,14 @@ programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN) {
       bquote({
         publie_programmes
         fichier_metadata_programmes
+        # directions_module : theme_programmes() n'expose PAS de registre de
+        # directions (le thème ne classe pas, ses rangs sont tous NA — la
+        # croisée #506 ne vit que là où les deux déclarations existent) ;
+        # l'expression reste le point de câblage si un jour il en gagne un.
         publier_theme_metadata(theme_programmes()$metadata(), .(sortie),
                                vintages = vintages_table_programmes,
-                               theme_attendu = theme_programmes()$theme)
+                               theme_attendu = theme_programmes()$theme,
+                               directions_module = theme_programmes()$directions)
       })
     )
   )
