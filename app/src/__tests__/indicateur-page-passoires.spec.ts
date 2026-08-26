@@ -228,10 +228,15 @@ describe('page scalaire part_passoires — rendu routé (#474)', () => {
 })
 
 describe('page distribution_dpe — profil contre ensemble de comparaison (#474)', () => {
-  it('ne présente PLUS de héros médian scalaire', async () => {
+  it('ne présente PLUS de héros médian scalaire — note de contexte (#472) et ensemble de comparaison (#474) coexistent', async () => {
     const wrapper = await monter('/indicateurs/habitat/distribution_dpe?territoire=22001')
     expect(wrapper.find('.hero').exists()).toBe(false)
     expect(wrapper.find('.median').exists()).toBe(false)
+    // La note de contexte permanente (#472), rendue AUSSI sur la distribution :
+    // elle vit au-dessus des vues, indépendante du sort du héros médian.
+    const note = wrapper.find('[data-testid="note-contexte"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('Allineuc')
     // La signature A–G du territoire sélectionné reste rendue ×100, une fois.
     const attendus = { A: '1 %', B: '3 %', C: '46 %', D: '28 %', E: '9 %', F: '6 %', G: '8 %' }
     for (const [detail, libelle] of Object.entries(attendus)) {
@@ -239,6 +244,20 @@ describe('page distribution_dpe — profil contre ensemble de comparaison (#474)
       expect(barre.exists(), `étiquette ${detail}`).toBe(true)
       expect(barre.text()).toContain(libelle)
     }
+  })
+
+  it('composition (#472) : la préservation d’URL du watcher (#474) garde note et contextualisation au bon périmètre', async () => {
+    // Périmètre départemental VALIDE demandé au chargement : le correctif #474
+    // du watcher l'empêche d'être strippé pendant la fenêtre de chargement —
+    // la note ET l'univers de la contextualisation composition (figcaption)
+    // le reflètent alors tous les deux, jamais un repli silencieux sur Bretagne.
+    const wrapper = await monter('/indicateurs/habitat/mix_logements?niveau=commune&departement=22&territoire=22001')
+    expect(wrapper.find('[data-testid="note-contexte"]').text()).toContain("département Côtes-d'Armor")
+    const rendu = wrapper.find('figure.composition-renderer')
+    expect(rendu.exists()).toBe(true)
+    expect(rendu.find('[data-testid="composition-contextualisee"]').exists()).toBe(true)
+    expect(rendu.text()).toContain("Côtes-d'Armor")
+    expect(rendu.find('figcaption').text()).not.toContain('Bretagne')
   })
 
   it('montre l’ensemble de comparaison : la moyenne des parts A–G de TOUS les territoires du périmètre actif', async () => {
