@@ -186,7 +186,7 @@ test_that("LE CRON SAUTE LA CHAÎNE : après l'amorçage, plus JAMAIS un recalcu
   # construit UNE fois (le même comportement que le graphe réel sur un
   # runner froid), puis ne tourne PLUS jamais en cron
   targets::tar_make(callr_function = NULL)
-expect_equal(compteur_de(projet), 1L)
+  expect_equal(compteur_de(projet), 1L)
   empreinte_avant <- tools::md5sum(
     file.path(projet, "processed", "enveloppe.rds"))
 

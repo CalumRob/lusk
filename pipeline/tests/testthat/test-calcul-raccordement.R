@@ -134,8 +134,9 @@ test_that("calculer_raccordement : la courbe cumulative, l'inclusion propre et l
   expect_equal(lire(60), 500 / 1000)
   expect_equal(lire(70), 600 / 1000)
   expect_equal(lire(600), 600 / 1000)
-  # la grille couvre [0, cap] au pas demandé — 61 points de 0 à 600
-  expect_setequal(unique(courbe_b$minute), seq(0, 600, by = 10))
+  # la grille couvre [0, cap] au pas demandé — les marques de la recette figée
+  expect_setequal(unique(courbe_b$minute),
+                  as.integer(sub("^t", "", grille_raccordement())))
   # la commune NON ROUTÉE n'a pas de courbe (aucune valeur inventée)
   expect_false(any(calcul$courbes_communes$code == "44444"))
 })
@@ -161,12 +162,14 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union, ja
   # région {A, B, C, D} : chacun se rejoint soi-même — routée ou non, tout
   # Breton habite la Bretagne : la part vaut exactement 1
   expect_equal(part(calcul$region, "53"), 1000 / 1000)
-  # les courbes existent aux trois niveaux
+  # les courbes existent aux trois niveaux (la grille complète de la recette)
   expect_true(nrow(calcul$courbes_epcis[
-    calcul$courbes_epcis$code == "200000001", ]) == 61L)
+    calcul$courbes_epcis$code == "200000001", ]) ==
+    length(grille_raccordement()))
   expect_true(nrow(calcul$courbes_departements[
-    calcul$courbes_departements$code == "22", ]) == 61L)
-  expect_true(nrow(calcul$courbe_region) == 61L)
+    calcul$courbes_departements$code == "22", ]) ==
+    length(grille_raccordement()))
+  expect_true(nrow(calcul$courbe_region) == length(grille_raccordement()))
   # la courbe EPCI saute à 30 (l'union ouvre plus tôt que chaque commune)
   e1 <- calcul$courbes_epcis[calcul$courbes_epcis$code == "200000001", ]
   expect_equal(e1$part[e1$minute == 20], 300 / 1000)
@@ -189,7 +192,7 @@ test_that("calculer_raccordement : la courbe de référence médiane bretonne", 
   expect_equal(lire(30), 300 / 1000)
   expect_equal(lire(90), 500 / 1000)
   expect_equal(lire(100), 600 / 1000)
-  expect_equal(length(ref$minute), 61L)
+  expect_equal(length(ref$minute), length(grille_raccordement()))
 })
 
 test_that("resoudre_codes_cog : la projection MULTI-MILLÉSIMES (un village pré-2022)", {

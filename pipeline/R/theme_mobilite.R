@@ -552,8 +552,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                         "matrice_temps_mairies"),
    multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5),
                     1L,
-                    length(seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                               by = PAS_COURBE_RACCORDEMENT)),
+                    length(grille_raccordement()),
                     NA_integer_)
 )
 
@@ -630,9 +629,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
          call. = FALSE)
   }
   racc <- analytiques$raccordement
-  minutes_raccordement <- seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                              by = PAS_COURBE_RACCORDEMENT)
-  grille_raccordement <- paste0("t", sprintf("%04d", minutes_raccordement))
+  grille <- grille_raccordement()
 
   aligner <- function(table_agregee, key, unit) {
     if (!"rider" %in% names(table_agregee)) table_agregee$rider <- NA_character_
@@ -785,7 +782,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
                      detail = paste0("t", sprintf("%04d", minute)),
                      value = part)
   raccordement_courbe <- tidyr::crossing(
-    code = territoires$code, detail = grille_raccordement
+    code = territoires$code, detail = grille
   ) %>%
     dplyr::left_join(racc_courbes, by = c("code", "detail")) %>%
     dplyr::mutate(key = "raccordement_courbe", unit = "%") %>%
@@ -797,9 +794,10 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   raccordement_reference <- tibble::tibble(
     code = "53",
     key = "raccordement_reference",
-    detail = grille_raccordement,
+    detail = grille,
     value = racc$calcul$reference$part_mediane[
-      match(minutes_raccordement, racc$calcul$reference$minute)],
+      match(as.integer(sub("^t", "", grille)),
+            racc$calcul$reference$minute)],
     unit = "%"
   )
 
@@ -1134,9 +1132,7 @@ validations_mobilite <- list(
   # détail hors grille ou mal formé est une corruption, jamais une courbe qui
   # ment sur son axe
   function(payload) {
-    grille_attendue <- paste0("t", sprintf(
-      "%04d", seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                  by = PAS_COURBE_RACCORDEMENT)))
+    grille_attendue <- grille_raccordement()
     for (cle in c("raccordement_courbe", "raccordement_reference")) {
       details <- payload$indicateurs$detail[
         payload$indicateurs$key == cle]

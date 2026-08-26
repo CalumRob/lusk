@@ -58,6 +58,19 @@ SEUIL_RACCORDEMENT_MIN <- 90L
 # recette figée (600), soit 61 points par territoire.
 PAS_COURBE_RACCORDEMENT <- 10L
 
+# GRILLE_RACCORDEMENT ---------------------------------------------------------------
+# LA GRILLE de la courbe du raccordement : les marques de détail « t0000 » →
+# « t0600 », exactement les multiples du pas sur [0, cap] de la recette figée
+# (RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min + PAS_COURBE_RACCORDEMENT).
+# SOURCE UNIQUE de la forme : la table déclarative (la multiplicité),
+# l'assemblage des indicateurs, les validations du thème et les tests la
+# consomment — jamais une recopie de la forme seq(0, cap, by = pas).
+grille_raccordement <- function() {
+  paste0("t", sprintf("%04d",
+                      seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
+                          by = PAS_COURBE_RACCORDEMENT)))
+}
+
 # MOTIF_NON_ROUTE_RACCORDEMENT ------------------------------------------------------
 # Le motif nommé porté par les communes absentes de la matrice figée — les
 # géocodes DILA aberrants documentés à la migration (#485).
@@ -144,7 +157,8 @@ verifier_contrat_population_raccordement <- function(population,
   }
 
   # l'empreinte VÉRIFIÉE SUR LE DISQUE (les octets relus, openssl) — un
-  # contenu substitué échoue là où le fichier est lu
+  # contenu substitué échoue là où le fichier est lu ; le même wrapper que
+  # partout ailleurs (empreinte_fichier_raccordement)
   if (is.null(chemin)) {
     chemin <- system.file("extdata", POPULATION_RACCORDEMENT_FICHIER,
                           package = "lusk")
@@ -155,9 +169,7 @@ verifier_contrat_population_raccordement <- function(population,
       " introuvable ou illisible sur le disque — l'empreinte doit rester ",
       "recalculable"))
   }
-  con <- file(chemin, "rb")
-  calculee <- paste(openssl::sha256(con))
-  close(con)
+  calculee <- empreinte_fichier_raccordement(chemin)
   if (!identical(calculee, POPULATION_RACCORDEMENT_SHA256)) {
     manquer("sha256", sprintf(
       paste0("empreinte recalculée sur le fichier lu (%s…) ≠ empreinte ",

@@ -73,7 +73,7 @@ test_that("MANIFEST_MOBILITE : batiments_residentiels pointe le fichier de produ
 
    # Le fichier de production est porté à la main (mode « manuel ») : le cron
    # ne le télécharge pas. Son chemin de cache est repo-relatif et portable ; le
-  # touche jamais, la garde de contenu (verifier_fichier) couvre le reste.
+   # touche jamais, la garde de contenu (verifier_fichier) couvre le reste.
    expect_equal(bat$url, "data/raw/batiments_residentiels_bretagne.csv")
    expect_false(grepl("^[A-Za-z]:|^file:///", bat$url))
   expect_equal(bat$mode, "manuel")
@@ -2252,11 +2252,10 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
   }
   # le raccordement (issue #486) : 1 / 61 / NA (la référence est variable —
   # la seule région la porte)
-  grille_raccordement <- length(seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                                    by = PAS_COURBE_RACCORDEMENT))
+  grille_n <- length(grille_raccordement())
   expect_equal(ind$multiplicite[ind$key == "raccordement_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "raccordement_courbe"],
-               grille_raccordement)
+               grille_n)
   expect_true(is.na(ind$multiplicite[ind$key == "raccordement_reference"]))
 
   # chaque clé est estampillée du vintage de SA source de référence :
@@ -2308,9 +2307,8 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
 # EPCIs, les deux départements, la région — et la grille complète de la
 # recette figée pour les deux clés de matière de figure.
 fixture_raccordement <- function() {
-  minutes <- seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                 by = PAS_COURBE_RACCORDEMENT)
-  grille <- paste0("t", sprintf("%04d", minutes))
+  minutes <- as.integer(sub("^t", "", grille_raccordement()))
+  grille <- grille_raccordement()
   codes <- c("22001", "22002", "29001", "29002")
   part_communes <- c(0.31, 0.62, 0.11, NA_real_)
   courbes <- tidyr::crossing(
@@ -2325,7 +2323,7 @@ fixture_raccordement <- function() {
         motif = c(NA_character_, NA_character_, NA_character_,
                   "Non routée — géocode DILA aberrant")
       ),
-      courbes_communes = dplyr::rename(courbes, code = code),
+      courbes_communes = courbes,
       reference = tibble::tibble(minute = minutes,
                                  part_mediane = 0.001 * seq_along(minutes)),
       exclusions = tibble::tibble(code = "29002"),
@@ -2468,8 +2466,7 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
     "iso_ecole", "iso_banque",
     "raccordement_tc", "raccordement_courbe", "raccordement_reference"
   ))
-  grille_n <- length(seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                         by = PAS_COURBE_RACCORDEMENT))
+  grille_n <- length(grille_raccordement())
   # 9 territoires × 27 lignes historiques = 243 ; + le raccordement :
   # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
   expect_equal(nrow(ind), 243 + 9 + 9 * grille_n + grille_n)
@@ -2581,9 +2578,7 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
 
   courbe_ind <- ind[ind$key == "raccordement_courbe", ]
   expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
-  grille_attendue <- paste0("t", sprintf(
-    "%04d", seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                by = PAS_COURBE_RACCORDEMENT)))
+  grille_attendue <- grille_raccordement()
   expect_setequal(courbe_ind$detail[courbe_ind$territoire == "22001"],
                   grille_attendue)
   expect_equal(courbe_ind$value[courbe_ind$territoire == "22001" &
