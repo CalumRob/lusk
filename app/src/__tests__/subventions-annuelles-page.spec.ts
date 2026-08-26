@@ -3,7 +3,13 @@ import { join } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Les montures routées lisent le VRAI payload committé : sous charge
+// parallèle, le premier monture dépasse parfois le timeout par défaut — la
+// même famille de flake que #185. Plafond relevé au niveau du fichier,
+// verrous inchangés.
+vi.setConfig({ testTimeout: 30_000 })
 
 import IndicateurView from '../views/IndicateurView.vue'
 import SourcesView from '../views/SourcesView.vue'
