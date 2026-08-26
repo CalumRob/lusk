@@ -300,6 +300,65 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
     ))
   }
 
+  # LE RACCORDEMENT (issue #486) : le trait `raccordement` du descripteur
+  # câble SA chaîne de calcul. Les DEUX épingles du package (la matrice temps
+  # figée, la population RP 2023) sont des cibles format = "file" (fraîcheur
+  # PAR CONTENU) ; raccordement_<thème> vérifie les contrats, résout la
+  # projection COG depuis le zip INSEE du cache (cog_passage — ordonné après
+  # le téléchargement du thème et l'extraction du référentiel partagé), calcule
+  # et persiste l'enveloppe sous le répertoire analytique du thème. La cible
+  # rend LE CHEMIN de l'enveloppe (format = "file" à son tour) : le skip suit
+  # exactement ses entrées — une matrice changée invalide le calcul SEUL puis
+  # l'aval ; rien d'autre du thème ne bouge.
+  #
+  # LE CRON SAUTE LA CHAÎNE (le même mode que les sources « manuel »,
+  # ADR-0004) : en mode cron la cible porte cue mode = "never" — jamais
+  # évaluée, jamais payée par l'horloge légère ; sa valeur (et celle de tout
+  # l'aval qui en dépend) reste celle du dernier run manuel, et
+  # lire_raccordement REFUSERAIT une enveloppe périmée plutôt que de laisser
+  # republier en silence des parts calculées depuis une autre matrice.
+  if (!is.null(theme$raccordement)) {
+    pin_matrice <- as.name(paste0("pin_matrice_temps_", nom))
+    pin_population <- as.name(paste0("pin_population_", nom))
+    cible_raccordement <- as.name(paste0("raccordement_", nom))
+    sortie_raccordement <- file.path(dirname(cache), "processed", nom)
+    grappe <- c(grappe, list(
+      tar_target_raw(
+        as.character(pin_matrice),
+        bquote(system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER,
+                           package = "lusk")),
+        format = "file"
+      ),
+      tar_target_raw(
+        as.character(pin_population),
+        bquote(system.file("extdata", POPULATION_RACCORDEMENT_FICHIER,
+                           package = "lusk")),
+        format = "file"
+      ),
+      tar_target_raw(
+        as.character(cible_raccordement),
+        bquote({
+          .(sources)
+          .(pin_matrice)
+          .(pin_population)
+          fichier_epci_extrait
+          preparer_raccordement(
+            file.path(.(cache), .(manifeste)$fichier[.(manifeste)$id ==
+                                                        "cog_passage"]),
+            file.path(.(cache), "extracted", "EPCI_au_01-01-2025.xlsx"),
+            sortie = .(sortie_raccordement))
+          file.path(.(sortie_raccordement), RACCORDEMENT_ARTEFACT)
+        }),
+        format = "file",
+        cue = if (identical(mode, "cron")) {
+          tar_cue(mode = "never")
+        } else {
+          tar_cue()
+        }
+      )
+    ))
+  }
+
   grappe
 }
 
@@ -324,6 +383,15 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
                     vintages = .(as.name(paste0("vintages_table_", nom))),
                     sortie = .(sortie))
     )
+    # LE RACCORDEMENT (issue #486) : le trait du descripteur CHAÎNE la
+    # publication derrière la cible de calcul — elle lit une enveloppe fraîche
+    # (ou refuse une périmée), jamais un recalcul au fil des republications.
+    if (!is.null(theme$raccordement)) {
+      command <- bquote({
+        .(as.name(paste0("raccordement_", nom)))
+        .(command)
+      })
+    }
   } else {
     command <- bquote(
       publish(.(as.name(paste0("payload_", nom))), .(sortie))
@@ -471,6 +539,12 @@ VERIFICATIONS_RUN <- list(
          verifier = verifier_amenagements_cyclables_reel,
          args = list(parquet = "amenagements_cyclables",
                      zip_cog = "cog_passage")),
+    list(slug = "mobilite_raccordement",
+         verifier = verifier_raccordement_reel,
+         # la sentinelle "raccordement" : l'artefact calculé par la cible
+         # raccordement_mobilite (le trait du descripteur) — la vérification
+         # suit SA fraîcheur, jamais un re-routage
+         args = list(artefact = "raccordement")),
     list(slug = "mobilite_e2e",
          verifier = verifier_mobilite_e2e_reel,
          sur_brut = TRUE,
@@ -581,6 +655,11 @@ verifications_theme <- function(theme, cache = CACHE_RUN) {
       id <- v$args[[param]]
       if (identical(id, "epci")) {
         appels[[param]] <- as.name("fichier_epci_extrait")
+      } else if (identical(id, "raccordement")) {
+        # la sentinelle du raccordement (#486) : l'artefact calculé par la
+        # cible du trait — le verrou reçoit SON chemin (format = "file"),
+        # la vérification suit SA fraîcheur
+        appels[[param]] <- as.name(paste0("raccordement_", theme$theme))
       } else {
         if (!id %in% deja) {
           cibles <- c(cibles, list(fichier_source(
@@ -821,7 +900,9 @@ if (!nzchar(selection)) {
 # run COMPLET — LUSK_THEMES vide, le cron) les verrous du thème Programmes.
 # Le référentiel partagé extrait (fichier_epci_extrait) n'est câblé qu'une
 # fois, et seulement si un verrou du run le lit (la sentinelle "epci" de SES
-# args — la REGISTRE).
+# args — la REGISTRE) OU si la chaîne du raccordement d'un thème en dépend
+# (le trait `raccordement` — issue #486 : ses niveaux agrégés lisent
+# l'EPCI_au_01-01-2025.xlsx extrait).
 verifications <- list()
 besoin_epci <- FALSE
 for (t in THEMES_RUN) {
@@ -831,6 +912,7 @@ for (t in THEMES_RUN) {
       any(vapply(spec, function(v) "epci" %in% unlist(v$args), logical(1)))) {
     besoin_epci <- TRUE
   }
+  if (!is.null(t$raccordement)) besoin_epci <- TRUE
 }
 publication_programmes <- list()
 if (!nzchar(selection)) {
