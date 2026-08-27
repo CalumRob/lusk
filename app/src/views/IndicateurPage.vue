@@ -21,6 +21,16 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl } from '@/indicateurs/etatUrl'
 
+const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
+const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+
+function dateLongue(iso: string, avecJour = true): string {
+  const date = new Date(`${iso}T00:00:00Z`)
+  return Number.isNaN(date.getTime())
+    ? iso
+    : `${avecJour ? `${JOURS_FR[date.getUTCDay()]} ` : ''}${date.getUTCDate()} ${MOIS_FR[date.getUTCMonth()]} ${date.getUTCFullYear()}`
+}
+
 const route = useRoute(); const router = useRouter(); const recherche = ref('')
 // La lecture du niveau mémorisé reste une fine couture d'effet de bord (#508) :
 // elle se fait au montage, puis l'applier de persistance la tient à jour. Les
@@ -43,6 +53,22 @@ const sources = computed(() => {
   const authority = sourceRecords(payload.value)
   return page.value.sources.map((id) => authority.find((record) => record.id === datasetDeSource(id))).filter((source): source is NonNullable<typeof source> => Boolean(source))
 })
+/**
+ * Some source versions describe a planned service day while their reference
+ * date records acquisition. Keep those clocks distinct in the page copy; do
+ * not infer the service day from the publication/freshness date.
+ */
+const horlogeService = computed(() => {
+  for (const source of sources.value) {
+    const clock = source.clocks.find((candidate) => candidate.reference.includes('mercredi réel de période scolaire'))
+    const serviceDate = clock?.reference.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0]
+    const acquisitionDate = serviceDate
+      ? source.vintages.find((vintage) => vintage.version === serviceDate)?.dateReference ?? null
+      : null
+    if (serviceDate && acquisitionDate) return { service: dateLongue(serviceDate), acquisition: dateLongue(acquisitionDate, false) }
+  }
+  return null
+})
 // Les faits du THÈME entier — chaque consommateur filtre par SA clé (la
 // facette résumée d'une distribution lit souvent une AUTRE clé publiée que
 // la page, #440 ; les trajectoires et le modèle par détail filtrent déjà).
@@ -59,9 +85,18 @@ const model = computed(() => familyDispatch.value ? modeleExploration(facts.valu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
 // sans replier la trajectoire.
 const trajectoire = computed(() => {
-  if (!familyDispatch.value || familyDispatch.value.family !== 'trajectory' || !model.value) return null
+  const dispatch = familyDispatch.value
+  if (!dispatch || dispatch.family !== 'trajectory' || !model.value) return null
   const { niveau, departement, epci, territoire } = model.value.state
-  return modeleTrajectoire(facts.value, familyDispatch.value.facet, familyDispatch.value.representation.endpoints, payload.value.territoires, { niveau, departement, epci, territoire })
+  return modeleTrajectoire(
+    facts.value,
+    dispatch.facet,
+    dispatch.representation.endpoints,
+    payload.value.territoires,
+    { niveau, departement, epci, territoire },
+    dispatch.representation.reference,
+    dispatch.representation.extension.reference?.label ?? null,
+  )
 })
 // La signature intra-territoire de la distribution (#440), dans le MÊME
 // périmètre résolu que la comparaison — les libellés canonical viennent des
@@ -162,11 +197,11 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
          </template>
        </RepereFamilyOutlet></main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
-       <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
+        <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><p v-if="horlogeService" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
     </template>
   </section>
 </template>
 <style scoped>
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.indicateur-page{min-height:100%;padding:clamp(24px,5vw,64px) max(16px,calc((100% - 1200px)/2));background:var(--surface-secondary);color:var(--text-primary)}header{max-width:760px}h1{font:var(--text-h1);margin:.3rem 0 1rem}h2{font:var(--text-h3)}.sur-titre{color:var(--indicateur-strong);font:var(--text-overline);text-transform:uppercase}.vues{display:flex;gap:24px;margin:32px 0;border-bottom:1px solid var(--border-default);padding-bottom:12px}.vues button.active{border-bottom:3px solid var(--indicateur-accent);font-weight:700}.hero,.extremes{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.hero article,.extremes article,aside{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px;margin-bottom:16px}.median strong{display:block;font:600 clamp(3rem,9vw,7rem)/1 var(--font-serif);margin:20px 0}.median small{font:var(--text-body)}.density{width:100%;height:170px;border-bottom:2px solid var(--indicateur-line)}.density path{fill:none;stroke:var(--indicateur-accent);stroke-width:4}.point-highlight{fill:var(--status-error)}.extremes article{display:flex;flex-direction:column;gap:8px}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;flex-direction:column;gap:4px}select,input{padding:8px;border:1px solid var(--border-default);border-radius:6px}table{width:100%;border-collapse:collapse;background:var(--surface-primary)}th,td{padding:12px;border-bottom:1px solid var(--border-subtle);text-align:left}tr.selection{background:var(--indicateur-soft)}button{border:0;background:none;color:var(--accent-primary);cursor:pointer}.carte-indicateur,.map-wrap{min-height:540px}.map-wrap{position:relative;height:540px}.map-wrap :deep(.map-explorer){height:100%}dt{font-weight:700;margin-top:12px}dd{margin:0}@media(max-width:700px){.hero,.extremes{grid-template-columns:1fr}table{font-size:.85rem}}
+.indicateur-page{min-height:100%;padding:clamp(24px,5vw,64px) max(16px,calc((100% - 1200px)/2));background:var(--surface-secondary);color:var(--text-primary)}header{max-width:760px}h1{font:var(--text-h1);margin:.3rem 0 1rem}h2{font:var(--text-h3)}.sur-titre{color:var(--indicateur-strong);font:var(--text-overline);text-transform:uppercase}.vues{display:flex;gap:24px;margin:32px 0;border-bottom:1px solid var(--border-default);padding-bottom:12px}.vues button.active{border-bottom:3px solid var(--indicateur-accent);font-weight:700}.hero,.extremes{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.hero article,.extremes article,aside{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px;margin-bottom:16px}.median strong{display:block;font:600 clamp(3rem,9vw,7rem)/1 var(--font-serif);margin:20px 0}.median small{font:var(--text-body)}.density{width:100%;height:170px;border-bottom:2px solid var(--indicateur-line)}.density path{fill:none;stroke:var(--indicateur-accent);stroke-width:4}.point-highlight{fill:var(--status-error)}.extremes article{display:flex;flex-direction:column;gap:8px}.indicator-date-caveat{margin:0 0 16px;color:var(--text-secondary)}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;flex-direction:column;gap:4px}select,input{padding:8px;border:1px solid var(--border-default);border-radius:6px}table{width:100%;border-collapse:collapse;background:var(--surface-primary)}th,td{padding:12px;border-bottom:1px solid var(--border-subtle);text-align:left}tr.selection{background:var(--indicateur-soft)}button{border:0;background:none;color:var(--accent-primary);cursor:pointer}.carte-indicateur,.map-wrap{min-height:540px}.map-wrap{position:relative;height:540px}.map-wrap :deep(.map-explorer){height:100%}dt{font-weight:700;margin-top:12px}dd{margin:0}@media(max-width:700px){.hero,.extremes{grid-template-columns:1fr}table{font-size:.85rem}}
 </style>

@@ -6,7 +6,7 @@ import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   indicateursRaccordementFixture,
   metadonneesMobiliteRaccordementFixture,
-  territoiresFixture,
+  territoiresRaccordementFixture,
 } from '../payload/fixtures'
 import { phraseRaccordement } from '../payload/selectors'
 import type { Indicateur, Payload } from '../payload/types'
@@ -37,15 +37,11 @@ function ligne(detail: string, value: number | null): Indicateur {
   }
 }
 
-const courbe = [ligne('t0000', 0.02), ligne('t0090', 0.42), ligne('t0600', 0.95)]
-const reference = [
-  { ...ligne('t0000', 0.01), key: 'raccordement_reference', territoire: '53', type: 'region' as const },
-  { ...ligne('t0090', 0.31), key: 'raccordement_reference', territoire: '53', type: 'region' as const },
-  { ...ligne('t0600', 0.9), key: 'raccordement_reference', territoire: '53', type: 'region' as const },
-]
+const courbe = indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.territoire === '22001')
+const reference = indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')
 
 const payloadRaccordement: Payload = {
-  territoires: territoiresFixture,
+  territoires: territoiresRaccordementFixture,
   indicateurs: indicateursRaccordementFixture,
   histoires: [],
   apercu: null,
@@ -132,11 +128,11 @@ describe('raccordement — fiche et accessibilité', () => {
     expect(wrapper.find('.liste-points').text()).toContain('20 min')
   })
 
-  it('publie les trois niveaux, les 61 détails de la courbe et la référence régionale dans le contrat', () => {
+  it('publie les trois niveaux, une tranche littérale de courbe et la référence régionale dans le contrat', () => {
     const lignes = validerIndicateurs(
       indicateursRaccordementFixture,
       'fixture-indicateurs-mobilite.json',
-      territoiresFixture,
+      territoiresRaccordementFixture,
     )
 
     expect([...new Set(lignes.filter((ligne) => ligne.key === 'raccordement_tc').map((ligne) => ligne.type))]).toEqual([
@@ -145,12 +141,12 @@ describe('raccordement — fiche et accessibilité', () => {
       'departement',
       'region',
     ])
-    expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe')).toHaveLength(549)
-    expect(lignes.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(61)
+    expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe')).toHaveLength(9)
+    expect(lignes.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(3)
     expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail === 't0090'))
-      .toHaveLength(9)
+      .toHaveLength(3)
     expect(lignes.find((ligne) => ligne.key === 'raccordement_reference' && ligne.detail === 't0090' && ligne.territoire === '53')?.value)
-      .toBe(0.31)
+      .toBe(0.014584982185152652)
   })
 
   it('garde le registre metadata autoportant et bijectif', () => {
@@ -184,9 +180,9 @@ describe('raccordement — fiche et accessibilité', () => {
   })
 
   it.each([
-    ['22001', 'Commune A1'],
-    ['200000001', 'EPCI X'],
-    ['22', 'Département 22'],
+    ['22001', 'Allineuc'],
+    ['200027027', 'Communauté de communes Arc Sud Bretagne'],
+    ['22', 'Côtes-d’Armor'],
   ])('rend le scalaire et la figure pour le niveau %s', async (territoire, nom) => {
     const wrapper = mount(OngletTheme, {
       props: { theme: 'mobilite', payload: payloadRaccordement, territoire },
@@ -201,8 +197,16 @@ describe('raccordement — fiche et accessibilité', () => {
   })
 
   it('rend le motif non routé sans transformer la valeur en zéro', () => {
+    const payloadNonRoute: Payload = {
+      ...payloadRaccordement,
+      indicateurs: payloadRaccordement.indicateurs.map((ligne) =>
+        ligne.key === 'raccordement_tc' || ligne.key === 'raccordement_courbe'
+          ? { ...ligne, territoire: '22001', value: null, rider: 'Non routée — aucune valeur mesurable publiée.' }
+          : ligne,
+      ),
+    }
     const wrapper = mount(OngletTheme, {
-      props: { theme: 'mobilite', payload: payloadRaccordement, territoire: '29002' },
+      props: { theme: 'mobilite', payload: payloadNonRoute, territoire: '22001' },
       global: { stubs: { RouterLink: RouterLinkStub } },
     })
 

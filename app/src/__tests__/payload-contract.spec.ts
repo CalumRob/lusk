@@ -135,14 +135,18 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(cles.size).toBe(payload.indicateurs.length)
   })
 
-  it('mirrors the raccordement scalar/curve/reference contract before artefact promotion (#487)', () => {
+  it('mirrors the raccordement scalar/curve/reference contract in the promoted artefact (#487)', () => {
     const keys = new Set(indicateursRaccordementFixture.map((ligne) => ligne.key))
-    expect(keys).toEqual(new Set(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']))
+    expect(keys).toEqual(new Set(['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']))
     expect(metadonneesMobiliteRaccordementFixture.indicator_keys).toEqual(
       expect.arrayContaining(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']),
     )
-    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail !== null)).toHaveLength(549)
-    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(61)
+    expect(metadonneesMobiliteRaccordementFixture.subgroups.find((group) => group.key === 'offre-transports-commun')).toMatchObject({
+      indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
+      figure: { family: 'scalar', indicator: 'offre_tc' },
+    })
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail !== null)).toHaveLength(9)
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(3)
     expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe').every((ligne) => ligne.rang_epci === null && ligne.rang_dep === null && ligne.rang_reg === null)).toBe(true)
   })
 
@@ -411,7 +415,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     // est sorti du manifeste) + les TROIS patchs correctifs M2 du run
     // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
     // l'amendement, appliquée dans #243)
-    expect(payload.vintages).toHaveLength(63)
+    expect(payload.vintages).toHaveLength(65)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:

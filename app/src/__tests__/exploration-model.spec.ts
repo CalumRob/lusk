@@ -69,6 +69,24 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(parDetail(modele, '2024').max).toBe(3200)
   })
 
+  it('expose la référence déclarée sans recalculer une médiane de niveau', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const reference = [point('53', '2020', 50, 'region'), point('53', '2024', 150, 'region')]
+    const modele = modeleTrajectoire(
+      [point('a', '2020', 10), point('a', '2024', 20), point('b', '2020', 30), point('b', '2024', 40)],
+      facet,
+      ['2020', '2024'],
+      territoires,
+      { niveau: 'commune' },
+      reference,
+      'Commune bretonne médiane',
+    )
+
+    expect(modele.serieReference!.map((point) => point.value)).toEqual([50, 150])
+    expect(modele.referenceLabel).toBe('Commune bretonne médiane')
+    expect(modele.domaineValeurs).toEqual({ min: 10, max: 150 })
+  })
+
   it('positionne points et libellés sur UNE seule échelle proportionnelle aux années (années non consécutives)', () => {
     const facet = pageTrajectoire(['2019', '2021', '2025'], '2025', ['2019', '2025'])
     const modele = modeleTrajectoire([point('a', '2019', 10), point('a', '2021', 12), point('a', '2025', 16)], facet, ['2019', '2025'], territoires, { niveau: 'commune' })
