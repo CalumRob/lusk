@@ -228,14 +228,14 @@ describe('FigureCompacte — composition pyramide des âges sexuée (structure_a
 })
 
 describe('FigureCompacte — trajectoire (artif_par_habitant)', () => {
-  it('trace une ligne SVG sur les millésimes et liste les points accessibles', () => {
+  it('trace une ligne SVG et publie un résumé accessible concis', () => {
     const wrapper = monter('trajectory', 'artif_par_habitant', 'milieux')
     const svg = wrapper.find('.trajectoire-ligne')
     expect(svg.exists()).toBe(true)
     expect(svg.find('path').attributes('d')).toMatch(/^M/)
     // texte visible — le test de l’onglet Milieux dépend de ces chaînes
     expect(wrapper.text()).toContain('2021')
-    expect(wrapper.text()).toContain('2 250')
+    expect(wrapper.text()).toContain('2 180')
     expect(wrapper.text()).toContain('2025')
     expect(wrapper.text()).toContain('2 550')
     expect(wrapper.text()).toContain('m²/hab')
@@ -243,9 +243,8 @@ describe('FigureCompacte — trajectoire (artif_par_habitant)', () => {
 
   it('souligne la valeur courante (dernier millésime) sans couleur de statut', () => {
     const wrapper = monter('trajectory', 'artif_par_habitant', 'milieux')
-    const points = wrapper.findAll('.point')
-    expect(points.length).toBeGreaterThan(1)
-    expect(points[points.length - 1].classes()).toContain('point--courant')
+    const points = wrapper.findAll('.point--courant')
+    expect(points).toHaveLength(1)
   })
 
   it('rend une année vide (jamais la clé brute) si labelsDetail est absent', () => {

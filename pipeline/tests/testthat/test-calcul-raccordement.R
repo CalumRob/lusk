@@ -114,7 +114,7 @@ test_that("calculer_raccordement : le minimum SUR LES POINTS gouverne (la fusion
     calcul$courbes_communes$code == "11111", ]
   lire <- function(minute) courbe_a$part[courbe_a$minute == minute]
   expect_equal(lire(90), 300 / 1000)
-  expect_equal(lire(100), 600 / 1000)   # le point absorbé ouvre la porte
+  expect_equal(lire(120), 600 / 1000)   # le point absorbé ouvre la porte
   expect_equal(lire(90), 300 / 1000)
   # monotone croissante, plafonnée par W (hors D)
   expect_true(all(diff(courbe_a$part[order(courbe_a$minute)]) >= 0))
@@ -132,11 +132,14 @@ test_that("calculer_raccordement : la courbe cumulative, l'inclusion propre et l
   expect_equal(lire(0), 200 / 1000)
   expect_equal(lire(30), 500 / 1000)
   expect_equal(lire(60), 500 / 1000)
-  expect_equal(lire(70), 600 / 1000)
-  expect_equal(lire(600), 600 / 1000)
-  # la grille couvre [0, cap] au pas demandé — les marques de la recette figée
-  expect_setequal(unique(courbe_b$minute),
-                  as.integer(sub("^t", "", grille_raccordement())))
+  expect_equal(lire(90), 600 / 1000)
+  expect_equal(lire(360), 600 / 1000)
+  # la grille publiée est exactement la liste déclarée — elle s'arrête à six
+  # heures, même si le cap de la recette de routage reste 600 minutes.
+  expect_identical(as.integer(courbe_b$minute),
+                   c(0L, 15L, 30L, 45L, 60L, 90L, 120L, 180L, 240L,
+                     300L, 360L))
+  expect_false(any(courbe_b$minute == 600))
   # la commune NON ROUTÉE n'a pas de courbe (aucune valeur inventée)
   expect_false(any(calcul$courbes_communes$code == "44444"))
 })
@@ -184,7 +187,7 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union des
   # la courbe EPCI saute à 30 (l'union ouvre plus tôt que chaque commune),
   # sur le dénominateur routé seul
   e1 <- calcul$courbes_epcis[calcul$courbes_epcis$code == "200000001", ]
-  expect_equal(e1$part[e1$minute == 20], 300 / 600)
+  expect_equal(e1$part[e1$minute == 15], 300 / 600)
   expect_equal(e1$part[e1$minute == 30], 600 / 600)
 })
 
@@ -203,8 +206,10 @@ test_that("calculer_raccordement : la courbe de référence médiane bretonne", 
   expect_equal(lire(0), 200 / 1000)
   expect_equal(lire(30), 300 / 1000)
   expect_equal(lire(90), 500 / 1000)
-  expect_equal(lire(100), 600 / 1000)
-  expect_equal(length(ref$minute), length(grille_raccordement()))
+  expect_equal(lire(120), 600 / 1000)
+  expect_identical(as.integer(ref$minute),
+                   c(0L, 15L, 30L, 45L, 60L, 90L, 120L, 180L, 240L,
+                     300L, 360L))
 })
 
 test_that("resoudre_codes_cog : la projection MULTI-MILLÉSIMES (un village pré-2022)", {

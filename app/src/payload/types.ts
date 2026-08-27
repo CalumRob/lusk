@@ -782,7 +782,17 @@ export interface ComparisonFacetMetadata {
   unit?: string
   labels?: Record<string, string>
 }
-/** Optional second series and marker for a metadata-driven trajectory. */
+/** A declared x-axis tick for a metadata-driven trajectory. */
+export interface TrajectoryTickMetadata {
+  /** Published detail represented by this tick. */
+  detail: string
+  /** Human label; raw detail keys never render. */
+  label: string
+  /** Keep this anchor when the chart has to hide dense labels on mobile. */
+  mobile?: boolean
+}
+
+/** Optional second series, axis grammar and marker for a metadata-driven trajectory. */
 export interface TrajectoryReferenceMetadata {
   /** Published indicator key carrying the comparison series. */
   indicator: string
@@ -803,6 +813,10 @@ export interface TrajectoryMetadata {
   endpoints: string[]
   /** `numeric` positions points from their detail; omitted means ordinal. */
   axis?: 'ordinal' | 'numeric'
+  /** Optional explicit axis labels, owned by the metadata contract. */
+  axisLabels?: { x: string; y: string }
+  /** Optional explicit ticks; omitted trajectories derive labels from details. */
+  ticks?: TrajectoryTickMetadata[]
   reference?: TrajectoryReferenceMetadata
   marker?: TrajectoryMarkerMetadata
 }

@@ -81,11 +81,11 @@ describe('OngletTheme — the Milieux subgroup (la lecture + les deux figures In
   })
 
   it('renders the Intensité état figure as the two state rows (M2 then M3, m²/hab)', async () => {
-    const wrapper = await monter('22001') // M2 2021 : 2 250 · M3 2025 : 2 550 m²/hab
+    const wrapper = await monter('22001') // premier point 2020 : 2 180 · dernier 2025 : 2 550 m²/hab
 
     const etat = wrapper.find('.figure-indicateur[data-clef="artif_par_habitant"]')
     expect(etat.text()).toContain('2021')
-    expect(etat.text()).toContain('2 250')
+    expect(etat.text()).toContain('2 180')
     expect(etat.text()).toContain('2025')
     expect(etat.text()).toContain('2 550')
     expect(etat.text()).toContain('m²/hab')

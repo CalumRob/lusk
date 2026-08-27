@@ -144,6 +144,7 @@ describe('IndicateurView — trajectoires (#438)', () => {
     expect(marqueur.attributes('aria-label')).toBe('Seuil de 90 minutes')
     expect(marqueur.find('title').text()).toBe('Seuil de 90 minutes')
     expect(wrapper.find('[data-renderer="trajectory"] svg').attributes('viewBox')).toBe('0 0 600 160')
+    expect(wrapper.findAll('[data-renderer="trajectory"] .trajectoire-tick').map((tick) => tick.classes('trajectoire-tick--wide'))).toEqual([false, true, true, false, true, false, true, false, true, true, false])
 
     await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } })
     await flushPromises()

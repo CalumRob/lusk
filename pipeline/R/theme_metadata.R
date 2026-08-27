@@ -971,6 +971,20 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
                   "l'axe fermé du chemin est requis pour une trajectoire")
         }
         declarees <- unlist(comparison$details, use.names = FALSE)
+        # Le raccordement est le seul chemin numérique dont la grille est
+        # publiée par décision produit : le contrat porte l'ordre, pas
+        # seulement l'ensemble des détails. Toute ancienne grille (notamment
+        # le chemin de 61 points au pas de 10) est donc refusée ici, avant la
+        # publication.
+        if (identical(indicator_key, "raccordement_courbe")) {
+          grille_attendue <- grille_raccordement()
+          if (!identical(declarees, grille_attendue)) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".comparison.details"),
+                   paste0("la grille publiée doit être exactement ",
+                          paste(grille_attendue, collapse = ", ")))
+          }
+        }
         if (length(endpoints) < 2L || anyDuplicated(endpoints) > 0L) {
           manquer(paste0("indicator_pages.", indicator_key, ".trajectory.endpoints"),
                   "les bornes doivent être deux détails distincts au moins")
@@ -986,6 +1000,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
           manquer(paste0("indicator_pages.", indicator_key, ".trajectory.axis"),
                   "l'axe doit être ordinal ou numeric")
         }
+        if (identical(indicator_key, "raccordement_courbe") &&
+            !identical(axis, "numeric")) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".trajectory.axis"),
+                  "l'axe du raccordement doit être numeric")
+        }
         if (!identical(axis, "numeric")) {
           orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
           if (length(orphelines) > 0L) {
@@ -993,6 +1013,15 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
                     paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
                            paste(orphelines, collapse = ", ")))
           }
+        }
+        axis_labels <- extension$axisLabels
+        if (!is.null(axis_labels) &&
+            (!is.list(axis_labels) ||
+             !est_chaine_non_vide(axis_labels$x) ||
+             !est_chaine_non_vide(axis_labels$y))) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".trajectory.axisLabels"),
+                  "x et y doivent être des libellés non vides")
         }
         reference <- extension$reference
         if (!is.null(reference) && (!is.list(reference) ||
@@ -1010,6 +1039,40 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
             !est_chaine_non_vide(marker$label))) {
           manquer(paste0("indicator_pages.", indicator_key, ".trajectory.marker"),
                   "le marqueur doit porter un détail déclaré et un libellé")
+        }
+        ticks <- extension$ticks
+        if (!is.null(ticks)) {
+          if (!is.list(ticks) || !length(ticks)) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks"),
+                   "les repères doivent être une liste non vide")
+          }
+          details_ticks <- vapply(ticks, function(tick) {
+            is.list(tick) && est_chaine_non_vide(tick$detail)
+          }, logical(1L))
+          if (any(!details_ticks)) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks"),
+                   "chaque repère doit porter un détail")
+          }
+          valeurs_ticks <- vapply(ticks, function(tick) tick$detail,
+                                  character(1L))
+          if (anyDuplicated(valeurs_ticks) ||
+              any(!valeurs_ticks %in% declarees) ||
+              any(!vapply(ticks, function(tick)
+                est_chaine_non_vide(tick$label), logical(1L)))) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks"),
+                   "les repères doivent référencer des détails déclarés et porter des libellés")
+          }
+          if (any(vapply(ticks, function(tick)
+            !is.null(tick$mobile) &&
+              !(is.logical(tick$mobile) && length(tick$mobile) == 1L &&
+                !is.na(tick$mobile)), logical(1L)))) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks.mobile"),
+                   "mobile doit être un booléen")
+          }
         }
       }
       if (identical(famille, "distribution")) {

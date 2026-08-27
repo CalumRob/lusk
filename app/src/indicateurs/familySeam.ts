@@ -26,7 +26,7 @@ export interface ComparisonFacet {
 
 export type FamilyRepresentation =
   | { kind: 'scalar'; rows: readonly Indicateur[]; territories: readonly Territoire[] }
-  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; reference: readonly Indicateur[]; extension: TrajectoryMetadata }
+  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; reference: readonly Indicateur[]; labelsDetail: Record<string, string>; extension: TrajectoryMetadata }
   | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: CompositionMetadata }
   | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[]; extension: DistributionMetadata }
   | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[]; extension: ListMetadata }
@@ -99,7 +99,7 @@ function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensio
   return !facet.valid || extensionMissing ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
 }
 
-export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
+export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object; labelsDetail?: Record<string, string> } = {}): FamilyDispatch {
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
   // La jointure des faits vit dans correspondFait (#507) — THÈME × CLÉ
   // toujours (les clés ne sont pas uniques entre thèmes, #383/#438), puis le
@@ -125,7 +125,7 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
         ? filtrerFaits(input.facts ?? [], { theme: facet.theme, cle: page.trajectory.reference.indicator }, CORRESPONDANCE_STRICTE)
           .filter((fact) => fact.territoire === page.trajectory!.reference!.territoire)
         : []
-      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, reference, extension: page.trajectory }, status }
+      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, reference, labelsDetail: input.labelsDetail ?? {}, extension: page.trajectory }, status }
     }
      case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
     case 'distribution': {

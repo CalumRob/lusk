@@ -493,7 +493,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #   - « raccordement_tc » / « raccordement_courbe » / « raccordement_reference »
 #     (issue #486) : LE RACCORDEMENT — la part de la population bretonne
 #     joignable en 90 minutes en TC (le scalaire classé), sa courbe cumulative
-#     (61 détails « t0000 » → « t0600 », la matière de la figure) et la courbe
+#     (11 détails « t0000 » → « t0360 », la matière de la figure) et la courbe
 #     de référence de la commune bretonne médiane (les mêmes détails, portés
 #     par la seule ligne régionale). Calculés depuis la matrice temps FIGÉE
 #     SEULE + la population RP 2023 épinglée — jamais re-routés. Source de
@@ -782,11 +782,11 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tot_loss %>% dplyr::select(code, key, detail, value),
     territoires)
 
-  # la COURBE du raccordement (la matière de la figure) : les 61 points de la
-  # grille aux quatre niveaux — le squelette (territoire × détail) garantit
-  # la multiplicité déclarée partout, NA pour les communes non routées (leur
-  # motif voyage sur le scalaire) ; JAMAIS classée (des courbes ne sont pas
-  # désirables, elles sont vraies)
+  # la COURBE du raccordement (la matière de la figure) : les 11 points de la
+  # grille déclarée aux quatre niveaux — le squelette (territoire × détail)
+  # garantit la multiplicité déclarée partout, NA pour les communes non
+  # routées (leur motif voyage sur le scalaire) ; JAMAIS classée (des courbes
+  # ne sont pas désirables, elles sont vraies)
   racc_courbes <- dplyr::bind_rows(
     racc$calcul$courbes_communes,
     racc$calcul$courbes_epcis,
@@ -1142,20 +1142,22 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
-  # la GRILLE de la courbe du raccordement : les détails « t0000 » → « t0600 »,
-  # exactement les multiples du pas sur [0, cap] de la recette figée — un
-  # détail hors grille ou mal formé est une corruption, jamais une courbe qui
-  # ment sur son axe
+  # la GRILLE de la courbe du raccordement : les 11 détails déclarés « t0000 »
+  # → « t0360 » — un détail hors grille, ancien ou mal formé est une
+  # corruption, jamais une courbe qui ment sur son axe
   function(payload) {
     grille_attendue <- grille_raccordement()
     for (cle in c("raccordement_courbe", "raccordement_reference")) {
-      details <- payload$indicateurs$detail[
-        payload$indicateurs$key == cle]
-      details <- details[!is.na(details)]
-      if (length(details) > 0 &&
-          !setequal(unique(details), grille_attendue)) {
+      lignes <- payload$indicateurs[
+        payload$indicateurs$key == cle &
+          !is.na(payload$indicateurs$detail), , drop = FALSE]
+      par_territoire <- split(lignes$detail, lignes$territoire)
+      if (length(par_territoire) > 0 && any(!vapply(
+        par_territoire,
+        function(details) identical(as.character(details), grille_attendue),
+        logical(1L)))) {
         stop("Payload invalide : la grille de la courbe du raccordement ",
-             "(", cle, ") n'est pas celle de la recette figée.",
+             "(", cle, ") n'est pas la grille publiée déclarée.",
              call. = FALSE)
       }
     }

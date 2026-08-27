@@ -518,7 +518,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       raccordement_courbe: {
         label: 'Courbe cumulative — population bretonne joignable en TC',
         definition:
-          'La courbe cumulative de la part de population bretonne joignable selon le temps de trajet en transports en commun, de mairie à mairie, jusqu’au plafond de 600 minutes.',
+          'La courbe cumulative de la part de population bretonne joignable selon le temps de trajet en transports en commun, de mairie à mairie, jusqu’à 6 heures, publiée sur onze seuils.',
         unite: '%',
         source:
           'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',

@@ -128,6 +128,23 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(x('2025')).toBe(100)
   })
 
+  it('positionne une trajectoire de minutes sur son axe numérique déclaré, pas sur des catégories', () => {
+    const details = ['t0000', 't0015', 't0060', 't0360']
+    const facet = pageTrajectoire(details, 't0060', ['t0000', 't0360'])
+    const modele = modeleTrajectoire(
+      details.map((detail, index) => point('a', detail, index + 1)),
+      facet,
+      ['t0000', 't0360'],
+      territoires,
+      { niveau: 'commune' },
+      [],
+      null,
+      { axis: 'numeric' },
+    )
+    const x = (detail: string) => parDetail(modele, detail).x
+    expect([x('t0015'), x('t0060')]).toEqual([expect.closeTo(15 / 360 * 100, 6), expect.closeTo(60 / 360 * 100, 6)])
+  })
+
   it('garde sur l’axe les bornes déclarées sans valeur (états OCS-GE M2/M3) — jamais effacées du chemin', () => {
     const facet = pageTrajectoire(['M2', 'M3', '2020', '2024'], '2024', ['M2', 'M3'])
     const modele = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12), point('b', '2020', 14), point('b', 'M2', null)], facet, ['M2', 'M3'], territoires, { niveau: 'commune' })
