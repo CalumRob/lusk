@@ -143,6 +143,7 @@ describe('IndicateurView — trajectoires (#438)', () => {
     const marqueur = wrapper.find('[data-renderer="trajectory"] .trajectoire-marqueur')
     expect(marqueur.attributes('aria-label')).toBe('Seuil de 90 minutes')
     expect(marqueur.find('title').text()).toBe('Seuil de 90 minutes')
+    expect(wrapper.find('[data-renderer="trajectory"] svg').attributes('viewBox')).toBe('0 0 600 160')
 
     await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } })
     await flushPromises()
