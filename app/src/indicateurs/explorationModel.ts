@@ -4,7 +4,7 @@ import { resoudreNiveau } from './etatUrl'
 import type { Indicateur, Payload, Territoire } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
 import { correspondFait, filtrerFaits, CORRESPONDANCE_CARTE, CORRESPONDANCE_STRICTE } from './correspondFait'
-import type { IndicatorPageMetadata } from '@/payload/types'
+import type { IndicatorPageMetadata, TrajectoryMetadata } from '@/payload/types'
 
 /** Alias du comparable du contrat d'exploration (#505) — l'ensemble vit là-bas, une seule fois. */
 export type NiveauIndicateur = NiveauComparable
@@ -246,9 +246,19 @@ export interface ModeleTrajectoire {
   /** La référence publiée par la métadonnée (jamais une médiane recalculée côté app). */
   serieReference: readonly PointTrajectoire[] | null
   referenceLabel: string | null
+  /** The selected territory's public label, when the handoff is in scope. */
+  territoireLabel: string | null
 }
 
 const ANNEE_DETAIL = /^\d{4}$/
+const MINUTE_DETAIL = /^t(\d+)$/
+
+export interface OptionsTrajectoire {
+  /** The declared x-axis contract; numeric raccordement points are minutes. */
+  axis?: TrajectoryMetadata['axis']
+  /** Canonical labels from theme metadata, outside the page descriptor. */
+  labelsDetail?: Record<string, string>
+}
 
 export function modeleTrajectoire(
   facts: readonly Indicateur[],
@@ -258,18 +268,26 @@ export function modeleTrajectoire(
   etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
   reference: readonly Indicateur[] = [],
   referenceLabel: string | null = null,
+  options: OptionsTrajectoire = {},
 ): ModeleTrajectoire {
   const details = facet.details
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
 
-  // L'échelle temporelle partagée — UNE coordonnée par détail déclaré. Une
-  // année siège à SA place dans la fenêtre ; une borne déclarée non annuelle
-  // (M2/M3) ancre l'extrémité hors de la plage des années ; le repli ordinal
-  // (détail ni année ni borne, fenêtre sans années) reste déterministe.
-  const annees = details.filter((detail) => ANNEE_DETAIL.test(detail)).map(Number)
+  // L'échelle temporelle partagée — UNE coordonnée par détail déclaré. Le
+  // raccordement déclare un axe numérique de minutes : t0015 vaut 15 et
+  // t0060 vaut 60, au lieu de devenir la deuxième et troisième catégorie.
+  // Les autres trajectoires gardent leur contrat années/états ci-dessous.
+  const axeNumerique = options.axis === 'numeric' ||
+    (options.axis === undefined && details.length > 0 && details.every((detail) => MINUTE_DETAIL.test(detail)))
+  const minutes = new Map(details.flatMap((detail) => {
+    const match = detail.match(MINUTE_DETAIL)
+    return match ? [[detail, Number(match[1])] as const] : []
+  }))
+  const annees = axeNumerique ? [] : details.filter((detail) => ANNEE_DETAIL.test(detail)).map(Number)
   const coordonnees = new Map<string, number>()
   details.forEach((detail, index) => {
-    if (ANNEE_DETAIL.test(detail)) coordonnees.set(detail, Number(detail))
+    if (axeNumerique && minutes.has(detail)) coordonnees.set(detail, minutes.get(detail)!)
+    else if (!axeNumerique && ANNEE_DETAIL.test(detail)) coordonnees.set(detail, Number(detail))
     else if (annees.length && detail === endpoints[0]) coordonnees.set(detail, Math.min(...annees) - 1)
     else if (annees.length && detail === endpoints[endpoints.length - 1]) coordonnees.set(detail, Math.max(...annees) + 1)
     else coordonnees.set(detail, index)
@@ -282,14 +300,14 @@ export function modeleTrajectoire(
     return tMax === tMin ? 0 : ((coordonnee - tMin) / (tMax - tMin)) * 100
   }
 
-  const lignes = details.map((detail) => {
+  const lignes = details.map((detail, index) => {
     // La jointure du détail : le prédicat unique (#507), strict sur le
     // sexe/dimension comme le statut et la facette résumée.
     const rows = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
     const valeurs = rows.filter((row) => row.value !== null).map((row) => row.value as number)
     return {
       detail,
-      label: facet.labels[detail] ?? detail,
+      label: options.labelsDetail?.[detail] ?? facet.labels[detail] ?? `Étape ${index + 1}`,
       x: xDe(detail),
       min: valeurs.length ? Math.min(...valeurs) : null,
       mediane: mediane(valeurs),
@@ -324,7 +342,10 @@ export function modeleTrajectoire(
   const domaineAvecReference = [...valeursDuChemin, ...valeursReference]
   const domaineValeursFinal = { min: domaineAvecReference.length ? Math.min(...domaineAvecReference) : null, max: domaineAvecReference.length ? Math.max(...domaineAvecReference) : null }
 
-  return { etapes: lignes, domaineValeurs: domaineValeursFinal, serieTerritoire, serieReference, referenceLabel }
+  const territoireLabel = refSelectionne && dansScope(refSelectionne, etat.niveau, etat.departement, etat.epci)
+    ? refSelectionne.nom
+    : null
+  return { etapes: lignes, domaineValeurs: domaineValeursFinal, serieTerritoire, serieReference, referenceLabel, territoireLabel }
 }
 
 /**
