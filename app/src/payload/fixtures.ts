@@ -1878,6 +1878,13 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
     raccordement_reference:
       'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
   }
+  base.map_layers = {
+    ...base.map_layers,
+    offre_tc: true,
+    raccordement_tc: true,
+    raccordement_courbe: false,
+    raccordement_reference: false,
+  }
   const pages = base.indicator_pages ?? {}
   const pageBase = {
     unit: '%',

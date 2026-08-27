@@ -2036,6 +2036,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
 
   let indicator_pages: ThemeMetadata['indicator_pages']
   let indicator_caveats: ThemeMetadata['indicator_caveats']
+  let map_layers: ThemeMetadata['map_layers']
   if (meta['indicator_caveats'] !== undefined) {
     exiger(estObjet(meta['indicator_caveats']), fichier, 0, '« indicator_caveats » doit être un objet')
     const caveats = meta['indicator_caveats'] as LigneBrute
@@ -2044,6 +2045,15 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(estChaineNonVide(value), fichier, 0, `« indicator_caveats.${key} » doit être renseigné`)
     }
     indicator_caveats = caveats as Record<string, string>
+  }
+  if (meta['map_layers'] !== undefined) {
+    exiger(estObjet(meta['map_layers']), fichier, 0, '« map_layers » doit être un objet')
+    const declarations = meta['map_layers'] as LigneBrute
+    for (const [key, eligible] of Object.entries(declarations)) {
+      exiger(indicator_keys.includes(key), fichier, 0, `« map_layers » référence un indicateur inconnu « ${key} »`)
+      exiger(typeof eligible === 'boolean', fichier, 0, `« map_layers.${key} » doit être booléen`)
+    }
+    map_layers = declarations as Record<string, boolean>
   }
   if (meta['indicator_pages'] !== undefined) {
     exiger(estObjet(meta['indicator_pages']), fichier, 0, '« indicator_pages » doit être un objet')
@@ -2244,6 +2254,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     indicator_pages,
     source_records: meta['source_records'] as ThemeMetadata['source_records'],
     indicator_caveats,
+    map_layers,
   }
 }
 

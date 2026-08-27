@@ -232,6 +232,7 @@ describe('couchesDuTheme — raccordement (fixture)', () => {
     }))
     expect(couchesIndicateurs.map((couche) => couche.clef)).not.toContain('raccordement_courbe')
     expect(couchesIndicateurs.map((couche) => couche.clef)).not.toContain('raccordement_reference')
+    expect(metadonneesMobiliteRaccordementFixture.map_layers).toMatchObject({ offre_tc: true, raccordement_tc: true, raccordement_courbe: false, raccordement_reference: false })
   })
 })
 

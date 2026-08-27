@@ -140,6 +140,9 @@ describe('IndicateurView — trajectoires (#438)', () => {
     )
     expect(wrapper.find('[data-renderer="trajectory"] .trajectoire-reference').exists()).toBe(true)
     expect(wrapper.find('[data-renderer="trajectory"] .trajectoire-mediane').exists()).toBe(false)
+    const marqueur = wrapper.find('[data-renderer="trajectory"] .trajectoire-marqueur')
+    expect(marqueur.attributes('aria-label')).toBe('Seuil de 90 minutes')
+    expect(marqueur.find('title').text()).toBe('Seuil de 90 minutes')
 
     await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } })
     await flushPromises()

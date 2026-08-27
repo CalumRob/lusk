@@ -320,6 +320,7 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   if (!is.null(theme$raccordement)) {
     pin_matrice <- as.name(paste0("pin_matrice_temps_", nom))
     pin_population <- as.name(paste0("pin_population_", nom))
+    pin_cog_passage <- as.name(paste0("pin_cog_passage_", nom))
     cible_raccordement <- as.name(paste0("raccordement_", nom))
     sortie_raccordement <- file.path(dirname(cache), "processed", nom)
     grappe <- c(grappe, list(
@@ -336,15 +337,25 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
         format = "file"
       ),
       tar_target_raw(
+        as.character(pin_cog_passage),
+        bquote({
+          .(sources)
+          fichier <- .(manifeste)$fichier[.(manifeste)$id == "cog_passage"]
+          stopifnot(length(fichier) == 1L)
+          file.path(.(cache), fichier)
+        }),
+        format = "file"
+      ),
+      tar_target_raw(
         as.character(cible_raccordement),
         bquote({
           .(sources)
           .(pin_matrice)
           .(pin_population)
+          .(pin_cog_passage)
           fichier_epci_extrait
           preparer_raccordement(
-            file.path(.(cache), .(manifeste)$fichier[.(manifeste)$id ==
-                                                        "cog_passage"]),
+            .(pin_cog_passage),
             file.path(.(cache), "extracted", "EPCI_au_01-01-2025.xlsx"),
             sortie = .(sortie_raccordement))
           file.path(.(sortie_raccordement), RACCORDEMENT_ARTEFACT)
@@ -543,8 +554,9 @@ VERIFICATIONS_RUN <- list(
          verifier = verifier_raccordement_reel,
          # la sentinelle "raccordement" : l'artefact calculé par la cible
          # raccordement_mobilite (le trait du descripteur) — la vérification
-         # suit SA fraîcheur, jamais un re-routage
-         args = list(artefact = "raccordement")),
+         # suit SA fraîcheur, jamais un re-routage ; la cible published porte
+         # le JSON effectivement publié, sans refaire tourner le pipeline
+         args = list(artefact = "raccordement", payload = "published")),
     list(slug = "mobilite_e2e",
          verifier = verifier_mobilite_e2e_reel,
          sur_brut = TRUE,
@@ -640,7 +652,7 @@ fichier_source <- function(theme_nom, id, manifeste, sources,
 # référentiel partagé (la sentinelle "epci"). Passer la cible en argument EST
 # la dépendance — le manifeste résout le chemin, la commande ne hard-code
 # jamais un nom de fichier.
-verifications_theme <- function(theme, cache = CACHE_RUN) {
+verifications_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN) {
   spec <- VERIFICATIONS_RUN[[theme$theme]]
   if (is.null(spec)) return(list())
   cibles <- list()
@@ -660,6 +672,25 @@ verifications_theme <- function(theme, cache = CACHE_RUN) {
         # cible du trait — le verrou reçoit SON chemin (format = "file"),
         # la vérification suit SA fraîcheur
         appels[[param]] <- as.name(paste0("raccordement_", theme$theme))
+      } else if (identical(id, "published")) {
+        # La vérification du raccordement lit le JSON publié, mais le chemin
+        # est lui-même une cible de fichiers ordonnée après la publication :
+        # une dérive du payload ne peut pas laisser le verrou frais.
+        cible_payload <- as.name(paste0("fichier_payload_", theme$theme))
+        if (!id %in% deja) {
+          cibles <- c(cibles, list(
+            tar_target_raw(
+              as.character(cible_payload),
+              bquote({
+                .(as.name(paste0("publie_", theme$theme)))
+                .(file.path(sortie, paste0("indicateurs_", theme$theme, ".json")))
+              }),
+              format = "file"
+            )
+          ))
+          deja <- c(deja, id)
+        }
+        appels[[param]] <- cible_payload
       } else {
         if (!id %in% deja) {
           cibles <- c(cibles, list(fichier_source(

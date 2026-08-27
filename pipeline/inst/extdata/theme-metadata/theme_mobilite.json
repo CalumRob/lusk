@@ -281,6 +281,12 @@
     "raccordement_courbe": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
     "raccordement_reference": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées."
   },
+  "map_layers": {
+    "offre_tc": true,
+    "raccordement_tc": true,
+    "raccordement_courbe": false,
+    "raccordement_reference": false
+  },
   "indicator_pages": {
     "voitures_menage": { "indicator": "voitures_menage", "label": "Voitures par ménage", "definition": "Répartition des ménages selon le nombre de voitures possédées.", "unit": "%", "calculation": "Parts publiées par le pipeline.", "direction": "high", "caveats": "Les catégories décrivent les ménages recensés.", "levels": ["commune", "epci", "departement"], "sources": ["rp_logement_princ"], "family": "composition", "composition": { "parts": ["sans_voiture", "une_voiture", "deux_plus"] }, "comparison": { "details": ["sans_voiture", "une_voiture", "deux_plus"], "detail": "sans_voiture", "unit": "%", "labels": { "sans_voiture": "Ménages sans voiture", "une_voiture": "Ménages avec 1 voiture", "deux_plus": "Ménages avec 2 voitures ou plus" } } },
     "offre_cyclable": { "indicator": "offre_cyclable", "label": "L’offre cyclable", "definition": "Répartition de l’offre cyclable entre aménagements protégés et partagés.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "La longueur dépend de la couverture du réseau publié.", "levels": ["commune", "epci", "departement"], "sources": ["osm_reseaux"], "family": "composition", "composition": { "parts": ["protege_longueur", "partage_longueur"] }, "comparison": { "details": ["protege_longueur", "partage_longueur", "total_longueur"], "detail": "total_longueur", "unit": "km", "labels": { "protege_longueur": "Longueur protégée", "partage_longueur": "Longueur partagée", "total_longueur": "Longueur totale" } } },

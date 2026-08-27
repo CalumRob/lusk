@@ -712,6 +712,8 @@ export interface ThemeMetadata {
   source_records?: Record<string, SourceRecord>
   /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
   indicator_caveats?: Record<string, string>
+  /** Optional map-layer eligibility, keyed by indicator; omitted entries stay eligible. */
+  map_layers?: Record<string, boolean>
 }
 
 export interface SourceRecord {

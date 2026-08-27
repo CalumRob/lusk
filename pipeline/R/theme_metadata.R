@@ -1043,6 +1043,26 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     }
   }
 
+  # La carte suit l'éligibilité déclarée par le payload : une figure composée
+  # d'une courbe et d'une référence peut rester visible sur la fiche sans
+  # devenir deux couches autonomes. Les clés absentes restent cartographiables
+  # pour conserver le contrat historique des indicateurs.
+  if (!is.null(metadata$map_layers)) {
+    if (!is.list(metadata$map_layers) || is.data.frame(metadata$map_layers) ||
+        (length(metadata$map_layers) > 0L && is.null(names(metadata$map_layers)))) {
+      manquer("map_layers", "la carte d'éligibilité doit être un objet")
+    }
+    inconnues <- setdiff(names(metadata$map_layers), cles_indicateurs)
+    if (length(inconnues) > 0L) {
+      manquer("map_layers", paste0("indicateur(s) inconnu(s) : ",
+                                    paste(inconnues, collapse = ", ")))
+    }
+    if (any(!vapply(metadata$map_layers, function(x)
+      is.logical(x) && length(x) == 1L && !is.na(x), logical(1L)))) {
+      manquer("map_layers", "chaque éligibilité doit être un booléen")
+    }
+  }
+
   # 7. la bijection sous-groupes ↔ registres : chaque indicateur vit dans
   #    EXACTEMENT un sous-groupe, chaque histoire est lue par EXACTEMENT un
   #    sous-groupe — rien d'orphelin, rien de partagé (l'identité

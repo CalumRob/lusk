@@ -100,14 +100,9 @@ const SERIES_EXCLUES: Partial<Record<Theme, readonly string[]>> = {
   milieux: ['conso_enaf_annuel'],
 }
 
-/**
- * Coordinated figure-only facts: they are rendered together as one chart and
- * do not describe one mappable value per territory. The scalar
- * `raccordement_tc` remains a normal layer; only the curve and its median
- * reference are excluded from the sidebar (#487).
- */
-const FIGURES_EXCLUES: Partial<Record<Theme, readonly string[]>> = {
-  mobilite: ['raccordement_courbe', 'raccordement_reference'],
+/** Eligibility is declared by the payload, not by a key/theme exception. */
+function estCoucheCartographiable(metadata: ThemeMetadata, clef: string): boolean {
+  return metadata.map_layers?.[clef] !== false
 }
 
 /** Le libellé d'un scalaire de Story — l'indicator_labels quand le champ est
@@ -221,13 +216,13 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
   // L'ordre des figures d'indicateurs — le registre des métadonnées (l'ordre
   // de la fiche, payload-owned), filtré aux clés que le payload publie.
   const clesIndicateurs = meta.indicator_keys.filter((clef) =>
-    !FIGURES_EXCLUES[theme]?.includes(clef) &&
+    estCoucheCartographiable(meta, clef) &&
     payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef),
   )
 
   const scalairesIndicateurs = new Set<string>()
   for (const clef of clesIndicateurs) {
-    if (SERIES_EXCLUES[theme]?.includes(clef) || FIGURES_EXCLUES[theme]?.includes(clef)) continue
+    if (SERIES_EXCLUES[theme]?.includes(clef)) continue
     if (payload.indicateurs.some((l) => l.theme === theme && l.key === clef && l.detail === null)) {
       scalairesIndicateurs.add(clef)
     }
@@ -279,7 +274,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
   }
 
   for (const clef of clesIndicateurs) {
-    if (SERIES_EXCLUES[theme]?.includes(clef) || FIGURES_EXCLUES[theme]?.includes(clef)) continue
+    if (SERIES_EXCLUES[theme]?.includes(clef)) continue
     // les story scalars sont déjà émis (part_passoires est dans les deux tables)
     if (scalairesStory.some((scalaire) => scalaire.champ === clef)) continue
     if (scalairesIndicateurs.has(clef)) {

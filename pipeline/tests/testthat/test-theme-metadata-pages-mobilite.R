@@ -41,6 +41,28 @@ test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses quato
   expect_no_error(valider_theme_metadata(meta))
 })
 
+test_that("map_layers déclare les faits cartographiables sans exposer les séries composées (#487)", {
+  meta <- lire_theme_metadata("mobilite")
+  expect_identical(meta$map_layers, list(
+    offre_tc = TRUE,
+    raccordement_tc = TRUE,
+    raccordement_courbe = FALSE,
+    raccordement_reference = FALSE
+  ))
+
+  inconnu <- meta
+  inconnu$map_layers$fantome <- TRUE
+  expect_error(valider_theme_metadata(inconnu), "indicateur")
+
+  invalide <- meta
+  invalide$map_layers$raccordement_tc <- "oui"
+  expect_error(valider_theme_metadata(invalide), "booléen")
+
+  vide <- meta
+  vide$map_layers <- list()
+  expect_no_error(valider_theme_metadata(vide))
+})
+
 test_that("publier_theme_metadata : les quatorze pages passent le seam et survivent au round-trip (#461)", {
   meta <- lire_theme_metadata("mobilite")
   sortie <- file.path(tempdir(), "pages-scalaires-mobilite")
