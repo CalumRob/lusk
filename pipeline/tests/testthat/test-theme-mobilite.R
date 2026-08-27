@@ -2221,7 +2221,7 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
   # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
-  # la référence médiane — multiplicités 1 / 61 / NA, la référence ne vit
+  # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
    expect_equal(nrow(ind), 19L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
@@ -2250,7 +2250,7 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$multiplicite[ind$key == cle], 1L, info = cle)
   }
-  # le raccordement (issue #486) : 1 / 61 / NA (la référence est variable —
+  # le raccordement (issue #486) : 1 / 11 / NA (la référence est variable —
   # la seule région la porte)
   grille_n <- length(grille_raccordement())
   expect_equal(ind$multiplicite[ind$key == "raccordement_tc"], 1L)
@@ -2593,8 +2593,8 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
                   grille_attendue)
   expect_equal(courbe_ind$value[courbe_ind$territoire == "22001" &
                                   courbe_ind$detail == "t0090"],
-               0.001 * 10)
-  # la commune NON ROUTÉE garde ses 61 détails à NA (jamais une ligne
+               0.001 * 6)
+  # la commune NON ROUTÉE garde ses 11 détails à NA (jamais une ligne
   # manquante — la multiplicité déclarée)
   expect_equal(sum(courbe_ind$territoire == "29002"), grille_n)
   expect_true(all(is.na(courbe_ind$value[courbe_ind$territoire == "29002"])))
@@ -2783,7 +2783,7 @@ test_that("validations_mobilite : le raccordement hors domaine ou hors grille fa
   expect_error(validate_payload(
     payload, indicateurs = INDICATEURS_MOBILITE,
     vintages = vintages_mobilite(), validations = validations_mobilite,
-    apercu = APERCU_MOBILITE), "recette figée")
+    apercu = APERCU_MOBILITE), "grille publiée")
 
   # un détail MAL FORMÉ fait échouer
   payload <- fabriquer_payload()
@@ -2793,7 +2793,7 @@ test_that("validations_mobilite : le raccordement hors domaine ou hors grille fa
   expect_error(validate_payload(
     payload, indicateurs = INDICATEURS_MOBILITE,
     vintages = vintages_mobilite(), validations = validations_mobilite,
-    apercu = APERCU_MOBILITE), "recette figée")
+    apercu = APERCU_MOBILITE), "grille publiée")
 })
 
 # =============================================================================

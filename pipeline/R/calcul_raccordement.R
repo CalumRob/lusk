@@ -62,22 +62,27 @@ W_RACCORDEMENT <- 3449370L
 # Le seuil PUBLIÉ : 90 minutes (décision §7 du parent — « share@T, T = 90 »).
 SEUIL_RACCORDEMENT_MIN <- 90L
 
+# MINUTES_COURBE_RACCORDEMENT -------------------------------------------------------
+# Les points de décision publiés de la courbe cumulative. Cette grille est
+# volontairement déclarée (et non dérivée d'un pas) : elle conserve les
+# ruptures utiles des 45 premières minutes, puis les repères de lecture
+# jusqu'à six heures. La matrice peut rester calculée jusqu'à son cap de
+# recette (600 minutes), mais le contrat de publication s'arrête à 360.
+MINUTES_COURBE_RACCORDEMENT <- c(0L, 15L, 30L, 45L, 60L, 90L, 120L,
+                                 180L, 240L, 300L, 360L)
+
 # PAS_COURBE_RACCORDEMENT -----------------------------------------------------------
-# Le pas de la grille de la courbe cumulative (minutes) : de 0 au cap de la
-# recette figée (600), soit 61 points par territoire.
+# Compatibilité avec l'enveloppe historique : ce champ décrit le pas de la
+# recette qui a produit la matrice, pas la grille publiée. Les sorties ne
+# doivent jamais être reconstruites avec ce pas.
 PAS_COURBE_RACCORDEMENT <- 10L
 
 # GRILLE_RACCORDEMENT ---------------------------------------------------------------
-# LA GRILLE de la courbe du raccordement : les marques de détail « t0000 » →
-# « t0600 », exactement les multiples du pas sur [0, cap] de la recette figée
-# (RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min + PAS_COURBE_RACCORDEMENT).
-# SOURCE UNIQUE de la forme : la table déclarative (la multiplicité),
-# l'assemblage des indicateurs, les validations du thème et les tests la
-# consomment — jamais une recopie de la forme seq(0, cap, by = pas).
+# SOURCE UNIQUE de la forme publiée : la table déclarative ci-dessus est
+# consommée par l'assemblage, les métadonnées, les validations et les tests.
+# Aucun seq(0, cap, by = pas) ne doit réintroduire l'ancien chemin de 61 points.
 grille_raccordement <- function() {
-  paste0("t", sprintf("%04d",
-                      seq(0, RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min,
-                          by = PAS_COURBE_RACCORDEMENT)))
+  paste0("t", sprintf("%04d", MINUTES_COURBE_RACCORDEMENT))
 }
 
 # MOTIF_NON_ROUTE_RACCORDEMENT ------------------------------------------------------
@@ -342,7 +347,17 @@ calculer_raccordement <- function(matrice, population, codes_cog,
   # les parts cumulées : P[x, c] = Σ_j w_j·1[S(j,c) ≤ x] / W — le produit
   # matrice × vecteur de poids (recyclé par LIGNE, chaque origine pèse son
   # w), jamais un comptage de booléens
-  xs <- seq(0, cap_duree_min, by = pas)
+  # Le cap et le pas restent des paramètres de la recette de routage, mais ne
+  # gouvernent plus la grille de publication. La courbe est toujours produite
+  # exactement sur les points déclarés par MINUTES_COURBE_RACCORDEMENT.
+  if (!identical(as.integer(cap_duree_min),
+                 RECETTE_MATRICE_TEMPS_MAIRIES$cap_duree_min) ||
+      !identical(as.integer(pas), PAS_COURBE_RACCORDEMENT)) {
+    manquer("grille", paste0(
+      "la grille publiée est déclarée et ne peut pas être dérivée d'un autre ",
+      "cap ou pas"))
+  }
+  xs <- as.numeric(MINUTES_COURBE_RACCORDEMENT)
   col_seuil <- match(seuil, xs)
   if (is.na(col_seuil)) {
     manquer("grille",

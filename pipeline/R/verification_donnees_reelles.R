@@ -208,12 +208,14 @@ verifier_raccordement_reel <- function(artefact, payload) {
                  paste("raccordement — chaque commune routée rejoint le",
                        "réseau régional par SA diagonale (t = 0)"))
 
-  grille <- seq(0, enveloppe$entrees$recette$cap_duree_min,
-                by = enveloppe$entrees$pas)
+  # La recette de routage garde son cap de 600 minutes, mais la publication
+  # suit la grille de décision déclarée (11 points), jamais le pas historique
+  # de la matrice.
+  grille <- as.integer(sub("^t", "", grille_raccordement()))
   courbe_rennes <- calcul$courbes_communes[
     calcul$courbes_communes$code == "35238", ]
-  verifier_egale(sort(courbe_rennes$minute), grille,
-                 "raccordement — la grille complète de la courbe de Rennes")
+  verifier_egale(as.integer(courbe_rennes$minute), grille,
+                 "raccordement — la grille publiée de la courbe de Rennes")
   verifier_vrai(all(diff(courbe_rennes$part) >= 0),
                 "raccordement", "la courbe de Rennes n'est pas monotone")
 
@@ -260,9 +262,9 @@ verifier_raccordement_reel <- function(artefact, payload) {
   }
   verifier_egale(couverture("raccordement_tc"), c(1202L, 61L, 4L, 1L),
                  "raccordement — couverture du scalaire publié")
-  verifier_egale(couverture("raccordement_courbe"), c(73322L, 3721L, 244L, 61L),
+  verifier_egale(couverture("raccordement_courbe"), c(13222L, 671L, 44L, 11L),
                  "raccordement — couverture de la courbe publiée")
-  verifier_egale(couverture("raccordement_reference"), c(0L, 0L, 0L, 61L),
+  verifier_egale(couverture("raccordement_reference"), c(0L, 0L, 0L, 11L),
                  "raccordement — couverture de la référence publiée")
   for (cle in cles) {
     lignes <- raccordement[raccordement$key == cle, , drop = FALSE]

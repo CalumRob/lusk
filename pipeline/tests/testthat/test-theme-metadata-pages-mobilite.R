@@ -41,6 +41,22 @@ test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses quato
   expect_no_error(valider_theme_metadata(meta))
 })
 
+test_that("la trajectoire raccordement déclare exactement la grille publiée et ses repères humains", {
+  meta <- lire_theme_metadata("mobilite")
+  page <- meta$indicator_pages$raccordement_courbe
+  expect_identical(
+    unlist(page$comparison$details, use.names = FALSE),
+    c("t0000", "t0015", "t0030", "t0045", "t0060", "t0090", "t0120",
+      "t0180", "t0240", "t0300", "t0360")
+  )
+  expect_identical(unlist(page$trajectory$endpoints, use.names = FALSE),
+                   c("t0000", "t0360"))
+  expect_identical(vapply(page$trajectory$ticks, `[[`, character(1L), "label"),
+                   c("0", "15", "30", "45", "1 h", "1 h 30", "2 h",
+                     "3 h", "4 h", "5 h", "6 h"))
+  expect_no_error(valider_theme_metadata(meta))
+})
+
 test_that("map_layers déclare les faits cartographiables sans exposer les séries composées (#487)", {
   meta <- lire_theme_metadata("mobilite")
   expect_identical(meta$map_layers, list(
