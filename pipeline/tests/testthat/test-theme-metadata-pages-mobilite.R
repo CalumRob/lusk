@@ -51,10 +51,14 @@ test_that("la trajectoire raccordement déclare exactement la grille publiée et
   )
   expect_identical(unlist(page$trajectory$endpoints, use.names = FALSE),
                    c("t0000", "t0360"))
+  expect_identical(page$trajectory$axis, "numeric")
   expect_identical(vapply(page$trajectory$ticks, `[[`, character(1L), "label"),
                    c("0", "15", "30", "45", "1 h", "1 h 30", "2 h",
                      "3 h", "4 h", "5 h", "6 h"))
   expect_no_error(valider_theme_metadata(meta))
+  ordinal <- meta
+  ordinal$indicator_pages$raccordement_courbe$trajectory$axis <- "ordinal"
+  expect_error(valider_theme_metadata(ordinal), "numeric")
 })
 
 test_that("map_layers déclare les faits cartographiables sans exposer les séries composées (#487)", {

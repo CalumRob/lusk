@@ -1000,6 +1000,12 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
           manquer(paste0("indicator_pages.", indicator_key, ".trajectory.axis"),
                   "l'axe doit être ordinal ou numeric")
         }
+        if (identical(indicator_key, "raccordement_courbe") &&
+            !identical(axis, "numeric")) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".trajectory.axis"),
+                  "l'axe du raccordement doit être numeric")
+        }
         if (!identical(axis, "numeric")) {
           orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
           if (length(orphelines) > 0L) {
