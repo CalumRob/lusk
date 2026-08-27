@@ -75,8 +75,9 @@ describe('raccordement — fiche et accessibilité', () => {
         nom: 'Allineuc',
         libelle: 'Courbe cumulative',
         trajectory: {
-          endpoints: ['t0000', 't0600'],
+          endpoints: ['t0000', 't0360'],
           axis: 'numeric',
+          axisLabels: { x: 'Temps de trajet (minutes)', y: 'Population joignable (%)' },
           marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
         },
       },
@@ -90,9 +91,10 @@ describe('raccordement — fiche et accessibilité', () => {
     expect(wrapper.find('svg').attributes('aria-label')).toContain('médiane')
     expect(wrapper.find('svg').attributes('aria-label')).toContain('90 minutes')
     expect(wrapper.findAll('path[role], line[role]')).toHaveLength(0)
-    expect(wrapper.find('.liste-points').text()).toContain('90 min')
+    expect(wrapper.find('.trajectoire-resume').text()).toContain('90 minutes')
+    expect(wrapper.find('.liste-points').exists()).toBe(false)
     expect(wrapper.text()).toContain('Temps de trajet (minutes)')
-    expect(wrapper.text()).toContain('Part de population (%)')
+    expect(wrapper.text()).toContain('Population joignable (%)')
   })
 
   it('rend une absence honnête quand le territoire est non routé', () => {
@@ -104,7 +106,7 @@ describe('raccordement — fiche et accessibilité', () => {
         reference,
         nom: 'Commune non routée',
         libelle: 'Courbe cumulative',
-        trajectory: { endpoints: ['t0000', 't0600'], axis: 'numeric' },
+        trajectory: { endpoints: ['t0000', 't0360'], axis: 'numeric' },
       },
     })
 
@@ -125,7 +127,7 @@ describe('raccordement — fiche et accessibilité', () => {
     })
 
     expect(wrapper.findAll('.trajectoire-courante')).toHaveLength(2)
-    expect(wrapper.find('.liste-points').text()).toContain('20 min')
+    expect(wrapper.find('.trajectoire-resume').text()).toContain('interrompent')
   })
 
   it('publie les trois niveaux, une tranche littérale de courbe et la référence régionale dans le contrat', () => {
@@ -141,8 +143,8 @@ describe('raccordement — fiche et accessibilité', () => {
       'departement',
       'region',
     ])
-    expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe')).toHaveLength(9)
-    expect(lignes.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(3)
+    expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe')).toHaveLength(33)
+    expect(lignes.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(11)
     expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail === 't0090'))
       .toHaveLength(3)
     expect(lignes.find((ligne) => ligne.key === 'raccordement_reference' && ligne.detail === 't0090' && ligne.territoire === '53')?.value)
@@ -157,7 +159,11 @@ describe('raccordement — fiche et accessibilité', () => {
 
     expect(validee.indicator_keys).toContain('raccordement_tc')
     expect(validee.sources.raccordement_courbe).toBe('matrice_temps_mairies')
-    expect(validee.detail_labels.raccordement_courbe?.t0600).toBe('600 minutes')
+    expect(Object.keys(validee.detail_labels.raccordement_courbe ?? {})).toEqual([
+      't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
+      't0120', 't0180', 't0240', 't0300', 't0360',
+    ])
+    expect(validee.detail_labels.raccordement_courbe?.t0360).toBe('6 h')
   })
 
   it('publie la méthode du raccordement avec ses autorités et ses garde-fous', () => {

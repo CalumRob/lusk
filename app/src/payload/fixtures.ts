@@ -705,6 +705,12 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   ...indicateursOffreCyclableFixture,
 ]
 
+/** The exact published raccordement curve grid (11 points, in canonical order). */
+const DETAILS_COURBE_RACCORDEMENT_FIXTURE = [
+  't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
+  't0120', 't0180', 't0240', 't0300', 't0360',
+] as const
+
 /** A literal raccordement slice copied from public/data after artefact promotion (#487). */
 export const territoiresRaccordementFixture: Territoire[] = [
   { territoire: '22001', type: 'commune', nom: 'Allineuc', departement: '22', epci: '200067460' },
@@ -724,7 +730,7 @@ function pointRaccordementFixture(
   territoire: string,
   type: Indicateur['type'],
   detail: string,
-  value: number,
+  value: number | null,
   key: 'raccordement_courbe' | 'raccordement_reference' = 'raccordement_courbe',
 ): Indicateur {
   return {
@@ -744,6 +750,20 @@ function pointRaccordementFixture(
     rang_reg_n: null,
     ...vintageRaccordementMobilite,
   }
+}
+
+function pointsRaccordementFixture(
+  territoire: string,
+  type: Indicateur['type'],
+  values: readonly (number | null)[],
+  key: 'raccordement_courbe' | 'raccordement_reference' = 'raccordement_courbe',
+): Indicateur[] {
+  if (values.length !== DETAILS_COURBE_RACCORDEMENT_FIXTURE.length) {
+    throw new Error('La fixture du raccordement doit porter exactement 11 points publiés.')
+  }
+  return DETAILS_COURBE_RACCORDEMENT_FIXTURE.map((detail, index) =>
+    pointRaccordementFixture(territoire, type, detail, values[index], key),
+  )
 }
 
 function scalaireRaccordementFixture(
@@ -790,18 +810,27 @@ export const indicateursRaccordementFixture: Indicateur[] = [
     rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 2, rang_reg_n: 4,
   }, 'Part de la population réellement mesurée par le réseau : 99,6 % (les communes non routées sont exclues du calcul).'),
   scalaireRaccordementFixture('53', 'region', 1, undefined, 'Part de la population réellement mesurée par le réseau : 98,9 % (les communes non routées sont exclues du calcul).'),
-  pointRaccordementFixture('22001', 'commune', 't0000', 0.00017075581917857464),
-  pointRaccordementFixture('22001', 'commune', 't0090', 0.00017075581917857464),
-  pointRaccordementFixture('22001', 'commune', 't0600', 0.00017075581917857464),
-  pointRaccordementFixture('200027027', 'epci', 't0000', 0.008044690902778755),
-  pointRaccordementFixture('200027027', 'epci', 't0090', 0.04359749804131305),
-  pointRaccordementFixture('200027027', 'epci', 't0600', 0.6842963153227963),
-  pointRaccordementFixture('22', 'departement', 't0000', 0.17486324377325208),
-  pointRaccordementFixture('22', 'departement', 't0090', 0.4420967567897238),
-  pointRaccordementFixture('22', 'departement', 't0600', 0.8699654708120458),
-  pointRaccordementFixture('53', 'region', 't0000', 0.0003992033327825081, 'raccordement_reference'),
-  pointRaccordementFixture('53', 'region', 't0090', 0.014584982185152652, 'raccordement_reference'),
-  pointRaccordementFixture('53', 'region', 't0600', 0.2961262491411475, 'raccordement_reference'),
+  ...pointsRaccordementFixture('22001', 'commune', [
+    0.00017075581917857464, 0.00017075581917857464, 0.00017075581917857464,
+    0.00017075581917857464, 0.00017075581917857464, 0.00017075581917857464,
+    0.00017075581917857464, 0.00017075581917857464, 0.00017075581917857464,
+    0.00017075581917857464, 0.00017075581917857464,
+  ]),
+  ...pointsRaccordementFixture('200027027', 'epci', [
+    0.008044690902778755, 0.008660738999685672, 0.009152756470704142, 0.011645097652859683, 0.011645097652859683,
+    0.04359749804131305, 0.10984392666300732, 0.29086765140532855,
+    0.5329543215436799, 0.6193681885781575, 0.6534654684663129,
+  ]),
+  ...pointsRaccordementFixture('22', 'departement', [
+    0.17486324377325208, 0.17909142728462654, 0.18917016180865387, 0.19356987703668257, 0.30038516933845644,
+    0.4420967567897238, 0.5516964340168798, 0.7824174419313826,
+    0.8277431586700633, 0.8655812960643294, 0.8699654708120458,
+  ]),
+  ...pointsRaccordementFixture('53', 'region', [
+    0.0003992033327825081, 0.00047573904800006956, 0.0010361312355589571, 0.0023183943734652996, 0.004568080548042106,
+    0.014584982185152652, 0.043124106720937444, 0.11412634770987166,
+    0.21432087598604962, 0.24915854199462512, 0.2681051902231422,
+  ], 'raccordement_reference'),
 ]
 
 /** Les Stories Mobilité (issue #142, RÉSOLUES par #312) — UNE lecture par
@@ -1829,12 +1858,11 @@ export function metadonneesHabitatAvecPagesFixture(
 /** The promoted Mobilité metadata slice, including the raccordement subgroup. */
 export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   const base = structuredClone(metadonneesThemesFixtures.mobilite)
-  const detailsCourbe = Object.fromEntries(
-    Array.from({ length: 61 }, (_, index) => {
-      const minute = index * 10
-      return [`t${String(minute).padStart(4, '0')}`, `${minute} minutes`]
-    }),
-  )
+  const detailsCourbe = Object.fromEntries([
+    ['t0000', '0'], ['t0015', '15'], ['t0030', '30'], ['t0045', '45'],
+    ['t0060', '1 h'], ['t0090', '1 h 30'], ['t0120', '2 h'], ['t0180', '3 h'],
+    ['t0240', '4 h'], ['t0300', '5 h'], ['t0360', '6 h'],
+  ])
   base.subgroups = base.subgroups.map((group) => group.key === 'acces-aux-services'
     ? { ...group, indicators: group.indicators.filter((indicator) => indicator !== 'offre_tc') }
     : group)
@@ -1913,8 +1941,22 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
       caveats: caveat,
       family: 'trajectory',
       trajectory: {
-        endpoints: ['t0000', 't0600'],
+        endpoints: ['t0000', 't0360'],
         axis: 'numeric',
+        axisLabels: { x: 'Temps de trajet (minutes)', y: 'Population joignable (%)' },
+        ticks: [
+          { detail: 't0000', label: '0', mobile: true },
+          { detail: 't0015', label: '15', mobile: false },
+          { detail: 't0030', label: '30', mobile: false },
+          { detail: 't0045', label: '45', mobile: true },
+          { detail: 't0060', label: '1 h', mobile: false },
+          { detail: 't0090', label: '1 h 30', mobile: true },
+          { detail: 't0120', label: '2 h', mobile: false },
+          { detail: 't0180', label: '3 h', mobile: true },
+          { detail: 't0240', label: '4 h', mobile: false },
+          { detail: 't0300', label: '5 h', mobile: false },
+          { detail: 't0360', label: '6 h', mobile: true },
+        ],
         reference: { indicator: 'raccordement_reference', territoire: '53', label: 'Commune bretonne médiane' },
         marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
       },
