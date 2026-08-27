@@ -26,7 +26,7 @@ export interface ComparisonFacet {
 
 export type FamilyRepresentation =
   | { kind: 'scalar'; rows: readonly Indicateur[]; territories: readonly Territoire[] }
-  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; extension: TrajectoryMetadata }
+  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; reference: readonly Indicateur[]; extension: TrajectoryMetadata }
   | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: CompositionMetadata }
   | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[]; extension: DistributionMetadata }
   | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[]; extension: ListMetadata }
@@ -121,7 +121,11 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
       // dans le prédicat unique (#507) — le sexe/dimension restent stricts.
       const cheminRows = allFacts.filter((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, details: detailsDeclarees, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE))
       const status: FamilyStatus = !facet.valid || page.trajectory === undefined ? 'invalid' : cheminRows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
-      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, extension: page.trajectory }, status }
+      const reference = page.trajectory.reference
+        ? filtrerFaits(input.facts ?? [], { theme: facet.theme, cle: page.trajectory.reference.indicator }, CORRESPONDANCE_STRICTE)
+          .filter((fact) => fact.territoire === page.trajectory!.reference!.territoire)
+        : []
+      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, reference, extension: page.trajectory }, status }
     }
      case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
     case 'distribution': {

@@ -712,6 +712,8 @@ export interface ThemeMetadata {
   source_records?: Record<string, SourceRecord>
   /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
   indicator_caveats?: Record<string, string>
+  /** Optional map-layer eligibility, keyed by indicator; omitted entries stay eligible. */
+  map_layers?: Record<string, boolean>
 }
 
 export interface SourceRecord {
@@ -780,7 +782,30 @@ export interface ComparisonFacetMetadata {
   unit?: string
   labels?: Record<string, string>
 }
-export interface TrajectoryMetadata { endpoints: string[] }
+/** Optional second series and marker for a metadata-driven trajectory. */
+export interface TrajectoryReferenceMetadata {
+  /** Published indicator key carrying the comparison series. */
+  indicator: string
+  /** Territory row carrying the reference series. */
+  territoire: string
+  /** Public label shown in the legend and text alternative. */
+  label: string
+}
+
+export interface TrajectoryMarkerMetadata {
+  /** Detail on the x axis at which the marker is drawn. */
+  detail: string
+  /** Public label shown with the marker and in the text alternative. */
+  label: string
+}
+
+export interface TrajectoryMetadata {
+  endpoints: string[]
+  /** `numeric` positions points from their detail; omitted means ordinal. */
+  axis?: 'ordinal' | 'numeric'
+  reference?: TrajectoryReferenceMetadata
+  marker?: TrajectoryMarkerMetadata
+}
 export interface CompositionMetadata { parts: string[] }
 /**
  * Une distribution ne se compare JAMAIS par ses bins (#440) : la facette

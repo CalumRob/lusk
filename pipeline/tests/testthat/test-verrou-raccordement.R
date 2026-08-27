@@ -15,8 +15,11 @@ test_that("verrou raccordement : les sorties réelles passent couverture, domain
   zip_cog <- file.path(racine, "data", "raw", "table_passage_annuelle_2025.zip")
   base_epci <- file.path(racine, "data", "raw", "extracted",
                          "EPCI_au_01-01-2025.xlsx")
+  payload <- file.path(racine, "public", "data",
+                       "indicateurs_mobilite.json")
   skip_if_not(file.exists(zip_cog), "le cache des données réelles n'est pas présent")
   skip_if_not(file.exists(base_epci), "le référentiel EPCI extrait n'est pas présent")
+  skip_if_not(file.exists(payload), "le payload publié du raccordement est absent")
 
   sortie <- tempfile("verrou-raccordement-")
   dir.create(sortie)
@@ -24,5 +27,5 @@ test_that("verrou raccordement : les sorties réelles passent couverture, domain
 
   preparer_raccordement(zip_cog = zip_cog, chemin_base_epci = base_epci,
                         sortie = sortie)
-  expect_invisible(verifier_raccordement_reel(sortie))
+  expect_invisible(verifier_raccordement_reel(sortie, payload))
 })

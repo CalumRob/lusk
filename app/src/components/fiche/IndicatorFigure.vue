@@ -14,7 +14,12 @@
 import { computed } from 'vue'
 
 import PuceRang from '@/components/fiche/PuceRang.vue'
-import { detailsRangEnContexte, formaterValeur, formaterVintage } from '@/payload/selectors'
+import {
+  detailsRangEnContexte,
+  formaterValeur,
+  formaterVintage,
+  phraseRaccordement,
+} from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
 import {
   accentPositionRang,
@@ -31,6 +36,8 @@ const props = defineProps<{
   large?: boolean
   /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
   theme: Theme
+  /** The territory name used by the approved raccordement sentence (#487). */
+  nomTerritoire?: string
 }>()
 
 const premiere = computed(() => props.lignes[0] ?? null)
@@ -93,6 +100,12 @@ const accentClasse = computed(() => {
 
 const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value) : null))
 
+const phrase = computed(() =>
+  premiere.value && props.nomTerritoire
+    ? phraseRaccordement(props.nomTerritoire, premiere.value)
+    : null,
+)
+
 interface Segment {
   libelle: string
   texte: string
@@ -152,6 +165,7 @@ const segments = computed<Segment[]>(() => {
       <span v-if="unite && valeur" class="valeur-unite">{{ unite }}</span>
     </div>
 
+    <p v-if="phrase" class="figure-indicateur-prose">{{ phrase }}</p>
     <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
     <p v-if="premiere?.rider" class="figure-indicateur-rider">{{ premiere.rider }}</p>
     <PuceRang v-if="puce && !multi" :puce="puce" />
@@ -195,6 +209,12 @@ const segments = computed<Segment[]>(() => {
 .figure-indicateur-libelle {
   font: var(--text-body-sm);
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.figure-indicateur-prose {
+  margin: 0;
+  font: var(--text-body-sm);
   color: var(--text-primary);
 }
 

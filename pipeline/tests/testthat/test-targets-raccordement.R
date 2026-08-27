@@ -27,7 +27,8 @@
 pieces_graphe_raccordement <- function() {
   arbres <- parse(file.path(pkgload::pkg_path(), "_targets.R"))
   noms <- c("attributs_nuls", "meme_fonction_paquet", "symbole_ns",
-            "grappe_theme", "publie_theme")
+            "fichier_source", "grappe_theme", "publie_theme",
+            "VERIFICATIONS_RUN", "verifications_theme")
   defs <- arbres[vapply(arbres, function(a) {
     is.call(a) && identical(a[[1]], as.name("<-")) &&
       is.name(a[[2]]) && as.character(a[[2]]) %in% noms
@@ -59,6 +60,10 @@ test_that("structure : le trait câble les épingles, la cible de calcul et la c
   # les épingles du package + la cible de calcul (format = "file")
   expect_true("pin_matrice_temps_mobilite" %in% noms)
   expect_true("pin_population_mobilite" %in% noms)
+  expect_true("pin_cog_passage_mobilite" %in% noms &&
+              any(grepl("pin_cog_passage_mobilite",
+                        deparse(grappe[[which(noms == "raccordement_mobilite")]]$command$expr),
+                        fixed = TRUE)))
   expect_true("raccordement_mobilite" %in% noms)
 
   # la publication est CHAÎNÉE derrière le calcul — sa commande référence la
@@ -69,6 +74,15 @@ test_that("structure : le trait câble les épingles, la cible de calcul et la c
                              sortie = tempfile("sortie-struct-"))
   expect_true(any(grepl("raccordement_mobilite",
                         deparse(publie$command$expr), fixed = TRUE)))
+
+  verifs <- env$verifications_theme(theme = theme_mobilite(),
+                                    cache = tempfile("cache-struct-"),
+                                    sortie = tempfile("sortie-struct-"))
+  noms_verifs <- vapply(verifs, function(t) t$name, character(1))
+  expect_true("fichier_payload_mobilite" %in% noms_verifs)
+  verif <- verifs[[which(noms_verifs == "verif_mobilite_raccordement")]]
+  expect_true(any(grepl("fichier_payload_mobilite",
+                        deparse(verif$command$expr), fixed = TRUE)))
 })
 
 test_that("structure : le mode cron pose cue = never, le mode full non", {

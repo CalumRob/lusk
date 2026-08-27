@@ -149,11 +149,13 @@ verifier_passage_cog_reel <- function(zip) {
 #     monotones couvrant la grille complète ;
 #   - LES ESTAMPILLES : l'enveloppe porte les empreintes de SES entrées et
 #     lire_raccordement les fait coïncider avec les fichiers épinglés
-#     actuels (une enveloppe périmée échoue AVANT toute assertion) ;
+#     actuels (une enveloppe périmée échoue AVANT toute assertion) ; le JSON
+#     publié porte les trois clés avec la version et les deux dates de la
+#     matrice ;
 #   - LES ANCRES de la recherche (cross-check #486) : les parts @90 de
 #     Rennes / Lamballe-Armor / Redon et la médiane bretonne reproduites à
 #     la précision du run vérifié — un calcul qui déraille est refusé ICI.
-verifier_raccordement_reel <- function(artefact) {
+verifier_raccordement_reel <- function(artefact, payload) {
   enveloppe <- lire_raccordement(artefact)
   calcul <- enveloppe$calcul
 
@@ -231,6 +233,49 @@ verifier_raccordement_reel <- function(artefact) {
   verifier_egale(med90, 0.014585,
                  "raccordement — l'ancre médiane bretonne @90",
                  tolerance = 5e-4)
+
+  # Le calcul ci-dessus n'est pas encore la preuve de publication : le verrou
+  # lit aussi le JSON produit par publish, passé par une cible format = "file".
+  verifier_vrai(file.exists(payload),
+                "raccordement — payload publié",
+                paste("le JSON des indicateurs est absent :", payload))
+  publie <- jsonlite::fromJSON(payload, simplifyVector = TRUE)
+  verifier_vrai(is.data.frame(publie) && all(c("theme", "key", "type", "detail",
+                                               "vintage_source", "vintage_version",
+                                               "vintage_date_reference",
+                                               "vintage_date_publication") %in% names(publie)),
+                "raccordement — payload publié",
+                "le JSON ne porte pas les colonnes de faits et d'estampille")
+  cles <- c("raccordement_tc", "raccordement_courbe", "raccordement_reference")
+  raccordement <- publie[publie$theme == "mobilite" & publie$key %in% cles,
+                         , drop = FALSE]
+  verifier_egale(sort(unique(raccordement$key)), sort(cles),
+                 "raccordement — les trois clés publiées")
+  couverture <- function(cle) {
+    lignes <- raccordement[raccordement$key == cle, , drop = FALSE]
+    c(communes = sum(lignes$type == "commune"),
+      epcis = sum(lignes$type == "epci"),
+      departements = sum(lignes$type == "departement"),
+      region = sum(lignes$type == "region"))
+  }
+  verifier_egale(couverture("raccordement_tc"), c(1202L, 61L, 4L, 1L),
+                 "raccordement — couverture du scalaire publié")
+  verifier_egale(couverture("raccordement_courbe"), c(73322L, 3721L, 244L, 61L),
+                 "raccordement — couverture de la courbe publiée")
+  verifier_egale(couverture("raccordement_reference"), c(0L, 0L, 0L, 61L),
+                 "raccordement — couverture de la référence publiée")
+  for (cle in cles) {
+    lignes <- raccordement[raccordement$key == cle, , drop = FALSE]
+    verifier_vrai(
+      all(!is.na(lignes$vintage_source) &
+          grepl("matrice temps mairie", lignes$vintage_source, fixed = TRUE) &
+          lignes$vintage_version == "2026-09-16" &
+          lignes$vintage_date_reference == "2026-08-25" &
+          lignes$vintage_date_publication == "2026-08-26"),
+      paste0("raccordement — estampilles du payload publié (", cle, ")"),
+      "source, version et dates de la matrice attendues absentes ou divergentes"
+    )
+  }
 
   invisible(TRUE)
 }

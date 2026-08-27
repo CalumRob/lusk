@@ -2,7 +2,7 @@
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, beforeEach } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
-import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
+import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { COULEURS_DPE } from '../fiche/couleursDpe'
 import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/types'
@@ -129,6 +129,28 @@ describe('IndicateurView — trajectoires (#438)', () => {
     expect(Math.abs(cy2024 - cy2025)).toBeGreaterThan(20)
     expect(wrapper.find('.trajectoire-territoire').exists()).toBe(true)
   })
+
+  it('trace la référence médiane déclarée et distingue le service planifié de l’acquisition', async () => {
+    const { wrapper, router } = await monter(
+      '/indicateurs/mobilite/raccordement_courbe?territoire=22001',
+      [],
+      metadonneesMobiliteRaccordementFixture,
+      indicateursRaccordementFixture,
+      'mobilite',
+    )
+    expect(wrapper.find('[data-renderer="trajectory"] .trajectoire-reference').exists()).toBe(true)
+    expect(wrapper.find('[data-renderer="trajectory"] .trajectoire-mediane').exists()).toBe(false)
+    const marqueur = wrapper.find('[data-renderer="trajectory"] .trajectoire-marqueur')
+    expect(marqueur.attributes('aria-label')).toBe('Seuil de 90 minutes')
+    expect(marqueur.find('title').text()).toBe('Seuil de 90 minutes')
+    expect(wrapper.find('[data-renderer="trajectory"] svg').attributes('viewBox')).toBe('0 0 600 160')
+
+    await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="raccordement-dates"]').text()).toBe(
+      'Les résultats reposent sur les horaires planifiés pour le mercredi 16 septembre 2026 ; les sources ont été acquises le 25 août 2026.',
+    )
+  }, 20000)
 
   it('rend un vocabulaire exclusivement français — « détail (actif) », jamais « endpoint »', async () => {
     const { wrapper } = await monter('/indicateurs/milieux/artif_par_habitant', [], metadataTrajectoire(), faitsMilieux, 'milieux')

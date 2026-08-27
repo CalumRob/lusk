@@ -100,6 +100,11 @@ const SERIES_EXCLUES: Partial<Record<Theme, readonly string[]>> = {
   milieux: ['conso_enaf_annuel'],
 }
 
+/** Eligibility is declared by the payload, not by a key/theme exception. */
+function estCoucheCartographiable(metadata: ThemeMetadata, clef: string): boolean {
+  return metadata.map_layers?.[clef] !== false
+}
+
 /** Le libellé d'un scalaire de Story — l'indicator_labels quand le champ est
  *  AUSSI un indicateur (part_passoires), la param_labels sinon (les champs
  *  d'histoires) : les deux cartes payload-owned (#318), jamais la clé brute. */
@@ -211,6 +216,7 @@ export function couchesDuTheme(payload: Payload, theme: Theme): CouchesTheme {
   // L'ordre des figures d'indicateurs — le registre des métadonnées (l'ordre
   // de la fiche, payload-owned), filtré aux clés que le payload publie.
   const clesIndicateurs = meta.indicator_keys.filter((clef) =>
+    estCoucheCartographiable(meta, clef) &&
     payload.indicateurs.some((ligne) => ligne.theme === theme && ligne.key === clef),
   )
 

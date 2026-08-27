@@ -243,6 +243,9 @@ export interface ModeleTrajectoire {
   domaineValeurs: { min: number | null; max: number | null }
   /** Le chemin du territoire mis en avant (null quand il est hors périmètre). */
   serieTerritoire: readonly PointTrajectoire[] | null
+  /** La référence publiée par la métadonnée (jamais une médiane recalculée côté app). */
+  serieReference: readonly PointTrajectoire[] | null
+  referenceLabel: string | null
 }
 
 const ANNEE_DETAIL = /^\d{4}$/
@@ -253,6 +256,8 @@ export function modeleTrajectoire(
   endpoints: readonly string[],
   territoires: readonly Territoire[],
   etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  reference: readonly Indicateur[] = [],
+  referenceLabel: string | null = null,
 ): ModeleTrajectoire {
   const details = facet.details
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
@@ -295,7 +300,6 @@ export function modeleTrajectoire(
   }).sort((a, b) => (coordonnees.get(a.detail)! - coordonnees.get(b.detail)!) || (details.indexOf(a.detail) - details.indexOf(b.detail)))
 
   const valeursDuChemin = lignes.flatMap((ligne) => [ligne.min, ligne.max].filter((valeur): valeur is number => valeur !== null))
-  const domaineValeurs = { min: valeursDuChemin.length ? Math.min(...valeursDuChemin) : null, max: valeursDuChemin.length ? Math.max(...valeursDuChemin) : null }
 
   const refSelectionne = etat.territoire ? refs.get(etat.territoire) : undefined
   const serieTerritoire = refSelectionne && dansScope(refSelectionne, etat.niveau, etat.departement, etat.epci)
@@ -307,7 +311,20 @@ export function modeleTrajectoire(
       })
     : null
 
-  return { etapes: lignes, domaineValeurs, serieTerritoire }
+  // La référence est une série publiée, sélectionnée par le dispatch à partir
+  // de la déclaration de page. Elle partage les coordonnées du chemin actif,
+  // mais ne participe jamais au calcul des médianes de niveau.
+  const serieReference = reference.length
+    ? lignes.map((ligne) => {
+        const row = reference.find((fact) => fact.detail === ligne.detail)
+        return { detail: ligne.detail, label: ligne.label, x: ligne.x, value: row?.value ?? null } satisfies PointTrajectoire
+      })
+    : null
+  const valeursReference = serieReference?.map((point) => point.value).filter((value): value is number => value !== null) ?? []
+  const domaineAvecReference = [...valeursDuChemin, ...valeursReference]
+  const domaineValeursFinal = { min: domaineAvecReference.length ? Math.min(...domaineAvecReference) : null, max: domaineAvecReference.length ? Math.max(...domaineAvecReference) : null }
+
+  return { etapes: lignes, domaineValeurs: domaineValeursFinal, serieTerritoire, serieReference, referenceLabel }
 }
 
 /**

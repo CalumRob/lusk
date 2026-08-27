@@ -981,11 +981,35 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
                   paste0("borne(s) non déclarée(s) dans comparison.details : ",
                          paste(hors_axe, collapse = ", ")))
         }
-        orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
-        if (length(orphelines) > 0L) {
-          manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
-                  paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
-                         paste(orphelines, collapse = ", ")))
+        axis <- extension$axis
+        if (!is.null(axis) && !axis %in% c("ordinal", "numeric")) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.axis"),
+                  "l'axe doit être ordinal ou numeric")
+        }
+        if (!identical(axis, "numeric")) {
+          orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
+          if (length(orphelines) > 0L) {
+            manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
+                    paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
+                           paste(orphelines, collapse = ", ")))
+          }
+        }
+        reference <- extension$reference
+        if (!is.null(reference) && (!is.list(reference) ||
+            !est_chaine_non_vide(reference$indicator) ||
+            !reference$indicator %in% cles_indicateurs ||
+            !est_chaine_non_vide(reference$territoire) ||
+            !est_chaine_non_vide(reference$label))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.reference"),
+                  "la référence doit porter une clé publiée, un territoire et un libellé")
+        }
+        marker <- extension$marker
+        if (!is.null(marker) && (!is.list(marker) ||
+            !est_chaine_non_vide(marker$detail) ||
+            !marker$detail %in% declarees ||
+            !est_chaine_non_vide(marker$label))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.marker"),
+                  "le marqueur doit porter un détail déclaré et un libellé")
         }
       }
       if (identical(famille, "distribution")) {
@@ -1016,6 +1040,26 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
         }
       }
     }
+    }
+  }
+
+  # La carte suit l'éligibilité déclarée par le payload : une figure composée
+  # d'une courbe et d'une référence peut rester visible sur la fiche sans
+  # devenir deux couches autonomes. Les clés absentes restent cartographiables
+  # pour conserver le contrat historique des indicateurs.
+  if (!is.null(metadata$map_layers)) {
+    if (!is.list(metadata$map_layers) || is.data.frame(metadata$map_layers) ||
+        (length(metadata$map_layers) > 0L && is.null(names(metadata$map_layers)))) {
+      manquer("map_layers", "la carte d'éligibilité doit être un objet")
+    }
+    inconnues <- setdiff(names(metadata$map_layers), cles_indicateurs)
+    if (length(inconnues) > 0L) {
+      manquer("map_layers", paste0("indicateur(s) inconnu(s) : ",
+                                    paste(inconnues, collapse = ", ")))
+    }
+    if (any(!vapply(metadata$map_layers, function(x)
+      is.logical(x) && length(x) == 1L && !is.na(x), logical(1L)))) {
+      manquer("map_layers", "chaque éligibilité doit être un booléen")
     }
   }
 
