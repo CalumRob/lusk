@@ -849,9 +849,9 @@ test_that("verifier_parite_trajectoires : le payload COMMITTÉ et les descripteu
     pages_trajectoires <- pages_trajectoires +
       sum(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))
   }
-  # La couverture du devoir : les TROIS indicateurs trajectoires publiés ont
+  # La couverture du devoir : les QUATRE indicateurs trajectoires publiés ont
   # leur page — jamais une famille trajectoire orpheline.
-  expect_identical(pages_trajectoires, 3L)
+  expect_identical(pages_trajectoires, 4L)
 })
 
 test_that("verifier_parite_trajectoires : une année morte déclarée échoue fort (#438)", {

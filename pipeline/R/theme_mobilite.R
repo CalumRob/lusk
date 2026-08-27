@@ -154,7 +154,7 @@ VINTAGES_RACCORDEMENT <- tibble::tribble(
   paste0("Lusk — matrice temps mairie à mairie figée du raccordement ",
          "(routage r5r sur SNCF Voyageurs national 2026-08-24 + ",
          "KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, ",
-         "meilleur départ p01 — artefact_raccordement.R, issue #485)"),
+         "meilleur départ p01 — recherche raccordement, issue #485)"),
   "2026-09-16", "odbl", "2026-08-25", "2026-08-26",
   "population_raccordement",
   paste0("INSEE — Recensement de la population 2023 : la population totale ",

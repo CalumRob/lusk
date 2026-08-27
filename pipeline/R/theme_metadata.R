@@ -981,11 +981,35 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
                   paste0("borne(s) non déclarée(s) dans comparison.details : ",
                          paste(hors_axe, collapse = ", ")))
         }
-        orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
-        if (length(orphelines) > 0L) {
-          manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
-                  paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
-                         paste(orphelines, collapse = ", ")))
+        axis <- extension$axis
+        if (!is.null(axis) && !axis %in% c("ordinal", "numeric")) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.axis"),
+                  "l'axe doit être ordinal ou numeric")
+        }
+        if (!identical(axis, "numeric")) {
+          orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
+          if (length(orphelines) > 0L) {
+            manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
+                    paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
+                           paste(orphelines, collapse = ", ")))
+          }
+        }
+        reference <- extension$reference
+        if (!is.null(reference) && (!is.list(reference) ||
+            !est_chaine_non_vide(reference$indicator) ||
+            !reference$indicator %in% cles_indicateurs ||
+            !est_chaine_non_vide(reference$territoire) ||
+            !est_chaine_non_vide(reference$label))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.reference"),
+                  "la référence doit porter une clé publiée, un territoire et un libellé")
+        }
+        marker <- extension$marker
+        if (!is.null(marker) && (!is.list(marker) ||
+            !est_chaine_non_vide(marker$detail) ||
+            !marker$detail %in% declarees ||
+            !est_chaine_non_vide(marker$label))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.marker"),
+                  "le marqueur doit porter un détail déclaré et un libellé")
         }
       }
       if (identical(famille, "distribution")) {
