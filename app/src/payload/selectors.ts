@@ -602,20 +602,6 @@ export function phraseRaccordement(
   return `Un mercredi de période scolaire, ${valeur} % de la population bretonne peut rejoindre ${nomTerritoire} en moins de 90 minutes en train, en car ou en bus de mairie à mairie.`
 }
 
-/** The cumulative raccordement rows for one territory, in payload order. */
-export function courbeRaccordementPourTerritoire(payload: Payload, territoire: string): Indicateur[] {
-  return payload.indicateurs.filter(
-    (ligne) => ligne.theme === 'mobilite' && ligne.key === 'raccordement_courbe' && ligne.territoire === territoire,
-  )
-}
-
-/** The median-Breton-commune reference curve (published on the region row). */
-export function referenceRaccordement(payload: Payload): Indicateur[] {
-  return payload.indicateurs.filter(
-    (ligne) => ligne.theme === 'mobilite' && ligne.key === 'raccordement_reference' && ligne.territoire === '53',
-  )
-}
-
 /** A signed integer — the Démographie story's soldes ("+70", "-380", "0"). */
 export function formaterSolde(x: number): string {
   const signe = x > 0 ? '+' : ''

@@ -21,8 +21,6 @@ import GraphiqueQuadrantMilieux from '@/components/fiche/GraphiqueQuadrantMilieu
 import GraphiqueSoldes from '@/components/fiche/GraphiqueSoldes.vue'
 import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
 import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
-import FigureRaccordement from '@/components/fiche/FigureRaccordement.vue'
-import IndicatorFigure from '@/components/fiche/IndicatorFigure.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { libelleIndicateur } from '@/fiche/libelles'
@@ -35,14 +33,8 @@ import {
 import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
 import { LIBELLE_HANDOFF, handoffExploration, passarellesLecture } from '@/fiche/explorationHandoff'
 import type { PassarelleLecture } from '@/fiche/explorationHandoff'
-import {
-  courbeRaccordementPourTerritoire,
-  descriptionNuage,
-  estampilleSnapshot,
-  referenceRaccordement,
-  trouverTerritoire,
-} from '@/payload/selectors'
-import type { Payload, Theme } from '@/payload/types'
+import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
+import type { FamilleFigure, Indicateur, Payload, Theme, TrajectoryMetadata } from '@/payload/types'
 
 const props = defineProps<{
   theme: Theme
@@ -111,7 +103,35 @@ const descriptionNuageComputed = computed(() =>
 function figuresGrille(groupe: SousGroupeRenduComplet) {
   return groupe.figures.filter(
     (figure) =>
-      figure.key !== groupe.figureCompacte?.clef && figure.key !== 'raccordement_reference',
+      figure.key !== groupe.figureCompacte?.clef && !figureEstReference(figure.key),
+  )
+}
+
+/** The family is metadata-owned for every grid figure, not inferred by key. */
+function familleFigure(clef: string): FamilleFigure {
+  return metadata.value?.indicator_pages?.[clef]?.family ?? 'scalar'
+}
+
+/** A trajectory's optional comparison series and marker are data-contract fields. */
+function trajectoirePour(clef: string): TrajectoryMetadata | undefined {
+  const page = metadata.value?.indicator_pages?.[clef]
+  return page?.family === 'trajectory' ? page.trajectory : undefined
+}
+
+function lignesReferencePour(clef: string): { lignes: Indicateur[]; label?: string } {
+  const reference = trajectoirePour(clef)?.reference
+  if (!reference) return { lignes: [] }
+  return {
+    lignes: props.payload.indicateurs.filter(
+      (ligne) => ligne.theme === props.theme && ligne.key === reference.indicator && ligne.territoire === reference.territoire,
+    ),
+    label: reference.label,
+  }
+}
+
+function figureEstReference(clef: string): boolean {
+  return Object.values(metadata.value?.indicator_pages ?? {}).some(
+    (page) => page.family === 'trajectory' && page.trajectory.reference?.indicator === clef,
   )
 }
 
@@ -156,13 +176,6 @@ const lignesReseaux = computed(
       ?.lignes ?? [],
 )
 
-/** The median reference curve is published once, on the regional row. */
-const lignesRaccordementReference = computed(() => referenceRaccordement(props.payload))
-
-/** The current territory's curve, exposed to the dedicated chart renderer. */
-const lignesRaccordement = computed(() =>
-  courbeRaccordementPourTerritoire(props.payload, props.territoire),
-)
 </script>
 
 <template>
@@ -321,6 +334,10 @@ const lignesRaccordement = computed(() =>
               :libelle="libelleIndicateurMetier(groupe.figureCompacte.clef)"
               :labels-detail="labelsDetailPour(groupe.figureCompacte.clef)"
               :reseaux="lignesReseaux"
+              :trajectory="trajectoirePour(groupe.figureCompacte.clef)"
+              :reference="lignesReferencePour(groupe.figureCompacte.clef).lignes"
+              :reference-label="lignesReferencePour(groupe.figureCompacte.clef).label"
+              :nom="nomTerritoire"
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
@@ -337,22 +354,18 @@ const lignesRaccordement = computed(() =>
             :key="figure.key"
             class="figure-cellule"
           >
-            <FigureRaccordement
-              v-if="figure.key === 'raccordement_courbe'"
-              :lignes="lignesRaccordement.length > 0 ? lignesRaccordement : figure.lignes"
-              :reference="lignesRaccordementReference"
-              :nom="nomTerritoire"
-              :libelle="libelleIndicateurMetier(figure.key)"
-            />
-            <IndicatorFigure
-              v-else
+            <FigureCompacte
+              :famille="familleFigure(figure.key)"
               :clef="figure.key"
               :lignes="figure.lignes"
               :libelle="libelleIndicateurMetier(figure.key)"
               :labels-detail="labelsDetailPour(figure.key)"
+              :trajectory="trajectoirePour(figure.key)"
+              :reference="lignesReferencePour(figure.key).lignes"
+              :reference-label="lignesReferencePour(figure.key).label"
+              :nom="nomTerritoire"
               :large="figureLarge(figure.key)"
               :signe="figureSigne(figure.key)"
-              :nom-territoire="nomTerritoire"
               :theme="theme"
             />
             <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />

@@ -1,7 +1,7 @@
 import { mount, RouterLinkStub } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import FigureRaccordement from '../components/fiche/FigureRaccordement.vue'
+import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   indicateursRaccordementFixture,
@@ -69,33 +69,67 @@ describe('raccordement — fiche et accessibilité', () => {
   })
 
   it('dessine la courbe du territoire, la médiane et le repère des 90 minutes', () => {
-    const wrapper = mount(FigureRaccordement, {
-      props: { lignes: courbe, reference, nom: 'Allineuc', libelle: 'Courbe cumulative' },
+    const wrapper = mount(FigureTrajectoire, {
+      props: {
+        lignes: courbe,
+        clef: 'raccordement_courbe',
+        theme: 'mobilite',
+        reference,
+        referenceLabel: 'Commune bretonne médiane',
+        nom: 'Allineuc',
+        libelle: 'Courbe cumulative',
+        trajectory: {
+          endpoints: ['t0000', 't0600'],
+          axis: 'numeric',
+          marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
+        },
+      },
     })
 
-    expect(wrapper.find('.raccordement-courbe').exists()).toBe(true)
-    expect(wrapper.find('.raccordement-reference').exists()).toBe(true)
-    expect(wrapper.find('.raccordement-seuil').attributes('aria-label')).toContain('90 minutes')
-    expect(wrapper.find('[data-minute="90"]').exists()).toBe(true)
-    expect(wrapper.find('.raccordement-courbe').attributes('aria-label')).toContain('Allineuc')
-    expect(wrapper.find('.raccordement-reference').attributes('aria-label')).toContain('médiane')
-    expect(wrapper.find('.raccordement-points-accessibles').text()).toContain('90 min')
+    expect(wrapper.find('.trajectoire-courante').exists()).toBe(true)
+    expect(wrapper.find('.trajectoire-reference').exists()).toBe(true)
+    expect(wrapper.find('.trajectoire-marqueur').attributes('data-detail')).toBe('t0090')
+    expect(wrapper.find('.trajectoire-marqueur-libelle').text()).toContain('90 minutes')
+    expect(wrapper.find('svg').attributes('aria-label')).toContain('Allineuc')
+    expect(wrapper.find('svg').attributes('aria-label')).toContain('médiane')
+    expect(wrapper.find('svg').attributes('aria-label')).toContain('90 minutes')
+    expect(wrapper.findAll('path[role], line[role]')).toHaveLength(0)
+    expect(wrapper.find('.liste-points').text()).toContain('90 min')
     expect(wrapper.text()).toContain('Temps de trajet (minutes)')
     expect(wrapper.text()).toContain('Part de population (%)')
   })
 
   it('rend une absence honnête quand le territoire est non routé', () => {
-    const wrapper = mount(FigureRaccordement, {
+    const wrapper = mount(FigureTrajectoire, {
       props: {
         lignes: courbe.map((l) => ({ ...l, value: null })),
+        clef: 'raccordement_courbe',
+        theme: 'mobilite',
         reference,
         nom: 'Commune non routée',
         libelle: 'Courbe cumulative',
+        trajectory: { endpoints: ['t0000', 't0600'], axis: 'numeric' },
       },
     })
 
-    expect(wrapper.find('.raccordement-courbe').exists()).toBe(false)
+    expect(wrapper.find('.trajectoire-courante').exists()).toBe(false)
     expect(wrapper.find('[role="status"]').text()).toContain('indisponible')
+  })
+
+  it('garde une interruption quand un point intermédiaire est NA', () => {
+    const wrapper = mount(FigureTrajectoire, {
+      props: {
+        lignes: [ligne('t0000', 0.1), ligne('t0010', 0.2), ligne('t0020', null), ligne('t0030', 0.4), ligne('t0040', 0.5)],
+        clef: 'raccordement_courbe',
+        theme: 'mobilite',
+        libelle: 'Courbe cumulative',
+        nom: 'Allineuc',
+        trajectory: { endpoints: ['t0000', 't0020'], axis: 'numeric' },
+      },
+    })
+
+    expect(wrapper.findAll('.trajectoire-courante')).toHaveLength(2)
+    expect(wrapper.find('.liste-points').text()).toContain('20 min')
   })
 
   it('publie les trois niveaux, les 61 détails de la courbe et la référence régionale dans le contrat', () => {
@@ -163,7 +197,7 @@ describe('raccordement — fiche et accessibilité', () => {
     expect(scalar.exists()).toBe(true)
     expect(scalar.text()).toContain('population bretonne')
     expect(scalar.text()).toContain(nom)
-    expect(wrapper.find('.figure-raccordement').exists()).toBe(true)
+    expect(wrapper.find('.figure-trajectoire').exists()).toBe(true)
   })
 
   it('rend le motif non routé sans transformer la valeur en zéro', () => {
@@ -175,6 +209,6 @@ describe('raccordement — fiche et accessibilité', () => {
     const scalar = wrapper.find('.figure-indicateur[data-clef="raccordement_tc"]')
     expect(scalar.text()).toContain('Non routée')
     expect(scalar.text()).not.toContain('population bretonne peut rejoindre')
-    expect(wrapper.find('.figure-raccordement [role="status"]').text()).toContain('indisponible')
+    expect(wrapper.find('.figure-trajectoire [role="status"]').text()).toContain('indisponible')
   })
 })

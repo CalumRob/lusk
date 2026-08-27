@@ -1852,10 +1852,14 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
       return [`t${String(minute).padStart(4, '0')}`, `${minute} minutes`]
     }),
   )
-  const subgroup = base.subgroups.find((groupe) => groupe.key === 'acces-aux-services')!
-  subgroup.indicators = [...subgroup.indicators, 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']
-  subgroup.framing =
-    'La part des bâtiments à moins de 500 mètres d’un arrêt et le raccordement du territoire au réseau de transports en commun breton, de mairie à mairie.'
+  base.subgroups.push({
+    key: 'offre-transports-commun',
+    label: 'L’offre de transports en commun',
+    framing:
+      'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.',
+    indicators: ['raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
+    figure: { family: 'trajectory', indicator: 'raccordement_courbe' },
+  })
   base.indicator_keys = [
     ...base.indicator_keys,
     'raccordement_tc',
@@ -1882,11 +1886,58 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   base.indicator_caveats = {
     ...base.indicator_caveats,
     raccordement_tc:
-      'Aux niveaux agrégés, les communes non routées sont exclues du dénominateur et la couverture réellement mesurée est signalée.',
+      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
     raccordement_courbe:
-      'La courbe est calculée depuis la matrice de temps mairie à mairie figée ; une commune non routée reste indisponible.',
+      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
     raccordement_reference:
-      'La référence est la courbe médiane des communes bretonnes routées.',
+      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+  }
+  const pages = base.indicator_pages ?? {}
+  const pageBase = {
+    unit: '%',
+    direction: 'high' as const,
+    levels: ['commune', 'epci', 'departement'] as ('commune' | 'epci' | 'departement')[],
+    sources: ['matrice_temps_mairies'],
+  }
+  const caveat = base.indicator_caveats?.raccordement_tc ?? 'La couverture réellement mesurée par le réseau est signalée.'
+  base.indicator_pages = {
+    ...pages,
+    raccordement_tc: {
+      ...pageBase,
+      indicator: 'raccordement_tc',
+      label: 'Population bretonne joignable en 90 minutes en TC',
+      definition: 'Part de la population bretonne pouvant rejoindre le territoire en transports en commun en moins de 90 minutes, de mairie à mairie.',
+      calculation: 'Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.',
+      caveats: caveat,
+      family: 'scalar',
+    },
+    raccordement_courbe: {
+      ...pageBase,
+      indicator: 'raccordement_courbe',
+      label: 'Courbe cumulative — population bretonne joignable en TC',
+      definition: 'Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.',
+      calculation: 'Courbe cumulative de la matrice de temps mairie à mairie publiée par le pipeline.',
+      caveats: caveat,
+      family: 'trajectory',
+      trajectory: {
+        endpoints: ['t0000', 't0600'],
+        axis: 'numeric',
+        reference: { indicator: 'raccordement_reference', territoire: '53', label: 'Commune bretonne médiane' },
+        marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
+      },
+      comparison: { details: Object.keys(detailsCourbe), detail: 't0090', unit: '%' },
+    },
+  }
+  base.source_records = {
+    ...(base.source_records ?? {}),
+    matrice_temps_mairies: {
+      dataset: 'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+      publisher: 'Lusk',
+      url: 'https://github.com/CalumRob/lusk',
+      licence: 'ODbL + Licence Ouverte 2.0',
+      vintage: '2026-08',
+      freshness: '26 août 2026',
+    },
   }
   return base
 })()
