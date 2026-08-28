@@ -9,8 +9,17 @@ The object of analysis: a Commune, an EPCI, a Département, or the Région (Bret
 _Avoid_: Entité (internal code-level term), zone
 
 **Fiche d'identité**:
-The territory's page — six theme tabs, with **Programmes et subventions** first and selected by default; the former **Aperçu** tab is retired. Each theme block is organized into **subgroups** — stable, ordered slots declared in the theme's own metadata file (`theme_<theme>.json`, #308): each subgroup carries a variable number of indicators (decided per theme by what's analytically interesting — revised 2026-08-04, replacing the fixed-4 contract), each with a rank-in-context, a compact figure, and **one resolved Story reading** (see **Story**). The retired Aperçu identity anchors disappear completely — they do not persist in the fiche header. The core artifact of the product.
+Legacy product vocabulary for the current site: the territory's existing page with six theme tabs. The prototype replacement no longer treats this as the canonical product concept; new work uses **TerritoryFacts** and **TerritoryContent** until a new user-facing name is chosen.
 _Avoid_: Page d'indicateurs, profil, dashboard
+
+**TerritoryFacts**:
+The prototype's normalized, presentation-neutral account of a territory's available facts for one theme or subgroup: identity, values, time, provenance, and any declared comparison context. It is the input to **TerritoryContent**, not a payload-shaped record, an all-themes object, or a renderer prop.
+_Avoid_: raw payload, fiche data, Story input
+
+**TerritoryContent**:
+The prototype's presentation-neutral semantic account of what can be said about a territory within one theme: ordered subgroups, their indicators and evidence, and optional **Lectures** resolved purely from **TerritoryFacts**. It is complete at subgroup level, represents unavailable content honestly, does not fetch data, and does not prescribe the Cahier, pages, cards, margins, or other presentation placement.
+_Avoid_: FicheContent, Cahier content, view model
+
 
 **Aperçu**:
 The fiche's former default, cross-theme tab.
@@ -19,13 +28,29 @@ _Historical record 2026-08-03 → 2026-08-21:_ the tab ran on the general (brand
 _Avoid_: Vue d'ensemble, overview, accueil (the landing page, not the tab)
 
 **Story**:
-The signature reading of a subgroup on a fiche: the serif one-liner + chart that only works because it was *computed*, never downloaded. Since issue #312 (parent #308), Story selection and salience resolution are **pipeline-side**: each theme has a pool of 1–3 candidate Stories, and the pipeline resolves **one reading per (territoire, groupe de fiche)** — the payload carries the resolved `histoires` row (explicit `groupe`, selected `story_key`, `salience_reason`), never the candidate pool (ADR-0002). One candidate per theme is always-on as the **default**: the most universal computation, the one that applies to every territory (naturally the mildest of the pool); the others replace it only when their salience fires. A Story is original to Lusk — a computation, not a repackaged figure. A theme with a single candidate is legitimate: that Story *is* its default.
-**No separate product layer (clarified 2026-08-12, follow-up UI d'#308):** the theme-level Story hero is gone — the reading is **one element of its subgroup**, and the values it renders (`div_loss_t`, `taux_solde_naturel`, `taux_variation_population`, the top-5 LQ…) are **indicators of that subgroup like any other**, presented in their figure style (distribution, cloud, quadrant, list). The fiche has no Story category anymore; prefer « **lecture** » (the subgroup's reading) product-side. « Story » survives only as pipeline vocabulary (`story_key`, `histoires`, salience — ADR-0002).
+**Retired product concept (2026-08-28).** Story selection, candidate pools, and salience no longer define the fiche: every territory uses the same underlying data and the app determines the data-deterministic text that presents it. `story_key`, `salience_reason`, `histoires`, and related pipeline fields remain historical/schema vocabulary until the payload is migrated; they must not become new product-side ownership rules.
+**Lecture**:
+The text presentation of a subgroup's data: a **Marelle** and its associated prose, arranged deterministically by the app from the available facts. A lecture may have figures as evidence, but it does not require every subgroup to have prose or every figure family to be implemented. The lecture is a presentation of data, not a pipeline-selected Story.
+_Avoid_: Story (retired product concept), récit, insight
+
+**Marelle**:
+The short, prominent title that opens a lecture — the phrase that names the tension or question the following prose and figures make readable. A Marelle and its prose form one **Lecture**; the Marelle is not a separate reading.
+_Avoid_: headline (generic), titre de figure (a figure title names evidence), Story
+
+**Figure textuelle**:
+A data-deterministic arrangement of words — Marelle, prose block, emphasis, ordering, and wording — that presents facts with the same deliberate role a visual figure presents them. It is resolved by the app's lecture grammar from facts, never copied as arbitrary template prose into a Vue surface.
+_Avoid_: copy, microcopy, editorial text (too narrow or too unstructured)
 _Avoid_: Récit, histoire (too generic), insight, feature
-> _Schema note:_ the pipeline's second payload table is named `histoires` (and `compute_histoires`, `story_key`). That is internal French plumbing — the product term remains **Story**. Do not "fix" the schema name; it is deliberately distinct so the domain term stays clean.
+> _Schema note:_ the pipeline's second payload table is named `histoires` (and `compute_histoires`, `story_key`). That is legacy internal French plumbing. Do not "fix" the schema name in the same change as the lecture grammar; migrate it only when the payload seam is deliberately changed.
+
+**Figure family**:
+A reusable semantic evidence shape shared when different content needs genuinely the same kind of figure. The prototype does not inherit a fixed list of families: families are defined case by case after surveying every theme subgroup and relevant **Page d'indicateur** need. A family describes evidence meaning and data shape, not a Cahier or indicator-page layout.
+_Avoid_: chart style (visual treatment), component (implementation), the current eight-family list (historical production contract under review)
+
+> _Glossary migration note (2026-08-28):_ older theme entries below may still describe a default Story, a Story candidate, or salience. Those descriptions are historical records, not current product rules. The current product vocabulary is **Lecture**, with its **Marelle** and data-deterministic prose resolved by the app.
 
 **Tension**:
-The product-wide design principle (adopted 2026-08-06): an indicator or Story earns its place on the fiche by reading a **tension between two forces**, never a bare state. The principle was already latent in the product — Mobilité's flagship reads car access against non-car access, Démographie's trajectory reads attract against renew, Économie's dortoir ratio reads work against residence, Habitat's energy story reads performance against passoire — it is now named and prescriptive. What it changes: Story design (a Story must read a tension), indicator selection ("what does this number argue *against* on the same fiche?"), and the documentation framing of how a theme is built (now Sources + each page's « L'indicateur »). The tiering is uniform across all themes: **binding on Stories, aspirational for indicators** — a bare state indicator (densité, prix, mix) is fine as long as the Story it feeds reads the tension. The fiche shows both sides of the tension and lets the reader connect them — the computation argues, the product never editorialises.
+The product-wide design principle (adopted 2026-08-06): an indicator or Lecture earns its place on the fiche by reading a **tension between two forces**, never a bare state. The principle was already latent in the product — Mobilité's flagship reads car access against non-car access, Démographie's trajectory reads attract against renew, Économie's dortoir ratio reads work against residence, Habitat's energy story reads performance against passoire — it is now named and prescriptive. What it changes: lecture design (a Lecture must read a tension), indicator selection ("what does this number argue *against* on the same fiche?"), and the documentation framing of how a theme is built (now Sources + each page's « L'indicateur »). The tiering is uniform across all themes: **binding on Lectures, aspirational for indicators** — a bare state indicator (densité, prix, mix) is fine as long as the Lecture it feeds reads the tension. The fiche shows both sides of the tension and lets the reader connect them — the computation argues, the product never editorialises.
 _Avoid_: Conflit (a tension is productive and analytical, not adversarial), contradiction (same), score (a single normalized number is the opposite of a tension)
 
 **Programmes et subventions**:

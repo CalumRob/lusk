@@ -152,7 +152,7 @@ const classesFond = computed(() =>
 
 /**
  * [PROTOTYPE #499 — JETABLE] La variante de lecture demandée par
- * ?variant=A|B|C — null hors développement ou sans paramètre valide. Le
+ * ?variant=A|B|C|D — null hors développement ou sans paramètre valide. Le
  * chargement et l'état restent CI-DESSUS : la variante reçoit le payload
  * déjà réglé et ne fetch jamais. L'onglet « Programmes et subventions »
  * garde SA présentation propre (BlocProgrammes) dans toutes les variantes —
@@ -160,6 +160,10 @@ const classesFond = computed(() =>
  */
 const variante = computed(() => varianteDeUrl(route.query.variant))
 const prototypeActif = import.meta.env.DEV
+/** [PROTOTYPE #511] D owns the editorial fiche surface on its own. */
+const prototypeIndependant = computed(
+  () => variante.value?.clef === 'D' && selection.value !== 'programmes',
+)
 
 function choisirOnglet(slug: SlugOnglet): void {
   // La fiche n'émet que des slugs de thème (pas de pseudo-onglet depuis
@@ -192,7 +196,7 @@ watch(
     :class="[classesFond, { 'fiche--prototype': prototypeActif }]"
     :aria-busy="chargement ? 'true' : 'false'"
   >
-    <div class="fiche-en-tete-surface">
+    <div v-if="!prototypeIndependant" class="fiche-en-tete-surface">
       <div class="fiche-en-tete">
       <div
         v-if="!identitePret"
@@ -271,6 +275,15 @@ watch(
              chaque changement d'onglet (remount via :key), figé pour la durée
              du montage. -->
         <template v-else>
+          <!-- [PROTOTYPE #511] D owns the complete editorial surface. -->
+          <component
+            :is="variante.composant"
+            v-if="prototypeIndependant && ongletTheme && variante"
+            :theme="ongletTheme.theme"
+            :payload="ongletTheme.payload"
+            :territoire="String(route.params.id)"
+          />
+          <template v-else>
           <FiligraneFiche v-if="selection" :key="selection" :theme="selection" />
           <div
             v-if="selection"
@@ -304,6 +317,7 @@ watch(
               :territoire="String(route.params.id)"
             />
           </div>
+          </template>
         </template>
       </div>
     </template>

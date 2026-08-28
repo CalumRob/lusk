@@ -104,6 +104,27 @@
   --theme-milieux-strong: color-mix(in oklab, var(--theme-milieux) 62%, #0C1B19);
   --theme-programmes-strong: color-mix(in oklab, var(--theme-programmes) 62%, #0C1B19);
 
+  /* Theme-relative transport scales for data figures. The theme anchor is
+   * always the foot + transit colour; bike darkens it and car lightens it. */
+  --theme-mobilite-foot: var(--theme-mobilite);
+  --theme-mobilite-bike: color-mix(in oklab, var(--theme-mobilite) 78%, #0C1B19);
+  --theme-mobilite-car: color-mix(in oklab, var(--theme-mobilite) 58%, #FFFFFF);
+  --theme-demographie-foot: var(--theme-demographie);
+  --theme-demographie-bike: color-mix(in oklab, var(--theme-demographie) 78%, #0C1B19);
+  --theme-demographie-car: color-mix(in oklab, var(--theme-demographie) 58%, #FFFFFF);
+  --theme-habitat-foot: var(--theme-habitat);
+  --theme-habitat-bike: color-mix(in oklab, var(--theme-habitat) 78%, #0C1B19);
+  --theme-habitat-car: color-mix(in oklab, var(--theme-habitat) 58%, #FFFFFF);
+  --theme-economie-foot: var(--theme-economie);
+  --theme-economie-bike: color-mix(in oklab, var(--theme-economie) 78%, #0C1B19);
+  --theme-economie-car: color-mix(in oklab, var(--theme-economie) 58%, #FFFFFF);
+  --theme-milieux-foot: var(--theme-milieux);
+  --theme-milieux-bike: color-mix(in oklab, var(--theme-milieux) 78%, #0C1B19);
+  --theme-milieux-car: color-mix(in oklab, var(--theme-milieux) 58%, #FFFFFF);
+  --theme-programmes-foot: var(--theme-programmes);
+  --theme-programmes-bike: color-mix(in oklab, var(--theme-programmes) 78%, #0C1B19);
+  --theme-programmes-car: color-mix(in oklab, var(--theme-programmes) 58%, #FFFFFF);
+
   /* ------------------------------------------------------------------------
    * §2 Color — Modes (semantic, preserved from the original)
    * ---------------------------------------------------------------------- */
@@ -164,6 +185,14 @@
 
   --text-overline: 600 0.6875rem/1.3 var(--font-sans); /* section labels, uppercase */
   --text-overline-tracking: 0.08em;
+
+  /* Shared figure role: labels and axes use the same compact editorial face. */
+  --type-figure-column: 400 0.75rem/1.2 var(--font-sans);
+  --type-figure-column-tracking: 0.08em;
+  --type-figure-label: 700 0.875rem/1.25 var(--font-sans);
+  --type-figure-mode: 400 0.875rem/1.35 var(--font-sans);
+  --type-figure-value: 700 1rem/1 var(--font-sans);
+  --type-figure-legend: 500 0.8125rem/1.35 var(--font-sans);
 
   /* Numeric — matches body sizes; digits never jitter */
   --text-numeric-weight: 600;
@@ -246,4 +275,11 @@
   --filigrane-opacity: 0.08;
   --filigrane-largeur-min: min(4vw, 280px);
   --filigrane-largeur-max: min(64vw, 680px);
+}
+
+/* Shared editorial figure label — use this class instead of local copies. */
+.type-figure-column {
+  font: var(--type-figure-column);
+  letter-spacing: var(--type-figure-column-tracking);
+  text-transform: uppercase;
 }

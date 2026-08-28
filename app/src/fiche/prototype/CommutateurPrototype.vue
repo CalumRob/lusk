@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * [PROTOTYPE #499 — JETABLE] Le commutateur fixe du bas — le seul moyen de
- * choisir une variante. Développement uniquement : le registre ne l'expose
+ * [PROTOTYPE #499/#511 — JETABLE] Le commutateur fixe du bas — le seul moyen
+ * de choisir une variante. Développement uniquement : le registre ne l'expose
  * pas hors `import.meta.env.DEV`.
  *
  * - affiche la clé + le nom de chaque variante, l'état actif en aria-pressed ;
@@ -50,8 +50,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', surTouche))
 </script>
 
 <template>
-  <div class="commutateur-proto" role="toolbar" aria-label="Prototype #499 — variantes de fiche">
-    <span class="proto-badge">PROTO #499 · jetable</span>
+  <div class="commutateur-proto" role="toolbar" aria-label="Prototype #499/#511 — variantes de fiche">
+    <span class="proto-badge">PROTO #499/#511 · jetable</span>
     <button
       v-for="variante in VARIANTES"
       :key="variante.clef"

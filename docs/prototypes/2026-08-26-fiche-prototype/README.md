@@ -1,4 +1,4 @@
-# PROTOTYPE #499 — Trois architectures de lecture de la fiche (jetable)
+# PROTOTYPE #499/#511 — Architectures de lecture et identité Cahier (jetable)
 
 **Statut : prototype jetable de DÉCISION — ne jamais fusionner.** Le gagnant,
 s'il existe, devra être réécrit sous TDD sur une branche propre (aucun de ce
@@ -27,7 +27,7 @@ npm ci
 npm run dev -- --port 5173 --strictPort
 ```
 
-Puis toute URL de fiche avec `?variant=A|B|C` (le commutateur fixe du bas
+Puis toute URL de fiche avec `?variant=A|B|C|D` (le commutateur fixe du bas
 n'existe qu'en développement — vérifié absent du bundle de production).
 
 ## URLs de revue directe
@@ -43,13 +43,15 @@ Représentants : **Rennes** (commune, 35238) et **Lorient Agglomération**
 | B · Cahier | Rennes · Économie/Emploi (mobile) | `/territoire/commune/35238?theme=economie&variant=B` |
 | C · Fil | Rennes · Mobilité | `/territoire/commune/35238?theme=mobilite&variant=C` |
 | C · Fil | Lorient Agglo · Démographie (mobile) | `/territoire/epci/200042174?theme=demographie&variant=C` |
+| D · Cahier libre | Lorient Agglo · Mobilité | `/territoire/epci/200042174?theme=mobilite&variant=D` |
+| D · Cahier libre | Rennes · Économie/Emploi (mobile) | `/territoire/commune/35238?theme=economie&variant=D` |
 | Référence | design actuel (sans `variant`) | `/territoire/commune/35238?theme=mobilite` |
 
-Le commutateur : clic sur A/B/C **ou** flèches ← / → (boucle ; jamais
+Le commutateur : clic sur A/B/C/D **ou** flèches ← / → (boucle ; jamais
 interceptées dans un champ éditable) ; `?theme=` et les autres paramètres
 sont conservés ; rechargement/partage stables.
 
-## Les trois variantes
+## Les quatre variantes
 
 ### A — « Le journal » (`VarianteJournal.vue`)
 
@@ -82,6 +84,23 @@ figure élargie (~360 px), puis un **bandeau horizontal de chiffres** (densité
 anti-carte : rangs en tête, unités attachées, filets verticaux, défilement
 latéral mobile). Provenance presque entièrement consolidée : `<details>`
 « Preuves & détails » par moment, registre exhaustif une fois en bas.
+
+### D — « Le Cahier libre » (`VarianteCahierLibre.vue`)
+
+Une itération #511 reconstruite indépendamment de la coquille visuelle actuelle.
+La tranche actuelle ne rend volontairement que le premier sous-groupe Mobilité,
+afin de tester l'architecture des figures avant de la généraliser. Chaque
+composition alterne la position de l'argument et de la preuve.
+Chaque sous-groupe est une **page de cahier distincte**, avec son propre papier,
+sa ligne de marge rouge, son réglage horizontal inspiré du Seyès, son titre,
+sa lecture, ses preuves et son pied de page. Un sommaire collant joue le rôle
+de tranche du cahier sur desktop et devient un menu repliable sur mobile.
+
+La direction reprend le vocabulaire du cahier français comme une grammaire
+visuelle — alignement, réglure, marge, annotations sobres — sans spirale,
+papier déchiré, texture lourde ni cursive généralisée. Elle possède aussi un
+en-tête local : le prototype peut donc être jugé sans le header/footer de la
+coquille actuelle. Marelle n'est pas utilisée dans cette itération.
 
 ## Arbitrages neutres (aucun vainqueur choisi)
 

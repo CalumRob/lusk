@@ -7,7 +7,7 @@
  * toujours null, le commutateur n'existe pas (les composants ne sont jamais
  * chargés : imports dynamiques dans la branche morte, éliminés au build).
  *
- * Le choix vit dans l'URL (`?variant=A|B|C`) — rechargement et partage
+ * Le choix vit dans l'URL (`?variant=A|B|C|D`) — rechargement et partage
  * stables — aux côtés des autres paramètres de la fiche (?theme=…), que
  * `choisirOnglet` préserve désormais.
  */
@@ -17,12 +17,12 @@ import type { Component } from 'vue'
 
 /** Une variante : sa clé d'URL, son nom affiché, son composant paresseux. */
 export interface VarianteProto {
-  clef: 'A' | 'B' | 'C'
+  clef: 'A' | 'B' | 'C' | 'D'
   nom: string
   composant: Component
 }
 
-const CLEFS = ['A', 'B', 'C'] as const
+const CLEFS = ['A', 'B', 'C', 'D'] as const
 
 export const VARIANTES: readonly VarianteProto[] = import.meta.env.DEV
   ? [
@@ -41,10 +41,15 @@ export const VARIANTES: readonly VarianteProto[] = import.meta.env.DEV
         nom: 'Fil',
         composant: defineAsyncComponent(() => import('./VarianteFil.vue')),
       },
+      {
+        clef: 'D',
+        nom: 'Cahier libre',
+        composant: defineAsyncComponent(() => import('./VarianteCahierLibre.vue')),
+      },
     ]
   : []
 
-/** La variante demandée par l'URL — null hors dev ou hors A|B|C. */
+/** La variante demandée par l'URL — null hors dev ou hors A|B|C|D. */
 export function varianteDeUrl(valeur: unknown): VarianteProto | null {
   if (!import.meta.env.DEV) return null
   if (typeof valeur !== 'string') return null
@@ -53,7 +58,10 @@ export function varianteDeUrl(valeur: unknown): VarianteProto | null {
 }
 
 /** La clé voisine pour le cyclage clavier (← / →), en boucle. */
-export function clefVoisine(clef: 'A' | 'B' | 'C' | null, sens: 1 | -1): 'A' | 'B' | 'C' {
+export function clefVoisine(
+  clef: 'A' | 'B' | 'C' | 'D' | null,
+  sens: 1 | -1,
+): 'A' | 'B' | 'C' | 'D' {
   const base = clef ? CLEFS.indexOf(clef) : sens === 1 ? -1 : 0
   const index = (base + sens + CLEFS.length) % CLEFS.length
   return CLEFS[index]
