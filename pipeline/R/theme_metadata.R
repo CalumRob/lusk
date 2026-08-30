@@ -359,9 +359,18 @@ valider_template <- function(template, params, cle, manquer) {
 # jsonlite :: fromJSON(simplifyVector = FALSE) — des listes imbriquées).
 # vintages, quand elle est passée (le run réel), vérifie la politique de
 # source de référence : chaque source déclarée existe dans la table partagée.
-# Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
-# faux publié silencieusement.
-valider_theme_metadata <- function(metadata, vintages = NULL) {
+ # directions_module, quand il est passé (le run réel — theme_<theme>()$
+ # directions), croise les DIRECTIONS : la direction déclarée par chaque page
+ # d'indicateur doit égaler celle du module de thème qui calcule les rangs
+ # publiés (compute_ranks) — une clé absente du registre vaut « high », le
+ # défaut exact de la machinerie de rangs (#506). La facette résumée suit la
+ # même règle pour SA clé (#516) : comparison.direction déclarée, elle égale
+ # directions_module[[comparison.indicator]] — jamais la clé de la page, ce
+ # sont deux indicateurs différents.
+ # Toute dérive échoue FORT, en nommant le champ fautif — jamais un chiffre
+ # faux publié silencieusement.
+valider_theme_metadata <- function(metadata, vintages = NULL,
+                                   directions_module = NULL) {
   manquer <- function(champ, detail) {
     stop(sprintf("Métadonnées du thème invalides — %s : %s.", champ, detail),
          call. = FALSE)
@@ -743,6 +752,25 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
     if (!identical(page$direction, "high") && !identical(page$direction, "low")) {
       manquer("indicator_pages.direction", "la direction doit être high ou low")
     }
+    # La concordance des directions (#506) : la direction déclarée par la
+    # page (le glyphe ▲▼ et les rangs Repères de la Page d'indicateur) doit
+    # ÉGALER celle du module de thème qui classe les rangs publiés lus par
+    # les chips de fiche (theme_<theme>()$directions -> compute_ranks).
+    # La règle de défaut vit dans direction_de() — LA MÊME fonction que
+    # compute_ranks : jamais un « moins = mieux » qui signifierait deux
+    # choses selon la surface, la dérive meurt à l'écriture.
+    if (!is.null(directions_module)) {
+      direction_module <- direction_de(indicator_key, directions_module)
+      if (!identical(page$direction, direction_module)) {
+        manquer(paste0("indicator_pages.", indicator_key, ".direction"),
+                paste0(
+                  "la direction du descripteur (« ", page$direction,
+                  " ») contredit celle du module de thème (« ",
+                  direction_module,
+                  " ») — la Page d'indicateur et les rangs publiés de la ",
+                  "fiche diraient l'inverse du même territoire"))
+      }
+    }
     if (is.null(page$levels) || length(page$levels) == 0L ||
         anyDuplicated(unlist(page$levels, use.names = FALSE)) ||
         any(!page$levels %in% c("commune", "epci", "departement"))) {
@@ -812,6 +840,37 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
       for (champ in c("detail", "dimension", "unit", "label")) if (!is.null(comparison[[champ]]) && !est_chaine_non_vide(comparison[[champ]])) manquer(paste0("indicator_pages.comparison.", champ), "la valeur est invalide")
       if (!is.null(comparison$sex) && !comparison$sex %in% c("F", "M")) manquer("indicator_pages.comparison.sex", "le sexe doit être F ou M")
       if (!is.null(comparison$direction) && !comparison$direction %in% c("high", "low")) manquer("indicator_pages.comparison.direction", "la direction doit être high ou low")
+      # La concordance de la facette résumée (#516, le trou #506) : le glyphe
+      # ▲▼ et l'ordonnancement Repères d'une page distribution sont pilotés
+      # par la facette résumée — l'app lit `comparison.direction ??
+      # page.direction` (familySeam.ts). Déclarée, elle doit égaler celle du
+      # module de thème pour LA CLÉ DE LA FACETTE (`comparison.indicator`,
+      # sinon la clé de la page — le même « ?? » que l'app) : souvent une
+      # AUTRE clé publiée que la page (part_passoires résume
+      # distribution_dpe), croiser la clé de la page serait faux. Une clé
+      # absente du registre vaut « high », le défaut exact de compute_ranks —
+      # la règle de défaut vit dans direction_de(), LA MÊME fonction que la
+      # croisée de la page ci-dessus.
+      if (!is.null(comparison$direction) && !is.null(directions_module)) {
+        cle_facette <- if (!is.null(comparison$indicator)) {
+          comparison$indicator
+        } else {
+          indicator_key
+        }
+        direction_module <- direction_de(cle_facette, directions_module)
+        if (!identical(comparison$direction, direction_module)) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".comparison.direction"),
+                  paste0(
+                    "la direction de la facette résumée (« ",
+                    comparison$direction,
+                    " », clé « ", cle_facette,
+                    " ») contredit celle du module de thème (« ",
+                    direction_module,
+                    " ») — le glyphe et l'ordonnancement Repères diraient ",
+                    "l'inverse des rangs publiés de la fiche"))
+        }
+      }
       if (!is.null(comparison$labels) && (!is.list(comparison$labels) || any(!vapply(comparison$labels, est_chaine_non_vide, logical(1))))) manquer("indicator_pages.comparison.labels", "les libellés sont invalides")
     }
     extensions_tableaux <- list(
@@ -912,6 +971,20 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
                   "l'axe fermé du chemin est requis pour une trajectoire")
         }
         declarees <- unlist(comparison$details, use.names = FALSE)
+        # Le raccordement est le seul chemin numérique dont la grille est
+        # publiée par décision produit : le contrat porte l'ordre, pas
+        # seulement l'ensemble des détails. Toute ancienne grille (notamment
+        # le chemin de 61 points au pas de 10) est donc refusée ici, avant la
+        # publication.
+        if (identical(indicator_key, "raccordement_courbe")) {
+          grille_attendue <- grille_raccordement()
+          if (!identical(declarees, grille_attendue)) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".comparison.details"),
+                   paste0("la grille publiée doit être exactement ",
+                          paste(grille_attendue, collapse = ", ")))
+          }
+        }
         if (length(endpoints) < 2L || anyDuplicated(endpoints) > 0L) {
           manquer(paste0("indicator_pages.", indicator_key, ".trajectory.endpoints"),
                   "les bornes doivent être deux détails distincts au moins")
@@ -922,11 +995,84 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
                   paste0("borne(s) non déclarée(s) dans comparison.details : ",
                          paste(hors_axe, collapse = ", ")))
         }
-        orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
-        if (length(orphelines) > 0L) {
-          manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
-                  paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
-                         paste(orphelines, collapse = ", ")))
+        axis <- extension$axis
+        if (!is.null(axis) && !axis %in% c("ordinal", "numeric")) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.axis"),
+                  "l'axe doit être ordinal ou numeric")
+        }
+        if (identical(indicator_key, "raccordement_courbe") &&
+            !identical(axis, "numeric")) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".trajectory.axis"),
+                  "l'axe du raccordement doit être numeric")
+        }
+        if (!identical(axis, "numeric")) {
+          orphelines <- setdiff(declarees[!grepl("^[0-9]{4}$", declarees)], endpoints)
+          if (length(orphelines) > 0L) {
+            manquer(paste0("indicator_pages.", indicator_key, ".comparison.details"),
+                    paste0("un détail non annuel doit être une borne déclarée — hors bornes : ",
+                           paste(orphelines, collapse = ", ")))
+          }
+        }
+        axis_labels <- extension$axisLabels
+        if (!is.null(axis_labels) &&
+            (!is.list(axis_labels) ||
+             !est_chaine_non_vide(axis_labels$x) ||
+             !est_chaine_non_vide(axis_labels$y))) {
+          manquer(paste0("indicator_pages.", indicator_key,
+                         ".trajectory.axisLabels"),
+                  "x et y doivent être des libellés non vides")
+        }
+        reference <- extension$reference
+        if (!is.null(reference) && (!is.list(reference) ||
+            !est_chaine_non_vide(reference$indicator) ||
+            !reference$indicator %in% cles_indicateurs ||
+            !est_chaine_non_vide(reference$territoire) ||
+            !est_chaine_non_vide(reference$label))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.reference"),
+                  "la référence doit porter une clé publiée, un territoire et un libellé")
+        }
+        marker <- extension$marker
+        if (!is.null(marker) && (!is.list(marker) ||
+            !est_chaine_non_vide(marker$detail) ||
+            !marker$detail %in% declarees ||
+            !est_chaine_non_vide(marker$label))) {
+          manquer(paste0("indicator_pages.", indicator_key, ".trajectory.marker"),
+                  "le marqueur doit porter un détail déclaré et un libellé")
+        }
+        ticks <- extension$ticks
+        if (!is.null(ticks)) {
+          if (!is.list(ticks) || !length(ticks)) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks"),
+                   "les repères doivent être une liste non vide")
+          }
+          details_ticks <- vapply(ticks, function(tick) {
+            is.list(tick) && est_chaine_non_vide(tick$detail)
+          }, logical(1L))
+          if (any(!details_ticks)) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks"),
+                   "chaque repère doit porter un détail")
+          }
+          valeurs_ticks <- vapply(ticks, function(tick) tick$detail,
+                                  character(1L))
+          if (anyDuplicated(valeurs_ticks) ||
+              any(!valeurs_ticks %in% declarees) ||
+              any(!vapply(ticks, function(tick)
+                est_chaine_non_vide(tick$label), logical(1L)))) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks"),
+                   "les repères doivent référencer des détails déclarés et porter des libellés")
+          }
+          if (any(vapply(ticks, function(tick)
+            !is.null(tick$mobile) &&
+              !(is.logical(tick$mobile) && length(tick$mobile) == 1L &&
+                !is.na(tick$mobile)), logical(1L)))) {
+            manquer(paste0("indicator_pages.", indicator_key,
+                           ".trajectory.ticks.mobile"),
+                   "mobile doit être un booléen")
+          }
         }
       }
       if (identical(famille, "distribution")) {
@@ -957,6 +1103,26 @@ valider_theme_metadata <- function(metadata, vintages = NULL) {
         }
       }
     }
+    }
+  }
+
+  # La carte suit l'éligibilité déclarée par le payload : une figure composée
+  # d'une courbe et d'une référence peut rester visible sur la fiche sans
+  # devenir deux couches autonomes. Les clés absentes restent cartographiables
+  # pour conserver le contrat historique des indicateurs.
+  if (!is.null(metadata$map_layers)) {
+    if (!is.list(metadata$map_layers) || is.data.frame(metadata$map_layers) ||
+        (length(metadata$map_layers) > 0L && is.null(names(metadata$map_layers)))) {
+      manquer("map_layers", "la carte d'éligibilité doit être un objet")
+    }
+    inconnues <- setdiff(names(metadata$map_layers), cles_indicateurs)
+    if (length(inconnues) > 0L) {
+      manquer("map_layers", paste0("indicateur(s) inconnu(s) : ",
+                                    paste(inconnues, collapse = ", ")))
+    }
+    if (any(!vapply(metadata$map_layers, function(x)
+      is.logical(x) && length(x) == 1L && !is.na(x), logical(1L)))) {
+      manquer("map_layers", "chaque éligibilité doit être un booléen")
     }
   }
 

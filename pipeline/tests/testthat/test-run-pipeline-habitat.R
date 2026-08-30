@@ -45,9 +45,12 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
            territoires = data.frame(territoire = "53", nom = "Bretagne")),
     publish = function(payload, cible, backend = NULL) invisible(payload),
     # issue #311 : le seam des métadonnées est mocké ici (test 1 — sortie par
-    # défaut, la publication réelle est couverte par test 2 + le test dédié)
+    # défaut, la publication réelle est couverte par test 2 + le test dédié) ;
+    # issue #506 : le mock porte le paramètre directions_module que le run
+    # transmet désormais au seam (les directions du module de thème)
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,
-                                      theme_attendu = NULL)
+                                      theme_attendu = NULL,
+                                      directions_module = NULL)
       invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)

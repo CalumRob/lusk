@@ -503,6 +503,38 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         sourceId: 'korrigo',
         direction: 'plus-est-mieux',
       },
+      raccordement_tc: {
+        label: 'Population bretonne joignable en 90 minutes en TC',
+        definition:
+          'La part de la population bretonne qui peut rejoindre le territoire en moins de 90 minutes en train, en car ou en bus, de mairie à mairie. Le calcul retient le meilleur départ d’un mercredi réel de période scolaire, avec une marche plafonnée à 40 minutes à chaque extrémité, sans aucun trajet en voiture.',
+        unite: '%',
+        source:
+          'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+        sourceId: 'matrice_temps_mairies',
+        direction: 'plus-est-mieux',
+        caveat:
+          'Aux niveaux agrégés, les communes non routées sont exclues du dénominateur et la couverture réellement mesurée est signalée. Une commune non routée reste indisponible, jamais ramenée à zéro.',
+      },
+      raccordement_courbe: {
+        label: 'Courbe cumulative — population bretonne joignable en TC',
+        definition:
+          'La courbe cumulative de la part de population bretonne joignable selon le temps de trajet en transports en commun, de mairie à mairie, jusqu’à 6 heures, publiée sur onze seuils.',
+        unite: '%',
+        source:
+          'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+        sourceId: 'matrice_temps_mairies',
+        direction: 'plus-est-mieux',
+      },
+      raccordement_reference: {
+        label: 'Référence médiane — commune bretonne',
+        definition:
+          'La courbe médiane des communes bretonnes routées, affichée comme référence sur la courbe cumulative du raccordement.',
+        unite: '%',
+        source:
+          'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+        sourceId: 'matrice_temps_mairies',
+        direction: 'plus-est-mieux',
+      },
       bornes_recharge: {
         label: 'Bornes de recharge pour véhicules électriques',
         definition:

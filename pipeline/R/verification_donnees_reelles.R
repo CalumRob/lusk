@@ -132,6 +132,156 @@ verifier_passage_cog_reel <- function(zip) {
   invisible(TRUE)
 }
 
+# verifier_raccordement_reel ----------------------------------------------------
+# Verrou du RACCORDEMENT (issue #486, parent #482) : l'enveloppe CALCULÉE
+# (le chemin rendu par la cible raccordement_mobilite, passé en argument)
+# est relue et vérifiée SANS JAMAIS re-router — la matrice figée est la
+# seule matière. Ce que le verrou asserte sur les sorties PUBLIÉES :
+#   - la COUVERTURE : 1 202 communes, dont exactement les 13 non routées
+#     (l'ensemble mairies − matrice, recalculé des artefacts épinglés) en NA
+#     avec motif, 1 189 parts calculées ;
+#   - LES DOMAINES de valeur : parts dans [0, 1] partout (communes, EPCIs,
+#     départements), les agrégats portant leur COUVERTURE dans ]0, 1] (la
+#     sémantique routés-seuls de la revue pass 2 : la région suit LA MÊME
+#     règle — sa couverture est exactement la population routée ÷ population
+#     totale des artefacts épinglés ; sa part reste 1 par la diagonale de
+#     SES communes routées, jamais par une identité spéciale), les courbes
+#     monotones couvrant la grille complète ;
+#   - LES ESTAMPILLES : l'enveloppe porte les empreintes de SES entrées et
+#     lire_raccordement les fait coïncider avec les fichiers épinglés
+#     actuels (une enveloppe périmée échoue AVANT toute assertion) ; le JSON
+#     publié porte les trois clés avec la version et les deux dates de la
+#     matrice ;
+#   - LES ANCRES de la recherche (cross-check #486) : les parts @90 de
+#     Rennes / Lamballe-Armor / Redon et la médiane bretonne reproduites à
+#     la précision du run vérifié — un calcul qui déraille est refusé ICI.
+verifier_raccordement_reel <- function(artefact, payload) {
+  enveloppe <- lire_raccordement(artefact)
+  calcul <- enveloppe$calcul
+
+  verifier_egale(nrow(calcul$communes), 1202L,
+                 "raccordement — les 1202 communes COG 2025")
+  non_routees <- calcul$communes$code[!is.na(calcul$communes$motif)]
+  verifier_egale(length(non_routees), 13L,
+                 "raccordement — les 13 communes non routées")
+  attendues <- setdiff(lire_mairies_bretagne()$id,
+                       unique(lire_matrice_temps_mairies()$from_id))
+  attendues <- intersect(attendues,
+                         lire_population_raccordement()$code_commune)
+  verifier_egale(sort(non_routees), sort(attendues),
+                 paste("raccordement — l'ensemble des non routées",
+                       "(mairies épinglées − matrice épinglée)"))
+  valeurs <- calcul$communes$part_90[is.na(calcul$communes$motif)]
+  verifier_egale(length(valeurs), 1189L,
+                 "raccordement — les 1189 communes routées")
+  verifier_vrai(all(!is.na(valeurs) & valeurs >= 0 & valeurs <= 1),
+                "raccordement", "une part communale hors [0, 1]")
+  motif_vide <- calcul$communes$motif[
+    is.na(calcul$communes$part_90) & is.na(calcul$communes$motif)]
+  verifier_egale(length(motif_vide), 0L,
+                 "raccordement — une commune sans part ET sans motif")
+
+  verifier_vrai(all(calcul$epcis$part_90 >= 0 & calcul$epcis$part_90 <= 1),
+                "raccordement", "une part EPCI hors [0, 1]")
+  # les agrégats portent leur COUVERTURE (la part de population réellement
+  # mesurée par le routage — les non routées sont hors dénominateur, jamais
+  # cachées)
+  verifier_vrai(all(calcul$epcis$couverture > 0 &
+                      calcul$epcis$couverture <= 1) &&
+                  all(calcul$departements$couverture > 0 &
+                        calcul$departements$couverture <= 1),
+                "raccordement", "une couverture d'agrégat hors ]0, 1]")
+  verifier_egale(nrow(calcul$departements), 4L,
+                 "raccordement — les quatre départements")
+  # la région suit la RÈGLE ROUTÉS-SEULS comme tout autre territoire : sa
+  # couverture est EXACTEMENT la population routée ÷ la population totale,
+  # recalculée ici des artefacts épinglés (les 13 non routées en sortent)
+  population <- lire_population_raccordement()
+  couverture_attendue <-
+    sum(population$population[
+      !population$code_commune %in% non_routees]) /
+    sum(population$population)
+  verifier_egale(calcul$region$couverture[[1]], couverture_attendue,
+                 paste("raccordement — la couverture régionale",
+                       "(population routée ÷ population totale)"))
+  verifier_egale(calcul$region$part_90[[1]], 1,
+                 paste("raccordement — chaque commune routée rejoint le",
+                       "réseau régional par SA diagonale (t = 0)"))
+
+  # La recette de routage garde son cap de 600 minutes, mais la publication
+  # suit la grille de décision déclarée (11 points), jamais le pas historique
+  # de la matrice.
+  grille <- as.integer(sub("^t", "", grille_raccordement()))
+  courbe_rennes <- calcul$courbes_communes[
+    calcul$courbes_communes$code == "35238", ]
+  verifier_egale(as.integer(courbe_rennes$minute), grille,
+                 "raccordement — la grille publiée de la courbe de Rennes")
+  verifier_vrai(all(diff(courbe_rennes$part) >= 0),
+                "raccordement", "la courbe de Rennes n'est pas monotone")
+
+  # LES ANCRES (cross-check du ticket #486 — le run de recherche vérifié,
+  # docs/research/accessibilite-extra-communale.md §5c) : tolérance au
+  # demi-point de pourcentage mille — une dérive nomme le calcul fautif.
+  part_de <- function(code) {
+    calcul$communes$part_90[calcul$communes$code == code]
+  }
+  verifier_egale(part_de("35238"), 0.311967,
+                 "raccordement — l'ancre Rennes @90 (inbound)", tolerance = 5e-4)
+  verifier_egale(part_de("22093"), 0.188828,
+                 "raccordement — l'ancre Lamballe-Armor @90 (inbound)",
+                 tolerance = 5e-4)
+  med90 <- calcul$reference$part_mediane[
+    calcul$reference$minute == 90]
+  verifier_egale(med90, 0.014585,
+                 "raccordement — l'ancre médiane bretonne @90",
+                 tolerance = 5e-4)
+
+  # Le calcul ci-dessus n'est pas encore la preuve de publication : le verrou
+  # lit aussi le JSON produit par publish, passé par une cible format = "file".
+  verifier_vrai(file.exists(payload),
+                "raccordement — payload publié",
+                paste("le JSON des indicateurs est absent :", payload))
+  publie <- jsonlite::fromJSON(payload, simplifyVector = TRUE)
+  verifier_vrai(is.data.frame(publie) && all(c("theme", "key", "type", "detail",
+                                               "vintage_source", "vintage_version",
+                                               "vintage_date_reference",
+                                               "vintage_date_publication") %in% names(publie)),
+                "raccordement — payload publié",
+                "le JSON ne porte pas les colonnes de faits et d'estampille")
+  cles <- c("raccordement_tc", "raccordement_courbe", "raccordement_reference")
+  raccordement <- publie[publie$theme == "mobilite" & publie$key %in% cles,
+                         , drop = FALSE]
+  verifier_egale(sort(unique(raccordement$key)), sort(cles),
+                 "raccordement — les trois clés publiées")
+  couverture <- function(cle) {
+    lignes <- raccordement[raccordement$key == cle, , drop = FALSE]
+    c(communes = sum(lignes$type == "commune"),
+      epcis = sum(lignes$type == "epci"),
+      departements = sum(lignes$type == "departement"),
+      region = sum(lignes$type == "region"))
+  }
+  verifier_egale(couverture("raccordement_tc"), c(1202L, 61L, 4L, 1L),
+                 "raccordement — couverture du scalaire publié")
+  verifier_egale(couverture("raccordement_courbe"), c(13222L, 671L, 44L, 11L),
+                 "raccordement — couverture de la courbe publiée")
+  verifier_egale(couverture("raccordement_reference"), c(0L, 0L, 0L, 11L),
+                 "raccordement — couverture de la référence publiée")
+  for (cle in cles) {
+    lignes <- raccordement[raccordement$key == cle, , drop = FALSE]
+    verifier_vrai(
+      all(!is.na(lignes$vintage_source) &
+          grepl("matrice temps mairie", lignes$vintage_source, fixed = TRUE) &
+          lignes$vintage_version == "2026-09-16" &
+          lignes$vintage_date_reference == "2026-08-25" &
+          lignes$vintage_date_publication == "2026-08-26"),
+      paste0("raccordement — estampilles du payload publié (", cle, ")"),
+      "source, version et dates de la matrice attendues absentes ou divergentes"
+    )
+  }
+
+  invisible(TRUE)
+}
+
 # verifier_amenagements_cyclables_reel -----------------------------------------
 # Verrou du bloc converti de test-qualite-amenagements-reelles.R : le snapshot
 # Geovelo RÉEL (le parquet, résolu par le manifeste et passé en argument)

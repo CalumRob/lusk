@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo } from '../indicateurs/explorationModel'
+import { estimerDensite, hauteurDensite, mediane, modeleExploration, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte, positionDensite, rangsExAequo, selectionTerritoire, situationContexte } from '../indicateurs/explorationModel'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { metadonneesThemesFixtures } from '../payload/fixtures'
 import type { Indicateur, Territoire } from '../payload/types'
@@ -43,6 +43,36 @@ describe('helpers partagés rang ex-aequo et médiane (#437)', () => {
   })
 })
 
+describe('résolution du territoire mis en avant — note et Repères', () => {
+  it('conserve les mêmes états honnêtes et les mêmes formulations selon le consommateur', () => {
+    const horsPerimetre = { niveau: 'commune' as const, departement: '29', territoire: 'a' }
+    expect(situationContexte(territoires, horsPerimetre)).toMatchObject({
+      ref: territoires[0],
+      nom: 'Alpha',
+      horsPerimetre: true,
+      introuvable: false,
+    })
+    expect(selectionTerritoire(territoires, horsPerimetre)).toEqual({
+      kind: 'horsScope',
+      nom: 'Alpha',
+      message: 'Alpha : territoire absent à ce niveau de comparaison.',
+    })
+
+    const introuvable = { niveau: 'commune' as const, territoire: 'inconnu' }
+    expect(situationContexte(territoires, introuvable)).toMatchObject({
+      ref: null,
+      nom: null,
+      horsPerimetre: false,
+      introuvable: true,
+    })
+    expect(selectionTerritoire(territoires, introuvable)).toEqual({
+      kind: 'horsScope',
+      nom: null,
+      message: 'Territoire sélectionné absent à ce niveau de comparaison.',
+    })
+  })
+})
+
 // La grammaire Repères des trajectoires (#438) — le modèle du chemin complet :
 // échelles dérivées des valeurs RÉELLES (jamais un bornage brut), une SEULE
 // échelle proportionnelle aux années pour les points ET les libellés, les
@@ -69,6 +99,24 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(parDetail(modele, '2024').max).toBe(3200)
   })
 
+  it('expose la référence déclarée sans recalculer une médiane de niveau', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const reference = [point('53', '2020', 50, 'region'), point('53', '2024', 150, 'region')]
+    const modele = modeleTrajectoire(
+      [point('a', '2020', 10), point('a', '2024', 20), point('b', '2020', 30), point('b', '2024', 40)],
+      facet,
+      ['2020', '2024'],
+      territoires,
+      { niveau: 'commune' },
+      reference,
+      'Commune bretonne médiane',
+    )
+
+    expect(modele.serieReference!.map((point) => point.value)).toEqual([50, 150])
+    expect(modele.referenceLabel).toBe('Commune bretonne médiane')
+    expect(modele.domaineValeurs).toEqual({ min: 10, max: 150 })
+  })
+
   it('positionne points et libellés sur UNE seule échelle proportionnelle aux années (années non consécutives)', () => {
     const facet = pageTrajectoire(['2019', '2021', '2025'], '2025', ['2019', '2025'])
     const modele = modeleTrajectoire([point('a', '2019', 10), point('a', '2021', 12), point('a', '2025', 16)], facet, ['2019', '2025'], territoires, { niveau: 'commune' })
@@ -78,6 +126,23 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(x('2019')).toBe(0)
     expect(x('2021')).toBeCloseTo(100 / 3, 6)
     expect(x('2025')).toBe(100)
+  })
+
+  it('positionne une trajectoire de minutes sur son axe numérique déclaré, pas sur des catégories', () => {
+    const details = ['t0000', 't0015', 't0060', 't0360']
+    const facet = pageTrajectoire(details, 't0060', ['t0000', 't0360'])
+    const modele = modeleTrajectoire(
+      details.map((detail, index) => point('a', detail, index + 1)),
+      facet,
+      ['t0000', 't0360'],
+      territoires,
+      { niveau: 'commune' },
+      [],
+      null,
+      { axis: 'numeric' },
+    )
+    const x = (detail: string) => parDetail(modele, detail).x
+    expect([x('t0015'), x('t0060')]).toEqual([expect.closeTo(15 / 360 * 100, 6), expect.closeTo(60 / 360 * 100, 6)])
   })
 
   it('garde sur l’axe les bornes déclarées sans valeur (états OCS-GE M2/M3) — jamais effacées du chemin', () => {
@@ -117,6 +182,18 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
     expect(modele.serieTerritoire!.map((p) => p.detail)).toEqual(['2020', '2024'])
     const horsScope = modeleTrajectoire([point('a', '2020', 10), point('a', '2024', 12)], facet, ['2020', '2024'], territoires, { niveau: 'epci', territoire: 'a' })
     expect(horsScope.serieTerritoire).toBeNull()
+  })
+
+  it('épingle la série du territoire au niveau résolu quand une même clé existe à plusieurs niveaux', () => {
+    const facet = pageTrajectoire(['2020', '2024'], '2024', ['2020', '2024'])
+    const modele = modeleTrajectoire([
+      point('a', '2020', 900, 'epci'),
+      point('a', '2020', 10, 'commune'),
+      point('a', '2024', 901, 'epci'),
+      point('a', '2024', 12, 'commune'),
+    ], facet, ['2020', '2024'], territoires, { niveau: 'commune', territoire: 'a' })
+
+    expect(modele.serieTerritoire!.map((p) => p.value)).toEqual([10, 12])
   })
 })
 

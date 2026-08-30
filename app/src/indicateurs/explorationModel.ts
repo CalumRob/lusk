@@ -1,8 +1,13 @@
-import type { Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
+import { lienFiche } from '@/fiche/contratExploration'
+import type { NiveauComparable } from '@/fiche/contratExploration'
+import { resoudreNiveau } from './etatUrl'
+import type { Indicateur, Payload, Territoire } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
-import type { IndicatorPageMetadata } from '@/payload/types'
+import { correspondFait, filtrerFaits, CORRESPONDANCE_CARTE, CORRESPONDANCE_STRICTE } from './correspondFait'
+import type { IndicatorPageMetadata, TrajectoryMetadata } from '@/payload/types'
 
-export type NiveauIndicateur = Extract<TerritoireType, 'commune' | 'epci' | 'departement'>
+/** Alias du comparable du contrat d'exploration (#505) — l'ensemble vit là-bas, une seule fois. */
+export type NiveauIndicateur = NiveauComparable
 export type DirectionIndicateur = 'high' | 'low'
 export type TriExploration = 'nom' | 'valeur' | 'rang'
 export type OrdreExploration = 'asc' | 'desc'
@@ -11,9 +16,6 @@ export interface DensitePoint { x: number; density: number; y: number }
 export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
 export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
-
-const niveaux: NiveauIndicateur[] = ['commune', 'epci', 'departement']
-export const niveauLePlusFin = (supported: readonly TerritoireType[]): NiveauIndicateur => niveaux.find((n) => supported.includes(n)) ?? 'commune'
 
 /**
  * La médiane d'une série — null pour une série vide. L'unique implémentation
@@ -56,6 +58,44 @@ export function dansScope(territoire: Territoire, niveau: NiveauIndicateur, depa
 
 const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes', epci: 'EPCI', departement: 'départements' }
 
+type ResolutionTerritoire =
+  | { statut: 'silence'; ref: null; nom: null; message: null }
+  | { statut: 'introuvable'; ref: null; nom: null; message: string }
+  | { statut: 'horsPerimetre'; ref: Territoire; nom: string; message: string }
+  | { statut: 'actif'; ref: Territoire; nom: string; message: null }
+
+/**
+ * La jointure commune du territoire mis en avant (#472/#441) : une seule
+ * recherche de référence, un seul verdict d'appartenance au niveau demandé
+ * et les formulations d'absence qui en découlent. Les modèles gardent leurs
+ * formes publiques propres, mais ne recalculent jamais ces états.
+ */
+function resoudreTerritoire(
+  territoires: readonly Territoire[],
+  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+): ResolutionTerritoire {
+  if (!etat.territoire) return { statut: 'silence', ref: null, nom: null, message: null }
+
+  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
+  if (!ref) {
+    return {
+      statut: 'introuvable',
+      ref: null,
+      nom: null,
+      message: 'Territoire sélectionné absent à ce niveau de comparaison.',
+    }
+  }
+  if (!dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
+    return {
+      statut: 'horsPerimetre',
+      ref,
+      nom: ref.nom,
+      message: `${ref.nom} : territoire absent à ce niveau de comparaison.`,
+    }
+  }
+  return { statut: 'actif', ref, nom: ref.nom, message: null }
+}
+
 /**
  * La situation résolue d'une Page d'indicateur (#472) — LA source unique de la
  * note de contexte permanente ET de la référence de périmètre des compositions :
@@ -65,9 +105,8 @@ const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes',
  * resserré au département ou à l'EPCI au niveau commune seulement.
  */
 export function situationContexte(territoires: readonly Territoire[], etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string }): { ref: Territoire | null; nom: string | null; horsPerimetre: boolean; introuvable: boolean; univers: string } {
+  const resolution = resoudreTerritoire(territoires, etat)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const ref = etat.territoire ? refs.get(etat.territoire) ?? null : null
-  const horsPerimetre = Boolean(ref && !dansScope(ref, etat.niveau, etat.departement, etat.epci))
   const niveau = LIBELLES_NIVEAU[etat.niveau]
   let univers = `les ${niveau} de Bretagne`
   if (etat.niveau === 'commune' && etat.departement) {
@@ -77,24 +116,26 @@ export function situationContexte(territoires: readonly Territoire[], etat: { ni
     const epci = refs.get(etat.epci)
     univers = epci ? `les communes de l’EPCI ${epci.nom}` : `les communes de l’EPCI ${etat.epci}`
   }
-  return { ref, nom: ref?.nom ?? null, horsPerimetre, introuvable: Boolean(etat.territoire) && !ref, univers }
+  return { ref: resolution.ref, nom: resolution.nom, horsPerimetre: resolution.statut === 'horsPerimetre', introuvable: resolution.statut === 'introuvable', univers }
 }
 
 /**
  * Le payload de la vue Carte : les faits de la facette résolue, dans le périmètre.
  *
  * Le sexe n'est PAS filtré ici alors même que la facette peut en déclarer un
- * (pyramide) : `resoudreGroupeSexe` (fusion.ts, #390) agrège F + M en une ligne
- * par territoire et JETTE par contrat tout groupe unisexe — peindre la moitié
- * d'une pyramide comme si c'était le tout est un mensonge cartographique. Un
- * pré-filtrage par `facet.sex` l'affamerait (0 ligne « M ») et ferait planter
- * le watcher de peinture : l'onglet Carte mourrait sur les pages pyramides.
- * L'agrégation par sexes appartient à la fusion, au moment de la peinture.
+ * (pyramide) — l'exception DÉCLARÉE du prédicat unique (`ignorerSexe`,
+ * CORRESPONDANCE_CARTE, #507) : `resoudreGroupeSexe` (fusion.ts, #390) agrège
+ * F + M en une ligne par territoire et JETTE par contrat tout groupe unisexe
+ * — peindre la moitié d'une pyramide comme si c'était le tout est un mensonge
+ * cartographique (#483). Un pré-filtrage par `facet.sex` l'affamerait
+ * (0 ligne « M ») et ferait planter le watcher de peinture : l'onglet Carte
+ * mourrait sur les pages pyramides. L'agrégation par sexes appartient à la
+ * fusion, au moment de la peinture.
  */
 export function payloadPourCarte(payload: Payload, facet: ComparisonFacet, etat: { niveau: NiveauIndicateur; departement?: string; epci?: string }): Payload {
   const { niveau, departement, epci } = etat
   const ids = new Set(payload.territoires.filter((territory) => dansScope(territory, niveau, departement, epci)).map((territory) => territory.territoire))
-  return { ...payload, indicateurs: payload.indicateurs.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (fact.dimension ?? null) === facet.dimension && fact.type === niveau && ids.has(fact.territoire)) }
+  return { ...payload, indicateurs: filtrerFaits(payload.indicateurs, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, dimension: facet.dimension, niveau }, CORRESPONDANCE_CARTE).filter((fact) => ids.has(fact.territoire)) }
 }
 
 /** KDE points retain the data-domain x and expose y in a stable 0..100 plot space. */
@@ -132,10 +173,13 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
 }
 
 export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
-  const supported = facet.levels.filter((level): level is NiveauIndicateur => niveaux.includes(level as NiveauIndicateur))
-  const niveau = requested.niveau && supported.includes(requested.niveau) ? requested.niveau : remembered && supported.includes(remembered as NiveauIndicateur) ? remembered as NiveauIndicateur : niveauLePlusFin(supported)
+  // La cascade explicite → mémorisé → repli est l'unique règle de la machine
+  // URL (#508), partagée avec l'applier de la Page d'indicateur.
+  const niveau = resoudreNiveau(requested.niveau, remembered, facet.levels)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
-  const all = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === facet.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === niveau && fact.value !== null).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
+  // La population facet-comparable : LE prédicat unique (#507), configuré
+  // strict — la même jointure que le statut de famille, par construction.
+  const all = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, sexe: facet.sex, dimension: facet.dimension, niveau, avecValeur: true }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
   const values = all.map((row) => row.value)
   // La série triée du modèle (la comparaison inter-territoires de Repères) :
   // la médiane et la densité lisent la même série triée que avant #437.
@@ -143,7 +187,7 @@ export function modeleExploration(facts: readonly Indicateur[], facet: Compariso
   const median = mediane(distribution)
   const rangsCalcules = rangsExAequo(values, facet.direction)
   const ranks = new Map(all.map((row, index) => [row.territoire.territoire, rangsCalcules[index]] as const))
-  const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: `/territoire/${row.territoire.type}/${row.territoire.territoire}?theme=${facet.theme}`, highlighted: row.territoire.territoire === requested.territoire })
+  const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: lienFiche(row.territoire, facet.theme), highlighted: row.territoire.territoire === requested.territoire })
   const filtered = all.filter((row) => !requested.recherche || row.territoire.nom.toLocaleLowerCase('fr').includes(requested.recherche.toLocaleLowerCase('fr')))
   const tri = requested.tri ?? 'nom'
   const ordre = requested.ordre ?? 'asc'
@@ -199,9 +243,22 @@ export interface ModeleTrajectoire {
   domaineValeurs: { min: number | null; max: number | null }
   /** Le chemin du territoire mis en avant (null quand il est hors périmètre). */
   serieTerritoire: readonly PointTrajectoire[] | null
+  /** La référence publiée par la métadonnée (jamais une médiane recalculée côté app). */
+  serieReference: readonly PointTrajectoire[] | null
+  referenceLabel: string | null
+  /** The selected territory's public label, when the handoff is in scope. */
+  territoireLabel: string | null
 }
 
 const ANNEE_DETAIL = /^\d{4}$/
+const MINUTE_DETAIL = /^t(\d+)$/
+
+export interface OptionsTrajectoire {
+  /** The declared x-axis contract; numeric raccordement points are minutes. */
+  axis?: TrajectoryMetadata['axis']
+  /** Canonical labels from theme metadata, outside the page descriptor. */
+  labelsDetail?: Record<string, string>
+}
 
 export function modeleTrajectoire(
   facts: readonly Indicateur[],
@@ -209,18 +266,28 @@ export function modeleTrajectoire(
   endpoints: readonly string[],
   territoires: readonly Territoire[],
   etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  reference: readonly Indicateur[] = [],
+  referenceLabel: string | null = null,
+  options: OptionsTrajectoire = {},
 ): ModeleTrajectoire {
   const details = facet.details
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
 
-  // L'échelle temporelle partagée — UNE coordonnée par détail déclaré. Une
-  // année siège à SA place dans la fenêtre ; une borne déclarée non annuelle
-  // (M2/M3) ancre l'extrémité hors de la plage des années ; le repli ordinal
-  // (détail ni année ni borne, fenêtre sans années) reste déterministe.
-  const annees = details.filter((detail) => ANNEE_DETAIL.test(detail)).map(Number)
+  // L'échelle temporelle partagée — UNE coordonnée par détail déclaré. Le
+  // raccordement déclare un axe numérique de minutes : t0015 vaut 15 et
+  // t0060 vaut 60, au lieu de devenir la deuxième et troisième catégorie.
+  // Les autres trajectoires gardent leur contrat années/états ci-dessous.
+  const axeNumerique = options.axis === 'numeric' ||
+    (options.axis === undefined && details.length > 0 && details.every((detail) => MINUTE_DETAIL.test(detail)))
+  const minutes = new Map(details.flatMap((detail) => {
+    const match = detail.match(MINUTE_DETAIL)
+    return match ? [[detail, Number(match[1])] as const] : []
+  }))
+  const annees = axeNumerique ? [] : details.filter((detail) => ANNEE_DETAIL.test(detail)).map(Number)
   const coordonnees = new Map<string, number>()
   details.forEach((detail, index) => {
-    if (ANNEE_DETAIL.test(detail)) coordonnees.set(detail, Number(detail))
+    if (axeNumerique && minutes.has(detail)) coordonnees.set(detail, minutes.get(detail)!)
+    else if (!axeNumerique && ANNEE_DETAIL.test(detail)) coordonnees.set(detail, Number(detail))
     else if (annees.length && detail === endpoints[0]) coordonnees.set(detail, Math.min(...annees) - 1)
     else if (annees.length && detail === endpoints[endpoints.length - 1]) coordonnees.set(detail, Math.max(...annees) + 1)
     else coordonnees.set(detail, index)
@@ -233,12 +300,14 @@ export function modeleTrajectoire(
     return tMax === tMin ? 0 : ((coordonnee - tMin) / (tMax - tMin)) * 100
   }
 
-  const lignes = details.map((detail) => {
-    const rows = facts.filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
+  const lignes = details.map((detail, index) => {
+    // La jointure du détail : le prédicat unique (#507), strict sur le
+    // sexe/dimension comme le statut et la facette résumée.
+    const rows = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value })).filter((row): row is { territoire: Territoire; value: number | null } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci)))
     const valeurs = rows.filter((row) => row.value !== null).map((row) => row.value as number)
     return {
       detail,
-      label: facet.labels[detail] ?? detail,
+      label: options.labelsDetail?.[detail] ?? facet.labels[detail] ?? `Étape ${index + 1}`,
       x: xDe(detail),
       min: valeurs.length ? Math.min(...valeurs) : null,
       mediane: mediane(valeurs),
@@ -249,17 +318,34 @@ export function modeleTrajectoire(
   }).sort((a, b) => (coordonnees.get(a.detail)! - coordonnees.get(b.detail)!) || (details.indexOf(a.detail) - details.indexOf(b.detail)))
 
   const valeursDuChemin = lignes.flatMap((ligne) => [ligne.min, ligne.max].filter((valeur): valeur is number => valeur !== null))
-  const domaineValeurs = { min: valeursDuChemin.length ? Math.min(...valeursDuChemin) : null, max: valeursDuChemin.length ? Math.max(...valeursDuChemin) : null }
 
   const refSelectionne = etat.territoire ? refs.get(etat.territoire) : undefined
   const serieTerritoire = refSelectionne && dansScope(refSelectionne, etat.niveau, etat.departement, etat.epci)
     ? lignes.map((ligne) => {
-        const row = facts.find((fact) => fact.theme === facet.theme && fact.key === facet.indicator && fact.detail === ligne.detail && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.territoire === refSelectionne.territoire)
+        // Le point du territoire mis en avant : le même prédicat unique
+        // (#507) épinglé au territoire, valeurs manquantes comprises.
+        const row = facts.find((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, detail: ligne.detail, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau, territoire: refSelectionne.territoire }, CORRESPONDANCE_STRICTE))
         return { detail: ligne.detail, label: ligne.label, x: ligne.x, value: row ? row.value : null } satisfies PointTrajectoire
       })
     : null
 
-  return { etapes: lignes, domaineValeurs, serieTerritoire }
+  // La référence est une série publiée, sélectionnée par le dispatch à partir
+  // de la déclaration de page. Elle partage les coordonnées du chemin actif,
+  // mais ne participe jamais au calcul des médianes de niveau.
+  const serieReference = reference.length
+    ? lignes.map((ligne) => {
+        const row = reference.find((fact) => fact.detail === ligne.detail)
+        return { detail: ligne.detail, label: ligne.label, x: ligne.x, value: row?.value ?? null } satisfies PointTrajectoire
+      })
+    : null
+  const valeursReference = serieReference?.map((point) => point.value).filter((value): value is number => value !== null) ?? []
+  const domaineAvecReference = [...valeursDuChemin, ...valeursReference]
+  const domaineValeursFinal = { min: domaineAvecReference.length ? Math.min(...domaineAvecReference) : null, max: domaineAvecReference.length ? Math.max(...domaineAvecReference) : null }
+
+  const territoireLabel = refSelectionne && dansScope(refSelectionne, etat.niveau, etat.departement, etat.epci)
+    ? refSelectionne.nom
+    : null
+  return { etapes: lignes, domaineValeurs: domaineValeursFinal, serieTerritoire, serieReference, referenceLabel, territoireLabel }
 }
 
 /**
@@ -296,13 +382,14 @@ export function modeleRelation(
 ): ModeleRelation {
   const roles = page.family === 'relationship' ? page.relationship.roles : null
   // La coordonnée d'un rôle : THÈME × CLÉ × DÉTAIL du rôle (la leçon de
-  // parité #438), le sexe/dimension suivant la facette, au niveau demandé.
+  // parité #438), le sexe/dimension suivant la facette — le prédicat unique
+  // (#507), strict comme le reste des modèles, au niveau demandé.
   const coordonneesDe = (role: { indicator: string; detail: string | null }): Map<string, number> => {
     const valeurs = new Map<string, number>()
     if (!roles) return valeurs
     for (const fact of faits) {
-      if (fact.theme !== facet.theme || fact.key !== role.indicator || (fact.detail ?? null) !== role.detail) continue
-      if ((facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau && fact.value !== null) valeurs.set(fact.territoire, fact.value)
+      if (!correspondFait(fact, { theme: facet.theme, cle: role.indicator, detail: role.detail ?? null, sexe: facet.sex, dimension: facet.dimension, niveau: etat.niveau, avecValeur: true }, CORRESPONDANCE_STRICTE)) continue
+      valeurs.set(fact.territoire, fact.value as number)
     }
     return valeurs
   }
@@ -351,14 +438,10 @@ export function selectionTerritoire(
   territoires: readonly Territoire[],
   etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
 ): SelectionTerritoire {
-  if (!etat.territoire) return { kind: 'silence' }
-  const ref = territoires.find((territoire) => territoire.territoire === etat.territoire)
-  if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) {
-    return ref
-      ? { kind: 'horsScope', nom: ref.nom, message: `${ref.nom} : territoire absent à ce niveau de comparaison.` }
-      : { kind: 'horsScope', nom: null, message: 'Territoire sélectionné absent à ce niveau de comparaison.' }
-  }
-  return { kind: 'active', ref }
+  const resolution = resoudreTerritoire(territoires, etat)
+  if (resolution.statut === 'silence') return { kind: 'silence' }
+  if (resolution.statut === 'actif') return { kind: 'active', ref: resolution.ref }
+  return { kind: 'horsScope', nom: resolution.nom, message: resolution.message }
 }
 
 /**
@@ -400,9 +483,10 @@ export function modeleSignature(
   if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, barres: barresDe(new Map()) }
   if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, barres: barresDe(new Map()) }
   const ref = selection.ref
-  // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — les clés
-  // ne sont pas uniques entre thèmes ; le sexe/dimension suivent la facette.
-  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && details.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  // La jointure des faits de la signature : le prédicat unique (#507) —
+  // THÈME × CLÉ (la leçon de parité #438), appartenance aux détails DÉCLARÉS
+  // (jamais un fait sans détail), sexe/dimension stricts comme partout.
+  const lignes = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, details, niveau: etat.niveau, territoire: ref.territoire, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)
   const valeurs = new Map<string, number>()
   let unite: string | null = null
   for (const ligne of lignes) {
@@ -460,9 +544,10 @@ export function modeleProfil(
   if (selection.kind === 'silence') return { etat: null, nom: null, message: null, lignes: lignesDe(new Map(), new Map()) }
   if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, lignes: lignesDe(new Map(), new Map()) }
   const ref = selection.ref
-  // Le filtre des faits est THÈME × CLÉ (la leçon de parité #438) — le profil
-  // lit la clé PROPRE de la page ; le sexe/dimension suivent la facette.
-  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && categories.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  // La jointure des faits du profil : le prédicat unique (#507) — THÈME × CLÉ
+  // (la leçon de parité #438), la clé PROPRE de la page, appartenance aux
+  // catégories DÉCLARÉES, sexe/dimension stricts comme partout.
+  const lignes = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, details: categories, niveau: etat.niveau, territoire: ref.territoire, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)
   const valeurs = new Map<string, number>()
   const unites = new Map<string, string>()
   for (const ligne of lignes) {
@@ -530,9 +615,9 @@ export function modeleComposition(
     partiesDeclarees.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null, reference: references.get(detail) ?? null }))
   // La référence par segment : la médiane du PÉRIMÈTRE comparé — le même
   // périmètre et le même calcul que la facette résumée, jamais une moyenne
-  // de parts recomposée côté app.
+  // de parts recomposée côté app. La jointure : le prédicat unique (#507).
   const references = new Map<string, number | null>(partiesDeclarees.map((detail) => {
-    const valeurs = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.detail === detail && fact.type === etat.niveau && fact.value !== null && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension)).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci))).map((row) => row.value)
+    const valeurs = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, detail, niveau: etat.niveau, avecValeur: true, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci))).map((row) => row.value)
     return [detail, mediane(valeurs)] as const
   }))
   // La trame null/absent du squelette partagé (#441) — un seul exemplaire.
@@ -540,10 +625,11 @@ export function modeleComposition(
   if (selection.kind === 'silence') return { etat: null, nom: null, message: null, unite: null, univers: situation.univers, parties: lignesDe(new Map()) }
   if (selection.kind === 'horsScope') return { etat: 'absent', nom: selection.nom, message: selection.message, unite: null, univers: situation.univers, parties: lignesDe(new Map()) }
   const ref = selection.ref
-  // Le filtre des faits est THÈME × CLÉ PROPRE de la page (la leçon de parité
-  // #438 — les clés ne sont pas uniques entre thèmes) ; le sexe/dimension
-  // suivent la facette.
-  const lignes = faits.filter((fact) => fact.theme === facet.theme && fact.key === page.indicator && fact.type === etat.niveau && fact.territoire === ref.territoire && fact.detail !== null && partiesDeclarees.includes(fact.detail) && (facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension))
+  // La jointure des parts du territoire : le prédicat unique (#507) — THÈME ×
+  // CLÉ PROPRE de la page (la leçon de parité #438 — les clés ne sont pas
+  // uniques entre thèmes), appartenance aux parties DÉCLARÉES, sexe/dimension
+  // stricts comme partout.
+  const lignes = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, details: partiesDeclarees, niveau: etat.niveau, territoire: ref.territoire, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)
   const valeurs = new Map<string, number>()
   let unite: string | null = null
   for (const ligne of lignes) {
@@ -611,15 +697,15 @@ export function modeleEnsembleComparaison(
   const contributeurs = new Set<string>()
   let unite: string | null = null
   for (const fact of faits) {
-    if (fact.theme !== facet.theme || fact.key !== page.indicator || fact.detail === null || !details.includes(fact.detail)) continue
-    if ((facet.sex === null || (fact.sex ?? null) === facet.sex) && (facet.dimension === null || (fact.dimension ?? null) === facet.dimension) && fact.type === etat.niveau && fact.value !== null) {
-      const ref = refs.get(fact.territoire)
-      if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) continue
-      sommes.set(fact.detail, (sommes.get(fact.detail) ?? 0) + fact.value)
-      comptes.set(fact.detail, (comptes.get(fact.detail) ?? 0) + 1)
-      contributeurs.add(fact.territoire)
-      unite ??= fact.unit ?? null
-    }
+    // La jointure : le prédicat unique (#507) — THÈME × CLÉ, appartenance aux
+    // détails DÉCLARÉS, sexe/dimension stricts, valeur publiée exigée.
+    if (!correspondFait(fact, { theme: facet.theme, cle: page.indicator, details, niveau: etat.niveau, avecValeur: true, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE)) continue
+    const ref = refs.get(fact.territoire)
+    if (!ref || !dansScope(ref, etat.niveau, etat.departement, etat.epci)) continue
+    sommes.set(fact.detail as string, (sommes.get(fact.detail as string) ?? 0) + (fact.value as number))
+    comptes.set(fact.detail as string, (comptes.get(fact.detail as string) ?? 0) + 1)
+    contributeurs.add(fact.territoire)
+    unite ??= fact.unit ?? null
   }
   const totalScope = territoires.filter((territoire) => dansScope(territoire, etat.niveau, etat.departement, etat.epci)).length
   return {

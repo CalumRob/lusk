@@ -19,7 +19,7 @@
  */
 import { computed } from 'vue'
 
-import type { FamilleFigure, Indicateur, Theme } from '@/payload/types'
+import type { FamilleFigure, Indicateur, Theme, TrajectoryMetadata } from '@/payload/types'
 import FigureOffreCyclable from './FigureOffreCyclable.vue'
 import FigureCompositionDpe from './FigureCompositionDpe.vue'
 import FigureCompositionPyramide from './FigureCompositionPyramide.vue'
@@ -37,6 +37,11 @@ const props = defineProps<{
   theme: Theme
   /** Les lignes reseaux du MÊME territoire — le dénominateur de L'offre cyclable. */
   reseaux?: Indicateur[]
+  /** Optional metadata-driven comparison series for the trajectory family. */
+  reference?: Indicateur[]
+  referenceLabel?: string
+  trajectory?: TrajectoryMetadata
+  nom?: string
   large?: boolean
   signe?: boolean
 }>()
@@ -98,6 +103,10 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :trajectory="trajectory"
+    :reference="reference"
+    :reference-label="referenceLabel"
+    :nom="nom"
   />
   <IndicatorFigure
     v-else
@@ -107,6 +116,7 @@ const corps = computed<Corps>(() => {
     :labels-detail="labelsDetail"
     :large="large"
     :signe="signe"
+    :nom-territoire="nom"
     :theme="theme"
   />
 </template>

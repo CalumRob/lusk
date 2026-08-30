@@ -1,4 +1,5 @@
 import type { ComparisonFacetMetadata, FamilleSemantique, IndicatorPageMetadata, Indicateur, FamilleFigure, Sexe, Territoire, Theme, TrajectoryMetadata, CompositionMetadata, DistributionMetadata, RelationshipMetadata, ListMetadata, PyramidMetadata, ComparisonBarsMetadata } from '@/payload/types'
+import { correspondFait, filtrerFaits, CORRESPONDANCE_STRICTE } from './correspondFait'
 
 export type FamilyStatus = 'ready' | 'unavailable' | 'incomplete' | 'invalid'
 export type FamilyName = FamilleFigure
@@ -25,7 +26,7 @@ export interface ComparisonFacet {
 
 export type FamilyRepresentation =
   | { kind: 'scalar'; rows: readonly Indicateur[]; territories: readonly Territoire[] }
-  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; extension: TrajectoryMetadata }
+  | { kind: 'trajectory'; rows: readonly Indicateur[]; territories: readonly Territoire[]; endpoints: readonly string[]; reference: readonly Indicateur[]; labelsDetail: Record<string, string>; extension: TrajectoryMetadata }
   | { kind: 'composition'; rows: readonly Indicateur[]; territories: readonly Territoire[]; parts: readonly Indicateur[]; extension: CompositionMetadata }
   | { kind: 'distribution'; rows: readonly Indicateur[]; territories: readonly Territoire[]; distribution: readonly Indicateur[]; extension: DistributionMetadata }
   | { kind: 'list'; rows: readonly Indicateur[]; territories: readonly Territoire[]; entries: readonly Indicateur[]; extension: ListMetadata }
@@ -98,10 +99,14 @@ function statusFor(facet: ComparisonFacet, rows: readonly Indicateur[], extensio
   return !facet.valid || extensionMissing ? 'invalid' : rows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
 }
 
-export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object } = {}): FamilyDispatch {
+export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { theme?: Theme; facts?: readonly Indicateur[]; territories?: readonly Territoire[]; selected?: string; facet?: object; labelsDetail?: Record<string, string> } = {}): FamilyDispatch {
   const facet = normalizeComparisonFacet(page, input.facet, input.theme)
-  const allFacts = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === facet.indicator)
-  const rows = allFacts.filter((fact) => fact.detail === facet.detail && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension)
+  // La jointure des faits vit dans correspondFait (#507) — THÈME × CLÉ
+  // toujours (les clés ne sont pas uniques entre thèmes, #383/#438), puis le
+  // prédicat configuré strict porte détail × sexe × dimension : le statut de
+  // famille et les modèles Repères lisent LA même population.
+  const allFacts = filtrerFaits(input.facts ?? [], { theme: facet.theme, cle: facet.indicator }, CORRESPONDANCE_STRICTE)
+  const rows = allFacts.filter((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE))
   const selected = rows.find((row) => row.territoire === input.selected) ?? null
   const territories = input.territories ?? []
   const common = { facet, resolvedUrl: facet.url, selected }
@@ -112,9 +117,15 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
       // (états OCS-GE M2/M3 au niveau commune) reste sélectionnable sans
       // rendre la page « indisponible » — le chemin existe toujours (#438).
       const detailsDeclarees = page.comparison?.details ?? [...new Set(allFacts.map((fact) => fact.detail).filter((detail): detail is string => detail !== null))]
-      const cheminRows = allFacts.filter((fact) => fact.detail !== null && detailsDeclarees.includes(fact.detail) && (fact.sex ?? null) === facet.sex && (fact.dimension ?? null) === facet.dimension)
+      // L'appartenance aux détails DÉCLARÉS (jamais un fait sans détail) vit
+      // dans le prédicat unique (#507) — le sexe/dimension restent stricts.
+      const cheminRows = allFacts.filter((fact) => correspondFait(fact, { theme: facet.theme, cle: facet.indicator, details: detailsDeclarees, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE))
       const status: FamilyStatus = !facet.valid || page.trajectory === undefined ? 'invalid' : cheminRows.length === 0 ? 'unavailable' : rows.some((row) => row.value === null) ? 'incomplete' : 'ready'
-      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, extension: page.trajectory }, status }
+      const reference = page.trajectory.reference
+        ? filtrerFaits(input.facts ?? [], { theme: facet.theme, cle: page.trajectory.reference.indicator }, CORRESPONDANCE_STRICTE)
+          .filter((fact) => fact.territoire === page.trajectory!.reference!.territoire)
+        : []
+      return { ...common, family: 'trajectory', renderer: 'trajectory', rendererIdentity: familyRegistry.trajectory, representation: { kind: 'trajectory', rows, territories, endpoints: page.trajectory.endpoints, reference, labelsDetail: input.labelsDetail ?? {}, extension: page.trajectory }, status }
     }
      case 'composition': return { ...common, family: 'composition', renderer: 'composition', rendererIdentity: familyRegistry.composition, representation: { kind: 'composition', rows, territories, parts: allFacts, extension: page.composition }, status: statusFor(facet, rows, page.composition === undefined) }
     case 'distribution': {
@@ -122,7 +133,7 @@ export function dispatchIndicatorFamily(page: IndicatorPageMetadata, input: { th
       // (#440) — jamais dans les rows de la facette résumée : allFacts porte
       // la clé de la facette (souvent une AUTRE clé publiée), la signature
       // lit la clé de la page dans les faits bruts.
-      const signatureRows = (input.facts ?? []).filter((fact) => fact.theme === facet.theme && fact.key === page.indicator)
+      const signatureRows = filtrerFaits(input.facts ?? [], { theme: facet.theme, cle: page.indicator }, CORRESPONDANCE_STRICTE)
       return { ...common, family: 'distribution', renderer: 'distribution', rendererIdentity: familyRegistry.distribution, representation: { kind: 'distribution', rows, territories, distribution: signatureRows, extension: page.distribution }, status: statusFor(facet, rows, page.distribution === undefined) }
     }
     case 'list': return { ...common, family: 'list', renderer: 'list', rendererIdentity: familyRegistry.list, representation: { kind: 'list', rows, territories, entries: rows, extension: page.list }, status: statusFor(facet, rows, page.list === undefined) }

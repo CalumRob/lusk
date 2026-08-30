@@ -28,6 +28,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { lienFiche } from '@/fiche/contratExploration'
 import type { CleColonne, ConfigListe } from '@/listes/listes'
 import {
   TRI_PAR_DEFAUT,
@@ -107,10 +108,6 @@ const aDesFiltres = computed(
 /** Which data columns this page's config carries (the mobile cards mirror them). */
 const colonneEpci = computed(() => props.config.colonnes.some((c) => c.cle === 'epci'))
 const colonneDepartement = computed(() => props.config.colonnes.some((c) => c.cle === 'departement'))
-
-function cheminFiche(t: Territoire): string {
-  return `/territoire/${t.type}/${t.territoire}`
-}
 
 /** The display value of a cell — an empty column value renders as an em dash. */
 function valeurCellule(t: Territoire, cle: CleColonne): string {
@@ -267,7 +264,7 @@ function choisirEpci(code: string): void {
           <tbody>
             <tr v-for="t in lignes" :key="t.territoire">
               <td v-for="col in config.colonnes" :key="col.cle" :class="'cellule-' + col.cle">
-                <RouterLink v-if="col.cle === 'nom'" :to="cheminFiche(t)" class="lien-fiche">
+                <RouterLink v-if="col.cle === 'nom'" :to="lienFiche(t)" class="lien-fiche">
                   {{ t.nom }}
                 </RouterLink>
                 <template v-else>{{ valeurCellule(t, col.cle) }}</template>
@@ -277,7 +274,7 @@ function choisirEpci(code: string): void {
                      carte reste routée (ruling PO 2026-08-26) mais sans lien
                      face-utilisateur ; l'exploration spatiale d'un indicateur
                      vit sur SA Page d'indicateur (vue Carte). -->
-                <RouterLink :to="cheminFiche(t)" class="action">Voir la fiche</RouterLink>
+                <RouterLink :to="lienFiche(t)" class="action">Voir la fiche</RouterLink>
               </td>
             </tr>
           </tbody>
@@ -285,7 +282,7 @@ function choisirEpci(code: string): void {
 
         <ul v-if="lignes.length > 0" class="liste-cartes">
           <li v-for="t in lignes" :key="t.territoire" class="carte">
-            <RouterLink :to="cheminFiche(t)" class="carte-lien">
+            <RouterLink :to="lienFiche(t)" class="carte-lien">
               <span class="carte-nom">{{ t.nom }}</span>
               <span class="carte-code">{{ t.territoire }}</span>
               <span v-if="colonneEpci" class="carte-epci">{{ valeurCellule(t, 'epci') }}</span>
@@ -294,7 +291,7 @@ function choisirEpci(code: string): void {
               </span>
             </RouterLink>
             <div class="carte-actions">
-              <RouterLink :to="cheminFiche(t)">Voir la fiche</RouterLink>
+              <RouterLink :to="lienFiche(t)">Voir la fiche</RouterLink>
             </div>
           </li>
         </ul>

@@ -138,12 +138,40 @@ construire_donnees_mobilite <- function(cache = "data/raw",
   ), sources[setdiff(names(sources), c("parkings_osm", "stations_service"))])
 }
 
+# VINTAGES_RACCORDEMENT -----------------------------------------------------------
+# Les DEUX faits de vintage CONSTRUITS du raccordement (issue #486) : la
+# matrice temps figée et la population RP 2023 épinglées sous inst/extdata ne
+# sont PAS des sources téléchargées — elles n'ont pas de ligne de manifeste —
+# mais ce sont des données VERSIONNÉES (la recette figée et les empreintes
+# sha256 d'artefact_raccordement.R / calcul_raccordement.R). Leurs lignes
+# voyagent dans la table des vintages du thème : l'estampillage des clés du
+# raccordement passe par la jointure source_reference standard, la validation
+# des métadonnées les retrouve, et la table partagée (fusionner_vintages) les
+# publie à Sources comme toute autre fraîcheur.
+VINTAGES_RACCORDEMENT <- tibble::tribble(
+  ~id, ~source, ~version, ~licence, ~date_reference, ~date_publication,
+  "matrice_temps_mairies",
+  paste0("Lusk — matrice temps mairie à mairie figée du raccordement ",
+         "(routage r5r sur SNCF Voyageurs national 2026-08-24 + ",
+         "KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, ",
+         "meilleur départ p01 — recherche raccordement, issue #485)"),
+  "2026-09-16", "odbl", "2026-08-25", "2026-08-26",
+  "population_raccordement",
+  paste0("INSEE — Recensement de la population 2023 : la population totale ",
+         "des 1 202 communes bretonnes COG 2025 (le dénominateur W = ",
+         "3 449 370), transcription épinglée du run de recherche vérifié ",
+         "(calcul_raccordement.R, issue #486)"),
+  "2023", "lov2", "2023-01-01", "2026-08-26"
+)
+
 # vintages_mobilite ------------------------------------------------------------
 # Le builder de vintages du thème : la projection générique depuis le
 # manifeste — une source, SA référence (l'instantané de l'analyse) et SA
-# publication (le portage), jamais alignées.
+# publication (le portage), jamais alignées. Depuis l'issue #486, les DEUX
+# faits construits du raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
-  vintages_depuis_manifest(MANIFEST_MOBILITE)
+  dplyr::bind_rows(vintages_depuis_manifest(MANIFEST_MOBILITE),
+                   VINTAGES_RACCORDEMENT)
 }
 
 # agreger_nb_buildings_territoires ---------------------------------------------
@@ -462,13 +490,25 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     et l'estampille SNAPSHOT (la source de référence « mobilite_snapshot » —
 #     la date d'instantané de l'analyse, le fait de vintage de première classe
 #     du flagship, ADR-0012).
+#   - « raccordement_tc » / « raccordement_courbe » / « raccordement_reference »
+#     (issue #486) : LE RACCORDEMENT — la part de la population bretonne
+#     joignable en 90 minutes en TC (le scalaire classé), sa courbe cumulative
+#     (11 détails « t0000 » → « t0360 », la matière de la figure) et la courbe
+#     de référence de la commune bretonne médiane (les mêmes détails, portés
+#     par la seule ligne régionale). Calculés depuis la matrice temps FIGÉE
+#     SEULE + la population RP 2023 épinglée — jamais re-routés. Source de
+#     référence : matrice_temps_mairies (le fait construit de VINTAGES_
+#     RACCORDEMENT — l'horloge du figé, la recette 2026-09-16). Multiplicité
+#     NA pour la référence : elle ne vit que sur la région (nombre de lignes
+#     variable par territoire).
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("voitures_menage", "reseaux",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
            "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
            "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
           "offre_cyclable",
-          names(CLES_ISOLATION_MOBILITE)),
+          names(CLES_ISOLATION_MOBILITE),
+          "raccordement_tc", "raccordement_courbe", "raccordement_reference"),
   libelle = c(
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
@@ -485,7 +525,10 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
     "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
     "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
-    "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
+    "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+    "Population bretonne joignable en 90 minutes en TC",
+    "Courbe cumulative — population bretonne joignable en TC",
+    "Référence médiane — commune bretonne"
   ),
   sources = list(
     "rp_logement_princ",
@@ -497,14 +540,20 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      c("stationnement-velo", "osm_reseaux"), "mobilite_snapshot", "mobilite_snapshot",
     c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
-    "mobilite_snapshot", "mobilite_snapshot"
+    "mobilite_snapshot", "mobilite_snapshot",
+    "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies"
   ),
    source_reference = c("rp_logement_princ", "amenagements_cyclables",
                         "korrigo", "bornes-recharges", "stationnement-velo",
                         "osm_reseaux", "bpe_b316", "osm_reseaux",
                         "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
-                        rep("mobilite_snapshot", 5)),
-   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5))
+                        rep("mobilite_snapshot", 5),
+                        "matrice_temps_mairies", "matrice_temps_mairies",
+                        "matrice_temps_mairies"),
+   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5),
+                    1L,
+                    length(grille_raccordement()),
+                    NA_integer_)
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -571,6 +620,17 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 # de la table déclarative) — la même règle que la machinerie partagée.
 construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
                                              directions = DIRECTIONS_MOBILITE) {
+  # LE RACCORDEMENT (issue #486) : les artefacts calculés doivent être là —
+  # un absent nomme la chaîne à lancer, jamais un payload amputé en silence
+  if (is.null(analytiques$raccordement)) {
+    stop("construire_indicateurs_mobilite : les artefacts du raccordement ",
+         "(issue #486) sont absents des analytiques — lancez le calcul ",
+         "(preparer_raccordement / la cible raccordement_mobilite du graphe).",
+         call. = FALSE)
+  }
+  racc <- analytiques$raccordement
+  grille <- grille_raccordement()
+
   aligner <- function(table_agregee, key, unit) {
     if (!"rider" %in% names(table_agregee)) table_agregee$rider <- NA_character_
     dplyr::left_join(territoires["code"], table_agregee, by = "code") %>%
@@ -610,6 +670,36 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
        sous_bloc("stationnement_velo_par_voiture"),
        "stationnement_velo_par_voiture", "places vélo / place voiture")
   )
+
+  # le scalaire classé du raccordement : la part @90 aux QUATRE niveaux —
+  # les communes non routées portent NA + leur motif nommé dans `rider`
+  # (l'alignement sur la référence garantit une ligne par territoire) ;
+  # les agrégats portent dans `rider` la phrase de COUVERTURE précalculée
+  # quand une part de leur population n'est pas mesurable par le réseau
+  # (sémantique routés-seuls — rien n'est caché)
+  rider_couverture <- function(couverture) {
+    dplyr::if_else(
+      !is.na(couverture) & couverture < 1,
+      paste0("Part de la population réellement mesurée par le réseau : ",
+             sub(".", ",",
+                 sprintf("%.1f", 100 * couverture), fixed = TRUE),
+             " % (les communes non routées sont exclues du calcul)."),
+      NA_character_)
+  }
+  racc_scalaire <- dplyr::bind_rows(
+    racc$calcul$communes %>%
+      dplyr::transmute(code = code, value = part_90, rider = motif),
+    racc$calcul$epcis %>%
+      dplyr::transmute(code = code, value = part_90,
+                       rider = rider_couverture(couverture)),
+    racc$calcul$departements %>%
+      dplyr::transmute(code = code, value = part_90,
+                       rider = rider_couverture(couverture)),
+    racc$calcul$region %>%
+      dplyr::transmute(code = code, value = part_90,
+                       rider = rider_couverture(couverture))
+  )
+  tables$raccordement_tc <- aligner(racc_scalaire, "raccordement_tc", "%")
   rangs <- compute_ranks(territoires, tables, scalaires = list(),
                          directions = directions)
 
@@ -692,6 +782,40 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tot_loss %>% dplyr::select(code, key, detail, value),
     territoires)
 
+  # la COURBE du raccordement (la matière de la figure) : les 11 points de la
+  # grille déclarée aux quatre niveaux — le squelette (territoire × détail)
+  # garantit la multiplicité déclarée partout, NA pour les communes non
+  # routées (leur motif voyage sur le scalaire) ; JAMAIS classée (des courbes
+  # ne sont pas désirables, elles sont vraies)
+  racc_courbes <- dplyr::bind_rows(
+    racc$calcul$courbes_communes,
+    racc$calcul$courbes_epcis,
+    racc$calcul$courbes_departements,
+    racc$calcul$courbe_region
+  ) %>%
+    dplyr::transmute(code = code,
+                     detail = paste0("t", sprintf("%04d", minute)),
+                     value = part)
+  raccordement_courbe <- tidyr::crossing(
+    code = territoires$code, detail = grille
+  ) %>%
+    dplyr::left_join(racc_courbes, by = c("code", "detail")) %>%
+    dplyr::mutate(key = "raccordement_courbe", unit = "%") %>%
+    dplyr::select(code, key, detail, value, unit)
+
+  # la RÉFÉRENCE médiane bretonne : les mêmes marques de grille, portées par
+  # la seule ligne régionale (la multiplicité NA de la table déclarative
+  # l'autorise — un nombre de lignes variable par territoire)
+  raccordement_reference <- tibble::tibble(
+    code = "53",
+    key = "raccordement_reference",
+    detail = grille,
+    value = racc$calcul$reference$part_mediane[
+      match(as.integer(sub("^t", "", grille)),
+            racc$calcul$reference$minute)],
+    unit = "%"
+  )
+
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
   # table déclarative — la même forme que la machinerie partagée
@@ -727,7 +851,10 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     dplyr::bind_rows(isolation),
     voitures,
     reseaux,
-    offre_cyclable
+    offre_cyclable,
+    tables$raccordement_tc,
+    raccordement_courbe,
+    raccordement_reference
   ) %>%
     dplyr::left_join(rangs_combines, by = c("code", "key", "detail")) %>%
     dplyr::left_join(territoires[c("code", "type")], by = "code") %>%
@@ -1000,14 +1127,49 @@ validations_mobilite <- list(
            call. = FALSE)
     }
     invisible(payload)
+  },
+  # LE RACCORDEMENT (issue #486) : les parts joignables — scalaire, courbe et
+  # référence — sont des parts dans [0, 1] (une valeur NA — la commune non
+  # routée au géocode DILA aberrant, son motif nommé voyage dans `rider` — est
+  # légitime ; une part hors de la borne est une corruption du calcul)
+  function(payload) {
+    racc <- payload$indicateurs$value[
+      payload$indicateurs$key %in% c("raccordement_tc", "raccordement_courbe",
+                                     "raccordement_reference")]
+    if (any(!is.na(racc) & (racc < 0 | racc > 1))) {
+      stop("Payload invalide : une part de population joignable (raccordement)",
+           " sort de [0, 1].", call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # la GRILLE de la courbe du raccordement : les 11 détails déclarés « t0000 »
+  # → « t0360 » — un détail hors grille, ancien ou mal formé est une
+  # corruption, jamais une courbe qui ment sur son axe
+  function(payload) {
+    grille_attendue <- grille_raccordement()
+    for (cle in c("raccordement_courbe", "raccordement_reference")) {
+      lignes <- payload$indicateurs[
+        payload$indicateurs$key == cle &
+          !is.na(payload$indicateurs$detail), , drop = FALSE]
+      par_territoire <- split(lignes$detail, lignes$territoire)
+      if (length(par_territoire) > 0 && any(!vapply(
+        par_territoire,
+        function(details) identical(as.character(details), grille_attendue),
+        logical(1L)))) {
+        stop("Payload invalide : la grille de la courbe du raccordement ",
+             "(", cle, ") n'est pas la grille publiée déclarée.",
+             call. = FALSE)
+      }
+    }
+    invisible(payload)
   }
 )
 
 # construire_payload_mobilite --------------------------------------------------
 # L'assembleur du payload du thème : les quatre tables du contrat (la forme
-# d'compute_payload, compute.R) — indicateurs (les onze clés — `nb_buildings`
-# retiré, issue #368 — avec rangs + estampilles T7, les 5 parts d'isolation
-# portant l'estampille snapshot),
+# d'compute_payload, compute.R) — indicateurs (les quatorze clés — les onze
+# historiques + le raccordement #486 — avec rangs + estampilles T7, les 5
+# parts d'isolation portant l'estampille snapshot),
 # histoires (les deux story keys), territoires (référence partagée) et apercu
 # (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
@@ -1036,19 +1198,27 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
 # publier_mobilite -------------------------------------------------------------
 # Le seam de publication du thème : lit le référentiel partagé (base_epci du
 # cache), enchaîne le calcul (construire_analytiques_mobilite — les artefacts
-# sont régénérés sous data/processed/mobilite/), assemble le payload, le
-# valide et le publie via la machinerie PARTAGÉE publish (backend "static"
-# par défaut — parquet + projections JSON + vintages). Retourne le payload,
-# comme run_pipeline l'attend.
+# sont régénérés sous data/processed/mobilite/), LIT l'artefact du
+# RACCORDEMENT calculé (issue #486 — `raccordement` : le chemin de l'enveloppe
+# passée par la cible du graphe, ou à défaut le répertoire analytique
+# conventionnel ; absent ou périmé, la lecture s'arrête bruyamment — les parts
+# ne se recalculent QUE quand leurs entrées figées changent, jamais au fil des
+# republications), assemble le payload, le valide et le publie via la
+# machinerie PARTAGÉE publish (backend "static" par défaut — parquet +
+# projections JSON + vintages). Retourne le payload, comme run_pipeline
+# l'attend.
 publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie = "public/data",
                              sortie_analytiques = file.path(dirname(cache),
-                                                            "processed", "mobilite")) {
+                                                            "processed", "mobilite"),
+                             raccordement = NULL) {
   if (is.null(vintages)) vintages <- vintages_mobilite()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
   analytiques <- construire_analytiques_mobilite(donnees, base_epci,
                                                  sortie = sortie_analytiques)
+  analytiques$raccordement <- lire_raccordement(
+    if (is.null(raccordement)) sortie_analytiques else raccordement)
   payload <- construire_payload_mobilite(analytiques, base_epci, vintages)
   publish(payload, sortie)
   payload
@@ -1065,7 +1235,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
 # nommant le membre fautif.
 MEMBRES_DESCRIPTEUR_MOBILITE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
-  "construire_analytiques", "publier", "directions", "metadata"
+  "construire_analytiques", "publier", "directions", "metadata",
+  "raccordement"
 )
 
 # verifier_descripteur_mobilite -------------------------------------------------
@@ -1112,6 +1283,12 @@ DIRECTIONS_MOBILITE <- list(
   offre_cyclable = "high",
   div_loss_t = "low",
   div_loss_b = "low",
+  raccordement_tc = "high",
+  # les deux clés de MATIÈRE DE FIGURE du raccordement (#486) : déclarées
+  # pour l'audit directions↔registre (la bijection du contrat), jamais
+  # consommées — des courbes ne sont classées nulle part
+  raccordement_courbe = "high",
+  raccordement_reference = "high",
   iso_alimentation = "low", iso_sante = "low",
   iso_administration = "low", iso_ecole = "low", iso_banque = "low"
 )
@@ -1137,7 +1314,13 @@ theme_mobilite <- function() {
     # Issue #311 : les métadonnées du thème (le fichier épinglé
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
-    metadata = function() lire_theme_metadata("mobilite")
+    metadata = function() lire_theme_metadata("mobilite"),
+    # LE TRAIT RACCORDEMENT (issue #486) : le graphe le voit et câble la
+    # chaîne de calcul — les épingles du package en cibles de fichiers, la
+    # cible raccordement_mobilite (le calcul, persisté), la publication
+    # chaînée derrière. Le mode cron pose cue = "never" sur la chaîne :
+    # l'horloge légère ne paie JAMAIS le raccordement.
+    raccordement = TRUE
   )
   verifier_descripteur_mobilite(descripteur)
   descripteur

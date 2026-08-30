@@ -84,11 +84,12 @@ function ordinalFrancais(n: number): string {
 export function formaterRang(
   rang: number | null,
   taille: number | null,
-  colonne: ColonneRang,
+  colonne?: ColonneRang,
 ): string | null {
   if (rang === null) return null
-  const sur = taille === null ? '' : `/${taille}`
-  return `${ordinalFrancais(rang)}${sur} ${SUFFIXE_RANG[colonne]}`
+  const sur = taille === null ? '' : colonne ? `/${taille}` : ` / ${taille}`
+  const suffixe = colonne ? ` ${SUFFIXE_RANG[colonne]}` : ''
+  return `${ordinalFrancais(rang)}${sur}${suffixe}`
 }
 
 const MOIS_FRANCAIS = [
@@ -248,6 +249,46 @@ export function histoireMobilitePourTerritoire(
   return histoire ?? null
 }
 
+interface PointNuageCommun {
+  territoire: string
+  type: TerritoireType
+  nom: string
+}
+
+type HistoireDuTheme<T extends Histoire['theme']> = Extract<Histoire, { theme: T }>
+
+/**
+ * Le squelette unique des nuages de Story (ADR-0011) : référence → périmètre
+ * de comparaison → histoire du thème → projection (qui porte les gardes NA
+ * propres au domaine) → métadonnées communes du point. Les projections
+ * gardent leurs types et leurs règles métier dans chaque constructeur public.
+ */
+function construireNuage<T extends Histoire['theme'], Projection extends object>(
+  payload: Payload,
+  territoire: string,
+  theme: T,
+  projeter: (histoire: HistoireDuTheme<T>) => Projection | null,
+): Array<PointNuageCommun & Projection> | null {
+  const ref = trouverTerritoire(payload, territoire)
+  if (!ref) return null
+
+  return codesComparaison(payload, ref).flatMap((code) => {
+    const histoire = payload.histoires.find(
+      (candidate): candidate is HistoireDuTheme<T> => candidate.theme === theme && candidate.territoire === code,
+    )
+    if (!histoire) return []
+
+    // Une projection null est un NA de domaine : le cœur n'invente jamais un
+    // point quand la Story ne porte pas les forces nécessaires au tracé.
+    const projection = projeter(histoire)
+    if (projection === null) return []
+
+    const refPoint = trouverTerritoire(payload, code)
+    if (!refPoint) return []
+    return [{ territoire: code, type: refPoint.type, nom: refPoint.nom, ...projection }]
+  })
+}
+
 /** One point of the Mobilité story chart's context cloud — a peer's div_loss_t (ADR-0011). */
 export interface PointNuageMobilite {
   territoire: string
@@ -267,21 +308,9 @@ export interface PointNuageMobilite {
  * Démographie).
  */
 export function nuageMobilite(payload: Payload, territoire: string): PointNuageMobilite[] | null {
-  const ref = trouverTerritoire(payload, territoire)
-  if (!ref) return null
-
-  const codes = codesComparaison(payload, ref)
-  const nuage: PointNuageMobilite[] = []
-  for (const code of codes) {
-    const histoire = payload.histoires.find(
-      (h) => h.theme === 'mobilite' && h.territoire === code,
-    )
-    if (histoire?.theme !== 'mobilite') continue
-    const t = trouverTerritoire(payload, code)
-    if (!t) continue
-    nuage.push({ territoire: code, type: t.type, nom: t.nom, divLoss: histoire.div_loss_t })
-  }
-  return nuage
+  return construireNuage(payload, territoire, 'mobilite', (histoire) => ({
+    divLoss: histoire.div_loss_t,
+  }))
 }
 
 /**
@@ -323,27 +352,10 @@ export interface PointNuage {
  * among — and a click navigates to that point's own fiche (territoire/type).
  */
 export function nuageComparaison(payload: Payload, territoire: string): PointNuage[] | null {
-  const ref = trouverTerritoire(payload, territoire)
-  if (!ref) return null
-
-  const codes = codesComparaison(payload, ref)
-  const nuage: PointNuage[] = []
-  for (const code of codes) {
-    const histoire = payload.histoires.find(
-      (h) => h.theme === 'demographie' && h.territoire === code,
-    )
-    if (histoire?.theme !== 'demographie') continue
-    const t = trouverTerritoire(payload, code)
-    if (!t) continue
-    nuage.push({
-      territoire: code,
-      type: t.type,
-      nom: t.nom,
+  return construireNuage(payload, territoire, 'demographie', (histoire) => ({
       tauxNaturel: histoire.taux_solde_naturel,
       tauxMigratoire: histoire.taux_solde_migratoire,
-    })
-  }
-  return nuage
+  }))
 }
 
 /** One point of the Milieux story chart's context cloud (issue #241, ADR-0017). */
@@ -376,36 +388,23 @@ export interface PointNuageMilieux {
  * nuageMobilite.
  */
 export function nuageMilieux(payload: Payload, territoire: string): PointNuageMilieux[] | null {
-  const ref = trouverTerritoire(payload, territoire)
-  if (!ref) return null
-
-  const codes = codesComparaison(payload, ref)
-  const nuage: PointNuageMilieux[] = []
-  for (const code of codes) {
-    const histoire = payload.histoires.find((h) => h.theme === 'milieux' && h.territoire === code)
-    if (histoire?.theme !== 'milieux') continue
+  return construireNuage(payload, territoire, 'milieux', (histoire) => {
     // un pair aux états absents (le trou NA honnête) ou au taux absent (la
     // population moyenne nulle — jamais une division par zéro) n'a pas de
     // point à tracer — le nuage ne l'invente pas
     if (histoire.artif_m2_par_habitant === null || histoire.artif_m3_par_habitant === null) {
-      continue
+      return null
     }
     if (histoire.taux_variation_population === null) {
-      continue
+      return null
     }
-    const t = trouverTerritoire(payload, code)
-    if (!t) continue
-    nuage.push({
-      territoire: code,
-      type: t.type,
-      nom: t.nom,
+    return {
       periodeArtif: histoire.periode_artif,
       tauxVariationPopulation: histoire.taux_variation_population,
       deltaM2ParHabitant:
         histoire.artif_m3_par_habitant - histoire.artif_m2_par_habitant,
-    })
-  }
-  return nuage
+    }
+  })
 }
 
 /** The comparison container the nuage groups come from — the subtitle names it and links to its fiche. */
@@ -584,6 +583,22 @@ export function formaterValeur(ligne: { value: number | null; unit: string | nul
   const estPourcent = ligne.unit === '%'
   const brut = estPourcent ? ligne.value * 100 : ligne.value
   return formaterNombreFR(brut, estPourcent ? 0 : 2)
+}
+
+/**
+ * The approved public sentence for the raccordement scalar (#487). The
+ * pipeline publishes fractions with unit "%"; this selector is the single
+ * place where that fraction becomes the reader-facing percentage. A null
+ * scalar stays null so an unrouted territory never gets an invented claim.
+ */
+export function phraseRaccordement(
+  nomTerritoire: string,
+  ligne: { key: string; value: number | null; unit: string },
+): string | null {
+  if (ligne.key !== 'raccordement_tc' || ligne.value === null) return null
+  const valeur = formaterValeur(ligne)
+  if (valeur === null) return null
+  return `Un mercredi de période scolaire, ${valeur} % de la population bretonne peut rejoindre ${nomTerritoire} en moins de 90 minutes en train, en car ou en bus de mairie à mairie.`
 }
 
 /** A signed integer — the Démographie story's soldes ("+70", "-380", "0"). */

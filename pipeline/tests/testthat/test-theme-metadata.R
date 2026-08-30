@@ -404,6 +404,191 @@ test_that("directions : chaque clé classée de chaque thème déclare SA direct
   }
 })
 
+# La concordance des directions (issue #506) : la direction DÉCLARÉE par le
+# descripteur de la Page d'indicateur (`indicator_pages.<clé>.direction` — le
+# glyphe ▲▼ et les rangs Repères) doit ÉGALER celle du module de thème qui
+# calcule les rangs publiés lus par les chips de fiche
+# (`theme_<theme>()$directions` -> compute_ranks -> rang_epci/rang_dep/
+# rang_reg). Une clé absente du registre du module vaut « high » — le défaut
+# EXACT de compute_ranks : jamais un « moins = mieux » qui signifierait deux
+# choses selon la surface, la dérive meurt à l'écriture.
+test_that("valider_theme_metadata : un descripteur contradictoire au module est rejeté (#506)", {
+  directions_demographie <- theme_demographie()$directions
+
+  # le cas concordant passe : la fixture déclare « high » comme le module
+  meta <- lire_metadata("theme-demographie-valide.json")
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = directions_demographie))
+
+  # la contradiction : le descripteur déclare « low » là où le module déclare
+  # « high » — le message nomme l'indicateur, les DEUX directions et les DEUX
+  # sources de vérité (le descripteur vs le module de thème)
+  meta$indicator_pages$densite$direction <- "low"
+  erreur <- expect_error(
+    valider_theme_metadata(meta, directions_module = directions_demographie),
+    "indicator_pages\\.densite\\.direction")
+  expect_match(conditionMessage(erreur),
+               paste0("la direction du descripteur (« low ») contredit ",
+                      "celle du module de thème (« high »)"),
+               fixed = TRUE)
+})
+
+test_that("valider_theme_metadata : une clé absente du registre du module vaut high — le défaut exact de compute_ranks (#506)", {
+  # le descripteur déclare « low », le module ne déclare RIEN pour la clé :
+  # les rangs publiés classeraient high-is-good — la contradiction est rejetée
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages$densite$direction <- "low"
+  expect_error(valider_theme_metadata(meta, directions_module = list()),
+               "module de thème")
+
+  # le module qui DÉCLARE « low » rend le descripteur concordant
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = list(densite = "low")))
+})
+
+test_that("valider_theme_metadata : sans registre de directions, la croisée ne s'applique pas (#506)", {
+  # l'appel historique sans le paramètre reste valide — Programmes et
+  # subventions (le thème non classé, ses rangs tous NA) ne se voit pas
+  # imposer une croisée vide : la règle ne vit que là où LES DEUX
+  # déclarations existent
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages$densite$direction <- "low"
+  expect_no_error(valider_theme_metadata(meta))
+})
+
+test_that("concordance des directions : les SIX canons épinglés passent telle quelle (#506)", {
+  # La porte de régression : ZÉRO faux positif sur le canon COMMITTÉ — chaque
+  # thème épinglé est croisé contre SON module réel et passe sans une seule
+  # exception ; Programmes (sans registre de directions) traverse la porte
+  # vide, rien à contredire
+  for (theme in THEMES_METADATA) {
+    descripteur <- get(paste0("theme_", theme))()
+    expect_error(
+      valider_theme_metadata(lire_theme_metadata(theme),
+                             directions_module = descripteur$directions),
+      NA, info = theme)
+  }
+})
+
+# La concordance de la FACETTE RÉSUMÉE (issue #516, le trou #506) : sur une
+# page distribution, le glyphe ▲▼ et l'ordonnancement Repères sont pilotés par
+# la facette résumée — l'app lit `comparison.direction ?? page.direction`
+# (familySeam.ts). Déclarée, sa direction doit ÉGALER celle du module de thème
+# pour LA CLÉ DE LA FACETTE (`comparison.indicator`, souvent une AUTRE clé
+# publiée que la page : part_passoires résume distribution_dpe — croiser la
+# clé de la page serait faux, ce sont deux indicateurs différents). Une clé
+# absente du registre vaut « high », le défaut exact de compute_ranks via
+# direction_de() ; sans direction déclarée par la facette, rien à croiser.
+test_that("valider_theme_metadata : une facette résumée contradictoire au module est rejetée (#516)", {
+  # le cas concordant passe : « part_passoires » résume « distribution_dpe »,
+  # les DEUX facettes du canon Habitat déclarent « low » comme le module
+  meta <- lire_theme_metadata("habitat")
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = theme_habitat()$directions))
+
+  # la contradiction : la facette résumée de « distribution_dpe » déclare
+  # « high » là où le module classe SA clé (« part_passoires ») « low » — le
+  # message nomme la clé de la facette, les DEUX directions et les DEUX
+  # sources de vérité (la facette résumée vs le module de thème)
+  meta$indicator_pages$distribution_dpe$comparison$direction <- "high"
+  erreur <- expect_error(
+    valider_theme_metadata(meta, directions_module = theme_habitat()$directions),
+    "indicator_pages\\.distribution_dpe\\.comparison\\.direction")
+  expect_match(conditionMessage(erreur),
+               paste0("la direction de la facette résumée (« high », ",
+                      "clé « part_passoires ») contredit celle du module de ",
+                      "thème (« low »)"),
+               fixed = TRUE)
+})
+
+test_that("valider_theme_metadata : la croisée de la facette lit la CLÉ de la facette, jamais celle de la page (#516)", {
+  # Le piège nominal du trou #516 : ce sont deux indicateurs différents.
+  # Construction où croiser la PAGE serait aveugle — le module passe
+  # « part_passoires » à « high » (sa propre page est alignée dessus), la
+  # facette de « distribution_dpe » reste à « low » : contradictoire avec SA
+  # clé (« part_passoires ») alors que la clé de la page (« distribution_dpe »,
+  # « low ») ne contredit rien — une croisée par la clé de la page passerait
+  # en silence
+  directions <- theme_habitat()$directions
+  directions$part_passoires <- "high"
+  meta <- lire_theme_metadata("habitat")
+  meta$indicator_pages$part_passoires$direction <- "high"
+  meta$indicator_pages$part_passoires$comparison$direction <- "high"
+
+  erreur <- expect_error(
+    valider_theme_metadata(meta, directions_module = directions),
+    "indicator_pages\\.distribution_dpe\\.comparison\\.direction")
+  expect_match(conditionMessage(erreur), "clé « part_passoires »", fixed = TRUE)
+})
+
+test_that("une facette résumée concordante publie à l'identique — octets stables (#516)", {
+  cible_sans <- tempfile("pub-meta-facette-sans-")
+  cible_avec <- tempfile("pub-meta-facette-avec-")
+  on.exit(unlink(c(cible_sans, cible_avec), recursive = TRUE))
+
+  # le canon Habitat épinglé porte DEUX facettes résumées qui déclarent leur
+  # direction (« part_passoires », « low » — concordantes du module) : publié
+  # avec et sans la croisée, le happy path reste BIT À BIT identique — la
+  # garde n'ajoute rien au payload publié
+  meta <- lire_theme_metadata("habitat")
+  publier_theme_metadata(meta, cible_sans)
+  publier_theme_metadata(meta, cible_avec,
+                         directions_module = theme_habitat()$directions)
+
+  octets <- function(chemin) {
+    readBin(chemin, "raw", n = file.info(chemin)$size)
+  }
+  expect_identical(
+    octets(file.path(cible_avec, "theme_habitat.json")),
+    octets(file.path(cible_sans, "theme_habitat.json")))
+})
+
+test_that("valider_theme_metadata : sans facette ou sans direction déclarée, la croisée ne s'applique pas (#516)", {
+  # une page SANS comparison (le scalaire « densite » de la fixture
+  # Démographie) traverse la porte inchangée
+  meta <- lire_metadata("theme-demographie-valide.json")
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = theme_demographie()$directions))
+
+  # une comparison DÉCLARÉE sans direction : rien à croiser — l'app retombe
+  # sur page.direction, déjà gardée par la croisée de la page (#506)
+  meta$indicator_pages$densite$comparison <- list(
+    indicator = "densite", label = "Densité de population")
+  expect_no_error(
+    valider_theme_metadata(meta, directions_module = theme_demographie()$directions))
+})
+
+test_that("concordance des facettes résumées : les SIX canons épinglés passent telle quelle (#516)", {
+  # La porte de régression facette : ZÉRO faux positif sur le canon COMMITTÉ.
+  # TROIS facettes épinglées déclarent leur direction — les deux d'Habitat
+  # (« part_passoires » résume « part_passoires » puis « distribution_dpe »,
+  # « low » comme le module) sont croisées contre LEUR clé ; celle de
+  # Programmes (« subventions_par_domaine », « high ») traverse la porte vide :
+  # son module ne possède pas de registre de directions (le thème non classé,
+  # des rangs tous NA) — la règle ne vit que là où LES DEUX déclarations
+  # existent
+  comptees <- 0L
+  for (theme in THEMES_METADATA) {
+    descripteur <- get(paste0("theme_", theme))()
+    meta <- lire_theme_metadata(theme)
+    expect_error(
+      valider_theme_metadata(meta, directions_module = descripteur$directions),
+      NA, info = theme)
+    if (is.null(descripteur$directions)) next
+    for (cle in names(meta$indicator_pages)) {
+      page <- meta$indicator_pages[[cle]]
+      if (!is.null(page$comparison) && !is.null(page$comparison$direction)) {
+        cle_facette <- if (is.null(page$comparison$indicator)) cle else page$comparison$indicator
+        comptees <- comptees + 1L
+        expect_identical(page$comparison$direction,
+                         direction_de(cle_facette, descripteur$directions),
+                         info = paste(theme, cle))
+      }
+    }
+  }
+  expect_identical(comptees, 2L)
+})
+
 # La décomposition des sous-groupes (issue #370, parent #367 ; étendue par
 # #408) : les SIX thèmes déclarent leurs sous-groupes en ordre de fiche —
 # Mobilité ×4, Démographie ×2, Habitat ×3, Économie ×2, Milieux ×1,
@@ -664,9 +849,9 @@ test_that("verifier_parite_trajectoires : le payload COMMITTÉ et les descripteu
     pages_trajectoires <- pages_trajectoires +
       sum(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))
   }
-  # La couverture du devoir : les TROIS indicateurs trajectoires publiés ont
+  # La couverture du devoir : les QUATRE indicateurs trajectoires publiés ont
   # leur page — jamais une famille trajectoire orpheline.
-  expect_identical(pages_trajectoires, 3L)
+  expect_identical(pages_trajectoires, 4L)
 })
 
 test_that("verifier_parite_trajectoires : une année morte déclarée échoue fort (#438)", {

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { chargerPayload } from '../payload/loader'
+import { indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture } from '../payload/fixtures'
 import type { HistoireMobilite, Payload } from '../payload/types'
 import {
   apercuPourTerritoire,
@@ -132,6 +133,41 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(themes.has('milieux')).toBe(true)
     const cles = new Set(payload.indicateurs.map((i) => `${i.territoire}|${i.key}|${i.detail ?? ''}|${i.sex ?? ''}|${i.dimension ?? ''}`))
     expect(cles.size).toBe(payload.indicateurs.length)
+  })
+
+  it('mirrors the raccordement scalar/curve/reference contract in the promoted artefact (#487)', () => {
+    const keys = new Set(indicateursRaccordementFixture.map((ligne) => ligne.key))
+    expect(keys).toEqual(new Set(['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']))
+    expect(metadonneesMobiliteRaccordementFixture.indicator_keys).toEqual(
+      expect.arrayContaining(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']),
+    )
+    expect(metadonneesMobiliteRaccordementFixture.subgroups.find((group) => group.key === 'offre-transports-commun')).toMatchObject({
+      indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
+      figure: { family: 'scalar', indicator: 'offre_tc' },
+    })
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail !== null)).toHaveLength(33)
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(11)
+    expect([...new Set(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe').map((ligne) => ligne.detail))]).toEqual([
+      't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
+      't0120', 't0180', 't0240', 't0300', 't0360',
+    ])
+    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe').every((ligne) => ligne.rang_epci === null && ligne.rang_dep === null && ligne.rang_reg === null)).toBe(true)
+  })
+
+  it('publishes the slim raccordement grid in the committed payload, without the old minute grid', () => {
+    const payload = obtenirPayload()
+    const details = [
+      't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
+      't0120', 't0180', 't0240', 't0300', 't0360',
+    ]
+    const courbe = payload.indicateurs.filter((ligne) => ligne.key === 'raccordement_courbe')
+    const reference = payload.indicateurs.filter((ligne) => ligne.key === 'raccordement_reference')
+
+    expect(courbe).toHaveLength(1268 * details.length)
+    expect(reference).toHaveLength(details.length)
+    expect([...new Set(courbe.map((ligne) => ligne.detail))]).toEqual(details)
+    expect([...new Set(reference.map((ligne) => ligne.detail))]).toEqual(details)
+    expect(courbe.some((ligne) => ligne.detail === 't0600')).toBe(false)
   })
 
   it('keeps every rank an ordinal ≥ 1 with its group size, or null (ADR-0015)', async () => {
@@ -399,7 +435,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     // est sorti du manifeste) + les TROIS patchs correctifs M2 du run
     // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
     // l'amendement, appliquée dans #243)
-    expect(payload.vintages).toHaveLength(63)
+    expect(payload.vintages).toHaveLength(65)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:

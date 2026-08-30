@@ -705,6 +705,134 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   ...indicateursOffreCyclableFixture,
 ]
 
+/** The exact published raccordement curve grid (11 points, in canonical order). */
+const DETAILS_COURBE_RACCORDEMENT_FIXTURE = [
+  't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
+  't0120', 't0180', 't0240', 't0300', 't0360',
+] as const
+
+/** A literal raccordement slice copied from public/data after artefact promotion (#487). */
+export const territoiresRaccordementFixture: Territoire[] = [
+  { territoire: '22001', type: 'commune', nom: 'Allineuc', departement: '22', epci: '200067460' },
+  { territoire: '200027027', type: 'epci', nom: 'Communauté de communes Arc Sud Bretagne', departement: '56', epci: null },
+  { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null },
+  { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
+]
+
+const vintageRaccordementMobilite = {
+  vintage_source: 'Lusk — matrice temps mairie à mairie figée du raccordement (routage r5r sur SNCF Voyageurs national 2026-08-24 + KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, meilleur départ p01 — recherche raccordement, issue #485)',
+  vintage_version: '2026-09-16',
+  vintage_date_reference: '2026-08-25',
+  vintage_date_publication: '2026-08-26',
+}
+
+function pointRaccordementFixture(
+  territoire: string,
+  type: Indicateur['type'],
+  detail: string,
+  value: number | null,
+  key: 'raccordement_courbe' | 'raccordement_reference' = 'raccordement_courbe',
+): Indicateur {
+  return {
+    territoire,
+    type,
+    theme: 'mobilite',
+    key,
+    detail,
+    value,
+    unit: '%',
+    rider: null,
+    rang_epci: null,
+    rang_epci_n: null,
+    rang_dep: null,
+    rang_dep_n: null,
+    rang_reg: null,
+    rang_reg_n: null,
+    ...vintageRaccordementMobilite,
+  }
+}
+
+function pointsRaccordementFixture(
+  territoire: string,
+  type: Indicateur['type'],
+  values: readonly (number | null)[],
+  key: 'raccordement_courbe' | 'raccordement_reference' = 'raccordement_courbe',
+): Indicateur[] {
+  if (values.length !== DETAILS_COURBE_RACCORDEMENT_FIXTURE.length) {
+    throw new Error('La fixture du raccordement doit porter exactement 11 points publiés.')
+  }
+  return DETAILS_COURBE_RACCORDEMENT_FIXTURE.map((detail, index) =>
+    pointRaccordementFixture(territoire, type, detail, values[index], key),
+  )
+}
+
+function scalaireRaccordementFixture(
+  territoire: string,
+  type: Indicateur['type'],
+  value: number | null,
+  rang: Pick<Indicateur, 'rang_epci' | 'rang_epci_n' | 'rang_dep' | 'rang_dep_n' | 'rang_reg' | 'rang_reg_n'> = {
+    rang_epci: null,
+    rang_epci_n: null,
+    rang_dep: null,
+    rang_dep_n: null,
+    rang_reg: null,
+    rang_reg_n: null,
+  },
+  rider: string | null = value === null ? 'Non routée — aucune valeur mesurable publiée.' : null,
+): Indicateur {
+  return {
+    territoire,
+    type,
+    theme: 'mobilite',
+    key: 'raccordement_tc',
+    detail: null,
+    value,
+    unit: '%',
+    rider,
+    ...rang,
+    ...vintageRaccordementMobilite,
+  }
+}
+
+export const indicateursRaccordementFixture: Indicateur[] = [
+  // The subgroup's lead figure remains the published offre_tc indicator.
+  { territoire: '22001', type: 'commune', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0, unit: '%', rang_epci: 16, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOffreTcMobilite },
+  { territoire: '200027027', type: 'epci', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.32764309281308279, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 41, rang_reg_n: 61, ...vintageOffreTcMobilite },
+  { territoire: '22', type: 'departement', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.446562999011482, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 4, rang_reg_n: 4, ...vintageOffreTcMobilite },
+  { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_tc', detail: null, value: 0.572896439016138, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageOffreTcMobilite },
+  scalaireRaccordementFixture('22001', 'commune', 0.00017075581917857464, {
+    rang_epci: 30, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+  }),
+  scalaireRaccordementFixture('200027027', 'epci', 0.04359749804131305, {
+    rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 53, rang_reg_n: 61,
+  }),
+  scalaireRaccordementFixture('22', 'departement', 0.4420967567897238, {
+    rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 2, rang_reg_n: 4,
+  }, 'Part de la population réellement mesurée par le réseau : 99,6 % (les communes non routées sont exclues du calcul).'),
+  scalaireRaccordementFixture('53', 'region', 1, undefined, 'Part de la population réellement mesurée par le réseau : 98,9 % (les communes non routées sont exclues du calcul).'),
+  ...pointsRaccordementFixture('22001', 'commune', [
+    0.00017075581917857464, 0.00017075581917857464, 0.00017075581917857464,
+    0.00017075581917857464, 0.00017075581917857464, 0.00017075581917857464,
+    0.00017075581917857464, 0.00017075581917857464, 0.00017075581917857464,
+    0.00017075581917857464, 0.00017075581917857464,
+  ]),
+  ...pointsRaccordementFixture('200027027', 'epci', [
+    0.008044690902778755, 0.008660738999685672, 0.009152756470704142, 0.011645097652859683, 0.011645097652859683,
+    0.04359749804131305, 0.10984392666300732, 0.29086765140532855,
+    0.5329543215436799, 0.6193681885781575, 0.6534654684663129,
+  ]),
+  ...pointsRaccordementFixture('22', 'departement', [
+    0.17486324377325208, 0.17909142728462654, 0.18917016180865387, 0.19356987703668257, 0.30038516933845644,
+    0.4420967567897238, 0.5516964340168798, 0.7824174419313826,
+    0.8277431586700633, 0.8655812960643294, 0.8699654708120458,
+  ]),
+  ...pointsRaccordementFixture('53', 'region', [
+    0.0003992033327825081, 0.00047573904800006956, 0.0010361312355589571, 0.0023183943734652996, 0.004568080548042106,
+    0.014584982185152652, 0.043124106720937444, 0.11412634770987166,
+    0.21432087598604962, 0.24915854199462512, 0.2681051902231422,
+  ], 'raccordement_reference'),
+]
+
 /** Les Stories Mobilité (issue #142, RÉSOLUES par #312) — UNE lecture par
  * territoire : le défaut « vingt-minutes-sans-voiture » (div_loss_t + la
  * signature de distribution) pour 22001 / 200000001 / 22 / 53, et — pour la
@@ -1726,3 +1854,139 @@ export function metadonneesHabitatAvecPagesFixture(
   )
   return clone
 }
+
+/** The promoted Mobilité metadata slice, including the raccordement subgroup. */
+export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
+  const base = structuredClone(metadonneesThemesFixtures.mobilite)
+  const detailsCourbe = Object.fromEntries([
+    ['t0000', '0'], ['t0015', '15'], ['t0030', '30'], ['t0045', '45'],
+    ['t0060', '1 h'], ['t0090', '1 h 30'], ['t0120', '2 h'], ['t0180', '3 h'],
+    ['t0240', '4 h'], ['t0300', '5 h'], ['t0360', '6 h'],
+  ])
+  base.subgroups = base.subgroups.map((group) => group.key === 'acces-aux-services'
+    ? { ...group, indicators: group.indicators.filter((indicator) => indicator !== 'offre_tc') }
+    : group)
+  base.subgroups.push({
+    key: 'offre-transports-commun',
+    label: 'L’offre de transports en commun',
+    framing:
+      'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.',
+    indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
+    figure: { family: 'scalar', indicator: 'offre_tc' },
+  })
+  base.indicator_keys = [
+    ...base.indicator_keys,
+    'raccordement_tc',
+    'raccordement_courbe',
+    'raccordement_reference',
+  ]
+  base.sources = {
+    ...base.sources,
+    raccordement_tc: 'matrice_temps_mairies',
+    raccordement_courbe: 'matrice_temps_mairies',
+    raccordement_reference: 'matrice_temps_mairies',
+  }
+  base.indicator_labels = {
+    ...base.indicator_labels,
+    raccordement_tc: 'Population bretonne joignable en 90 minutes en TC',
+    raccordement_courbe: 'Courbe cumulative — population bretonne joignable en TC',
+    raccordement_reference: 'Référence médiane — commune bretonne',
+  }
+  base.detail_labels = {
+    ...base.detail_labels,
+    raccordement_courbe: detailsCourbe,
+    raccordement_reference: detailsCourbe,
+  }
+  base.indicator_caveats = {
+    ...base.indicator_caveats,
+    raccordement_tc:
+      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+    raccordement_courbe:
+      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+    raccordement_reference:
+      'Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.',
+  }
+  base.map_layers = {
+    ...base.map_layers,
+    offre_tc: true,
+    raccordement_tc: true,
+    raccordement_courbe: false,
+    raccordement_reference: false,
+  }
+  const pages = base.indicator_pages ?? {}
+  const pageBase = {
+    unit: '%',
+    direction: 'high' as const,
+    levels: ['commune', 'epci', 'departement'] as ('commune' | 'epci' | 'departement')[],
+    sources: ['matrice_temps_mairies'],
+  }
+  const caveat = base.indicator_caveats?.raccordement_tc ?? 'La couverture réellement mesurée par le réseau est signalée.'
+  base.indicator_pages = {
+    ...pages,
+    raccordement_tc: {
+      ...pageBase,
+      indicator: 'raccordement_tc',
+      label: 'Population bretonne joignable en 90 minutes en TC',
+      definition: 'Part de la population bretonne pouvant rejoindre le territoire en transports en commun en moins de 90 minutes, de mairie à mairie.',
+      calculation: 'Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.',
+      caveats: caveat,
+      family: 'scalar',
+    },
+    raccordement_courbe: {
+      ...pageBase,
+      indicator: 'raccordement_courbe',
+      label: 'Courbe cumulative — population bretonne joignable en TC',
+      definition: 'Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.',
+      calculation: 'Courbe cumulative de la matrice de temps mairie à mairie publiée par le pipeline.',
+      caveats: caveat,
+      family: 'trajectory',
+      trajectory: {
+        endpoints: ['t0000', 't0360'],
+        axis: 'numeric',
+        axisLabels: { x: 'Temps de trajet (minutes)', y: 'Population joignable (%)' },
+        ticks: [
+          { detail: 't0000', label: '0', mobile: true },
+          { detail: 't0015', label: '15', mobile: false },
+          { detail: 't0030', label: '30', mobile: false },
+          { detail: 't0045', label: '45', mobile: true },
+          { detail: 't0060', label: '1 h', mobile: false },
+          { detail: 't0090', label: '1 h 30', mobile: true },
+          { detail: 't0120', label: '2 h', mobile: false },
+          { detail: 't0180', label: '3 h', mobile: true },
+          { detail: 't0240', label: '4 h', mobile: false },
+          { detail: 't0300', label: '5 h', mobile: false },
+          { detail: 't0360', label: '6 h', mobile: true },
+        ],
+        reference: { indicator: 'raccordement_reference', territoire: '53', label: 'Commune bretonne médiane' },
+        marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
+      },
+      comparison: { details: Object.keys(detailsCourbe), detail: 't0090', unit: '%' },
+    },
+  }
+  base.source_records = {
+    ...(base.source_records ?? {}),
+    matrice_temps_mairies: {
+      dataset: 'Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)',
+      publisher: 'Lusk',
+      url: 'https://github.com/CalumRob/lusk',
+      licence: 'ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)',
+      vintage: '2026-08',
+      freshness: '26 août 2026',
+      vintages: [{
+        id: 'matrice_temps_mairies',
+        label: 'Matrice figée du mercredi 16 septembre 2026',
+        version: '2026-09-16',
+        licence: 'ODbL + Licence Ouverte 2.0',
+        dateReference: '2026-08-25',
+        datePublication: '2026-08-26',
+      }],
+      clocks: [{
+        name: 'Le meilleur départ de la journée',
+        frequency: 'figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)',
+        reference: 'mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01',
+        trigger: 'Recalcul manuel sur décision après une nouvelle acquisition des feeds.',
+      }],
+    },
+  }
+  return base
+})()

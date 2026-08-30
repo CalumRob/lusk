@@ -66,6 +66,19 @@ afterEach(() => {
 })
 
 describe('le store progressif — la gating par wait-set', () => {
+  it('ingère un thème avec un grand payload sans dépasser la pile d’arguments', async () => {
+    const lignes = Array.from({ length: 70_000 }, (_, index) => ({
+      ...indicateursDemographieFixture[0]!,
+      territoire: String(index).padStart(5, '0'),
+    }))
+    const wrapper = await monter(
+      chargerAvec({ ...payload, indicateurs: lignes }),
+      ['territoires'],
+    )
+
+    expect(wrapper.vm.etat.payload.value?.indicateurs).toHaveLength(lignes.length)
+  })
+
   it('no-arg = le full set : chargement false une fois tout réglé, payload complet', async () => {
     const wrapper = await monter(chargerAvec(payload))
     const { payload: p, erreur, chargement } = wrapper.vm.etat

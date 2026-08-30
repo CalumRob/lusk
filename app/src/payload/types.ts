@@ -712,6 +712,8 @@ export interface ThemeMetadata {
   source_records?: Record<string, SourceRecord>
   /** Caveats for published facts whose scalar page descriptor is not shipped yet. */
   indicator_caveats?: Record<string, string>
+  /** Optional map-layer eligibility, keyed by indicator; omitted entries stay eligible. */
+  map_layers?: Record<string, boolean>
 }
 
 export interface SourceRecord {
@@ -780,7 +782,44 @@ export interface ComparisonFacetMetadata {
   unit?: string
   labels?: Record<string, string>
 }
-export interface TrajectoryMetadata { endpoints: string[] }
+/** A declared x-axis tick for a metadata-driven trajectory. */
+export interface TrajectoryTickMetadata {
+  /** Published detail represented by this tick. */
+  detail: string
+  /** Human label; raw detail keys never render. */
+  label: string
+  /** Keep this anchor when the chart has to hide dense labels on mobile. */
+  mobile?: boolean
+}
+
+/** Optional second series, axis grammar and marker for a metadata-driven trajectory. */
+export interface TrajectoryReferenceMetadata {
+  /** Published indicator key carrying the comparison series. */
+  indicator: string
+  /** Territory row carrying the reference series. */
+  territoire: string
+  /** Public label shown in the legend and text alternative. */
+  label: string
+}
+
+export interface TrajectoryMarkerMetadata {
+  /** Detail on the x axis at which the marker is drawn. */
+  detail: string
+  /** Public label shown with the marker and in the text alternative. */
+  label: string
+}
+
+export interface TrajectoryMetadata {
+  endpoints: string[]
+  /** `numeric` positions points from their detail; omitted means ordinal. */
+  axis?: 'ordinal' | 'numeric'
+  /** Optional explicit axis labels, owned by the metadata contract. */
+  axisLabels?: { x: string; y: string }
+  /** Optional explicit ticks; omitted trajectories derive labels from details. */
+  ticks?: TrajectoryTickMetadata[]
+  reference?: TrajectoryReferenceMetadata
+  marker?: TrajectoryMarkerMetadata
+}
 export interface CompositionMetadata { parts: string[] }
 /**
  * Une distribution ne se compare JAMAIS par ses bins (#440) : la facette

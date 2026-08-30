@@ -21,6 +21,8 @@ describe('contrat des pages d’indicateur', () => {
     ['source de référence absente de la page', (meta: any) => { meta.indicator_pages.densite.sources = ['age_detail'] }],
     ['vintage dupliqué', (meta: any) => { meta.indicator_pages.densite.vintage = 'ancienne valeur' }],
     ['famille inconnue', (meta: any) => { meta.indicator_pages.densite.family = 'unknown' }],
+    ['couche cartographique inconnue', (meta: any) => { meta.map_layers = { fantome: true } }],
+    ['éligibilité cartographique invalide', (meta: any) => { meta.map_layers = { densite: 'oui' } }],
     ['facette indicateur inconnue', (meta: any) => { meta.indicator_pages.densite.comparison = { indicator: 'unknown' } }],
     ['facette sexe invalide', (meta: any) => { meta.indicator_pages.densite.comparison = { sexes: ['X'] } }],
     ['facette dimension invalide', (meta: any) => { meta.indicator_pages.densite.comparison = { dimensions: [42] } }],

@@ -15,7 +15,9 @@
 #     un fichier theme_programmes.json fabriqué ;
 #   - publier_theme_metadata : le seam — valide le contenu (valider_theme_
 #     metadata, theme_metadata.R — le contrat #309, sources croisées contre les
-#     vintages quand la table est passée, le run réel) puis écrit le fichier.
+#     vintages quand la table est passée (le run réel), DIRECTIONS croisées
+#     contre le registre du module de thème (#506) quand il est passé) puis
+#     écrit le fichier.
 #     Le nom du fichier dérive du thème VALIDÉ du contenu, jamais d'un
 #     paramètre : la machinerie ne peut pas écrire le fichier d'un autre thème.
 #     La garde `theme_attendu` (le thème du payload, passée par run_pipeline)
@@ -47,10 +49,16 @@ lire_theme_metadata <- function(theme, chemin = NULL) {
 
 # publier_theme_metadata --------------------------------------------------------
 # Le seam de publication : valide, puis écrit theme_<theme>.json (le nom du
-# thème validé du contenu). La garde theme_attendu refuse la collision.
+# thème validé du contenu). La garde theme_attendu refuse la collision ;
+# directions_module (theme_<theme>()$directions) branche la croisée des
+# directions descripteur ↔ module (#506) — NULL chez le thème qui ne classe
+# pas (Programmes, des rangs tous NA), la règle ne vit que là où LES DEUX
+# déclarations existent.
 publier_theme_metadata <- function(metadata, sortie = "public/data",
-                                   vintages = NULL, theme_attendu = NULL) {
-  valider_theme_metadata(metadata, vintages = vintages)
+                                   vintages = NULL, theme_attendu = NULL,
+                                   directions_module = NULL) {
+  valider_theme_metadata(metadata, vintages = vintages,
+                         directions_module = directions_module)
   if (!is.null(theme_attendu) && !identical(metadata$theme, theme_attendu)) {
     stop(sprintf(
       paste0(

@@ -149,9 +149,11 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
       default:
         // Un thème absent (null) ne contribue aucune ligne — l'état vide honnête.
         if (nom.startsWith('indicateurs_') && Array.isArray(valeur)) {
-          p.indicateurs.push(...(valeur as Indicateur[]))
+          // Ne passe pas le tableau entier comme arguments : les payloads de
+          // trajectoires peuvent dépasser la limite d'arguments de la VM.
+          for (const ligne of valeur as Indicateur[]) p.indicateurs.push(ligne)
         } else if (nom.startsWith('histoires_') && Array.isArray(valeur)) {
-          p.histoires.push(...(valeur as Histoire[]))
+          for (const ligne of valeur as Histoire[]) p.histoires.push(ligne)
         } else if (nom.startsWith('theme_') && valeur !== null) {
           // Les métadonnées du thème (theme_<theme>.json, #313) — une entrée
           // par thème présent ; un thème absent ne contribue aucune entrée.

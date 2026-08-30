@@ -502,5 +502,21 @@
     "licence": "lov2",
     "date_reference": "2026-08-05",
     "date_publication": "2026-08-05"
+  },
+  {
+    "id": "matrice_temps_mairies",
+    "source": "Lusk — matrice temps mairie à mairie figée du raccordement (routage r5r sur SNCF Voyageurs national 2026-08-24 + KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, meilleur départ p01 — recherche raccordement, issue #485)",
+    "version": "2026-09-16",
+    "licence": "odbl",
+    "date_reference": "2026-08-25",
+    "date_publication": "2026-08-26"
+  },
+  {
+    "id": "population_raccordement",
+    "source": "INSEE — Recensement de la population 2023 : la population totale des 1 202 communes bretonnes COG 2025 (le dénominateur W = 3 449 370), transcription épinglée du run de recherche vérifié (calcul_raccordement.R, issue #486)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-08-26"
   }
 ]

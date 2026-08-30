@@ -95,9 +95,12 @@
     {
       "key": "offre-transports-commun",
       "label": "L’offre de transports en commun",
-      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt de transports en commun.",
+      "framing": "La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.",
       "indicators": [
-        "offre_tc"
+        "offre_tc",
+        "raccordement_tc",
+        "raccordement_courbe",
+        "raccordement_reference"
       ],
       "figure": {
         "family": "scalar",
@@ -121,7 +124,10 @@
     "iso_sante",
     "iso_administration",
     "iso_ecole",
-    "iso_banque"
+    "iso_banque",
+    "raccordement_tc",
+    "raccordement_courbe",
+    "raccordement_reference"
   ],
   "story_keys": [
     "vingt-minutes-sans-voiture",
@@ -143,7 +149,10 @@
     "iso_sante": "mobilite_snapshot",
     "iso_administration": "mobilite_snapshot",
     "iso_ecole": "mobilite_snapshot",
-    "iso_banque": "mobilite_snapshot"
+    "iso_banque": "mobilite_snapshot",
+    "raccordement_tc": "matrice_temps_mairies",
+    "raccordement_courbe": "matrice_temps_mairies",
+    "raccordement_reference": "matrice_temps_mairies"
   },
   "indicator_labels": {
     "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
@@ -151,6 +160,9 @@
     "iso_administration": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
     "iso_ecole": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
     "iso_banque": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+    "raccordement_tc": "Population bretonne joignable en 90 minutes en TC",
+    "raccordement_courbe": "Courbe cumulative — population bretonne joignable en TC",
+    "raccordement_reference": "Référence médiane — commune bretonne",
     "voitures_menage": "Voitures par ménage",
     "reseaux": "Réseaux à pied / vélo / voiture",
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
@@ -183,6 +195,12 @@
       "partage_longueur": "Longueur partagée",
       "partage_km_1000": "Partagé",
       "total_longueur": "Longueur totale"
+    },
+    "raccordement_courbe": {
+      "t0000": "0", "t0015": "15", "t0030": "30", "t0045": "45", "t0060": "1 h", "t0090": "1 h 30", "t0120": "2 h", "t0180": "3 h", "t0240": "4 h", "t0300": "5 h", "t0360": "6 h"
+    },
+    "raccordement_reference": {
+      "t0000": "0", "t0015": "15", "t0030": "30", "t0045": "45", "t0060": "1 h", "t0090": "1 h 30", "t0120": "2 h", "t0180": "3 h", "t0240": "4 h", "t0300": "5 h", "t0360": "6 h"
     }
   },
   "param_labels": {
@@ -192,6 +210,17 @@
     "tot_loss_b": "Nombre d'accès perdus à vélo",
     "pct_iso_full_t": "Part des bâtiments perdant tout accès",
     "classification_saillance": "Classification de saillance"
+  },
+  "indicator_caveats": {
+    "raccordement_tc": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
+    "raccordement_courbe": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
+    "raccordement_reference": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées."
+  },
+  "map_layers": {
+    "offre_tc": true,
+    "raccordement_tc": true,
+    "raccordement_courbe": false,
+    "raccordement_reference": false
   },
   "indicator_pages": {
     "voitures_menage": {
@@ -554,6 +583,55 @@
         "mobilite_snapshot"
       ],
       "family": "scalar"
+    },
+    "raccordement_tc": {
+      "indicator": "raccordement_tc",
+      "label": "Population bretonne joignable en 90 minutes en TC",
+      "definition": "Part de la population bretonne pouvant rejoindre le territoire en transports en commun en moins de 90 minutes, de mairie à mairie.",
+      "unit": "%",
+      "calculation": "Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.",
+      "direction": "high",
+      "caveats": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["matrice_temps_mairies"],
+      "family": "scalar"
+    },
+    "raccordement_courbe": {
+      "indicator": "raccordement_courbe",
+      "label": "Courbe cumulative — population bretonne joignable en TC",
+      "definition": "Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.",
+      "unit": "%",
+      "calculation": "Courbe cumulative de la matrice de temps mairie à mairie publiée par le pipeline.",
+      "direction": "high",
+      "caveats": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
+      "levels": ["commune", "epci", "departement"],
+      "sources": ["matrice_temps_mairies"],
+      "family": "trajectory",
+      "trajectory": {
+        "endpoints": ["t0000", "t0360"],
+        "axis": "numeric",
+        "axisLabels": { "x": "Temps de trajet (minutes)", "y": "Population joignable (%)" },
+        "ticks": [
+          { "detail": "t0000", "label": "0", "mobile": true },
+          { "detail": "t0015", "label": "15", "mobile": false },
+          { "detail": "t0030", "label": "30", "mobile": false },
+          { "detail": "t0045", "label": "45", "mobile": true },
+          { "detail": "t0060", "label": "1 h", "mobile": false },
+          { "detail": "t0090", "label": "1 h 30", "mobile": true },
+          { "detail": "t0120", "label": "2 h", "mobile": false },
+          { "detail": "t0180", "label": "3 h", "mobile": true },
+          { "detail": "t0240", "label": "4 h", "mobile": false },
+          { "detail": "t0300", "label": "5 h", "mobile": false },
+          { "detail": "t0360", "label": "6 h", "mobile": true }
+        ],
+        "reference": { "indicator": "raccordement_reference", "territoire": "53", "label": "Commune bretonne médiane" },
+        "marker": { "detail": "t0090", "label": "1 h 30 (90 min)" }
+      },
+      "comparison": {
+        "details": ["t0000", "t0015", "t0030", "t0045", "t0060", "t0090", "t0120", "t0180", "t0240", "t0300", "t0360"],
+        "detail": "t0090",
+        "unit": "%"
+      }
     }
   },
   "source_records": {
@@ -730,6 +808,25 @@
           "datePublication": "2026-06-30"
         }
       ]
+    },
+    "matrice_temps_mairies": {
+      "dataset": "Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)",
+      "publisher": "Lusk",
+      "url": "https://github.com/CalumRob/lusk",
+      "licence": "ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)",
+      "vintage": "2026-08",
+      "freshness": "26 août 2026",
+      "vintages": [{ "id": "matrice_temps_mairies", "label": "Matrice figée du mercredi 16 septembre 2026", "version": "2026-09-16", "licence": "ODbL + Licence Ouverte 2.0", "dateReference": "2026-08-25", "datePublication": "2026-08-26" }],
+      "clocks": [{ "name": "Le meilleur départ de la journée", "frequency": "figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)", "reference": "mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01", "trigger": "Recalcul manuel sur décision après une nouvelle acquisition des feeds." }]
+    },
+    "population_raccordement": {
+      "dataset": "INSEE — Recensement de la population 2023 (population totale des communes bretonnes)",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/metadonnees/source/serie/s099",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023",
+      "freshness": "26 août 2026",
+      "vintages": [{ "id": "population_raccordement", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-08-26" }]
     }
   }
 }

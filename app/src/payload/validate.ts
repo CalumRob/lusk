@@ -45,6 +45,7 @@ import type {
   IndicatorPageMetadataBase,
   FamilleFigure,
   RelationshipRoleMetadata,
+  TrajectoryMetadata,
   Vintage,
   Sexe,
 } from './types'
@@ -74,6 +75,12 @@ export class PayloadError extends Error {
 }
 
 type LigneBrute = Record<string, unknown>
+
+/** Published raccordement curve grid — the pipeline contract mirrored here. */
+const DETAILS_COURBE_RACCORDEMENT = [
+  't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
+  't0120', 't0180', 't0240', 't0300', 't0360',
+] as const
 
 const TYPES_TERRITOIRE: readonly TerritoireType[] = [
   'commune',
@@ -2034,6 +2041,26 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
   }
 
   let indicator_pages: ThemeMetadata['indicator_pages']
+  let indicator_caveats: ThemeMetadata['indicator_caveats']
+  let map_layers: ThemeMetadata['map_layers']
+  if (meta['indicator_caveats'] !== undefined) {
+    exiger(estObjet(meta['indicator_caveats']), fichier, 0, '« indicator_caveats » doit être un objet')
+    const caveats = meta['indicator_caveats'] as LigneBrute
+    for (const [key, value] of Object.entries(caveats)) {
+      exiger(indicator_keys.includes(key), fichier, 0, `« indicator_caveats » référence un indicateur inconnu « ${key} »`)
+      exiger(estChaineNonVide(value), fichier, 0, `« indicator_caveats.${key} » doit être renseigné`)
+    }
+    indicator_caveats = caveats as Record<string, string>
+  }
+  if (meta['map_layers'] !== undefined) {
+    exiger(estObjet(meta['map_layers']), fichier, 0, '« map_layers » doit être un objet')
+    const declarations = meta['map_layers'] as LigneBrute
+    for (const [key, eligible] of Object.entries(declarations)) {
+      exiger(indicator_keys.includes(key), fichier, 0, `« map_layers » référence un indicateur inconnu « ${key} »`)
+      exiger(typeof eligible === 'boolean', fichier, 0, `« map_layers.${key} » doit être booléen`)
+    }
+    map_layers = declarations as Record<string, boolean>
+  }
   if (meta['indicator_pages'] !== undefined) {
     exiger(estObjet(meta['indicator_pages']), fichier, 0, '« indicator_pages » doit être un objet')
     indicator_pages = {}
@@ -2127,8 +2154,62 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
             const detailsDeclarees = comparison !== undefined ? (comparison['details'] as unknown[] as string[]) : []
             exiger(endpoints.length >= 2 && new Set(endpoints).size === endpoints.length, fichier, 0, `« indicator_pages.${key}.trajectory.endpoints » doit déclarer deux bornes distinctes au moins`)
             exiger(endpoints.every((endpoint) => detailsDeclarees.includes(endpoint)), fichier, 0, `« indicator_pages.${key}.trajectory.endpoints » : une borne n'est pas déclarée dans comparison.details`)
-            exiger(detailsDeclarees.filter((value) => !/^\d{4}$/.test(value)).every((value) => endpoints.includes(value)), fichier, 0, `« indicator_pages.${key}.comparison.details » : un détail non annuel doit être une borne déclarée`)
-            indicator_pages[key] = { ...base, family, trajectory: { endpoints } }
+            const axis = extension?.['axis']
+            exiger(axis === undefined || axis === 'ordinal' || axis === 'numeric', fichier, 0, `« indicator_pages.${key}.trajectory.axis » doit être ordinal ou numeric`)
+            const axisLabelsBrute = extension?.['axisLabels']
+            let axisLabels: TrajectoryMetadata['axisLabels']
+            if (axisLabelsBrute !== undefined) {
+              exiger(estObjet(axisLabelsBrute), fichier, 0, `« indicator_pages.${key}.trajectory.axisLabels » doit être un objet`)
+              const labels = axisLabelsBrute as LigneBrute
+              exiger(estChaineNonVide(labels['x']) && estChaineNonVide(labels['y']), fichier, 0, `« indicator_pages.${key}.trajectory.axisLabels » doit déclarer x et y`)
+              axisLabels = { x: labels['x'] as string, y: labels['y'] as string }
+            }
+            const ticksBrute = extension?.['ticks']
+            let ticks: TrajectoryMetadata['ticks']
+            if (ticksBrute !== undefined) {
+              exiger(Array.isArray(ticksBrute) && ticksBrute.length > 0, fichier, 0, `« indicator_pages.${key}.trajectory.ticks » doit être un tableau non vide`)
+              const seen = new Set<string>()
+              ticks = (ticksBrute as unknown[]).map((tick, index) => {
+                exiger(estObjet(tick), fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}] » doit être un objet`)
+                const raw = tick as LigneBrute
+                exiger(estChaineNonVide(raw['detail']) && detailsDeclarees.includes(raw['detail'] as string), fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}].detail » doit être déclaré dans comparison.details`)
+                exiger(!seen.has(raw['detail'] as string), fichier, 0, `« indicator_pages.${key}.trajectory.ticks » ne doit pas répéter un détail`)
+                seen.add(raw['detail'] as string)
+                exiger(estChaineNonVide(raw['label']), fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}].label » doit être renseigné`)
+                exiger(raw['mobile'] === undefined || typeof raw['mobile'] === 'boolean', fichier, 0, `« indicator_pages.${key}.trajectory.ticks[${index}].mobile » doit être un booléen`)
+                return { detail: raw['detail'] as string, label: raw['label'] as string, ...(raw['mobile'] === undefined ? {} : { mobile: raw['mobile'] as boolean }) }
+              })
+            }
+            if (key === 'raccordement_courbe') {
+              exiger(axis === 'numeric' && detailsDeclarees.length === DETAILS_COURBE_RACCORDEMENT.length && detailsDeclarees.every((detail, index) => detail === DETAILS_COURBE_RACCORDEMENT[index]), fichier, 0, `« indicator_pages.${key}.comparison.details » doit déclarer exactement la grille publiée du raccordement (0, 15, 30, 45, 60, 90, 120, 180, 240, 300, 360 minutes)`)
+            }
+            // An ordinal trajectory uses non-year details (for example M2/M3)
+            // as its endpoints. A numeric axis such as t0000…t0360 is a real
+            // continuous scale: intermediate details are expected and must not
+            // be forced into the endpoint pair.
+            if (axis !== 'numeric') {
+              exiger(detailsDeclarees.filter((value) => !/^\d{4}$/.test(value)).every((value) => endpoints.includes(value)), fichier, 0, `« indicator_pages.${key}.comparison.details » : un détail non annuel doit être une borne déclarée`)
+            }
+            const referenceBrute = extension?.['reference']
+            let reference: TrajectoryMetadata['reference']
+            if (referenceBrute !== undefined) {
+              exiger(estObjet(referenceBrute), fichier, 0, `« indicator_pages.${key}.trajectory.reference » doit être un objet`)
+              const ref = referenceBrute as LigneBrute
+              exiger(estChaineNonVide(ref['indicator']) && indicator_keys.includes(ref['indicator'] as string), fichier, 0, `« indicator_pages.${key}.trajectory.reference.indicator » doit référencer un indicateur publié`)
+              exiger(estChaineNonVide(ref['territoire']), fichier, 0, `« indicator_pages.${key}.trajectory.reference.territoire » doit être renseigné`)
+              exiger(estChaineNonVide(ref['label']), fichier, 0, `« indicator_pages.${key}.trajectory.reference.label » doit être renseigné`)
+              reference = { indicator: ref['indicator'] as string, territoire: ref['territoire'] as string, label: ref['label'] as string }
+            }
+            const markerBrute = extension?.['marker']
+            let marker: TrajectoryMetadata['marker']
+            if (markerBrute !== undefined) {
+              exiger(estObjet(markerBrute), fichier, 0, `« indicator_pages.${key}.trajectory.marker » doit être un objet`)
+              const markerRaw = markerBrute as LigneBrute
+              exiger(estChaineNonVide(markerRaw['detail']) && detailsDeclarees.includes(markerRaw['detail'] as string), fichier, 0, `« indicator_pages.${key}.trajectory.marker.detail » doit être déclaré dans comparison.details`)
+              exiger(estChaineNonVide(markerRaw['label']), fichier, 0, `« indicator_pages.${key}.trajectory.marker.label » doit être renseigné`)
+              marker = { detail: markerRaw['detail'] as string, label: markerRaw['label'] as string }
+            }
+            indicator_pages[key] = { ...base, family, trajectory: { endpoints, ...(axis === undefined ? {} : { axis }), ...(axisLabels === undefined ? {} : { axisLabels }), ...(ticks === undefined ? {} : { ticks }), ...(reference === undefined ? {} : { reference }), ...(marker === undefined ? {} : { marker }) } }
             break
           }
           case 'composition': indicator_pages[key] = { ...base, family, composition: { parts: lireExtensionChaines('parts') } }; break
@@ -2205,6 +2286,8 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     classification_labels,
     indicator_pages,
     source_records: meta['source_records'] as ThemeMetadata['source_records'],
+    indicator_caveats,
+    map_layers,
   }
 }
 

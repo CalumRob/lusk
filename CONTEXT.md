@@ -32,6 +32,11 @@ _Avoid_: page, bloc de mise en page, subgroup (the legacy payload assembly term)
 A distinct claim-and-evidence subject within a ContentUnit, such as « Perte de diversité » or « Perte totale d’accès ». It may carry an optional **Lecture** resolved from the available facts. It names semantic content and its honest availability, not a Cahier section, column, margin, or other layout placement.
 _Avoid_: section de page, panneau, card
 
+**Cahier (design exploration, 2026-08-27)**:
+An exploratory visual model for the **Fiche d'identité**: a territory fiche that feels like a notebook or field report, giving Lusk a recognisable identity beyond a conventional data dashboard. The first direction is a long scroll with each subgroup treated as a possible page/chapter, and a compact sticky **Sommaire du cahier** in the desktop margin; mobile would use an accessible collapsed navigation. The margin may carry the chapter title, short description, sources, and useful links, while the main field carries the reading and evidence. A carousel or page-at-a-time mode remains a possible later layer. The existing #499 « Cahier » prototype is useful for this structure, but its visual language is not a reference: it inherited the incumbent Manrope/Newsreader, theme washes, card/tile grammar, and dashboard vocabulary that #511 is now questioning. Keep the structural experiment; treat its skin as an anti-reference. This is not a locked visual decision and does not amend `DESIGN.md`.
+
+**Marelle (Cahier design reference)**:
+The free, OFL-licensed cursive typeface created for teaching handwriting in primary school ([official site](https://marelle.forge.apps.education.fr/)). It is not intended for full-cursive use in Lusk; it may be tested as restrained marginalia, a handwritten annotation, a single emphasized word, or a small chapter/page label. Body copy, data, sources, controls, and essential meaning remain in the existing accessible typography. Treat it as a possible identity accent—or inspiration only—until a prototype proves that it adds warmth without reducing credibility or legibility. Any use must account for the current `DESIGN.md` rule of two type families.
 
 **Aperçu**:
 The fiche's former default, cross-theme tab.

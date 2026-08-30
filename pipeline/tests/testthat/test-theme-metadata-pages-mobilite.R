@@ -1,5 +1,5 @@
 # test-theme-metadata-pages-mobilite ---------------------------------------------
-# Les Pages d'indicateur scalaires de la Mobilité (issue #461) : les TREIZE
+# Les Pages d'indicateur scalaires de la Mobilité (issue #461) : les QUATORZE
 # indicateurs publiés du thème portent chacun leur page scalaire complète —
 # offre_tc, bornes_recharge, places_stationnement_velo_1000,
 # places_stationnement_voiture_1000, bornes_ev_par_station_service,
@@ -8,8 +8,8 @@
 # artefacts committés.
 #
 # L'énumération est le devoir (le même verrou que les trajectoires #438, les
-# distributions #440, les listes #439 et les relations #441) : une treizième…
-# ou une quatorzième page ajoutée ou retirée échoue ICI — jamais une famille
+# distributions #440, les listes #439 et les relations #441) : une page ajoutée
+# ou retirée échoue ICI — jamais une famille
 # scalaire qui gonfle ou fond en silence.
 
 PAGES_SCALAIRES_MOBILITE <- c(
@@ -17,29 +17,73 @@ PAGES_SCALAIRES_MOBILITE <- c(
   "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
   "tot_loss_t", "tot_loss_b",
-  "iso_alimentation", "iso_sante", "iso_administration", "iso_ecole", "iso_banque"
+  "iso_alimentation", "iso_sante", "iso_administration", "iso_ecole", "iso_banque",
+  "raccordement_tc"
 )
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
 
-test_that("l'énumération des pages Mobilité est connue — exactement les trois pages existantes plus les treize scalaires (#461)", {
+test_that("l'énumération des pages Mobilité est connue — les pages multi-mesures et les quatorze scalaires (#461)", {
   meta <- lire_theme_metadata("mobilite")
   cles <- names(meta$indicator_pages)
   expect_setequal(
     cles,
-    c(PAGES_SCALAIRES_MOBILITE, "voitures_menage", "offre_cyclable", "reseaux")
+    c(PAGES_SCALAIRES_MOBILITE, "voitures_menage", "offre_cyclable", "reseaux",
+      "raccordement_courbe")
   )
   scalaires <- cles[vapply(meta$indicator_pages, function(p)
     identical(p$family, "scalar"), logical(1L))]
   expect_setequal(scalaires, PAGES_SCALAIRES_MOBILITE)
 })
 
-test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses treize pages scalaires complètes (#461)", {
+test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses quatorze pages scalaires complètes (#461)", {
   meta <- lire_theme_metadata("mobilite")
   expect_no_error(valider_theme_metadata(meta))
 })
 
-test_that("publier_theme_metadata : les treize pages passent le seam et survivent au round-trip (#461)", {
+test_that("la trajectoire raccordement déclare exactement la grille publiée et ses repères humains", {
+  meta <- lire_theme_metadata("mobilite")
+  page <- meta$indicator_pages$raccordement_courbe
+  expect_identical(
+    unlist(page$comparison$details, use.names = FALSE),
+    c("t0000", "t0015", "t0030", "t0045", "t0060", "t0090", "t0120",
+      "t0180", "t0240", "t0300", "t0360")
+  )
+  expect_identical(unlist(page$trajectory$endpoints, use.names = FALSE),
+                   c("t0000", "t0360"))
+  expect_identical(page$trajectory$axis, "numeric")
+  expect_identical(vapply(page$trajectory$ticks, `[[`, character(1L), "label"),
+                   c("0", "15", "30", "45", "1 h", "1 h 30", "2 h",
+                     "3 h", "4 h", "5 h", "6 h"))
+  expect_no_error(valider_theme_metadata(meta))
+  ordinal <- meta
+  ordinal$indicator_pages$raccordement_courbe$trajectory$axis <- "ordinal"
+  expect_error(valider_theme_metadata(ordinal), "numeric")
+})
+
+test_that("map_layers déclare les faits cartographiables sans exposer les séries composées (#487)", {
+  meta <- lire_theme_metadata("mobilite")
+  expect_identical(meta$map_layers, list(
+    offre_tc = TRUE,
+    raccordement_tc = TRUE,
+    raccordement_courbe = FALSE,
+    raccordement_reference = FALSE
+  ))
+
+  inconnu <- meta
+  inconnu$map_layers$fantome <- TRUE
+  expect_error(valider_theme_metadata(inconnu), "indicateur")
+
+  invalide <- meta
+  invalide$map_layers$raccordement_tc <- "oui"
+  expect_error(valider_theme_metadata(invalide), "booléen")
+
+  vide <- meta
+  vide$map_layers <- list()
+  expect_no_error(valider_theme_metadata(vide))
+})
+
+test_that("publier_theme_metadata : les quatorze pages passent le seam et survivent au round-trip (#461)", {
   meta <- lire_theme_metadata("mobilite")
   sortie <- file.path(tempdir(), "pages-scalaires-mobilite")
   dir.create(sortie, showWarnings = FALSE)

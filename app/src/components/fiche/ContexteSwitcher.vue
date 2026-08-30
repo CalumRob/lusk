@@ -11,6 +11,7 @@ import { ChevronRight } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import AppIcon from '@/components/AppIcon.vue'
+import { lienFiche } from '@/fiche/contratExploration'
 import type { Territoire } from '@/payload/types'
 
 const props = defineProps<{
@@ -18,10 +19,6 @@ const props = defineProps<{
 }>()
 
 const actuel = computed(() => props.echelons[0]?.territoire ?? null)
-
-function cheminFiche(territoire: Territoire): string {
-  return `/territoire/${territoire.type}/${territoire.territoire}`
-}
 </script>
 
 <template>
@@ -39,7 +36,7 @@ function cheminFiche(territoire: Territoire): string {
       <RouterLink
         v-else
         class="contexte-switcher-lien"
-        :to="cheminFiche(echelon)"
+        :to="lienFiche(echelon)"
       >{{ echelon.nom }}</RouterLink>
       <AppIcon
         v-if="index < echelons.length - 1"
