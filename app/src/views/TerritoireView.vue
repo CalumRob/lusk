@@ -18,7 +18,7 @@
  * honest empty state when the territory (or its type) is unknown.
  */
 import { AlertCircle, ChevronRight, SearchX } from 'lucide-vue-next'
-import { computed, watch } from 'vue'
+import { computed, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -32,6 +32,11 @@ import {
   CommutateurPrototype,
   varianteDeUrl,
 } from '@/fiche/prototype/variantes'
+import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
+import { lireAccesMobiliteTransitoire } from '@/fiche/content/mobiliteAccessSource'
+import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import type { ThemeContent } from '@/fiche/content/themeContent'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -160,9 +165,31 @@ const classesFond = computed(() =>
  */
 const variante = computed(() => varianteDeUrl(route.query.variant))
 const prototypeActif = import.meta.env.DEV
-/** [PROTOTYPE #511] D owns the editorial fiche surface on its own. */
+/** [PROTOTYPE #531] D owns the editorial fiche surface for Mobilité only. */
+const prototypeDMobilite = computed(
+  () => prototypeActif && variante.value?.clef === 'D' && selection.value === 'mobilite',
+)
+const contenuMobilite = computed<ThemeContent | null>(() => {
+  if (
+    !prototypeDMobilite.value ||
+    chargement.value ||
+    !payload.value ||
+    !typeValide.value
+  ) return null
+  const facts = territoryFactsFor(
+    toRaw(payload.value),
+    String(route.params.id),
+    lireAccesMobiliteTransitoire,
+  )
+  return facts ? resolveMobiliteThemeContent(facts) : null
+})
+const paginationCahier = computed(() =>
+  payload.value && contenuMobilite.value
+    ? cahierPaginationFor(payload.value, contenuMobilite.value)
+    : null,
+)
 const prototypeIndependant = computed(
-  () => variante.value?.clef === 'D' && selection.value !== 'programmes',
+  () => prototypeDMobilite.value && contenuMobilite.value !== null && paginationCahier.value !== null,
 )
 
 function choisirOnglet(slug: SlugOnglet): void {
@@ -275,14 +302,13 @@ watch(
              chaque changement d'onglet (remount via :key), figé pour la durée
              du montage. -->
         <template v-else>
-          <!-- [PROTOTYPE #511] D owns the complete editorial surface. -->
+          <!-- [PROTOTYPE #531] D owns the content-driven Mobilité surface. -->
           <component
             :is="variante.composant"
-            v-if="prototypeIndependant && ongletTheme && variante"
-            :theme="ongletTheme.theme"
-            :payload="ongletTheme.payload"
-            :territoire="String(route.params.id)"
-          />
+            v-if="prototypeIndependant && contenuMobilite && paginationCahier && variante"
+            :content="contenuMobilite"
+            :pagination="paginationCahier"
+            />
           <template v-else>
           <FiligraneFiche v-if="selection" :key="selection" :theme="selection" />
           <div
@@ -305,7 +331,7 @@ watch(
                  cinq thèmes éditoriaux — même props, zéro fetch propre. -->
             <component
               :is="variante.composant"
-              v-else-if="ongletTheme && variante"
+              v-else-if="ongletTheme && variante && variante.clef !== 'D'"
               :theme="ongletTheme.theme"
               :payload="ongletTheme.payload"
               :territoire="String(route.params.id)"

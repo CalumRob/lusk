@@ -67,6 +67,13 @@ export type MobiliteService =
 export type MobiliteAccessMode = 'car' | 'bike' | 'walkTransit'
 type SourceAccessMode = 'c' | 'b' | 't'
 
+/** Canonical labels for the three mobility modes used throughout the fiche. */
+export const MOBILITE_MODE_LABELS: Readonly<Record<MobiliteAccessMode, string>> = {
+  car: 'Voiture',
+  bike: 'À vélo + TC',
+  walkTransit: 'À pied + TC',
+}
+
 /** The smallest source contract needed by the facts adapter. */
 export interface MobiliteAccessSnapshot {
   totalBatimentsBretons: number | null
@@ -121,6 +128,21 @@ export interface TerritoryIdentity {
   name: string
   department: string | null
   epci: string | null
+}
+
+/**
+ * The source identity remains the legal/reference name. Cahier prose uses the
+ * public short name, so an EPCI reads “Lorient Agglomération”, not its legal
+ * category prefix.
+ */
+export function nomTerritoirePourAffichage(territory: TerritoryIdentity): string {
+  if (territory.type !== 'epci') return territory.name
+  return territory.name
+    .replace(/^CA\s+/i, '')
+    .replace(/^Communauté d['’]agglomération\s+/i, '')
+    .replace(/^Communauté de communes\s+/i, '')
+    .replace(/^Métropole\s+/i, '')
+    .trim()
 }
 
 export interface MobilityFacts {

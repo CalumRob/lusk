@@ -1,0 +1,47 @@
+/** Shared Cahier rhythm. Keep grid alignment in the layout vocabulary, not in
+ * a single page's scoped stylesheet, so later Cahier iterations can opt in by
+ * using the same anchor classes. */
+
+@media (min-width: 761px) {
+  .cahier-baseline-anchor,
+  .cahier-baseline-first-line,
+  .cahier-baseline-group {
+    transform: translateY(var(--cahier-baseline-shift, 0px));
+    margin-bottom: var(--cahier-baseline-shift, 0px);
+  }
+}
+
+.cahier {
+  --cahier-grid-jump: 32px;
+}
+
+.cahier-prose {
+  line-height: var(--cahier-grid-jump);
+}
+
+.cahier-prose p {
+  margin-bottom: var(--cahier-grid-jump);
+}
+
+.cahier-section-exploration { margin-top: var(--cahier-grid-jump); }
+.cahier-section-exploration .passarelle-exploration {
+  margin-top: 0;
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: var(--cahier-grid-jump);
+}
+
+.cahier-figure-title {
+  min-height: 36px;
+  margin: 0 0 28px;
+  color: var(--cahier-default);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.cahier-mode-icon--foot { color: var(--cahier-mode-foot); }
+.cahier-mode-icon--bike { color: var(--cahier-mode-bike); }
+.cahier-mode-icon--car { color: var(--cahier-mode-car); }

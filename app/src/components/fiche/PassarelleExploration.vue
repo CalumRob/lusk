@@ -35,12 +35,15 @@ defineProps<{
    * (#468) — tous les sites existants restent inchangés.
    */
   libelle?: string
+  /** Let a host surface use the reference's quiet, undecorated handoff. */
+  sansSoulignement?: boolean
 }>()
 </script>
 
 <template>
   <RouterLink
     class="passarelle-exploration"
+    :class="{ 'passarelle-exploration--plain': sansSoulignement }"
     :to="to"
     target="_blank"
     rel="noopener noreferrer"
@@ -67,6 +70,8 @@ defineProps<{
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+.passarelle-exploration--plain { text-decoration: none; }
 
 .passarelle-exploration:hover {
   color: var(--passarelle-survol, var(--passarelle-couleur, currentColor));

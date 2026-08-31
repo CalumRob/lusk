@@ -11,22 +11,21 @@ import { computed, ref } from 'vue'
 import { Bike, Footprints } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 
-import type { DistributionMobilite } from '@/fiche/sousGroupes'
-import type { PointNuageMobilite } from '@/payload/selectors'
-import { formaterNombreFR } from '@/payload/selectors'
+import type { DistributionEvidence } from '@/fiche/content/themeContent'
+import {
+  MOBILITE_MODE_LABELS,
+  nomTerritoirePourAffichage,
+} from '@/fiche/content/territoryFacts'
+import type { MobiliteDistributionPeer } from '@/fiche/content/territoryFacts'
 
 const props = defineProps<{
-  distribution: DistributionMobilite
-  mediane: number
-  medianeVelo: number
-  modes: { t: string; b: string }
+  evidence: DistributionEvidence
   nom: string
-  nuage: PointNuageMobilite[]
 }>()
 
 const router = useRouter()
 const distributionRef = ref<HTMLElement | null>(null)
-const pointSelectionne = ref<PointNuageMobilite | null>(null)
+const pointSelectionne = ref<MobiliteDistributionPeer | null>(null)
 const positionInfobulle = ref({ top: 0, left: 0 })
 
 const largeur = 820
@@ -35,12 +34,20 @@ const marge = { haut: 38, droite: 26, bas: 58, gauche: 88 }
 const axeBas = hauteur - marge.bas
 const axeDroite = largeur - marge.droite
 
+const walkTransit = computed(() => props.evidence.marks.walkTransit)
+const bike = computed(() => props.evidence.marks.bike)
+const mediane = computed(() => walkTransit.value.fact.value ?? 0)
+const medianeVelo = computed(() => bike.value?.fact.value ?? null)
+
+function formatNumber(value: number, maximumFractionDigits = 1): string {
+  return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
+}
+
 const valeursX = computed(() => {
-  const valeurs = props.distribution.dec.filter((valeur): valeur is number => valeur !== null)
-  valeurs.push(...props.nuage.map((point) => point.divLoss))
-  if (props.distribution.min !== null) valeurs.push(props.distribution.min)
-  if (props.distribution.max !== null) valeurs.push(props.distribution.max)
-  valeurs.push(props.mediane, props.medianeVelo)
+  const valeurs = [...props.evidence.distribution.quantiles]
+  valeurs.push(...props.evidence.peers.map((point) => point.value))
+  valeurs.push(props.evidence.distribution.min, props.evidence.distribution.max, mediane.value)
+  if (medianeVelo.value !== null) valeurs.push(medianeVelo.value)
   return valeurs
 })
 
@@ -51,7 +58,7 @@ const domaineX = computed(() => {
 })
 
 const densiteMax = computed(() => {
-  const valeurs = props.distribution.dens.filter((valeur): valeur is number => valeur !== null)
+  const valeurs = props.evidence.distribution.densities
   return Math.max(...valeurs, 0.001)
 })
 
@@ -65,9 +72,9 @@ function yPour(valeur: number): number {
 }
 
 const points = computed(() =>
-  props.distribution.dec
+  props.evidence.distribution.quantiles
     .map((dec, index) => {
-      const densite = props.distribution.dens[index]
+      const densite = props.evidence.distribution.densities[index]
       return dec !== null && densite !== null ? { x: xPour(dec), y: yPour(densite) } : null
     })
     .filter((point): point is { x: number; y: number } => point !== null),
@@ -87,9 +94,11 @@ const aireDistribution = computed(() => {
 })
 
 const nuagePoints = computed(() =>
-  props.nuage.map((point, index) => ({
-    ...point,
-    x: xPour(point.divLoss),
+  props.evidence.peers.map((point, index) => ({
+    territoire: point.territoire,
+    nom: nomTerritoirePourAffichage(point.territoire),
+    value: point.value,
+    x: xPour(point.value),
     y: axeBas - 10 - (index % 4) * 10,
   })),
 )
@@ -110,8 +119,8 @@ const graduationsY = computed(() =>
   }),
 )
 
-const repereT = computed(() => xPour(props.mediane))
-const repereB = computed(() => xPour(props.medianeVelo))
+const repereT = computed(() => xPour(mediane.value))
+const repereB = computed(() => xPour(medianeVelo.value ?? mediane.value))
 
 const positionRepereT = computed(() => ({ left: `${(repereT.value / largeur) * 100}%` }))
 const positionRepereB = computed(() => ({ left: `${(repereB.value / largeur) * 100}%` }))
@@ -119,19 +128,21 @@ const positionRepereB = computed(() => ({ left: `${(repereB.value / largeur) * 1
 const libelleAccessible = computed(
   () =>
     `${props.nom}. Distribution des bâtiments selon le nombre de types de services perdus. ` +
-    `Médiane ${props.modes.t} : ${formaterNombreFR(props.mediane, 0)}. ` +
-    `Médiane ${props.modes.b} : ${formaterNombreFR(props.medianeVelo, 0)}.`,
+    `Médiane ${MOBILITE_MODE_LABELS.walkTransit} : ${formatNumber(mediane.value, 0)}.` +
+    (bike.value && medianeVelo.value !== null
+      ? ` Médiane ${MOBILITE_MODE_LABELS.bike} : ${formatNumber(medianeVelo.value, 0)}.`
+      : ''),
 )
 
-function lienNuage(point: PointNuageMobilite): string {
+function lienNuage(point: MobiliteDistributionPeer): string {
   return router.resolve({
     name: 'territoire',
-    params: { type: point.type, id: point.territoire },
+    params: { type: point.territoire.type, id: point.territoire.code },
     query: { theme: 'mobilite' },
   }).href
 }
 
-function selectionnerNuage(point: PointNuageMobilite, event: MouseEvent | KeyboardEvent): void {
+function selectionnerNuage(point: MobiliteDistributionPeer, event: MouseEvent | KeyboardEvent): void {
   const cible = event.currentTarget
   const figure = distributionRef.value
   if (cible instanceof SVGCircleElement && figure) {
@@ -178,15 +189,15 @@ const styleInfobulle = computed(() => ({
       <path v-if="ligneDistribution" class="distribution-line" :d="ligneDistribution" />
 
       <line class="distribution-reference distribution-reference--territory" :x1="repereT" :x2="repereT" :y1="marge.haut" :y2="axeBas" />
-      <line class="distribution-reference distribution-reference--bike" :x1="repereB" :x2="repereB" :y1="marge.haut" :y2="axeBas" />
-      <g v-for="point in nuagePoints" :key="point.territoire" class="distribution-peer">
+      <line v-if="medianeVelo !== null" class="distribution-reference distribution-reference--bike" :x1="repereB" :x2="repereB" :y1="marge.haut" :y2="axeBas" />
+      <g v-for="point in nuagePoints" :key="point.territoire.code" class="distribution-peer">
         <circle
           :cx="point.x"
           :cy="point.y"
           r="5"
           tabindex="0"
           role="button"
-          :aria-label="`${point.nom} : ${formaterNombreFR(point.divLoss, 0)} types de services perdus`"
+          :aria-label="`${point.nom} : ${formatNumber(point.value, 0)} types de services perdus`"
           @click="selectionnerNuage(point, $event)"
           @keydown.enter.prevent="selectionnerNuage(point, $event)"
         />
@@ -195,13 +206,13 @@ const styleInfobulle = computed(() => ({
       <g v-for="graduation in graduations" :key="graduation.valeur">
         <line class="distribution-tick" :x1="graduation.x" :x2="graduation.x" :y1="axeBas" :y2="axeBas + 7" />
         <text class="distribution-tick-label" :x="graduation.x" :y="axeBas + 22" text-anchor="middle">
-          {{ formaterNombreFR(graduation.valeur, 0) }}
+          {{ formatNumber(graduation.valeur, 0) }}
         </text>
       </g>
       <g v-for="graduation in graduationsY" :key="graduation.valeur">
         <line class="distribution-tick" :x1="marge.gauche - 7" :x2="marge.gauche" :y1="graduation.y" :y2="graduation.y" />
         <text class="distribution-y-tick-label" :x="marge.gauche - 12" :y="graduation.y + 4" text-anchor="end">
-          {{ formaterNombreFR(graduation.valeur, 2) }}
+          {{ formatNumber(graduation.valeur, 2) }}
         </text>
       </g>
       </svg>
@@ -212,28 +223,29 @@ const styleInfobulle = computed(() => ({
       <span
         class="distribution-reference-icon distribution-reference-icon--territory"
         :style="positionRepereT"
-        :title="`${modes.t} : ${formaterNombreFR(mediane, 0)}`"
+        :title="`${MOBILITE_MODE_LABELS.walkTransit} : ${formatNumber(mediane, 0)}`"
       >
         <Footprints :size="16" stroke-width="1.7" />
       </span>
       <span
+        v-if="bike && medianeVelo !== null"
         class="distribution-reference-icon distribution-reference-icon--bike"
         :style="positionRepereB"
-        :title="`${modes.b} : ${formaterNombreFR(medianeVelo, 0)}`"
+        :title="`${MOBILITE_MODE_LABELS.bike} : ${formatNumber(medianeVelo, 0)}`"
       >
         <Bike :size="16" stroke-width="1.7" />
       </span>
     </div>
     <aside v-if="pointSelectionne" class="distribution-callout" :style="styleInfobulle" aria-live="polite">
       <div>
-        <strong>{{ pointSelectionne.nom }}</strong>
-        <span>{{ formaterNombreFR(pointSelectionne.divLoss, 0) }} types de services perdus</span>
+         <strong>{{ nomTerritoirePourAffichage(pointSelectionne.territoire) }}</strong>
+        <span>{{ formatNumber(pointSelectionne.value, 0) }} types de services perdus</span>
       </div>
       <a
-        v-if="pointSelectionne.type !== 'region'"
-        :href="lienNuage(pointSelectionne)"
-        target="_blank"
-        rel="noreferrer"
+        v-if="pointSelectionne.territoire.type !== 'region'"
+          :href="lienNuage(pointSelectionne)"
+          target="_blank"
+          rel="noopener noreferrer"
       >
         Ouvrir la fiche
       </a>

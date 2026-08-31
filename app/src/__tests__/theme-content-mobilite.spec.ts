@@ -190,12 +190,12 @@ describe('resolveMobiliteThemeContent', () => {
     })
     expect(diversity.evidence?.kind === 'distribution' ? diversity.evidence.peers : []).toHaveLength(2)
     expect(diversity.explorationTargets.map((target) => target.key)).toEqual([
-      'tot_loss_t',
-      'tot_loss_b',
+      'div_loss_t',
+      'div_loss_b',
     ])
     expect(diversity.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
     expect(lectureText(diversity.lecture)).toBe(
-      'À Commune A, le bâtiment médian perd accès à 38 types de services à pied ou en transports en commun en vingt minutes. À vélo, cette perte atteint 24 types de services. La référence est la médiane des communes de son EPCI : 31 types de services.',
+      'À Commune A, le bâtiment médian perd accès à 38 types de services à pied + TC en vingt minutes. À vélo + TC, cette perte atteint 24 types de services. La référence est la médiane communes de son EPCI : 31 types de services.',
     )
 
     expect(total.availability).toBe('complete')
@@ -212,7 +212,7 @@ describe('resolveMobiliteThemeContent', () => {
     ])
     expect(total.lecture?.marelle).toBe('Et en volume ?')
     expect(lectureText(total.lecture)).toBe(
-      'À Commune A, la perte totale atteint 4 accès par bâtiment à pied ou en transports en commun, contre 2 à vélo. La référence est la médiane des communes de son EPCI : 6 accès perdus.',
+      'À Commune A, la perte totale atteint 4 accès par bâtiment à pied + TC, contre 2 à vélo + TC. La référence est la médiane communes de son EPCI : 6 accès perdus.',
     )
 
     expect(essentials.availability).toBe('complete')

@@ -22,6 +22,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import { routeIndicateur } from './contratExploration'
 import type { RefTerritoire } from './contratExploration'
+import type { ExplorationTarget } from './content/themeContent'
 
 /** Le libellé unique du handoff — la microcopie compacte (#468), la copie
  *  française du produit ; le composant partagé PassarelleExploration la rend
@@ -98,4 +99,61 @@ export function passarellesLecture(
     resultats.push({ clef, libelle, to })
   }
   return resultats
+}
+
+/**
+ * Map a semantic content target to an already published indicator page. The
+ * direct access shares are the canonical facts of the new content grammar, but
+ * their existing fiche handoffs still land on the published isolation mirror.
+ * Targets without a published page deliberately return null.
+ */
+const PAGE_KEY_FOR_TARGET: Readonly<Record<string, string>> = {
+  // The diversity reading is a derived story fact. Its handoff remains honest
+  // by landing on the published total-loss indicator, as the old Cahier did.
+  div_loss_t: 'tot_loss_t',
+  div_loss_b: 'tot_loss_b',
+  share_food_t: 'iso_alimentation',
+  share_health_t: 'iso_sante',
+  share_admin_t: 'iso_administration',
+  share_school_t: 'iso_ecole',
+  share_bank_t: 'iso_banque',
+  tot_loss_t: 'tot_loss_t',
+  tot_loss_b: 'tot_loss_b',
+}
+
+const ACCESS_PAGE_KEY_FOR_SERVICE: Readonly<Record<string, string>> = {
+  administration: 'iso_administration',
+  alimentation: 'iso_alimentation',
+  sante: 'iso_sante',
+  banque: 'iso_banque',
+  ecole: 'iso_ecole',
+}
+
+export function routePourCibleExploration(
+  target: ExplorationTarget,
+): RouteLocationRaw | null {
+  const pageKey = PAGE_KEY_FOR_TARGET[target.key]
+  return pageKey
+    ? routeIndicateur(target.theme, pageKey, {
+        territoire: target.territory.code,
+        type: target.territory.type,
+      })
+    : null
+}
+
+/** Resolve a normalized access fact to its published isolation indicator page. */
+export function routePourFaitExploration(
+  key: string,
+  detail: string | null,
+  territoire: { code: string; type: RefTerritoire['type'] },
+): RouteLocationRaw | null {
+  if (!key.startsWith('access.') || detail !== 'walkTransit') return null
+  const service = key.slice('access.'.length)
+  const pageKey = ACCESS_PAGE_KEY_FOR_SERVICE[service]
+  return pageKey
+    ? routeIndicateur('mobilite', pageKey, {
+        territoire: territoire.code,
+        type: territoire.type,
+      })
+    : null
 }

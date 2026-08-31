@@ -1,3 +1,4 @@
+import { MOBILITE_MODE_LABELS, nomTerritoirePourAffichage } from './territoryFacts'
 import type {
   ComparisonScope,
   FactAvailability,
@@ -37,7 +38,7 @@ export interface ContentIndicator extends ContentFact {}
 
 export type TextSegment =
   | { kind: 'text'; value: string }
-  | { kind: 'emphasis'; value: string }
+  | { kind: 'emphasis'; tone: 'theme' | 'region'; value: string }
 
 export type TextBlock = readonly TextSegment[]
 
@@ -56,6 +57,7 @@ export interface CompleteDistributionSignature {
 export interface DistributionEvidence {
   kind: 'distribution'
   distribution: CompleteDistributionSignature
+  referenceLabel: string | null
   marks: {
     walkTransit: ContentFact
     bike: ContentFact | null
@@ -67,6 +69,7 @@ export interface ComparisonEvidence {
   kind: 'comparison'
   rows: readonly ContentIndicator[]
   scope: ComparisonScope | null
+  referenceLabel: string | null
 }
 
 export interface AccessServiceEvidence {
@@ -80,6 +83,7 @@ export interface AccessEvidence {
   totalBuildings: ContentFact
   totalBrittanyBuildings: ContentFact
   services: readonly AccessServiceEvidence[]
+  referenceLabel: string | null
 }
 
 export type ContentEvidence = DistributionEvidence | ComparisonEvidence | AccessEvidence
@@ -131,7 +135,9 @@ export type ContentUnit = MobiliteContentUnit
 
 export interface ThemeContent {
   theme: 'mobilite'
+  label: 'Mobilité'
   territory: TerritoryIdentity
+  introduction: readonly TextBlock[]
   units: readonly [MobiliteContentUnit]
   sourceRegister: readonly ContentSource[]
 }
@@ -147,34 +153,27 @@ const SERVICE_GRAMMAR: readonly {
   { key: 'ecole', label: 'École' },
 ]
 
-const MODE_LABELS: Readonly<Record<MobiliteAccessMode, string>> = {
-  car: 'En voiture',
-  bike: 'À vélo',
-  walkTransit: 'À pied ou en transports en commun',
-}
-
 /** Public labels for this grammar's published indicators and content metrics. */
 const CONTENT_LABELS: Readonly<Record<string, string>> = {
-  div_loss_t: 'Perte de diversité — à pied ou en transports en commun',
-  div_loss_b: 'Perte de diversité — à vélo',
-  tot_loss_t: 'Perte totale d’accès — à pied ou en transports en commun',
-  tot_loss_b: 'Perte totale d’accès — à vélo',
-  share_food_t: 'Part des bâtiments avec accès à l’alimentation — à pied ou en transports en commun',
-  share_food_b: 'Part des bâtiments avec accès à l’alimentation — à vélo',
-  share_food_c: 'Part des bâtiments avec accès à l’alimentation — en voiture',
-  share_health_t: 'Part des bâtiments avec accès à la santé — à pied ou en transports en commun',
-  share_health_b: 'Part des bâtiments avec accès à la santé — à vélo',
-  share_health_c: 'Part des bâtiments avec accès à la santé — en voiture',
-  share_admin_t:
-    'Part des bâtiments avec accès aux services administratifs — à pied ou en transports en commun',
-  share_admin_b: 'Part des bâtiments avec accès aux services administratifs — à vélo',
-  share_admin_c: 'Part des bâtiments avec accès aux services administratifs — en voiture',
-  share_school_t: 'Part des bâtiments avec accès à l’école — à pied ou en transports en commun',
-  share_school_b: 'Part des bâtiments avec accès à l’école — à vélo',
-  share_school_c: 'Part des bâtiments avec accès à l’école — en voiture',
-  share_bank_t: 'Part des bâtiments avec accès à la banque — à pied ou en transports en commun',
-  share_bank_b: 'Part des bâtiments avec accès à la banque — à vélo',
-  share_bank_c: 'Part des bâtiments avec accès à la banque — en voiture',
+  div_loss_t: `Perte de diversité — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  div_loss_b: `Perte de diversité — ${MOBILITE_MODE_LABELS.bike}`,
+  tot_loss_t: `Perte totale d’accès — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  tot_loss_b: `Perte totale d’accès — ${MOBILITE_MODE_LABELS.bike}`,
+  share_food_t: `Part des bâtiments avec accès à l’alimentation — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  share_food_b: `Part des bâtiments avec accès à l’alimentation — ${MOBILITE_MODE_LABELS.bike}`,
+  share_food_c: `Part des bâtiments avec accès à l’alimentation — ${MOBILITE_MODE_LABELS.car}`,
+  share_health_t: `Part des bâtiments avec accès à la santé — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  share_health_b: `Part des bâtiments avec accès à la santé — ${MOBILITE_MODE_LABELS.bike}`,
+  share_health_c: `Part des bâtiments avec accès à la santé — ${MOBILITE_MODE_LABELS.car}`,
+  share_admin_t: `Part des bâtiments avec accès aux services administratifs — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  share_admin_b: `Part des bâtiments avec accès aux services administratifs — ${MOBILITE_MODE_LABELS.bike}`,
+  share_admin_c: `Part des bâtiments avec accès aux services administratifs — ${MOBILITE_MODE_LABELS.car}`,
+  share_school_t: `Part des bâtiments avec accès à l’école — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  share_school_b: `Part des bâtiments avec accès à l’école — ${MOBILITE_MODE_LABELS.bike}`,
+  share_school_c: `Part des bâtiments avec accès à l’école — ${MOBILITE_MODE_LABELS.car}`,
+  share_bank_t: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  share_bank_b: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.bike}`,
+  share_bank_c: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.car}`,
 }
 
 const TOTAL_LOSS_KEYS = ['tot_loss_t', 'tot_loss_b'] as const
@@ -330,21 +329,76 @@ function text(value: string): TextSegment {
 }
 
 function emphasis(value: string): TextSegment {
-  return { kind: 'emphasis', value }
+  return { kind: 'emphasis', tone: 'theme', value }
+}
+
+function regionalEmphasis(value: string): TextSegment {
+  return { kind: 'emphasis', tone: 'region', value }
+}
+
+function modeInSentence(mode: MobiliteAccessMode, sentenceStart = false): string {
+  const label = MOBILITE_MODE_LABELS[mode]
+  return sentenceStart
+    ? label
+    : label.charAt(0).toLocaleLowerCase('fr-FR') + label.slice(1)
 }
 
 function comparisonLabel(comparison: NumericFact['comparison']): string | null {
   if (!comparison?.reference) return null
   switch (comparison.scope.kind) {
     case 'communes-epci':
-      return 'la médiane des communes de son EPCI'
+      return 'la médiane communes de son EPCI'
     case 'communes-bretagne':
-      return 'la médiane des communes bretonnes'
+      return 'la médiane communes bretonnes'
     case 'epcis-bretagne':
-      return 'la médiane des EPCIs bretons'
+      return 'la médiane EPCI bretons'
     case 'departements-bretagne':
-      return 'la médiane des départements bretons'
+      return 'la médiane départements bretons'
   }
+}
+
+function comparisonReferenceLabel(comparison: NumericFact['comparison']): string | null {
+  if (!comparison?.reference) return null
+  switch (comparison.scope.kind) {
+    case 'communes-epci':
+      return 'Médiane communes de l’EPCI'
+    case 'communes-bretagne':
+      return 'Médiane communes bretonnes'
+    case 'epcis-bretagne':
+      return 'Médiane EPCI bretons'
+    case 'departements-bretagne':
+      return 'Médiane départements bretons'
+  }
+}
+
+function formatMillions(value: number): string {
+  if (Math.abs(value) < 1_000_000) return formatNumber(value)
+  const millions = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(
+    value / 1_000_000,
+  )
+  return `${millions} millions`
+}
+
+function introductionFor(facts: TerritoryFacts): readonly TextBlock[] {
+  const territoryName = nomTerritoirePourAffichage(facts.territory)
+  const blocks: TextBlock[] = [
+    [
+      text('Cette page illustre les différences d’accès aux services selon le mode de déplacement : voiture, vélo et marche, transports en commun inclus. Elle présente les résultats d’une analyse qui cartographie les équipements accessibles en '),
+      emphasis('20 minutes'),
+      text(' autour de chaque bâtiment résidentiel breton.'),
+    ],
+  ]
+  const total = facts.mobility.access.totalBrittanyBuildings
+  const territory = facts.mobility.access.totalBuildings
+  if (complete(total) && complete(territory)) {
+    blocks.push([
+      regionalEmphasis(formatMillions(total.value)),
+      text(' de bâtiments sont pris en compte en Bretagne, dont '),
+      emphasis(formatNumber(territory.value)),
+      text(` à ${territoryName}.`),
+    ])
+  }
+  return blocks
 }
 
 function lectureDiversite(
@@ -353,18 +407,19 @@ function lectureDiversite(
   bike: NumericFact,
 ): Lecture | null {
   if (!complete(walkTransit)) return null
+  const territoryName = nomTerritoirePourAffichage(territory)
   const prose: TextBlock[] = [
     [
       text('À '),
-      emphasis(territory.name),
+      emphasis(territoryName),
       text(', le bâtiment médian perd accès à '),
       emphasis(formatNumber(walkTransit.value)),
-      text(' types de services à pied ou en transports en commun en vingt minutes.'),
+      text(` types de services ${modeInSentence('walkTransit')} en vingt minutes.`),
     ],
   ]
   if (complete(bike)) {
     prose.push([
-      text('À vélo, cette perte atteint '),
+      text(`${modeInSentence('bike', true)}, cette perte atteint `),
       emphasis(formatNumber(bike.value)),
       text(' types de services.'),
     ])
@@ -374,9 +429,9 @@ function lectureDiversite(
   if (comparison && reference) {
     prose.push([
       text('La référence est '),
-      emphasis(comparison),
+      regionalEmphasis(comparison),
       text(' : '),
-      emphasis(formatNumber(reference.value)),
+      regionalEmphasis(formatNumber(reference.value)),
       text(' types de services.'),
     ])
   }
@@ -389,15 +444,16 @@ function lectureTotale(
   bike: NumericFact,
 ): Lecture | null {
   if (!complete(walkTransit) || !complete(bike)) return null
+  const territoryName = nomTerritoirePourAffichage(territory)
   const prose: TextBlock[] = [
     [
       text('À '),
-      emphasis(territory.name),
+      emphasis(territoryName),
       text(', la perte totale atteint '),
       emphasis(formatNumber(walkTransit.value)),
-      text(' accès par bâtiment à pied ou en transports en commun, contre '),
+      text(` accès par bâtiment ${modeInSentence('walkTransit')}, contre `),
       emphasis(formatNumber(bike.value)),
-      text(' à vélo.'),
+      text(` ${modeInSentence('bike')}.`),
     ],
   ]
   const comparison = comparisonLabel(walkTransit.comparison)
@@ -405,9 +461,9 @@ function lectureTotale(
   if (comparison && reference) {
     prose.push([
       text('La référence est '),
-      emphasis(comparison),
+      regionalEmphasis(comparison),
       text(' : '),
-      emphasis(formatNumber(reference.value)),
+      regionalEmphasis(formatNumber(reference.value)),
       text(' accès perdus.'),
     ])
   }
@@ -437,12 +493,12 @@ function lectureEssentiels(
       voitureComplete
         ? [
             text('À '),
-            emphasis(territory.name),
+            emphasis(nomTerritoirePourAffichage(territory)),
             text(', les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.'),
           ]
           : [
               text('À '),
-              emphasis(territory.name),
+            emphasis(nomTerritoirePourAffichage(territory)),
               text(', l’accès aux services essentiels varie selon le mode de déplacement.'),
             ],
     ],
@@ -459,6 +515,7 @@ function diversitySection(facts: TerritoryFacts): PerteDeDiversiteSection {
     ? {
         kind: 'distribution',
         distribution: walkDistribution,
+        referenceLabel: comparisonReferenceLabel(walkTransit.comparison),
         marks: {
           walkTransit: contentFact(walkTransit, CONTENT_LABELS.div_loss_t),
           bike: complete(bike) ? contentFact(bike, CONTENT_LABELS.div_loss_b) : null,
@@ -470,9 +527,7 @@ function diversitySection(facts: TerritoryFacts): PerteDeDiversiteSection {
   const availability: FactAvailability =
     !hasAny ? 'absent' : complete(walkTransit) && evidence !== null ? 'complete' : 'incomplete'
   const targets = targetsFor(
-    TOTAL_LOSS_KEYS
-      .map((key) => indicatorFor(facts, key))
-      .filter((fact): fact is NumericFact => fact !== null),
+    [walkTransit, bike].filter((fact): fact is NumericFact => hasValue(fact)),
     facts.territory,
   )
   const sectionFacts = [
@@ -514,10 +569,13 @@ function totalSection(facts: TerritoryFacts): PerteTotaleSection {
       : {
           kind: 'comparison',
           rows: indicators,
-          scope:
-            indicators.find((indicator) => indicator.fact.comparison)?.fact.comparison?.scope ??
-            null,
-        }
+           scope:
+             indicators.find((indicator) => indicator.fact.comparison)?.fact.comparison?.scope ??
+             null,
+           referenceLabel: comparisonReferenceLabel(
+             indicators.find((indicator) => indicator.fact.comparison)?.fact.comparison ?? null,
+           ),
+         }
   return {
     key: 'perte-totale-d-acces',
     label: 'Perte totale d’accès',
@@ -547,14 +605,19 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
       service: key,
       label,
       modes: {
-        car: contentFact(facts.mobility.access.byService[key].car, MODE_LABELS.car),
-        bike: contentFact(facts.mobility.access.byService[key].bike, MODE_LABELS.bike),
+        car: contentFact(facts.mobility.access.byService[key].car, MOBILITE_MODE_LABELS.car),
+        bike: contentFact(facts.mobility.access.byService[key].bike, MOBILITE_MODE_LABELS.bike),
         walkTransit: contentFact(
           facts.mobility.access.byService[key].walkTransit,
-          MODE_LABELS.walkTransit,
+          MOBILITE_MODE_LABELS.walkTransit,
         ),
       },
     })),
+    referenceLabel: comparisonReferenceLabel(
+      Object.values(facts.mobility.access.byService)
+        .flatMap((modes) => Object.values(modes))
+        .find((fact) => fact.comparison)?.comparison ?? null,
+    ),
   }
 }
 
@@ -603,7 +666,9 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent
 
   return {
     theme: 'mobilite',
+    label: 'Mobilité',
     territory: facts.territory,
+    introduction: introductionFor(facts),
     units: [
       {
         key: 'acces-aux-services',
