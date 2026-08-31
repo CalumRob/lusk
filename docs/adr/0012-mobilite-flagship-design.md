@@ -15,3 +15,15 @@ The Mobilité contract (`docs/themes/mobilite.md`) was locked 2026-08-03 before 
 **Considered options:** (1) keep `norm_score` as the headline — rejected, convoluted composite; (2) total loss (`tot_loss`, the satiated volume) as the Story — rejected, an opaque weighted figure where the count is legible; (3) bike as the Story's mode — rejected, everyone has feet; the bike is the *delta* story; (4) access-framed grid (`share_*`) — rejected, deprivation framing is what a territory acts on; (5) region-wide comparison cloud — rejected, flattens rural contrast; same-scale peers keep the local bite; (6) rebuild Équipements BPE or admin `pct_iso` — rejected, redundant or not-in-production; (7) treat the flagship like the light themes' freshness — rejected, it is not alive and must not pretend to be.
 
 **Consequences:** `docs/themes/mobilite.md` is rewritten to this contract; `docs/data-source-map.md` §Mobilité is updated (5 isolation shares + sub-block trio, BPE dropped, Korrigo/IRVE/stationnement vélo promoted from 🔶 to locked); `CONTEXT.md` gains the terms (Perte de diversité, Part des bâtiments isolés, Vingt minutes sans voiture, Ce que le vélo préserve, L'offre de mobilité alternative, the Alive snapshot clause). The ported pipeline must apply `ensure_mode_neutrality` on the base before any loss aggregation (bike ≥ transit, always — the non-production summarize artifact showed negative deltas; the production file is clean). The pipeline publishes: the 5 isolation shares, the Story's `div_loss_t` + distribution signature + same-scale cloud points, the salience classification and its trigger value, and the block's five supply/demand figures — plus the snapshot date as a first-class vintage fact. The app maps two new Story keys (`vingt-minutes-sans-voiture`, `ce-que-le-velo-preserve`) and renders the isolation grid + sub-block; Méthodes documents the slow clock and the ODbL sources per the 2026-08-06 contract.
+
+## Amendment (user, 2026-08-31, issue #530)
+
+The new semantic Mobilité contract uses the **direct access shares** as its
+canonical facts: all 15 `share_*_{t,b,c}` values (five services × three modes)
+are published, typed, ranked high-is-good, and consumed by the new
+`TerritoryFacts` / `ThemeContent` seam. The five `iso_*` rows remain only as a
+temporary compatibility mirror for the legacy prototype renderer and will be
+removed after #531 migrates that renderer. `tot_loss_t` and `tot_loss_b` remain
+separate volume-loss facts. The Région keeps its own distribution signature but
+does not receive a commune-comparison cloud; a regional cloud would be
+misleading rather than useful.

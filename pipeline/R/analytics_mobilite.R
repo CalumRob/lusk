@@ -16,12 +16,31 @@
 # préserve » (le delta, saillance). Les libellés disent « à pied ou en
 # transports en commun » — jamais « sans voiture » hors du titre de la Story.
 
-# CLES_ISOLATION_MOBILITE ------------------------------------------------------
-# Les 5 clusters de services de la grille (ADR-0012 point 2) : la clé
-# analytique (le vocabulaire CONTEXT : alimentation, santé, administration,
-# école, banque) et la colonne du snapshot porté qui porte sa part d'accès à
-# pied/TC (share_*_t). L'indicateur EST le miroir — 1 − share_*, le même fait
-# en cadrage de privation, jamais un second indicateur.
+# CLES_ACCES_MOBILITE / CLES_ISOLATION_MOBILITE -------------------------------
+# Les 5 clusters de services de la grille (ADR-0012 point 2), dans les trois
+# modes du snapshot porté. Les clés `share_*` publient le fait direct : la part
+# des bâtiments ayant accès au service. Les clés `iso_*` restent calculées et
+# publiées pendant la transition de l'ancien rendu vers le nouveau contrat :
+# elles sont le miroir 1 − share_* en cadrage de privation, jamais un second
+# calcul analytique.
+CLES_ACCES_MOBILITE <- c(
+  share_food_t = "share_food_t",
+  share_food_b = "share_food_b",
+  share_food_c = "share_food_c",
+  share_health_t = "share_health_t",
+  share_health_b = "share_health_b",
+  share_health_c = "share_health_c",
+  share_admin_t = "share_admin_t",
+  share_admin_b = "share_admin_b",
+  share_admin_c = "share_admin_c",
+  share_school_t = "share_school_t",
+  share_school_b = "share_school_b",
+  share_school_c = "share_school_c",
+  share_bank_t = "share_bank_t",
+  share_bank_b = "share_bank_b",
+  share_bank_c = "share_bank_c"
+)
+
 CLES_ISOLATION_MOBILITE <- c(
   iso_alimentation = "share_food_t",
   iso_sante = "share_health_t",
@@ -62,6 +81,22 @@ ensure_mode_neutrality <- function(div_loss_t, div_loss_b) {
   dplyr::if_else(div_loss_b > div_loss_t, div_loss_t, div_loss_b)
 }
 
+# calculer_parts_acces_communes -----------------------------------------------
+# Les 15 parts d'accès COMMUNALES, directement lues dans le snapshot porté.
+# Table longue (commune × clé × valeur), triée par commune puis clé —
+# déterministe. L'agrégation des niveaux est l'affaire de
+# agreger_parts_acces_territoires.
+calculer_parts_acces_communes <- function(snapshot) {
+  dplyr::bind_rows(lapply(seq_along(CLES_ACCES_MOBILITE), function(i) {
+    tibble::tibble(
+      commune = snapshot$commune,
+      key = names(CLES_ACCES_MOBILITE)[[i]],
+      value = snapshot[[CLES_ACCES_MOBILITE[[i]]]]
+    )
+  })) %>%
+    dplyr::arrange(commune, key)
+}
+
 # calculer_parts_isolation_communes --------------------------------------------
 # Les 5 parts d'isolation COMMUNALES : le miroir des parts d'accès à pied/TC —
 # 1 − share_*_t par cluster (alimentation, santé, administration, école,
@@ -77,6 +112,38 @@ calculer_parts_isolation_communes <- function(snapshot) {
     )
   })) %>%
     dplyr::arrange(commune, key)
+}
+
+# agreger_parts_acces_territoires ----------------------------------------------
+# Les 15 parts d'accès aux QUATRE niveaux. Même règle que pour le miroir :
+# moyenne pondérée par les bâtiments, jamais moyenne des communes.
+agreger_parts_acces_territoires <- function(acces, poids, base_epci) {
+  ctx <- acces %>%
+    dplyr::left_join(poids, by = "commune") %>%
+    dplyr::left_join(base_epci[c("CODGEO", "EPCI", "DEP")],
+                     by = c("commune" = "CODGEO"))
+
+  dplyr::bind_rows(
+    ctx %>%
+      dplyr::select(commune, key, value) %>%
+      dplyr::rename(code = commune),
+    ctx %>%
+      dplyr::filter(!is.na(EPCI)) %>%
+      dplyr::group_by(code = EPCI, key) %>%
+      dplyr::summarise(value = sum(value * nb_buildings) / sum(nb_buildings),
+                       .groups = "drop"),
+    ctx %>%
+      dplyr::group_by(code = DEP, key) %>%
+      dplyr::summarise(value = sum(value * nb_buildings) / sum(nb_buildings),
+                       .groups = "drop"),
+    ctx %>%
+      dplyr::group_by(key) %>%
+      dplyr::summarise(code = "53",
+                       value = sum(value * nb_buildings) / sum(nb_buildings),
+                       .groups = "drop")
+  ) %>%
+    dplyr::select(code, key, value) %>%
+    dplyr::arrange(code, key)
 }
 
 # agreger_parts_isolation_territoires ------------------------------------------
@@ -466,6 +533,29 @@ construire_rangs_isolation <- function(isolation_territoires, territoires) {
 
   directions <- stats::setNames(rep("low", length(CLES_ISOLATION_MOBILITE)),
                                 names(CLES_ISOLATION_MOBILITE))
+
+  dplyr::bind_rows(compute_ranks(territoires, tables, scalaires = list(),
+                                 directions = directions)) %>%
+    dplyr::arrange(code, key)
+}
+
+# construire_rangs_acces -------------------------------------------------------
+# Les 15 parts d'accès sont high-is-good : plus de bâtiments atteignent le
+# service, mieux c'est. Elles partagent la même machinerie de rangs et le même
+# contexte que leurs miroirs iso_* ; les deux familles restent distinctes dans
+# le payload pour permettre la transition du rendu sans recalcul côté app.
+construire_rangs_acces <- function(acces_territoires, territoires) {
+  tables <- lapply(names(CLES_ACCES_MOBILITE), function(key) {
+    dplyr::left_join(
+      territoires["code"],
+      acces_territoires %>% dplyr::filter(key == !!key),
+      by = "code"
+    )
+  })
+  names(tables) <- names(CLES_ACCES_MOBILITE)
+
+  directions <- stats::setNames(rep("high", length(CLES_ACCES_MOBILITE)),
+                                names(CLES_ACCES_MOBILITE))
 
   dplyr::bind_rows(compute_ranks(territoires, tables, scalaires = list(),
                                  directions = directions)) %>%

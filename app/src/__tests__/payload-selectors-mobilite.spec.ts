@@ -42,7 +42,8 @@ const payloadMobilite: Payload = {
 }
 
 /** L'ordre de la fiche — le registre indicator_keys de la métadonnée Mobilité
- *  (onze clés depuis l'issue #368 — `nb_buildings` a quitté le payload). */
+ *  (les clés publiées du registre Mobilité — `nb_buildings` a quitté le
+ *  payload). */
 const ORDRE_METADONNEES = [
   'voitures_menage',
   'reseaux',
@@ -55,10 +56,25 @@ const ORDRE_METADONNEES = [
   'iso_administration',
   'iso_ecole',
   'iso_banque',
+  'share_food_t',
+  'share_food_b',
+  'share_food_c',
+  'share_health_t',
+  'share_health_b',
+  'share_health_c',
+  'share_admin_t',
+  'share_admin_b',
+  'share_admin_c',
+  'share_school_t',
+  'share_school_b',
+  'share_school_c',
+  'share_bank_t',
+  'share_bank_b',
+  'share_bank_c',
 ]
 
 describe('indicateursPourTerritoire — the Mobilité block in the metadata order', () => {
-  it('returns the 11 keys in the fiche order (the metadata indicator_keys, #318)', () => {
+  it('returns the published keys in the fiche order (the metadata indicator_keys, #318)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     expect(groupes.map((g) => g.key)).toEqual(ORDRE_METADONNEES)
@@ -78,12 +94,7 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
         'offre_cyclable',
         'iso_alimentation',
       ])
-      expect(cles.slice(7)).toEqual([
-        'iso_sante',
-        'iso_administration',
-        'iso_ecole',
-        'iso_banque',
-      ])
+      expect(cles.slice(7)).toEqual(ORDRE_METADONNEES.slice(7))
     }
   })
 

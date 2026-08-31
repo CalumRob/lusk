@@ -206,6 +206,40 @@ export function indicateursParDataset(): ReadonlyMap<string, readonly Indicateur
   return parDataset
 }
 
+const MOBILITE_SHARE_LABELS: Record<string, string> = {
+  share_food_t: 'Part des bâtiments avec accès à l’alimentation — à pied ou en transports en commun',
+  share_food_b: 'Part des bâtiments avec accès à l’alimentation — à vélo',
+  share_food_c: 'Part des bâtiments avec accès à l’alimentation — en voiture',
+  share_health_t: 'Part des bâtiments avec accès à la santé — à pied ou en transports en commun',
+  share_health_b: 'Part des bâtiments avec accès à la santé — à vélo',
+  share_health_c: 'Part des bâtiments avec accès à la santé — en voiture',
+  share_admin_t: 'Part des bâtiments avec accès aux services administratifs — à pied ou en transports en commun',
+  share_admin_b: 'Part des bâtiments avec accès aux services administratifs — à vélo',
+  share_admin_c: 'Part des bâtiments avec accès aux services administratifs — en voiture',
+  share_school_t: 'Part des bâtiments avec accès à l’école — à pied ou en transports en commun',
+  share_school_b: 'Part des bâtiments avec accès à l’école — à vélo',
+  share_school_c: 'Part des bâtiments avec accès à l’école — en voiture',
+  share_bank_t: 'Part des bâtiments avec accès à la banque — à pied ou en transports en commun',
+  share_bank_b: 'Part des bâtiments avec accès à la banque — à vélo',
+  share_bank_c: 'Part des bâtiments avec accès à la banque — en voiture',
+}
+
+const MOBILITE_SHARE_INDICATORS: Record<string, IndicateurMethodes> = Object.fromEntries(
+  Object.entries(MOBILITE_SHARE_LABELS).map(([key, label]) => [
+    key,
+    {
+      label,
+      definition:
+        `${label}. La valeur est la part des bâtiments résidentiels du territoire d’où l’on peut atteindre le service en vingt minutes. Plus cette part est élevée, mieux c’est.`,
+      unite: '%',
+      source:
+        'Lusk — analyse d’accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+      sourceId: 'mobilite_snapshot',
+      direction: 'plus-est-mieux' as const,
+    },
+  ]),
+)
+
 /**
  * Le registre complet — une entrée par thème construit. Ordre du registre =
  * ordre d'affichage de la page (démographie, habitat, économie). La forme
@@ -684,6 +718,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         sourceId: 'mobilite_snapshot',
         direction: 'moins-est-mieux',
       },
+      ...MOBILITE_SHARE_INDICATORS,
     },
     stories: [
       {

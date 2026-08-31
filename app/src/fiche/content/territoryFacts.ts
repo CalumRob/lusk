@@ -47,6 +47,8 @@ export interface FactComparison {
 export interface NumericFact {
   key: string
   detail: string | null
+  /** Payload-owned label when this fact is a published indicator. */
+  label?: string | null
   value: number | null
   unit: string
   availability: FactAvailability
@@ -95,7 +97,22 @@ export interface MobiliteAccessFacts {
 export interface MobiliteLossFacts {
   diversityWalkTransit: NumericFact
   diversityBike: NumericFact
-  fullyIsolatedShare: NumericFact
+  distributionWalkTransit: MobiliteDistributionSignature | null
+  distributionPeers: readonly MobiliteDistributionPeer[]
+}
+
+/** The normalized building-level signature used by the Mobilité distribution figure. */
+export interface MobiliteDistributionSignature {
+  densities: readonly (number | null)[]
+  quantiles: readonly (number | null)[]
+  min: number | null
+  max: number | null
+}
+
+/** One same-scope walk/transit value for the distribution context cloud. */
+export interface MobiliteDistributionPeer {
+  territoire: TerritoryIdentity
+  value: number
 }
 
 export interface TerritoryIdentity {
@@ -137,6 +154,36 @@ const ACCESS_MODES: Readonly<Record<MobiliteAccessMode, SourceAccessMode>> = {
   walkTransit: 't',
 }
 
+const ACCESS_INDICATOR_KEYS: Readonly<
+  Record<MobiliteService, Record<SourceAccessMode, string>>
+> = {
+  administration: {
+    c: 'share_admin_c',
+    b: 'share_admin_b',
+    t: 'share_admin_t',
+  },
+  alimentation: {
+    c: 'share_food_c',
+    b: 'share_food_b',
+    t: 'share_food_t',
+  },
+  sante: {
+    c: 'share_health_c',
+    b: 'share_health_b',
+    t: 'share_health_t',
+  },
+  banque: {
+    c: 'share_bank_c',
+    b: 'share_bank_b',
+    t: 'share_bank_t',
+  },
+  ecole: {
+    c: 'share_school_c',
+    b: 'share_school_b',
+    t: 'share_school_t',
+  },
+}
+
 const STORY_METRICS = {
   diversityWalkTransit: {
     key: 'div_loss_t',
@@ -147,11 +194,6 @@ const STORY_METRICS = {
     key: 'div_loss_b',
     unit: 'types de services',
     read: (histoire: HistoireMobilite) => histoire.div_loss_b,
-  },
-  fullyIsolatedShare: {
-    key: 'pct_iso_full_t',
-    unit: '%',
-    read: (histoire: HistoireMobilite) => histoire.pct_iso_full_t,
   },
 } as const
 
@@ -173,6 +215,7 @@ function availabilityOf(value: number | null, present: boolean): FactAvailabilit
 function factOf(options: {
   key: string
   detail?: string | null
+  label?: string | null
   value: number | null
   unit: string
   present: boolean
@@ -183,6 +226,7 @@ function factOf(options: {
   return {
     key: options.key,
     detail: options.detail ?? null,
+    label: options.label ?? null,
     value: options.value,
     unit: options.unit,
     availability: availabilityOf(options.value, options.present),
@@ -348,6 +392,7 @@ function indicatorsOf(
       return factOf({
         key: row.key,
         detail: row.detail,
+        label: payload.themeMetadata?.mobilite?.indicator_labels[row.key] ?? null,
         value: row.value,
         unit: row.unit,
         present: true,
@@ -360,14 +405,6 @@ function indicatorsOf(
     })
 }
 
-function absentAccessFact(
-  key: string,
-  detail: string | null,
-  unit: string,
-): NumericFact {
-  return factOf({ key, detail, value: null, unit, present: false })
-}
-
 function accessFact(
   key: string,
   detail: string | null,
@@ -375,6 +412,7 @@ function accessFact(
   unit: string,
   present: boolean,
   provenance: FactProvenance | null,
+  comparison: FactComparison | null,
 ): NumericFact {
   return factOf({
     key,
@@ -383,64 +421,76 @@ function accessFact(
     unit,
     present,
     provenance,
+    comparison,
   })
 }
 
-function accessOf(target: Territoire, reader: MobiliteAccessReader): MobiliteAccessFacts {
-  const snapshot = reader(target.territoire)
-  if (!snapshot) {
-    const missingModes = Object.fromEntries(
-      SERVICES.map((service) => [
-        service,
-        {
-          car: absentAccessFact(`access.${service}`, 'car', '%'),
-          bike: absentAccessFact(`access.${service}`, 'bike', '%'),
-          walkTransit: absentAccessFact(`access.${service}`, 'walkTransit', '%'),
-        },
-      ]),
-    ) as Record<MobiliteService, MobiliteAccessModes>
-
-    return {
-      availability: 'absent',
-      totalBuildings: absentAccessFact('access.totalBuildings', null, 'bâtiments'),
-      totalBrittanyBuildings: absentAccessFact(
-        'access.totalBrittanyBuildings',
-        null,
-        'bâtiments',
-      ),
-      byService: missingModes,
-    }
+function accessOf(
+  payload: Payload,
+  target: Territoire,
+  scope: ComparisonScope | null,
+  reader: MobiliteAccessReader,
+): MobiliteAccessFacts {
+  const snapshots = new Map<string, MobiliteAccessSnapshot | null>()
+  const read = (territoire: string): MobiliteAccessSnapshot | null => {
+    if (snapshots.has(territoire)) return snapshots.get(territoire) ?? null
+    const snapshot = reader(territoire)
+    snapshots.set(territoire, snapshot)
+    return snapshot
   }
 
-  const provenance = snapshot.provenance
+  const snapshot = read(target.territoire)
+  const rowFor = (service: MobiliteService, mode: MobiliteAccessMode): Indicateur | null =>
+    payload.indicateurs.find(
+      (row) =>
+        row.theme === 'mobilite' &&
+        row.territoire === target.territoire &&
+        row.key === ACCESS_INDICATOR_KEYS[service][ACCESS_MODES[mode]] &&
+        (row.detail ?? null) === null,
+    ) ?? null
+
+  const comparisonFor = (
+    service: MobiliteService,
+    mode: MobiliteAccessMode,
+    value: number | null | undefined,
+    row: Indicateur | null,
+  ): FactComparison | null => {
+    if (!scope) return null
+    if (row) return indicatorComparison(payload, scope, row, 'plus-est-mieux')
+    const values = scope.territoryIds.flatMap((territoire) => {
+      const peer = read(territoire)
+      const peerValue = peer?.parts[service]?.[ACCESS_MODES[mode]]
+      return typeof peerValue === 'number' ? [peerValue] : []
+    })
+    if (values.length === 0) return null
+    return comparisonOf({
+      scope,
+      direction: 'plus-est-mieux',
+      value: value ?? null,
+      values,
+    })
+  }
+
   const byService = Object.fromEntries(
     SERVICES.map((service) => {
-      const parts = snapshot.parts[service]
+      const modeFact = (mode: MobiliteAccessMode): NumericFact => {
+        const row = rowFor(service, mode)
+        const legacyValue = snapshot?.parts[service]?.[ACCESS_MODES[mode]]
+        const value = row ? row.value : legacyValue
+        return accessFact(
+          `access.${service}`,
+          mode,
+          value,
+          '%',
+          row !== null || legacyValue !== undefined,
+          row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : snapshot?.provenance ?? null,
+          comparisonFor(service, mode, value, row),
+        )
+      }
       const modes: MobiliteAccessModes = {
-        car: accessFact(
-          `access.${service}`,
-          'car',
-          parts?.[ACCESS_MODES.car],
-          '%',
-          parts?.[ACCESS_MODES.car] !== undefined,
-          provenance,
-        ),
-        bike: accessFact(
-          `access.${service}`,
-          'bike',
-          parts?.[ACCESS_MODES.bike],
-          '%',
-          parts?.[ACCESS_MODES.bike] !== undefined,
-          provenance,
-        ),
-        walkTransit: accessFact(
-          `access.${service}`,
-          'walkTransit',
-          parts?.[ACCESS_MODES.walkTransit],
-          '%',
-          parts?.[ACCESS_MODES.walkTransit] !== undefined,
-          provenance,
-        ),
+        car: modeFact('car'),
+        bike: modeFact('bike'),
+        walkTransit: modeFact('walkTransit'),
       }
       return [service, modes]
     }),
@@ -449,18 +499,20 @@ function accessOf(target: Territoire, reader: MobiliteAccessReader): MobiliteAcc
   const totalBuildings = accessFact(
     'access.totalBuildings',
     null,
-    snapshot.batimentsTerritoire,
+    snapshot?.batimentsTerritoire,
     'bâtiments',
-    true,
-    provenance,
+    snapshot !== null,
+    snapshot?.provenance ?? null,
+    null,
   )
   const totalBrittanyBuildings = accessFact(
     'access.totalBrittanyBuildings',
     null,
-    snapshot.totalBatimentsBretons,
+    snapshot?.totalBatimentsBretons,
     'bâtiments',
-    true,
-    provenance,
+    snapshot !== null,
+    snapshot?.provenance ?? null,
+    null,
   )
   const allFacts = [
     totalBuildings,
@@ -519,7 +571,49 @@ function lossesOf(
   return {
     diversityWalkTransit: makeLossFact('diversityWalkTransit'),
     diversityBike: makeLossFact('diversityBike'),
-    fullyIsolatedShare: makeLossFact('fullyIsolatedShare'),
+    distributionWalkTransit: histoire
+      ? {
+          densities: [
+            histoire.dens_1,
+            histoire.dens_2,
+            histoire.dens_3,
+            histoire.dens_4,
+            histoire.dens_5,
+            histoire.dens_6,
+            histoire.dens_7,
+            histoire.dens_8,
+            histoire.dens_9,
+            histoire.dens_10,
+          ],
+          quantiles: [
+            histoire.dec_1,
+            histoire.dec_2,
+            histoire.dec_3,
+            histoire.dec_4,
+            histoire.dec_5,
+            histoire.dec_6,
+            histoire.dec_7,
+            histoire.dec_8,
+            histoire.dec_9,
+            histoire.dec_10,
+          ],
+          min: histoire.dens_min,
+          max: histoire.dens_max,
+        }
+      : null,
+    distributionPeers: scope
+      ? scope.territoryIds.flatMap((territoire) => {
+          const peer = payload.histoires.find(
+            (candidate): candidate is HistoireMobilite =>
+              candidate.theme === 'mobilite' && candidate.territoire === territoire,
+          )
+          const reference = payload.territoires.find(
+            (candidate) => candidate.territoire === territoire,
+          )
+          if (!peer || !reference) return []
+          return [{ territoire: identityOf(reference), value: peer.div_loss_t }]
+        })
+      : [],
   }
 }
 
@@ -538,7 +632,7 @@ export function territoryFactsFor(
     theme: 'mobilite',
     mobility: {
       indicators: indicatorsOf(payload, target, scope),
-      access: accessOf(target, accessReader),
+      access: accessOf(payload, target, scope, accessReader),
       losses: lossesOf(payload, target, scope),
     },
   }

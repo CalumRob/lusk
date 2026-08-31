@@ -46,7 +46,7 @@ async function monter(territoire: string, payload: Payload = payloadMobilite) {
 }
 
 describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le sous-bloc)', () => {
-  it('renders the metadata subgroup and the 11 figures — compact figure first, then the key order', async () => {
+  it('renders the metadata subgroup and the published figures — compact figure first, then the key order', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
@@ -66,6 +66,21 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       'iso_administration',
       'iso_ecole',
       'iso_banque',
+      'share_food_t',
+      'share_food_b',
+      'share_food_c',
+      'share_health_t',
+      'share_health_b',
+      'share_health_c',
+      'share_admin_t',
+      'share_admin_b',
+      'share_admin_c',
+      'share_school_t',
+      'share_school_b',
+      'share_school_c',
+      'share_bank_t',
+      'share_bank_b',
+      'share_bank_c',
     ])
   })
 

@@ -619,12 +619,45 @@ export const indicateursOffreCyclableFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'offre_cyclable', detail: 'total_longueur', value: 4913.233, unit: 'km', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
 ]
 
-/** Les ONZE clés du thème (INDICATEURS_MOBILITE) : les 5 parts d'isolation de
- * la grille, l'étage demande/réseaux et le sous-bloc — `nb_buildings` QUITTE
+/** Les clés d'accès publiées du thème (INDICATEURS_MOBILITE) : les 5 parts
+ * d'accès directes (trois modes par service), complétées par les 5 parts d'isolation de
+ * les 5 parts d'isolation de la grille, l'étage demande/réseaux et le sous-bloc — `nb_buildings` QUITTE
  * le payload (issue #368, décision #196) — valeurs réelles du payload
  * reshapé, une ligne par (territoire × key × detail), plus la clé
  * multi-mesures « L'offre cyclable » (issue #232, les lignes
  * d'indicateursOffreCyclableFixture). */
+const CLES_ACCES_MOBILITE_FIXTURE = [
+  'share_food_t', 'share_food_b', 'share_food_c',
+  'share_health_t', 'share_health_b', 'share_health_c',
+  'share_admin_t', 'share_admin_b', 'share_admin_c',
+  'share_school_t', 'share_school_b', 'share_school_c',
+  'share_bank_t', 'share_bank_b', 'share_bank_c',
+] as const
+
+const indicateursAccesMobiliteFixture: Indicateur[] = ([
+  ['22001', 'commune', [0, 0, 1, 0, 0, 1, 0.36, 0.32, 1, 0, 0, 1, 0, 0, 1]],
+  ['200000001', 'epci', [0.610111918604651, 0.549, 1, 0.448648255813954, 0.404, 1, 0.56853125, 0.512, 1, 0.574292151162791, 0.517, 1, 0.299010174418605, 0.269, 1]],
+  ['22', 'departement', [0.613244684728932, 0.552, 1, 0.534464290510596, 0.481, 1, 0.619575392242256, 0.558, 1, 0.621973432278017, 0.56, 1, 0.445400607021031, 0.4, 1]],
+  ['53', 'region', [0.689505131671213, 0.62, 1, 0.611447811255188, 0.55, 1, 0.656679516957644, 0.591, 1, 0.676997853835227, 0.609, 1, 0.497752264261044, 0.448, 1]],
+] as const).flatMap(([territoire, type, values]) =>
+  CLES_ACCES_MOBILITE_FIXTURE.map((key, index) => ({
+    territoire,
+    type,
+    theme: 'mobilite' as const,
+    key,
+    detail: null,
+    value: values[index] ?? null,
+    unit: '%',
+    rang_epci: null,
+    rang_epci_n: null,
+    rang_dep: null,
+    rang_dep_n: null,
+    rang_reg: null,
+    rang_reg_n: null,
+    ...vintageSnapshotMobilite,
+  })),
+)
+
 export const indicateursMobiliteFixture: Indicateur[] = [
   // 22001 — la commune réelle : ses rangs ordinaux dans SON EPCI (ADR-0021),
   // tailles portées (le « / Y »), plus aucun rang départemental ou régional.
@@ -702,6 +735,7 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   { territoire: '53', type: 'region', theme: 'mobilite', key: 'reseaux', detail: 't_longueur', value: 6732.87001274969, unit: "km", rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, ...vintageReseauxMobilite },
   // la douzième clé du thème (issue #232) : la figure « L'offre cyclable » du
   // sous-bloc — 5 mesures par territoire (indicateursOffreCyclableFixture)
+  ...indicateursAccesMobiliteFixture,
   ...indicateursOffreCyclableFixture,
 ]
 
@@ -1612,6 +1646,21 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
           'iso_administration',
           'iso_ecole',
           'iso_banque',
+          'share_food_t',
+          'share_food_b',
+          'share_food_c',
+          'share_health_t',
+          'share_health_b',
+          'share_health_c',
+          'share_admin_t',
+          'share_admin_b',
+          'share_admin_c',
+          'share_school_t',
+          'share_school_b',
+          'share_school_c',
+          'share_bank_t',
+          'share_bank_b',
+          'share_bank_c',
         ],
         figure: { family: 'scalar', indicator: 'offre_cyclable' },
         reading: {
@@ -1644,6 +1693,21 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       'iso_administration',
       'iso_ecole',
       'iso_banque',
+      'share_food_t',
+      'share_food_b',
+      'share_food_c',
+      'share_health_t',
+      'share_health_b',
+      'share_health_c',
+      'share_admin_t',
+      'share_admin_b',
+      'share_admin_c',
+      'share_school_t',
+      'share_school_b',
+      'share_school_c',
+      'share_bank_t',
+      'share_bank_b',
+      'share_bank_c',
     ],
     story_keys: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
     sources: {
@@ -1658,6 +1722,21 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       iso_administration: 'mobilite_snapshot',
       iso_ecole: 'mobilite_snapshot',
       iso_banque: 'mobilite_snapshot',
+      share_food_t: 'mobilite_snapshot',
+      share_food_b: 'mobilite_snapshot',
+      share_food_c: 'mobilite_snapshot',
+      share_health_t: 'mobilite_snapshot',
+      share_health_b: 'mobilite_snapshot',
+      share_health_c: 'mobilite_snapshot',
+      share_admin_t: 'mobilite_snapshot',
+      share_admin_b: 'mobilite_snapshot',
+      share_admin_c: 'mobilite_snapshot',
+      share_school_t: 'mobilite_snapshot',
+      share_school_b: 'mobilite_snapshot',
+      share_school_c: 'mobilite_snapshot',
+      share_bank_t: 'mobilite_snapshot',
+      share_bank_b: 'mobilite_snapshot',
+      share_bank_c: 'mobilite_snapshot',
     },
     indicator_labels: {
       iso_alimentation: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
@@ -1665,6 +1744,21 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       iso_administration: 'Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)',
       iso_ecole: 'Part des bâtiments sans accès à l’école (à pied ou en transports en commun)',
       iso_banque: 'Part des bâtiments sans accès à la banque (à pied ou en transports en commun)',
+      share_food_t: 'Part des bâtiments avec accès à l’alimentation — à pied ou en transports en commun',
+      share_food_b: 'Part des bâtiments avec accès à l’alimentation — à vélo',
+      share_food_c: 'Part des bâtiments avec accès à l’alimentation — en voiture',
+      share_health_t: 'Part des bâtiments avec accès à la santé — à pied ou en transports en commun',
+      share_health_b: 'Part des bâtiments avec accès à la santé — à vélo',
+      share_health_c: 'Part des bâtiments avec accès à la santé — en voiture',
+      share_admin_t: 'Part des bâtiments avec accès aux services administratifs — à pied ou en transports en commun',
+      share_admin_b: 'Part des bâtiments avec accès aux services administratifs — à vélo',
+      share_admin_c: 'Part des bâtiments avec accès aux services administratifs — en voiture',
+      share_school_t: 'Part des bâtiments avec accès à l’école — à pied ou en transports en commun',
+      share_school_b: 'Part des bâtiments avec accès à l’école — à vélo',
+      share_school_c: 'Part des bâtiments avec accès à l’école — en voiture',
+      share_bank_t: 'Part des bâtiments avec accès à la banque — à pied ou en transports en commun',
+      share_bank_b: 'Part des bâtiments avec accès à la banque — à vélo',
+      share_bank_c: 'Part des bâtiments avec accès à la banque — en voiture',
       voitures_menage: 'Voitures par ménage',
       reseaux: 'Réseaux à pied / vélo / voiture',
       offre_tc: 'Part des bâtiments près d’un arrêt (à 500 m)',

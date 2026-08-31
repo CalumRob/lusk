@@ -221,7 +221,7 @@ agreger_nb_buildings_territoires <- function(communes, base_epci) {
 # moindre écriture — jamais un succès partiel silencieux.
 COLONNES_ANALYTIQUES_MOBILITE <- c(
   "commune", "nb_buildings",
-  unname(CLES_ISOLATION_MOBILITE),
+  unname(CLES_ACCES_MOBILITE),
   "med_div_loss_t", "med_div_loss_b", "pct_iso_full_t",
   "med_tot_loss_t", "med_tot_loss_b",
   "med_tot_loss_t_epci", "med_tot_loss_b_epci",
@@ -245,16 +245,18 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
 # Le seam enchaîne les builders de analytics_mobilite.R — il ne calcule RIEN
 # lui-même :
 #   - la « Taille » : nb_buildings par niveau (agreger_nb_buildings_territoires) ;
-#   - les 5 parts d'isolation (1 − share_*, calculer_parts_isolation_communes)
-#     agrégées aux quatre niveaux (agreger_parts_isolation_territoires — la
-#     moyenne pondérée par les bâtiments, jamais une moyenne de parts) ;
+#   - les 15 parts d'accès direct (calculer_parts_acces_communes) et leurs
+#     quatre niveaux (agreger_parts_acces_territoires — la moyenne pondérée par
+#     les bâtiments, jamais une moyenne de parts) ; les 5 parts d'isolation
+#     restent assemblées comme miroir de compatibilité ;
 #   - div_loss_t/b (calculer_div_loss_communes — la neutralité modale sur la
 #     base d'abord) aux quatre niveaux (agreger_div_loss_territoires — les
 #     valeurs du fichier, recalcul depuis les parties quand le fichier est muet) ;
 #   - la classification de saillance (construire_saillance_territoires), la
 #     signature de densité (construire_signature_densite), le nuage même-échelle
 #     (construire_nuage_territoires) et les rangs-en-contexte des parts
-#     d'isolation via la machinerie partagée (construire_rangs_isolation) ;
+#     d'accès et d'isolation via la machinerie partagée
+#     (construire_rangs_acces / construire_rangs_isolation) ;
 #   - l'étage demande/réseaux (issue #139) : la demande (voitures/ménage — la
 #     moyenne pondérée par les ménages, jamais une moyenne de parts) et les
 #     réseaux t/b/c (longueurs sommées, densités Σ L ÷ Σ surface — la règle
@@ -293,6 +295,10 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   )
 
   # le chaînon analytique flagship (issue #138)
+  acces_communes <- calculer_parts_acces_communes(snapshot)
+  acces_territoires <- agreger_parts_acces_territoires(
+    acces_communes, mobilite_communes, base_epci
+  )
   isolation_communes <- calculer_parts_isolation_communes(snapshot)
   isolation_territoires <- agreger_parts_isolation_territoires(
     isolation_communes, mobilite_communes, base_epci
@@ -310,6 +316,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   territoires <- construire_territoires_mobilite(
     base_epci, list(mobilite_communes = mobilite_communes)
   )
+  acces_rangs <- construire_rangs_acces(acces_territoires, territoires)
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
 
@@ -378,6 +385,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   readr::write_rds(mobilite_communes, file.path(sortie, "mobilite_communes.rds"))
   readr::write_rds(nb_buildings_territoires,
                    file.path(sortie, "nb_buildings_territoires.rds"))
+  readr::write_rds(acces_territoires,
+                   file.path(sortie, "acces_territoires.rds"))
   readr::write_rds(isolation_territoires,
                    file.path(sortie, "isolation_territoires.rds"))
   readr::write_rds(div_loss_territoires,
@@ -390,6 +399,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "nuage_territoires.rds"))
   readr::write_rds(isolation_rangs,
                    file.path(sortie, "isolation_rangs.rds"))
+  readr::write_rds(acces_rangs,
+                   file.path(sortie, "acces_rangs.rds"))
   readr::write_rds(voitures_communes,
                    file.path(sortie, "voitures_communes.rds"))
   readr::write_rds(voitures_territoires,
@@ -412,12 +423,14 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   list(
     mobilite_communes = mobilite_communes,
     nb_buildings_territoires = nb_buildings_territoires,
+    acces_territoires = acces_territoires,
     isolation_territoires = isolation_territoires,
     div_loss_territoires = div_loss_territoires,
     saillance_territoires = saillance_territoires,
     densite_territoires = densite_territoires,
     nuage_territoires = nuage_territoires,
     isolation_rangs = isolation_rangs,
+    acces_rangs = acces_rangs,
     voitures_communes = voitures_communes,
     voitures_territoires = voitures_territoires,
     reseaux_communes = reseaux_communes,
@@ -482,10 +495,12 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     le jeu Geovelo (amenagements_cyclables) et la population du hub
 #     (stationnement-velo, le dénominateur des km/1 000 hab) restent des
 #     sources de l'indicateur.
+#   - les QUINZE parts d'accès (share_*_t/b/c) : les faits directs de la grille,
+#     une ligne par territoire et clé, la multiplicité 1 ;
 #   - les CINQ parts d'isolation (issue #141) : iso_alimentation, iso_sante,
-#     iso_administration, iso_ecole, iso_banque — la GRILLE du flagship, les
-#     parts des bâtiments SANS accès à pied ou en transports en commun à 20
-#     minutes (1 − share_*), une ligne par territoire, la multiplicité 1.
+#     iso_administration, iso_ecole, iso_banque — le miroir legacy des parts
+#     d'accès à pied ou en transports en commun (1 − share_*_t), conservé le
+#     temps que le rendu prototype soit migré ;
 #     Chaque part porte SON rang-en-contexte (l'artefact isolation_rangs.rds)
 #     et l'estampille SNAPSHOT (la source de référence « mobilite_snapshot » —
 #     la date d'instantané de l'analyse, le fait de vintage de première classe
@@ -506,9 +521,10 @@ INDICATEURS_MOBILITE <- tibble::tibble(
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
            "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
            "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
-          "offre_cyclable",
-          names(CLES_ISOLATION_MOBILITE),
-          "raccordement_tc", "raccordement_courbe", "raccordement_reference"),
+           "offre_cyclable",
+           names(CLES_ISOLATION_MOBILITE),
+           names(CLES_ACCES_MOBILITE),
+           "raccordement_tc", "raccordement_courbe", "raccordement_reference"),
   libelle = c(
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
@@ -523,10 +539,25 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "L’offre cyclable",
     "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
     "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
-    "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
-    "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
-    "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
-    "Population bretonne joignable en 90 minutes en TC",
+     "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+     "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+     "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+     "Part des bâtiments avec accès à l’alimentation — à pied ou en transports en commun",
+     "Part des bâtiments avec accès à l’alimentation — à vélo",
+     "Part des bâtiments avec accès à l’alimentation — en voiture",
+     "Part des bâtiments avec accès à la santé — à pied ou en transports en commun",
+     "Part des bâtiments avec accès à la santé — à vélo",
+     "Part des bâtiments avec accès à la santé — en voiture",
+     "Part des bâtiments avec accès aux services administratifs — à pied ou en transports en commun",
+     "Part des bâtiments avec accès aux services administratifs — à vélo",
+     "Part des bâtiments avec accès aux services administratifs — en voiture",
+     "Part des bâtiments avec accès à l’école — à pied ou en transports en commun",
+     "Part des bâtiments avec accès à l’école — à vélo",
+     "Part des bâtiments avec accès à l’école — en voiture",
+     "Part des bâtiments avec accès à la banque — à pied ou en transports en commun",
+     "Part des bâtiments avec accès à la banque — à vélo",
+     "Part des bâtiments avec accès à la banque — en voiture",
+     "Population bretonne joignable en 90 minutes en TC",
     "Courbe cumulative — population bretonne joignable en TC",
     "Référence médiane — commune bretonne"
   ),
@@ -539,18 +570,25 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "osm_reseaux", c("bornes-recharges", "bpe_b316"),
      c("stationnement-velo", "osm_reseaux"), "mobilite_snapshot", "mobilite_snapshot",
     c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
-    "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
-    "mobilite_snapshot", "mobilite_snapshot",
-    "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies"
+     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+     "mobilite_snapshot", "mobilite_snapshot",
+     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+     "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+     "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies"
   ),
    source_reference = c("rp_logement_princ", "amenagements_cyclables",
                         "korrigo", "bornes-recharges", "stationnement-velo",
                         "osm_reseaux", "bpe_b316", "osm_reseaux",
-                        "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
-                        rep("mobilite_snapshot", 5),
-                        "matrice_temps_mairies", "matrice_temps_mairies",
+                         "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
+                         rep("mobilite_snapshot", 5),
+                         rep("mobilite_snapshot", 15),
+                         "matrice_temps_mairies", "matrice_temps_mairies",
                         "matrice_temps_mairies"),
-   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5),
+    multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5),
+                     rep(1L, 15),
                     1L,
                     length(grille_raccordement()),
                     NA_integer_)
@@ -703,6 +741,21 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   rangs <- compute_ranks(territoires, tables, scalaires = list(),
                          directions = directions)
 
+  # les 15 parts d'accès direct : les valeurs de l'artefact
+  # analytique acces_territoires (longue code × key × value), alignées sur la
+  # référence — leurs rangs viennent de acces_rangs.
+  acces <- lapply(names(CLES_ACCES_MOBILITE), function(key) {
+    aligner(
+      analytiques$acces_territoires %>%
+        dplyr::filter(key == !!key) %>%
+        dplyr::select(code, value),
+      key, "%"
+    )
+  })
+  names(acces) <- names(CLES_ACCES_MOBILITE)
+  rangs_acces <- analytiques$acces_rangs %>%
+    dplyr::mutate(detail = NA_character_)
+
   # les 5 parts d'isolation (issue #141, la grille du flagship) : les valeurs
   # de l'artefact analytique isolation_territoires (longue code × key × value),
   # alignées sur la référence — leurs rangs-en-contexte viennent de l'artefact
@@ -833,6 +886,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     dplyr::bind_rows(lapply(rangs, function(rang) {
       rang %>% dplyr::mutate(detail = NA_character_)
     })),
+    rangs_acces,
     rangs_isolation,
     rangs_voitures,
     rangs_reseaux,
@@ -848,6 +902,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tables$bornes_ev_par_station_service,
     tables$stationnement_velo_par_voiture,
     tot_loss,
+    dplyr::bind_rows(acces),
     dplyr::bind_rows(isolation),
     voitures,
     reseaux,
@@ -1116,14 +1171,15 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
-  # les 5 parts d'isolation (issue #141, la grille) sont des parts dans [0, 1]
-  # (1 − share_*, le miroir des parts d'accès — une part hors de la borne est
-  # une corruption, jamais une part de bâtiments > 100 %)
+  # les 15 parts d'accès et leurs 5 miroirs sont des parts dans [0, 1] (une
+  # part hors de la borne est une corruption, jamais une part de bâtiments
+  # supérieure à 100 %)
   function(payload) {
-    iso <- payload$indicateurs$value[
-      payload$indicateurs$key %in% names(CLES_ISOLATION_MOBILITE)]
-    if (any(!is.na(iso) & (iso < 0 | iso > 1))) {
-      stop("Payload invalide : une part d'isolation sort de [0, 1].",
+    parts <- payload$indicateurs$value[
+      payload$indicateurs$key %in% c(names(CLES_ACCES_MOBILITE),
+                                     names(CLES_ISOLATION_MOBILITE))]
+    if (any(!is.na(parts) & (parts < 0 | parts > 1))) {
+      stop("Payload invalide : une part d'accès sort de [0, 1].",
            call. = FALSE)
     }
     invisible(payload)
@@ -1289,6 +1345,11 @@ DIRECTIONS_MOBILITE <- list(
   # consommées — des courbes ne sont classées nulle part
   raccordement_courbe = "high",
   raccordement_reference = "high",
+  share_food_t = "high", share_food_b = "high", share_food_c = "high",
+  share_health_t = "high", share_health_b = "high", share_health_c = "high",
+  share_admin_t = "high", share_admin_b = "high", share_admin_c = "high",
+  share_school_t = "high", share_school_b = "high", share_school_c = "high",
+  share_bank_t = "high", share_bank_b = "high", share_bank_c = "high",
   iso_alimentation = "low", iso_sante = "low",
   iso_administration = "low", iso_ecole = "low", iso_banque = "low"
 )

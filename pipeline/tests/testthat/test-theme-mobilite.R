@@ -508,6 +508,13 @@ fixture_snapshot_analytique_mobilite <- function() {
     "29002", 400, 0.8, 0.9, 0.9, 0.8, 0.9, 40, 41, 0.6, 12, 50,
     NA, NA, NA, 14, 12, 0.12, 15, 13, 0.11
   )
+  for (key in names(CLES_ACCES_MOBILITE)) {
+    if (!key %in% names(base)) {
+      t_key <- sub("_(b|c)$", "_t", key)
+      facteur <- if (grepl("_b$", key)) 0.9 else 1
+      base[[key]] <- base[[t_key]] * facteur
+    }
+  }
   for (i in 1:10) {
     base[[paste0("dens_div_t_", i)]] <- 0.01 * i
     base[[paste0("div_loss_t_dec_", i)]] <- 10 + i
@@ -586,6 +593,14 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
       pousser("nb_buildings")
       tibble::tibble(code = "22001", value = 100)
     },
+    calculer_parts_acces_communes = function(snapshot) {
+      pousser("acces_communes")
+      tibble::tibble(commune = "22001", key = "share_food_t", value = 0.9)
+    },
+    agreger_parts_acces_territoires = function(acces, poids, base_epci) {
+      pousser("acces_territoires")
+      tibble::tibble(code = "22001", key = "share_food_t", value = 0.9)
+    },
     calculer_parts_isolation_communes = function(snapshot) {
       pousser("isolation_communes")
       tibble::tibble(commune = "22001", key = "iso_alimentation", value = 0.1)
@@ -624,6 +639,11 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
     construire_rangs_isolation = function(isolation_territoires, territoires) {
       pousser("rangs")
       tibble::tibble(code = "22001", key = "iso_alimentation",
+                     rang_epci = 0, rang_dep = 0, rang_reg = 0)
+    },
+    construire_rangs_acces = function(acces_territoires, territoires) {
+      pousser("acces_rangs")
+      tibble::tibble(code = "22001", key = "share_food_t",
                      rang_epci = 0, rang_dep = 0, rang_reg = 0)
     },
     calculer_voitures_communes = function(voitures) {
@@ -690,9 +710,10 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   # le chaînon enchaîne les builders dans l'ordre — le seam ne calcule RIEN
   # lui-même, il orchestre (le flagship puis l'étage demande/réseaux, #139)
   expect_equal(suivi$ordre,
-               c("nb_buildings", "isolation_communes", "isolation_territoires",
-                 "div_loss_communes", "div_loss_territoires", "saillance",
-                 "densite", "nuage", "territoires", "rangs",
+                c("nb_buildings", "acces_communes", "acces_territoires",
+                  "isolation_communes", "isolation_territoires",
+                  "div_loss_communes", "div_loss_territoires", "saillance",
+                  "densite", "nuage", "territoires", "acces_rangs", "rangs",
                  "voitures_communes", "voitures_territoires",
                  "reseaux_communes", "reseaux_velo_communes",
                  "reseaux_territoires",
@@ -703,9 +724,10 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   # l'étage demande/réseaux (issue #139) + le sous-bloc (issue #140) + la
   # figure « L'offre cyclable » (issue #231)
   expect_named(res, c("mobilite_communes", "nb_buildings_territoires",
+                        "acces_territoires",
                         "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
-                      "nuage_territoires", "isolation_rangs",
+                       "nuage_territoires", "isolation_rangs", "acces_rangs",
                       "voitures_communes", "voitures_territoires",
                       "reseaux_communes", "reseaux_territoires",
                       "offre_tc_communes", "bornes_communes",
@@ -2223,7 +2245,7 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
   # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
-   expect_equal(nrow(ind), 19L)
+   expect_equal(nrow(ind), 34L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
                               "places_stationnement_velo_1000",
@@ -2232,9 +2254,10 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
                               "stationnement_velo_par_voiture",
                               "tot_loss_t", "tot_loss_b",
                              "offre_cyclable",
-                             "iso_alimentation", "iso_sante",
-                             "iso_administration", "iso_ecole", "iso_banque",
-                             "raccordement_tc", "raccordement_courbe",
+                              "iso_alimentation", "iso_sante",
+                              "iso_administration", "iso_ecole", "iso_banque",
+                              names(CLES_ACCES_MOBILITE),
+                              "raccordement_tc", "raccordement_courbe",
                              "raccordement_reference"))
   # `nb_buildings` QUITTE le payload (issue #368, décision #196) — jamais
   # publié, la « Taille » reste la pondération interne du thème
@@ -2375,12 +2398,32 @@ fixture_indicateurs_mobilite <- function() {
   ) %>%
     dplyr::mutate(value = 0.1 + 0.05 * match(code, codes))
 
+  acces_territoires <- tidyr::crossing(
+    code = codes, key = names(CLES_ACCES_MOBILITE)
+  ) %>%
+    dplyr::mutate(value = 0.5 + 0.01 * match(code, codes))
+
   # les rangs MOCKÉS : la forme longue (code, key, rang_epci/dep/reg et leurs
   # tailles) de isolation_rangs.rds — des ORDINAUX directionnels (ADR-0015) :
   # 1 = meilleur, la taille du groupe portée à côté ; une commune ne se classe
   # que dans son EPCI (ADR-0021 — rang_dep/rang_reg NA), un EPCI ou un
   # département dans la région, la région nulle part
   isolation_rangs <- isolation_territoires %>%
+    dplyr::transmute(
+      code = code, key = key,
+      rang_epci = dplyr::if_else(code %in% c("22001", "22002", "29001", "29002"),
+                                 1, NA_real_),
+      rang_epci_n = dplyr::if_else(code %in% c("22001", "22002", "29001", "29002"),
+                                   2, NA_real_),
+      rang_dep = NA_real_,
+      rang_dep_n = NA_real_,
+      rang_reg = dplyr::if_else(code %in% c("200000001", "200000002", "22", "29"),
+                                1, NA_real_),
+      rang_reg_n = dplyr::if_else(code %in% c("200000001", "200000002", "22", "29"),
+                                  2, NA_real_)
+    )
+
+  acces_rangs <- acces_territoires %>%
     dplyr::transmute(
       code = code, key = key,
       rang_epci = dplyr::if_else(code %in% c("22001", "22002", "29001", "29002"),
@@ -2436,6 +2479,8 @@ fixture_indicateurs_mobilite <- function() {
 
   list(
     nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
+    acces_territoires = acces_territoires,
+    acces_rangs = acces_rangs,
     isolation_territoires = isolation_territoires,
     isolation_rangs = isolation_rangs,
     voitures_territoires = voitures_territoires,
@@ -2469,12 +2514,13 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
     "offre_cyclable",
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque",
+    names(CLES_ACCES_MOBILITE),
     "raccordement_tc", "raccordement_courbe", "raccordement_reference"
   ))
   grille_n <- length(grille_raccordement())
   # 9 territoires × 27 lignes historiques = 243 ; + le raccordement :
   # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
-  expect_equal(nrow(ind), 243 + 9 + 9 * grille_n + grille_n)
+  expect_equal(nrow(ind), 243 + 9 * length(CLES_ACCES_MOBILITE) + 9 + 9 * grille_n + grille_n)
   expect_false("nb_buildings" %in% ind$key)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
@@ -2492,6 +2538,9 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(sum(ind$key == cle), 9, info = cle)
   }
+  for (cle in names(CLES_ACCES_MOBILITE)) {
+    expect_equal(sum(ind$key == cle), 9, info = cle)
+  }
 
   # chaque part d'isolation porte la valeur MOCKÉE de son artefact (la forme
   # longue de isolation_territoires.rds) avec le détail NA des clés scalaires
@@ -2500,6 +2549,8 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
                0.1 + 0.05 * match("22001", territoires$code))
   expect_equal(lire("53", "iso_banque"),
                0.1 + 0.05 * match("53", territoires$code))
+  expect_equal(lire("22001", "share_food_t"),
+               0.5 + 0.01 * match("22001", territoires$code))
 
   # chaque part d'isolation porte SES rangs-en-contexte (l'artefact
   # isolation_rangs.rds — la machinerie partagée, jamais re-forkée)
@@ -2512,6 +2563,8 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
   expect_true(is.na(rang("22001", "iso_alimentation", "rang_dep")))
   expect_true(is.na(rang("22001", "iso_alimentation", "rang_reg")))
   expect_true(is.na(rang("53", "iso_banque", "rang_reg")))
+  expect_equal(rang("22001", "share_food_t", "rang_epci"), 1)
+  expect_equal(rang("22001", "share_food_t", "rang_epci_n"), 2)
 
   # la figure « L'offre cyclable » (issue #231) : les valeurs MOCKÉES de
   # l'artefact offre_territoires, la multiplicité 5 et les RANGS PAR DÉTAIL
@@ -2544,6 +2597,11 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
   expect_true(all(iso_ind$vintage_date_publication == "2026-08-06"))
   # le détail des clés d'isolation est NA (les clés scalaires de la grille)
   expect_true(all(is.na(iso_ind$detail)))
+  share_ind <- ind[ind$key %in% names(CLES_ACCES_MOBILITE), ]
+  expect_true(all(share_ind$vintage_source == ref_snapshot))
+  expect_true(all(share_ind$vintage_date_reference == "2026-02-28"))
+  expect_true(all(share_ind$vintage_date_publication == "2026-08-06"))
+  expect_true(all(is.na(share_ind$detail)))
 
   # l'estampille de l'offre cyclable : le vintage de SA source de référence —
   # l'extrait OSM (osm_reseaux, l'horloge LENTE : la référence 2026-08-05, le

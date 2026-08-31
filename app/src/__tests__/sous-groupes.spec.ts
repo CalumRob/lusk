@@ -115,6 +115,21 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
       'iso_administration',
       'iso_ecole',
       'iso_banque',
+      'share_food_t',
+      'share_food_b',
+      'share_food_c',
+      'share_health_t',
+      'share_health_b',
+      'share_health_c',
+      'share_admin_t',
+      'share_admin_b',
+      'share_admin_c',
+      'share_school_t',
+      'share_school_b',
+      'share_school_c',
+      'share_bank_t',
+      'share_bank_b',
+      'share_bank_c',
     ])
   })
 

@@ -25,11 +25,11 @@ The semantic content for one territory within one **Thème** — the ordered Con
 _Avoid_: page de thème (confusable with the **Page d'indicateur**), payload theme, view model
 
 **ContentUnit**:
-A coherent semantic subject within ThemeContent, such as « L’accès aux services » in Mobilité. It groups related indicators and ContentSections, but is not a page, spread, or other presentation container; its order and interpretation belong to typed theme grammar rather than the published payload contract.
+A coherent semantic subject within ThemeContent, such as « Accès aux services » in Mobilité. It groups related indicators and ContentSections, but is not a page, spread, or other presentation container; its order and interpretation belong to typed theme grammar rather than the published payload contract.
 _Avoid_: page, bloc de mise en page, subgroup (the legacy payload assembly term)
 
 **ContentSection**:
-A distinct claim-and-evidence subject within a ContentUnit, such as « Perte de diversité » or « Perte totale d’accès ». It may carry an optional **Lecture** resolved from the available facts. It names semantic content and its honest availability, not a Cahier section, column, margin, or other layout placement.
+A distinct claim-and-evidence subject within a ContentUnit, such as « Perte de diversité », « Perte totale d’accès » or « Services essentiels ». It may carry an optional **Lecture** resolved from the available facts. It names semantic content and its honest availability, not a Cahier section, column, margin, or other layout placement.
 _Avoid_: section de page, panneau, card
 
 **Cahier (design exploration, 2026-08-27)**:
@@ -206,6 +206,10 @@ _Avoid_: Ce que la voiture masque (considered 2026-08-06, rejected — flat next
 **Perte de diversité (div_loss)**:
 The flagship Mobilité figure (the Story's computation, decided 2026-08-06): the number of **different service types** that disappear from a territory's daily reach when the car is removed — car access minus foot/transit access at 20 minutes, aggregated from the building-level analysis. A *count*, never an index: legible to the élu, defensible to the chargé d'études. Computed for foot/transit (`div_loss_t`) and bike (`div_loss_b`); the bike reading is mode-neutrality-clamped to never be worse than foot/transit. **Indicator mode labels say "à pied ou en transports en commun", never "sans voiture"** (decided 2026-08-06 — the phrase overclaims the bike; the story *title* is the one sanctioned exception, its « comment lire » carrying the precision).
 _Avoid_: Indice de vulnérabilité (norm_score — the old log-normalized 0–100 composite, rejected 2026-08-06 as too convoluted), score (overloaded)
+
+**Services essentiels**:
+The Mobilité content section that reads access to the five service types — administration, alimentation, santé, banque, école — within twenty minutes by car, bike, and walking or public transport. Its `share_*_{t,b,c}` indicators are the direct, typed facts of what the territory's buildings can reach; the `iso_*` indicators remain only as the ranked legacy mirror until the old renderer is migrated. The section states only the modes and comparisons carried by its available facts; missing access or comparison data stays honest rather than being filled from a fixture.
+_Avoid_: couverture totale (unless every relevant access fact supports it), médiane d'EPCI (when the resolved comparison scope says otherwise)
 
 **Part des bâtiments isolés (isolation share)**:
 The flagship's standard-indicator family (grid, decided 2026-08-06): per service cluster, the **share of a territory's buildings without any access to that service à pied ou en transports en commun at 20 minutes** — `1 − share_*`, the mirror of the access share (`1 − share ≈ pct_iso`; the two are the same fact in loss vs access framing, never two indicators). Five clusters: alimentation, santé, administration, école, banque. The deprivation framing — a territory acts on what its buildings *lack*. Rank-in-context per the fiche contract.
