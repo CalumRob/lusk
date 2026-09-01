@@ -158,6 +158,23 @@ const completeFacts: TerritoryFacts = {
       ],
     },
     access: accessFacts(),
+    bpeAccess: {
+      availability: 'complete',
+      profiles: [
+        {
+          profile: 'inaccessible-20-minutes',
+          label: 'Inaccessible ou presque en 20 minutes',
+          count: 2,
+          exemplar: {
+            typequ: 'A128',
+            label: 'France services',
+            car: 0.9,
+            bike: 0.1,
+            walkTransit: 0.1,
+          },
+        },
+      ],
+    },
   },
 }
 
@@ -222,6 +239,13 @@ describe('resolveMobiliteThemeContent', () => {
     expect(essentials.evidence).toMatchObject({
       kind: 'access',
       services: expect.arrayContaining([expect.objectContaining({ service: 'administration' })]),
+      bpeProfiles: [
+        expect.objectContaining({
+          profile: 'inaccessible-20-minutes',
+          count: 2,
+          exemplar: expect.objectContaining({ typequ: 'A128' }),
+        }),
+      ],
     })
     if (essentials.evidence?.kind === 'access') {
       for (const service of essentials.evidence.services) {
@@ -323,6 +347,7 @@ describe('resolveMobiliteThemeContent', () => {
         ]),
       ) as Record<(typeof services)[number], MobiliteAccessModes>,
     }
+    facts.mobility.bpeAccess = { availability: 'absent', profiles: [] }
 
     const sections = resolveMobiliteThemeContent(facts).units[0].sections
 

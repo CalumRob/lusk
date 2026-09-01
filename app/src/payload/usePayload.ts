@@ -43,6 +43,7 @@ import type {
   Indicateur,
   Payload,
   ProgrammesPayload,
+  ProfilAccesBpeRow,
   RunReport,
   Territoire,
   Theme,
@@ -79,6 +80,7 @@ function payloadVide(): Payload {
     runReport: null,
     vintages: null,
     programmes: null,
+    profilsAccesBpe: null,
     themeMetadata: {},
   }
 }
@@ -93,6 +95,7 @@ const TOUS_LES_FICHIERS: Fichier[] = [
   'vintages',
   'apercu',
   'programmes',
+  'profils_acces_bpe',
   ...THEMES_CANONIQUES.flatMap(
     (theme) => [`indicateurs_${theme}`, `histoires_${theme}`, `theme_${theme}`] as Fichier[],
   ),
@@ -145,6 +148,9 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         break
       case 'programmes':
         p.programmes = valeur as ProgrammesPayload | null
+        break
+      case 'profils_acces_bpe':
+        p.profilsAccesBpe = valeur as ProfilAccesBpeRow[] | null
         break
       default:
         // Un thème absent (null) ne contribue aucune ligne — l'état vide honnête.
@@ -298,6 +304,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     // résolution) ; histoires_<theme> chaîne sur sa paire indicateurs.
     lancer('apercu')
     lancer('programmes')
+    lancer('profils_acces_bpe')
     for (const theme of THEMES_CANONIQUES) {
       lancer(`indicateurs_${theme}`)
       lancer(`histoires_${theme}`)

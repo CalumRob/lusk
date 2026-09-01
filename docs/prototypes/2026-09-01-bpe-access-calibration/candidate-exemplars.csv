@@ -1,0 +1,257 @@
+"candidate_id","type_code","commune","nom","context","profile","c","t","b","rarity","signal"
+"floor-low__car-0.05__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-low__car-0.05__bike-0.05","A207","22384","Uzel","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-low__car-0.05__bike-0.05","C303","22106","Langueux","Département 22","Le vélo compense",1,0.55,0.99,0.00290697674418605,0.44
+"floor-low__car-0.05__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.05__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-low__car-0.05__bike-0.10","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-low__car-0.05__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00290697674418605,0.62
+"floor-low__car-0.05__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.05__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-low__car-0.05__bike-0.20","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-low__car-0.05__bike-0.20","B306","22362","Tréguier","Département 22","Le vélo compense",1,0.33,1,0.00290697674418605,0.67
+"floor-low__car-0.05__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.05__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-low__car-0.05__bike-0.30","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-low__car-0.05__bike-0.30","D265","22153","Moncontour","Département 22","Le vélo compense",1,0.03,1,0.00290697674418605,0.97
+"floor-low__car-0.05__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.10__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-low__car-0.10__bike-0.05","C107","22214","Plouézec","Département 22","Accès à pied ou en TC possible",0.09,0,0,0.00290697674418605,0
+"floor-low__car-0.10__bike-0.05","D267","22278","Saint-Brieuc","Département 22","Le vélo compense",1,0.69,0.99,0.00581395348837209,0.3
+"floor-low__car-0.10__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.10__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-low__car-0.10__bike-0.10","F101","56195","La Roche-Bernard","Département 56","Accès à pied ou en TC possible",1,0.9,1,0.00803212851405622,0.9
+"floor-low__car-0.10__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00581395348837209,0.62
+"floor-low__car-0.10__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.10__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-low__car-0.10__bike-0.20","C107","22278","Saint-Brieuc","Département 22","Accès à pied ou en TC possible",1,0.91,1,0.0116279069767442,0.91
+"floor-low__car-0.10__bike-0.20","A203","22094","Lancieux","Département 22","Le vélo compense",1,0.49,0.97,0.00290697674418605,0.48
+"floor-low__car-0.10__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.10__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-low__car-0.10__bike-0.30","A208","35022","Bécherel","Département 35","Accès à pied ou en TC possible",1,1,1,0.0120481927710843,1
+"floor-low__car-0.10__bike-0.30","B313","22094","Lancieux","Département 22","Le vélo compense",1,0.31,0.96,0.00290697674418605,0.65
+"floor-low__car-0.10__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.20__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-low__car-0.20__bike-0.05","B105","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0145348837209302,1
+"floor-low__car-0.20__bike-0.05","D267","22067","Grâces","Département 22","Le vélo compense",1,0.46,0.86,0.0116279069767442,0.4
+"floor-low__car-0.20__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.20__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-low__car-0.20__bike-0.10","D502","56121","Lorient","Département 56","Accès à pied ou en TC possible",1,0.97,1,0.0240963855421687,0.97
+"floor-low__car-0.20__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0116279069767442,0.72
+"floor-low__car-0.20__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.20__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-low__car-0.20__bike-0.20","A208","35022","Bécherel","Département 35","Accès à pied ou en TC possible",1,1,1,0.0391566265060241,1
+"floor-low__car-0.20__bike-0.20","A504","22259","Quévert","Département 22","Le vélo compense",1,0.65,0.88,0.00290697674418605,0.23
+"floor-low__car-0.20__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.20__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-low__car-0.20__bike-0.30","A208","35022","Bécherel","Département 35","Accès à pied ou en TC possible",1,1,1,0.0391566265060241,1
+"floor-low__car-0.20__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-low__car-0.20__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.30__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-low__car-0.30__bike-0.05","D502","56121","Lorient","Département 56","Accès à pied ou en TC possible",1,0.97,1,0.0200803212851406,0.97
+"floor-low__car-0.30__bike-0.05","C303","22070","Guingamp","Département 22","Le vélo compense",1,0,0.9,0.0203488372093023,0.9
+"floor-low__car-0.30__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.30__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-low__car-0.30__bike-0.10","A128","29043","Daoulas","Département 29","Accès à pied ou en TC possible",1,0.97,1,0.0327272727272727,0.97
+"floor-low__car-0.30__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0174418604651163,0.72
+"floor-low__car-0.30__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.30__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-low__car-0.30__bike-0.20","B103","29212","Plouzané","Département 29","Accès à pied ou en TC possible",1,0.94,0.95,0.0545454545454545,0.94
+"floor-low__car-0.30__bike-0.20","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00581395348837209,0.62
+"floor-low__car-0.30__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-low__car-0.30__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-low__car-0.30__bike-0.30","B103","29212","Plouzané","Département 29","Accès à pied ou en TC possible",1,0.94,0.95,0.0654545454545455,0.94
+"floor-low__car-0.30__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-low__car-0.30__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.05__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.421686746987952,1
+"floor-moderate__car-0.05__bike-0.05","A207","22384","Uzel","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-moderate__car-0.05__bike-0.05","C303","22106","Langueux","Département 22","Le vélo compense",1,0.55,0.99,0.00290697674418605,0.44
+"floor-moderate__car-0.05__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.05__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.421686746987952,1
+"floor-moderate__car-0.05__bike-0.10","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-moderate__car-0.05__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00290697674418605,0.62
+"floor-moderate__car-0.05__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.05__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.421686746987952,1
+"floor-moderate__car-0.05__bike-0.20","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-moderate__car-0.05__bike-0.20","B306","22362","Tréguier","Département 22","Le vélo compense",1,0.33,1,0.00290697674418605,0.67
+"floor-moderate__car-0.05__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.05__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.421686746987952,1
+"floor-moderate__car-0.05__bike-0.30","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-moderate__car-0.05__bike-0.30","D265","22153","Moncontour","Département 22","Le vélo compense",1,0.03,1,0.00290697674418605,0.97
+"floor-moderate__car-0.05__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.10__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-moderate__car-0.10__bike-0.05","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-moderate__car-0.10__bike-0.05","D267","22278","Saint-Brieuc","Département 22","Le vélo compense",1,0.69,0.99,0.00581395348837209,0.3
+"floor-moderate__car-0.10__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.10__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-moderate__car-0.10__bike-0.10","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-moderate__car-0.10__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00581395348837209,0.62
+"floor-moderate__car-0.10__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.10__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-moderate__car-0.10__bike-0.20","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-moderate__car-0.10__bike-0.20","A203","22094","Lancieux","Département 22","Le vélo compense",1,0.49,0.97,0.00290697674418605,0.48
+"floor-moderate__car-0.10__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.10__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-moderate__car-0.10__bike-0.30","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-moderate__car-0.10__bike-0.30","B313","22094","Lancieux","Département 22","Le vélo compense",1,0.31,0.96,0.00290697674418605,0.65
+"floor-moderate__car-0.10__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.20__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-moderate__car-0.20__bike-0.05","B105","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.00872093023255814,1
+"floor-moderate__car-0.20__bike-0.05","D267","22067","Grâces","Département 22","Le vélo compense",1,0.46,0.86,0.0116279069767442,0.4
+"floor-moderate__car-0.20__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.20__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-moderate__car-0.20__bike-0.10","D502","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0174418604651163,1
+"floor-moderate__car-0.20__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0116279069767442,0.72
+"floor-moderate__car-0.20__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.20__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-moderate__car-0.20__bike-0.20","D502","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0261627906976744,1
+"floor-moderate__car-0.20__bike-0.20","A504","22259","Quévert","Département 22","Le vélo compense",1,0.65,0.88,0.00290697674418605,0.23
+"floor-moderate__car-0.20__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.20__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-moderate__car-0.20__bike-0.30","D502","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0348837209302326,1
+"floor-moderate__car-0.20__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-moderate__car-0.20__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.30__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-moderate__car-0.30__bike-0.05","C201","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0174418604651163,1
+"floor-moderate__car-0.30__bike-0.05","C303","22070","Guingamp","Département 22","Le vélo compense",1,0,0.9,0.0203488372093023,0.9
+"floor-moderate__car-0.30__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.30__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-moderate__car-0.30__bike-0.10","A128","29043","Daoulas","Département 29","Accès à pied ou en TC possible",1,0.97,1,0.0254545454545455,0.97
+"floor-moderate__car-0.30__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0174418604651163,0.72
+"floor-moderate__car-0.30__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.30__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-moderate__car-0.30__bike-0.20","B103","29212","Plouzané","Département 29","Accès à pied ou en TC possible",1,0.94,0.95,0.0472727272727273,0.94
+"floor-moderate__car-0.30__bike-0.20","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00581395348837209,0.62
+"floor-moderate__car-0.30__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-moderate__car-0.30__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-moderate__car-0.30__bike-0.30","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.0581395348837209,0.89
+"floor-moderate__car-0.30__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-moderate__car-0.30__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.05__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-permissive__car-0.05__bike-0.05","D403","22362","Tréguier","Département 22","Accès à pied ou en TC possible",1,1,1,0.00581395348837209,1
+"floor-permissive__car-0.05__bike-0.05","C303","22106","Langueux","Département 22","Le vélo compense",1,0.55,0.99,0.00290697674418605,0.44
+"floor-permissive__car-0.05__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.05__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-permissive__car-0.05__bike-0.10","D403","22362","Tréguier","Département 22","Accès à pied ou en TC possible",1,1,1,0.00581395348837209,1
+"floor-permissive__car-0.05__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00290697674418605,0.62
+"floor-permissive__car-0.05__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.05__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-permissive__car-0.05__bike-0.20","A208","29132","Locquénolé","Département 29","Accès à pied ou en TC possible",1,1,1,0.00727272727272727,1
+"floor-permissive__car-0.05__bike-0.20","B306","22362","Tréguier","Département 22","Le vélo compense",1,0.33,1,0.00290697674418605,0.67
+"floor-permissive__car-0.05__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.05__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.441767068273092,1
+"floor-permissive__car-0.05__bike-0.30","A208","29132","Locquénolé","Département 29","Accès à pied ou en TC possible",1,1,1,0.00727272727272727,1
+"floor-permissive__car-0.05__bike-0.30","D265","22153","Moncontour","Département 22","Le vélo compense",1,0.03,1,0.00290697674418605,0.97
+"floor-permissive__car-0.05__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.10__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-permissive__car-0.10__bike-0.05","F101","56104","Lanvaudan","Département 56","Accès à pied ou en TC possible",0.01,0,0,0.0120481927710843,0
+"floor-permissive__car-0.10__bike-0.05","D267","22278","Saint-Brieuc","Département 22","Le vélo compense",1,0.69,0.99,0.00581395348837209,0.3
+"floor-permissive__car-0.10__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.10__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-permissive__car-0.10__bike-0.10","A208","29132","Locquénolé","Département 29","Accès à pied ou en TC possible",1,1,1,0.0145454545454545,1
+"floor-permissive__car-0.10__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00581395348837209,0.62
+"floor-permissive__car-0.10__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.10__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-permissive__car-0.10__bike-0.20","A208","29132","Locquénolé","Département 29","Accès à pied ou en TC possible",1,1,1,0.0181818181818182,1
+"floor-permissive__car-0.10__bike-0.20","A203","22094","Lancieux","Département 22","Le vélo compense",1,0.49,0.97,0.00290697674418605,0.48
+"floor-permissive__car-0.10__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.10__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.409638554216867,1
+"floor-permissive__car-0.10__bike-0.30","A208","29132","Locquénolé","Département 29","Accès à pied ou en TC possible",1,1,1,0.0181818181818182,1
+"floor-permissive__car-0.10__bike-0.30","B313","22094","Lancieux","Département 22","Le vélo compense",1,0.31,0.96,0.00290697674418605,0.65
+"floor-permissive__car-0.10__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.20__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-permissive__car-0.20__bike-0.05","B105","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0145348837209302,1
+"floor-permissive__car-0.20__bike-0.05","D267","22067","Grâces","Département 22","Le vélo compense",1,0.46,0.86,0.0116279069767442,0.4
+"floor-permissive__car-0.20__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.20__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-permissive__car-0.20__bike-0.10","D502","56121","Lorient","Département 56","Accès à pied ou en TC possible",1,0.97,1,0.0281124497991968,0.97
+"floor-permissive__car-0.20__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0116279069767442,0.72
+"floor-permissive__car-0.20__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.20__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-permissive__car-0.20__bike-0.20","A208","56088","Île-d'Arz","Département 56","Accès à pied ou en TC possible",1,1,1,0.0441767068273092,1
+"floor-permissive__car-0.20__bike-0.20","A504","22259","Quévert","Département 22","Le vélo compense",1,0.65,0.88,0.00290697674418605,0.23
+"floor-permissive__car-0.20__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.20__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-permissive__car-0.20__bike-0.30","A208","56088","Île-d'Arz","Département 56","Accès à pied ou en TC possible",1,1,1,0.0441767068273092,1
+"floor-permissive__car-0.20__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-permissive__car-0.20__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.30__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-permissive__car-0.30__bike-0.05","C201","22153","Moncontour","Département 22","Accès à pied ou en TC possible",1,1,1,0.0232558139534884,1
+"floor-permissive__car-0.30__bike-0.05","C303","22070","Guingamp","Département 22","Le vélo compense",1,0,0.9,0.0203488372093023,0.9
+"floor-permissive__car-0.30__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.30__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-permissive__car-0.30__bike-0.10","D403","22362","Tréguier","Département 22","Accès à pied ou en TC possible",1,1,1,0.0406976744186047,1
+"floor-permissive__car-0.30__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0174418604651163,0.72
+"floor-permissive__car-0.30__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.30__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-permissive__car-0.30__bike-0.20","A128","35125","La Guerche-de-Bretagne","Département 35","Accès à pied ou en TC possible",1,0.93,0.98,0.0692771084337349,0.93
+"floor-permissive__car-0.30__bike-0.20","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00581395348837209,0.62
+"floor-permissive__car-0.30__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-permissive__car-0.30__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-permissive__car-0.30__bike-0.30","A128","35125","La Guerche-de-Bretagne","Département 35","Accès à pied ou en TC possible",1,0.93,0.98,0.072289156626506,0.93
+"floor-permissive__car-0.30__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-permissive__car-0.30__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.05__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.385542168674699,1
+"floor-strict__car-0.05__bike-0.05","A207","22384","Uzel","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-strict__car-0.05__bike-0.05","C303","22106","Langueux","Département 22","Le vélo compense",1,0.55,0.99,0.00290697674418605,0.44
+"floor-strict__car-0.05__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.05__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.385542168674699,1
+"floor-strict__car-0.05__bike-0.10","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-strict__car-0.05__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00290697674418605,0.62
+"floor-strict__car-0.05__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.05__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.385542168674699,1
+"floor-strict__car-0.05__bike-0.20","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-strict__car-0.05__bike-0.20","B306","22362","Tréguier","Département 22","Le vélo compense",1,0.33,1,0.00290697674418605,0.67
+"floor-strict__car-0.05__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.05__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.385542168674699,1
+"floor-strict__car-0.05__bike-0.30","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-strict__car-0.05__bike-0.30","D265","22153","Moncontour","Département 22","Le vélo compense",1,0.03,1,0.00290697674418605,0.97
+"floor-strict__car-0.05__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.10__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.10__bike-0.05","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-strict__car-0.10__bike-0.05","D267","22278","Saint-Brieuc","Département 22","Le vélo compense",1,0.69,0.99,0.00581395348837209,0.3
+"floor-strict__car-0.10__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.10__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.10__bike-0.10","B307","22324","Saint-Quay-Perros","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-strict__car-0.10__bike-0.10","A207","22362","Tréguier","Département 22","Le vélo compense",1,0.36,0.98,0.00581395348837209,0.62
+"floor-strict__car-0.10__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.10__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.10__bike-0.20","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-strict__car-0.10__bike-0.20","A203","22094","Lancieux","Département 22","Le vélo compense",1,0.49,0.97,0.00290697674418605,0.48
+"floor-strict__car-0.10__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.10__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.10__bike-0.30","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-strict__car-0.10__bike-0.30","B313","22094","Lancieux","Département 22","Le vélo compense",1,0.31,0.96,0.00290697674418605,0.65
+"floor-strict__car-0.10__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.20__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.20__bike-0.05","C301","22362","Tréguier","Département 22","Accès à pied ou en TC possible",1,1,1,0.00290697674418605,1
+"floor-strict__car-0.20__bike-0.05","D267","22067","Grâces","Département 22","Le vélo compense",1,0.46,0.86,0.0116279069767442,0.4
+"floor-strict__car-0.20__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.20__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.20__bike-0.10","B318","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.96,1,0.00290697674418605,0.96
+"floor-strict__car-0.20__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0116279069767442,0.72
+"floor-strict__car-0.20__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.20__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.20__bike-0.20","D267","22070","Guingamp","Département 22","Accès à pied ou en TC possible",1,0.89,1,0.00290697674418605,0.89
+"floor-strict__car-0.20__bike-0.20","A504","22259","Quévert","Département 22","Le vélo compense",1,0.65,0.88,0.00290697674418605,0.23
+"floor-strict__car-0.20__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.20__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.373493975903614,1
+"floor-strict__car-0.20__bike-0.30","C303","22050","Dinan","Département 22","Accès à pied ou en TC possible",1,0.63,0.86,0.00290697674418605,0.63
+"floor-strict__car-0.20__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-strict__car-0.20__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.30__bike-0.05","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-strict__car-0.30__bike-0.05","A128","29043","Daoulas","Département 29","Accès à pied ou en TC possible",1,0.97,1,0.00727272727272727,0.97
+"floor-strict__car-0.30__bike-0.05","C303","22070","Guingamp","Département 22","Le vélo compense",1,0,0.9,0.0203488372093023,0.9
+"floor-strict__car-0.30__bike-0.05","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.30__bike-0.10","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-strict__car-0.30__bike-0.10","C303","22104","Languédias","Département 22","Accès à pied ou en TC possible",0.21,0,0,0.00872093023255814,0
+"floor-strict__car-0.30__bike-0.10","A207","22360","Trégueux","Département 22","Le vélo compense",1,0.13,0.85,0.0174418604651163,0.72
+"floor-strict__car-0.30__bike-0.10","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.30__bike-0.20","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-strict__car-0.30__bike-0.20","C303","22104","Languédias","Département 22","Accès à pied ou en TC possible",0.21,0,0,0.00872093023255814,0
+"floor-strict__car-0.30__bike-0.20","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00581395348837209,0.62
+"floor-strict__car-0.30__bike-0.20","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0
+"floor-strict__car-0.30__bike-0.30","D269","56011","Béganne","Département 56","La voiture ouvre l’accès",1,0,0,0.349397590361446,1
+"floor-strict__car-0.30__bike-0.30","C303","22050","Dinan","Département 22","Accès à pied ou en TC possible",1,0.63,0.86,0.0145348837209302,0.63
+"floor-strict__car-0.30__bike-0.30","A501","22379","Trévou-Tréguignec","Département 22","Le vélo compense",1,0.33,0.95,0.00290697674418605,0.62
+"floor-strict__car-0.30__bike-0.30","A203","22016","Île-de-Bréhat","Département 22","Aucun mode ne permet l’accès",0,0,0,0.00290697674418605,0

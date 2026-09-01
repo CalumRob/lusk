@@ -161,6 +161,47 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       rank: { position: 1, size: 2 },
       reference: { kind: 'median', value: 0.7 },
     })
+    expect(facts?.mobility.bpeAccess).toEqual({ availability: 'absent', profiles: [] })
+  })
+
+  it('normalizes the bounded BPE profile rows without exposing raw payload names', () => {
+    const bpePayload: Payload = {
+      ...payload,
+      profilsAccesBpe: [
+        {
+          territoire: '22001',
+          type: 'commune',
+          profil: 'velo-compense',
+          profil_libelle: 'Le vélo compense',
+          nombre_typequ: 3,
+          exemplar_typequ: 'D267',
+          exemplar_libelle: 'Spécialiste en dermatologie vénéréologie',
+          exemplar_c: 0.1,
+          exemplar_b: 0.4,
+          exemplar_t: 0.1,
+        },
+      ],
+    }
+
+    const facts = territoryFactsFor(bpePayload, '22001', access)
+
+    expect(facts?.mobility.bpeAccess).toEqual({
+      availability: 'complete',
+      profiles: [
+        {
+          profile: 'velo-compense',
+          label: 'Le vélo compense',
+          count: 3,
+          exemplar: {
+            typequ: 'D267',
+            label: 'Spécialiste en dermatologie vénéréologie',
+            car: 0.1,
+            bike: 0.4,
+            walkTransit: 0.1,
+          },
+        },
+      ],
+    })
   })
 
   it('prefers published share facts for access evidence and ranks them in the same scope', () => {

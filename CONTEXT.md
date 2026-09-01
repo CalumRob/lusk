@@ -211,6 +211,31 @@ _Avoid_: Indice de vulnérabilité (norm_score — the old log-normalized 0–10
 The Mobilité content section that reads access to the five service types — administration, alimentation, santé, banque, école — within twenty minutes by car, bike, and walking or public transport. Its `share_*_{t,b,c}` indicators are the direct, typed facts of what the territory's buildings can reach; the `iso_*` indicators remain only as the ranked legacy mirror until the old renderer is migrated. The section states only the modes and comparisons carried by its available facts; missing access or comparison data stays honest rather than being filled from a fixture.
 _Avoid_: couverture totale (unless every relevant access fact supports it), médiane d'EPCI (when the resolved comparison scope says otherwise)
 
+**Type d’équipement BPE**:
+ A single BPE destination category considered on its own within Accès aux services, rather than a five-service aggregate; when selected, it is read through its three access-mode values and the tension between them. The canonical universe is the 53-type universe carried by the BPE24-backed mobility snapshot; it is expected to carry a complete `c / b / t` triptych for every type. A missing or null value is a data-quality defect to flag, not an inaccessible profile. It is a semantic equipment case, not a raw count of equipment present in the territory.
+_Avoid_: famille de services (the aggregate five-service unit), inventaire des équipements, équipement (too broad when the BPE category matters)
+
+**Registre des équipements BPE**:
+The shared payload metadata registry mapping every canonical BPE type code to its French product label. Fiche and Page d’indicateur surfaces resolve labels from this registry, while selected cases carry the stable code and never a duplicated or raw fallback label.
+_Avoid_: libellés locaux, table des exemples (the registry covers the whole universe), code affiché
+
+**Tension d’accès**:
+A meaningful contrast in the access of one type d’équipement across voiture, vélo + TC, and à pied + TC; a selected type earns space by making that contrast legible, never merely by being numerically unusual. The three mode values are read together so the role names a relationship rather than declaring a single winning mode.
+_Avoid_: score d’accessibilité, classement des modes, saillance (retired Story-selection vocabulary)
+
+**Profil d’accès**:
+ The one mutually exclusive reading assigned to every Type d’équipement BPE in Accès aux services from its three mode values: « La voiture est requise », « Accès à pied ou en TC possible », « Le vélo compense », or « Inaccessible ou presque en 20 minutes » (the fixed public order). The chosen rule uses one flat threshold `U = 25 %` for every mode: if `t >= U`, the reading is foot/TC; otherwise if `b >= U`, it is bike; otherwise if `c >= U`, it is car; otherwise it is inaccessible or almost inaccessible. Equivalently, the car predicate is `c >= U & b < U & t < U`, the bike predicate is `b >= U & t < U`, and the final `t < U` residual is inaccessible. The foot/TC reading claims that at least 25 % of buildings have access by that mode, regardless of the other modes; « Le vélo compense » does not claim that cycling reaches the car's level. « La voiture est requise » is the public shorthand for car being the only mode above the 25 % coverage floor, not a claim about every individual journey or destination. The mode ordering is not a hard invariant: rare `b < t` and `c < b` observations remain valid inputs and are not silently clamped for this reading. The public reading carries the profile count and at most one exemplar per non-empty profile, with its three mode values; no gap calculation or entropy target is part of the rule.
+The counts are unweighted counts of types: each BPE category contributes one, regardless of how many buildings it serves; building coverage belongs to the exemplar’s mode values.
+_Avoid_: rôle de saillance, score, catégorie d’équipement (a BPE category is the subject, not its access reading)
+
+**Calibration de l’univers**:
+ The fixed access calibration chosen for the pooled territory × Type d’équipement BPE distribution: one flat threshold `U = 25 %` applied identically to `c`, `b`, and `t`, with no entropy-balancing objective. The calibration uses the 53-type universe carried by the BPE24-backed mobility snapshot. It applies unchanged to every territory and type and is not recalculated at display time or separately for an amenity. A territory’s own profile counts may be uneven.
+_Avoid_: seuil local, seuil par équipement, seuil dynamique
+
+**Rareté de profil**:
+The proportion of comparable territories in which the same Type d’équipement BPE receives the same Profil d’accès, measured in the territory’s declared comparison context and excluding unavailable cases. A lower proportion makes a type a more distinctive exemplar when profile-specific signal strength is tied; the Région has no such peer universe.
+_Avoid_: fréquence brute (group sizes differ), exception (rarity describes a profile, not an error)
+
 **Part des bâtiments isolés (isolation share)**:
 The flagship's standard-indicator family (grid, decided 2026-08-06): per service cluster, the **share of a territory's buildings without any access to that service à pied ou en transports en commun at 20 minutes** — `1 − share_*`, the mirror of the access share (`1 − share ≈ pct_iso`; the two are the same fact in loss vs access framing, never two indicators). Five clusters: alimentation, santé, administration, école, banque. The deprivation framing — a territory acts on what its buildings *lack*. Rank-in-context per the fiche contract.
 _Avoid_: Taux d'équipement (access framing — the mirror, story-side), part avec accès (same mirror)

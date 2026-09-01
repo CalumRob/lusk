@@ -1,6 +1,7 @@
 import { MOBILITE_MODE_LABELS, nomTerritoirePourAffichage } from './territoryFacts'
 import type {
   ComparisonScope,
+  BpeAccessProfileFact,
   FactAvailability,
   FactProvenance,
   MobiliteAccessMode,
@@ -83,6 +84,7 @@ export interface AccessEvidence {
   totalBuildings: ContentFact
   totalBrittanyBuildings: ContentFact
   services: readonly AccessServiceEvidence[]
+  bpeProfiles: readonly BpeAccessProfileFact[]
   referenceLabel: string | null
 }
 
@@ -590,7 +592,10 @@ function totalSection(facts: TerritoryFacts): PerteTotaleSection {
 }
 
 function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
-  if (facts.mobility.access.availability === 'absent') return null
+  if (
+    facts.mobility.access.availability === 'absent' &&
+    facts.mobility.bpeAccess.availability === 'absent'
+  ) return null
   return {
     kind: 'access',
     totalBuildings: contentFact(
@@ -613,6 +618,7 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
         ),
       },
     })),
+    bpeProfiles: facts.mobility.bpeAccess.profiles,
     referenceLabel: comparisonReferenceLabel(
       Object.values(facts.mobility.access.byService)
         .flatMap((modes) => Object.values(modes))
@@ -634,9 +640,16 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
     evidence.services.every((service) =>
       Object.values(service.modes).every((mode) => complete(mode.fact)),
     )
+  const bpeComplete =
+    facts.mobility.bpeAccess.availability === 'absent' ||
+    facts.mobility.bpeAccess.availability === 'complete'
   const hasAny = indicators.length > 0 || evidence !== null
   const availability: FactAvailability =
-    !hasAny ? 'absent' : allIndicatorsComplete && allAccessComplete ? 'complete' : 'incomplete'
+    !hasAny
+      ? 'absent'
+      : allIndicatorsComplete && allAccessComplete && bpeComplete
+        ? 'complete'
+        : 'incomplete'
   const contentFacts: ContentFact[] = [...indicators]
   if (evidence) {
     contentFacts.push(evidence.totalBuildings, evidence.totalBrittanyBuildings)

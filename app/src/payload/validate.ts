@@ -32,6 +32,8 @@ import type {
   MembreProgramme,
   NoeudTexteRiche,
   Payload,
+  ProfilAccesBpe,
+  ProfilAccesBpeRow,
   ProgrammesPayload,
   RaisonSaillance,
   RunReport,
@@ -57,6 +59,8 @@ import {
   SIGLES_PROGRAMMES,
   THEMES_CANONIQUES,
   TYPES_NOEUD_TEXTE_RICHE,
+  LIBELLES_PROFILS_ACCES_BPE,
+  PROFILS_ACCES_BPE,
 } from './types'
 
 export type PayloadErrorKind = 'fetch' | 'validation'
@@ -1425,6 +1429,76 @@ export function validerApercu(
   })
 }
 
+/**
+ * The bounded Mobilité BPE projection: one row per non-empty profile and
+ * territory, with one deterministic exemplar. The full TYPEQU universe stays
+ * pipeline-side; this file contains only displayable profile summaries.
+ */
+export function validerProfilsAccesBpe(
+  brut: unknown,
+  fichier: string,
+  territoires: Territoire[],
+): ProfilAccesBpeRow[] | null {
+  if (brut === null) return null
+  exiger(Array.isArray(brut), fichier, 0, 'la projection des profils BPE doit être un tableau')
+  const reference = indexerReference(territoires)
+  const vus = new Set<string>()
+
+  const lireMode = (ligne: LigneBrute, champ: string, i: number): number => {
+    const value = ligne[champ]
+    exiger(estNombre(value) && value >= 0 && value <= 1, fichier, i,
+      `« ${champ} » doit être un nombre dans [0, 1]`)
+    return value
+  }
+
+  return (brut as unknown[]).map((ligne, i) => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque profil BPE doit être un objet')
+    verifierReference(ligne, reference, fichier, ligneIndexee)
+
+    const territoire = ligne['territoire'] as string
+    const type = lireType(ligne, fichier, ligneIndexee)
+    const profil = ligne['profil']
+    exiger(estUneDe(profil, PROFILS_ACCES_BPE), fichier, ligneIndexee,
+      `« profil » inconnu « ${String(profil)} »`)
+    const key = `${territoire}\u0000${profil}`
+    exiger(!vus.has(key), fichier, ligneIndexee,
+      `profil BPE en double pour « ${territoire} »`)
+    vus.add(key)
+
+    const profil_libelle = lireChaine(ligne, 'profil_libelle', fichier, ligneIndexee)
+    exiger(profil_libelle === LIBELLES_PROFILS_ACCES_BPE[profil], fichier, ligneIndexee,
+      `« profil_libelle » incohérent avec « ${profil} »`)
+
+    const nombre_typequ = ligne['nombre_typequ']
+    exiger(
+      estNombre(nombre_typequ) && nombre_typequ >= 1 && Number.isInteger(nombre_typequ),
+      fichier,
+      ligneIndexee,
+      '« nombre_typequ » doit être un entier ≥ 1',
+    )
+    const exemplar_typequ = lireChaine(ligne, 'exemplar_typequ', fichier, ligneIndexee)
+    exiger(/^[A-Z][0-9]{3}$/.test(exemplar_typequ), fichier, ligneIndexee,
+      '« exemplar_typequ » doit être un code TYPEQU')
+    const exemplar_libelle = lireChaine(ligne, 'exemplar_libelle', fichier, ligneIndexee)
+    exiger(exemplar_libelle !== exemplar_typequ, fichier, ligneIndexee,
+      '« exemplar_libelle » ne peut pas être le code brut')
+
+    return {
+      territoire,
+      type,
+      profil: profil as ProfilAccesBpe,
+      profil_libelle,
+      nombre_typequ: nombre_typequ as number,
+      exemplar_typequ,
+      exemplar_libelle,
+      exemplar_c: lireMode(ligne, 'exemplar_c', ligneIndexee),
+      exemplar_b: lireMode(ligne, 'exemplar_b', ligneIndexee),
+      exemplar_t: lireMode(ligne, 'exemplar_t', ligneIndexee),
+    }
+  })
+}
+
 /** The run report (CONTEXT.md §Run report) — null when absent. */
 export function validerRapportRun(brut: unknown, fichier: string): RunReport | null {
   if (brut === null) return null
@@ -1692,6 +1766,7 @@ function validerSubventionsProgrammes(
   runReport: unknown
   vintages?: unknown
   programmes?: unknown
+  profilsAccesBpe?: unknown
 }): Payload {
   const territoires = validerTerritoires(documents.territoires, 'territoires.json')
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
@@ -1700,8 +1775,13 @@ function validerSubventionsProgrammes(
   const runReport = validerRapportRun(documents.runReport, 'run-report.json')
   const vintages = validerVintages(documents.vintages ?? null, 'vintages.json')
   const programmes = validerProgrammes(documents.programmes ?? null, 'programmes.json', territoires)
+  const profilsAccesBpe = validerProfilsAccesBpe(
+    documents.profilsAccesBpe ?? null,
+    'profils_acces_bpe.json',
+    territoires,
+  )
 
-  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes }
+  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, profilsAccesBpe }
 }
 
 /**

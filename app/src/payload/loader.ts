@@ -43,6 +43,7 @@ import type {
   Indicateur,
   Payload,
   ProgrammesPayload,
+  ProfilAccesBpeRow,
   RunReport,
   Territoire,
   Theme,
@@ -56,6 +57,7 @@ import {
   validerHistoires,
   validerIndicateurs,
   validerProgrammes,
+  validerProfilsAccesBpe,
   validerRapportRun,
   validerTerritoires,
   validerThemeMetadata,
@@ -93,6 +95,7 @@ export type Fichier =
   | 'vintages'
   | 'apercu'
   | 'programmes'
+  | 'profils_acces_bpe'
   | `indicateurs_${Theme}`
   | `histoires_${Theme}`
   | `theme_${Theme}`
@@ -151,6 +154,7 @@ const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['vintages', (brut, fichier) => validerVintages(brut, fichier)],
   ['apercu', (brut, fichier, territoires) => validerApercu(brut, fichier, territoires)],
   ['programmes', (brut, fichier, territoires) => validerProgrammes(brut, fichier, territoires)],
+  ['profils_acces_bpe', (brut, fichier, territoires) => validerProfilsAccesBpe(brut, fichier, territoires)],
 ])
 
 // Les fichiers de thème (ADR-0007) : les mêmes validateurs par thème, la
@@ -203,6 +207,11 @@ export async function chargerFichier(
   options?: ChargerOptions,
 ): Promise<ProgrammesPayload | null>
 export async function chargerFichier(
+  nom: 'profils_acces_bpe',
+  territoires: Territoire[],
+  options?: ChargerOptions,
+): Promise<ProfilAccesBpeRow[] | null>
+export async function chargerFichier(
   nom: `indicateurs_${Theme}`,
   territoires: Territoire[],
   options?: ChargerOptions,
@@ -238,6 +247,7 @@ export async function chargerFichier(
 
 export async function chargerPayload(options: ChargerOptions = {}): Promise<Payload> {
   const territoires = await chargerFichier('territoires', options)
+  const profilsAccesBpe = await chargerFichier('profils_acces_bpe', territoires, options)
 
   const indicateurs: Indicateur[] = []
   const histoires: Histoire[] = []
@@ -286,7 +296,17 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // (key, detail) publiée a son libellé dans les métadonnées du thème — et
   // aucun libellé déclaré n'est mort. Une dérive échoue FORT ici, jamais au
   // rendu (la fiche et la carte ne retombent jamais sur la clé brute).
-  const payload = { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, themeMetadata }
+  const payload = {
+    territoires,
+    indicateurs,
+    histoires,
+    apercu,
+    runReport,
+    vintages,
+    programmes,
+    profilsAccesBpe,
+    themeMetadata,
+  }
   verifierPariteLibelles(payload)
   // La parité trajectoires ↔ faits publiés (#438) : le chemin déclaré d'une
   // page trajectoire est exactement ce que le pipeline publie — jamais une

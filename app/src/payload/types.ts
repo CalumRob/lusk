@@ -333,6 +333,37 @@ export interface ApercuRow {
   unit: string
 }
 
+/** The closed BPE access-profile vocabulary emitted by the Mobilité pipeline. */
+export const PROFILS_ACCES_BPE = [
+  'voiture-requise',
+  'acces-pied-tc',
+  'velo-compense',
+  'inaccessible-20-minutes',
+] as const
+
+export type ProfilAccesBpe = (typeof PROFILS_ACCES_BPE)[number]
+
+export const LIBELLES_PROFILS_ACCES_BPE: Readonly<Record<ProfilAccesBpe, string>> = {
+  'voiture-requise': 'La voiture est requise',
+  'acces-pied-tc': 'Accès à pied ou en TC possible',
+  'velo-compense': 'Le vélo compense',
+  'inaccessible-20-minutes': 'Inaccessible ou presque en 20 minutes',
+}
+
+/** One bounded public row per (territoire × profile), with at most one exemplar. */
+export interface ProfilAccesBpeRow {
+  territoire: string
+  type: TerritoireType
+  profil: ProfilAccesBpe
+  profil_libelle: string
+  nombre_typequ: number
+  exemplar_typequ: string
+  exemplar_libelle: string
+  exemplar_c: number
+  exemplar_b: number
+  exemplar_t: number
+}
+
 /**
  * The programme sigles of the payload contract (ADR-0013, the ANCT/DGALN
  * sources of the MANIFEST_PROGRAMMES_COMPLET): the two commune labels (ACV,
@@ -453,6 +484,8 @@ export interface Payload {
   vintages: Vintage[] | null
   /** The programmes payload (programmes.json) — optional; null = element absent (404). */
   programmes: ProgrammesPayload | null
+  /** Bounded Mobilité BPE projection; null/undefined means the element is absent. */
+  profilsAccesBpe?: ProfilAccesBpeRow[] | null
   /**
    * The per-theme metadata files (theme_<theme>.json, issue #309, wired by
    * #313) — keyed by theme, present themes only. Optional at the type level:

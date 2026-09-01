@@ -316,6 +316,15 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   territoires <- construire_territoires_mobilite(
     base_epci, list(mobilite_communes = mobilite_communes)
   )
+  # Le Type d'équipement BPE : la matrice complète reste un artefact interne
+  # (territoire × TYPEQU × c/b/t × profil), sa projection bornée sera la
+  # seule matière BPE du payload public.
+  matrice_profils_acces_bpe <- construire_matrice_profils_acces_bpe(
+    snapshot, base_epci
+  )
+  profils_acces_bpe <- construire_projection_profils_acces_bpe(
+    matrice_profils_acces_bpe
+  )
   acces_rangs <- construire_rangs_acces(acces_territoires, territoires)
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
@@ -419,6 +428,10 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "offre_cyclable_communes.rds"))
   readr::write_rds(offre_territoires,
                    file.path(sortie, "offre_territoires.rds"))
+  readr::write_rds(matrice_profils_acces_bpe,
+                   file.path(sortie, "matrice_profils_acces_bpe.rds"))
+  readr::write_rds(profils_acces_bpe,
+                   file.path(sortie, "profils_acces_bpe.rds"))
 
   list(
     mobilite_communes = mobilite_communes,
@@ -440,7 +453,9 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     stationnement_velo_communes = stationnement_velo_communes,
     offre_cyclable_communes = offre_cyclable_communes,
     offre_territoires = offre_territoires,
-    tot_loss_territoires = tot_loss_territoires
+    tot_loss_territoires = tot_loss_territoires,
+    matrice_profils_acces_bpe = matrice_profils_acces_bpe,
+    profils_acces_bpe = profils_acces_bpe
   )
 }
 
@@ -1198,6 +1213,15 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
+  # la projection BPE est optionnelle pour les fixtures historiques, mais
+  # lorsqu'elle est présente elle porte exactement sa forme bornée — aucun
+  # tableau interne ou profil vide ne doit franchir le seam public
+  function(payload) {
+    if (!"profils_acces_bpe" %in% names(payload) ||
+        is.null(payload$profils_acces_bpe)) return(invisible(payload))
+    verifier_contrat_projection_profils_acces_bpe(payload$profils_acces_bpe)
+    invisible(payload)
+  },
   # la GRILLE de la courbe du raccordement : les 11 détails déclarés « t0000 »
   # → « t0360 » — un détail hors grille, ancien ou mal formé est une
   # corruption, jamais une courbe qui ment sur son axe
@@ -1226,8 +1250,9 @@ validations_mobilite <- list(
 # d'compute_payload, compute.R) — indicateurs (les quatorze clés — les onze
 # historiques + le raccordement #486 — avec rangs + estampilles T7, les 5
 # parts d'isolation portant l'estampille snapshot),
-# histoires (les deux story keys), territoires (référence partagée) et apercu
-# (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
+# histoires (les deux story keys), territoires (référence partagée), la
+# projection BPE bornée et apercu (vide — gating). Validé par la validation
+# GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
   territoires <- construire_territoires_mobilite(base_epci, analytiques)
@@ -1240,6 +1265,7 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
     histoires = resoudre_histoires(
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
     territoires = reference_territoires(territoires),
+    profils_acces_bpe = analytiques$profils_acces_bpe,
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
 

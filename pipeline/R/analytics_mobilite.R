@@ -49,6 +49,68 @@ CLES_ISOLATION_MOBILITE <- c(
   iso_banque = "share_bank_t"
 )
 
+# PROFILS_ACCES_BPE / SEUIL_PROFIL_ACCES_BPE ------------------------------------
+# Le vocabulaire fermé du profil d'accès d'un Type d'équipement BPE. Les codes
+# sont stables pour le pipeline et le payload ; les libellés sont la seule forme
+# destinée à l'affichage. L'ordre est l'ordre public déclaré dans CONTEXT.md.
+PROFILS_ACCES_BPE <- c(
+  "voiture-requise" = "La voiture est requise",
+  "acces-pied-tc" = "Accès à pied ou en TC possible",
+  "velo-compense" = "Le vélo compense",
+  "inaccessible-20-minutes" = "Inaccessible ou presque en 20 minutes"
+)
+
+SEUIL_PROFIL_ACCES_BPE <- 0.25
+
+# verifier_triptyque_acces_bpe ---------------------------------------------------
+# Le classifieur consomme des parts déjà normalisées (numériques, entre 0 et 1).
+# Une valeur manquante ou hors domaine est une anomalie de donnée : elle arrête
+# la construction et ne devient jamais le profil « inaccessible ».
+verifier_triptyque_acces_bpe <- function(valeur, mode) {
+  if (!is.numeric(valeur)) {
+    stop("Profil d'accès BPE : la valeur « ", mode,
+         " » doit être numérique.", call. = FALSE)
+  }
+  if (anyNA(valeur) || any(!is.finite(valeur))) {
+    stop("Profil d'accès BPE : valeur manquante ou non finie pour le mode « ",
+         mode, " ».", call. = FALSE)
+  }
+  if (any(valeur < 0 | valeur > 1)) {
+    stop("Profil d'accès BPE : valeur hors de l'intervalle [0, 1] pour le mode « ",
+         mode, " ».", call. = FALSE)
+  }
+  invisible(valeur)
+}
+
+# classifier_profil_acces_bpe ----------------------------------------------------
+# Une lecture mutuellement exclusive par triptyque (voiture c, vélo b, à pied
+# ou TC t), avec le seuil plat U. La priorité est volontairement explicite :
+# t d'abord, puis b, puis c ; le résidu est l'inaccessible. Les relations entre
+# modes ne sont jamais imposées ni corrigées.
+classifier_profil_acces_bpe <- function(c, b, t,
+                                        seuil = SEUIL_PROFIL_ACCES_BPE) {
+  valeurs <- list(c = c, b = b, t = t)
+  longueurs <- vapply(valeurs, length, integer(1L))
+  if (length(unique(longueurs)) != 1L) {
+    stop("Profil d'accès BPE : les trois modes doivent avoir la même longueur.",
+         call. = FALSE)
+  }
+  if (!is.numeric(seuil) || length(seuil) != 1L || !is.finite(seuil) ||
+      seuil < 0 || seuil > 1) {
+    stop("Profil d'accès BPE : le seuil doit être un nombre dans [0, 1].",
+         call. = FALSE)
+  }
+  Map(function(valeur, mode) verifier_triptyque_acces_bpe(valeur, mode),
+      valeurs, names(valeurs))
+
+  profil <- rep(NA_character_, longueurs[[1L]])
+  profil[t >= seuil] <- "acces-pied-tc"
+  profil[t < seuil & b >= seuil] <- "velo-compense"
+  profil[t < seuil & b < seuil & c >= seuil] <- "voiture-requise"
+  profil[t < seuil & b < seuil & c < seuil] <- "inaccessible-20-minutes"
+  unname(profil)
+}
+
 # SEUIL_DELTA_REEL_VELO / SEUIL_SAILLANCE_VELO ---------------------------------
 # Les seuils de saillance de « Ce que le vélo préserve », VERROUILLÉS sur la
 # distribution réelle du snapshot porté (2026-08-06, 1 200 communes — le delta

@@ -1,6 +1,13 @@
 import type { DirectionRang } from '@/methodes/indicateurs'
 import { THEMES_METHODES } from '@/methodes/indicateurs'
-import type { HistoireMobilite, Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
+import type {
+  HistoireMobilite,
+  Indicateur,
+  Payload,
+  ProfilAccesBpe,
+  Territoire,
+  TerritoireType,
+} from '@/payload/types'
 
 /** The availability of a normalized fact, independent of how a surface lays it out. */
 export type FactAvailability = 'complete' | 'incomplete' | 'absent'
@@ -101,6 +108,26 @@ export interface MobiliteAccessFacts {
   byService: Record<MobiliteService, MobiliteAccessModes>
 }
 
+export interface BpeAccessExemplar {
+  typequ: string
+  label: string
+  car: number
+  bike: number
+  walkTransit: number
+}
+
+export interface BpeAccessProfileFact {
+  profile: ProfilAccesBpe
+  label: string
+  count: number
+  exemplar: BpeAccessExemplar
+}
+
+export interface MobiliteBpeAccessFacts {
+  availability: FactAvailability
+  profiles: readonly BpeAccessProfileFact[]
+}
+
 export interface MobiliteLossFacts {
   diversityWalkTransit: NumericFact
   diversityBike: NumericFact
@@ -148,6 +175,7 @@ export function nomTerritoirePourAffichage(territory: TerritoryIdentity): string
 export interface MobilityFacts {
   indicators: readonly NumericFact[]
   access: MobiliteAccessFacts
+  bpeAccess: MobiliteBpeAccessFacts
   losses: MobiliteLossFacts
 }
 
@@ -557,6 +585,29 @@ function accessOf(
   }
 }
 
+function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFacts {
+  const rows = (payload.profilsAccesBpe ?? []).filter(
+    (row) => row.territoire === target.territoire,
+  )
+  if (rows.length === 0) return { availability: 'absent', profiles: [] }
+
+  return {
+    availability: 'complete',
+    profiles: rows.map((row) => ({
+      profile: row.profil,
+      label: row.profil_libelle,
+      count: row.nombre_typequ,
+      exemplar: {
+        typequ: row.exemplar_typequ,
+        label: row.exemplar_libelle,
+        car: row.exemplar_c,
+        bike: row.exemplar_b,
+        walkTransit: row.exemplar_t,
+      },
+    })),
+  }
+}
+
 function lossesOf(
   payload: Payload,
   target: Territoire,
@@ -655,6 +706,7 @@ export function territoryFactsFor(
     mobility: {
       indicators: indicatorsOf(payload, target, scope),
       access: accessOf(payload, target, scope, accessReader),
+      bpeAccess: bpeAccessOf(payload, target),
       losses: lossesOf(payload, target, scope),
     },
   }

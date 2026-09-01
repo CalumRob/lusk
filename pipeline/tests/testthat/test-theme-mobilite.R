@@ -218,6 +218,65 @@ test_that("verifier_contrat_mobilite_snapshot : le manifeste épingle le fichier
   expect_error(verifier_contrat_mobilite_snapshot(defectueux), "référence")
 })
 
+test_that("classifier_profil_acces_bpe : applique le seuil plat et sa priorité", {
+  triptyques <- tibble::tibble(
+    c = c(0.90, 0.90, 0.25, 0.249),
+    b = c(0.90, 0.25, 0.249, 0.249),
+    t = c(0.25, 0.249, 0.249, 0.249)
+  )
+
+  expect_equal(
+    classifier_profil_acces_bpe(
+      triptyques$c, triptyques$b, triptyques$t
+    ),
+    c(
+      "acces-pied-tc",
+      "velo-compense",
+      "voiture-requise",
+      "inaccessible-20-minutes"
+    )
+  )
+})
+
+test_that("classifier_profil_acces_bpe : conserve les valeurs modales atypiques", {
+  # Les anomalies b < t et c < b sont des observations valides : le
+  # classifieur ne les remplace pas par une relation modale supposée.
+  expect_equal(
+    classifier_profil_acces_bpe(
+      c = c(0.10, 0.40), b = c(0.40, 0.60), t = c(0.60, 0.10)
+    ),
+    c("acces-pied-tc", "velo-compense")
+  )
+})
+
+test_that("classifier_profil_acces_bpe : refuse un triptyque incomplet ou invalide", {
+  expect_error(
+    classifier_profil_acces_bpe(c(0.2, NA_real_), c(0.2, 0.2), c(0.2, 0.2)),
+    "valeur manquante"
+  )
+  expect_error(
+    classifier_profil_acces_bpe(c(0.2), c(0.2), c(1.2)),
+    "hors de l'intervalle"
+  )
+})
+
+test_that("PROFILS_ACCES_BPE : expose les libellés dans l'ordre public", {
+  expect_named(
+    PROFILS_ACCES_BPE,
+    c("voiture-requise", "acces-pied-tc", "velo-compense",
+      "inaccessible-20-minutes")
+  )
+  expect_identical(
+    unname(PROFILS_ACCES_BPE),
+    c(
+      "La voiture est requise",
+      "Accès à pied ou en TC possible",
+      "Le vélo compense",
+      "Inaccessible ou presque en 20 minutes"
+    )
+  )
+})
+
 test_that("verifier_contrat_mobilite_demande_reseaux : les trois sources de l'étage demande/réseaux, épinglées", {
   # le manifeste réel passe la validation des fragments demande/réseaux
   expect_true(verifier_contrat_mobilite_demande_reseaux(MANIFEST_MOBILITE))
@@ -636,6 +695,24 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
       pousser("territoires")
       tibble::tibble(code = "22001", type = "commune")
     },
+    construire_matrice_profils_acces_bpe = function(snapshot, base_epci) {
+      pousser("profils_matrice")
+      tibble::tibble(
+        territoire = "22001", type = "commune", typequ = "A128",
+        libelle_typequ = "France services", description_typequ = "Test",
+        c = 1, b = 0.5, t = 0.25, profil = "acces-pied-tc",
+        profil_libelle = "Accès à pied ou en TC possible"
+      )
+    },
+    construire_projection_profils_acces_bpe = function(matrice) {
+      pousser("profils_public")
+      tibble::tibble(
+        territoire = "22001", type = "commune", profil = "acces-pied-tc",
+        profil_libelle = "Accès à pied ou en TC possible", nombre_typequ = 1L,
+        exemplar_typequ = "A128", exemplar_libelle = "France services",
+        exemplar_c = 1, exemplar_b = 0.5, exemplar_t = 0.25
+      )
+    },
     construire_rangs_isolation = function(isolation_territoires, territoires) {
       pousser("rangs")
       tibble::tibble(code = "22001", key = "iso_alimentation",
@@ -713,7 +790,8 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                 c("nb_buildings", "acces_communes", "acces_territoires",
                   "isolation_communes", "isolation_territoires",
                   "div_loss_communes", "div_loss_territoires", "saillance",
-                  "densite", "nuage", "territoires", "acces_rangs", "rangs",
+                  "densite", "nuage", "territoires", "profils_matrice",
+                  "profils_public", "acces_rangs", "rangs",
                  "voitures_communes", "voitures_territoires",
                  "reseaux_communes", "reseaux_velo_communes",
                  "reseaux_territoires",
@@ -733,7 +811,8 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                       "offre_tc_communes", "bornes_communes",
                       "stationnement_velo_communes",
                        "offre_cyclable_communes", "offre_territoires",
-                       "tot_loss_territoires"))
+                       "tot_loss_territoires", "matrice_profils_acces_bpe",
+                       "profils_acces_bpe"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -766,6 +845,8 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_true(file.exists(file.path(sortie, "stationnement_velo_communes.rds")))
   expect_true(file.exists(file.path(sortie, "offre_cyclable_communes.rds")))
   expect_true(file.exists(file.path(sortie, "offre_territoires.rds")))
+  expect_true(file.exists(file.path(sortie, "matrice_profils_acces_bpe.rds")))
+  expect_true(file.exists(file.path(sortie, "profils_acces_bpe.rds")))
 })
 
 test_that("construire_analytiques_mobilite : un input corrompu (famille analytique manquante) s'arrête bruyamment", {

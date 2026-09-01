@@ -43,6 +43,27 @@ test_that("publish(backend = 'static') écrit parquet + JSON des quatre tables",
   }
 })
 
+test_that("publish écrit la projection BPE bornée quand le payload la porte", {
+  payload <- compute_payload(load_fixture())
+  payload$profils_acces_bpe <- tibble::tibble(
+    territoire = "22001", type = "commune", profil = "velo-compense",
+    profil_libelle = "Le vélo compense", nombre_typequ = 1L,
+    exemplar_typequ = "D267",
+    exemplar_libelle = "Spécialiste en dermatologie vénéréologie",
+    exemplar_c = 0.1, exemplar_b = 0.4, exemplar_t = 0.1
+  )
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible)
+
+  expect_true(file.exists(file.path(cible, "profils_acces_bpe.parquet")))
+  expect_true(file.exists(file.path(cible, "profils_acces_bpe.json")))
+  parquet <- nanoparquet::read_parquet(file.path(cible, "profils_acces_bpe.parquet"))
+  json <- jsonlite::fromJSON(file.path(cible, "profils_acces_bpe.json"))
+  verifier_non_derivee(parquet, json, "profils_acces_bpe")
+})
+
 # verifier_non_derivee (vivante dans helper-payload.R — partagée avec
 # test-run-pipeline-economie.R, issue #131) : le contrat de non-dérive
 # (issue #10, ADR-0004).

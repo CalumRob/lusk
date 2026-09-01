@@ -61,6 +61,14 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     nanoparquet::write_parquet(payload$apercu,
                                file.path(cible, "apercu.parquet"))
   }
+  # Le profil BPE est une projection publique bornée du thème Mobilité. Il est
+  # optionnel pour les autres thèmes et absent signifie « élément non construit »
+  # (comme l'aperçu), jamais une table vide fabriquée par publish.
+  if ("profils_acces_bpe" %in% names(payload) &&
+      !is.null(payload$profils_acces_bpe)) {
+    nanoparquet::write_parquet(payload$profils_acces_bpe,
+                               file.path(cible, "profils_acces_bpe.parquet"))
+  }
 
   if (backend == "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
@@ -81,6 +89,10 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     ecrire_projection(payload$territoires, "territoires.json")
     if (nrow(payload$apercu) > 0) {
       ecrire_projection(payload$apercu, "apercu.json")
+    }
+    if ("profils_acces_bpe" %in% names(payload) &&
+        !is.null(payload$profils_acces_bpe)) {
+      ecrire_projection(payload$profils_acces_bpe, "profils_acces_bpe.json")
     }
   }
 
