@@ -267,6 +267,61 @@ valeur_fichier_niveau <- function(valeurs) {
   if (length(uniques) == 0) NA_real_ else uniques[[1]]
 }
 
+# construire_moyennes_acces_territoires -----------------------------------------
+# Les six moyennes du résumé, portées par le snapshot source. Le fichier porte
+# la valeur calculée à chaque niveau sur chacune de ses lignes communales ; on
+# vérifie donc l'unicité comme pour les autres statistiques de niveau, au lieu
+# de moyenner des valeurs déjà agrégées. Le trou d'un niveau reste NA : aucune
+# valeur de présentation n'est fabriquée pour le remplacer.
+construire_moyennes_acces_territoires <- function(snapshot, base_epci) {
+  colonnes <- CLES_MOYENNES_ACCES_MOBILITE
+
+  ctx <- snapshot %>%
+    dplyr::left_join(base_epci[c("CODGEO", "EPCI", "DEP")],
+                     by = c("commune" = "CODGEO"))
+
+  communes <- snapshot %>%
+    dplyr::select(code = commune, dplyr::all_of(colonnes)) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(colonnes), names_to = "key", values_to = "value"
+    )
+
+  niveau <- function(groupe, suffixe) {
+    portees <- paste0(colonnes, "_", suffixe)
+    ctx %>%
+      dplyr::filter(!is.na(.data[[groupe]])) %>%
+      dplyr::group_by(code = .data[[groupe]]) %>%
+      dplyr::summarise(
+        dplyr::across(dplyr::all_of(portees), valeur_fichier_niveau),
+        .groups = "drop"
+      ) %>%
+      stats::setNames(c("code", colonnes)) %>%
+      tidyr::pivot_longer(
+        cols = dplyr::all_of(colonnes), names_to = "key", values_to = "value"
+      )
+  }
+
+  epcis <- niveau("EPCI", "epci")
+  departements <- niveau("DEP", "dep")
+  region <- ctx %>%
+    dplyr::summarise(
+      dplyr::across(
+        dplyr::all_of(paste0(colonnes, "_reg")),
+        valeur_fichier_niveau
+      ),
+      .groups = "drop"
+    ) %>%
+    stats::setNames(colonnes) %>%
+    dplyr::mutate(code = "53", .before = 1) %>%
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(colonnes), names_to = "key", values_to = "value"
+    )
+
+  dplyr::bind_rows(communes, epcis, departements, region) %>%
+    dplyr::select(code, key, value) %>%
+    dplyr::arrange(code, key)
+}
+
 # mediane_ponderee -------------------------------------------------------------
 # La médiane PONDÉRÉE par les bâtiments : la statistique de recalcul d'une
 # médiane depuis les parties communales (le trou Brest Métropole) — la même

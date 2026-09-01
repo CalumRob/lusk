@@ -7,25 +7,15 @@ import AppHeader from '@/components/AppHeader.vue'
 
 const route = useRoute()
 
-/** [PROTOTYPE #511] Cahier libre is allowed to test a fiche without the
- * incumbent global shell. This branch is dev-only and throwaway. */
-const cahierLibre = computed(
-  () =>
-    import.meta.env.DEV &&
-    route.path.startsWith('/territoire/') &&
-    route.query.variant === 'D' &&
-    route.query.theme !== 'programmes',
-)
-
 /** Full-bleed tool pages (e.g. /carte — issue #67) own the viewport: no
     footer, so the page never scrolls as a whole. */
-const afficherPied = computed(() => route.meta.sansPied !== true && !cahierLibre.value)
+const afficherPied = computed(() => route.meta.sansPied !== true)
 </script>
 
 <template>
   <div class="app-shell">
     <a class="lien-evitement" href="#contenu-principal">Passer au contenu</a>
-    <AppHeader v-if="!cahierLibre" />
+    <AppHeader />
     <main class="app-main" id="contenu-principal">
       <RouterView />
     </main>

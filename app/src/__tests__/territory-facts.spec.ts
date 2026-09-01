@@ -60,6 +60,12 @@ const highDirectionRow = (territoire: string, value: number): Indicateur => ({
   detail: 'sans_voiture',
 })
 
+const averageRow = (territoire: string, key: string, value: number): Indicateur => ({
+  ...row(territoire, value),
+  key,
+  unit: key.startsWith('avg_tot_') ? 'équipements / bâtiment' : 'types d’équipement / bâtiment',
+})
+
 const payload: Payload = {
   territoires: [
     { territoire: '22001', type: 'commune', nom: 'Commune A', departement: '22', epci: '200000001' },
@@ -380,7 +386,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(facts?.mobility.losses).not.toHaveProperty('story_key')
   })
 
-  it('normalizes the walk/transit distribution and computes access ranks and medians for every mode', () => {
+  it('normalizes the walk/transit distribution and computes payload-owned summary ranks and medians for every mode', () => {
     const snapshot = (car: number, bike: number, walkTransit: number): MobiliteAccessSnapshot => ({
       totalBatimentsBretons: 1000,
       batimentsTerritoire: 100,
@@ -403,8 +409,26 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       '22002': snapshot(0.5, 0.4, 0.3),
     }
     const reader: MobiliteAccessReader = (territoire) => snapshots[territoire] ?? null
+    const summaryPayload: Payload = {
+      ...payload,
+      indicateurs: [
+        ...payload.indicateurs,
+        averageRow('22001', 'avg_tot_car', 100),
+        averageRow('22001', 'avg_tot_b', 80),
+        averageRow('22001', 'avg_tot_t', 60),
+        averageRow('22001', 'avg_div_car', 50),
+        averageRow('22001', 'avg_div_b', 40),
+        averageRow('22001', 'avg_div_t', 30),
+        averageRow('22002', 'avg_tot_car', 50),
+        averageRow('22002', 'avg_tot_b', 40),
+        averageRow('22002', 'avg_tot_t', 30),
+        averageRow('22002', 'avg_div_car', 25),
+        averageRow('22002', 'avg_div_b', 20),
+        averageRow('22002', 'avg_div_t', 15),
+      ],
+    }
     const facts = territoryFactsFor(
-      { ...payload, histoires: histoiresMobiliteFixture },
+      { ...summaryPayload, histoires: histoiresMobiliteFixture },
       '22001',
       reader,
     )
@@ -443,6 +467,19 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         10,
       )
     }
+    expect(facts?.mobility.access.summary).toMatchObject({
+      availability: 'complete',
+      accessibleEquipment: {
+        car: { key: 'avg_tot_car', value: 100 },
+        bike: { key: 'avg_tot_b', value: 80 },
+        walkTransit: { key: 'avg_tot_t', value: 60 },
+      },
+      accessibleTypes: {
+        car: { key: 'avg_div_car', value: 50 },
+        bike: { key: 'avg_div_b', value: 40 },
+        walkTransit: { key: 'avg_div_t', value: 30 },
+      },
+    })
   })
 
   it('matches an available published rank while leaving the compatibility payload untouched', () => {

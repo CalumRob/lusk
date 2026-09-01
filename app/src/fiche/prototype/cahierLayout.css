@@ -16,11 +16,11 @@
 }
 
 .cahier-prose {
-  line-height: var(--cahier-grid-jump);
+  line-height: var(--cahier-prose-line-height, var(--cahier-grid-jump));
 }
 
 .cahier-prose p {
-  margin-bottom: var(--cahier-grid-jump);
+  margin-bottom: var(--cahier-prose-paragraph-gap, var(--cahier-grid-jump));
 }
 
 .cahier-section-exploration { margin-top: var(--cahier-grid-jump); }
@@ -33,8 +33,8 @@
 }
 
 .cahier-figure-title {
-  min-height: 36px;
-  margin: 0 0 28px;
+  min-height: var(--cahier-figure-title-min-height, 36px);
+  margin: 0 0 var(--cahier-figure-title-gap, 28px);
   color: var(--cahier-default);
   font-size: 14px;
   font-weight: 700;

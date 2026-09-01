@@ -240,6 +240,28 @@ const MOBILITE_SHARE_INDICATORS: Record<string, IndicateurMethodes> = Object.fro
   ]),
 )
 
+const MOBILITE_AVG_INDICATORS: Record<string, IndicateurMethodes> = Object.fromEntries(
+  [
+    ['avg_tot_car', 'Nombre moyen d’équipements accessibles — en voiture'],
+    ['avg_tot_b', 'Nombre moyen d’équipements accessibles — à vélo'],
+    ['avg_tot_t', 'Nombre moyen d’équipements accessibles — à pied ou en transports en commun'],
+    ['avg_div_car', 'Nombre moyen de types d’équipements accessibles — en voiture'],
+    ['avg_div_b', 'Nombre moyen de types d’équipements accessibles — à vélo'],
+    ['avg_div_t', 'Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun'],
+  ].map(([key, label]) => [
+    key,
+    {
+      label,
+      definition: `${label}. La valeur est la moyenne par bâtiment résidentiel des équipements ou types d’équipements atteignables en vingt minutes. Plus cette moyenne est élevée, mieux c’est.`,
+      unite: key.startsWith('avg_tot_') ? 'équipements / bâtiment' : 'types d’équipement / bâtiment',
+      source:
+        'Lusk — analyse d’accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+      sourceId: 'mobilite_snapshot',
+      direction: 'plus-est-mieux' as const,
+    },
+  ]),
+)
+
 /**
  * Le registre complet — une entrée par thème construit. Ordre du registre =
  * ordre d'affichage de la page (démographie, habitat, économie). La forme
@@ -718,6 +740,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
         sourceId: 'mobilite_snapshot',
         direction: 'moins-est-mieux',
       },
+      ...MOBILITE_AVG_INDICATORS,
       ...MOBILITE_SHARE_INDICATORS,
     },
     stories: [

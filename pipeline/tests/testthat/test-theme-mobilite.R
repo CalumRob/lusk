@@ -574,6 +574,18 @@ fixture_snapshot_analytique_mobilite <- function() {
       base[[key]] <- base[[t_key]] * facteur
     }
   }
+  # Les six moyennes du résumé : la valeur communale et les valeurs déjà
+  # calculées par niveau, portées de façon identique par les communes membres
+  # comme dans le snapshot réel.
+  for (i in seq_along(CLES_MOYENNES_ACCES_MOBILITE)) {
+    key <- CLES_MOYENNES_ACCES_MOBILITE[[i]]
+    base[[key]] <- i + seq_len(nrow(base))
+    base[[paste0(key, "_epci")]] <- ifelse(
+      base$commune %in% c("22001", "22002"), i + 10, i + 20
+    )
+    base[[paste0(key, "_dep")]] <- ifelse(base$commune %in% c("22001", "22002"), i + 30, i + 40)
+    base[[paste0(key, "_reg")]] <- i + 50
+  }
   for (i in 1:10) {
     base[[paste0("dens_div_t_", i)]] <- 0.01 * i
     base[[paste0("div_loss_t_dec_", i)]] <- 10 + i
@@ -811,8 +823,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                       "offre_tc_communes", "bornes_communes",
                       "stationnement_velo_communes",
                        "offre_cyclable_communes", "offre_territoires",
-                       "tot_loss_territoires", "matrice_profils_acces_bpe",
-                       "profils_acces_bpe"))
+                        "tot_loss_territoires", "moyennes_acces_territoires",
+                        "matrice_profils_acces_bpe",
+                        "profils_acces_bpe"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)
@@ -2326,7 +2339,7 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
   # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
-   expect_equal(nrow(ind), 34L)
+   expect_equal(nrow(ind), 40L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
                               "places_stationnement_velo_1000",
@@ -2337,7 +2350,8 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
                              "offre_cyclable",
                               "iso_alimentation", "iso_sante",
                               "iso_administration", "iso_ecole", "iso_banque",
-                              names(CLES_ACCES_MOBILITE),
+                               names(CLES_ACCES_MOBILITE),
+                               CLES_MOYENNES_ACCES_MOBILITE,
                               "raccordement_tc", "raccordement_courbe",
                              "raccordement_reference"))
   # `nb_buildings` QUITTE le payload (issue #368, décision #196) — jamais
@@ -2557,6 +2571,11 @@ fixture_indicateurs_mobilite <- function() {
   tot_loss_territoires <- tibble::tibble(
     code = codes, tot_loss_t = seq_along(codes),
     tot_loss_b = pmax(seq_along(codes) - 1, 0))
+  moyennes_acces_territoires <- tidyr::crossing(
+    code = codes, key = CLES_MOYENNES_ACCES_MOBILITE
+  ) %>%
+    dplyr::mutate(value = 1 + match(key, CLES_MOYENNES_ACCES_MOBILITE) +
+                    0.1 * match(code, codes))
 
   list(
     nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
@@ -2568,6 +2587,7 @@ fixture_indicateurs_mobilite <- function() {
     reseaux_territoires = reseaux_territoires,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
+    moyennes_acces_territoires = moyennes_acces_territoires,
     raccordement = fixture_raccordement()
   )
 }
@@ -2596,12 +2616,15 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
     "iso_alimentation", "iso_sante", "iso_administration",
     "iso_ecole", "iso_banque",
     names(CLES_ACCES_MOBILITE),
+    CLES_MOYENNES_ACCES_MOBILITE,
     "raccordement_tc", "raccordement_courbe", "raccordement_reference"
   ))
   grille_n <- length(grille_raccordement())
   # 9 territoires × 27 lignes historiques = 243 ; + le raccordement :
   # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
-  expect_equal(nrow(ind), 243 + 9 * length(CLES_ACCES_MOBILITE) + 9 + 9 * grille_n + grille_n)
+  expect_equal(nrow(ind), 243 + 9 * length(CLES_ACCES_MOBILITE) +
+                 9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 +
+                 9 * grille_n + grille_n)
   expect_false("nb_buildings" %in% ind$key)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)

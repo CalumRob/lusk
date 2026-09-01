@@ -37,6 +37,8 @@ function referenceText(fact: NumericFact): string | null {
 
 <style scoped>
 .cahier-reference-note {
+  display: block;
+  width: 100%;
   margin: 0;
   color: var(--cahier-default);
   font: var(--type-figure-mode);

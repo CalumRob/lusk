@@ -6,6 +6,7 @@ import type {
   FactProvenance,
   MobiliteAccessFacts,
   MobiliteAccessModes,
+  MobiliteSummaryFacts,
   NumericFact,
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
@@ -104,9 +105,26 @@ function accessFacts(): MobiliteAccessFacts {
     availability: 'complete',
     totalBuildings: fact('access.totalBuildings', 100, 'bâtiments', null),
     totalBrittanyBuildings: fact('access.totalBrittanyBuildings', 1000, 'bâtiments', null),
+    summary: summaryFacts(),
     byService: Object.fromEntries(
       services.map((service) => [service, accessModes(1, 0.8, 0.6)]),
     ) as Record<(typeof services)[number], MobiliteAccessModes>,
+  }
+}
+
+function summaryFacts(): MobiliteSummaryFacts {
+  return {
+    availability: 'complete',
+    accessibleEquipment: {
+      car: fact('avg_tot_car', 100, 'équipements / bâtiment', null),
+      bike: fact('avg_tot_b', 70, 'équipements / bâtiment', null),
+      walkTransit: fact('avg_tot_t', 40, 'équipements / bâtiment', null),
+    },
+    accessibleTypes: {
+      car: fact('avg_div_car', 50, 'types d’équipement / bâtiment', null),
+      bike: fact('avg_div_b', 35, 'types d’équipement / bâtiment', null),
+      walkTransit: fact('avg_div_t', 20, 'types d’équipement / bâtiment', null),
+    },
   }
 }
 
@@ -179,10 +197,10 @@ const completeFacts: TerritoryFacts = {
 }
 
 describe('resolveMobiliteThemeContent', () => {
-  it('resolves one ordered unit with the three semantic sections and their evidence', () => {
+  it('resolves one ordered unit with the four semantic sections and their evidence', () => {
     const content = resolveMobiliteThemeContent(completeFacts)
     const unit = content.units[0]!
-    const [diversity, total, essentials] = unit.sections
+    const [summary, profiles, essentials, distribution] = unit.sections
 
     expect(content).toMatchObject({
       theme: 'mobilite',
@@ -191,13 +209,65 @@ describe('resolveMobiliteThemeContent', () => {
     })
     expect(unit.label).toBe('Accès aux services')
     expect(unit.sections.map((section) => section.label)).toEqual([
-      'Perte de diversité',
-      'Perte totale d’accès',
+      'Résumé',
+      'Profils d’accès par mode',
       'Services essentiels',
+      "Distribution de l'accès par bâtiment",
     ])
 
-    expect(diversity.availability).toBe('complete')
-    expect(diversity.evidence).toMatchObject({
+    expect(summary.availability).toBe('complete')
+    expect(summary.evidence).toMatchObject({
+      kind: 'summary',
+      accessibleEquipment: {
+        car: { fact: { key: 'avg_tot_car', value: 100 } },
+        bike: { fact: { key: 'avg_tot_b', value: 70 } },
+        walkTransit: { fact: { key: 'avg_tot_t', value: 40 } },
+      },
+      accessibleTypes: {
+        car: { fact: { key: 'avg_div_car', value: 50 } },
+        bike: { fact: { key: 'avg_div_b', value: 35 } },
+        walkTransit: { fact: { key: 'avg_div_t', value: 20 } },
+      },
+      losses: {
+        diversity: {
+          walkTransit: { fact: { key: 'div_loss_t', value: 38 } },
+          bike: { fact: { key: 'div_loss_b', value: 24 } },
+        },
+        total: {
+          walkTransit: { fact: { key: 'tot_loss_t', value: 4 } },
+          bike: { fact: { key: 'tot_loss_b', value: 2 } },
+        },
+      },
+    })
+    expect(summary.explorationTargets.map((target) => target.key)).toEqual([
+      'avg_tot_car',
+      'avg_tot_b',
+      'avg_tot_t',
+      'avg_div_car',
+      'avg_div_b',
+      'avg_div_t',
+      'div_loss_t',
+      'div_loss_b',
+      'tot_loss_t',
+      'tot_loss_b',
+    ])
+    expect(summary.lecture).not.toBeNull()
+
+    expect(profiles.availability).toBe('complete')
+    expect(profiles.evidence).toMatchObject({
+      kind: 'bpe-profiles',
+      profiles: [
+        expect.objectContaining({
+          profile: 'inaccessible-20-minutes',
+          count: 2,
+          exemplar: expect.objectContaining({ typequ: 'A128' }),
+        }),
+      ],
+    })
+    expect(profiles.lecture?.marelle).toBe('Service minimum assuré?')
+
+    expect(distribution.availability).toBe('complete')
+    expect(distribution.evidence).toMatchObject({
       kind: 'distribution',
       distribution: { min: 28, max: 47 },
       marks: {
@@ -205,31 +275,15 @@ describe('resolveMobiliteThemeContent', () => {
         bike: { fact: { key: 'div_loss_b', value: 24 } },
       },
     })
-    expect(diversity.evidence?.kind === 'distribution' ? diversity.evidence.peers : []).toHaveLength(2)
-    expect(diversity.explorationTargets.map((target) => target.key)).toEqual([
+    expect(distribution.evidence?.kind === 'distribution' ? distribution.evidence.peers : []).toHaveLength(2)
+    expect(distribution.explorationTargets.map((target) => target.key)).toEqual([
       'div_loss_t',
       'div_loss_b',
     ])
-    expect(diversity.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
-    expect(lectureText(diversity.lecture)).toBe(
+    expect(distribution.lecture?.marelle).toBe('... Tous les bâtiments non plus')
+    expect(summary.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
+    expect(lectureText(summary.lecture)).toBe(
       'À Commune A, le bâtiment médian perd accès à 38 types de services à pied + TC en vingt minutes. À vélo + TC, cette perte atteint 24 types de services. La référence est la médiane communes de son EPCI : 31 types de services.',
-    )
-
-    expect(total.availability).toBe('complete')
-    expect(total.evidence).toMatchObject({
-      kind: 'comparison',
-      rows: [
-        { fact: { key: 'tot_loss_t', value: 4 } },
-        { fact: { key: 'tot_loss_b', value: 2 } },
-      ],
-    })
-    expect(total.explorationTargets.map((target) => target.key)).toEqual([
-      'tot_loss_t',
-      'tot_loss_b',
-    ])
-    expect(total.lecture?.marelle).toBe('Et en volume ?')
-    expect(lectureText(total.lecture)).toBe(
-      'À Commune A, la perte totale atteint 4 accès par bâtiment à pied + TC, contre 2 à vélo + TC. La référence est la médiane communes de son EPCI : 6 accès perdus.',
     )
 
     expect(essentials.availability).toBe('complete')
@@ -239,13 +293,6 @@ describe('resolveMobiliteThemeContent', () => {
     expect(essentials.evidence).toMatchObject({
       kind: 'access',
       services: expect.arrayContaining([expect.objectContaining({ service: 'administration' })]),
-      bpeProfiles: [
-        expect.objectContaining({
-          profile: 'inaccessible-20-minutes',
-          count: 2,
-          exemplar: expect.objectContaining({ typequ: 'A128' }),
-        }),
-      ],
     })
     if (essentials.evidence?.kind === 'access') {
       for (const service of essentials.evidence.services) {
@@ -257,7 +304,7 @@ describe('resolveMobiliteThemeContent', () => {
     expect(essentials.explorationTargets.map((target) => target.key)).toEqual(
       accessIndicators,
     )
-    expect(essentials.lecture?.marelle).toBe('Tous les équipements ne se valent pas')
+    expect(essentials.lecture?.marelle).toBe('Tous les équipements ne se valent pas...')
     expect(lectureText(essentials.lecture)).toBe(
       'À Commune A, les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.',
     )
@@ -295,32 +342,47 @@ describe('resolveMobiliteThemeContent', () => {
       densities: [null, ...facts.mobility.losses.distributionWalkTransit!.densities.slice(1)],
     }
 
-    const diversity = resolveMobiliteThemeContent(facts).units[0].sections[0]
+    const distribution = resolveMobiliteThemeContent(facts).units[0].sections[3]
 
-    expect(diversity.availability).toBe('incomplete')
-    expect(diversity.indicators.map((indicator) => [indicator.fact.key, indicator.fact.value])).toEqual([
+    expect(distribution.availability).toBe('incomplete')
+    expect(distribution.indicators.map((indicator) => [indicator.fact.key, indicator.fact.value])).toEqual([
       ['div_loss_t', 38],
       ['div_loss_b', 24],
     ])
-    expect(diversity.evidence).toBeNull()
-    expect(diversity.lecture).toBeNull()
+    expect(distribution.evidence).toBeNull()
+    expect(distribution.lecture).toBeNull()
   })
 
-  it('keeps a partial total-loss comparison visible without composing its Lecture', () => {
+  it('keeps a partial summary visible without composing its Lecture', () => {
     const facts = structuredClone(completeFacts)
     facts.mobility.indicators = facts.mobility.indicators.filter(
       (indicator) => indicator.key !== 'tot_loss_b',
     )
 
-    const total = resolveMobiliteThemeContent(facts).units[0].sections[1]
+    const summary = resolveMobiliteThemeContent(facts).units[0].sections[0]
 
-    expect(total.availability).toBe('incomplete')
-    expect(total.evidence).toMatchObject({
-      kind: 'comparison',
-      rows: [{ fact: { key: 'tot_loss_t' } }],
+    expect(summary.availability).toBe('incomplete')
+    expect(summary.evidence).toMatchObject({
+      kind: 'summary',
+      losses: {
+        total: {
+          walkTransit: { fact: { key: 'tot_loss_t', value: 4 } },
+          bike: { fact: { key: 'tot_loss_b', availability: 'absent' } },
+        },
+      },
     })
-    expect(total.lecture).toBeNull()
-    expect(total.explorationTargets.map((target) => target.key)).toEqual(['tot_loss_t'])
+    expect(summary.lecture).not.toBeNull()
+    expect(summary.explorationTargets.map((target) => target.key)).toEqual([
+      'avg_tot_car',
+      'avg_tot_b',
+      'avg_tot_t',
+      'avg_div_car',
+      'avg_div_b',
+      'avg_div_t',
+      'div_loss_t',
+      'div_loss_b',
+      'tot_loss_t',
+    ])
   })
 
   it('represents absent sections without manufacturing indicators, evidence, Lectures, or targets', () => {
@@ -336,6 +398,19 @@ describe('resolveMobiliteThemeContent', () => {
       availability: 'absent',
       totalBuildings: absentFact('access.totalBuildings', 'bâtiments'),
       totalBrittanyBuildings: absentFact('access.totalBrittanyBuildings', 'bâtiments'),
+      summary: {
+        availability: 'absent',
+        accessibleEquipment: {
+          car: absentFact('avg_tot_car', 'équipements / bâtiment'),
+          bike: absentFact('avg_tot_b', 'équipements / bâtiment'),
+          walkTransit: absentFact('avg_tot_t', 'équipements / bâtiment'),
+        },
+        accessibleTypes: {
+          car: absentFact('avg_div_car', 'types d’équipement / bâtiment'),
+          bike: absentFact('avg_div_b', 'types d’équipement / bâtiment'),
+          walkTransit: absentFact('avg_div_t', 'types d’équipement / bâtiment'),
+        },
+      },
       byService: Object.fromEntries(
         services.map((service) => [
           service,
@@ -352,6 +427,7 @@ describe('resolveMobiliteThemeContent', () => {
     const sections = resolveMobiliteThemeContent(facts).units[0].sections
 
     expect(sections.map((section) => section.availability)).toEqual([
+      'absent',
       'absent',
       'absent',
       'absent',
@@ -378,8 +454,9 @@ describe('resolveMobiliteThemeContent', () => {
     expect(first).toEqual(second)
     expect(JSON.stringify(first)).not.toContain('médiane')
     expect(first.units[0].sections[0].lecture).not.toBeNull()
-    expect(first.units[0].sections[1].lecture).not.toBeNull()
+    expect(first.units[0].sections[1].lecture?.marelle).toBe('Service minimum assuré?')
     expect(first.units[0].sections[2].lecture).not.toBeNull()
+    expect(first.units[0].sections[3].lecture?.marelle).toBe('... Tous les bâtiments non plus')
   })
 
 })

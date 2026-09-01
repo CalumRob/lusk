@@ -17,27 +17,32 @@ import {
   Utensils,
   WalletCards,
 } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import type {
   AccessEvidence,
-  ComparisonEvidence,
+  BpeProfilesEvidence,
   ContentFact,
   ContentSection,
   DistributionEvidence,
   ExplorationTarget,
+  SummaryEvidence,
   ThemeContent,
 } from '@/fiche/content/themeContent'
-import { routePourCibleExploration, routePourFaitExploration } from '@/fiche/explorationHandoff'
+import {
+  routePourCibleExploration,
+  routePourFaitExploration,
+  routePourSectionExploration,
+} from '@/fiche/explorationHandoff'
 import {
   MOBILITE_MODE_LABELS,
   nomTerritoirePourAffichage,
 } from '@/fiche/content/territoryFacts'
 import type { MobiliteAccessMode, MobiliteService, NumericFact } from '@/fiche/content/territoryFacts'
+import { layoutMasonry } from '@/fiche/masonryLayout'
 import type { CahierPagination } from './cahierPagination'
-import CahierRank from './CahierRank.vue'
 import CahierProse from './CahierProse.vue'
 import CahierReferenceNote from './CahierReferenceNote.vue'
 import DistributionFigureCahier from './DistributionFigureCahier.vue'
@@ -46,11 +51,20 @@ import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 const props = defineProps<{
   content: ThemeContent
   pagination: CahierPagination
+  presentation?: 'ruled' | 'plain'
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
+const figureStackRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
+const masonryReady = ref(false)
+const masonryHeight = ref(0)
+const sectionPlacements = ref<Record<string, { column: 0 | 1; top: number }>>({})
+const sectionElements = new Map<string, HTMLElement>()
 let observer: IntersectionObserver | null = null
+let resizeObserver: ResizeObserver | null = null
+let masonryQueued = false
+const MASONRY_TWO_COLUMN_QUERY = '(min-width: 1281px)'
 
 const unit = computed(() => props.content.units[0] ?? null)
 const sections = computed(() => unit.value?.sections ?? [])
@@ -60,6 +74,68 @@ const pageEntry = computed(
 const sourceEntry = computed(
   () => props.pagination.entries.find((entry) => entry.key === 'sources') ?? null,
 )
+
+function setSectionElement(key: string, element: unknown): void {
+  if (element instanceof HTMLElement) {
+    sectionElements.set(key, element)
+    resizeObserver?.observe(element)
+  } else {
+    sectionElements.delete(key)
+  }
+}
+
+function usesTwoColumns(): boolean {
+  return typeof window === 'undefined'
+    || typeof window.matchMedia !== 'function'
+    || window.matchMedia(MASONRY_TWO_COLUMN_QUERY).matches
+}
+
+function styleForSection(key: string): Record<string, string> | undefined {
+  const placement = sectionPlacements.value[key]
+  if (!placement) return undefined
+  const twoColumns = usesTwoColumns()
+  return {
+    '--masonry-top': `${placement.top}px`,
+    '--masonry-left':
+      twoColumns && placement.column === 1
+        ? 'calc(50% + var(--masonry-half-gap))'
+        : '0px',
+    '--masonry-width': twoColumns ? 'calc(50% - var(--masonry-half-gap))' : '100%',
+  }
+}
+
+function measureMasonry(): void {
+  const stack = figureStackRef.value
+  if (!stack) return
+
+  const elements = sections.value.map((section) => sectionElements.get(section.key))
+  if (elements.some((element) => !element)) return
+
+  const twoColumns = usesTwoColumns()
+  const gap = Number.parseFloat(getComputedStyle(stack).getPropertyValue('--masonry-gap')) || 32
+  const layout = layoutMasonry(
+    sections.value.map((section, index) => ({
+      key: section.key,
+      height: elements[index]?.getBoundingClientRect().height ?? 0,
+    })),
+    { columns: twoColumns ? 2 : 1, gap },
+  )
+
+  sectionPlacements.value = Object.fromEntries(
+    layout.placements.map((placement) => [placement.key, placement]),
+  )
+  masonryHeight.value = layout.height
+  masonryReady.value = true
+}
+
+function scheduleMasonry(): void {
+  if (masonryQueued) return
+  masonryQueued = true
+  void nextTick(() => {
+    masonryQueued = false
+    measureMasonry()
+  })
+}
 
 const SERVICE_ICONS: Readonly<Record<MobiliteService, Component>> = {
   administration: Landmark,
@@ -98,26 +174,90 @@ function formatFact(fact: NumericFact | null | undefined): string {
   return fact.unit === '%' ? `${formatNumber(fact.value * 100, 0)} %` : formatNumber(fact.value)
 }
 
-function formatFactWithoutUnit(fact: NumericFact | null | undefined): string {
-  if (!fact || fact.value === null) return '—'
-  return fact.unit === '%' ? formatNumber(fact.value * 100, 0) : formatNumber(fact.value)
+function profileCountLabel(count: number): string {
+  return `${count} type${count > 1 ? 's' : ''}`
 }
 
-function shortModeLabel(fact: ContentFact): string {
-  const mode = modeForFact(fact.fact)
-  return mode ? MOBILITE_MODE_LABELS[mode] : fact.label
+function formatPercentage(value: number): string {
+  return `${formatNumber(value * 100, 0)} %`
 }
 
-function modeForFact(fact: NumericFact): MobiliteAccessMode | null {
-  if (fact.key.endsWith('_t')) return 'walkTransit'
-  if (fact.key.endsWith('_b')) return 'bike'
-  if (fact.key.endsWith('_c')) return 'car'
-  return null
+function summaryMetrics(evidence: SummaryEvidence): readonly {
+  key: 'equipment' | 'types'
+  title: string
+  values: SummaryEvidence['accessibleEquipment']
+}[] {
+  return [
+    { key: 'equipment', title: 'Équipements accessibles', values: evidence.accessibleEquipment },
+    { key: 'types', title: 'Types d’équipements accessibles', values: evidence.accessibleTypes },
+  ]
 }
 
-function modeClassForFact(fact: NumericFact): string {
-  const mode = modeForFact(fact)
-  return mode ? MODE_CLASSES[mode] : ''
+function summaryHasValues(values: SummaryEvidence['accessibleEquipment']): boolean {
+  return Object.values(values).some((value) => value.fact.value !== null)
+}
+
+function summaryScale(values: SummaryEvidence['accessibleEquipment']): number {
+  return Math.max(
+    0,
+    ...Object.values(values).flatMap((value) => [
+      value.fact.value ?? 0,
+      value.fact.comparison?.reference?.value ?? 0,
+    ]),
+  )
+}
+
+function summarySegments(values: SummaryEvidence['accessibleEquipment']): readonly {
+  mode: MobiliteAccessMode
+  label: string
+  icon: Component
+  fact: ContentFact
+  start: number
+  end: number
+  width: string
+  left: string
+}[] {
+  const scale = summaryScale(values)
+  const walk = Math.max(0, values.walkTransit.fact.value ?? 0)
+  const bike = Math.max(walk, values.bike.fact.value ?? 0)
+  const car = Math.max(bike, values.car.fact.value ?? 0)
+  const segments = [
+    { mode: 'walkTransit' as const, start: 0, end: walk, fact: values.walkTransit },
+    { mode: 'bike' as const, start: walk, end: bike, fact: values.bike },
+    { mode: 'car' as const, start: bike, end: car, fact: values.car },
+  ]
+  return segments.map((segment) => ({
+    ...segment,
+    label: MOBILITE_MODE_LABELS[segment.mode],
+    icon: modeIcon(segment.mode),
+    width: scale > 0 ? `${((segment.end - segment.start) / scale) * 100}%` : '0%',
+    left: scale > 0 ? `${(segment.start / scale) * 100}%` : '0%',
+  }))
+}
+
+function summaryLoss(values: SummaryEvidence['accessibleEquipment'], mode: MobiliteAccessMode): number | null {
+  const car = values.car.fact.value
+  const current = values[mode].fact.value
+  return car === null || current === null || mode === 'car' ? null : Math.max(0, car - current)
+}
+
+function bpeProfileScale(profiles: BpeProfilesEvidence['profiles']): number {
+  return Math.max(0, ...profiles.map((profile) => profile.count))
+}
+
+function bpeBarHeight(count: number, maximum: number): string {
+  return maximum > 0 ? `${(count / maximum) * 100}%` : '0%'
+}
+
+function donutStyle(values: { car: number; bike: number; walkTransit: number }): Record<string, string> {
+  const walk = Math.max(0, Math.min(1, values.walkTransit))
+  const bike = Math.max(walk, Math.min(1, values.bike))
+  const car = Math.max(bike, Math.min(1, values.car))
+  return {
+    '--donut-walk': `${walk * 360}deg`,
+    '--donut-bike': `${bike * 360}deg`,
+    '--donut-car': `${car * 360}deg`,
+  }
 }
 
 function isExtreme(fact: NumericFact): boolean {
@@ -125,14 +265,6 @@ function isExtreme(fact: NumericFact): boolean {
   if (!rank) return false
   const edge = Math.max(1, Math.ceil(rank.size * 0.05))
   return rank.position <= edge || rank.position > rank.size - edge
-}
-
-function referenceText(fact: NumericFact): string {
-  return formatFactWithoutUnit(
-    fact.comparison?.reference
-      ? { ...fact, value: fact.comparison.reference.value }
-      : null,
-  )
 }
 
 function referenceFactText(fact: NumericFact): string {
@@ -151,7 +283,10 @@ function explorationLinks(section: ContentSection): readonly {
 }
 
 function sectionExploration(section: ContentSection) {
-  return explorationLinks(section)[0] ?? null
+  return explorationLinks(section)[0]?.to ?? routePourSectionExploration(section, {
+    territoire: props.content.territory.code,
+    type: props.content.territory.type,
+  })
 }
 
 function routeForFact(section: ContentSection, fact: NumericFact) {
@@ -171,34 +306,16 @@ function sectionState(section: ContentSection): string {
     : 'Lecture indisponible avec les données disponibles.'
 }
 
-function barWidth(value: number | null, maximum: number): string {
-  if (value === null || maximum <= 0) return '0%'
-  return `${Math.max(4, Math.min(100, (value / maximum) * 100))}%`
-}
-
-function comparisonMaximum(evidence: ComparisonEvidence): number {
-  return Math.max(
-    0,
-    ...evidence.rows.flatMap((row) => [
-      row.fact.value ?? 0,
-      row.fact.comparison?.reference?.value ?? 0,
-    ]),
-  )
-}
-
 function percentage(value: NumericFact): number | null {
   return value.value === null ? null : Math.max(0, Math.min(1, value.value))
 }
 
 function accessDonutStyle(service: AccessEvidence['services'][number]): Record<string, string> {
-  const walk = percentage(service.modes.walkTransit.fact) ?? 0
-  const bike = Math.max(walk, percentage(service.modes.bike.fact) ?? 0)
-  const car = Math.max(bike, percentage(service.modes.car.fact) ?? 0)
-  return {
-    '--donut-walk': `${walk * 360}deg`,
-    '--donut-bike': `${bike * 360}deg`,
-    '--donut-car': `${car * 360}deg`,
-  }
+  return donutStyle({
+    walkTransit: percentage(service.modes.walkTransit.fact) ?? 0,
+    bike: percentage(service.modes.bike.fact) ?? 0,
+    car: percentage(service.modes.car.fact) ?? 0,
+  })
 }
 
 function serviceIcon(service: MobiliteService): Component {
@@ -250,9 +367,15 @@ function sourceLabel(source: { source: string; version: string }): string {
 
 const sourceLabels = computed(() => props.content.sourceRegister.map(sourceLabel))
 
-useCahierBaselineGrid(rootRef)
+useCahierBaselineGrid(rootRef, () => props.presentation !== 'plain')
 
 onMounted(() => {
+  scheduleMasonry()
+  if (figureStackRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => scheduleMasonry())
+    resizeObserver.observe(figureStackRef.value)
+    sectionElements.forEach((element) => resizeObserver?.observe(element))
+  }
   activeFigure.value = pageEntry.value?.anchor ?? anchorForEntry('acces-aux-services')
   if (!rootRef.value || !('IntersectionObserver' in window)) return
   const figures = [...rootRef.value.querySelectorAll<HTMLElement>('[data-figure]')]
@@ -271,43 +394,29 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   observer?.disconnect()
+  resizeObserver?.disconnect()
 })
+
+watch(() => props.content, scheduleMasonry, { deep: true })
 </script>
 
 <template>
   <article
     ref="rootRef"
     class="cahier"
+    :class="{ 'cahier--sans-grille': props.presentation === 'plain' }"
     :style="{
       '--cahier-theme': 'var(--theme-mobilite-line)',
       '--cahier-theme-strong': 'var(--theme-mobilite-strong)',
       '--cahier-ground': 'var(--theme-mobilite-soft)',
       '--cahier-theme-emphasis': 'var(--theme-mobilite)',
       '--cahier-region-emphasis': 'var(--brand-200)',
-      '--cahier-mode-foot': 'var(--theme-mobilite-foot)',
-      '--cahier-mode-bike': 'var(--theme-mobilite-bike)',
-      '--cahier-mode-car': 'var(--theme-mobilite-car)',
+      '--cahier-mode-foot': 'var(--mode-transit)',
+      '--cahier-mode-bike': 'var(--mode-bike)',
+      '--cahier-mode-car': 'var(--mode-car)',
     }"
   >
-    <header class="cahier-cover">
-      <nav class="cahier-local-nav" aria-label="Navigation de la fiche">
-        <RouterLink class="cahier-wordmark" to="/">Lusk</RouterLink>
-        <span class="cahier-local-divider" aria-hidden="true">·</span>
-        <span>Fiche d’identité</span>
-        <RouterLink class="cahier-home-link" to="/">Accueil</RouterLink>
-      </nav>
-      <div class="cover-body">
-        <p class="cover-context">{{ content.label }} · Bretagne</p>
-        <h1>{{ nomTerritoirePourAffichage(content.territory) }}</h1>
-        <p class="cover-lead">Un cahier de lecture pour regarder ce qui se passe ici.</p>
-        <div class="cover-signature">
-          <span>Fiche de lecture</span><span aria-hidden="true">/</span><span>Données publiques</span>
-        </div>
-      </div>
-      <div class="cover-bottom-rule" aria-hidden="true" />
-    </header>
-
-    <div class="cahier-reader">
+      <div class="cahier-reader">
       <aside class="cahier-spine" aria-label="Sommaire du cahier">
         <p class="spine-title">Sommaire</p>
         <ol>
@@ -356,17 +465,31 @@ onBeforeUnmount(() => {
             <CahierProse class="page-subtitle" :blocks="content.introduction" />
           </header>
 
-          <div class="figure-stack">
+          <div
+            ref="figureStackRef"
+            class="figure-stack"
+            :class="{ 'figure-stack--ready': masonryReady }"
+            :style="{ minHeight: `${masonryHeight}px` }"
+          >
             <section
               v-for="(section, sectionIndex) in sections"
               :key="section.key"
+              :ref="(element) => setSectionElement(section.key, element)"
               class="concept-group"
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
+              :style="styleForSection(section.key)"
             >
               <div class="concept-group-heading cahier-baseline-group">
                 <span>{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
-                <h3>{{ section.label }}</h3>
+                <div
+                  v-if="props.presentation === 'plain' && section.lecture"
+                  class="concept-group-heading-copy"
+                >
+                  <span class="concept-group-label">{{ section.label }}</span>
+                  <h3 class="concept-group-narrative">{{ section.lecture.marelle }}</h3>
+                </div>
+                <h3 v-else>{{ section.label }}</h3>
               </div>
 
               <section
@@ -376,16 +499,19 @@ onBeforeUnmount(() => {
                 :data-figure="`section-${section.key}`"
               >
                 <div class="argument-side">
-                  <template v-if="section.lecture">
-                    <h4 class="cahier-baseline-anchor cahier-marelle-anchor">{{ section.lecture.marelle }}</h4>
+                  <template v-if="section.lecture?.prose.length">
+                    <h4
+                      v-if="props.presentation !== 'plain' && section.lecture?.prose.length"
+                      class="cahier-baseline-anchor cahier-marelle-anchor"
+                    >{{ section.lecture.marelle }}</h4>
                     <CahierProse class="argument-copy" :blocks="section.lecture.prose" />
                     <div
-                      v-if="sectionExploration(section)"
+                      v-if="props.presentation !== 'plain' && sectionExploration(section)"
                       class="cahier-section-exploration"
                       aria-label="Explorer les indicateurs de cette section"
                     >
                       <PassarelleExploration
-                        :to="sectionExploration(section)!.to"
+                        :to="sectionExploration(section)!"
                         libelle="En savoir plus"
                         sans-soulignement
                         class="cahier-baseline-anchor"
@@ -408,7 +534,7 @@ onBeforeUnmount(() => {
                             {{ mode.label }}
                           </dt>
                           <dd>
-                            <strong class="mode-value" :class="{ 'is-extreme': isExtreme(mode.fact.fact) }">
+                    <strong class="mode-value cahier-scalar-value" :class="{ 'is-extreme': isExtreme(mode.fact.fact) }">
                               {{ formatFact(mode.fact.fact) }}
                             </strong>
                             <CahierReferenceNote
@@ -421,7 +547,7 @@ onBeforeUnmount(() => {
                       </dl>
                     </div>
                   </template>
-                  <p v-else class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
+                  <p v-else-if="section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
 
                 </div>
 
@@ -433,48 +559,87 @@ onBeforeUnmount(() => {
                   />
                 </figure>
 
-                <figure v-else-if="section.evidence?.kind === 'comparison'" class="evidence-side evidence-figure">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Accès perdus par bâtiment</figcaption>
-                  <div class="comparison-figure" :aria-label="section.evidence.referenceLabel ?? 'Comparaison des valeurs disponibles'">
-                    <div class="comparison-header type-figure-column">
-                       <span>Mode</span><span>{{ nomTerritoirePourAffichage(content.territory) }}</span><span>{{ section.evidence.referenceLabel ?? 'Référence' }}</span>
-                    </div>
-                    <div
-                      v-for="row in section.evidence.rows"
-                      :key="row.fact.key"
-                      class="comparison-row"
-                      :class="`comparison-row--${modeClassForFact(row.fact)}`"
+                <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
+                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Accès moyen par bâtiment</figcaption>
+                  <div class="summary-metrics">
+                    <section
+                      v-for="metric in summaryMetrics(section.evidence)"
+                      :key="metric.key"
+                      v-show="summaryHasValues(metric.values)"
+                      class="summary-metric"
                     >
-                      <div class="comparison-label">
-                        <component
-                          v-if="modeForFact(row.fact)"
-                          :is="modeIcon(modeForFact(row.fact)!)"
-                          :size="18"
-                          stroke-width="1.6"
-                        />
-                        <span>{{ shortModeLabel(row) }}</span>
-                      </div>
-                      <div class="bar-cell bar-cell--current">
-                        <div class="bar-line">
-                          <span class="bar bar--current" :style="{ width: barWidth(row.fact.value, comparisonMaximum(section.evidence)) }" />
-                          <strong :class="{ 'is-extreme': isExtreme(row.fact) }">{{ formatFact(row.fact) }}</strong>
-                        </div>
-                        <CahierRank
-                          :fact="row.fact"
-                          :to="routeForFact(section, row.fact)"
-                          placement="comparison"
+                      <h4 class="summary-metric-title">{{ metric.title }} <span>(moy./bât.)</span></h4>
+                      <div
+                        class="summary-stack"
+                        role="img"
+                        :aria-label="`${metric.title} : ${summarySegments(metric.values).map((segment) => `${segment.label} ${formatFact(segment.fact.fact)}`).join('; ')}`"
+                      >
+                        <span
+                          v-for="segment in summarySegments(metric.values)"
+                          :key="segment.mode"
+                          class="summary-stack-segment"
+                          :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
+                          :style="{ left: segment.left, width: segment.width }"
                         />
                       </div>
-                      <div class="bar-cell bar-cell--reference">
-                        <div class="bar-line">
-                          <span class="bar bar--reference" :style="{ width: barWidth(row.fact.comparison?.reference?.value ?? null, comparisonMaximum(section.evidence)) }" />
-                          <strong>{{ referenceText(row.fact) }}<small v-if="row.fact.unit === '%'"> %</small></strong>
+                      <dl class="summary-values">
+                        <div
+                          v-for="segment in summarySegments(metric.values)"
+                          :key="segment.mode"
+                          class="summary-value"
+                          :class="`summary-value--${MODE_CLASSES[segment.mode]}`"
+                        >
+                          <dt>
+                            <component :is="segment.icon" :size="16" stroke-width="1.6" aria-hidden="true" />
+                            {{ segment.label }}
+                          </dt>
+                          <dd>
+                            <strong class="cahier-scalar-value" :class="{ 'is-extreme': isExtreme(segment.fact.fact) }">{{ formatFact(segment.fact.fact) }}</strong>
+                            <small v-if="summaryLoss(metric.values, segment.mode) !== null">
+                              −{{ formatNumber(summaryLoss(metric.values, segment.mode)!) }} vs voiture
+                            </small>
+                            <CahierReferenceNote
+                              :fact="segment.fact.fact"
+                              :reference-label="section.evidence.referenceLabel"
+                              :to="routeForFact(section, segment.fact.fact)"
+                            />
+                          </dd>
                         </div>
-                      </div>
-                    </div>
+                      </dl>
+                    </section>
                   </div>
                 </figure>
 
+                <figure v-else-if="section.evidence?.kind === 'bpe-profiles'" class="evidence-side evidence-figure bpe-evidence">
+                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Composition des profils d’accès</figcaption>
+                  <div class="bpe-profile-chart" aria-label="Composition des profils d’accès par mode">
+                    <div
+                      v-for="profile in section.evidence.profiles"
+                      :key="profile.profile"
+                      class="bpe-profile-column"
+                    >
+                      <div class="bpe-profile-bar-area">
+                        <span
+                          class="bpe-profile-bar"
+                          :style="{ height: bpeBarHeight(profile.count, bpeProfileScale(section.evidence.profiles)) }"
+                        />
+                      </div>
+                      <strong class="bpe-profile-label">{{ profile.label }}</strong>
+                      <span class="bpe-profile-count">{{ profileCountLabel(profile.count) }}</span>
+                      <div
+                        class="stacked-donut bpe-profile-donut"
+                        :style="donutStyle(profile.exemplar)"
+                        :aria-label="`${profile.exemplar.label}. ${MOBILITE_MODE_LABELS.walkTransit} : ${formatPercentage(profile.exemplar.walkTransit)}; ${MOBILITE_MODE_LABELS.bike} : ${formatPercentage(profile.exemplar.bike)}; ${MOBILITE_MODE_LABELS.car} : ${formatPercentage(profile.exemplar.car)}`"
+                        role="img"
+                      >
+                        <span class="stacked-donut-center">
+                          <span>Exemple</span>
+                        </span>
+                      </div>
+                      <span class="bpe-profile-exemplar">{{ profile.exemplar.label }}</span>
+                    </div>
+                  </div>
+                </figure>
                 <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
                   <div class="access-figures" aria-label="Part des bâtiments accessibles par service et par mode">
@@ -497,7 +662,7 @@ onBeforeUnmount(() => {
                         </span>
                       </div>
                       <div class="access-foot-summary">
-                        <strong :class="{ 'is-extreme': isExtreme(service.modes.walkTransit.fact) }">
+                        <strong class="cahier-scalar-value" :class="{ 'is-extreme': isExtreme(service.modes.walkTransit.fact) }">
                           {{ formatFact(service.modes.walkTransit.fact) }}
                         </strong>
                         <span><Footprints class="cahier-mode-icon--foot" :size="14" stroke-width="1.7" aria-hidden="true" />{{ service.modes.walkTransit.label }}</span>
@@ -533,6 +698,18 @@ onBeforeUnmount(() => {
                   <span>{{ sectionState(section) }}</span>
                 </div>
               </section>
+              <div
+                v-if="props.presentation === 'plain' && sectionExploration(section)"
+                class="cahier-section-exploration cahier-section-exploration--unit-footer"
+                aria-label="Explorer les indicateurs de cette section"
+              >
+                <PassarelleExploration
+                  :to="sectionExploration(section)!"
+                  libelle="En savoir plus"
+                  sans-soulignement
+                  class="cahier-baseline-anchor"
+                />
+              </div>
             </section>
           </div>
         </section>
@@ -581,13 +758,38 @@ onBeforeUnmount(() => {
   --margin-line: 104px;
   --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
   --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
-  min-height: 100vh;
+  min-height: 0;
   color: var(--ink);
-  background: var(--cahier-ground);
+  background: transparent;
   font-family: var(--font-sans);
 }
 
-.cahier-cover,
+.cahier--sans-grille .cahier-page,
+.cahier--sans-grille .sources-page {
+  background-image: linear-gradient(
+    to left,
+    transparent 0,
+    transparent var(--margin-line),
+    var(--red-soft) var(--margin-line),
+    var(--red-soft) calc(var(--margin-line) + 1px),
+    transparent calc(var(--margin-line) + 1px)
+  );
+}
+
+.cahier--sans-grille {
+  --cahier-grid-jump: 24px;
+  --cahier-prose-line-height: 1.45;
+  --cahier-prose-paragraph-gap: var(--space-3);
+  --cahier-group-gap: var(--space-6);
+  --cahier-figure-title-gap: var(--space-3);
+  --cahier-figure-title-min-height: 0px;
+  --cahier-page-left-inset: 64px;
+  --cahier-page-right-inset: 148px;
+  --cahier-spread-gap: var(--space-5);
+  --cahier-spread-padding: 0px;
+  --cahier-unit-padding: var(--space-3);
+}
+
 .cahier-page,
 .sources-page {
   background-color: var(--paper);
@@ -596,21 +798,7 @@ onBeforeUnmount(() => {
     repeating-linear-gradient(to bottom, transparent 0 7px, var(--fine-rule) 7px 8px, transparent 8px 15px, var(--fine-rule) 15px 16px, transparent 16px 23px, var(--fine-rule) 23px 24px, transparent 24px 30px, var(--rule) 30px 32px);
 }
 
-.cahier-cover { padding: 22px clamp(24px, 6vw, 96px) 64px; border-bottom: 1px solid var(--red-soft); }
-.cahier-local-nav { display: flex; align-items: baseline; gap: 12px; max-width: 1400px; margin: 0 auto; padding-left: 92px; color: var(--muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
-.cahier-local-nav a { color: inherit; text-underline-offset: 4px; }
-.cahier-wordmark { color: var(--ink) !important; font-family: var(--font-serif); font-size: 20px; font-style: italic; font-weight: 600; letter-spacing: -.03em; text-transform: none; }
-.cahier-local-divider { color: var(--red); font-size: 20px; }
-.cahier-home-link { margin-left: auto; }
-.cover-body { max-width: 1400px; margin: 116px auto 0; padding-left: 92px; }
-.cover-context { margin: 0 0 18px; color: var(--cahier-theme-strong); font-size: 13px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.cover-body h1 { max-width: 1050px; margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: clamp(4rem, 10vw, 8rem); font-weight: 500; letter-spacing: -.065em; line-height: .86; }
-.cover-lead { max-width: 38rem; margin: 30px 0 0; color: var(--muted); font-family: var(--font-serif); font-size: 21px; line-height: 1.4; }
-.cover-signature { display: flex; gap: 12px; margin-top: 76px; color: var(--muted); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
-.cover-signature span:nth-child(2) { color: var(--red); }
-.cover-bottom-rule { max-width: 1400px; height: 9px; margin: 76px auto 0; border-top: 1px solid var(--cahier-theme); border-bottom: 1px solid var(--red); }
-
-.cahier-reader { display: grid; grid-template-columns: minmax(160px, 210px) minmax(0, 1fr); gap: clamp(28px, 4vw, 68px); max-width: 1640px; margin: 0 auto; padding: 80px clamp(24px, 6vw, 96px) 128px; }
+.cahier-reader { display: grid; grid-template-columns: minmax(160px, 210px) minmax(0, 1fr); gap: clamp(28px, 4vw, 68px); max-width: 1640px; margin: 0 auto; padding: 0 0 64px; }
 .cahier-spine { position: sticky; top: 24px; align-self: start; padding-top: 4px; }
 .spine-title, .margin-label { margin: 0; color: var(--cahier-theme-strong); font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .cahier-spine ol { display: grid; gap: 6px; margin: 18px 0 0; padding: 0; list-style: none; }
@@ -621,21 +809,51 @@ onBeforeUnmount(() => {
 .spine-number { color: var(--cahier-theme-strong); font-variant-numeric: tabular-nums; }
 .mobile-index { display: none; }
 .cahier-pages { display: grid; gap: 96px; min-width: 0; }
-.cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: 148px; --page-right-inset: 64px; padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid rgb(35 42 42 / 15%); box-shadow: 0 14px 30px rgb(67 57 42 / 11%); scroll-margin-top: 28px; }
+.cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: var(--cahier-page-left-inset, 148px); --page-right-inset: var(--cahier-page-right-inset, 64px); padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid rgb(35 42 42 / 15%); box-shadow: 0 14px 30px rgb(67 57 42 / 11%); scroll-margin-top: 28px; }
 .page-margin { position: absolute; top: 48px; left: 18px; display: grid; width: 72px; gap: 30px; align-content: start; text-align: center; }
+.cahier--sans-grille .page-margin { right: 18px; left: auto; }
 .page-number { display: grid; gap: 3px; color: var(--red); font-family: var(--font-serif); font-size: 29px; line-height: .9; }
 .page-number span, .page-number small { color: var(--muted); font-family: var(--font-sans); font-size: 9px; }
 .page-number span { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .margin-sources { display: grid; gap: 10px; justify-items: center; overflow-wrap: anywhere; }
 .margin-sources a { color: var(--cahier-theme-strong); font-size: 10px; line-height: 1.1; text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
 .page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
+.cahier--sans-grille .page-heading { padding-right: 0; padding-left: 0; }
 .page-heading h2 { max-width: none; margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: clamp(1.65rem, 2.8vw, 2.4rem); font-weight: 400; letter-spacing: -.035em; line-height: 1; text-align: center; }
 .page-subtitle { max-width: none; margin: 14px 0 0; color: var(--cahier-default); font-size: 15px; text-align: justify; }
-.figure-stack { display: grid; gap: 0; }
-.concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: 8px 0 14px; }
+.figure-stack {
+  --masonry-gap: var(--space-8);
+  --masonry-half-gap: calc(var(--masonry-gap) / 2);
+  position: relative;
+  min-width: 0;
+}
+.cahier--sans-grille .figure-stack {
+  --masonry-gap: var(--space-4);
+}
+.concept-group {
+  container: subgroup / inline-size;
+  margin: 0 0 var(--cahier-group-gap, var(--space-8));
+}
+.cahier--sans-grille .concept-group {
+  padding: var(--cahier-unit-padding);
+  border: 1px solid color-mix(in srgb, var(--cahier-theme) 24%, var(--paper));
+  background: transparent;
+}
+.figure-stack:not(.figure-stack--ready) .concept-group { width: 100%; }
+.figure-stack--ready .concept-group {
+  position: absolute;
+  top: var(--masonry-top);
+  left: var(--masonry-left);
+  width: var(--masonry-width);
+}
+.concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
+.cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-2); }
+.concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
+.concept-group-label { color: var(--cahier-theme-strong); font-size: 10px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
 .concept-group-heading > span { color: var(--red); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
 .concept-group-heading h3 { margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: calc(1.2rem + 2px); font-weight: 500; line-height: 1; }
-.figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: 34px; align-items: start; padding: 22px 0; }
+.cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
+.figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
 .figure-spread--flip .argument-side { order: 2; }
 .figure-spread--flip .evidence-side { order: 1; }
 .argument-side, .evidence-side { min-width: 0; }
@@ -646,6 +864,28 @@ onBeforeUnmount(() => {
 .cahier-section-state { margin: 0; padding: 20px 0; }
 .evidence-placeholder { display: grid; place-items: center; min-height: 180px; border: 1px dashed color-mix(in srgb, var(--cahier-theme) 35%, transparent); text-align: center; }
 .evidence-figure { margin: 0; padding: 12px 0 0; }
+.cahier--sans-grille .evidence-figure { padding-top: 0; }
+.summary-evidence { display: grid; gap: 36px; }
+.summary-metrics { display: grid; gap: 42px; }
+.summary-metric { min-width: 0; }
+.summary-metric-title { margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: 20px; font-weight: 500; line-height: 1.15; }
+.summary-metric-title span { color: var(--cahier-default); font-family: var(--font-sans); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.summary-stack { position: relative; height: 14px; margin: 24px 0 20px; background: var(--paper-deep); }
+.summary-stack-segment { position: absolute; top: 0; height: 100%; }
+.summary-stack-segment--t { background: var(--cahier-mode-foot); }
+.summary-stack-segment--b { background: var(--cahier-mode-bike); }
+.summary-stack-segment--c { background: var(--cahier-mode-car); }
+.summary-values { display: grid; gap: 14px; margin: 0; }
+.summary-value { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; padding-top: 12px; border-top: 1px solid var(--fine-rule); }
+.summary-value dt { display: flex; align-items: center; gap: 7px; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.25; }
+.summary-value dd { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: baseline; margin: 0; }
+.summary-value dd strong { font: var(--type-figure-value); font-size: 18px; font-variant-numeric: tabular-nums; }
+.summary-value dd small { color: var(--cahier-default); font-size: 11px; }
+.summary-value dd .cahier-reference-note { grid-column: 1 / -1; text-align: left; }
+.cahier--sans-grille .summary-value dd .cahier-reference-note { text-align: center; }
+.summary-value--t dt, .summary-value--t dd strong { color: var(--cahier-mode-foot); }
+.summary-value--b dt, .summary-value--b dd strong { color: var(--cahier-mode-bike); }
+.summary-value--c dt, .summary-value--c dd strong { color: var(--cahier-mode-car); }
 .mode-figures { display: grid; gap: 0; margin: 16px 0 0; }
 .mode-figures-heading { display: grid; grid-template-columns: minmax(0, 1fr) var(--mode-scalar-width); gap: 12px; color: var(--cahier-default); text-align: center; }
 .mode-figure { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 0 34px; }
@@ -659,23 +899,8 @@ onBeforeUnmount(() => {
 .mode-figure dd .cahier-reference-note { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; }
 
 .mode-value.is-extreme, .bar-cell strong.is-extreme, .access-foot-summary > strong.is-extreme { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.cahier--sans-grille .cahier-scalar-value.is-extreme { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .regional-reading { font: var(--type-figure-mode); font-size: 11px; line-height: 1.25; }
-
-.comparison-figure { display: grid; gap: 0; padding: 0 0 18px; }
-.comparison-header, .comparison-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(100px, 1fr) minmax(100px, 1fr); gap: 16px; align-items: center; }
-.comparison-header { padding-bottom: 12px; color: var(--cahier-default); }
-.comparison-header span:not(:first-child) { text-align: right; }
-.comparison-row { align-items: start; padding: 18px 0; }
-.comparison-label { display: flex; align-items: center; gap: 8px; color: var(--cahier-default); font-size: 13px; line-height: 1.25; }
-.comparison-label svg { flex: 0 0 auto; }
-.comparison-row--t .comparison-label svg, .comparison-row--t .bar-cell--current .bar, .comparison-row--t .bar-cell--current strong { color: var(--cahier-mode-foot); }
-.comparison-row--t .bar-cell--current .bar { background: var(--cahier-mode-foot); }
-.comparison-row--b .comparison-label svg, .comparison-row--b .bar-cell--current .bar, .comparison-row--b .bar-cell--current strong { color: var(--cahier-mode-bike); }
-.comparison-row--b .bar-cell--current .bar { background: var(--cahier-mode-bike); }
-.bar-cell { position: relative; display: grid; gap: 5px; align-content: start; }
-.bar-line { display: grid; grid-template-columns: minmax(20px, 1fr) auto; gap: 10px; align-items: center; min-height: 18px; }
-.bar { display: block; min-width: 4px; height: 9px; background: var(--cahier-region-emphasis); }
-.bar-cell strong { color: var(--cahier-region-emphasis); font: var(--type-figure-value); font-variant-numeric: tabular-nums; }
 
 .access-figure-collection { margin: 0; padding: 12px 0 0; }
 .access-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 18px; align-items: start; }
@@ -704,30 +929,53 @@ onBeforeUnmount(() => {
 .access-legend-item--b i { background: var(--cahier-mode-bike); }
 .access-legend-item--c i { background: var(--cahier-mode-car); }
 
+.bpe-evidence { min-width: 0; }
+.bpe-profile-chart { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(18px, 3vw, 34px); align-items: end; }
+.bpe-profile-column { display: grid; gap: 8px; min-width: 0; justify-items: center; text-align: center; }
+.bpe-profile-bar-area { display: flex; width: 100%; height: 170px; align-items: end; justify-content: center; border-bottom: 1px solid var(--rule); }
+.bpe-profile-bar { display: block; width: min(72px, 48%); min-height: 4px; background: var(--cahier-theme); }
+.bpe-profile-label { color: var(--ink); font-size: 12px; line-height: 1.25; }
+.bpe-profile-count { color: var(--cahier-theme-strong); font-size: 10px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
+.bpe-profile-donut { width: clamp(76px, 10vw, 108px); margin-top: 10px; }
+.bpe-profile-exemplar { max-width: 16ch; color: var(--cahier-default); font-size: 11px; line-height: 1.2; overflow-wrap: anywhere; }
+
 .sources-page { padding-bottom: 72px; }
 .sources-list { display: grid; gap: 18px; margin: 48px 0 0; }
 .sources-list dt { color: var(--ink); font-size: 14px; font-weight: 700; }
 .sources-list dt a { color: inherit; }
 .sources-list dd { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .sources-link { display: inline-block; margin-top: 48px; color: var(--cahier-theme-strong); font-size: 13px; text-underline-offset: 4px; }
+.cahier--sans-grille .cahier-section-exploration--unit-footer { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--fine-rule); }
 
-@media (min-width: 761px) {
+/* A subgroup occupies one independent masonry rail. Its existing figure spread
+   remains intact, but collapses only when the rail cannot physically hold both
+   sides without overflow. */
+@container subgroup (max-width: 760px) {
+  .figure-spread { grid-template-columns: 1fr; column-gap: 0; row-gap: var(--cahier-spread-gap, 24px); }
+  .figure-spread--flip .argument-side, .figure-spread--flip .evidence-side { order: initial; }
 }
 
 @container cahier-page (max-width: 900px) {
-  .figure-spread { grid-template-columns: 1fr; gap: 32px; }
+  .figure-spread { grid-template-columns: 1fr; gap: var(--cahier-spread-gap, 32px); }
   .figure-spread--flip .argument-side, .figure-spread--flip .evidence-side { order: initial; }
+  .summary-metrics { gap: 32px; }
 }
 @container cahier-page (max-width: 620px) {
-  .comparison-header, .comparison-row { grid-template-columns: minmax(120px, 1fr) minmax(90px, 1fr) minmax(90px, 1fr); }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .access-legend { grid-column: 1 / -1; grid-row: auto; }
+  .bpe-profile-chart { gap: 10px; }
+  .bpe-profile-bar { width: min(56px, 58%); }
 }
 @container cahier-page (max-width: 480px) {
-  .comparison-header, .comparison-row { grid-template-columns: minmax(100px, 1fr) minmax(76px, 1fr) minmax(76px, 1fr); gap: 8px; }
+  .summary-value { grid-template-columns: 1fr; gap: 5px; }
+  .summary-value dd .cahier-reference-note { text-align: left; }
+  .cahier--sans-grille .summary-value dd .cahier-reference-note { text-align: center; }
+  .bpe-profile-bar-area { height: 125px; }
+  .bpe-profile-label { font-size: 10px; }
 }
 
 @media (max-width: 760px) {
+  .cahier--sans-grille { --cahier-page-left-inset: 28px; --cahier-page-right-inset: 116px; }
   .cahier { --margin-line: 82px; }
   .cahier-reader { grid-template-columns: 1fr; padding-top: 36px; }
   .cahier-spine { display: none; }
@@ -736,9 +984,11 @@ onBeforeUnmount(() => {
   .mobile-index nav { display: grid; gap: 2px; padding: 0 0 18px 18px; }
   .mobile-index a { display: flex; gap: 12px; padding: 8px 0; color: var(--muted); font-size: 14px; text-decoration: none; }
   .page-margin { width: 58px; }
+  .cahier--sans-grille .page-margin { right: 10px; left: auto; }
   .cahier-page, .sources-page { --page-left-inset: 116px; --page-right-inset: 28px; padding-right: var(--page-right-inset); padding-left: var(--page-left-inset); }
 }
 @media (max-width: 600px) {
+  .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
   .cahier { --margin-line: 74px; }
   .cahier-cover { padding: 18px 20px 44px; }
   .cahier-local-nav { padding-left: 44px; font-size: 10px; }
@@ -754,9 +1004,7 @@ onBeforeUnmount(() => {
   .page-margin { top: 36px; left: 10px; width: 48px; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
-  .figure-spread { padding: 28px 0; }
-  .comparison-header, .comparison-row { grid-template-columns: minmax(100px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr); gap: 8px; }
-  .comparison-label { font-size: 11px; }
+  .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
 }
 @media (prefers-reduced-motion: reduce) {

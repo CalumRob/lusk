@@ -1,10 +1,10 @@
 import { MOBILITE_MODE_LABELS, nomTerritoirePourAffichage } from './territoryFacts'
 import type {
-  ComparisonScope,
   BpeAccessProfileFact,
   FactAvailability,
   FactProvenance,
   MobiliteAccessMode,
+  MobiliteAccessModes,
   MobiliteDistributionPeer,
   MobiliteDistributionSignature,
   MobiliteService,
@@ -66,11 +66,28 @@ export interface DistributionEvidence {
   peers: readonly MobiliteDistributionPeer[]
 }
 
-export interface ComparisonEvidence {
-  kind: 'comparison'
-  rows: readonly ContentIndicator[]
-  scope: ComparisonScope | null
+export interface BpeProfilesEvidence {
+  kind: 'bpe-profiles'
+  profiles: readonly BpeAccessProfileFact[]
+}
+
+export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
+
+export interface SummaryEvidence {
+  kind: 'summary'
+  accessibleEquipment: ContentModeFacts
+  accessibleTypes: ContentModeFacts
   referenceLabel: string | null
+  losses: {
+    diversity: {
+      walkTransit: ContentFact
+      bike: ContentFact
+    }
+    total: {
+      walkTransit: ContentFact
+      bike: ContentFact
+    }
+  }
 }
 
 export interface AccessServiceEvidence {
@@ -84,11 +101,14 @@ export interface AccessEvidence {
   totalBuildings: ContentFact
   totalBrittanyBuildings: ContentFact
   services: readonly AccessServiceEvidence[]
-  bpeProfiles: readonly BpeAccessProfileFact[]
   referenceLabel: string | null
 }
 
-export type ContentEvidence = DistributionEvidence | ComparisonEvidence | AccessEvidence
+export type ContentEvidence =
+  | DistributionEvidence
+  | BpeProfilesEvidence
+  | SummaryEvidence
+  | AccessEvidence
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -101,14 +121,18 @@ interface ContentSectionBase<Key extends string, Evidence> {
   explorationTargets: readonly ExplorationTarget[]
 }
 
-export interface PerteDeDiversiteSection
-  extends ContentSectionBase<'perte-de-diversite', DistributionEvidence> {
-  label: 'Perte de diversité'
+export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
+  label: 'Résumé'
 }
 
-export interface PerteTotaleSection
-  extends ContentSectionBase<'perte-totale-d-acces', ComparisonEvidence> {
-  label: 'Perte totale d’accès'
+export interface ProfilsAccesParModeSection
+  extends ContentSectionBase<'profils-acces-par-mode', BpeProfilesEvidence> {
+  label: 'Profils d’accès par mode'
+}
+
+export interface DistributionAccesParBatimentSection
+  extends ContentSectionBase<'distribution-acces-par-batiment', DistributionEvidence> {
+  label: "Distribution de l'accès par bâtiment"
 }
 
 export interface ServicesEssentielsSection
@@ -117,9 +141,10 @@ export interface ServicesEssentielsSection
 }
 
 export type MobiliteContentSection =
-  | PerteDeDiversiteSection
-  | PerteTotaleSection
+  | ResumeSection
+  | ProfilsAccesParModeSection
   | ServicesEssentielsSection
+  | DistributionAccesParBatimentSection
 
 export type ContentSection = MobiliteContentSection
 
@@ -127,9 +152,10 @@ export interface MobiliteContentUnit {
   key: 'acces-aux-services'
   label: 'Accès aux services'
   sections: readonly [
-    PerteDeDiversiteSection,
-    PerteTotaleSection,
+    ResumeSection,
+    ProfilsAccesParModeSection,
     ServicesEssentielsSection,
+    DistributionAccesParBatimentSection,
   ]
 }
 
@@ -157,6 +183,12 @@ const SERVICE_GRAMMAR: readonly {
 
 /** Public labels for this grammar's published indicators and content metrics. */
 const CONTENT_LABELS: Readonly<Record<string, string>> = {
+  avg_tot_car: `Équipements accessibles — ${MOBILITE_MODE_LABELS.car}`,
+  avg_tot_b: `Équipements accessibles — ${MOBILITE_MODE_LABELS.bike}`,
+  avg_tot_t: `Équipements accessibles — ${MOBILITE_MODE_LABELS.walkTransit}`,
+  avg_div_car: `Types d’équipements accessibles — ${MOBILITE_MODE_LABELS.car}`,
+  avg_div_b: `Types d’équipements accessibles — ${MOBILITE_MODE_LABELS.bike}`,
+  avg_div_t: `Types d’équipements accessibles — ${MOBILITE_MODE_LABELS.walkTransit}`,
   div_loss_t: `Perte de diversité — ${MOBILITE_MODE_LABELS.walkTransit}`,
   div_loss_b: `Perte de diversité — ${MOBILITE_MODE_LABELS.bike}`,
   tot_loss_t: `Perte totale d’accès — ${MOBILITE_MODE_LABELS.walkTransit}`,
@@ -178,7 +210,6 @@ const CONTENT_LABELS: Readonly<Record<string, string>> = {
   share_bank_c: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.car}`,
 }
 
-const TOTAL_LOSS_KEYS = ['tot_loss_t', 'tot_loss_b'] as const
 const ESSENTIAL_INDICATOR_KEYS = [
   'share_food_t',
   'share_food_b',
@@ -207,6 +238,20 @@ function hasValue(fact: NumericFact): boolean {
 
 function contentFact(fact: NumericFact, label: string): ContentFact {
   return { fact, label }
+}
+
+function absentFact(key: string, unit: string): NumericFact {
+  return {
+    key,
+    detail: null,
+    label: null,
+    value: null,
+    unit,
+    availability: 'absent',
+    provenance: null,
+    comparison: null,
+    reason: null,
+  }
 }
 
 function labelFor(key: string): string | null {
@@ -263,6 +308,14 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
     if (section.evidence?.kind === 'distribution') {
       add(section.evidence.marks.walkTransit)
       if (section.evidence.marks.bike) add(section.evidence.marks.bike)
+    }
+    if (section.evidence?.kind === 'summary') {
+      for (const mode of Object.values(section.evidence.accessibleEquipment)) add(mode)
+      for (const mode of Object.values(section.evidence.accessibleTypes)) add(mode)
+      add(section.evidence.losses.diversity.walkTransit)
+      add(section.evidence.losses.diversity.bike)
+      add(section.evidence.losses.total.walkTransit)
+      add(section.evidence.losses.total.bike)
     }
     if (section.evidence?.kind === 'access') {
       add(section.evidence.totalBuildings)
@@ -440,38 +493,6 @@ function lectureDiversite(
   return { marelle: 'Ce que l’on perd sans voiture', prose }
 }
 
-function lectureTotale(
-  territory: TerritoryIdentity,
-  walkTransit: NumericFact,
-  bike: NumericFact,
-): Lecture | null {
-  if (!complete(walkTransit) || !complete(bike)) return null
-  const territoryName = nomTerritoirePourAffichage(territory)
-  const prose: TextBlock[] = [
-    [
-      text('À '),
-      emphasis(territoryName),
-      text(', la perte totale atteint '),
-      emphasis(formatNumber(walkTransit.value)),
-      text(` accès par bâtiment ${modeInSentence('walkTransit')}, contre `),
-      emphasis(formatNumber(bike.value)),
-      text(` ${modeInSentence('bike')}.`),
-    ],
-  ]
-  const comparison = comparisonLabel(walkTransit.comparison)
-  const reference = walkTransit.comparison?.reference
-  if (comparison && reference) {
-    prose.push([
-      text('La référence est '),
-      regionalEmphasis(comparison),
-      text(' : '),
-      regionalEmphasis(formatNumber(reference.value)),
-      text(' accès perdus.'),
-    ])
-  }
-  return { marelle: 'Et en volume ?', prose }
-}
-
 function lectureEssentiels(
   territory: TerritoryIdentity,
   access: AccessEvidence,
@@ -490,7 +511,7 @@ function lectureEssentiels(
     (service) => service.modes.car.fact.value === 1,
   )
   return {
-    marelle: 'Tous les équipements ne se valent pas',
+    marelle: 'Tous les équipements ne se valent pas...',
     prose: [
       voitureComplete
         ? [
@@ -507,7 +528,7 @@ function lectureEssentiels(
   }
 }
 
-function diversitySection(facts: TerritoryFacts): PerteDeDiversiteSection {
+function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
   const walkTransit = facts.mobility.losses.diversityWalkTransit
   const bike = facts.mobility.losses.diversityBike
   const walkDistribution = completeDistribution(
@@ -538,64 +559,93 @@ function diversitySection(facts: TerritoryFacts): PerteDeDiversiteSection {
   ]
   const indicators = sectionFacts.filter(({ fact }) => hasValue(fact))
   return {
-    key: 'perte-de-diversite',
-    label: 'Perte de diversité',
+    key: 'distribution-acces-par-batiment',
+    label: "Distribution de l'accès par bâtiment",
     availability,
     indicators,
     evidence,
     provenance: sourceIdsFor(sectionFacts),
-    lecture: availability === 'complete' ? lectureDiversite(facts.territory, walkTransit, bike) : null,
+    lecture: availability === 'complete'
+      ? { marelle: '... Tous les bâtiments non plus', prose: [] }
+      : null,
     explorationTargets: targets,
   }
 }
 
-function totalSection(facts: TerritoryFacts): PerteTotaleSection {
-  const rawIndicators = TOTAL_LOSS_KEYS
-    .map((key) => indicatorFor(facts, key))
-    .filter((fact): fact is NumericFact => fact !== null)
-  const indicators = rawIndicators
-    .map(contentIndicator)
-    .filter((indicator): indicator is ContentIndicator => indicator !== null)
-  const walkTransit = rawIndicators.find((fact) => fact.key === 'tot_loss_t')
-  const bike = rawIndicators.find((fact) => fact.key === 'tot_loss_b')
-  const hasAny = rawIndicators.some(hasValue)
-  const availability: FactAvailability =
-    !hasAny
-      ? 'absent'
-      : walkTransit && bike && complete(walkTransit) && complete(bike)
-        ? 'complete'
-        : 'incomplete'
-  const evidence: ComparisonEvidence | null =
-    indicators.length === 0
-      ? null
-      : {
-          kind: 'comparison',
-          rows: indicators,
-           scope:
-             indicators.find((indicator) => indicator.fact.comparison)?.fact.comparison?.scope ??
-             null,
-           referenceLabel: comparisonReferenceLabel(
-             indicators.find((indicator) => indicator.fact.comparison)?.fact.comparison ?? null,
-           ),
-         }
+function contentModes(
+  modes: MobiliteAccessModes,
+  labels: Record<MobiliteAccessMode, string> = MOBILITE_MODE_LABELS,
+): ContentModeFacts {
   return {
-    key: 'perte-totale-d-acces',
-    label: 'Perte totale d’accès',
-    availability,
+    car: contentFact(modes.car, labels.car),
+    bike: contentFact(modes.bike, labels.bike),
+    walkTransit: contentFact(modes.walkTransit, labels.walkTransit),
+  }
+}
+
+function summarySection(facts: TerritoryFacts): ResumeSection {
+  const summary = facts.mobility.access.summary
+  const diversityWalkTransit = facts.mobility.losses.diversityWalkTransit
+  const diversityBike = facts.mobility.losses.diversityBike
+  const totalWalkTransit = indicatorFor(facts, 'tot_loss_t') ?? absentFact('tot_loss_t', 'accès perdus')
+  const totalBike = indicatorFor(facts, 'tot_loss_b') ?? absentFact('tot_loss_b', 'accès perdus')
+  const accessibleEquipment = contentModes(summary.accessibleEquipment)
+  const accessibleTypes = contentModes(summary.accessibleTypes)
+  const losses = {
+    diversity: {
+      walkTransit: contentFact(diversityWalkTransit, CONTENT_LABELS.div_loss_t),
+      bike: contentFact(diversityBike, CONTENT_LABELS.div_loss_b),
+    },
+    total: {
+      walkTransit: contentFact(totalWalkTransit, CONTENT_LABELS.tot_loss_t),
+      bike: contentFact(totalBike, CONTENT_LABELS.tot_loss_b),
+    },
+  }
+  const summaryFacts = [
+    ...Object.values(accessibleEquipment),
+    ...Object.values(accessibleTypes),
+    losses.diversity.walkTransit,
+    losses.diversity.bike,
+    losses.total.walkTransit,
+    losses.total.bike,
+  ]
+  const completeSummary = summaryFacts.every((value) => complete(value.fact))
+  const hasAny = summaryFacts.some((value) => hasValue(value.fact))
+  const indicators = [
+    ...Object.values(accessibleEquipment),
+    ...Object.values(accessibleTypes),
+    losses.diversity.walkTransit,
+    losses.diversity.bike,
+    losses.total.walkTransit,
+    losses.total.bike,
+  ].filter(({ fact }) => hasValue(fact))
+  return {
+    key: 'resume',
+    label: 'Résumé',
+    availability: !hasAny ? 'absent' : completeSummary ? 'complete' : 'incomplete',
     indicators,
-    evidence,
-    provenance: sourceIdsFor(indicators),
+    evidence: hasAny
+      ? {
+          kind: 'summary',
+          accessibleEquipment,
+          accessibleTypes,
+          referenceLabel: comparisonReferenceLabel(
+            summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
+          ),
+          losses,
+        }
+      : null,
+    provenance: sourceIdsFor(summaryFacts),
     lecture:
-      walkTransit && bike ? lectureTotale(facts.territory, walkTransit, bike) : null,
-    explorationTargets: targetsFor(rawIndicators, facts.territory),
+      complete(diversityWalkTransit) && complete(diversityBike)
+        ? lectureDiversite(facts.territory, diversityWalkTransit, diversityBike)
+        : null,
+    explorationTargets: targetsFor(indicators.map((indicator) => indicator.fact), facts.territory),
   }
 }
 
 function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
-  if (
-    facts.mobility.access.availability === 'absent' &&
-    facts.mobility.bpeAccess.availability === 'absent'
-  ) return null
+  if (facts.mobility.access.availability === 'absent') return null
   return {
     kind: 'access',
     totalBuildings: contentFact(
@@ -618,7 +668,6 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
         ),
       },
     })),
-    bpeProfiles: facts.mobility.bpeAccess.profiles,
     referenceLabel: comparisonReferenceLabel(
       Object.values(facts.mobility.access.byService)
         .flatMap((modes) => Object.values(modes))
@@ -640,14 +689,11 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
     evidence.services.every((service) =>
       Object.values(service.modes).every((mode) => complete(mode.fact)),
     )
-  const bpeComplete =
-    facts.mobility.bpeAccess.availability === 'absent' ||
-    facts.mobility.bpeAccess.availability === 'complete'
   const hasAny = indicators.length > 0 || evidence !== null
   const availability: FactAvailability =
     !hasAny
       ? 'absent'
-      : allIndicatorsComplete && allAccessComplete && bpeComplete
+      : allIndicatorsComplete && allAccessComplete
         ? 'complete'
         : 'incomplete'
   const contentFacts: ContentFact[] = [...indicators]
@@ -670,11 +716,36 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
   }
 }
 
+function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
+  const profiles = facts.mobility.bpeAccess.profiles
+  const evidence: BpeProfilesEvidence | null =
+    profiles.length > 0 ? { kind: 'bpe-profiles', profiles } : null
+  const availability: FactAvailability =
+    facts.mobility.bpeAccess.availability === 'incomplete'
+      ? 'incomplete'
+      : evidence
+        ? 'complete'
+        : 'absent'
+  return {
+    key: 'profils-acces-par-mode',
+    label: 'Profils d’accès par mode',
+    availability,
+    indicators: [],
+    evidence,
+    provenance: [],
+    lecture: availability === 'complete'
+      ? { marelle: 'Service minimum assuré?', prose: [] }
+      : null,
+    explorationTargets: [],
+  }
+}
+
 export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent {
   const sections = [
-    diversitySection(facts),
-    totalSection(facts),
+    summarySection(facts),
+    profilesSection(facts),
     essentialsSection(facts),
+    distributionSection(facts),
   ] as const
 
   return {

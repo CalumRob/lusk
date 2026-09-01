@@ -1,5 +1,5 @@
 /**
- * [PROTOTYPE #499 — JETABLE] Le registre des trois variantes de lecture de la
+ * [PROTOTYPE #499 — JETABLE] Le registre des variantes de lecture de la
  * fiche et le commutateur fixe du bas.
  *
  * Développement UNIQUEMENT : tout ce module est sous `import.meta.env.DEV` —
@@ -17,12 +17,12 @@ import type { Component } from 'vue'
 
 /** Une variante : sa clé d'URL, son nom affiché, son composant paresseux. */
 export interface VarianteProto {
-  clef: 'A' | 'B' | 'C' | 'D'
+  clef: 'A' | 'B' | 'C' | 'D' | 'E'
   nom: string
   composant: Component
 }
 
-const CLEFS = ['A', 'B', 'C', 'D'] as const
+const CLEFS = ['A', 'B', 'C', 'D', 'E'] as const
 
 export const VARIANTES: readonly VarianteProto[] = import.meta.env.DEV
   ? [
@@ -46,6 +46,11 @@ export const VARIANTES: readonly VarianteProto[] = import.meta.env.DEV
         nom: 'Cahier libre',
         composant: defineAsyncComponent(() => import('./VarianteCahierLibre.vue')),
       },
+      {
+        clef: 'E',
+        nom: 'Cahier sans grille',
+        composant: defineAsyncComponent(() => import('./VarianteCahierLibreE.vue')),
+      },
     ]
   : []
 
@@ -59,9 +64,9 @@ export function varianteDeUrl(valeur: unknown): VarianteProto | null {
 
 /** La clé voisine pour le cyclage clavier (← / →), en boucle. */
 export function clefVoisine(
-  clef: 'A' | 'B' | 'C' | 'D' | null,
+  clef: 'A' | 'B' | 'C' | 'D' | 'E' | null,
   sens: 1 | -1,
-): 'A' | 'B' | 'C' | 'D' {
+): 'A' | 'B' | 'C' | 'D' | 'E' {
   const base = clef ? CLEFS.indexOf(clef) : sens === 1 ? -1 : 0
   const index = (base + sens + CLEFS.length) % CLEFS.length
   return CLEFS[index]

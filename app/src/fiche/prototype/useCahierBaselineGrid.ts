@@ -67,11 +67,15 @@ function alignCahierBaselines(root: HTMLElement): void {
 }
 
 /** Shared baseline-grid lifecycle for every Cahier surface. */
-export function useCahierBaselineGrid(rootRef: Ref<HTMLElement | null>): void {
+export function useCahierBaselineGrid(
+  rootRef: Ref<HTMLElement | null>,
+  isEnabled: () => boolean = () => true,
+): void {
   let observer: ResizeObserver | null = null
   let frame: number | null = null
 
   const schedule = (): void => {
+    if (!isEnabled()) return
     if (frame !== null || typeof window.requestAnimationFrame !== 'function') return
     frame = window.requestAnimationFrame(() => {
       frame = null

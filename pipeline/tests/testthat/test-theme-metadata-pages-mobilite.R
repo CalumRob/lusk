@@ -1,11 +1,11 @@
 # test-theme-metadata-pages-mobilite ---------------------------------------------
-# Les Pages d'indicateur scalaires de la Mobilité (issue #461) : les QUATORZE
+# Les Pages d'indicateur scalaires de la Mobilité (issue #461) : les VINGT
 # indicateurs publiés du thème portent chacun leur page scalaire complète —
 # offre_tc, bornes_recharge, places_stationnement_velo_1000,
 # places_stationnement_voiture_1000, bornes_ev_par_station_service,
 # stationnement_velo_par_voiture, tot_loss_t, tot_loss_b et les cinq sœurs
-# iso_* — par des descripteurs épinglés → le seam de publication → les
-# artefacts committés.
+# iso_* et les six moyennes d'accès du résumé — par des descripteurs épinglés
+# → le seam de publication → les artefacts committés.
 #
 # L'énumération est le devoir (le même verrou que les trajectoires #438, les
 # distributions #440, les listes #439 et les relations #441) : une page ajoutée
@@ -18,12 +18,13 @@ PAGES_SCALAIRES_MOBILITE <- c(
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
   "tot_loss_t", "tot_loss_b",
   "iso_alimentation", "iso_sante", "iso_administration", "iso_ecole", "iso_banque",
+  "avg_tot_car", "avg_tot_b", "avg_tot_t", "avg_div_car", "avg_div_b", "avg_div_t",
   "raccordement_tc"
 )
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
 
-test_that("l'énumération des pages Mobilité est connue — les pages multi-mesures et les quatorze scalaires (#461)", {
+test_that("l'énumération des pages Mobilité est connue — les pages multi-mesures et les vingt scalaires (#461)", {
   meta <- lire_theme_metadata("mobilite")
   cles <- names(meta$indicator_pages)
   expect_setequal(
@@ -36,7 +37,7 @@ test_that("l'énumération des pages Mobilité est connue — les pages multi-me
   expect_setequal(scalaires, PAGES_SCALAIRES_MOBILITE)
 })
 
-test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses quatorze pages scalaires complètes (#461)", {
+test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses vingt pages scalaires complètes (#461)", {
   meta <- lire_theme_metadata("mobilite")
   expect_no_error(valider_theme_metadata(meta))
 })
@@ -83,7 +84,7 @@ test_that("map_layers déclare les faits cartographiables sans exposer les séri
   expect_no_error(valider_theme_metadata(vide))
 })
 
-test_that("publier_theme_metadata : les quatorze pages passent le seam et survivent au round-trip (#461)", {
+test_that("publier_theme_metadata : les vingt pages passent le seam et survivent au round-trip (#461)", {
   meta <- lire_theme_metadata("mobilite")
   sortie <- file.path(tempdir(), "pages-scalaires-mobilite")
   dir.create(sortie, showWarnings = FALSE)

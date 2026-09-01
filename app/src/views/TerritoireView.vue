@@ -166,12 +166,12 @@ const classesFond = computed(() =>
 const variante = computed(() => varianteDeUrl(route.query.variant))
 const prototypeActif = import.meta.env.DEV
 /** [PROTOTYPE #531] D owns the editorial fiche surface for Mobilité only. */
-const prototypeDMobilite = computed(
-  () => prototypeActif && variante.value?.clef === 'D' && selection.value === 'mobilite',
+const prototypeCahierMobilite = computed(
+  () => prototypeActif && (variante.value?.clef === 'D' || variante.value?.clef === 'E') && selection.value === 'mobilite',
 )
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
-    !prototypeDMobilite.value ||
+    !prototypeCahierMobilite.value ||
     chargement.value ||
     !payload.value ||
     !typeValide.value
@@ -188,10 +188,6 @@ const paginationCahier = computed(() =>
     ? cahierPaginationFor(payload.value, contenuMobilite.value)
     : null,
 )
-const prototypeIndependant = computed(
-  () => prototypeDMobilite.value && contenuMobilite.value !== null && paginationCahier.value !== null,
-)
-
 function choisirOnglet(slug: SlugOnglet): void {
   // La fiche n'émet que des slugs de thème (pas de pseudo-onglet depuis
   // #408) — la garde garde la jointure de type pour les autres shells.
@@ -220,10 +216,10 @@ watch(
 <template>
   <section
     class="fiche"
-    :class="[classesFond, { 'fiche--prototype': prototypeActif }]"
+    :class="[classesFond, { 'fiche--prototype': prototypeActif, 'fiche--prototype-d': prototypeCahierMobilite }]"
     :aria-busy="chargement ? 'true' : 'false'"
   >
-    <div v-if="!prototypeIndependant" class="fiche-en-tete-surface">
+    <div class="fiche-en-tete-surface">
       <div class="fiche-en-tete">
       <div
         v-if="!identitePret"
@@ -302,14 +298,6 @@ watch(
              chaque changement d'onglet (remount via :key), figé pour la durée
              du montage. -->
         <template v-else>
-          <!-- [PROTOTYPE #531] D owns the content-driven Mobilité surface. -->
-          <component
-            :is="variante.composant"
-            v-if="prototypeIndependant && contenuMobilite && paginationCahier && variante"
-            :content="contenuMobilite"
-            :pagination="paginationCahier"
-            />
-          <template v-else>
           <FiligraneFiche v-if="selection" :key="selection" :theme="selection" />
           <div
             v-if="selection"
@@ -318,12 +306,21 @@ watch(
             :id="idPanneau(selection)"
             :aria-labelledby="idOnglet(selection)"
           >
+            <!-- [PROTOTYPE #531] D replaces only the Mobilité body; the fiche
+                 identity header, theme tabs, background and tabpanel stay owned
+                 by this shell. -->
+            <component
+              :is="variante.composant"
+              v-if="prototypeCahierMobilite && contenuMobilite && paginationCahier && variante"
+              :content="contenuMobilite"
+              :pagination="paginationCahier"
+            />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent
                  par la boucle partagée des sous-groupes. -->
             <BlocProgrammes
-              v-if="selection === 'programmes' && payload"
+              v-else-if="selection === 'programmes' && payload"
               :payload="payload"
               :territoire="String(route.params.id)"
             />
@@ -343,7 +340,6 @@ watch(
               :territoire="String(route.params.id)"
             />
           </div>
-          </template>
         </template>
       </div>
     </template>
@@ -545,5 +541,9 @@ watch(
 /* [PROTOTYPE #499] la place du commutateur fixe du bas. */
 .fiche--prototype {
   padding-bottom: 96px;
+}
+
+.fiche--prototype-d .fiche-contenu {
+  max-width: 1640px;
 }
 </style>

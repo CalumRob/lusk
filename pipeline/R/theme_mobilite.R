@@ -212,6 +212,18 @@ agreger_nb_buildings_territoires <- function(communes, base_epci) {
     dplyr::arrange(code)
 }
 
+# CLES_MOYENNES_ACCES_MOBILITE --------------------------------------------------
+# Les six moyennes du résumé : le nombre moyen d'équipements et de types
+# d'équipements accessibles par bâtiment, pour chacun des trois modes. Elles
+# sont déjà calculées dans le snapshot porté, avec une valeur par niveau
+# (`_epci`, `_dep`, `_reg`) ; le pipeline les publie comme des indicateurs
+# ordinaires, avec les mêmes rangs et la même estampille que le reste du
+# flagship. Aucune valeur n'est reconstruite côté application.
+CLES_MOYENNES_ACCES_MOBILITE <- c(
+  "avg_tot_car", "avg_tot_b", "avg_tot_t",
+  "avg_div_car", "avg_div_b", "avg_div_t"
+)
+
 # COLONNES_ANALYTIQUES_MOBILITE ------------------------------------------------
 # Les colonnes REQUISES du chaînon analytique flagship (issue #138) : l'identité
 # + les familles que les builders consomment (les parts d'accès share_*_t, les
@@ -231,6 +243,10 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
   "med_div_loss_t_dep", "med_div_loss_b_dep", "pct_iso_full_t_dep",
   "med_div_loss_t_reg", "med_div_loss_b_reg", "pct_iso_full_t_reg",
   "dens_div_t_min", "dens_div_t_max",
+  CLES_MOYENNES_ACCES_MOBILITE,
+  paste0(CLES_MOYENNES_ACCES_MOBILITE, "_epci"),
+  paste0(CLES_MOYENNES_ACCES_MOBILITE, "_dep"),
+  paste0(CLES_MOYENNES_ACCES_MOBILITE, "_reg"),
   paste0("dens_div_t_", 1:10), paste0("div_loss_t_dec_", 1:10),
   paste0("dens_div_t_min_", c("epci", "dep", "reg")),
   paste0("dens_div_t_max_", c("epci", "dep", "reg")),
@@ -315,6 +331,9 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                                                     base_epci)
   territoires <- construire_territoires_mobilite(
     base_epci, list(mobilite_communes = mobilite_communes)
+  )
+  moyennes_acces_territoires <- construire_moyennes_acces_territoires(
+    snapshot, base_epci
   )
   # Le Type d'équipement BPE : la matrice complète reste un artefact interne
   # (territoire × TYPEQU × c/b/t × profil), sa projection bornée sera la
@@ -428,6 +447,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "offre_cyclable_communes.rds"))
   readr::write_rds(offre_territoires,
                    file.path(sortie, "offre_territoires.rds"))
+  readr::write_rds(moyennes_acces_territoires,
+                   file.path(sortie, "moyennes_acces_territoires.rds"))
   readr::write_rds(matrice_profils_acces_bpe,
                    file.path(sortie, "matrice_profils_acces_bpe.rds"))
   readr::write_rds(profils_acces_bpe,
@@ -454,6 +475,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     offre_cyclable_communes = offre_cyclable_communes,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
+    moyennes_acces_territoires = moyennes_acces_territoires,
     matrice_profils_acces_bpe = matrice_profils_acces_bpe,
     profils_acces_bpe = profils_acces_bpe
   )
@@ -536,8 +558,9 @@ INDICATEURS_MOBILITE <- tibble::tibble(
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
            "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
            "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
-           "offre_cyclable",
-           names(CLES_ISOLATION_MOBILITE),
+            "offre_cyclable",
+            CLES_MOYENNES_ACCES_MOBILITE,
+            names(CLES_ISOLATION_MOBILITE),
            names(CLES_ACCES_MOBILITE),
            "raccordement_tc", "raccordement_courbe", "raccordement_reference"),
   libelle = c(
@@ -551,8 +574,14 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "Places de stationnement vélo pour 1 place voiture",
      "Perte totale d’accès — à pied ou en transports en commun",
      "Perte totale d’accès — à vélo",
-    "L’offre cyclable",
-    "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+     "L’offre cyclable",
+     "Nombre moyen d’équipements accessibles — en voiture",
+     "Nombre moyen d’équipements accessibles — à vélo",
+     "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
+     "Nombre moyen de types d’équipements accessibles — en voiture",
+     "Nombre moyen de types d’équipements accessibles — à vélo",
+     "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
+     "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
     "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
      "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
      "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
@@ -583,8 +612,10 @@ INDICATEURS_MOBILITE <- tibble::tibble(
     "bornes-recharges",
     "stationnement-velo",
      "osm_reseaux", c("bornes-recharges", "bpe_b316"),
-     c("stationnement-velo", "osm_reseaux"), "mobilite_snapshot", "mobilite_snapshot",
-    c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
+       c("stationnement-velo", "osm_reseaux"), "mobilite_snapshot", "mobilite_snapshot",
+       c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
+       "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
+       "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
@@ -597,12 +628,14 @@ INDICATEURS_MOBILITE <- tibble::tibble(
    source_reference = c("rp_logement_princ", "amenagements_cyclables",
                         "korrigo", "bornes-recharges", "stationnement-velo",
                         "osm_reseaux", "bpe_b316", "osm_reseaux",
-                         "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
-                         rep("mobilite_snapshot", 5),
+                          "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
+                          rep("mobilite_snapshot", 6),
+                          rep("mobilite_snapshot", 5),
                          rep("mobilite_snapshot", 15),
                          "matrice_temps_mairies", "matrice_temps_mairies",
                         "matrice_temps_mairies"),
-    multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L, rep(1L, 5),
+   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
+                   rep(1L, 6), rep(1L, 5),
                      rep(1L, 15),
                     1L,
                     length(grille_raccordement()),
@@ -723,6 +756,19 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
        sous_bloc("stationnement_velo_par_voiture"),
        "stationnement_velo_par_voiture", "places vélo / place voiture")
   )
+
+  moyennes <- lapply(CLES_MOYENNES_ACCES_MOBILITE, function(key) {
+    aligner(
+      analytiques$moyennes_acces_territoires %>%
+        dplyr::filter(key == !!key) %>%
+        dplyr::select(code, value),
+      key,
+      if (grepl("^avg_tot_", key)) "équipements / bâtiment"
+      else "types d’équipement / bâtiment"
+    )
+  })
+  names(moyennes) <- CLES_MOYENNES_ACCES_MOBILITE
+  tables <- c(tables, moyennes)
 
   # le scalaire classé du raccordement : la part @90 aux QUATRE niveaux —
   # les communes non routées portent NA + leur motif nommé dans `rider`
@@ -915,8 +961,9 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tables$places_stationnement_velo_1000,
     tables$places_stationnement_voiture_1000,
     tables$bornes_ev_par_station_service,
-    tables$stationnement_velo_par_voiture,
-    tot_loss,
+     tables$stationnement_velo_par_voiture,
+     dplyr::bind_rows(moyennes),
+     tot_loss,
     dplyr::bind_rows(acces),
     dplyr::bind_rows(isolation),
     voitures,
@@ -1173,6 +1220,16 @@ validations_mobilite <- list(
       stop("Payload invalide : stationnement voiture ou ratio EV/fuel négatif.", call. = FALSE)
     invisible(payload)
   },
+  # les six moyennes du résumé sont des comptes par bâtiment (équipements ou
+  # types d'équipements) : une valeur négative est une corruption du snapshot,
+  # jamais une mesure à afficher.
+  function(payload) {
+    moyennes <- payload$indicateurs$value[
+      payload$indicateurs$key %in% CLES_MOYENNES_ACCES_MOBILITE]
+    if (any(!is.na(moyennes) & moyennes < 0))
+      stop("Payload invalide : une moyenne d'accès est négative.", call. = FALSE)
+    invisible(payload)
+  },
   # la figure « L'offre cyclable » (issue #231) : des longueurs et taux non
   # négatifs (une longueur protégé/partagé/total négative — le numérateur du
   # ratio — ou un km/1 000 hab négatif est une corruption, jamais une offre
@@ -1360,6 +1417,8 @@ DIRECTIONS_MOBILITE <- list(
   places_stationnement_voiture_1000 = "low",
   bornes_ev_par_station_service = "high",
   stationnement_velo_par_voiture = "high",
+  avg_tot_car = "high", avg_tot_b = "high", avg_tot_t = "high",
+  avg_div_car = "high", avg_div_b = "high", avg_div_t = "high",
   tot_loss_t = "low",
   tot_loss_b = "low",
   offre_cyclable = "high",

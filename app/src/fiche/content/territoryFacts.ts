@@ -105,7 +105,14 @@ export interface MobiliteAccessFacts {
   availability: FactAvailability
   totalBuildings: NumericFact
   totalBrittanyBuildings: NumericFact
+  summary: MobiliteSummaryFacts
   byService: Record<MobiliteService, MobiliteAccessModes>
+}
+
+export interface MobiliteSummaryFacts {
+  availability: FactAvailability
+  accessibleEquipment: MobiliteAccessModes
+  accessibleTypes: MobiliteAccessModes
 }
 
 export interface BpeAccessExemplar {
@@ -231,6 +238,22 @@ const ACCESS_INDICATOR_KEYS: Readonly<
     c: 'share_school_c',
     b: 'share_school_b',
     t: 'share_school_t',
+  },
+}
+
+const SUMMARY_FACT_KEYS: Readonly<{
+  accessibleEquipment: Record<MobiliteAccessMode, string>
+  accessibleTypes: Record<MobiliteAccessMode, string>
+}> = {
+  accessibleEquipment: {
+    car: 'avg_tot_car',
+    bike: 'avg_tot_b',
+    walkTransit: 'avg_tot_t',
+  },
+  accessibleTypes: {
+    car: 'avg_div_car',
+    bike: 'avg_div_b',
+    walkTransit: 'avg_div_t',
   },
 }
 
@@ -521,6 +544,61 @@ function accessOf(
     })
   }
 
+  const summaryRowFor = (key: string): Indicateur | null =>
+    payload.indicateurs.find(
+      (row) =>
+        row.theme === 'mobilite' &&
+        row.territoire === target.territoire &&
+        row.key === key &&
+        (row.detail ?? null) === null,
+    ) ?? null
+
+  const summaryModeFacts = (
+    kind: keyof typeof SUMMARY_FACT_KEYS,
+    unit: string,
+  ): MobiliteAccessModes => {
+    const modeFact = (mode: MobiliteAccessMode): NumericFact => {
+      const row = summaryRowFor(SUMMARY_FACT_KEYS[kind][mode])
+      const direction = row ? directionForIndicator(row.key) : null
+      return accessFact(
+        SUMMARY_FACT_KEYS[kind][mode],
+        null,
+        row?.value,
+        unit,
+        row !== null,
+        row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : null,
+        row && direction ? indicatorComparison(payload, scope, row, direction) : null,
+      )
+    }
+    return {
+      car: modeFact('car'),
+      bike: modeFact('bike'),
+      walkTransit: modeFact('walkTransit'),
+    }
+  }
+
+  const accessibleEquipment = summaryModeFacts(
+    'accessibleEquipment',
+    'équipements / bâtiment',
+  )
+  const accessibleTypes = summaryModeFacts(
+    'accessibleTypes',
+    'types d’équipement / bâtiment',
+  )
+  const summaryFacts = [...Object.values(accessibleEquipment), ...Object.values(accessibleTypes)]
+  const summaryCompleteCount = summaryFacts.filter((fact) => fact.availability === 'complete').length
+  const summaryPresentCount = summaryFacts.filter((fact) => fact.availability !== 'absent').length
+  const summary: MobiliteSummaryFacts = {
+    availability:
+      summaryPresentCount === 0
+        ? 'absent'
+        : summaryCompleteCount === summaryFacts.length
+          ? 'complete'
+          : 'incomplete',
+    accessibleEquipment,
+    accessibleTypes,
+  }
+
   const byService = Object.fromEntries(
     SERVICES.map((service) => {
       const modeFact = (mode: MobiliteAccessMode): NumericFact => {
@@ -581,6 +659,7 @@ function accessOf(
           : 'incomplete',
     totalBuildings,
     totalBrittanyBuildings,
+    summary,
     byService,
   }
 }

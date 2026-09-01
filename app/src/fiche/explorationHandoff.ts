@@ -22,7 +22,7 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import { routeIndicateur } from './contratExploration'
 import type { RefTerritoire } from './contratExploration'
-import type { ExplorationTarget } from './content/themeContent'
+import type { ContentSection, ExplorationTarget } from './content/themeContent'
 
 /** Le libellé unique du handoff — la microcopie compacte (#468), la copie
  *  française du produit ; le composant partagé PassarelleExploration la rend
@@ -139,6 +139,32 @@ export function routePourCibleExploration(
         type: target.territory.type,
       })
     : null
+}
+
+/**
+ * Every Mobilité section owns an exploration affordance in the Cahier. Some
+ * sections currently contain derived/profile evidence without a direct target;
+ * these fallbacks land on an already published indicator page until their
+ * dedicated indicator pages exist.
+ */
+const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string>> = {
+  resume: 'avg_tot_t',
+  'profils-acces-par-mode': 'avg_tot_t',
+  'services-essentiels': 'iso_administration',
+  'distribution-acces-par-batiment': 'tot_loss_t',
+}
+
+export function routePourSectionExploration(
+  section: ContentSection,
+  territoire: RefTerritoire,
+): RouteLocationRaw | null {
+  const existing = section.explorationTargets
+    .map(routePourCibleExploration)
+    .find((route): route is RouteLocationRaw => route !== null)
+  if (existing) return existing
+
+  const pageKey = SECTION_PAGE_FALLBACKS[section.key]
+  return pageKey ? routeIndicateur('mobilite', pageKey, territoire) : null
 }
 
 /** Resolve a normalized access fact to its published isolation indicator page. */
