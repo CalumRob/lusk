@@ -8,6 +8,7 @@ import type {
   MobiliteDistributionPeer,
   MobiliteDistributionSignature,
   MobiliteService,
+  MobiliteSummaryFacts,
   NumericFact,
   TerritoryFacts,
   TerritoryIdentity,
@@ -39,7 +40,7 @@ export interface ContentIndicator extends ContentFact {}
 
 export type TextSegment =
   | { kind: 'text'; value: string }
-  | { kind: 'emphasis'; tone: 'theme' | 'region'; value: string }
+  | { kind: 'emphasis'; tone: 'default' | 'theme' | 'region' | 'car'; value: string }
 
 export type TextBlock = readonly TextSegment[]
 
@@ -73,10 +74,20 @@ export interface BpeProfilesEvidence {
 
 export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
 
+export interface ContentLossFacts {
+  walkTransit: ContentFact
+  bike: ContentFact
+}
+
 export interface SummaryEvidence {
   kind: 'summary'
   accessibleEquipment: ContentModeFacts
   accessibleTypes: ContentModeFacts
+  averageLosses: {
+    diversity: ContentLossFacts
+    total: ContentLossFacts
+  }
+  typeCount: number | null
   referenceLabel: string | null
   losses: {
     diversity: {
@@ -312,6 +323,10 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
     if (section.evidence?.kind === 'summary') {
       for (const mode of Object.values(section.evidence.accessibleEquipment)) add(mode)
       for (const mode of Object.values(section.evidence.accessibleTypes)) add(mode)
+      add(section.evidence.averageLosses.diversity.walkTransit)
+      add(section.evidence.averageLosses.diversity.bike)
+      add(section.evidence.averageLosses.total.walkTransit)
+      add(section.evidence.averageLosses.total.bike)
       add(section.evidence.losses.diversity.walkTransit)
       add(section.evidence.losses.diversity.bike)
       add(section.evidence.losses.total.walkTransit)
@@ -391,38 +406,21 @@ function regionalEmphasis(value: string): TextSegment {
   return { kind: 'emphasis', tone: 'region', value }
 }
 
-function modeInSentence(mode: MobiliteAccessMode, sentenceStart = false): string {
-  const label = MOBILITE_MODE_LABELS[mode]
-  return sentenceStart
-    ? label
-    : label.charAt(0).toLocaleLowerCase('fr-FR') + label.slice(1)
-}
-
-function comparisonLabel(comparison: NumericFact['comparison']): string | null {
-  if (!comparison?.reference) return null
-  switch (comparison.scope.kind) {
-    case 'communes-epci':
-      return 'la médiane communes de son EPCI'
-    case 'communes-bretagne':
-      return 'la médiane communes bretonnes'
-    case 'epcis-bretagne':
-      return 'la médiane EPCI bretons'
-    case 'departements-bretagne':
-      return 'la médiane départements bretons'
-  }
+function bold(value: string, tone: 'default' | 'car' = 'default'): TextSegment {
+  return { kind: 'emphasis', tone, value }
 }
 
 function comparisonReferenceLabel(comparison: NumericFact['comparison']): string | null {
   if (!comparison?.reference) return null
   switch (comparison.scope.kind) {
     case 'communes-epci':
-      return 'Médiane communes de l’EPCI'
+      return 'communes de l’EPCI'
     case 'communes-bretagne':
-      return 'Médiane communes bretonnes'
+      return 'communes bretonnes'
     case 'epcis-bretagne':
-      return 'Médiane EPCI bretons'
+      return 'EPCI bretons'
     case 'departements-bretagne':
-      return 'Médiane départements bretons'
+      return 'départements bretons'
   }
 }
 
@@ -435,7 +433,6 @@ function formatMillions(value: number): string {
 }
 
 function introductionFor(facts: TerritoryFacts): readonly TextBlock[] {
-  const territoryName = nomTerritoirePourAffichage(facts.territory)
   const blocks: TextBlock[] = [
     [
       text('Cette page illustre les différences d’accès aux services selon le mode de déplacement : voiture, vélo et marche, transports en commun inclus. Elle présente les résultats d’une analyse qui cartographie les équipements accessibles en '),
@@ -450,46 +447,309 @@ function introductionFor(facts: TerritoryFacts): readonly TextBlock[] {
       regionalEmphasis(formatMillions(total.value)),
       text(' de bâtiments sont pris en compte en Bretagne, dont '),
       emphasis(formatNumber(territory.value)),
-      text(` à ${territoryName}.`),
+      text(` ${territoryLead(facts.territory, false)}.`),
     ])
   }
   return blocks
 }
 
+type ComparisonRelation = 'higher' | 'lower' | 'same' | 'unavailable'
+
+function referenceValue(fact: NumericFact): number | null {
+  return fact.comparison?.reference?.value ?? null
+}
+
+function comparisonRelation(fact: NumericFact): ComparisonRelation {
+  const reference = referenceValue(fact)
+  if (fact.value === null || reference === null) return 'unavailable'
+  if (fact.value > reference) return 'higher'
+  if (fact.value < reference) return 'lower'
+  return 'same'
+}
+
+function comparisonLabelForFacts(facts: readonly NumericFact[]): string | null {
+  const comparison = facts.find((fact) => fact.comparison?.reference)?.comparison
+  return comparison ? comparisonReferenceLabel(comparison) : null
+}
+
+function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
+  const name = nomTerritoirePourAffichage(territory)
+  return `${territoryPreposition(territory, capitalized)} ${name}`
+}
+
+function territoryPreposition(territory: TerritoryIdentity, capitalized = false): string {
+  const preposition = territory.type === 'region' || territory.type === 'departement' ? 'en' : 'à'
+  return capitalized ? preposition[0]!.toUpperCase() + preposition.slice(1) : preposition
+}
+
+function accessQuantity(
+  relation: ComparisonRelation,
+  kind: 'equipment' | 'types',
+): string {
+  if (kind === 'equipment') {
+    if (relation === 'higher') return 'plus d’équipements au total'
+    if (relation === 'lower') return 'moins d’équipements au total'
+    if (relation === 'same') return 'autant d’équipements au total'
+    return 'd’équipements au total'
+  }
+  if (relation === 'higher') return 'plus de types d’équipements'
+  if (relation === 'lower') return 'moins de types d’équipements'
+  if (relation === 'same') return 'autant de types d’équipements'
+  return 'types d’équipements'
+}
+
+function accessMetricText(
+  fact: NumericFact,
+  kind: 'equipment' | 'types',
+  comparable: boolean,
+): TextSegment[] | null {
+  if (!complete(fact)) return null
+  const relation = comparisonRelation(fact)
+  if (!comparable || relation === 'unavailable') {
+    return [
+      emphasis(formatNumber(fact.value)),
+      text(` ${kind === 'equipment' ? 'équipements au total' : 'types d’équipements'}`),
+    ]
+  }
+  return [
+    text(`${accessQuantity(relation, kind)} (`),
+    emphasis(formatNumber(fact.value)),
+    text(' contre '),
+    regionalEmphasis(formatNumber(referenceValue(fact)!)),
+    text(')'),
+  ]
+}
+
+function summaryOpening(
+  territory: TerritoryIdentity,
+  summary: MobiliteSummaryFacts,
+  referenceLabel: string | null,
+): TextBlock | null {
+  const equipment = summary.accessibleEquipment.car
+  const types = summary.accessibleTypes.car
+  const comparable =
+    referenceLabel !== null &&
+    referenceValue(equipment) !== null &&
+    referenceValue(types) !== null
+  const equipmentText = accessMetricText(equipment, 'equipment', comparable)
+  const typesText = accessMetricText(types, 'types', comparable)
+  if (!equipmentText || !typesText) return null
+
+  if (!comparable) {
+    return [
+      text(`${territoryLead(territory)}, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint `),
+      ...equipmentText,
+      text(' et '),
+      ...typesText,
+      text('.'),
+    ]
+  }
+
+  const equipmentRelation = comparisonRelation(equipment)
+  const typesRelation = comparisonRelation(types)
+  const contrasting =
+    (equipmentRelation === 'higher' && typesRelation === 'lower') ||
+    (equipmentRelation === 'lower' && typesRelation === 'higher')
+  return [
+    text(`${territoryLead(territory)}, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint `),
+    ...equipmentText,
+    text(contrasting ? ' mais ' : ' et '),
+    ...typesText,
+    text(' que la médiane des '),
+    regionalEmphasis(referenceLabel),
+    text('.'),
+  ]
+}
+
+function footOpening(
+  carRelation: ComparisonRelation,
+  footRelation: ComparisonRelation,
+): TextBlock {
+  if (footRelation === 'unavailable') {
+    return [text('Sans voiture, '), bold('l’accès se réduit'), text('.')]
+  }
+  if (footRelation === 'lower') {
+    if (carRelation === 'lower') {
+      return [text('La voiture ouvre peu d’accès, et '), bold('s’en passer a peu d’impact'), text(' sur l’accessibilité.')]
+    }
+    if (carRelation === 'higher') return [text('L’accès reste '), bold('bien préservé sans voiture'), text('.')]
+    if (carRelation === 'same') {
+      return [
+        text('Le niveau d’accès en voiture est comparable à la médiane, mais l’accès reste '),
+        bold('relativement préservé sans voiture'),
+        text('.'),
+      ]
+    }
+    return [text('L’accès reste '), bold('relativement préservé sans voiture'), text('.')]
+  }
+  if (footRelation === 'higher') {
+    if (carRelation === 'lower') {
+      return [
+        text('Malgré un accès limité en voiture, le bâtiment moyen '),
+        bold('dépend de la voiture', 'car'),
+        text(' pour de nombreux services.'),
+      ]
+    }
+    if (carRelation === 'higher') {
+      return [text('La voiture permet un bon accès, mais elle '), bold('crée une dépendance', 'car'), text(' pour de nombreux services.')]
+    }
+    if (carRelation === 'same') {
+      return [
+        text('Le bâtiment moyen '),
+        bold('dépend de la voiture', 'car'),
+        text(', même si son niveau d’accès en voiture est comparable à la médiane.'),
+      ]
+    }
+    return [text('La voiture '), bold('crée une dépendance', 'car'), text(' pour de nombreux services.')]
+  }
+  if (carRelation === 'lower') {
+    return [
+      text('La voiture ouvre peu d’accès, mais la '),
+      bold('perte lorsqu’on s’en passe est comparable'),
+      text(' à celle de la médiane.'),
+    ]
+  }
+  if (carRelation === 'higher') {
+    return [
+      text('La voiture permet un bon accès, et la '),
+      bold('perte lorsqu’on s’en passe est comparable'),
+      text(' à celle de la médiane.'),
+    ]
+  }
+  if (carRelation === 'same') {
+    return [
+      text('Le niveau d’accès en voiture est comparable à la médiane, et la '),
+      bold('perte lorsqu’on s’en passe l’est aussi'),
+      text('.'),
+    ]
+  }
+  return [text('La '), bold('perte lorsqu’on s’en passe reste comparable'), text(' à la médiane.')]
+}
+
+function medianSuffix(
+  fact: NumericFact,
+  referenceLabel: string | null,
+  explainReference: boolean,
+): TextSegment[] {
+  const reference = referenceValue(fact)
+  if (reference === null || referenceLabel === null) return [text('.')]
+  if (!explainReference) {
+    return [
+      text(' (référence : '),
+      regionalEmphasis(formatNumber(reference)),
+      text(').'),
+    ]
+  }
+  return [
+    text(' (la médiane des '),
+    regionalEmphasis(referenceLabel),
+    text(' : '),
+    regionalEmphasis(formatNumber(reference)),
+    text(').'),
+  ]
+}
+
+function footNarrative(
+  summary: MobiliteSummaryFacts,
+  referenceLabel: string | null,
+  explainReference: boolean,
+): TextBlock | null {
+  const carTypes = summary.accessibleTypes.car
+  const footLoss = summary.averageLosses.diversity.walkTransit
+  if (!complete(footLoss)) return null
+  return [
+    ...footOpening(comparisonRelation(carTypes), comparisonRelation(footLoss)),
+    text(' '),
+    text('À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à '),
+    emphasis(formatNumber(footLoss.value)),
+    text(' types d’équipements'),
+    ...medianSuffix(footLoss, referenceLabel, explainReference),
+  ]
+}
+
+function bikeOpening(
+  footRelation: ComparisonRelation,
+  bikeRelation: ComparisonRelation,
+): string {
+  if (footRelation === 'lower') {
+    if (bikeRelation === 'higher') return 'Le vélo renforce cette situation.'
+    if (bikeRelation === 'lower') return 'Le vélo nuance toutefois cette situation.'
+    if (bikeRelation === 'same') return 'Le vélo reproduit cette situation.'
+    return 'Le vélo apporte une lecture complémentaire.'
+  }
+  if (footRelation === 'higher') {
+    if (bikeRelation === 'higher') return 'Le vélo atténue néanmoins cette difficulté.'
+    if (bikeRelation === 'lower') return 'Le vélo n’atténue pas suffisamment cette difficulté.'
+    if (bikeRelation === 'same') return 'Le vélo atténue cette difficulté dans des proportions comparables.'
+    return 'Le vélo apporte une lecture complémentaire à cette difficulté.'
+  }
+  if (bikeRelation === 'higher') return 'Le vélo améliore toutefois cette situation.'
+  if (bikeRelation === 'lower') return 'Le vélo réduit moins l’écart.'
+  if (bikeRelation === 'same') return 'Le vélo réduit l’écart dans des proportions proches de la médiane.'
+  return 'Le vélo apporte une lecture complémentaire.'
+}
+
+function bikeNarrative(
+  summary: MobiliteSummaryFacts,
+  referenceLabel: string | null,
+  explainReference: boolean,
+): TextBlock | null {
+  const footLoss = summary.averageLosses.diversity.walkTransit
+  const bikeLoss = summary.averageLosses.diversity.bike
+  if (!complete(footLoss) || !complete(bikeLoss)) return null
+  const footReference = referenceValue(footLoss)
+  const bikeReference = referenceValue(bikeLoss)
+  const bikeRelation =
+    footReference === null || bikeReference === null
+      ? 'unavailable'
+      : comparisonRelation({
+          ...bikeLoss,
+          value: footLoss.value - bikeLoss.value,
+          comparison: {
+            ...bikeLoss.comparison!,
+            reference: { kind: 'median', value: footReference - bikeReference },
+          },
+        })
+  return [
+    text(`${bikeOpening(comparisonRelation(footLoss), bikeRelation)} `),
+    text('Il limite la perte à '),
+    emphasis(formatNumber(bikeLoss.value)),
+    text(' types d’équipements'),
+    ...medianSuffix(bikeLoss, referenceLabel, explainReference),
+  ]
+}
+
 function lectureDiversite(
   territory: TerritoryIdentity,
-  walkTransit: NumericFact,
-  bike: NumericFact,
+  summary: MobiliteSummaryFacts,
 ): Lecture | null {
-  if (!complete(walkTransit)) return null
-  const territoryName = nomTerritoirePourAffichage(territory)
-  const prose: TextBlock[] = [
-    [
-      text('À '),
-      emphasis(territoryName),
-      text(', le bâtiment médian perd accès à '),
-      emphasis(formatNumber(walkTransit.value)),
-      text(` types de services ${modeInSentence('walkTransit')} en vingt minutes.`),
-    ],
-  ]
-  if (complete(bike)) {
-    prose.push([
-      text(`${modeInSentence('bike', true)}, cette perte atteint `),
-      emphasis(formatNumber(bike.value)),
-      text(' types de services.'),
-    ])
-  }
-  const comparison = comparisonLabel(walkTransit.comparison)
-  const reference = walkTransit.comparison?.reference
-  if (comparison && reference) {
-    prose.push([
-      text('La référence est '),
-      regionalEmphasis(comparison),
-      text(' : '),
-      regionalEmphasis(formatNumber(reference.value)),
-      text(' types de services.'),
-    ])
-  }
+  const footLoss = summary.averageLosses.diversity.walkTransit
+  const bikeLoss = summary.averageLosses.diversity.bike
+  if (!complete(footLoss) || !complete(bikeLoss)) return null
+  const referenceLabel = comparisonLabelForFacts([
+    summary.accessibleEquipment.car,
+    summary.accessibleTypes.car,
+    footLoss,
+    bikeLoss,
+  ])
+  const opening = summaryOpening(territory, summary, referenceLabel)
+  const openingExplainsReference =
+    opening !== null &&
+    referenceLabel !== null &&
+    referenceValue(summary.accessibleEquipment.car) !== null &&
+    referenceValue(summary.accessibleTypes.car) !== null
+  const foot = footNarrative(summary, referenceLabel, !openingExplainsReference)
+  const footExplainsReference =
+    !openingExplainsReference &&
+    foot !== null &&
+    referenceLabel !== null &&
+    referenceValue(footLoss) !== null
+  const bike = bikeNarrative(
+    summary,
+    referenceLabel,
+    !openingExplainsReference && !footExplainsReference,
+  )
+  const prose = [opening, foot, bike].filter((block): block is TextBlock => block !== null)
   return { marelle: 'Ce que l’on perd sans voiture', prose }
 }
 
@@ -515,12 +775,12 @@ function lectureEssentiels(
     prose: [
       voitureComplete
         ? [
-            text('À '),
+            text(`${territoryPreposition(territory, true)} `),
             emphasis(nomTerritoirePourAffichage(territory)),
             text(', les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.'),
           ]
           : [
-              text('À '),
+              text(`${territoryPreposition(territory, true)} `),
             emphasis(nomTerritoirePourAffichage(territory)),
               text(', l’accès aux services essentiels varie selon le mode de déplacement.'),
             ],
@@ -591,6 +851,19 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
   const totalBike = indicatorFor(facts, 'tot_loss_b') ?? absentFact('tot_loss_b', 'accès perdus')
   const accessibleEquipment = contentModes(summary.accessibleEquipment)
   const accessibleTypes = contentModes(summary.accessibleTypes)
+  const typeCount = facts.mobility.bpeAccess.profiles.length > 0
+    ? facts.mobility.bpeAccess.profiles.reduce((total, profile) => total + profile.count, 0)
+    : null
+  const averageLosses = {
+    diversity: {
+      walkTransit: contentFact(summary.averageLosses.diversity.walkTransit, 'Perte de diversité — à pied + TC'),
+      bike: contentFact(summary.averageLosses.diversity.bike, 'Perte de diversité — à vélo + TC'),
+    },
+    total: {
+      walkTransit: contentFact(summary.averageLosses.total.walkTransit, 'Perte totale d’accès — à pied + TC'),
+      bike: contentFact(summary.averageLosses.total.bike, 'Perte totale d’accès — à vélo + TC'),
+    },
+  }
   const losses = {
     diversity: {
       walkTransit: contentFact(diversityWalkTransit, CONTENT_LABELS.div_loss_t),
@@ -604,6 +877,8 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
   const summaryFacts = [
     ...Object.values(accessibleEquipment),
     ...Object.values(accessibleTypes),
+    ...Object.values(averageLosses.diversity),
+    ...Object.values(averageLosses.total),
     losses.diversity.walkTransit,
     losses.diversity.bike,
     losses.total.walkTransit,
@@ -627,9 +902,11 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
     evidence: hasAny
       ? {
           kind: 'summary',
-          accessibleEquipment,
-          accessibleTypes,
-          referenceLabel: comparisonReferenceLabel(
+           accessibleEquipment,
+           accessibleTypes,
+           averageLosses,
+           typeCount,
+           referenceLabel: comparisonReferenceLabel(
             summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
           ),
           losses,
@@ -638,7 +915,7 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
     provenance: sourceIdsFor(summaryFacts),
     lecture:
       complete(diversityWalkTransit) && complete(diversityBike)
-        ? lectureDiversite(facts.territory, diversityWalkTransit, diversityBike)
+        ? lectureDiversite(facts.territory, summary)
         : null,
     explorationTargets: targetsFor(indicators.map((indicator) => indicator.fact), facts.territory),
   }

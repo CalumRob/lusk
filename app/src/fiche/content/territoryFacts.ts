@@ -81,20 +81,6 @@ export const MOBILITE_MODE_LABELS: Readonly<Record<MobiliteAccessMode, string>> 
   walkTransit: 'À pied + TC',
 }
 
-/** The smallest source contract needed by the facts adapter. */
-export interface MobiliteAccessSnapshot {
-  totalBatimentsBretons: number | null
-  batimentsTerritoire: number | null
-  parts: Partial<
-    Record<MobiliteService, Partial<Record<SourceAccessMode, number | null>>>
-  >
-  provenance: FactProvenance
-}
-
-export type MobiliteAccessReader = (
-  territoire: string,
-) => MobiliteAccessSnapshot | null
-
 export interface MobiliteAccessModes {
   car: NumericFact
   bike: NumericFact
@@ -113,6 +99,16 @@ export interface MobiliteSummaryFacts {
   availability: FactAvailability
   accessibleEquipment: MobiliteAccessModes
   accessibleTypes: MobiliteAccessModes
+  averageLosses: {
+    diversity: {
+      walkTransit: NumericFact
+      bike: NumericFact
+    }
+    total: {
+      walkTransit: NumericFact
+      bike: NumericFact
+    }
+  }
 }
 
 export interface BpeAccessExemplar {
@@ -372,7 +368,7 @@ function comparisonOf(options: {
   value: number | null
   values: readonly number[]
 }): FactComparison | null {
-  if (!options.scope) return null
+  if (!options.scope || options.values.length === 0) return null
 
   const referenceValue = median(options.values)
   const rank =
@@ -502,17 +498,17 @@ function accessOf(
   payload: Payload,
   target: Territoire,
   scope: ComparisonScope | null,
-  reader: MobiliteAccessReader,
 ): MobiliteAccessFacts {
-  const snapshots = new Map<string, MobiliteAccessSnapshot | null>()
-  const read = (territoire: string): MobiliteAccessSnapshot | null => {
-    if (snapshots.has(territoire)) return snapshots.get(territoire) ?? null
-    const snapshot = reader(territoire)
-    snapshots.set(territoire, snapshot)
-    return snapshot
-  }
-
-  const snapshot = read(target.territoire)
+  const buildingCountFor = (territoire: string): Indicateur | null =>
+    payload.indicateurs.find(
+      (row) =>
+        row.theme === 'mobilite' &&
+        row.territoire === territoire &&
+        row.key === 'nb_buildings' &&
+        (row.detail ?? null) === null,
+    ) ?? null
+  const territoryBuildingCount = buildingCountFor(target.territoire)
+  const brittanyBuildingCount = buildingCountFor('53')
   const rowFor = (service: MobiliteService, mode: MobiliteAccessMode): Indicateur | null =>
     payload.indicateurs.find(
       (row) =>
@@ -523,35 +519,23 @@ function accessOf(
     ) ?? null
 
   const comparisonFor = (
-    service: MobiliteService,
-    mode: MobiliteAccessMode,
-    value: number | null | undefined,
     row: Indicateur | null,
   ): FactComparison | null => {
     if (!scope) return null
-    if (row) return indicatorComparison(payload, scope, row, 'plus-est-mieux')
-    const values = scope.territoryIds.flatMap((territoire) => {
-      const peer = read(territoire)
-      const peerValue = peer?.parts[service]?.[ACCESS_MODES[mode]]
-      return typeof peerValue === 'number' ? [peerValue] : []
-    })
-    if (values.length === 0) return null
-    return comparisonOf({
-      scope,
-      direction: 'plus-est-mieux',
-      value: value ?? null,
-      values,
-    })
+    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux') : null
   }
 
-  const summaryRowFor = (key: string): Indicateur | null =>
+  const summaryRowForTerritory = (territoire: string, key: string): Indicateur | null =>
     payload.indicateurs.find(
       (row) =>
         row.theme === 'mobilite' &&
-        row.territoire === target.territoire &&
+        row.territoire === territoire &&
         row.key === key &&
         (row.detail ?? null) === null,
     ) ?? null
+
+  const summaryRowFor = (key: string): Indicateur | null =>
+    summaryRowForTerritory(target.territoire, key)
 
   const summaryModeFacts = (
     kind: keyof typeof SUMMARY_FACT_KEYS,
@@ -585,6 +569,47 @@ function accessOf(
     'accessibleTypes',
     'types d’équipement / bâtiment',
   )
+  const averageLossesFor = (
+    kind: 'total' | 'diversity',
+    values: MobiliteAccessModes,
+    unit: string,
+  ): { walkTransit: NumericFact; bike: NumericFact } => {
+    const sourceKeys = kind === 'total'
+      ? { car: 'avg_tot_car', bike: 'avg_tot_b', walkTransit: 'avg_tot_t' }
+      : { car: 'avg_div_car', bike: 'avg_div_b', walkTransit: 'avg_div_t' }
+    const lossFact = (mode: 'walkTransit' | 'bike'): NumericFact => {
+      const car = values.car
+      const current = values[mode]
+      const value = car.value === null || current.value === null ? null : Math.max(0, car.value - current.value)
+      const peerValues = scope
+        ? scope.territoryIds.flatMap((territoire) => {
+            const peerCar = summaryRowForTerritory(territoire, sourceKeys.car)?.value
+            const peerCurrent = summaryRowForTerritory(territoire, sourceKeys[mode])?.value
+            return peerCar === null || peerCar === undefined || peerCurrent === null || peerCurrent === undefined
+              ? []
+              : [Math.max(0, peerCar - peerCurrent)]
+          })
+        : []
+      return factOf({
+        key: kind === 'total' ? `avg_loss_tot_${mode === 'bike' ? 'b' : 't'}` : `avg_loss_div_${mode === 'bike' ? 'b' : 't'}`,
+        value,
+        unit,
+        present: car.availability !== 'absent' && current.availability !== 'absent',
+        provenance: current.provenance ?? car.provenance,
+        comparison: comparisonOf({
+          scope,
+          direction: 'moins-est-mieux',
+          value,
+          values: peerValues,
+        }),
+      })
+    }
+    return { walkTransit: lossFact('walkTransit'), bike: lossFact('bike') }
+  }
+  const averageLosses = {
+    diversity: averageLossesFor('diversity', accessibleTypes, 'types d’équipement / bâtiment'),
+    total: averageLossesFor('total', accessibleEquipment, 'équipements / bâtiment'),
+  }
   const summaryFacts = [...Object.values(accessibleEquipment), ...Object.values(accessibleTypes)]
   const summaryCompleteCount = summaryFacts.filter((fact) => fact.availability === 'complete').length
   const summaryPresentCount = summaryFacts.filter((fact) => fact.availability !== 'absent').length
@@ -597,22 +622,22 @@ function accessOf(
           : 'incomplete',
     accessibleEquipment,
     accessibleTypes,
+    averageLosses,
   }
 
   const byService = Object.fromEntries(
     SERVICES.map((service) => {
       const modeFact = (mode: MobiliteAccessMode): NumericFact => {
         const row = rowFor(service, mode)
-        const legacyValue = snapshot?.parts[service]?.[ACCESS_MODES[mode]]
-        const value = row ? row.value : legacyValue
+        const value = row?.value
         return accessFact(
           `access.${service}`,
           mode,
           value,
           '%',
-          row !== null || legacyValue !== undefined,
-          row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : snapshot?.provenance ?? null,
-          comparisonFor(service, mode, value, row),
+          row !== null,
+          row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : null,
+          comparisonFor(row),
         )
       }
       const modes: MobiliteAccessModes = {
@@ -627,19 +652,23 @@ function accessOf(
   const totalBuildings = accessFact(
     'access.totalBuildings',
     null,
-    snapshot?.batimentsTerritoire,
+    territoryBuildingCount?.value,
     'bâtiments',
-    snapshot !== null,
-    snapshot?.provenance ?? null,
+    territoryBuildingCount !== null,
+    territoryBuildingCount
+      ? provenanceFromRow(territoryBuildingCount, sourceIdForIndicator(payload, territoryBuildingCount.key))
+      : null,
     null,
   )
   const totalBrittanyBuildings = accessFact(
     'access.totalBrittanyBuildings',
     null,
-    snapshot?.totalBatimentsBretons,
+    brittanyBuildingCount?.value,
     'bâtiments',
-    snapshot !== null,
-    snapshot?.provenance ?? null,
+    brittanyBuildingCount !== null,
+    brittanyBuildingCount
+      ? provenanceFromRow(brittanyBuildingCount, sourceIdForIndicator(payload, brittanyBuildingCount.key))
+      : null,
     null,
   )
   const allFacts = [
@@ -773,7 +802,6 @@ function lossesOf(
 export function territoryFactsFor(
   payload: Payload,
   territoire: string,
-  accessReader: MobiliteAccessReader,
 ): TerritoryFacts | null {
   const target = payload.territoires.find((candidate) => candidate.territoire === territoire)
   if (!target) return null
@@ -784,7 +812,7 @@ export function territoryFactsFor(
     theme: 'mobilite',
     mobility: {
       indicators: indicatorsOf(payload, target, scope),
-      access: accessOf(payload, target, scope, accessReader),
+      access: accessOf(payload, target, scope),
       bpeAccess: bpeAccessOf(payload, target),
       losses: lossesOf(payload, target, scope),
     },

@@ -33,7 +33,6 @@ import {
   varianteDeUrl,
 } from '@/fiche/prototype/variantes'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
-import { lireAccesMobiliteTransitoire } from '@/fiche/content/mobiliteAccessSource'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type { ThemeContent } from '@/fiche/content/themeContent'
@@ -179,7 +178,6 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
   const facts = territoryFactsFor(
     toRaw(payload.value),
     String(route.params.id),
-    lireAccesMobiliteTransitoire,
   )
   return facts ? resolveMobiliteThemeContent(facts) : null
 })

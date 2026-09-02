@@ -120,11 +120,21 @@ function summaryFacts(): MobiliteSummaryFacts {
       bike: fact('avg_tot_b', 70, 'équipements / bâtiment', null),
       walkTransit: fact('avg_tot_t', 40, 'équipements / bâtiment', null),
     },
-    accessibleTypes: {
-      car: fact('avg_div_car', 50, 'types d’équipement / bâtiment', null),
-      bike: fact('avg_div_b', 35, 'types d’équipement / bâtiment', null),
-      walkTransit: fact('avg_div_t', 20, 'types d’équipement / bâtiment', null),
-    },
+      accessibleTypes: {
+        car: fact('avg_div_car', 50, 'types d’équipement / bâtiment', null),
+        bike: fact('avg_div_b', 35, 'types d’équipement / bâtiment', null),
+        walkTransit: fact('avg_div_t', 20, 'types d’équipement / bâtiment', null),
+      },
+      averageLosses: {
+        diversity: {
+          walkTransit: fact('avg_loss_div_t', 30, 'types d’équipement / bâtiment', comparison(20)),
+          bike: fact('avg_loss_div_b', 15, 'types d’équipement / bâtiment', comparison(10)),
+        },
+        total: {
+          walkTransit: fact('avg_loss_tot_t', 60, 'équipements / bâtiment', comparison(30)),
+          bike: fact('avg_loss_tot_b', 30, 'équipements / bâtiment', comparison(20)),
+        },
+      },
   }
 }
 
@@ -228,6 +238,7 @@ describe('resolveMobiliteThemeContent', () => {
         bike: { fact: { key: 'avg_div_b', value: 35 } },
         walkTransit: { fact: { key: 'avg_div_t', value: 20 } },
       },
+      typeCount: 2,
       losses: {
         diversity: {
           walkTransit: { fact: { key: 'div_loss_t', value: 38 } },
@@ -283,8 +294,13 @@ describe('resolveMobiliteThemeContent', () => {
     expect(distribution.lecture?.marelle).toBe('... Tous les bâtiments non plus')
     expect(summary.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
     expect(lectureText(summary.lecture)).toBe(
-      'À Commune A, le bâtiment médian perd accès à 38 types de services à pied + TC en vingt minutes. À vélo + TC, cette perte atteint 24 types de services. La référence est la médiane communes de son EPCI : 31 types de services.',
+      'À Commune A, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint 100 équipements au total et 50 types d’équipements. La voiture crée une dépendance pour de nombreux services. À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à 30 types d’équipements (la médiane des communes de l’EPCI : 20). Le vélo atténue néanmoins cette difficulté. Il limite la perte à 15 types d’équipements (référence : 10).',
     )
+    expect(summary.lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'car',
+      value: 'crée une dépendance',
+    })
 
     expect(essentials.availability).toBe('complete')
     expect(essentials.indicators.map((indicator) => indicator.fact.key)).toEqual(
@@ -308,8 +324,69 @@ describe('resolveMobiliteThemeContent', () => {
     expect(lectureText(essentials.lecture)).toBe(
       'À Commune A, les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.',
     )
+    expect(completeFacts.mobility.access.totalBuildings.value).toBe(100)
+    expect(content.introduction[1]?.map((segment) => segment.value).join('')).toContain(
+      'dont 100 à Commune A.',
+    )
     expect(JSON.stringify(content)).not.toContain('story_key')
     expect(JSON.stringify(content)).not.toContain('salience')
+  })
+
+  it('uses the correct preposition for a department in the subtitle and prose', () => {
+    const facts = structuredClone(completeFacts)
+    facts.territory = {
+      ...facts.territory,
+      code: '35',
+      type: 'departement',
+      name: 'Ille-et-Vilaine',
+      department: '35',
+      epci: null,
+    }
+
+    const content = resolveMobiliteThemeContent(facts)
+    const introduction = content.introduction.map((block) => block.map((segment) => segment.value).join('')).join(' ')
+    const summary = content.units[0]!.sections[0]!
+    const essentials = content.units[0]!.sections[2]!
+
+    expect(introduction).toContain('dont 100 en Ille-et-Vilaine.')
+    expect(lectureText(summary.lecture)).toContain('En Ille-et-Vilaine')
+    expect(lectureText(essentials.lecture)).toContain('En Ille-et-Vilaine')
+    expect(introduction).not.toContain('Dans Ille-et-Vilaine')
+    expect(lectureText(summary.lecture)).not.toContain('Dans Ille-et-Vilaine')
+
+    const epciFacts = structuredClone(completeFacts)
+    epciFacts.territory = {
+      ...epciFacts.territory,
+      code: '200000001',
+      type: 'epci',
+      name: 'Lorient Agglomération',
+      epci: '200000001',
+    }
+    const epciContent = resolveMobiliteThemeContent(epciFacts)
+    const epciIntroduction = epciContent.introduction.map((block) => block.map((segment) => segment.value).join('')).join(' ')
+
+    expect(epciIntroduction).toContain('dont 100 à Lorient Agglomération.')
+    expect(lectureText(epciContent.units[0]!.sections[0]!.lecture)).toContain('À Lorient Agglomération')
+  })
+
+  it('bolds a car-independent loss without applying the car color', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.averageLosses.diversity.walkTransit = {
+      ...facts.mobility.access.summary.averageLosses.diversity.walkTransit,
+      value: 10,
+    }
+    facts.mobility.access.summary.averageLosses.diversity.bike = {
+      ...facts.mobility.access.summary.averageLosses.diversity.bike,
+      value: 5,
+    }
+
+    const summary = resolveMobiliteThemeContent(facts).units[0]!.sections[0]!
+
+    expect(summary.lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'default',
+      value: 'relativement préservé sans voiture',
+    })
   })
 
   it('keeps partial access evidence but marks the section incomplete and removes its Lecture', () => {
@@ -405,11 +482,21 @@ describe('resolveMobiliteThemeContent', () => {
           bike: absentFact('avg_tot_b', 'équipements / bâtiment'),
           walkTransit: absentFact('avg_tot_t', 'équipements / bâtiment'),
         },
-        accessibleTypes: {
-          car: absentFact('avg_div_car', 'types d’équipement / bâtiment'),
-          bike: absentFact('avg_div_b', 'types d’équipement / bâtiment'),
-          walkTransit: absentFact('avg_div_t', 'types d’équipement / bâtiment'),
+      accessibleTypes: {
+        car: absentFact('avg_div_car', 'types d’équipement / bâtiment'),
+        bike: absentFact('avg_div_b', 'types d’équipement / bâtiment'),
+        walkTransit: absentFact('avg_div_t', 'types d’équipement / bâtiment'),
+      },
+      averageLosses: {
+        diversity: {
+          walkTransit: absentFact('avg_loss_div_t', 'types d’équipement / bâtiment'),
+          bike: absentFact('avg_loss_div_b', 'types d’équipement / bâtiment'),
         },
+        total: {
+          walkTransit: absentFact('avg_loss_tot_t', 'équipements / bâtiment'),
+          bike: absentFact('avg_loss_tot_b', 'équipements / bâtiment'),
+        },
+      },
       },
       byService: Object.fromEntries(
         services.map((service) => [
@@ -443,6 +530,10 @@ describe('resolveMobiliteThemeContent', () => {
     const facts = structuredClone(completeFacts)
     facts.mobility.losses.diversityWalkTransit.comparison = null
     facts.mobility.losses.diversityBike.comparison = null
+    facts.mobility.access.summary.averageLosses.diversity.walkTransit.comparison = null
+    facts.mobility.access.summary.averageLosses.diversity.bike.comparison = null
+    facts.mobility.access.summary.averageLosses.total.walkTransit.comparison = null
+    facts.mobility.access.summary.averageLosses.total.bike.comparison = null
     for (const indicator of facts.mobility.indicators) indicator.comparison = null
     for (const service of Object.values(facts.mobility.access.byService)) {
       for (const mode of Object.values(service)) mode.comparison = null

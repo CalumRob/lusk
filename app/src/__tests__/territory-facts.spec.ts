@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
-import type {
-  MobiliteAccessReader,
-  MobiliteAccessSnapshot,
-} from '@/fiche/content/territoryFacts'
 import { histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Indicateur, Payload } from '@/payload/types'
 
@@ -66,6 +62,35 @@ const averageRow = (territoire: string, key: string, value: number): Indicateur 
   unit: key.startsWith('avg_tot_') ? 'équipements / bâtiment' : 'types d’équipement / bâtiment',
 })
 
+const buildingCountRow = (territoire: string, value: number): Indicateur => ({
+  ...row(territoire, value),
+  key: 'nb_buildings',
+  unit: 'bâtiments',
+})
+
+const accessRows: Indicateur[] = [
+  ['share_admin_c', 1],
+  ['share_admin_b', 0.8],
+  ['share_admin_t', 0.7],
+  ['share_food_c', 1],
+  ['share_food_b', 0.9],
+  ['share_food_t', 0.85],
+  ['share_health_c', 1],
+  ['share_health_b', 0.75],
+  ['share_health_t', 0.65],
+  ['share_bank_c', 1],
+  ['share_bank_b', 0.8],
+  ['share_bank_t', 0.7],
+  ['share_school_c', 1],
+  ['share_school_b', 0.9],
+  ['share_school_t', 0.8],
+].flatMap(([key, value]) =>
+  ['22001', '22002'].map((territoire) => ({
+    ...row(territoire, value as number),
+    key: key as string,
+  })),
+)
+
 const payload: Payload = {
   territoires: [
     { territoire: '22001', type: 'commune', nom: 'Commune A', departement: '22', epci: '200000001' },
@@ -73,7 +98,14 @@ const payload: Payload = {
     { territoire: '29001', type: 'commune', nom: 'Commune C', departement: '29', epci: '200000002' },
     { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
   ],
-  indicateurs: [row('22001', 0.2), row('22002', 0.4), row('29001', 0.1)],
+  indicateurs: [
+    row('22001', 0.2),
+    row('22002', 0.4),
+    row('29001', 0.1),
+    buildingCountRow('22001', 100),
+    buildingCountRow('53', 1000),
+    ...accessRows,
+  ],
   histoires: [],
   apercu: null,
   runReport: null,
@@ -90,28 +122,9 @@ const payload: Payload = {
   programmes: null,
 }
 
-const access: MobiliteAccessReader = () => ({
-  totalBatimentsBretons: 1000,
-  batimentsTerritoire: 100,
-  provenance: {
-    sourceId: 'mobilite_snapshot',
-    source: 'Snapshot Mobilité',
-    version: '2026-02',
-    referenceDate: '2026-02-01',
-    publicationDate: '2026-02-15',
-  },
-  parts: {
-    administration: { c: 1, b: 0.8, t: 0.7 },
-    alimentation: { c: 1, b: 0.9, t: 0.85 },
-    sante: { c: 1, b: 0.75, t: 0.65 },
-    banque: { c: 1, b: 0.8, t: 0.7 },
-    ecole: { c: 1, b: 0.9, t: 0.8 },
-  },
-})
-
 describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
   it('normalizes target facts, provenance, access data, and one runtime comparison context', () => {
-    const facts = territoryFactsFor(payload, '22001', access)
+    const facts = territoryFactsFor(payload, '22001')
 
     expect(facts).not.toBeNull()
     expect(facts?.territory).toEqual({
@@ -160,7 +173,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     })
     expect(facts?.mobility.access.byService.administration.walkTransit.provenance).toMatchObject({
       sourceId: 'mobilite_snapshot',
-      source: 'Snapshot Mobilité',
+      source: 'Source de test',
     })
     expect(facts?.mobility.access.byService.administration.walkTransit.comparison).toMatchObject({
       direction: 'plus-est-mieux',
@@ -189,7 +202,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       ],
     }
 
-    const facts = territoryFactsFor(bpePayload, '22001', access)
+    const facts = territoryFactsFor(bpePayload, '22001')
 
     expect(facts?.mobility.bpeAccess).toEqual({
       availability: 'complete',
@@ -233,18 +246,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         },
       },
     }
-    const facts = territoryFactsFor(directAccessPayload, '22001', () => ({
-      totalBatimentsBretons: 1000,
-      batimentsTerritoire: 100,
-      provenance: {
-        sourceId: 'legacy-reader',
-        source: 'Legacy reader',
-        version: 'old',
-        referenceDate: null,
-        publicationDate: null,
-      },
-      parts: { administration: { t: 0.1 } },
-    }))
+    const facts = territoryFactsFor(directAccessPayload, '22001')
     const accessFact = facts?.mobility.access.byService.administration.walkTransit
 
     expect(accessFact).toMatchObject({
@@ -269,7 +271,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       indicateurs: [row('22001', 0.3), row('22002', 0.3), row('29001', 0.8)],
     }
 
-    const facts = territoryFactsFor(regionalPayload, '22001', () => null)
+    const facts = territoryFactsFor(regionalPayload, '22001')
     const indicator = facts?.mobility.indicators.find((fact) => fact.key === 'iso_sante')
 
     expect(indicator?.comparison).toMatchObject({
@@ -302,9 +304,9 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       ],
     }
 
-    const epci = territoryFactsFor(scopedPayload, '200000001', () => null)
-    const departement = territoryFactsFor(scopedPayload, '22', () => null)
-    const region = territoryFactsFor(scopedPayload, '53', () => null)
+    const epci = territoryFactsFor(scopedPayload, '200000001')
+    const departement = territoryFactsFor(scopedPayload, '22')
+    const region = territoryFactsFor(scopedPayload, '53')
 
     expect(epci?.mobility.indicators[0]?.comparison).toMatchObject({
       scope: { kind: 'epcis-bretagne', territoryIds: ['200000001', '200000002'] },
@@ -325,7 +327,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       indicateurs: [highDirectionRow('22001', 0.4), highDirectionRow('22002', 0.2)],
     }
 
-    const indicator = territoryFactsFor(highPayload, '22001', () => null)?.mobility.indicators[0]
+    const indicator = territoryFactsFor(highPayload, '22001')?.mobility.indicators[0]
 
     expect(indicator?.comparison).toMatchObject({
       direction: 'plus-est-mieux',
@@ -335,20 +337,17 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
   })
 
   it('marks null and missing source facts honestly instead of manufacturing values', () => {
-    const partialAccess: MobiliteAccessReader = () => ({
-      totalBatimentsBretons: 1000,
-      batimentsTerritoire: 100,
-      provenance: {
-        sourceId: 'mobilite_snapshot',
-        source: 'Snapshot Mobilité',
-        version: '2026-02',
-        referenceDate: '2026-02-01',
-        publicationDate: '2026-02-15',
-      },
-      parts: { administration: { c: 1, t: null } },
-    })
-    const facts = territoryFactsFor(payload, '22001', partialAccess)
-    const absent = territoryFactsFor(payload, '22001', () => null)
+    const partialPayload: Payload = {
+      ...payload,
+      indicateurs: [
+        buildingCountRow('22001', 100),
+        buildingCountRow('53', 1000),
+        { ...row('22001', 1), key: 'share_admin_c' },
+        { ...row('22001', null), key: 'share_admin_t' },
+      ],
+    }
+    const facts = territoryFactsFor(partialPayload, '22001')
+    const absent = territoryFactsFor({ ...payload, indicateurs: [row('22001', 0.2)] }, '22001')
 
     expect(facts?.mobility.access.availability).toBe('incomplete')
     expect(facts?.mobility.access.byService.administration.car.availability).toBe('complete')
@@ -364,11 +363,10 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(absent?.mobility.losses.diversityWalkTransit.availability).toBe('absent')
   })
 
-  it('keeps mobility facts from the transitional reading data without exposing its selection fields', () => {
+  it('keeps mobility facts from the payload without exposing its selection fields', () => {
     const facts = territoryFactsFor(
       { ...payload, histoires: histoiresMobiliteFixture },
       '22001',
-      () => null,
     )
 
     expect(facts?.mobility.losses.diversityWalkTransit).toMatchObject({
@@ -387,28 +385,6 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
   })
 
   it('normalizes the walk/transit distribution and computes payload-owned summary ranks and medians for every mode', () => {
-    const snapshot = (car: number, bike: number, walkTransit: number): MobiliteAccessSnapshot => ({
-      totalBatimentsBretons: 1000,
-      batimentsTerritoire: 100,
-      provenance: {
-        sourceId: 'mobilite_snapshot',
-        source: 'Snapshot Mobilité',
-        version: '2026-02',
-        referenceDate: '2026-02-01',
-        publicationDate: '2026-02-15',
-      },
-      parts: Object.fromEntries(
-        ['administration', 'alimentation', 'sante', 'banque', 'ecole'].map((service) => [
-          service,
-          { c: car, b: bike, t: walkTransit },
-        ]),
-      ),
-    })
-    const snapshots: Record<string, MobiliteAccessSnapshot> = {
-      '22001': snapshot(1, 0.8, 0.6),
-      '22002': snapshot(0.5, 0.4, 0.3),
-    }
-    const reader: MobiliteAccessReader = (territoire) => snapshots[territoire] ?? null
     const summaryPayload: Payload = {
       ...payload,
       indicateurs: [
@@ -430,7 +406,6 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     const facts = territoryFactsFor(
       { ...summaryPayload, histoires: histoiresMobiliteFixture },
       '22001',
-      reader,
     )
 
     expect(facts?.mobility.losses).not.toHaveProperty('fullyIsolatedShare')
@@ -463,7 +438,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         reference: { kind: 'median', value: expect.any(Number) },
       })
       expect(comparison?.reference?.value).toBeCloseTo(
-        mode === 'car' ? 0.75 : mode === 'bike' ? 0.6 : 0.45,
+        mode === 'car' ? 1 : mode === 'bike' ? 0.8 : 0.7,
         10,
       )
     }
@@ -480,6 +455,32 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         walkTransit: { key: 'avg_div_t', value: 30 },
       },
     })
+    expect(facts?.mobility.access.summary.averageLosses).toMatchObject({
+      total: {
+        walkTransit: {
+          key: 'avg_loss_tot_t',
+          value: 40,
+          comparison: { rank: { position: 2, size: 2 }, reference: { value: 30 } },
+        },
+        bike: {
+          key: 'avg_loss_tot_b',
+          value: 20,
+          comparison: { rank: { position: 2, size: 2 }, reference: { value: 15 } },
+        },
+      },
+      diversity: {
+        walkTransit: {
+          key: 'avg_loss_div_t',
+          value: 20,
+          comparison: { rank: { position: 2, size: 2 }, reference: { value: 15 } },
+        },
+        bike: {
+          key: 'avg_loss_div_b',
+          value: 10,
+          comparison: { rank: { position: 2, size: 2 }, reference: { value: 7.5 } },
+        },
+      },
+    })
   })
 
   it('matches an available published rank while leaving the compatibility payload untouched', () => {
@@ -492,7 +493,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     }
     const before = structuredClone(parityPayload.indicateurs)
 
-    const facts = territoryFactsFor(parityPayload, '22001', () => null)
+    const facts = territoryFactsFor(parityPayload, '22001')
     const indicator = facts?.mobility.indicators[0]
     const published = parityPayload.indicateurs.find((row) => row.territoire === '22001')
 
@@ -509,7 +510,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       indicateurs: [row('22001', null), row('22002', 0.4)],
     }
 
-    const indicator = territoryFactsFor(missingPayload, '22001', () => null)?.mobility.indicators[0]
+    const indicator = territoryFactsFor(missingPayload, '22001')?.mobility.indicators[0]
 
     expect(indicator).toMatchObject({
       value: null,
@@ -527,7 +528,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       indicateurs: [row('22001', 0.2), row('22002', null)],
     }
 
-    const indicator = territoryFactsFor(missingPeerPayload, '22001', () => null)?.mobility.indicators[0]
+    const indicator = territoryFactsFor(missingPeerPayload, '22001')?.mobility.indicators[0]
 
     expect(indicator?.comparison).toMatchObject({
       rank: { position: 1, size: 1 },
@@ -554,8 +555,8 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     }
     const before = structuredClone(parityPayload.indicateurs)
 
-    const epciFacts = territoryFactsFor(parityPayload, '200000001', () => null)
-    const departementFacts = territoryFactsFor(parityPayload, '22', () => null)
+    const epciFacts = territoryFactsFor(parityPayload, '200000001')
+    const departementFacts = territoryFactsFor(parityPayload, '22')
     const epciPublished = parityPayload.indicateurs.find((row) => row.territoire === '200000001')
     const departementPublished = parityPayload.indicateurs.find((row) => row.territoire === '22')
 
@@ -576,7 +577,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       indicateurs: [{ ...row('22001', 0.2), key: 'future_mobility_key' }],
     }
 
-    const indicator = territoryFactsFor(unknownPayload, '22001', () => null)?.mobility.indicators[0]
+    const indicator = territoryFactsFor(unknownPayload, '22001')?.mobility.indicators[0]
 
     expect(indicator).toMatchObject({ value: 0.2, availability: 'complete', comparison: null })
   })
