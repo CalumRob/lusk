@@ -44,6 +44,19 @@ can cite them; method depth stays in the skills. No intent personas/subagents.
 **Known baseline:** 10 detector findings on current code (mostly `[side-tab]` theme accent lines)
 are deliberately NOT ignore-listed — they open the evidence base of the DESIGN.md v2 campaign (#511).
 
+### General implementation rule — derive decisions from contracts, not literals
+
+- Do not hardcode domain facts, derived values, territory names, indicator selections, comparison
+  scopes, source metadata, or content decisions in a renderer or UI fixture when the value belongs
+  in the pipeline, payload, metadata, typed facts, or semantic content layer.
+- Keep stable presentation grammar in code — component structure, CSS tokens, enum keys, and
+  contract-required fallback copy are legitimate constants. The test is whether changing the
+  underlying data or product decision should change the literal; if so, it belongs upstream of
+  presentation.
+- Before adding a domain-looking literal, identify its source of truth and put it there. Add or
+  update a contract test proving the renderer consumes that source rather than silently duplicating
+  it.
+
 ### R / renv in worktrees (pipeline) — READ BEFORE RUNNING ANY R
 
 The R pipeline (`pipeline/`) uses renv, which stores each project's package library at
