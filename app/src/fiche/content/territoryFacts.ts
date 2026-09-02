@@ -1,5 +1,6 @@
 import type { DirectionRang } from '@/methodes/indicateurs'
 import { THEMES_METHODES } from '@/methodes/indicateurs'
+import { LIBELLES_PROFILS_ACCES_BPE, PROFILS_ACCES_BPE } from '@/payload/types'
 import type {
   HistoireMobilite,
   Indicateur,
@@ -39,7 +40,7 @@ export interface ComparisonRank {
 }
 
 export interface ComparisonReference {
-  kind: 'median'
+  kind: 'mean' | 'median'
   value: number
 }
 
@@ -119,11 +120,25 @@ export interface BpeAccessExemplar {
   walkTransit: number
 }
 
+export interface BpeAccessProfileReference {
+  /** The mean keeps the four mutually exclusive profile counts compositional. */
+  kind: 'mean'
+  value: number
+}
+
+export interface BpeAccessProfileComparison {
+  scope: ComparisonScope
+  direction: DirectionRang
+  rank: ComparisonRank | null
+  reference: BpeAccessProfileReference | null
+}
+
 export interface BpeAccessProfileFact {
   profile: ProfilAccesBpe
   label: string
   count: number
-  exemplar: BpeAccessExemplar
+  exemplar: BpeAccessExemplar | null
+  comparison: BpeAccessProfileComparison | null
 }
 
 export interface MobiliteBpeAccessFacts {
@@ -362,6 +377,27 @@ function median(values: readonly number[]): number | null {
   return lower === undefined || upper === undefined ? null : (lower + upper) / 2
 }
 
+function mean(values: readonly number[]): number | null {
+  if (values.length === 0) return null
+  return values.reduce((total, value) => total + value, 0) / values.length
+}
+
+function rankOf(
+  value: number | null,
+  values: readonly number[],
+  direction: DirectionRang,
+): ComparisonRank | null {
+  if (value === null || values.length === 0) return null
+  return {
+    position:
+      1 +
+      values.filter((candidate) =>
+        direction === 'moins-est-mieux' ? candidate < value : candidate > value,
+      ).length,
+    size: values.length,
+  }
+}
+
 function comparisonOf(options: {
   scope: ComparisonScope | null
   direction: DirectionRang
@@ -371,19 +407,7 @@ function comparisonOf(options: {
   if (!options.scope || options.values.length === 0) return null
 
   const referenceValue = median(options.values)
-  const rank =
-    options.value === null || options.values.length === 0
-      ? null
-      : {
-          position:
-            1 +
-            options.values.filter((candidate) =>
-              options.direction === 'moins-est-mieux'
-                ? candidate < options.value!
-                : candidate > options.value!,
-            ).length,
-          size: options.values.length,
-        }
+  const rank = rankOf(options.value, options.values, options.direction)
 
   return {
     direction: options.direction,
@@ -694,25 +718,57 @@ function accessOf(
 }
 
 function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFacts {
-  const rows = (payload.profilsAccesBpe ?? []).filter(
-    (row) => row.territoire === target.territoire,
-  )
+  const allRows = payload.profilsAccesBpe ?? []
+  const rowsForTerritory = (territoire: string) =>
+    allRows.filter((row) => row.territoire === territoire)
+  const rows = rowsForTerritory(target.territoire)
+  const scope = scopeFor(payload, target)
+  const directions: Readonly<Record<ProfilAccesBpe, DirectionRang>> = {
+    'acces-pied-tc': 'plus-est-mieux',
+    'velo-compense': 'plus-est-mieux',
+    'voiture-requise': 'moins-est-mieux',
+    'inaccessible-20-minutes': 'moins-est-mieux',
+  }
   if (rows.length === 0) return { availability: 'absent', profiles: [] }
 
   return {
     availability: 'complete',
-    profiles: rows.map((row) => ({
-      profile: row.profil,
-      label: row.profil_libelle,
-      count: row.nombre_typequ,
-      exemplar: {
-        typequ: row.exemplar_typequ,
-        label: row.exemplar_libelle,
-        car: row.exemplar_c,
-        bike: row.exemplar_b,
-        walkTransit: row.exemplar_t,
-      },
-    })),
+    profiles: PROFILS_ACCES_BPE.map((profile) => {
+      const row = rows.find((candidate) => candidate.profil === profile)
+      const peerValues = scope?.territoryIds.flatMap((territoire) => {
+        const peerRows = rowsForTerritory(territoire)
+        if (peerRows.length === 0) return []
+        return [peerRows.find((candidate) => candidate.profil === profile)?.nombre_typequ ?? 0]
+      }) ?? []
+      // A profile is a composition: each peer contributes the same closed
+      // universe of service types. The mean therefore preserves the 53-type
+      // total, while four independent medians do not.
+      const reference = mean(peerValues)
+      const direction = directions[profile]
+      return {
+        profile,
+        label: row?.profil_libelle ?? LIBELLES_PROFILS_ACCES_BPE[profile],
+        count: row?.nombre_typequ ?? 0,
+        exemplar: row
+          ? {
+              typequ: row.exemplar_typequ,
+              label: row.exemplar_libelle,
+              car: row.exemplar_c,
+              bike: row.exemplar_b,
+              walkTransit: row.exemplar_t,
+            }
+          : null,
+        comparison:
+          scope && reference !== null
+            ? {
+                scope,
+                direction,
+                rank: rankOf(row?.nombre_typequ ?? 0, peerValues, direction),
+                reference: { kind: 'mean', value: reference },
+              }
+            : null,
+      }
+    }),
   }
 }
 

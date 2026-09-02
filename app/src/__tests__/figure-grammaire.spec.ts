@@ -6,6 +6,11 @@ import {
   glypheDirection,
   puceRangDirection,
 } from '../fiche/figureGrammaire'
+import {
+  CAHIER_FIGURE_AXIS,
+  CAHIER_FIGURE_GEOMETRY,
+  CAHIER_FIGURE_GRID,
+} from '../fiche/cahierFigureGrammaire'
 
 /**
  * La grammaire des puces de rang (issue #371, parent #367) — le seam partagé
@@ -33,6 +38,29 @@ describe('figureGrammaire — le glyphe et la phrase de direction', () => {
     const puce = puceRangDirection('27e/38 de l’EPCI', 'moins-est-mieux')
     expect(puce.glyphe).toBe('▼')
     expect(puce.phrase).toBe('27e/38 de l’EPCI — moins = mieux')
+  })
+})
+
+describe('figureGrammaire — le socle géométrique du Cahier', () => {
+  it('expose la géométrie 820×340 commune à la distribution et aux profils', () => {
+    expect(CAHIER_FIGURE_GEOMETRY).toEqual({
+      width: 820,
+      height: 340,
+      margin: { top: 38, right: 26, bottom: 58, left: 88 },
+    })
+  })
+
+  it('dérive la grille ECharts des mêmes marges que le SVG', () => {
+    expect(CAHIER_FIGURE_GRID).toEqual({
+      left: '10.73%',
+      right: '3.17%',
+      top: '11.18%',
+      bottom: '17.06%',
+    })
+  })
+
+  it('garde les axes et les graduations sur la même mesure', () => {
+    expect(CAHIER_FIGURE_AXIS).toEqual({ width: 1, tickLength: 7, xLabelOffset: 22, yLabelOffset: 12, yLabelBaseline: 4 })
   })
 })
 

@@ -195,6 +195,7 @@
   --type-figure-mode: 400 0.875rem/1.35 var(--font-sans);
   --type-figure-value: 700 1rem/1 var(--font-sans);
   --type-figure-legend: 500 0.8125rem/1.35 var(--font-sans);
+  --type-figure-comparison: 500 0.6875rem/1.25 var(--font-sans);
 
   /* Numeric — matches body sizes; digits never jitter */
   --text-numeric-weight: 600;

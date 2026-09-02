@@ -54,9 +54,9 @@ CLES_ISOLATION_MOBILITE <- c(
 # sont stables pour le pipeline et le payload ; les libellés sont la seule forme
 # destinée à l'affichage. L'ordre est l'ordre public déclaré dans CONTEXT.md.
 PROFILS_ACCES_BPE <- c(
-  "voiture-requise" = "La voiture est requise",
   "acces-pied-tc" = "Accès à pied ou en TC possible",
   "velo-compense" = "Le vélo compense",
+  "voiture-requise" = "La voiture est requise",
   "inaccessible-20-minutes" = "Inaccessible ou presque en 20 minutes"
 )
 

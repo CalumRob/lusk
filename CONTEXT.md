@@ -64,6 +64,10 @@ _Avoid_: Récit, histoire (too generic), insight, feature
 A reusable semantic evidence shape shared when different content needs genuinely the same kind of figure. The prototype does not inherit a fixed list of families: families are defined case by case after surveying every theme subgroup and relevant **Page d'indicateur** need. A family describes evidence meaning and data shape, not a Cahier or indicator-page layout.
 _Avoid_: chart style (visual treatment), component (implementation), the current eight-family list (historical production contract under review)
 
+**Inaccessible (figure remainder)**:
+A declared remainder in a compositional figure for the part not covered by the represented access modes, shown only when the figure has a declared denominator. It is a neutral category named « Inaccessible », not a judgment about a territory and not a substitute for missing data. This figure meaning is reusable beyond Mobilité. It is distinct from the BPE profile named `inaccessible-20-minutes`, which describes a profile of equipment types.
+_Avoid_: indisponible (missing data), inaccessible inferred from a null value, inaccessible as a rank judgment
+
 > _Glossary migration note (2026-08-28):_ older theme entries below may still describe a default Story, a Story candidate, or salience. Those descriptions are historical records, not current product rules. The current product vocabulary is **Lecture**, with its **Marelle** and data-deterministic prose resolved by the app.
 
 **Tension**:

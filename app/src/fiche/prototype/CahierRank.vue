@@ -72,8 +72,7 @@ function rankStyle(seed: string): Record<string, string> {
 <style scoped>
 .cahier-rank {
   color: var(--cahier-region-emphasis);
-  font: var(--type-figure-mode);
-  font-size: 11px;
+  font: var(--type-figure-comparison);
   font-weight: 700;
   line-height: 1.2;
   text-decoration: none;

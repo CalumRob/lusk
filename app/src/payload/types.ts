@@ -335,9 +335,9 @@ export interface ApercuRow {
 
 /** The closed BPE access-profile vocabulary emitted by the Mobilité pipeline. */
 export const PROFILS_ACCES_BPE = [
-  'voiture-requise',
   'acces-pied-tc',
   'velo-compense',
+  'voiture-requise',
   'inaccessible-20-minutes',
 ] as const
 

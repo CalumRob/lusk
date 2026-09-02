@@ -263,15 +263,15 @@ test_that("classifier_profil_acces_bpe : refuse un triptyque incomplet ou invali
 test_that("PROFILS_ACCES_BPE : expose les libellés dans l'ordre public", {
   expect_named(
     PROFILS_ACCES_BPE,
-    c("voiture-requise", "acces-pied-tc", "velo-compense",
+    c("acces-pied-tc", "velo-compense", "voiture-requise",
       "inaccessible-20-minutes")
   )
   expect_identical(
     unname(PROFILS_ACCES_BPE),
     c(
-      "La voiture est requise",
       "Accès à pied ou en TC possible",
       "Le vélo compense",
+      "La voiture est requise",
       "Inaccessible ou presque en 20 minutes"
     )
   )

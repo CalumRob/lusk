@@ -30,7 +30,7 @@ function referenceText(fact: NumericFact): string | null {
 <template>
   <p
     v-if="referenceText(fact) || fact.comparison?.rank"
-    class="cahier-reference-note regional-reading"
+    class="cahier-reference-note cahier-figure-comparison"
   >
     <span v-if="referenceText(fact)" class="cahier-reference-value">
       {{ referenceLabel ?? 'Référence' }} :
@@ -47,9 +47,7 @@ function referenceText(fact: NumericFact): string | null {
   width: 100%;
   margin: 0;
   color: var(--cahier-default);
-  font: var(--type-figure-mode);
-  font-size: 11px;
-  line-height: 1.25;
+  font: var(--type-figure-comparison);
   text-align: center;
 }
 

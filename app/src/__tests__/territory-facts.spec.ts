@@ -204,22 +204,39 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
 
     const facts = territoryFactsFor(bpePayload, '22001')
 
-    expect(facts?.mobility.bpeAccess).toEqual({
-      availability: 'complete',
-      profiles: [
-        {
-          profile: 'velo-compense',
-          label: 'Le vélo compense',
-          count: 3,
-          exemplar: {
-            typequ: 'D267',
-            label: 'Spécialiste en dermatologie vénéréologie',
-            car: 0.1,
-            bike: 0.4,
-            walkTransit: 0.1,
-          },
-        },
-      ],
+    expect(facts?.mobility.bpeAccess?.availability).toBe('complete')
+    expect(facts?.mobility.bpeAccess?.profiles.map((profile) => profile.profile)).toEqual([
+      'acces-pied-tc',
+      'velo-compense',
+      'voiture-requise',
+      'inaccessible-20-minutes',
+    ])
+    expect(facts?.mobility.bpeAccess?.profiles[0]).toMatchObject({
+      count: 0,
+      exemplar: null,
+       comparison: { reference: { kind: 'mean', value: 0 } },
+    })
+    expect(facts?.mobility.bpeAccess?.profiles[1]).toMatchObject({
+      count: 3,
+      label: 'Le vélo compense',
+      exemplar: {
+        typequ: 'D267',
+        label: 'Spécialiste en dermatologie vénéréologie',
+        car: 0.1,
+        bike: 0.4,
+        walkTransit: 0.1,
+      },
+       comparison: { reference: { kind: 'mean', value: 3 } },
+    })
+    expect(facts?.mobility.bpeAccess?.profiles[2]).toMatchObject({
+      count: 0,
+      exemplar: null,
+       comparison: { reference: { kind: 'mean', value: 0 } },
+    })
+    expect(facts?.mobility.bpeAccess?.profiles[3]).toMatchObject({
+      count: 0,
+      exemplar: null,
+       comparison: { reference: { kind: 'mean', value: 0 } },
     })
   })
 

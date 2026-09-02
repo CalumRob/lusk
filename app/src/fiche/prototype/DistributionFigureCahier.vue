@@ -13,10 +13,19 @@ import { useRouter } from 'vue-router'
 
 import type { DistributionEvidence } from '@/fiche/content/themeContent'
 import {
+  type CahierFigureAxisTick,
+  CAHIER_FIGURE_GEOMETRY,
+  type CahierTooltipRow,
+} from '@/fiche/cahierFigureGrammaire'
+import {
   MOBILITE_MODE_LABELS,
   nomTerritoirePourAffichage,
 } from '@/fiche/content/territoryFacts'
 import type { MobiliteDistributionPeer } from '@/fiche/content/territoryFacts'
+import CahierFigureAxes from './CahierFigureAxes.vue'
+import CahierFigureLegend from './CahierFigureLegend.vue'
+import CahierFigureFrame from './CahierFigureFrame.vue'
+import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
 const props = defineProps<{
   evidence: DistributionEvidence
@@ -24,13 +33,18 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const distributionRef = ref<HTMLElement | null>(null)
+const distributionRef = ref<{ rootElement: HTMLElement | null } | null>(null)
 const pointSelectionne = ref<MobiliteDistributionPeer | null>(null)
 const positionInfobulle = ref({ top: 0, left: 0 })
 
-const largeur = 820
-const hauteur = 340
-const marge = { haut: 38, droite: 26, bas: 58, gauche: 88 }
+const largeur = CAHIER_FIGURE_GEOMETRY.width
+const hauteur = CAHIER_FIGURE_GEOMETRY.height
+const marge = {
+  haut: CAHIER_FIGURE_GEOMETRY.margin.top,
+  droite: CAHIER_FIGURE_GEOMETRY.margin.right,
+  bas: CAHIER_FIGURE_GEOMETRY.margin.bottom,
+  gauche: CAHIER_FIGURE_GEOMETRY.margin.left,
+}
 const axeBas = hauteur - marge.bas
 const axeDroite = largeur - marge.droite
 
@@ -134,6 +148,22 @@ const libelleAccessible = computed(
       : ''),
 )
 
+const graduationsAxesX = computed<readonly CahierFigureAxisTick[]>(() =>
+  graduations.value.map((graduation, index) => ({
+    key: index,
+    position: graduation.x,
+    label: formatNumber(graduation.valeur, 0),
+  })),
+)
+
+const graduationsAxesY = computed<readonly CahierFigureAxisTick[]>(() =>
+  graduationsY.value.map((graduation, index) => ({
+    key: index,
+    position: graduation.y,
+    label: formatNumber(graduation.valeur, 2),
+  })),
+)
+
 function lienNuage(point: MobiliteDistributionPeer): string {
   return router.resolve({
     name: 'territoire',
@@ -144,7 +174,7 @@ function lienNuage(point: MobiliteDistributionPeer): string {
 
 function selectionnerNuage(point: MobiliteDistributionPeer, event: MouseEvent | KeyboardEvent): void {
   const cible = event.currentTarget
-  const figure = distributionRef.value
+  const figure = distributionRef.value?.rootElement ?? null
   if (cible instanceof SVGCircleElement && figure) {
     const rectangle = cible.getBoundingClientRect()
     const figureRectangle = figure.getBoundingClientRect()
@@ -170,11 +200,27 @@ const styleInfobulle = computed(() => ({
   top: `${positionInfobulle.value.top}px`,
   left: `${positionInfobulle.value.left}px`,
 }))
+
+function pointTooltipRows(point: MobiliteDistributionPeer): readonly CahierTooltipRow[] {
+  return [
+    {
+      label: 'Types de services perdus',
+      value: formatNumber(point.value, 0),
+      tone: 'neutral',
+    },
+  ]
+}
 </script>
 
 <template>
-    <div ref="distributionRef" class="distribution-cahier">
-    <div class="distribution-plot">
+  <CahierFigureFrame
+    ref="distributionRef"
+    class="distribution-cahier"
+    x-title="Types de services perdus"
+    y-title="Densité des bâtiments"
+  >
+    <template #plot>
+      <div class="distribution-plot cahier-figure-plot">
       <svg
         class="distribution-cahier-svg"
         :viewBox="`0 0 ${largeur} ${hauteur}`"
@@ -182,8 +228,7 @@ const styleInfobulle = computed(() => ({
         role="img"
         :aria-label="libelleAccessible"
       >
-      <line class="distribution-axis" :x1="marge.gauche" :x2="axeDroite" :y1="axeBas" :y2="axeBas" />
-      <line class="distribution-axis" :x1="marge.gauche" :x2="marge.gauche" :y1="marge.haut" :y2="axeBas" />
+        <CahierFigureAxes :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" />
 
       <path v-if="aireDistribution" class="distribution-area" :d="aireDistribution" />
       <path v-if="ligneDistribution" class="distribution-line" :d="ligneDistribution" />
@@ -203,22 +248,9 @@ const styleInfobulle = computed(() => ({
         />
       </g>
 
-      <g v-for="graduation in graduations" :key="graduation.valeur">
-        <line class="distribution-tick" :x1="graduation.x" :x2="graduation.x" :y1="axeBas" :y2="axeBas + 7" />
-        <text class="distribution-tick-label" :x="graduation.x" :y="axeBas + 22" text-anchor="middle">
-          {{ formatNumber(graduation.valeur, 0) }}
-        </text>
-      </g>
-      <g v-for="graduation in graduationsY" :key="graduation.valeur">
-        <line class="distribution-tick" :x1="marge.gauche - 7" :x2="marge.gauche" :y1="graduation.y" :y2="graduation.y" />
-        <text class="distribution-y-tick-label" :x="marge.gauche - 12" :y="graduation.y + 4" text-anchor="end">
-          {{ formatNumber(graduation.valeur, 2) }}
-        </text>
-      </g>
       </svg>
-      <span class="distribution-axis-title distribution-axis-title--x type-figure-label">Types de services perdus</span>
-      <span class="distribution-axis-title distribution-axis-title--y type-figure-label">Densité des bâtiments</span>
-    </div>
+      </div>
+    </template>
     <div class="distribution-reference-icons" aria-hidden="true">
       <span
         class="distribution-reference-icon distribution-reference-icon--territory"
@@ -236,32 +268,39 @@ const styleInfobulle = computed(() => ({
         <Bike :size="16" stroke-width="1.7" />
       </span>
     </div>
-    <aside v-if="pointSelectionne" class="distribution-callout" :style="styleInfobulle" aria-live="polite">
-      <div>
-         <strong>{{ nomTerritoirePourAffichage(pointSelectionne.territoire) }}</strong>
-        <span>{{ formatNumber(pointSelectionne.value, 0) }} types de services perdus</span>
-      </div>
-      <a
-        v-if="pointSelectionne.territoire.type !== 'region'"
+    <CahierFigureTooltip
+      v-if="pointSelectionne"
+      class="distribution-callout cahier-figure-tooltip--anchored"
+      :style="styleInfobulle"
+      :title="nomTerritoirePourAffichage(pointSelectionne.territoire)"
+      :rows="pointTooltipRows(pointSelectionne)"
+      aria-live="polite"
+    >
+      <template #actions>
+        <a
+          v-if="pointSelectionne.territoire.type !== 'region'"
           :href="lienNuage(pointSelectionne)"
           target="_blank"
           rel="noopener noreferrer"
-      >
-        Ouvrir la fiche
-      </a>
-      <button type="button" aria-label="Fermer le détail" @click="fermerSelection">Fermer</button>
-    </aside>
-    <div class="distribution-legend" aria-hidden="true">
-      <span><i class="distribution-key distribution-key--curve" />Distribution du territoire</span>
-      <span><i class="distribution-key distribution-key--peer" />Territoires comparables</span>
-      <span><i class="distribution-key distribution-key--reference" />Médianes</span>
-    </div>
-  </div>
+        >
+          Ouvrir la fiche
+        </a>
+        <button type="button" aria-label="Fermer le détail" @click="fermerSelection">Fermer</button>
+      </template>
+    </CahierFigureTooltip>
+    <CahierFigureLegend
+      :entries="evidence.legend"
+      label="Séries comparées"
+      class="distribution-legend"
+    />
+  </CahierFigureFrame>
 </template>
 
-<style scoped>
+<style>
+/* The frame renders this component's slots; keep its namespaced mark styles
+   global so they cross the frame's slot seam. Shared frame styles stay in
+   cahierFigure.css. */
 .distribution-cahier {
-  position: relative;
   width: 100%;
   min-width: 0;
 }
@@ -276,17 +315,6 @@ const styleInfobulle = computed(() => ({
   width: 100%;
   height: auto;
   overflow: visible;
-}
-
-.distribution-axis,
-.distribution-tick {
-  fill: none;
-  stroke: color-mix(in srgb, var(--cahier-default) 22%, transparent);
-  stroke-width: 1;
-}
-
-.distribution-axis {
-  stroke: color-mix(in srgb, var(--cahier-default) 58%, transparent);
 }
 
 .distribution-area {
@@ -312,34 +340,6 @@ const styleInfobulle = computed(() => ({
 
 .distribution-reference--bike {
   stroke: var(--cahier-mode-bike);
-}
-
-.distribution-tick-label,
-.distribution-y-tick-label {
-  fill: var(--cahier-default);
-  font: var(--type-figure-column);
-}
-
-.distribution-axis-title {
-  position: absolute;
-  z-index: 1;
-  fill: var(--cahier-default);
-  color: var(--cahier-default);
-  white-space: nowrap;
-  text-align: center;
-  pointer-events: none;
-}
-
-.distribution-axis-title--x {
-  bottom: 0;
-  left: 53.8%;
-  transform: translateX(-50%);
-}
-
-.distribution-axis-title--y {
-  top: 47.1%;
-  left: 2.7%;
-  transform: translate(-50%, -50%) rotate(-90deg);
 }
 
 .distribution-reference-icons {
@@ -384,82 +384,4 @@ const styleInfobulle = computed(() => ({
   stroke: var(--cahier-mode-foot);
 }
 
-.distribution-callout {
-  position: absolute;
-  z-index: 20;
-  width: min(330px, calc(100% - 24px));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px 14px;
-  box-shadow: 0 12px 30px rgba(35, 42, 42, 0.2);
-  border: 1px solid color-mix(in srgb, var(--cahier-mode-foot) 30%, transparent);
-  background: color-mix(in srgb, var(--cahier-mode-foot) 8%, var(--paper));
-  color: var(--ink);
-  font-size: 12px;
-}
-
-.distribution-callout div {
-  display: grid;
-  gap: 3px;
-}
-
-.distribution-callout span {
-  color: var(--cahier-mode-foot);
-}
-
-.distribution-callout a {
-  color: var(--cahier-region-emphasis);
-  font-weight: 700;
-  text-underline-offset: 3px;
-  white-space: nowrap;
-}
-
-.distribution-callout button {
-  border: 0;
-  background: transparent;
-  color: var(--cahier-region-emphasis);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  white-space: nowrap;
-}
-
-.distribution-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 18px;
-  margin-top: 8px;
-  justify-content: center;
-  color: var(--cahier-default);
-  font: var(--type-figure-legend);
-}
-
-.distribution-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.distribution-key {
-  display: inline-block;
-  width: 18px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--cahier-mode-foot);
-}
-
-.distribution-key--peer {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--cahier-default);
-}
-
-.distribution-key--reference {
-  height: 0;
-  border-top: 2px dashed var(--cahier-region-emphasis);
-  background: transparent;
-}
 </style>

@@ -23,7 +23,6 @@ import type { Component } from 'vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import type {
   AccessEvidence,
-  BpeProfilesEvidence,
   ContentFact,
   ContentSection,
   DistributionEvidence,
@@ -33,7 +32,6 @@ import type {
 } from '@/fiche/content/themeContent'
 import {
   routePourCibleExploration,
-  routePourFaitExploration,
   routePourSectionExploration,
 } from '@/fiche/explorationHandoff'
 import {
@@ -41,10 +39,17 @@ import {
   nomTerritoirePourAffichage,
 } from '@/fiche/content/territoryFacts'
 import type { MobiliteAccessMode, MobiliteService, NumericFact } from '@/fiche/content/territoryFacts'
+import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import type { CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { layoutMasonry } from '@/fiche/masonryLayout'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
+import CahierDonut from './CahierDonut.vue'
+import CahierFigureTooltip from './CahierFigureTooltip.vue'
+import CahierFigureLegend from './CahierFigureLegend.vue'
+import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierReferenceNote from './CahierReferenceNote.vue'
+import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
 import DistributionFigureCahier from './DistributionFigureCahier.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
@@ -199,14 +204,6 @@ function formatFactValue(fact: NumericFact, value: number | null): string {
   return formatFact({ ...fact, value })
 }
 
-function profileCountLabel(count: number): string {
-  return `${count} type${count > 1 ? 's' : ''}`
-}
-
-function formatPercentage(value: number): string {
-  return `${formatNumber(value * 100, 0)} %`
-}
-
 function summaryMetrics(evidence: SummaryEvidence): readonly {
   key: 'equipment' | 'types'
   title: string
@@ -220,6 +217,21 @@ function summaryMetrics(evidence: SummaryEvidence): readonly {
 
 function summaryMetricTitle(key: 'equipment' | 'types'): string {
   return key === 'equipment' ? 'Nombre d’équip. accessibles' : "Types d'équip. accessibles"
+}
+
+type SummaryBarSegment = {
+  mode: MobiliteAccessMode | 'inaccessible'
+  fact: ContentFact
+  start: number
+  end: number
+}
+
+type RenderedSummaryBarSegment = SummaryBarSegment & {
+  label: string
+  icon: Component | null
+  value: number | null
+  left: string
+  right: string
 }
 
 function summaryHasValues(values: SummaryEvidence['accessibleEquipment']): boolean {
@@ -258,18 +270,9 @@ function summarySegments(
   values: SummaryEvidence['accessibleEquipment'],
   metric?: 'equipment' | 'types',
   typeCount?: number | null,
-): readonly {
-  mode: MobiliteAccessMode
-  label: string
-  icon: Component
-  fact: ContentFact
-  start: number
-  end: number
-  value: number | null
-  left: string
-  right: string
-}[] {
-  return summaryBarSegments(values, false, metric, typeCount)
+  inaccessibleTypes?: ContentFact,
+): readonly RenderedSummaryBarSegment[] {
+  return summaryBarSegments(values, false, metric, typeCount, inaccessibleTypes)
 }
 
 function summaryBarSegments(
@@ -277,41 +280,68 @@ function summaryBarSegments(
   reference: boolean,
   metric?: 'equipment' | 'types',
   typeCount?: number | null,
-): readonly {
-  mode: MobiliteAccessMode
-  label: string
-  icon: Component
-  fact: ContentFact
-  start: number
-  end: number
-  value: number | null
-  left: string
-  right: string
-}[] {
+  inaccessibleTypes?: ContentFact,
+): readonly RenderedSummaryBarSegment[] {
   const scale = summaryScale(values, metric, typeCount)
   const valueFor = (mode: MobiliteAccessMode): number | null => reference
     ? values[mode].fact.comparison?.reference?.value ?? null
     : values[mode].fact.value
   const walk = Math.max(0, valueFor('walkTransit') ?? 0)
   const bike = Math.max(walk, valueFor('bike') ?? 0)
-  const car = Math.max(bike, valueFor('car') ?? 0)
-  const segments = [
+  const car = Math.min(scale, Math.max(bike, valueFor('car') ?? 0))
+  const inaccessibleValue = inaccessibleTypes
+    ? reference
+      ? inaccessibleTypes.fact.comparison?.reference?.value ?? null
+      : inaccessibleTypes.fact.value
+    : null
+  const segments: SummaryBarSegment[] = [
     { mode: 'walkTransit' as const, start: 0, end: walk, fact: values.walkTransit },
     { mode: 'bike' as const, start: walk, end: bike, fact: values.bike },
     { mode: 'car' as const, start: bike, end: car, fact: values.car },
   ]
+  if (metric === 'types' && inaccessibleTypes) {
+    if (inaccessibleValue !== null && scale > 0) {
+      segments.push({
+        mode: 'inaccessible' as const,
+        start: car,
+        end: scale,
+        fact: inaccessibleTypes,
+      })
+    }
+  }
   return segments.map((segment) => ({
     ...segment,
-    value: valueFor(segment.mode),
-    label: MOBILITE_MODE_LABELS[segment.mode],
-    icon: modeIcon(segment.mode),
+    value: segment.mode === 'inaccessible' ? inaccessibleValue : valueFor(segment.mode),
+    label: segment.mode === 'inaccessible' ? segment.fact.label : MOBILITE_MODE_LABELS[segment.mode],
+    icon: segment.mode === 'inaccessible' ? null : modeIcon(segment.mode),
     left: scale > 0 ? `${(segment.start / scale) * 100}%` : '0%',
     right: scale > 0 ? `${100 - (segment.end / scale) * 100}%` : '100%',
   }))
 }
 
+function summarySegmentClass(mode: MobiliteAccessMode | 'inaccessible'): string {
+  return mode === 'inaccessible' ? 'inaccessible' : MODE_CLASSES[mode]
+}
+
 function summaryBarTooltipId(key: 'equipment' | 'types', reference: boolean): string {
   return `summary-${key}-${reference ? 'reference' : 'territory'}-detail`
+}
+
+function summaryTooltipRows(
+  values: SummaryEvidence['accessibleEquipment'],
+  reference: boolean,
+  metric?: 'equipment' | 'types',
+  typeCount?: number | null,
+  inaccessibleTypes?: ContentFact,
+): readonly CahierTooltipRow[] {
+  return summaryBarSegments(values, reference, metric, typeCount, inaccessibleTypes).map((segment) => ({
+    label: segment.label,
+    value: formatFactValue(segment.fact.fact, segment.value),
+    tone: segment.mode === 'inaccessible'
+      ? 'neutral'
+      : MODE_CLASSES[segment.mode] as CahierTooltipRow['tone'],
+    marker: segment.mode === 'inaccessible' ? 'slash' : undefined,
+  }))
 }
 
 function summaryLosses(
@@ -343,12 +373,11 @@ function summaryLoss(values: SummaryEvidence['accessibleEquipment'], mode: Mobil
   return car === null || current === null || mode === 'car' ? null : Math.max(0, car - current)
 }
 
-function bpeProfileScale(profiles: BpeProfilesEvidence['profiles']): number {
-  return Math.max(0, ...profiles.map((profile) => profile.count))
-}
-
-function bpeBarHeight(count: number, maximum: number): string {
-  return maximum > 0 ? `${(count / maximum) * 100}%` : '0%'
+function summaryLossForSegment(
+  values: SummaryEvidence['accessibleEquipment'],
+  segment: RenderedSummaryBarSegment,
+): number | null {
+  return segment.mode === 'inaccessible' ? null : summaryLoss(values, segment.mode)
 }
 
 function donutStyle(values: { car: number; bike: number; walkTransit: number }): Record<string, string> {
@@ -391,13 +420,6 @@ function sectionExploration(section: ContentSection) {
   })
 }
 
-function routeForFact(section: ContentSection, fact: NumericFact) {
-  const target = section.explorationTargets.find((candidate) => candidate.key === fact.key)
-  return target
-    ? routePourCibleExploration(target)
-    : routePourFaitExploration(fact.key, fact.detail, props.content.territory)
-}
-
 function anchorForEntry(key: string): string {
   return props.pagination.entries.find((entry) => entry.key === key)?.anchor ?? `figure-${key}`
 }
@@ -418,6 +440,35 @@ function accessDonutStyle(service: AccessEvidence['services'][number]): Record<s
     bike: percentage(service.modes.bike.fact) ?? 0,
     car: percentage(service.modes.car.fact) ?? 0,
   })
+}
+
+function accessTooltipId(service: MobiliteService): string {
+  return `access-${service}-detail`
+}
+
+function accessTooltipRows(
+  service: AccessEvidence['services'][number],
+  referenceLabel: string | null,
+): readonly CahierTooltipRow[] {
+  return [
+    ...SUMMARY_MODES.map((mode) => ({
+      label: service.modes[mode].label,
+      value: formatFact(service.modes[mode].fact),
+      tone: MODE_CLASSES[mode] as CahierTooltipRow['tone'],
+      note: service.modes[mode].fact.comparison?.reference
+        ? `${referenceLabelForFigure(referenceLabel) ?? 'Référence'} : ${referenceFactText(service.modes[mode].fact)}`
+        : undefined,
+    })),
+    {
+      label: service.inaccessible.label,
+      value: formatFact(service.inaccessible.fact),
+      tone: 'neutral' as const,
+      marker: 'slash' as const,
+      note: service.inaccessible.fact.comparison?.reference
+        ? `${referenceLabelForFigure(referenceLabel) ?? 'Référence'} : ${referenceFactText(service.inaccessible.fact)}`
+        : undefined,
+    },
+  ]
 }
 
 function serviceIcon(service: MobiliteService): Component {
@@ -642,7 +693,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                             <CahierReferenceNote
                               :fact="mode.fact.fact"
                               :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
-                              :to="routeForFact(section, mode.fact.fact)"
+                               :to="sectionExploration(section)"
                             />
                           </dd>
                         </div>
@@ -663,19 +714,9 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 
                 <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Équipements accessibles en 20 min., moyenne</figcaption>
+                  <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                   <template v-if="props.presentation === 'plain'">
-                    <div class="summary-mode-key" aria-label="Modes d’accès">
-                      <span
-                        v-for="mode in SUMMARY_MODES"
-                        :key="mode"
-                        class="summary-mode-key-item"
-                        :class="`summary-mode-key-item--${MODE_CLASSES[mode]}`"
-                      >
-                        <component :is="modeIcon(mode)" :size="14" stroke-width="1.7" aria-hidden="true" />
-                        {{ MOBILITE_MODE_LABELS[mode] }}
-                      </span>
-                    </div>
-                    <div class="summary-metrics summary-metrics--paired">
+                    <div class="summary-metrics summary-metrics--paired summary-bar-metrics">
                       <section
                         v-for="metric in summaryMetrics(section.evidence)"
                         :key="metric.key"
@@ -691,22 +732,24 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                                 role="img"
                                 tabindex="0"
                                 :aria-describedby="summaryBarTooltipId(metric.key, false)"
-                                 :aria-label="`${summaryMetricTitle(metric.key)}, territoire : ${summarySegments(metric.values, metric.key, section.evidence.typeCount).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
+                                 :aria-label="`${summaryMetricTitle(metric.key)}, territoire : ${summarySegments(metric.values, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
                                >
                                 <span
-                                  v-for="segment in summarySegments(metric.values, metric.key, section.evidence.typeCount)"
+                                   v-for="segment in summarySegments(metric.values, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
                                   :key="segment.mode"
                                   class="summary-stack-segment"
-                                  :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
+                                   :class="`summary-stack-segment--${summarySegmentClass(segment.mode)}`"
                                   :style="{ left: segment.left, right: segment.right }"
                                 />
                               </div>
-                              <dl :id="summaryBarTooltipId(metric.key, false)" class="summary-bar-tooltip" role="tooltip">
-                                <div v-for="segment in summarySegments(metric.values)" :key="segment.mode">
-                                  <dt>{{ segment.label }}</dt>
-                                  <dd>{{ formatFactValue(segment.fact.fact, segment.value) }}</dd>
-                                </div>
-                              </dl>
+                              <CahierFigureTooltip
+                                :id="summaryBarTooltipId(metric.key, false)"
+                                class="summary-bar-tooltip"
+                                title="Détail par mode"
+                                 :rows="summaryTooltipRows(metric.values, false, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
+                                popover
+                                compact
+                              />
                             </div>
                           </div>
                           <div
@@ -719,54 +762,71 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                                 role="img"
                                 tabindex="0"
                                 :aria-describedby="summaryBarTooltipId(metric.key, true)"
-                                  :aria-label="`${summaryMetricTitle(metric.key)}, ${referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence indisponible'} : ${summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
+                                   :aria-label="`${summaryMetricTitle(metric.key)}, ${referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence indisponible'} : ${summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
                                >
                                 <span
-                                  v-for="segment in summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount)"
+                                   v-for="segment in summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
                                   :key="segment.mode"
                                   class="summary-stack-segment"
-                                  :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
+                                   :class="`summary-stack-segment--${summarySegmentClass(segment.mode)}`"
                                   :style="{ left: segment.left, right: segment.right }"
                                 />
                               </div>
-                              <dl :id="summaryBarTooltipId(metric.key, true)" class="summary-bar-tooltip" role="tooltip">
-                                <div v-for="segment in summaryBarSegments(metric.values, true)" :key="segment.mode">
-                                  <dt>{{ segment.label }}</dt>
-                                  <dd>{{ formatFactValue(segment.fact.fact, segment.value) }}</dd>
-                                </div>
-                              </dl>
+                               <CahierFigureTooltip
+                                 :id="summaryBarTooltipId(metric.key, true)"
+                                 class="summary-bar-tooltip"
+                                 title="Détail par mode"
+                                 :rows="summaryTooltipRows(metric.values, true, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
+                                 popover
+                                 compact
+                               />
                             </div>
                             <span class="summary-bar-label summary-bar-label--reference type-figure-label">{{ referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence indisponible' }}</span>
                           </div>
                         </div>
+                      </section>
+                    </div>
+                    <CahierFigureLegend
+                      class="summary-mode-key"
+                      :entries="section.evidence.legend"
+                      :icons="MODE_ICONS"
+                      label="Modes d’accès"
+                    />
+                    <div class="summary-metrics summary-metrics--paired summary-loss-metrics">
+                      <section
+                        v-for="metric in summaryMetrics(section.evidence)"
+                        :key="metric.key"
+                        v-show="summaryHasValues(metric.values)"
+                        class="summary-metric"
+                      >
                         <div class="summary-loss">
                           <span class="summary-loss-title type-figure-label">
                             {{ metric.key === 'equipment' ? 'Perte totale d’accès' : 'Perte de diversité' }}
                           </span>
                           <div class="summary-loss-readings">
-                            <span
+                            <CahierFigureScalar
                               v-for="loss in summaryLosses(section.evidence, metric.key)"
                               :key="loss.mode"
                               class="summary-loss-reading"
-                              :class="`summary-loss-reading--${MODE_CLASSES[loss.mode]}`"
+                              :value="loss.fact.fact.value === null ? '—' : formatNumber(loss.fact.fact.value, 0)"
+                              :label="loss.label"
+                              :icon="modeIcon(loss.mode)"
+                              :tone="MODE_CLASSES[loss.mode]"
+                              color-value
+                              :show-label="false"
+                              :extreme="isExtreme(loss.fact.fact)"
+                              :aria-label="`${loss.label} : ${loss.fact.fact.value === null ? 'indisponible' : formatNumber(loss.fact.fact.value, 0)}`"
                             >
-                              <span
-                                class="summary-loss-reading-value"
-                                role="img"
-                                :aria-label="`${loss.label} : ${loss.fact.fact.value === null ? 'indisponible' : formatNumber(loss.fact.fact.value, 0)}`"
-                              >
-                                <component :is="modeIcon(loss.mode)" :size="15" stroke-width="1.7" aria-hidden="true" />
-                                <strong v-if="loss.fact.fact.value !== null">{{ formatNumber(loss.fact.fact.value, 0) }}</strong>
-                                <strong v-else>—</strong>
-                              </span>
-                              <CahierReferenceNote
-                                v-if="loss.fact.fact.comparison?.reference"
-                                :fact="loss.fact.fact"
-                                :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
-                                :maximum-fraction-digits="0"
-                                :to="sectionExploration(section)!"
-                              />
-                            </span>
+                              <template #reference>
+                                <CahierReferenceNote
+                                  v-if="loss.fact.fact.comparison?.reference"
+                                  :fact="loss.fact.fact"
+                                  :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
+                                  :maximum-fraction-digits="0"
+                                  :to="sectionExploration(section)!"
+                                />
+                              </template>
+                            </CahierFigureScalar>
                           </div>
                         </div>
                       </section>
@@ -789,7 +849,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                           v-for="segment in summarySegments(metric.values)"
                           :key="segment.mode"
                           class="summary-stack-segment"
-                          :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
+                           :class="`summary-stack-segment--${summarySegmentClass(segment.mode)}`"
                           :style="{ left: segment.left, right: segment.right }"
                         />
                       </div>
@@ -798,7 +858,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                           v-for="segment in summarySegments(metric.values)"
                           :key="segment.mode"
                           class="summary-value"
-                          :class="`summary-value--${MODE_CLASSES[segment.mode]}`"
+                           :class="`summary-value--${summarySegmentClass(segment.mode)}`"
                         >
                           <dt>
                             <component :is="segment.icon" :size="16" stroke-width="1.6" aria-hidden="true" />
@@ -806,104 +866,94 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                           </dt>
                           <dd>
                             <strong class="cahier-scalar-value" :class="{ 'is-extreme': isExtreme(segment.fact.fact) }">{{ formatFact(segment.fact.fact) }}</strong>
-                            <small v-if="summaryLoss(metric.values, segment.mode) !== null">
-                              −{{ formatNumber(summaryLoss(metric.values, segment.mode)!) }} vs voiture
+                             <small v-if="summaryLossForSegment(metric.values, segment) !== null">
+                               −{{ formatNumber(summaryLossForSegment(metric.values, segment)!) }} vs voiture
                             </small>
                             <CahierReferenceNote
                               :fact="segment.fact.fact"
                               :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
-                              :to="routeForFact(section, segment.fact.fact)"
+                               :to="sectionExploration(section)"
                             />
                           </dd>
                         </div>
                       </dl>
                     </section>
                   </div>
+                  </div>
                 </figure>
 
                 <figure v-else-if="section.evidence?.kind === 'bpe-profiles'" class="evidence-side evidence-figure bpe-evidence">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Composition des profils d’accès</figcaption>
-                  <div class="bpe-profile-chart" aria-label="Composition des profils d’accès par mode">
-                    <div
-                      v-for="profile in section.evidence.profiles"
-                      :key="profile.profile"
-                      class="bpe-profile-column"
-                    >
-                      <div class="bpe-profile-bar-area">
-                        <span
-                          class="bpe-profile-bar"
-                          :style="{ height: bpeBarHeight(profile.count, bpeProfileScale(section.evidence.profiles)) }"
-                        />
-                      </div>
-                      <strong class="bpe-profile-label">{{ profile.label }}</strong>
-                      <span class="bpe-profile-count">{{ profileCountLabel(profile.count) }}</span>
-                      <div
-                        class="stacked-donut bpe-profile-donut"
-                        :style="donutStyle(profile.exemplar)"
-                        :aria-label="`${profile.exemplar.label}. ${MOBILITE_MODE_LABELS.walkTransit} : ${formatPercentage(profile.exemplar.walkTransit)}; ${MOBILITE_MODE_LABELS.bike} : ${formatPercentage(profile.exemplar.bike)}; ${MOBILITE_MODE_LABELS.car} : ${formatPercentage(profile.exemplar.car)}`"
-                        role="img"
-                      >
-                        <span class="stacked-donut-center">
-                          <span>Exemple</span>
-                        </span>
-                      </div>
-                      <span class="bpe-profile-exemplar">{{ profile.exemplar.label }}</span>
-                    </div>
-                  </div>
+                  <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
+                  <p v-if="section.evidence.totalTypes !== null" class="bpe-profile-total">
+                    {{ formatNumber(section.evidence.totalTypes, 0) }} types d’équipement
+                  </p>
+                  <BpeProfilesChartCahier
+                    :profiles="section.evidence.profiles"
+                    :reference-label="section.evidence.referenceLabel"
+                    :legend="section.evidence.legend"
+                    :exploration-to="sectionExploration(section)"
+                  />
+                  <p v-if="section.evidence.referenceLabel" class="bpe-profile-reference-note" role="note">
+                    *ref : {{ section.evidence.referenceLabel }}
+                  </p>
                 </figure>
                 <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
-                  <div class="access-figures" aria-label="Part des bâtiments accessibles par service et par mode">
+                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
+                   <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
+                   <div class="access-figures" aria-label="Part des bâtiments accessibles par service et par mode">
                     <figure
                       v-for="service in section.evidence.services"
                       :key="service.service"
                       class="access-figure"
                       :class="{ 'access-figure--incomplete': !hasAnyAccessValue(service) }"
                     >
-                      <div
+                      <CahierDonut
                         class="stacked-donut cahier-tooltip-trigger"
-                        :style="accessDonutStyle(service)"
-                        :aria-label="`${service.label}. ${Object.values(service.modes).map((mode) => `${mode.label} : ${formatFact(mode.fact)}`).join('; ')}`"
-                        role="img"
-                        tabindex="0"
+                         :style="accessDonutStyle(service)"
+                         :aria-describedby="accessTooltipId(service.service)"
+                        :label-accessible="`${service.label}. ${[...Object.values(service.modes), service.inaccessible].map((mode) => `${mode.label} : ${formatFact(mode.fact)}`).join('; ')}`"
                       >
-                        <span class="stacked-donut-center">
-                          <component :is="serviceIcon(service.service)" class="stacked-donut-icon" :size="16" stroke-width="1.5" aria-hidden="true" />
-                          <span>{{ service.label }}</span>
-                        </span>
-                      </div>
-                      <div class="access-foot-summary">
-                        <strong class="cahier-scalar-value" :class="{ 'is-extreme': isExtreme(service.modes.walkTransit.fact) }">
-                          {{ formatFact(service.modes.walkTransit.fact) }}
-                        </strong>
-                        <span><Footprints class="cahier-mode-icon--foot" :size="14" stroke-width="1.7" aria-hidden="true" />{{ service.modes.walkTransit.label }}</span>
-                        <CahierReferenceNote
-                          :fact="service.modes.walkTransit.fact"
-                          :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
-                          :to="routeForFact(section, service.modes.walkTransit.fact)"
-                        />
-                      </div>
-                      <div class="access-tooltip" role="tooltip">
-                        <strong>Détail par mode</strong>
-                        <dl>
-                          <div v-for="(mode, modeKey) in service.modes" :key="modeKey" :class="`access-detail--${MODE_CLASSES[modeKey as MobiliteAccessMode]}`">
-                            <dt><component :is="modeIcon(modeKey as MobiliteAccessMode)" :size="12" stroke-width="1.7" />{{ mode.label }}</dt>
-                            <dd>{{ formatFact(mode.fact) }}</dd>
-                            <small v-if="mode.fact.comparison?.reference">
-                              {{ referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence' }} : {{ referenceFactText(mode.fact) }}
-                            </small>
-                          </div>
-                        </dl>
-                      </div>
+                        <component :is="serviceIcon(service.service)" class="stacked-donut-icon" :size="16" stroke-width="1.5" aria-hidden="true" />
+                        <span>{{ service.label }}</span>
+                      </CahierDonut>
+                      <CahierFigureScalar
+                        class="access-foot-summary"
+                        :value="formatFact(service.modes.walkTransit.fact)"
+                        :label="service.modes.walkTransit.label"
+                        :icon="Footprints"
+                        tone="t"
+                        color-value
+                        :show-label="false"
+                        :extreme="isExtreme(service.modes.walkTransit.fact)"
+                        :aria-label="`${service.label}. ${service.modes.walkTransit.label} : ${formatFact(service.modes.walkTransit.fact)}`"
+                      >
+                        <template #reference>
+                          <CahierReferenceNote
+                            :fact="service.modes.walkTransit.fact"
+                            :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
+                             :to="sectionExploration(section)"
+                          />
+                        </template>
+                      </CahierFigureScalar>
+                       <CahierFigureTooltip
+                         :id="accessTooltipId(service.service)"
+                         class="access-tooltip"
+                         title="Détail par mode"
+                        :rows="accessTooltipRows(service, section.evidence.referenceLabel)"
+                        popover
+                      />
                     </figure>
-                    <div class="access-legend" aria-label="Légende des parts d'accessibilité">
+                    <div class="access-legend">
                       <p>Chaque cercle montre les parts disponibles par mode.</p>
-                      <span class="access-legend-item access-legend-item--t"><i />{{ MOBILITE_MODE_LABELS.walkTransit }}</span>
-                      <span class="access-legend-item access-legend-item--b"><i />{{ MOBILITE_MODE_LABELS.bike }}</span>
-                      <span class="access-legend-item access-legend-item--c"><i />{{ MOBILITE_MODE_LABELS.car }}</span>
+                      <CahierFigureLegend
+                        :entries="section.evidence.legend"
+                        :icons="MODE_ICONS"
+                        label="Légende des parts d'accessibilité"
+                      />
                     </div>
-                  </div>
-                </figure>
+                     </div>
+                   </div>
+                 </figure>
 
                 <div v-else class="evidence-side evidence-placeholder" role="note">
                   <span>{{ sectionState(section) }}</span>
@@ -974,6 +1024,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
   --red: #a44f51;
   --red-soft: rgb(164 79 81 / 58%);
   --cahier-default: var(--muted);
+  --cahier-profile-inaccessible: color-mix(in srgb, var(--cahier-default) 42%, var(--paper));
   --margin-line: 104px;
   --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
   --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
@@ -1085,7 +1136,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .evidence-figure { margin: 0; padding: 12px 0 0; }
 .cahier--sans-grille .evidence-figure { padding-top: 0; }
 .summary-evidence { display: grid; gap: 10px; }
-.summary-evidence > .cahier-figure-title { margin-bottom: 0; }
+.summary-evidence .cahier-figure-title { margin-bottom: 0; }
 .cahier--sans-grille .summary-metrics--paired {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 10%;
@@ -1111,16 +1162,9 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .summary-stack--reference .summary-stack-segment { opacity: .48; }
 .cahier-tooltip-trigger { cursor: help; }
 .summary-stack[tabindex]:focus-visible { outline: 2px solid var(--cahier-region-emphasis); outline-offset: 4px; }
-.summary-bar-tooltip { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 10; display: grid; width: min(210px, calc(100% + 80px)); gap: 5px; margin: 0; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--cahier-theme-emphasis) 30%, transparent); background: var(--paper); box-shadow: 0 12px 28px rgb(35 42 42 / 16%); color: var(--cahier-default); font-size: 10px; line-height: 1.2; opacity: 0; pointer-events: none; transform: translate(-50%, -4px); transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease; visibility: hidden; }
-.summary-stack:hover + .summary-bar-tooltip, .summary-stack:focus-visible + .summary-bar-tooltip { opacity: 1; transform: translate(-50%, 0); visibility: visible; }
-.summary-bar-tooltip > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
-.summary-bar-tooltip dt, .summary-bar-tooltip dd { margin: 0; }
-.summary-bar-tooltip dd { color: var(--ink); font-variant-numeric: tabular-nums; }
-.summary-mode-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin: 0; color: var(--cahier-default); font-size: 11px; }
-.summary-mode-key-item { display: inline-flex; align-items: center; gap: 5px; }
-.summary-mode-key-item--t { color: var(--cahier-mode-foot); }
-.summary-mode-key-item--b { color: var(--cahier-mode-bike); }
-.summary-mode-key-item--c { color: var(--cahier-mode-car); }
+.summary-mode-key { --cahier-figure-legend-margin: 4px 0 0; }
+.summary-bar-metrics { gap: var(--space-6); }
+.summary-loss-metrics { margin-top: var(--space-3); }
 .summary-metrics { display: grid; gap: 42px; }
 .summary-metric { min-width: 0; }
 .summary-metric-title { margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: 20px; font-weight: 500; line-height: 1.15; }
@@ -1130,6 +1174,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .summary-stack-segment--t { background: var(--cahier-mode-foot); }
 .summary-stack-segment--b { background: var(--cahier-mode-bike); }
 .summary-stack-segment--c { background: var(--cahier-mode-car); }
+.summary-stack-segment--inaccessible {
+  border-left: 1px solid color-mix(in srgb, var(--cahier-default) 54%, transparent);
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--cahier-default) 32%, transparent) 0 1px, transparent 1px 5px);
+}
 .summary-values { display: grid; gap: 14px; margin: 0; }
 .summary-value { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; padding-top: 12px; border-top: 1px solid var(--fine-rule); }
 .summary-value dt { display: flex; align-items: center; gap: 7px; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.25; }
@@ -1142,68 +1190,27 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .summary-loss { min-width: 0; }
 .summary-loss-title { display: block; color: var(--cahier-default); text-align: center; }
 .summary-loss-readings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.summary-loss-reading { display: grid; justify-items: center; gap: 3px; color: var(--cahier-default); font-size: 10px; text-align: center; }
-.summary-loss-reading-value { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
-.summary-loss-reading-value strong { color: var(--ink); font: var(--type-figure-value); font-size: 14px; font-variant-numeric: tabular-nums; }
-.summary-loss-reading--t .summary-loss-reading-value { color: var(--cahier-mode-foot); }
-.summary-loss-reading--t .summary-loss-reading-value strong { color: var(--cahier-mode-foot); }
-.summary-loss-reading--b .summary-loss-reading-value { color: var(--cahier-mode-bike); }
-.summary-loss-reading--b .summary-loss-reading-value strong { color: var(--cahier-mode-bike); }
 .summary-value--t dt, .summary-value--t dd strong { color: var(--cahier-mode-foot); }
 .summary-value--b dt, .summary-value--b dd strong { color: var(--cahier-mode-bike); }
 .summary-value--c dt, .summary-value--c dd strong { color: var(--cahier-mode-car); }
 .mode-figures { display: grid; gap: 0; margin: 16px 0 0; }
 .mode-figures-heading { display: grid; grid-template-columns: minmax(0, 1fr) var(--mode-scalar-width); gap: 12px; color: var(--cahier-default); text-align: center; }
-.mode-figure { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 0 34px; }
-.mode-figure dt { display: flex; align-items: center; gap: 9px; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.3; }
-.mode-figure dt svg { flex: 0 0 auto; }
-.mode-figure--t dt svg, .mode-figure--t .mode-value { color: var(--cahier-mode-foot); }
-.mode-figure--b dt svg, .mode-figure--b .mode-value { color: var(--cahier-mode-bike); }
-.mode-figure dd { position: relative; width: var(--mode-scalar-width); min-width: 0; margin: 0; color: var(--cahier-default); font: var(--type-figure-value); font-size: 27px; text-align: center; }
-.mode-value { display: block; }
-.mode-figure dd small { display: block; margin-top: 9px; color: var(--cahier-default); font-family: var(--font-sans); font-size: 11px; line-height: 1.2; text-transform: uppercase; }
-.mode-figure dd .cahier-reference-note { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; }
+.mode-figure { padding: 14px 0 34px; }
+.mode-figure-scalar { width: 100%; }
 
-.mode-value.is-extreme, .bar-cell strong.is-extreme, .access-foot-summary > strong.is-extreme { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.mode-value.is-extreme, .bar-cell strong.is-extreme { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .cahier--sans-grille .cahier-scalar-value.is-extreme { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .regional-reading { font: var(--type-figure-mode); font-size: 11px; line-height: 1.25; }
 
 .access-figure-collection { margin: 0; padding: 12px 0 0; }
 .access-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 18px; align-items: start; }
 .access-figure { position: relative; display: grid; min-width: 0; gap: 8px; justify-items: center; margin: 0; }
-.stacked-donut { position: relative; width: clamp(92px, 12vw, 132px); aspect-ratio: 1; margin: 0 auto; border-radius: 50%; background: conic-gradient(var(--cahier-mode-foot) 0 var(--donut-walk), var(--cahier-mode-bike) var(--donut-walk) var(--donut-bike), var(--cahier-mode-car) var(--donut-bike) var(--donut-car), var(--paper-deep) var(--donut-car) 360deg); }
-.stacked-donut::after { position: absolute; inset: 10%; z-index: 1; border-radius: 50%; background: var(--paper); content: ''; }
-.stacked-donut:focus-visible { outline: 2px solid var(--cahier-region-emphasis); outline-offset: 5px; }
-.stacked-donut-center { position: absolute; inset: 16%; z-index: 2; display: grid; align-content: center; justify-items: center; gap: 4px; color: var(--cahier-default); font-size: 11px; line-height: 1.1; text-align: center; }
-.access-foot-summary { display: grid; width: 100%; gap: 4px; justify-items: center; color: var(--cahier-mode-foot); text-align: center; }
-.access-foot-summary > strong { font: var(--type-figure-value); font-variant-numeric: tabular-nums; }
-.access-foot-summary > span { display: inline-flex; align-items: center; gap: 5px; color: var(--cahier-default); font-size: 10px; line-height: 1.1; }
-.access-foot-summary > small { color: var(--cahier-region-emphasis); font-size: 10px; line-height: 1.25; }
-.access-tooltip { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 10; width: min(220px, calc(100% + 80px)); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--cahier-theme-emphasis) 30%, transparent); background: var(--paper); box-shadow: 0 12px 28px rgb(35 42 42 / 16%); color: var(--cahier-default); font-size: 11px; line-height: 1.25; opacity: 0; pointer-events: none; transform: translate(-50%, -4px); visibility: hidden; }
-.stacked-donut:hover ~ .access-tooltip, .stacked-donut:focus-visible ~ .access-tooltip { opacity: 1; transform: translate(-50%, 0); visibility: visible; }
-.access-tooltip > strong { color: var(--cahier-region-emphasis); }
-.access-tooltip dl { display: grid; gap: 7px; margin: 8px 0 0; }
-.access-tooltip dl > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
-.access-tooltip dt { display: flex; align-items: center; gap: 5px; }
-.access-tooltip dd { margin: 0; font-variant-numeric: tabular-nums; }
-.access-tooltip small { grid-column: 1 / -1; color: var(--cahier-region-emphasis); font-size: 10px; }
-.access-legend { grid-column: 3; grid-row: 2; align-self: center; display: grid; gap: 7px; justify-items: center; padding: 10px 0; color: var(--cahier-default); font-size: 11px; text-align: center; }
+.access-legend { display: grid; gap: 7px; justify-items: center; margin-top: var(--space-5); color: var(--cahier-default); text-align: center; }
 .access-legend p { margin: 0 0 3px; }
-.access-legend-item { display: flex; align-items: center; justify-content: center; gap: 7px; }
-.access-legend-item i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
-.access-legend-item--t i { background: var(--cahier-mode-foot); }
-.access-legend-item--b i { background: var(--cahier-mode-bike); }
-.access-legend-item--c i { background: var(--cahier-mode-car); }
 
 .bpe-evidence { min-width: 0; }
-.bpe-profile-chart { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(18px, 3vw, 34px); align-items: end; }
-.bpe-profile-column { display: grid; gap: 8px; min-width: 0; justify-items: center; text-align: center; }
-.bpe-profile-bar-area { display: flex; width: 100%; height: 170px; align-items: end; justify-content: center; border-bottom: 1px solid var(--rule); }
-.bpe-profile-bar { display: block; width: min(72px, 48%); min-height: 4px; background: var(--cahier-theme); }
-.bpe-profile-label { color: var(--ink); font-size: 12px; line-height: 1.25; }
-.bpe-profile-count { color: var(--cahier-theme-strong); font-size: 10px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
-.bpe-profile-donut { width: clamp(76px, 10vw, 108px); margin-top: 10px; }
-.bpe-profile-exemplar { max-width: 16ch; color: var(--cahier-default); font-size: 11px; line-height: 1.2; overflow-wrap: anywhere; }
+.bpe-profile-total { margin: 0; color: var(--cahier-default); font: var(--type-figure-label); text-align: center; }
+.bpe-profile-reference-note { margin: 8px 0 12px; color: var(--cahier-default); font: var(--type-figure-label); font-size: 11px; line-height: 1.3; text-align: center; }
 
 .sources-page { padding-bottom: 72px; }
 .sources-list { display: grid; gap: 18px; margin: 48px 0 0; }
@@ -1232,17 +1239,12 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 }
 @container cahier-page (max-width: 620px) {
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .access-legend { grid-column: 1 / -1; grid-row: auto; }
-  .bpe-profile-chart { gap: 10px; }
-  .bpe-profile-bar { width: min(56px, 58%); }
   .cahier--sans-grille .summary-metrics--paired { grid-template-columns: 1fr; gap: var(--space-6); }
 }
 @container cahier-page (max-width: 480px) {
   .summary-value { grid-template-columns: 1fr; gap: 5px; }
   .summary-value dd .cahier-reference-note { text-align: left; }
   .cahier--sans-grille .summary-value dd .cahier-reference-note { text-align: center; }
-  .bpe-profile-bar-area { height: 125px; }
-  .bpe-profile-label { font-size: 10px; }
 }
 
 @media (max-width: 760px) {

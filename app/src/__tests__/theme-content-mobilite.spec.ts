@@ -200,6 +200,7 @@ const completeFacts: TerritoryFacts = {
             bike: 0.1,
             walkTransit: 0.1,
           },
+          comparison: null,
         },
       ],
     },
@@ -238,6 +239,7 @@ describe('resolveMobiliteThemeContent', () => {
         bike: { fact: { key: 'avg_div_b', value: 35 } },
         walkTransit: { fact: { key: 'avg_div_t', value: 20 } },
       },
+      inaccessibleTypes: { fact: { key: 'inaccessible_types', value: 0 }, label: 'Inaccessible' },
       typeCount: 2,
       losses: {
         diversity: {
@@ -249,6 +251,12 @@ describe('resolveMobiliteThemeContent', () => {
           bike: { fact: { key: 'tot_loss_b', value: 2 } },
         },
       },
+      legend: [
+        { key: 'walkTransit', label: 'À pied + TC', marker: 'icon', iconKey: 'walkTransit', tone: 't' },
+        { key: 'bike', label: 'À vélo + TC', marker: 'icon', iconKey: 'bike', tone: 'b' },
+        { key: 'car', label: 'Voiture', marker: 'icon', iconKey: 'car', tone: 'c' },
+        { key: 'inaccessible', label: 'Inaccessible', marker: 'slash', tone: 'neutral' },
+      ],
     })
     expect(summary.explorationTargets.map((target) => target.key)).toEqual([
       'avg_tot_car',
@@ -309,6 +317,16 @@ describe('resolveMobiliteThemeContent', () => {
     expect(essentials.evidence).toMatchObject({
       kind: 'access',
       services: expect.arrayContaining([expect.objectContaining({ service: 'administration' })]),
+      legend: [
+        { key: 'walkTransit', label: 'À pied + TC', marker: 'icon', iconKey: 'walkTransit', tone: 't' },
+        { key: 'bike', label: 'À vélo + TC', marker: 'icon', iconKey: 'bike', tone: 'b' },
+        { key: 'car', label: 'Voiture', marker: 'icon', iconKey: 'car', tone: 'c' },
+        { key: 'inaccessible', label: 'Inaccessible', marker: 'slash', tone: 'neutral' },
+      ],
+    })
+    expect(essentials.evidence?.kind === 'access' ? essentials.evidence.services[0]?.inaccessible : null).toMatchObject({
+      label: 'Inaccessible',
+      fact: { value: 0 },
     })
     if (essentials.evidence?.kind === 'access') {
       for (const service of essentials.evidence.services) {

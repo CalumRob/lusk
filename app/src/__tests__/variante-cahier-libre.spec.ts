@@ -159,6 +159,42 @@ const payload: Payload = {
       exemplar_b: 0.2,
       exemplar_t: 0.1,
     },
+    {
+      territoire: '22002',
+      type: 'commune',
+      profil: 'acces-pied-tc',
+      profil_libelle: 'Accès à pied ou en TC possible',
+      nombre_typequ: 10,
+      exemplar_typequ: 'A208',
+      exemplar_libelle: 'Agence postale',
+      exemplar_c: 1,
+      exemplar_b: 0.74,
+      exemplar_t: 0.72,
+    },
+    {
+      territoire: '22002',
+      type: 'commune',
+      profil: 'voiture-requise',
+      profil_libelle: 'La voiture est requise',
+      nombre_typequ: 42,
+      exemplar_typequ: 'F111',
+      exemplar_libelle: 'Plateaux et terrains de jeux extérieurs',
+      exemplar_c: 1,
+      exemplar_b: 0,
+      exemplar_t: 0,
+    },
+    {
+      territoire: '22002',
+      type: 'commune',
+      profil: 'inaccessible-20-minutes',
+      profil_libelle: 'Inaccessible ou presque en 20 minutes',
+      nombre_typequ: 1,
+      exemplar_typequ: 'C303',
+      exemplar_libelle: 'Lycée technique agricole',
+      exemplar_c: 0.03,
+      exemplar_b: 0,
+      exemplar_t: 0,
+    },
   ],
   themeMetadata: { mobilite: structuredClone(metadonneesThemesFixtures.mobilite) },
 }
@@ -228,16 +264,22 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.summary-evidence').text()).toContain('1 467,8')
     expect(wrapper.findAll('.summary-value')).toHaveLength(6)
     expect(wrapper.find('.distribution-cahier-svg').exists()).toBe(true)
+    expect(wrapper.find('.distribution-cahier').classes()).toContain('cahier-figure-frame')
+    expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
+    expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.find('.mode-figures').exists()).toBe(false)
     expect(wrapper.find('.summary-losses').exists()).toBe(false)
     expect(wrapper.find('.access-figures').exists()).toBe(true)
-    expect(wrapper.find('.bpe-evidence').text()).toContain('Composition des profils d’accès')
+    expect(wrapper.find('.bpe-evidence').text()).toContain('Profils d’accès par mode')
     expect(wrapper.find('.bpe-evidence').text()).toContain('2 types')
     expect(wrapper.find('.bpe-evidence').text()).toContain('France services')
     expect(wrapper.find('.bpe-evidence').text()).not.toContain('A128')
-    expect(wrapper.findAll('.bpe-profile-column')).toHaveLength(3)
-    expect(wrapper.find('.bpe-profile-donut').attributes('aria-label')).toContain('10 %')
-    expect(wrapper.find('.bpe-profile-donut').attributes('aria-label')).toContain('90 %')
+    expect(wrapper.findAll('.bpe-profile-column')).toHaveLength(4)
+    const inaccessibleProfile = wrapper.find('[data-profile="inaccessible-20-minutes"] .bpe-profile-donut')
+    expect(inaccessibleProfile.attributes('aria-label')).toContain('10 %')
+    expect(inaccessibleProfile.attributes('aria-label')).toContain('90 %')
     expect(wrapper.find('.sources-page').text()).toContain(content.sourceRegister[0]?.source)
     expect(wrapper.find('.page-number').text()).toContain('/01')
     expect(wrapper.find('.page-subtitle').text()).toContain('1,2 millions de bâtiments')
@@ -246,21 +288,23 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.argument-copy p').every((paragraph) => paragraph.classes().includes('cahier-baseline-first-line'))).toBe(true)
 
     const links = wrapper.findAll('a[target="_blank"]')
-    expect(links).toHaveLength(7)
+    expect(links).toHaveLength(17)
     const moreLinks = links.filter((link) => link.text().includes('En savoir plus'))
     expect(moreLinks).toHaveLength(2)
     expect(moreLinks.every((link) => link.classes().includes('passarelle-exploration--plain'))).toBe(true)
-    expect(links.filter((link) => /^\d+(?:er|e)\/\d+$/.test(link.text()))).toHaveLength(5)
-    expect(links.filter((link) => link.attributes('href')?.includes('/indicateurs/mobilite/tot_loss_t'))).toHaveLength(1)
+    expect(links.filter((link) => /^\d+(?:er|e)\/\d+$/.test(link.text()))).toHaveLength(15)
+    expect(links.filter((link) => link.attributes('href')?.includes('/indicateurs/mobilite/tot_loss_t'))).toHaveLength(7)
     expect(wrapper.findAll('.cahier-section-exploration')).toHaveLength(2)
     expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(4)
-    expect(wrapper.findAll('.cahier-reference-note')).toHaveLength(11)
+    expect(wrapper.findAll('.cahier-reference-note')).toHaveLength(15)
     expect(wrapper.findAll('.cahier-reference-note').every((note) => !note.text().includes('Médiane'))).toBe(true)
     expect(wrapper.find('.cahier-reference-note').text()).toContain('vs ref*')
     expect(wrapper.text()).toContain('À pied + TC')
     expect(wrapper.text()).toContain('À vélo + TC')
     expect(wrapper.text()).not.toContain('À pied ou en transports en commun')
     expect(wrapper.find('.access-tooltip').text()).toContain('vs ref*')
+    expect(wrapper.find('.access-figures .stacked-donut').attributes('aria-describedby')).toBe('access-administration-detail')
+    expect(wrapper.find('#access-administration-detail').classes()).toContain('cahier-figure-tooltip')
     expect(wrapper.find('.summary-value strong.is-extreme').exists()).toBe(true)
     expect(wrapper.find('.rank-emphasis.is-extreme').exists()).toBe(true)
     for (const link of links) {
@@ -325,7 +369,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
   it('pairs the summary bars and shares the app-wide compact figure label', async () => {
     const wrapper = await render(resolveMobiliteThemeContent(factsForTarget()), 'plain')
 
-    const pairedMetrics = wrapper.findAll('.summary-metrics--paired .summary-metric')
+    const pairedMetrics = wrapper.findAll('.summary-bar-metrics .summary-metric')
     expect(pairedMetrics).toHaveLength(2)
     expect(wrapper.findAll('.summary-bar-row')).toHaveLength(4)
     expect(wrapper.findAll('.summary-bar-row--territory .summary-bar-label')).toHaveLength(0)
@@ -337,18 +381,23 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       "Types d'équip. accessibles",
     ])
     expect(wrapper.findAll('.summary-metric-title').every((title) => title.classes().includes('type-figure-label'))).toBe(true)
-    expect(wrapper.findAll('.summary-mode-key-item')).toHaveLength(3)
+    expect(wrapper.findAll('.summary-mode-key .cahier-figure-legend-item')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-legend')).toHaveLength(4)
+    expect(wrapper.find('.summary-mode-key .cahier-figure-legend-mark--slash').exists()).toBe(true)
     expect(wrapper.find('.summary-values--paired').exists()).toBe(false)
     expect(wrapper.findAll('.summary-loss')).toHaveLength(2)
     expect(wrapper.findAll('.summary-loss-reading')).toHaveLength(4)
-    expect(wrapper.findAll('.summary-loss-reading-value svg')).toHaveLength(4)
-    expect(wrapper.findAll('.summary-loss-reading-value strong').map((value) => value.text())).toEqual([
+    expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-icon')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-value strong').map((value) => value.text())).toEqual([
       '1 211',
       '889',
       '19',
       '11',
     ])
-    expect(wrapper.findAll('.summary-loss-reading').every((reading) => !reading.text().includes('À pied + TC') && !reading.text().includes('À vélo + TC'))).toBe(true)
+    expect(wrapper.findAll('.summary-loss-reading').every((reading) => {
+      const label = reading.attributes('aria-label') ?? ''
+      return label.includes('À pied + TC') || label.includes('À vélo + TC')
+    })).toBe(true)
     expect(wrapper.findAll('.summary-loss .cahier-reference-note')).toHaveLength(4)
     expect(wrapper.findAll('.summary-loss .cahier-reference-note').every((note) => !note.text().includes('Médiane'))).toBe(true)
     expect(wrapper.findAll('.summary-loss .cahier-rank')).toHaveLength(4)
@@ -357,7 +406,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(summaryExplorationHref).toBeTruthy()
     expect(wrapper.findAll('.summary-loss .cahier-rank').every((rank) => rank.element.tagName === 'A')).toBe(true)
     expect(wrapper.findAll('.summary-loss .cahier-rank').every((rank) => rank.attributes('href') === summaryExplorationHref)).toBe(true)
-    const typesLastSegment = pairedMetrics[1]!.find('.summary-bar-row--territory').findAll('.summary-stack-segment').at(-1)
+    const typesLastSegment = pairedMetrics[1]!.find('.summary-bar-row--territory').find('.summary-stack-segment--c')
     const equipmentLastSegment = pairedMetrics[0]!.find('.summary-bar-row--territory').findAll('.summary-stack-segment').at(-1)
     if (!typesLastSegment || !equipmentLastSegment) throw new Error('Expected summary stack segments')
     const endFromStyle = (style: string): number => {
@@ -371,17 +420,113 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(typesBarEnd).toBeCloseTo((48.63 / 53) * 100, 4)
     expect(typesBarEnd).not.toBeCloseTo(100, 4)
     expect(equipmentBarEnd).toBeCloseTo(100, 4)
-    expect(wrapper.findAll('.summary-loss-reading--t')).toHaveLength(2)
-    expect(wrapper.findAll('.summary-loss-reading--b')).toHaveLength(2)
+    expect(wrapper.find('.summary-bar-metrics .summary-stack-segment--inaccessible').exists()).toBe(true)
+    expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-icon--t')).toHaveLength(2)
+    expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-icon--b')).toHaveLength(2)
+    expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-label')).toHaveLength(0)
+    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-marker--slash')).toHaveLength(2)
+    expect(wrapper.findAll('.access-tooltip .cahier-figure-tooltip-marker--slash')).toHaveLength(5)
+    expect(wrapper.findAll('.access-foot-summary.cahier-figure-scalar')).toHaveLength(5)
     expect(wrapper.findAll('.summary-bar-tooltip')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-tooltip')).toHaveLength(9)
     const summaryTooltipTriggers = wrapper.findAll('.summary-stack[tabindex="0"]')
     expect(summaryTooltipTriggers.every((bar) => bar.attributes('aria-describedby') && wrapper.find(`#${bar.attributes('aria-describedby')}`).exists())).toBe(true)
     expect(summaryTooltipTriggers.every((bar) => bar.classes().includes('cahier-tooltip-trigger'))).toBe(true)
     expect(wrapper.findAll('.access-figures .stacked-donut[tabindex="0"]').every((donut) => donut.classes().includes('cahier-tooltip-trigger'))).toBe(true)
     const legend = wrapper.find('.summary-mode-key').element
     const bars = wrapper.find('.summary-bar-pair').element
-    expect(Boolean(legend.compareDocumentPosition(bars) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
-    expect(wrapper.find('.distribution-axis-title--x').classes()).toContain('type-figure-label')
+    expect(Boolean(bars.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    expect(wrapper.find('.distribution-cahier .cahier-figure-axis-title--x').classes()).toContain('type-figure-label')
+  })
+
+  it('makes the bounded profile composition legible without exposing the type matrix', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const profileSection = content.units[0]!.sections[1]!
+    expect(profileSection.evidence?.kind).toBe('bpe-profiles')
+    if (profileSection.evidence?.kind !== 'bpe-profiles') throw new Error('Expected BPE profile evidence')
+    expect(profileSection.evidence.profiles.map((profile) => ({
+      profile: profile.profile,
+      direction: profile.comparison?.direction,
+      rank: profile.comparison?.rank,
+    }))).toEqual([
+      { profile: 'acces-pied-tc', direction: 'plus-est-mieux', rank: { position: 1, size: 2 } },
+      { profile: 'velo-compense', direction: 'plus-est-mieux', rank: { position: 1, size: 2 } },
+      { profile: 'voiture-requise', direction: 'moins-est-mieux', rank: { position: 1, size: 2 } },
+      { profile: 'inaccessible-20-minutes', direction: 'moins-est-mieux', rank: { position: 2, size: 2 } },
+    ])
+    const wrapper = await render(content, 'plain')
+
+    expect(wrapper.find('.bpe-evidence .cahier-figure-title').text()).toBe(profileSection.label)
+    expect(wrapper.find('.bpe-profile-total').text()).toBe('53 types d’équipement')
+    expect(wrapper.find('.bpe-profile-distribution').exists()).toBe(false)
+    expect(wrapper.find('.bpe-profile-chart').exists()).toBe(true)
+    expect(wrapper.find('.bpe-profile-chart svg').exists()).toBe(true)
+    expect(wrapper.findAll('.bpe-profile-chart .cahier-figure-axis')).toHaveLength(2)
+    expect(wrapper.findAll('.bpe-profile-chart .cahier-figure-tick')).toHaveLength(9)
+    expect(wrapper.findAll('.bpe-profile-chart .cahier-figure-tick-label')).toHaveLength(5)
+    expect(wrapper.findAll('.bpe-profile-visual .cahier-figure-axis-title')).toHaveLength(2)
+    expect(wrapper.find('.bpe-profile-chart .cahier-figure-axis-title').exists()).toBe(false)
+    expect(wrapper.find('.bpe-profile-visual > .cahier-figure-frame__plot').exists()).toBe(true)
+    expect(wrapper.findAll('.bpe-profile-bars[role="img"]')).toHaveLength(4)
+    expect(wrapper.findAll('.bpe-profile-bars[role="button"]')).toHaveLength(0)
+    expect(wrapper.findAll('.bpe-profile-bars[tabindex="0"]')).toHaveLength(4)
+    expect(wrapper.find('.bpe-profile-tooltip').exists()).toBe(false)
+    expect(wrapper.find('.bpe-profile-visual').classes()).toContain('cahier-figure-frame')
+    expect(wrapper.findAll('.bpe-profile-column').map((column) => column.attributes('data-profile'))).toEqual([
+      'acces-pied-tc',
+      'velo-compense',
+      'voiture-requise',
+      'inaccessible-20-minutes',
+    ])
+    expect(wrapper.findAll('.bpe-profile-swatch')).toHaveLength(4)
+    expect(wrapper.findAll('.bpe-profile-count.cahier-figure-scalar')).toHaveLength(4)
+    expect(wrapper.findAll('.bpe-profile-count .cahier-figure-scalar-reference')).toHaveLength(4)
+    expect(wrapper.findAll('.bpe-profile-count .cahier-figure-scalar-label')).toHaveLength(0)
+    expect(wrapper.findAll('.bpe-profile-label').map((label) => label.text())).toEqual([
+      'Accès à pied ou en TC possible',
+      'Le vélo compense',
+      'La voiture est requise',
+      'Inaccessible ou presque en 20 minutes',
+    ])
+    expect(wrapper.findAll('.bpe-profile-count .cahier-reference-note').map((note) => note.text().replace(/\s+/g, ' ').trim())).toEqual([
+      'vs ref* : 10,51er/2',
+      'vs ref* : 01er/2',
+      'vs ref* : 411er/2',
+      'vs ref* : 1,52e/2',
+    ])
+    expect(wrapper.findAll('.bpe-profile-count .cahier-reference-note').every((note) => note.classes().includes('cahier-figure-comparison'))).toBe(true)
+    expect(wrapper.findAll('.bpe-profile-count .cahier-rank').map((rank) => rank.text())).toEqual([
+      '1er/2',
+      '1er/2',
+      '1er/2',
+      '2e/2',
+    ])
+    const bpeGroup = wrapper.find('.bpe-evidence').element.closest('.concept-group')
+    const sectionExplorationHref = bpeGroup?.querySelector('.cahier-section-footer .cahier-section-exploration a')?.getAttribute('href')
+    expect(sectionExplorationHref).toBeTruthy()
+    expect(wrapper.findAll('.bpe-profile-count .cahier-rank').every((rank) => rank.element.tagName === 'A')).toBe(true)
+    expect(wrapper.findAll('.bpe-profile-count .cahier-rank').map((rank) => rank.attributes('href'))).toEqual([
+      sectionExplorationHref,
+      sectionExplorationHref,
+      sectionExplorationHref,
+      sectionExplorationHref,
+    ])
+    expect(wrapper.findAll('.bpe-profile-series-key .cahier-figure-legend-item').map((item) => item.text())).toEqual([
+      'Territoire',
+      'vs ref*',
+    ])
+    expect(wrapper.find('.bpe-profile-reference-note').text()).toBe('*ref : moyenne des communes de l’EPCI')
+    expect(wrapper.find('.bpe-profile-column[data-profile="inaccessible-20-minutes"]').attributes('aria-label')).toBe('Inaccessible ou presque en 20 minutes')
+    expect(wrapper.find('.bpe-profile-chart').attributes('aria-label')).toContain('Inaccessible ou presque en 20 minutes')
+    const firstProfileBars = wrapper.find('.bpe-profile-bars[data-profile="acces-pied-tc"]')
+    await firstProfileBars.trigger('mouseenter')
+    expect(wrapper.find('.bpe-profile-tooltip').exists()).toBe(true)
+    expect(wrapper.find('.bpe-profile-tooltip').classes()).toContain('cahier-figure-tooltip--chart')
+    expect(wrapper.find('.bpe-profile-tooltip').text()).toContain('10,5 types')
+    await firstProfileBars.trigger('mouseleave')
+    expect(wrapper.find('.bpe-profile-tooltip').exists()).toBe(false)
+    expect(wrapper.find('.bpe-evidence').text()).not.toContain('inaccessible-20-minutes')
+    expect(wrapper.find('.bpe-evidence').text()).not.toContain('A128')
   })
 
   it('writes the first group as a territory-specific comparison story', async () => {

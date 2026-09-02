@@ -1,6 +1,8 @@
 import { MOBILITE_MODE_LABELS, nomTerritoirePourAffichage } from './territoryFacts'
+import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type {
   BpeAccessProfileFact,
+  ComparisonScope,
   FactAvailability,
   FactProvenance,
   MobiliteAccessMode,
@@ -58,6 +60,7 @@ export interface CompleteDistributionSignature {
 
 export interface DistributionEvidence {
   kind: 'distribution'
+  legend: readonly FigureLegendEntry[]
   distribution: CompleteDistributionSignature
   referenceLabel: string | null
   marks: {
@@ -69,7 +72,12 @@ export interface DistributionEvidence {
 
 export interface BpeProfilesEvidence {
   kind: 'bpe-profiles'
+  legend: readonly FigureLegendEntry[]
   profiles: readonly BpeAccessProfileFact[]
+  /** Total canonical BPE types represented by the complete projection. */
+  totalTypes: number | null
+  /** Human-readable aggregation method and scope for the compositional reference. */
+  referenceLabel: string | null
 }
 
 export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
@@ -81,8 +89,10 @@ export interface ContentLossFacts {
 
 export interface SummaryEvidence {
   kind: 'summary'
+  legend: readonly FigureLegendEntry[]
   accessibleEquipment: ContentModeFacts
   accessibleTypes: ContentModeFacts
+  inaccessibleTypes: ContentFact
   averageLosses: {
     diversity: ContentLossFacts
     total: ContentLossFacts
@@ -105,10 +115,12 @@ export interface AccessServiceEvidence {
   service: MobiliteService
   label: string
   modes: Record<MobiliteAccessMode, ContentFact>
+  inaccessible: ContentFact
 }
 
 export interface AccessEvidence {
   kind: 'access'
+  legend: readonly FigureLegendEntry[]
   totalBuildings: ContentFact
   totalBrittanyBuildings: ContentFact
   services: readonly AccessServiceEvidence[]
@@ -239,6 +251,32 @@ const ESSENTIAL_INDICATOR_KEYS = [
   'share_bank_c',
 ] as const
 
+const MOBILITE_ACCESS_LEGEND: readonly FigureLegendEntry[] = [
+  { key: 'walkTransit', label: MOBILITE_MODE_LABELS.walkTransit, marker: 'icon', iconKey: 'walkTransit', tone: 't' },
+  { key: 'bike', label: MOBILITE_MODE_LABELS.bike, marker: 'icon', iconKey: 'bike', tone: 'b' },
+  { key: 'car', label: MOBILITE_MODE_LABELS.car, marker: 'icon', iconKey: 'car', tone: 'c' },
+  { key: 'inaccessible', label: 'Inaccessible', marker: 'slash', tone: 'neutral' },
+]
+
+function mobiliteAccessLegend(includeInaccessible: boolean): readonly FigureLegendEntry[] {
+  return includeInaccessible ? MOBILITE_ACCESS_LEGEND : MOBILITE_ACCESS_LEGEND.slice(0, 3)
+}
+
+const DISTRIBUTION_LEGEND: readonly FigureLegendEntry[] = [
+  { key: 'territory', label: 'Distribution du territoire', marker: 'line', tone: 'territory' },
+  { key: 'peers', label: 'Territoires comparables', marker: 'dot', tone: 'peer' },
+  { key: 'reference', label: 'Médianes', marker: 'dash', tone: 'reference' },
+]
+
+function bpeLegend(referenceLabel: string | null): readonly FigureLegendEntry[] {
+  return [
+    { key: 'territory', label: 'Territoire', marker: 'line', tone: 'territory' },
+    ...(referenceLabel
+      ? [{ key: 'reference', label: 'vs ref*', marker: 'line' as const, tone: 'reference' }]
+      : []),
+  ]
+}
+
 function complete(fact: NumericFact): fact is NumericFact & { value: number } {
   return fact.availability === 'complete' && fact.value !== null
 }
@@ -249,6 +287,37 @@ function hasValue(fact: NumericFact): boolean {
 
 function contentFact(fact: NumericFact, label: string): ContentFact {
   return { fact, label }
+}
+
+function inaccessibleFact(
+  total: number,
+  source: NumericFact,
+  key: string,
+  unit: string,
+): ContentFact {
+  const remainder = (value: number | null): number | null =>
+    value === null ? null : Math.max(0, total - value)
+  const comparison = source.comparison
+  return contentFact(
+    {
+      ...source,
+      key,
+      detail: null,
+      label: 'Inaccessible',
+      value: remainder(source.value),
+      unit,
+      comparison: comparison
+        ? {
+            ...comparison,
+            rank: null,
+            reference: comparison.reference
+              ? { ...comparison.reference, value: remainder(comparison.reference.value)! }
+              : null,
+          }
+        : null,
+    },
+    'Inaccessible',
+  )
 }
 
 function absentFact(key: string, unit: string): NumericFact {
@@ -410,7 +479,12 @@ function bold(value: string, tone: 'default' | 'car' = 'default'): TextSegment {
   return { kind: 'emphasis', tone, value }
 }
 
-function comparisonReferenceLabel(comparison: NumericFact['comparison']): string | null {
+type ComparisonContext = {
+  scope: ComparisonScope
+  reference: { value: number } | null
+}
+
+function comparisonReferenceLabel(comparison: ComparisonContext | null): string | null {
   if (!comparison?.reference) return null
   switch (comparison.scope.kind) {
     case 'communes-epci':
@@ -422,6 +496,11 @@ function comparisonReferenceLabel(comparison: NumericFact['comparison']): string
     case 'departements-bretagne':
       return 'départements bretons'
   }
+}
+
+function bpeReferenceLabel(comparison: ComparisonContext | null): string | null {
+  const scopeLabel = comparisonReferenceLabel(comparison)
+  return scopeLabel ? `moyenne des ${scopeLabel}` : null
 }
 
 function formatMillions(value: number): string {
@@ -795,8 +874,9 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
     facts.mobility.losses.distributionWalkTransit,
   )
   const evidence: DistributionEvidence | null = walkDistribution
-    ? {
+      ? {
         kind: 'distribution',
+        legend: DISTRIBUTION_LEGEND,
         distribution: walkDistribution,
         referenceLabel: comparisonReferenceLabel(walkTransit.comparison),
         marks: {
@@ -854,6 +934,14 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
   const typeCount = facts.mobility.bpeAccess.profiles.length > 0
     ? facts.mobility.bpeAccess.profiles.reduce((total, profile) => total + profile.count, 0)
     : null
+  const inaccessibleTypes = typeCount === null
+    ? contentFact(absentFact('inaccessible_types', 'types d’équipement / bâtiment'), 'Inaccessible')
+    : inaccessibleFact(
+        typeCount,
+        accessibleTypes.car.fact,
+        'inaccessible_types',
+        'types d’équipement / bâtiment',
+      )
   const averageLosses = {
     diversity: {
       walkTransit: contentFact(summary.averageLosses.diversity.walkTransit, 'Perte de diversité — à pied + TC'),
@@ -902,8 +990,10 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
     evidence: hasAny
       ? {
           kind: 'summary',
-           accessibleEquipment,
-           accessibleTypes,
+          legend: mobiliteAccessLegend(typeCount !== null),
+          accessibleEquipment,
+          accessibleTypes,
+          inaccessibleTypes,
            averageLosses,
            typeCount,
            referenceLabel: comparisonReferenceLabel(
@@ -925,6 +1015,7 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
   if (facts.mobility.access.availability === 'absent') return null
   return {
     kind: 'access',
+    legend: MOBILITE_ACCESS_LEGEND,
     totalBuildings: contentFact(
       facts.mobility.access.totalBuildings,
       'Bâtiments du territoire analysés',
@@ -944,6 +1035,12 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
           MOBILITE_MODE_LABELS.walkTransit,
         ),
       },
+      inaccessible: inaccessibleFact(
+        1,
+        facts.mobility.access.byService[key].car,
+        `access.${key}.inaccessible`,
+        '%',
+      ),
     })),
     referenceLabel: comparisonReferenceLabel(
       Object.values(facts.mobility.access.byService)
@@ -995,14 +1092,28 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
 
 function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
   const profiles = facts.mobility.bpeAccess.profiles
-  const evidence: BpeProfilesEvidence | null =
-    profiles.length > 0 ? { kind: 'bpe-profiles', profiles } : null
+  const referenceLabel = bpeReferenceLabel(
+    profiles.find((profile) => profile.comparison?.reference)?.comparison ?? null,
+  )
   const availability: FactAvailability =
     facts.mobility.bpeAccess.availability === 'incomplete'
       ? 'incomplete'
-      : evidence
+      : profiles.length > 0
         ? 'complete'
         : 'absent'
+  const evidence: BpeProfilesEvidence | null =
+    profiles.length > 0
+      ? {
+          kind: 'bpe-profiles',
+          legend: bpeLegend(referenceLabel),
+          profiles,
+          totalTypes:
+            availability === 'complete'
+              ? profiles.reduce((total, profile) => total + profile.count, 0)
+              : null,
+          referenceLabel,
+        }
+      : null
   return {
     key: 'profils-acces-par-mode',
     label: 'Profils d’accès par mode',

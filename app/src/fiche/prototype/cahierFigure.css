@@ -1,0 +1,447 @@
+/*
+ * The Cahier figure foundation. Figure-specific marks stay local; this file
+ * owns only the shared frame grammar, type treatment, surfaces, and tooltip
+ * interaction so a visual correction has one seam.
+ */
+.cahier-figure-frame {
+  --cahier-figure-surface: var(--paper, #f1f2ec);
+  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, #57726f) 19%, transparent);
+  --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
+  width: 100%;
+  min-width: 0;
+  position: relative;
+  color: var(--cahier-default, var(--muted, #62706c));
+  font: var(--type-figure-label, 400 0.75rem/1.2 var(--font-sans, 'Manrope Variable', system-ui, sans-serif));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--type-figure-label-tracking, 0.08em);
+}
+
+.cahier-figure-frame__plot {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.cahier-figure-plot {
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: var(--cahier-figure-aspect-ratio);
+}
+
+.cahier-figure-axis,
+.cahier-figure-tick {
+  fill: none;
+  stroke: color-mix(in srgb, var(--cahier-default, #62706c) 22%, transparent);
+  stroke-width: var(--cahier-figure-axis-width, 1);
+}
+
+.cahier-figure-axis {
+  stroke: color-mix(in srgb, var(--cahier-default, #62706c) 58%, transparent);
+}
+
+.cahier-figure-tick-label,
+.cahier-figure-axis-title {
+  fill: var(--cahier-default, #62706c);
+  color: var(--cahier-default, #62706c);
+  font: var(--type-figure-label, 400 0.75rem/1.2 var(--font-sans, sans-serif));
+  letter-spacing: var(--type-figure-label-tracking, 0.08em);
+}
+
+.cahier-figure-axis-title {
+  position: absolute;
+  z-index: 1;
+  white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
+}
+
+.cahier-figure-axis-title--x {
+  bottom: 0;
+  left: var(--cahier-figure-axis-title-x-left);
+  transform: translateX(-50%);
+}
+
+.cahier-figure-axis-title--y {
+  top: var(--cahier-figure-axis-title-y-top);
+  left: var(--cahier-figure-axis-title-y-left);
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+.cahier-figure-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 18px;
+  margin: var(--cahier-figure-legend-margin, 10px 0 0);
+  padding: 0;
+  list-style: none;
+  color: var(--cahier-default, #62706c);
+  font: var(--type-figure-legend, 500 0.8125rem/1.35 var(--font-sans, sans-serif));
+}
+
+.cahier-figure-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--cahier-default, #62706c);
+}
+
+.cahier-figure-legend-label {
+  overflow-wrap: anywhere;
+}
+
+.cahier-figure-legend-icon,
+.cahier-figure-legend-mark {
+  flex: 0 0 auto;
+}
+
+.cahier-figure-legend-mark {
+  position: relative;
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.cahier-figure-legend-mark--dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.cahier-figure-legend-mark--square {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+
+.cahier-figure-legend-mark--dash {
+  height: 0;
+  border-top: 2px dashed currentColor;
+  border-radius: 0;
+  background: transparent;
+}
+
+.cahier-figure-legend-mark--slash {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.cahier-figure-legend-mark--slash::after {
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  width: 10px;
+  height: 1.5px;
+  background: currentColor;
+  content: '';
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.cahier-figure-legend-mark--t,
+.cahier-figure-legend-mark--t.cahier-figure-legend-icon {
+  color: var(--cahier-mode-foot, #448fa6);
+}
+
+.cahier-figure-legend-mark--b,
+.cahier-figure-legend-mark--b.cahier-figure-legend-icon {
+  color: var(--cahier-mode-bike, #2e6171);
+}
+
+.cahier-figure-legend-mark--c,
+.cahier-figure-legend-mark--c.cahier-figure-legend-icon {
+  color: var(--cahier-mode-car, #a94562);
+}
+
+.cahier-figure-legend-mark--territory,
+.cahier-figure-legend-mark--theme {
+  color: var(--cahier-theme, #57726f);
+}
+
+.cahier-figure-legend-mark--peer {
+  color: var(--cahier-default, #62706c);
+}
+
+.cahier-figure-legend-mark--reference,
+.cahier-figure-legend-mark--neutral {
+  color: var(--cahier-default, #62706c);
+}
+
+.cahier-figure-scalar {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  justify-items: center;
+  gap: 3px;
+  color: var(--cahier-default, #62706c);
+  text-align: center;
+}
+
+.cahier-figure-scalar--inline {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-areas:
+    'label value'
+    '. reference';
+  align-items: baseline;
+  gap: 5px 10px;
+  justify-items: stretch;
+  text-align: left;
+}
+
+.cahier-figure-scalar--inline .cahier-figure-scalar-value {
+  grid-area: value;
+  justify-self: end;
+}
+
+.cahier-figure-scalar--inline .cahier-figure-scalar-label {
+  display: inline-flex;
+  grid-area: label;
+  align-items: center;
+  gap: 9px;
+  max-width: none;
+  justify-self: start;
+}
+
+.cahier-figure-scalar--inline .cahier-figure-scalar-reference {
+  grid-area: reference;
+  justify-self: end;
+  text-align: right;
+}
+
+.cahier-figure-scalar-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: var(--ink, #232a2a);
+  font: var(--type-figure-value, 600 1rem/1.1 var(--font-sans, sans-serif));
+  font-variant-numeric: tabular-nums;
+}
+
+.cahier-figure-scalar--colored .cahier-figure-scalar-value {
+  color: var(--cahier-figure-scalar-color, var(--cahier-theme-strong, #3e5350));
+}
+
+.cahier-figure-scalar--colored.cahier-figure-scalar--t .cahier-figure-scalar-value {
+  color: var(--cahier-figure-scalar-color, var(--cahier-mode-foot, #448fa6));
+}
+
+.cahier-figure-scalar--colored.cahier-figure-scalar--b .cahier-figure-scalar-value {
+  color: var(--cahier-figure-scalar-color, var(--cahier-mode-bike, #2e6171));
+}
+
+.cahier-figure-scalar--colored.cahier-figure-scalar--c .cahier-figure-scalar-value {
+  color: var(--cahier-figure-scalar-color, var(--cahier-mode-car, #a94562));
+}
+
+.cahier-figure-scalar-value strong {
+  font: inherit;
+}
+
+.cahier-figure-scalar-icon {
+  flex: 0 0 auto;
+}
+
+.cahier-figure-scalar-icon--t {
+  color: var(--cahier-mode-foot, #448fa6);
+}
+
+.cahier-figure-scalar-icon--b {
+  color: var(--cahier-mode-bike, #2e6171);
+}
+
+.cahier-figure-scalar-icon--c {
+  color: var(--cahier-mode-car, #a94562);
+}
+
+.cahier-figure-scalar-label {
+  max-width: 22ch;
+  color: var(--cahier-default, #62706c);
+  font: var(--type-figure-mode, 500 0.75rem/1.25 var(--font-sans, sans-serif));
+  overflow-wrap: anywhere;
+}
+
+.cahier-figure-scalar-reference {
+  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
+  font: var(--type-figure-label, 400 0.6875rem/1.2 var(--font-sans, sans-serif));
+}
+
+.cahier-figure-scalar--extreme .cahier-figure-scalar-value strong {
+  text-decoration: underline;
+  text-decoration-color: var(--cahier-red, #a44f51);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.cahier-figure-tooltip {
+  position: absolute;
+  z-index: 20;
+  display: grid;
+  gap: 8px;
+  width: min(220px, calc(100% - 24px));
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--cahier-figure-surface-border, rgb(87 114 111 / 30%));
+  background: var(--cahier-figure-surface, #f1f2ec);
+  box-shadow: var(--cahier-figure-surface-shadow);
+  color: var(--cahier-default, #62706c);
+  font: var(--type-figure-label, 400 0.75rem/1.2 var(--font-sans, sans-serif));
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.cahier-figure-tooltip--popover {
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  visibility: hidden;
+}
+
+.cahier-tooltip-trigger:hover + .cahier-figure-tooltip--popover,
+.cahier-tooltip-trigger:focus-visible + .cahier-figure-tooltip--popover,
+.cahier-tooltip-trigger:hover ~ .cahier-figure-tooltip--popover,
+.cahier-tooltip-trigger:focus-visible ~ .cahier-figure-tooltip--popover {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+
+.cahier-figure-tooltip--compact {
+  width: min(210px, calc(100% + 80px));
+  gap: 5px;
+  padding: 9px 10px;
+  font-size: 10px;
+}
+
+.cahier-figure-tooltip--anchored {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: min(330px, calc(100% - 24px));
+}
+
+.cahier-figure-tooltip--chart {
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.cahier-figure-tooltip > strong {
+  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
+  font-weight: 700;
+}
+
+.cahier-figure-tooltip dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.cahier-figure-tooltip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+}
+
+.cahier-figure-tooltip-row dt,
+.cahier-figure-tooltip-row dd {
+  margin: 0;
+}
+
+.cahier-figure-tooltip-row dt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cahier-figure-tooltip-row dd {
+  color: var(--ink, #232a2a);
+  font-variant-numeric: tabular-nums;
+}
+
+.cahier-figure-tooltip-row small {
+  grid-column: 1 / -1;
+  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
+  font-size: 10px;
+}
+
+.cahier-figure-tooltip-marker {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cahier-default, #62706c);
+}
+
+.cahier-figure-tooltip-marker--slash {
+  width: 8px;
+  height: 8px;
+  border: 1.25px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.cahier-figure-tooltip-marker--slash::after {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  width: 6px;
+  height: 1px;
+  background: currentColor;
+  content: '';
+  transform: rotate(-45deg);
+}
+
+.cahier-figure-tooltip-row--t .cahier-figure-tooltip-marker {
+  background: var(--cahier-mode-foot, #448fa6);
+}
+
+.cahier-figure-tooltip-row--b .cahier-figure-tooltip-marker {
+  background: var(--cahier-mode-bike, #2e6171);
+}
+
+.cahier-figure-tooltip-row--c .cahier-figure-tooltip-marker {
+  background: var(--cahier-mode-car, #a94562);
+}
+
+.cahier-figure-tooltip-row--neutral .cahier-figure-tooltip-marker {
+  background: var(--cahier-default, #62706c);
+}
+
+.cahier-figure-tooltip-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.cahier-figure-tooltip-actions a,
+.cahier-figure-tooltip-actions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cahier-figure-tooltip--popover {
+    transition: none;
+  }
+}
