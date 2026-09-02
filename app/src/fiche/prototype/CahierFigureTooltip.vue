@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import type { CahierTooltipRow } from '../cahierFigureGrammaire'
+import type {
+  CahierFigureTooltipAnchor,
+  CahierTooltipRow,
+} from '../cahierFigureGrammaire'
 
 withDefaults(
   defineProps<{
     title: string
     rows: readonly CahierTooltipRow[]
+    anchor?: CahierFigureTooltipAnchor
     popover?: boolean
     compact?: boolean
   }>(),
@@ -22,6 +26,10 @@ withDefaults(
       'cahier-figure-tooltip--popover': popover,
       'cahier-figure-tooltip--compact': compact,
     }"
+    :style="anchor ? {
+      '--cahier-figure-tooltip-anchor-x': anchor.x,
+      '--cahier-figure-tooltip-anchor-y': anchor.y ?? '8px',
+    } : undefined"
     role="tooltip"
   >
     <strong>{{ title }}</strong>

@@ -1,4 +1,8 @@
-import { MOBILITE_MODE_LABELS, nomTerritoirePourAffichage } from './territoryFacts'
+import {
+  MOBILITE_INACCESSIBLE_LABEL,
+  MOBILITE_MODE_LABELS,
+  nomTerritoirePourAffichage,
+} from './territoryFacts'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type {
   BpeAccessProfileFact,
@@ -74,6 +78,8 @@ export interface BpeProfilesEvidence {
   kind: 'bpe-profiles'
   legend: readonly FigureLegendEntry[]
   profiles: readonly BpeAccessProfileFact[]
+  territoryName: string
+  donutTooltipTitle: string
   /** Total canonical BPE types represented by the complete projection. */
   totalTypes: number | null
   /** Human-readable aggregation method and scope for the compositional reference. */
@@ -255,7 +261,7 @@ const MOBILITE_ACCESS_LEGEND: readonly FigureLegendEntry[] = [
   { key: 'walkTransit', label: MOBILITE_MODE_LABELS.walkTransit, marker: 'icon', iconKey: 'walkTransit', tone: 't' },
   { key: 'bike', label: MOBILITE_MODE_LABELS.bike, marker: 'icon', iconKey: 'bike', tone: 'b' },
   { key: 'car', label: MOBILITE_MODE_LABELS.car, marker: 'icon', iconKey: 'car', tone: 'c' },
-  { key: 'inaccessible', label: 'Inaccessible', marker: 'slash', tone: 'neutral' },
+  { key: 'inaccessible', label: MOBILITE_INACCESSIBLE_LABEL, marker: 'slash', tone: 'neutral' },
 ]
 
 function mobiliteAccessLegend(includeInaccessible: boolean): readonly FigureLegendEntry[] {
@@ -268,9 +274,9 @@ const DISTRIBUTION_LEGEND: readonly FigureLegendEntry[] = [
   { key: 'reference', label: 'Médianes', marker: 'dash', tone: 'reference' },
 ]
 
-function bpeLegend(referenceLabel: string | null): readonly FigureLegendEntry[] {
+function bpeLegend(referenceLabel: string | null, territoryName: string): readonly FigureLegendEntry[] {
   return [
-    { key: 'territory', label: 'Territoire', marker: 'line', tone: 'territory' },
+    { key: 'territory', label: territoryName, marker: 'line', tone: 'territory' },
     ...(referenceLabel
       ? [{ key: 'reference', label: 'vs ref*', marker: 'line' as const, tone: 'reference' }]
       : []),
@@ -303,7 +309,7 @@ function inaccessibleFact(
       ...source,
       key,
       detail: null,
-      label: 'Inaccessible',
+      label: MOBILITE_INACCESSIBLE_LABEL,
       value: remainder(source.value),
       unit,
       comparison: comparison
@@ -316,7 +322,7 @@ function inaccessibleFact(
           }
         : null,
     },
-    'Inaccessible',
+    MOBILITE_INACCESSIBLE_LABEL,
   )
 }
 
@@ -1105,8 +1111,10 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
     profiles.length > 0
       ? {
           kind: 'bpe-profiles',
-          legend: bpeLegend(referenceLabel),
+          legend: bpeLegend(referenceLabel, nomTerritoirePourAffichage(facts.territory)),
           profiles,
+          territoryName: nomTerritoirePourAffichage(facts.territory),
+          donutTooltipTitle: '% des bâtiments ayant accès',
           totalTypes:
             availability === 'complete'
               ? profiles.reduce((total, profile) => total + profile.count, 0)

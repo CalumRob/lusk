@@ -54,6 +54,20 @@ export const CAHIER_FIGURE_AXIS = {
   yLabelBaseline: 4,
 } as const
 
+export interface CahierDonutParts {
+  walkTransit: number
+  bike: number
+  car: number
+}
+
+/** Clamp cumulative access shares once so the ring and its labels cannot drift. */
+export function normaliserPartsDonut(values: CahierDonutParts): CahierDonutParts {
+  const walkTransit = Math.max(0, Math.min(1, values.walkTransit))
+  const bike = Math.max(walkTransit, Math.min(1, values.bike))
+  const car = Math.max(bike, Math.min(1, values.car))
+  return { walkTransit, bike, car }
+}
+
 export interface CahierFigureAxisTick {
   key: string | number
   position: number
@@ -81,4 +95,10 @@ export interface CahierTooltipRow {
   markerColor?: string
   marker?: 'dot' | 'slash'
   note?: string
+}
+
+/** A shared HTML tooltip anchor, expressed in its containing figure's space. */
+export interface CahierFigureTooltipAnchor {
+  x: string
+  y?: string
 }

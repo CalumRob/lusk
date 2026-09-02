@@ -82,6 +82,8 @@ export const MOBILITE_MODE_LABELS: Readonly<Record<MobiliteAccessMode, string>> 
   walkTransit: 'À pied + TC',
 }
 
+export const MOBILITE_INACCESSIBLE_LABEL = 'Inaccessible'
+
 export interface MobiliteAccessModes {
   car: NumericFact
   bike: NumericFact

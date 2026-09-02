@@ -298,6 +298,7 @@
 }
 
 .cahier-figure-tooltip--popover {
+  width: min(220px, calc(100vw - 24px));
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, -4px);
@@ -331,8 +332,8 @@
 }
 
 .cahier-figure-tooltip--chart {
-  top: 8px;
-  left: 50%;
+  top: var(--cahier-figure-tooltip-anchor-y, 8px);
+  left: var(--cahier-figure-tooltip-anchor-x, 50%);
   transform: translateX(-50%);
 }
 
@@ -418,6 +419,10 @@
 
 .cahier-figure-tooltip-row--neutral .cahier-figure-tooltip-marker {
   background: var(--cahier-default, #62706c);
+}
+
+.cahier-figure-tooltip-row--neutral .cahier-figure-tooltip-marker--slash {
+  background: transparent;
 }
 
 .cahier-figure-tooltip-actions {

@@ -26,12 +26,19 @@ defineProps<{
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: 50%;
-  background: conic-gradient(
-    var(--cahier-mode-foot) 0 var(--donut-walk),
-    var(--cahier-mode-bike) var(--donut-walk) var(--donut-bike),
-    var(--cahier-mode-car) var(--donut-bike) var(--donut-car),
-    var(--paper-deep) var(--donut-car) 360deg
-  );
+  background-color: var(--paper-deep);
+  background-image:
+    conic-gradient(
+      var(--cahier-mode-foot) 0 var(--donut-walk),
+      var(--cahier-mode-bike) var(--donut-walk) var(--donut-bike),
+      var(--cahier-mode-car) var(--donut-bike) var(--donut-car),
+      transparent var(--donut-car) 360deg
+    ),
+    repeating-conic-gradient(
+      from -45deg,
+      var(--cahier-profile-inaccessible) 0 1deg,
+      transparent 1deg 5deg
+    );
 }
 
 .stacked-donut::after {

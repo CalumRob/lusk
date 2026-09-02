@@ -39,7 +39,7 @@ import {
   nomTerritoirePourAffichage,
 } from '@/fiche/content/territoryFacts'
 import type { MobiliteAccessMode, MobiliteService, NumericFact } from '@/fiche/content/territoryFacts'
-import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_STYLE, normaliserPartsDonut } from '@/fiche/cahierFigureGrammaire'
 import type { CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { layoutMasonry } from '@/fiche/masonryLayout'
 import type { CahierPagination } from './cahierPagination'
@@ -381,9 +381,7 @@ function summaryLossForSegment(
 }
 
 function donutStyle(values: { car: number; bike: number; walkTransit: number }): Record<string, string> {
-  const walk = Math.max(0, Math.min(1, values.walkTransit))
-  const bike = Math.max(walk, Math.min(1, values.bike))
-  const car = Math.max(bike, Math.min(1, values.car))
+  const { walkTransit: walk, bike, car } = normaliserPartsDonut(values)
   return {
     '--donut-walk': `${walk * 360}deg`,
     '--donut-bike': `${bike * 360}deg`,
@@ -889,6 +887,8 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                   </p>
                   <BpeProfilesChartCahier
                     :profiles="section.evidence.profiles"
+                    :territory-name="section.evidence.territoryName"
+                    :donut-tooltip-title="section.evidence.donutTooltipTitle"
                     :reference-label="section.evidence.referenceLabel"
                     :legend="section.evidence.legend"
                     :exploration-to="sectionExploration(section)"
