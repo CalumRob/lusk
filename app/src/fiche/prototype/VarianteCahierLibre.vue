@@ -74,6 +74,25 @@ const pageEntry = computed(
 const sourceEntry = computed(
   () => props.pagination.entries.find((entry) => entry.key === 'sources') ?? null,
 )
+const comparisonReference = computed(() => {
+  for (const section of sections.value) {
+    const evidence = section.evidence
+    if (
+      evidence &&
+      evidence.kind !== 'bpe-profiles' &&
+      evidence.referenceLabel
+    ) {
+      return evidence.referenceLabel
+    }
+  }
+  return null
+})
+
+const FIGURE_REFERENCE_LABEL = 'vs ref*'
+
+function referenceLabelForFigure(referenceLabel: string | null): string | null {
+  return referenceLabel ? FIGURE_REFERENCE_LABEL : null
+}
 
 function setSectionElement(key: string, element: unknown): void {
   if (element instanceof HTMLElement) {
@@ -157,6 +176,8 @@ const MODE_CLASSES: Readonly<Record<MobiliteAccessMode, string>> = {
   walkTransit: 't',
 }
 
+const SUMMARY_MODES = ['walkTransit', 'bike', 'car'] as const
+
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
@@ -172,6 +193,10 @@ function formatDate(value: string | null): string | null {
 function formatFact(fact: NumericFact | null | undefined): string {
   if (!fact || fact.value === null) return '—'
   return fact.unit === '%' ? `${formatNumber(fact.value * 100, 0)} %` : formatNumber(fact.value)
+}
+
+function formatFactValue(fact: NumericFact, value: number | null): string {
+  return formatFact({ ...fact, value })
 }
 
 function profileCountLabel(count: number): string {
@@ -193,11 +218,33 @@ function summaryMetrics(evidence: SummaryEvidence): readonly {
   ]
 }
 
+function summaryMetricTitle(key: 'equipment' | 'types'): string {
+  return key === 'equipment' ? 'Nombre d’équip. accessibles' : "Types d'équip. accessibles"
+}
+
 function summaryHasValues(values: SummaryEvidence['accessibleEquipment']): boolean {
   return Object.values(values).some((value) => value.fact.value !== null)
 }
 
-function summaryScale(values: SummaryEvidence['accessibleEquipment']): number {
+function summaryHasReference(values: SummaryEvidence['accessibleEquipment']): boolean {
+  return Object.values(values).some((value) => value.fact.comparison?.reference?.value !== undefined)
+}
+
+function summaryScale(
+  values: SummaryEvidence['accessibleEquipment'],
+  metric?: 'equipment' | 'types',
+  typeCount?: number | null,
+): number {
+  if (metric === 'types' && typeCount !== null && typeCount !== undefined) {
+    return Math.max(0, typeCount)
+  }
+  if (metric === 'equipment') {
+    return Math.max(
+      0,
+      values.car.fact.value ?? 0,
+      values.car.fact.comparison?.reference?.value ?? 0,
+    )
+  }
   return Math.max(
     0,
     ...Object.values(values).flatMap((value) => [
@@ -207,20 +254,47 @@ function summaryScale(values: SummaryEvidence['accessibleEquipment']): number {
   )
 }
 
-function summarySegments(values: SummaryEvidence['accessibleEquipment']): readonly {
+function summarySegments(
+  values: SummaryEvidence['accessibleEquipment'],
+  metric?: 'equipment' | 'types',
+  typeCount?: number | null,
+): readonly {
   mode: MobiliteAccessMode
   label: string
   icon: Component
   fact: ContentFact
   start: number
   end: number
-  width: string
+  value: number | null
   left: string
+  right: string
 }[] {
-  const scale = summaryScale(values)
-  const walk = Math.max(0, values.walkTransit.fact.value ?? 0)
-  const bike = Math.max(walk, values.bike.fact.value ?? 0)
-  const car = Math.max(bike, values.car.fact.value ?? 0)
+  return summaryBarSegments(values, false, metric, typeCount)
+}
+
+function summaryBarSegments(
+  values: SummaryEvidence['accessibleEquipment'],
+  reference: boolean,
+  metric?: 'equipment' | 'types',
+  typeCount?: number | null,
+): readonly {
+  mode: MobiliteAccessMode
+  label: string
+  icon: Component
+  fact: ContentFact
+  start: number
+  end: number
+  value: number | null
+  left: string
+  right: string
+}[] {
+  const scale = summaryScale(values, metric, typeCount)
+  const valueFor = (mode: MobiliteAccessMode): number | null => reference
+    ? values[mode].fact.comparison?.reference?.value ?? null
+    : values[mode].fact.value
+  const walk = Math.max(0, valueFor('walkTransit') ?? 0)
+  const bike = Math.max(walk, valueFor('bike') ?? 0)
+  const car = Math.max(bike, valueFor('car') ?? 0)
   const segments = [
     { mode: 'walkTransit' as const, start: 0, end: walk, fact: values.walkTransit },
     { mode: 'bike' as const, start: walk, end: bike, fact: values.bike },
@@ -228,11 +302,39 @@ function summarySegments(values: SummaryEvidence['accessibleEquipment']): readon
   ]
   return segments.map((segment) => ({
     ...segment,
+    value: valueFor(segment.mode),
     label: MOBILITE_MODE_LABELS[segment.mode],
     icon: modeIcon(segment.mode),
-    width: scale > 0 ? `${((segment.end - segment.start) / scale) * 100}%` : '0%',
     left: scale > 0 ? `${(segment.start / scale) * 100}%` : '0%',
+    right: scale > 0 ? `${100 - (segment.end / scale) * 100}%` : '100%',
   }))
+}
+
+function summaryBarTooltipId(key: 'equipment' | 'types', reference: boolean): string {
+  return `summary-${key}-${reference ? 'reference' : 'territory'}-detail`
+}
+
+function summaryLosses(
+  evidence: SummaryEvidence,
+  metric: 'equipment' | 'types',
+): readonly {
+  mode: 'walkTransit' | 'bike'
+  label: string
+  fact: ContentFact
+}[] {
+  const values = metric === 'equipment' ? evidence.averageLosses.total : evidence.averageLosses.diversity
+  return [
+    {
+      mode: 'walkTransit',
+      label: MOBILITE_MODE_LABELS.walkTransit,
+      fact: values.walkTransit,
+    },
+    {
+      mode: 'bike',
+      label: MOBILITE_MODE_LABELS.bike,
+      fact: values.bike,
+    },
+  ]
 }
 
 function summaryLoss(values: SummaryEvidence['accessibleEquipment'], mode: MobiliteAccessMode): number | null {
@@ -539,7 +641,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                             </strong>
                             <CahierReferenceNote
                               :fact="mode.fact.fact"
-                              :reference-label="section.evidence.referenceLabel"
+                              :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
                               :to="routeForFact(section, mode.fact.fact)"
                             />
                           </dd>
@@ -560,8 +662,117 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                 </figure>
 
                 <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Accès moyen par bâtiment</figcaption>
-                  <div class="summary-metrics">
+                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Équipements accessibles en 20 min., moyenne</figcaption>
+                  <template v-if="props.presentation === 'plain'">
+                    <div class="summary-mode-key" aria-label="Modes d’accès">
+                      <span
+                        v-for="mode in SUMMARY_MODES"
+                        :key="mode"
+                        class="summary-mode-key-item"
+                        :class="`summary-mode-key-item--${MODE_CLASSES[mode]}`"
+                      >
+                        <component :is="modeIcon(mode)" :size="14" stroke-width="1.7" aria-hidden="true" />
+                        {{ MOBILITE_MODE_LABELS[mode] }}
+                      </span>
+                    </div>
+                    <div class="summary-metrics summary-metrics--paired">
+                      <section
+                        v-for="metric in summaryMetrics(section.evidence)"
+                        :key="metric.key"
+                        v-show="summaryHasValues(metric.values)"
+                        class="summary-metric"
+                      >
+                        <h4 class="summary-metric-title type-figure-label">{{ summaryMetricTitle(metric.key) }}</h4>
+                        <div class="summary-bar-pair">
+                          <div class="summary-bar-row summary-bar-row--territory">
+                            <div class="summary-bar-visual">
+                              <div
+                                class="summary-stack cahier-tooltip-trigger"
+                                role="img"
+                                tabindex="0"
+                                :aria-describedby="summaryBarTooltipId(metric.key, false)"
+                                 :aria-label="`${summaryMetricTitle(metric.key)}, territoire : ${summarySegments(metric.values, metric.key, section.evidence.typeCount).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
+                               >
+                                <span
+                                  v-for="segment in summarySegments(metric.values, metric.key, section.evidence.typeCount)"
+                                  :key="segment.mode"
+                                  class="summary-stack-segment"
+                                  :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
+                                  :style="{ left: segment.left, right: segment.right }"
+                                />
+                              </div>
+                              <dl :id="summaryBarTooltipId(metric.key, false)" class="summary-bar-tooltip" role="tooltip">
+                                <div v-for="segment in summarySegments(metric.values)" :key="segment.mode">
+                                  <dt>{{ segment.label }}</dt>
+                                  <dd>{{ formatFactValue(segment.fact.fact, segment.value) }}</dd>
+                                </div>
+                              </dl>
+                            </div>
+                          </div>
+                          <div
+                            v-if="summaryHasReference(metric.values)"
+                            class="summary-bar-row summary-bar-row--reference"
+                          >
+                            <div class="summary-bar-visual">
+                              <div
+                                 class="summary-stack summary-stack--reference cahier-tooltip-trigger"
+                                role="img"
+                                tabindex="0"
+                                :aria-describedby="summaryBarTooltipId(metric.key, true)"
+                                  :aria-label="`${summaryMetricTitle(metric.key)}, ${referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence indisponible'} : ${summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
+                               >
+                                <span
+                                  v-for="segment in summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount)"
+                                  :key="segment.mode"
+                                  class="summary-stack-segment"
+                                  :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
+                                  :style="{ left: segment.left, right: segment.right }"
+                                />
+                              </div>
+                              <dl :id="summaryBarTooltipId(metric.key, true)" class="summary-bar-tooltip" role="tooltip">
+                                <div v-for="segment in summaryBarSegments(metric.values, true)" :key="segment.mode">
+                                  <dt>{{ segment.label }}</dt>
+                                  <dd>{{ formatFactValue(segment.fact.fact, segment.value) }}</dd>
+                                </div>
+                              </dl>
+                            </div>
+                            <span class="summary-bar-label summary-bar-label--reference type-figure-label">{{ referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence indisponible' }}</span>
+                          </div>
+                        </div>
+                        <div class="summary-loss">
+                          <span class="summary-loss-title type-figure-label">
+                            {{ metric.key === 'equipment' ? 'Perte totale d’accès' : 'Perte de diversité' }}
+                          </span>
+                          <div class="summary-loss-readings">
+                            <span
+                              v-for="loss in summaryLosses(section.evidence, metric.key)"
+                              :key="loss.mode"
+                              class="summary-loss-reading"
+                              :class="`summary-loss-reading--${MODE_CLASSES[loss.mode]}`"
+                            >
+                              <span
+                                class="summary-loss-reading-value"
+                                role="img"
+                                :aria-label="`${loss.label} : ${loss.fact.fact.value === null ? 'indisponible' : formatNumber(loss.fact.fact.value, 0)}`"
+                              >
+                                <component :is="modeIcon(loss.mode)" :size="15" stroke-width="1.7" aria-hidden="true" />
+                                <strong v-if="loss.fact.fact.value !== null">{{ formatNumber(loss.fact.fact.value, 0) }}</strong>
+                                <strong v-else>—</strong>
+                              </span>
+                              <CahierReferenceNote
+                                v-if="loss.fact.fact.comparison?.reference"
+                                :fact="loss.fact.fact"
+                                :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
+                                :maximum-fraction-digits="0"
+                                :to="sectionExploration(section)!"
+                              />
+                            </span>
+                          </div>
+                        </div>
+                      </section>
+                    </div>
+                  </template>
+                  <div v-else class="summary-metrics">
                     <section
                       v-for="metric in summaryMetrics(section.evidence)"
                       :key="metric.key"
@@ -579,7 +790,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                           :key="segment.mode"
                           class="summary-stack-segment"
                           :class="`summary-stack-segment--${MODE_CLASSES[segment.mode]}`"
-                          :style="{ left: segment.left, width: segment.width }"
+                          :style="{ left: segment.left, right: segment.right }"
                         />
                       </div>
                       <dl class="summary-values">
@@ -600,7 +811,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                             </small>
                             <CahierReferenceNote
                               :fact="segment.fact.fact"
-                              :reference-label="section.evidence.referenceLabel"
+                              :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
                               :to="routeForFact(section, segment.fact.fact)"
                             />
                           </dd>
@@ -650,7 +861,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                       :class="{ 'access-figure--incomplete': !hasAnyAccessValue(service) }"
                     >
                       <div
-                        class="stacked-donut"
+                        class="stacked-donut cahier-tooltip-trigger"
                         :style="accessDonutStyle(service)"
                         :aria-label="`${service.label}. ${Object.values(service.modes).map((mode) => `${mode.label} : ${formatFact(mode.fact)}`).join('; ')}`"
                         role="img"
@@ -668,7 +879,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                         <span><Footprints class="cahier-mode-icon--foot" :size="14" stroke-width="1.7" aria-hidden="true" />{{ service.modes.walkTransit.label }}</span>
                         <CahierReferenceNote
                           :fact="service.modes.walkTransit.fact"
-                          :reference-label="section.evidence.referenceLabel"
+                          :reference-label="referenceLabelForFigure(section.evidence.referenceLabel)"
                           :to="routeForFact(section, service.modes.walkTransit.fact)"
                         />
                       </div>
@@ -679,7 +890,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                             <dt><component :is="modeIcon(modeKey as MobiliteAccessMode)" :size="12" stroke-width="1.7" />{{ mode.label }}</dt>
                             <dd>{{ formatFact(mode.fact) }}</dd>
                             <small v-if="mode.fact.comparison?.reference">
-                              {{ section.evidence.referenceLabel ?? 'Référence' }} : {{ referenceFactText(mode.fact) }}
+                              {{ referenceLabelForFigure(section.evidence.referenceLabel) ?? 'Référence' }} : {{ referenceFactText(mode.fact) }}
                             </small>
                           </div>
                         </dl>
@@ -699,16 +910,24 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                 </div>
               </section>
               <div
-                v-if="props.presentation === 'plain' && sectionExploration(section)"
-                class="cahier-section-exploration cahier-section-exploration--unit-footer"
-                aria-label="Explorer les indicateurs de cette section"
+                v-if="(props.presentation === 'plain' && sectionExploration(section)) || comparisonReference"
+                class="cahier-section-footer"
               >
-                <PassarelleExploration
-                  :to="sectionExploration(section)!"
-                  libelle="En savoir plus"
-                  sans-soulignement
-                  class="cahier-baseline-anchor"
-                />
+                <div
+                  v-if="props.presentation === 'plain' && sectionExploration(section)"
+                  class="cahier-section-exploration cahier-section-exploration--unit-footer"
+                  aria-label="Explorer les indicateurs de cette section"
+                >
+                  <PassarelleExploration
+                    :to="sectionExploration(section)!"
+                    libelle="En savoir plus"
+                    sans-soulignement
+                    class="cahier-baseline-anchor"
+                  />
+                </div>
+                <p v-if="comparisonReference" class="subgroup-reference" role="note">
+                  *ref : médiane des {{ comparisonReference }}
+                </p>
               </div>
             </section>
           </div>
@@ -865,7 +1084,43 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .evidence-placeholder { display: grid; place-items: center; min-height: 180px; border: 1px dashed color-mix(in srgb, var(--cahier-theme) 35%, transparent); text-align: center; }
 .evidence-figure { margin: 0; padding: 12px 0 0; }
 .cahier--sans-grille .evidence-figure { padding-top: 0; }
-.summary-evidence { display: grid; gap: 36px; }
+.summary-evidence { display: grid; gap: 10px; }
+.summary-evidence > .cahier-figure-title { margin-bottom: 0; }
+.cahier--sans-grille .summary-metrics--paired {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 10%;
+}
+.cahier--sans-grille .summary-metric-title {
+  color: var(--cahier-default);
+  font: var(--type-figure-label);
+  letter-spacing: var(--type-figure-label-tracking);
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+.cahier--sans-grille .summary-metrics--paired .summary-stack { margin: 8px 0 0; }
+.summary-bar-pair { display: grid; gap: 8px; margin-top: 8px; }
+.summary-bar-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px; align-items: center; }
+.summary-bar-label { display: block; margin-top: 4px; color: var(--cahier-default); font-size: 9px; line-height: 1.1; text-align: center; white-space: nowrap; }
+.summary-bar-label--reference { color: var(--cahier-region-emphasis); }
+.summary-bar-row--territory { display: block; }
+.summary-bar-row--reference { grid-template-columns: 1fr; gap: 5px; }
+.summary-bar-row--reference .summary-bar-label { display: block; text-align: center; }
+.summary-bar-visual { position: relative; }
+.summary-stack--reference { border: 1px solid color-mix(in srgb, var(--cahier-default) 24%, transparent); background: transparent; }
+.summary-stack--reference .summary-stack-segment { opacity: .48; }
+.cahier-tooltip-trigger { cursor: help; }
+.summary-stack[tabindex]:focus-visible { outline: 2px solid var(--cahier-region-emphasis); outline-offset: 4px; }
+.summary-bar-tooltip { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 10; display: grid; width: min(210px, calc(100% + 80px)); gap: 5px; margin: 0; padding: 9px 10px; border: 1px solid color-mix(in srgb, var(--cahier-theme-emphasis) 30%, transparent); background: var(--paper); box-shadow: 0 12px 28px rgb(35 42 42 / 16%); color: var(--cahier-default); font-size: 10px; line-height: 1.2; opacity: 0; pointer-events: none; transform: translate(-50%, -4px); transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease; visibility: hidden; }
+.summary-stack:hover + .summary-bar-tooltip, .summary-stack:focus-visible + .summary-bar-tooltip { opacity: 1; transform: translate(-50%, 0); visibility: visible; }
+.summary-bar-tooltip > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+.summary-bar-tooltip dt, .summary-bar-tooltip dd { margin: 0; }
+.summary-bar-tooltip dd { color: var(--ink); font-variant-numeric: tabular-nums; }
+.summary-mode-key { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin: 0; color: var(--cahier-default); font-size: 11px; }
+.summary-mode-key-item { display: inline-flex; align-items: center; gap: 5px; }
+.summary-mode-key-item--t { color: var(--cahier-mode-foot); }
+.summary-mode-key-item--b { color: var(--cahier-mode-bike); }
+.summary-mode-key-item--c { color: var(--cahier-mode-car); }
 .summary-metrics { display: grid; gap: 42px; }
 .summary-metric { min-width: 0; }
 .summary-metric-title { margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: 20px; font-weight: 500; line-height: 1.15; }
@@ -883,6 +1138,17 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .summary-value dd small { color: var(--cahier-default); font-size: 11px; }
 .summary-value dd .cahier-reference-note { grid-column: 1 / -1; text-align: left; }
 .cahier--sans-grille .summary-value dd .cahier-reference-note { text-align: center; }
+.cahier--sans-grille .summary-metric > .summary-loss { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--fine-rule); }
+.summary-loss { min-width: 0; }
+.summary-loss-title { display: block; color: var(--cahier-default); text-align: center; }
+.summary-loss-readings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.summary-loss-reading { display: grid; justify-items: center; gap: 3px; color: var(--cahier-default); font-size: 10px; text-align: center; }
+.summary-loss-reading-value { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.summary-loss-reading-value strong { color: var(--ink); font: var(--type-figure-value); font-size: 14px; font-variant-numeric: tabular-nums; }
+.summary-loss-reading--t .summary-loss-reading-value { color: var(--cahier-mode-foot); }
+.summary-loss-reading--t .summary-loss-reading-value strong { color: var(--cahier-mode-foot); }
+.summary-loss-reading--b .summary-loss-reading-value { color: var(--cahier-mode-bike); }
+.summary-loss-reading--b .summary-loss-reading-value strong { color: var(--cahier-mode-bike); }
 .summary-value--t dt, .summary-value--t dd strong { color: var(--cahier-mode-foot); }
 .summary-value--b dt, .summary-value--b dd strong { color: var(--cahier-mode-bike); }
 .summary-value--c dt, .summary-value--c dd strong { color: var(--cahier-mode-car); }
@@ -946,6 +1212,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .sources-list dd { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .sources-link { display: inline-block; margin-top: 48px; color: var(--cahier-theme-strong); font-size: 13px; text-underline-offset: 4px; }
 .cahier--sans-grille .cahier-section-exploration--unit-footer { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--fine-rule); }
+.cahier-section-footer { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-3); }
+.cahier--sans-grille .cahier-section-footer { padding-top: var(--space-3); border-top: 1px solid var(--fine-rule); }
+.cahier--sans-grille .cahier-section-exploration--unit-footer { margin-top: 0; padding-top: 0; border-top: 0; }
+.subgroup-reference { margin: 0 0 0 auto; color: var(--cahier-region-emphasis); font: var(--type-figure-label); letter-spacing: .04em; line-height: 1.2; text-align: right; text-transform: none; }
 
 /* A subgroup occupies one independent masonry rail. Its existing figure spread
    remains intact, but collapses only when the rail cannot physically hold both
@@ -965,6 +1235,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
   .access-legend { grid-column: 1 / -1; grid-row: auto; }
   .bpe-profile-chart { gap: 10px; }
   .bpe-profile-bar { width: min(56px, 58%); }
+  .cahier--sans-grille .summary-metrics--paired { grid-template-columns: 1fr; gap: var(--space-6); }
 }
 @container cahier-page (max-width: 480px) {
   .summary-value { grid-template-columns: 1fr; gap: 5px; }

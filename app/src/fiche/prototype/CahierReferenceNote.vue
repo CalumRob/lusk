@@ -4,11 +4,15 @@ import type { RouteLocationRaw } from 'vue-router'
 import type { NumericFact } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
 
-defineProps<{
-  fact: NumericFact
-  referenceLabel: string | null
-  to?: RouteLocationRaw | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    fact: NumericFact
+    referenceLabel: string | null
+    to?: RouteLocationRaw | null
+    maximumFractionDigits?: number
+  }>(),
+  { to: null, maximumFractionDigits: 1 },
+)
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
@@ -17,7 +21,9 @@ function formatNumber(value: number, maximumFractionDigits = 1): string {
 function referenceText(fact: NumericFact): string | null {
   const value = fact.comparison?.reference?.value
   if (value === undefined) return null
-  return fact.unit === '%' ? `${formatNumber(value * 100, 0)} %` : formatNumber(value)
+  return fact.unit === '%'
+    ? `${formatNumber(value * 100, 0)} %`
+    : formatNumber(value, props.maximumFractionDigits)
 }
 </script>
 

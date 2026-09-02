@@ -12,7 +12,12 @@ defineProps<{
       <template v-for="(segment, segmentIndex) in block" :key="segmentIndex">
         <strong
           v-if="segment.kind === 'emphasis'"
-          :class="segment.tone === 'region' ? 'region-emphasis' : 'theme-emphasis'"
+          :class="{
+            'region-emphasis': segment.tone === 'region',
+            'theme-emphasis': segment.tone === 'theme',
+            'car-emphasis': segment.tone === 'car',
+            'default-emphasis': segment.tone === 'default',
+          }"
         >{{ segment.value }}</strong>
         <template v-else>{{ segment.value }}</template>
       </template>
@@ -27,4 +32,6 @@ defineProps<{
 .cahier-prose p:last-child { margin-bottom: 0; }
 .cahier-prose strong.theme-emphasis { color: var(--cahier-theme-emphasis); font-weight: 700; }
 .cahier-prose strong.region-emphasis { color: var(--cahier-region-emphasis); font-weight: 700; }
+.cahier-prose strong.car-emphasis { color: var(--cahier-mode-car); font-weight: 700; }
+.cahier-prose strong.default-emphasis { font-weight: 700; }
 </style>

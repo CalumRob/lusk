@@ -7,7 +7,7 @@ import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { nomTerritoirePourAffichage, territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type {
-  MobiliteAccessReader,
+  NumericFact,
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
 import type { ThemeContent } from '@/fiche/content/themeContent'
@@ -27,25 +27,6 @@ const vintage = {
   vintage_date_reference: '2026-02-28',
   vintage_date_publication: '2026-08-06',
 }
-
-const accessReader: MobiliteAccessReader = () => ({
-  totalBatimentsBretons: 1_175_048,
-  batimentsTerritoire: 65_078,
-  provenance: {
-    sourceId: 'mobilite_snapshot',
-    source: 'Snapshot Mobilité',
-    version: '2026-02',
-    referenceDate: '2026-02-28',
-    publicationDate: '2026-08-06',
-  },
-  parts: {
-    administration: { c: 1, b: 0.86, t: 0.78 },
-    alimentation: { c: 1, b: 0.89, t: 0.86 },
-    sante: { c: 1, b: 0.86, t: 0.82 },
-    banque: { c: 1, b: 0.84, t: 0.78 },
-    ecole: { c: 1, b: 0.88, t: 0.83 },
-  },
-})
 
 function totalLossRows(): Indicateur[] {
   return [
@@ -112,7 +93,30 @@ function averageRows(): Indicateur[] {
 
 const payload: Payload = {
   territoires: territoiresFixture,
-  indicateurs: [...indicateursMobiliteFixture, ...totalLossRows(), ...averageRows()],
+  indicateurs: [
+    ...indicateursMobiliteFixture,
+    ...totalLossRows(),
+    ...averageRows(),
+    ...[
+      ['22001', 65_078],
+      ['53', 1_223_578],
+    ].map(([territoire, value]) => ({
+      territoire: territoire as string,
+      type: territoire === '53' ? 'region' as const : 'commune' as const,
+      theme: 'mobilite' as const,
+      key: 'nb_buildings',
+      detail: null,
+      value: value as number,
+      unit: 'bâtiments',
+      rang_epci: null,
+      rang_epci_n: null,
+      rang_dep: null,
+      rang_dep_n: null,
+      rang_reg: null,
+      rang_reg_n: null,
+      ...vintage,
+    })),
+  ],
   histoires: histoiresMobiliteFixture,
   apercu: null,
   runReport: null,
@@ -131,14 +135,49 @@ const payload: Payload = {
       exemplar_b: 0.1,
       exemplar_t: 0.1,
     },
+    {
+      territoire: '22001',
+      type: 'commune',
+      profil: 'acces-pied-tc',
+      profil_libelle: 'Accès à pied ou en TC possible',
+      nombre_typequ: 11,
+      exemplar_typequ: 'B304',
+      exemplar_libelle: 'Équipement de proximité',
+      exemplar_c: 0.9,
+      exemplar_b: 0.5,
+      exemplar_t: 0.4,
+    },
+    {
+      territoire: '22001',
+      type: 'commune',
+      profil: 'voiture-requise',
+      profil_libelle: 'La voiture est requise',
+      nombre_typequ: 40,
+      exemplar_typequ: 'C108',
+      exemplar_libelle: 'Équipement spécialisé',
+      exemplar_c: 0.8,
+      exemplar_b: 0.2,
+      exemplar_t: 0.1,
+    },
   ],
   themeMetadata: { mobilite: structuredClone(metadonneesThemesFixtures.mobilite) },
 }
 
 function factsForTarget(): TerritoryFacts {
-  const facts = territoryFactsFor(payload, '22001', accessReader)
+  const facts = territoryFactsFor(payload, '22001')
   if (!facts) throw new Error('Test target should exist')
   return facts
+}
+
+function withMedian(fact: NumericFact, value: number): NumericFact {
+  if (!fact.comparison) throw new Error(`Expected a comparison for ${fact.key}`)
+  return {
+    ...fact,
+    comparison: {
+      ...fact.comparison,
+      reference: { kind: 'median', value },
+    },
+  }
 }
 
 function paginationFor(content: ThemeContent) {
@@ -183,7 +222,8 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     ])
     expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(2)
     expect(wrapper.find('.summary-evidence').exists()).toBe(true)
-    expect(wrapper.find('.summary-evidence').text()).toContain('Équipements accessibles')
+    expect(wrapper.find('.summary-evidence .cahier-figure-title').text()).toBe('Équipements accessibles en 20 min., moyenne')
+    expect(wrapper.find('.summary-evidence').text()).toContain('Équipements accessibles en 20 min., moyenne')
     expect(wrapper.find('.summary-evidence').text()).toContain('Types d’équipements accessibles')
     expect(wrapper.find('.summary-evidence').text()).toContain('1 467,8')
     expect(wrapper.findAll('.summary-value')).toHaveLength(6)
@@ -195,7 +235,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.bpe-evidence').text()).toContain('2 types')
     expect(wrapper.find('.bpe-evidence').text()).toContain('France services')
     expect(wrapper.find('.bpe-evidence').text()).not.toContain('A128')
-    expect(wrapper.findAll('.bpe-profile-column')).toHaveLength(1)
+    expect(wrapper.findAll('.bpe-profile-column')).toHaveLength(3)
     expect(wrapper.find('.bpe-profile-donut').attributes('aria-label')).toContain('10 %')
     expect(wrapper.find('.bpe-profile-donut').attributes('aria-label')).toContain('90 %')
     expect(wrapper.find('.sources-page').text()).toContain(content.sourceRegister[0]?.source)
@@ -215,12 +255,12 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.cahier-section-exploration')).toHaveLength(2)
     expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(4)
     expect(wrapper.findAll('.cahier-reference-note')).toHaveLength(11)
-    expect(wrapper.findAll('.cahier-reference-note').every((note) => note.text().includes('Médiane'))).toBe(true)
-    expect(wrapper.find('.cahier-reference-note').text()).toContain('Médiane communes de l’EPCI')
+    expect(wrapper.findAll('.cahier-reference-note').every((note) => !note.text().includes('Médiane'))).toBe(true)
+    expect(wrapper.find('.cahier-reference-note').text()).toContain('vs ref*')
     expect(wrapper.text()).toContain('À pied + TC')
     expect(wrapper.text()).toContain('À vélo + TC')
     expect(wrapper.text()).not.toContain('À pied ou en transports en commun')
-    expect(wrapper.find('.access-tooltip').text()).toContain('Médiane')
+    expect(wrapper.find('.access-tooltip').text()).toContain('vs ref*')
     expect(wrapper.find('.summary-value strong.is-extreme').exists()).toBe(true)
     expect(wrapper.find('.rank-emphasis.is-extreme').exists()).toBe(true)
     for (const link of links) {
@@ -274,12 +314,103 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       expect(groups.every((group) => group.attributes('style')?.includes('--masonry-left: 0px;'))).toBe(true)
       expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(4)
       const unitExplorations = wrapper.findAll('.cahier-section-exploration--unit-footer')
-      expect(unitExplorations.every((link) => link.element.parentElement?.classList.contains('concept-group'))).toBe(true)
+      expect(unitExplorations.every((link) => link.element.parentElement?.classList.contains('cahier-section-footer'))).toBe(true)
       expect(unitExplorations.every((link) => link.find('a').attributes('href')?.startsWith('/indicateurs/mobilite/'))).toBe(true)
     } finally {
       if (originalMatchMedia) Object.defineProperty(window, 'matchMedia', originalMatchMedia)
       else delete (window as { matchMedia?: typeof window.matchMedia }).matchMedia
     }
+  })
+
+  it('pairs the summary bars and shares the app-wide compact figure label', async () => {
+    const wrapper = await render(resolveMobiliteThemeContent(factsForTarget()), 'plain')
+
+    const pairedMetrics = wrapper.findAll('.summary-metrics--paired .summary-metric')
+    expect(pairedMetrics).toHaveLength(2)
+    expect(wrapper.findAll('.summary-bar-row')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-bar-row--territory .summary-bar-label')).toHaveLength(0)
+    expect(wrapper.findAll('.summary-bar-row--reference').every((row) => row.text().includes('vs ref*'))).toBe(true)
+    expect(wrapper.find('.summary-bar-label--reference').text()).toBe('vs ref*')
+    expect(wrapper.findAll('.summary-bar-row--reference .summary-bar-label').every((label) => !label.text().includes('Médiane'))).toBe(true)
+    expect(wrapper.findAll('.summary-metric-title').map((title) => title.text())).toEqual([
+      'Nombre d’équip. accessibles',
+      "Types d'équip. accessibles",
+    ])
+    expect(wrapper.findAll('.summary-metric-title').every((title) => title.classes().includes('type-figure-label'))).toBe(true)
+    expect(wrapper.findAll('.summary-mode-key-item')).toHaveLength(3)
+    expect(wrapper.find('.summary-values--paired').exists()).toBe(false)
+    expect(wrapper.findAll('.summary-loss')).toHaveLength(2)
+    expect(wrapper.findAll('.summary-loss-reading')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-loss-reading-value svg')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-loss-reading-value strong').map((value) => value.text())).toEqual([
+      '1 211',
+      '889',
+      '19',
+      '11',
+    ])
+    expect(wrapper.findAll('.summary-loss-reading').every((reading) => !reading.text().includes('À pied + TC') && !reading.text().includes('À vélo + TC'))).toBe(true)
+    expect(wrapper.findAll('.summary-loss .cahier-reference-note')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-loss .cahier-reference-note').every((note) => !note.text().includes('Médiane'))).toBe(true)
+    expect(wrapper.findAll('.summary-loss .cahier-rank')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-loss .cahier-rank.is-extreme')).toHaveLength(4)
+    const summaryExplorationHref = wrapper.find('.cahier-section-exploration--unit-footer a').attributes('href')
+    expect(summaryExplorationHref).toBeTruthy()
+    expect(wrapper.findAll('.summary-loss .cahier-rank').every((rank) => rank.element.tagName === 'A')).toBe(true)
+    expect(wrapper.findAll('.summary-loss .cahier-rank').every((rank) => rank.attributes('href') === summaryExplorationHref)).toBe(true)
+    const typesLastSegment = pairedMetrics[1]!.find('.summary-bar-row--territory').findAll('.summary-stack-segment').at(-1)
+    const equipmentLastSegment = pairedMetrics[0]!.find('.summary-bar-row--territory').findAll('.summary-stack-segment').at(-1)
+    if (!typesLastSegment || !equipmentLastSegment) throw new Error('Expected summary stack segments')
+    const endFromStyle = (style: string): number => {
+      const left = style.match(/left:\s*([\d.]+)%/)?.[1]
+      const right = style.match(/right:\s*([\d.]+)%/)?.[1]
+      if (left === undefined || right === undefined) throw new Error('Expected percentage segment styles')
+      return 100 - parseFloat(right)
+    }
+    const typesBarEnd = endFromStyle(typesLastSegment.attributes('style') ?? '')
+    const equipmentBarEnd = endFromStyle(equipmentLastSegment.attributes('style') ?? '')
+    expect(typesBarEnd).toBeCloseTo((48.63 / 53) * 100, 4)
+    expect(typesBarEnd).not.toBeCloseTo(100, 4)
+    expect(equipmentBarEnd).toBeCloseTo(100, 4)
+    expect(wrapper.findAll('.summary-loss-reading--t')).toHaveLength(2)
+    expect(wrapper.findAll('.summary-loss-reading--b')).toHaveLength(2)
+    expect(wrapper.findAll('.summary-bar-tooltip')).toHaveLength(4)
+    const summaryTooltipTriggers = wrapper.findAll('.summary-stack[tabindex="0"]')
+    expect(summaryTooltipTriggers.every((bar) => bar.attributes('aria-describedby') && wrapper.find(`#${bar.attributes('aria-describedby')}`).exists())).toBe(true)
+    expect(summaryTooltipTriggers.every((bar) => bar.classes().includes('cahier-tooltip-trigger'))).toBe(true)
+    expect(wrapper.findAll('.access-figures .stacked-donut[tabindex="0"]').every((donut) => donut.classes().includes('cahier-tooltip-trigger'))).toBe(true)
+    const legend = wrapper.find('.summary-mode-key').element
+    const bars = wrapper.find('.summary-bar-pair').element
+    expect(Boolean(legend.compareDocumentPosition(bars) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    expect(wrapper.find('.distribution-axis-title--x').classes()).toContain('type-figure-label')
+  })
+
+  it('writes the first group as a territory-specific comparison story', async () => {
+    const facts = structuredClone(factsForTarget())
+    const summary = facts.mobility.access.summary
+    summary.accessibleEquipment.car = withMedian(summary.accessibleEquipment.car, 1_000)
+    summary.accessibleTypes.car = withMedian(summary.accessibleTypes.car, 60)
+    summary.averageLosses.diversity.walkTransit = withMedian(summary.averageLosses.diversity.walkTransit, 25)
+    summary.averageLosses.diversity.bike = withMedian(summary.averageLosses.diversity.bike, 20)
+
+    const content = resolveMobiliteThemeContent(facts)
+    const firstSection = content.units[0]!.sections[0]!
+    const prose = firstSection.lecture!.prose.map((block) => block.map((segment) => segment.value).join(''))
+    const wrapper = await render(content, 'plain')
+
+    expect(prose).toHaveLength(3)
+    expect(prose[0]).toContain('À Commune A1, dans un rayon de 20 minutes en voiture')
+    expect(prose[0]).toContain('atteint plus d’équipements au total')
+    expect(prose[0]).toContain('mais moins de types d’équipements')
+    expect(prose[1]).toContain('La voiture ouvre peu d’accès')
+    expect(prose[1]).toContain('À pied et/ou en transports en commun')
+    expect(prose[1]).not.toContain('médiane des communes de l’EPCI')
+    expect(prose[2]).toContain('Le vélo renforce cette situation')
+    expect(prose[2]).toContain('référence : 20')
+    expect(wrapper.find('.margin-comparison').exists()).toBe(false)
+    expect(wrapper.findAll('.subgroup-reference')).toHaveLength(4)
+    expect(wrapper.findAll('.subgroup-reference').every((marker) => marker.text() === '*ref : médiane des communes de l’EPCI')).toBe(true)
+    expect(wrapper.findAll('.cahier-section-footer').every((footer) => footer.find('.subgroup-reference').exists())).toBe(true)
+    expect(wrapper.findAll('.cahier-section-footer').every((footer) => footer.find('.cahier-section-exploration--unit-footer').exists())).toBe(true)
   })
 
   it('uses the narrative sentence as E’s single unit heading without the Marelle duplicate', async () => {
@@ -353,6 +484,16 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
             { ...value, value: null, availability: 'absent', provenance: null, comparison: null },
           ]),
         ) as typeof facts.mobility.access.summary.accessibleTypes,
+        averageLosses: {
+          diversity: {
+            walkTransit: { ...facts.mobility.access.summary.averageLosses.diversity.walkTransit, value: null, availability: 'absent', provenance: null, comparison: null },
+            bike: { ...facts.mobility.access.summary.averageLosses.diversity.bike, value: null, availability: 'absent', provenance: null, comparison: null },
+          },
+          total: {
+            walkTransit: { ...facts.mobility.access.summary.averageLosses.total.walkTransit, value: null, availability: 'absent', provenance: null, comparison: null },
+            bike: { ...facts.mobility.access.summary.averageLosses.total.bike, value: null, availability: 'absent', provenance: null, comparison: null },
+          },
+        },
       },
       byService: Object.fromEntries(
         Object.entries(facts.mobility.access.byService).map(([service, modes]) => [

@@ -187,9 +187,11 @@
   --text-overline-tracking: 0.08em;
 
   /* Shared figure role: labels and axes use the same compact editorial face. */
-  --type-figure-column: 400 0.75rem/1.2 var(--font-sans);
-  --type-figure-column-tracking: 0.08em;
-  --type-figure-label: 700 0.875rem/1.25 var(--font-sans);
+  --type-figure-label: 400 0.75rem/1.2 var(--font-sans);
+  --type-figure-label-tracking: 0.08em;
+  /* Backwards-compatible alias for existing figure-column consumers. */
+  --type-figure-column: var(--type-figure-label);
+  --type-figure-column-tracking: var(--type-figure-label-tracking);
   --type-figure-mode: 400 0.875rem/1.35 var(--font-sans);
   --type-figure-value: 700 1rem/1 var(--font-sans);
   --type-figure-legend: 500 0.8125rem/1.35 var(--font-sans);
@@ -278,8 +280,9 @@
 }
 
 /* Shared editorial figure label — use this class instead of local copies. */
+.type-figure-label,
 .type-figure-column {
-  font: var(--type-figure-column);
-  letter-spacing: var(--type-figure-column-tracking);
+  font: var(--type-figure-label);
+  letter-spacing: var(--type-figure-label-tracking);
   text-transform: uppercase;
 }

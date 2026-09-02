@@ -216,8 +216,8 @@ const styleInfobulle = computed(() => ({
         </text>
       </g>
       </svg>
-      <span class="distribution-axis-title distribution-axis-title--x type-figure-column">Types de services perdus</span>
-      <span class="distribution-axis-title distribution-axis-title--y type-figure-column">Densité des bâtiments</span>
+      <span class="distribution-axis-title distribution-axis-title--x type-figure-label">Types de services perdus</span>
+      <span class="distribution-axis-title distribution-axis-title--y type-figure-label">Densité des bâtiments</span>
     </div>
     <div class="distribution-reference-icons" aria-hidden="true">
       <span
