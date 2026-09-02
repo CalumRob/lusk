@@ -621,8 +621,8 @@ export const indicateursOffreCyclableFixture: Indicateur[] = [
 
 /** Les clés d'accès publiées du thème (INDICATEURS_MOBILITE) : les 5 parts
  * d'accès directes (trois modes par service), complétées par les 5 parts d'isolation de
- * les 5 parts d'isolation de la grille, l'étage demande/réseaux et le sous-bloc — `nb_buildings` QUITTE
- * le payload (issue #368, décision #196) — valeurs réelles du payload
+ * les 5 parts d'isolation de la grille, l'étage demande/réseaux et le sous-bloc — `nb_buildings`
+ * porte la taille target-scoped des bâtiments — valeurs réelles du payload
  * reshapé, une ligne par (territoire × key × detail), plus la clé
  * multi-mesures « L'offre cyclable » (issue #232, les lignes
  * d'indicateursOffreCyclableFixture). */
@@ -1660,9 +1660,10 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
           'share_school_t',
           'share_school_b',
           'share_school_c',
-          'share_bank_t',
-          'share_bank_b',
-          'share_bank_c',
+       'share_bank_t',
+       'share_bank_b',
+       'share_bank_c',
+       'nb_buildings',
         ],
         figure: { family: 'scalar', indicator: 'offre_cyclable' },
         reading: {
@@ -1710,6 +1711,7 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       'share_bank_t',
       'share_bank_b',
       'share_bank_c',
+      'nb_buildings',
     ],
     story_keys: ['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'],
     sources: {
@@ -1736,9 +1738,10 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       share_school_t: 'mobilite_snapshot',
       share_school_b: 'mobilite_snapshot',
       share_school_c: 'mobilite_snapshot',
-      share_bank_t: 'mobilite_snapshot',
-      share_bank_b: 'mobilite_snapshot',
-      share_bank_c: 'mobilite_snapshot',
+       share_bank_t: 'mobilite_snapshot',
+       share_bank_b: 'mobilite_snapshot',
+       share_bank_c: 'mobilite_snapshot',
+       nb_buildings: 'mobilite_snapshot',
     },
     indicator_labels: {
       iso_alimentation: 'Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)',
@@ -1758,9 +1761,10 @@ export const metadonneesThemesFixtures: Record<Theme, ThemeMetadata> = {
       share_school_t: 'Part des bâtiments avec accès à l’école — à pied ou en transports en commun',
       share_school_b: 'Part des bâtiments avec accès à l’école — à vélo',
       share_school_c: 'Part des bâtiments avec accès à l’école — en voiture',
-      share_bank_t: 'Part des bâtiments avec accès à la banque — à pied ou en transports en commun',
-      share_bank_b: 'Part des bâtiments avec accès à la banque — à vélo',
-      share_bank_c: 'Part des bâtiments avec accès à la banque — en voiture',
+       share_bank_t: 'Part des bâtiments avec accès à la banque — à pied ou en transports en commun',
+       share_bank_b: 'Part des bâtiments avec accès à la banque — à vélo',
+       share_bank_c: 'Part des bâtiments avec accès à la banque — en voiture',
+       nb_buildings: 'Bâtiments résidentiels analysés',
       voitures_menage: 'Voitures par ménage',
       reseaux: 'Réseaux à pied / vélo / voiture',
       offre_tc: 'Part des bâtiments près d’un arrêt (à 500 m)',

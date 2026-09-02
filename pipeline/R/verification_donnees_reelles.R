@@ -260,11 +260,11 @@ verifier_raccordement_reel <- function(artefact, payload) {
       departements = sum(lignes$type == "departement"),
       region = sum(lignes$type == "region"))
   }
-  verifier_egale(couverture("raccordement_tc"), c(1202L, 61L, 4L, 1L),
+  verifier_egale(unname(couverture("raccordement_tc")), c(1202L, 61L, 4L, 1L),
                  "raccordement — couverture du scalaire publié")
-  verifier_egale(couverture("raccordement_courbe"), c(13222L, 671L, 44L, 11L),
+  verifier_egale(unname(couverture("raccordement_courbe")), c(13222L, 671L, 44L, 11L),
                  "raccordement — couverture de la courbe publiée")
-  verifier_egale(couverture("raccordement_reference"), c(0L, 0L, 0L, 11L),
+  verifier_egale(unname(couverture("raccordement_reference")), c(0L, 0L, 0L, 11L),
                  "raccordement — couverture de la référence publiée")
   for (cle in cles) {
     lignes <- raccordement[raccordement$key == cle, , drop = FALSE]
@@ -892,7 +892,8 @@ verifier_economie_e2e_reel <- function(donnees, base_epci) {
 # résolu de test-resoudre-histoires.R) : le chaînon analytique FLAGSHIP sur
 # les sources réelles — le snapshot porté aux comptes verrouillés (1 200
 # communes × 2 061 colonnes), les artefacts analytiques (les comptes du run
-# 2026-08-06, l'EPCI Brest Métropole recalculé depuis les parties, la
+# 2026-08-06, l'EPCI Brest Métropole recalculé depuis les parties (y compris
+# les moyennes d'accès), la
 # saillance aux seuils réels), le sous-bloc « L'offre de mobilité
 # alternative » (issue #140), la figure « L'offre cyclable » (issue #231) et
 # les Stories résolues (une lecture par territoire, la saillance vélo qui
@@ -901,8 +902,9 @@ verifier_economie_e2e_reel <- function(donnees, base_epci) {
 # `base_epci` est le chemin du référentiel partagé extrait (fichier_epci_
 # extrait) ; les artefacts analytiques sont écrits dans un répertoire
 # TEMPORAIRE (jamais la sortie analytique du run — pas de course avec
-# publie_mobilite).
-verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
+# publie_mobilite) ; `raccordement` est l'artefact calculé et épinglé par le
+# graphe, jamais un re-routage lancé par le verrou.
+verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   snapshot <- donnees$mobilite_snapshot
   verifier_egale(nrow(snapshot), 1200L,
                  "Mobilité e2e — les 1200 communes du snapshot porté")
@@ -934,6 +936,7 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   dir.create(sortie_analytiques)
   analytiques <- construire_analytiques_mobilite(donnees, base,
                                                  sortie = sortie_analytiques)
+  analytiques$raccordement <- lire_raccordement(raccordement)
 
   # les comptes par niveau des parts d'isolation (issue #138) : 5 clés × le
   # nombre de territoires du niveau — jamais une moyenne de parts
@@ -964,10 +967,25 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   verifier_egale(brest$div_loss_t, 8L, "Mobilité e2e — Brest div_loss_t")
   verifier_egale(brest$div_loss_b, 1L, "Mobilité e2e — Brest div_loss_b")
   verifier_egale(brest$delta, 7L, "Mobilité e2e — Brest delta")
-  verifier_egale(round(brest$pct_iso_full_t, 4), 0.0219,
-                 "Mobilité e2e — Brest pct_iso_full_t")
+   verifier_egale(round(brest$pct_iso_full_t, 4), 0.0219,
+                  "Mobilité e2e — Brest pct_iso_full_t")
 
-  # la saillance : seuils verrouillés sur la distribution réelle (q75 = 4,
+   # les moyennes du résumé : le bloc `_epci` du snapshot est absent pour Brest,
+   # mais les huit communes membres portent toutes les moyennes communales ; le
+   # chaînon les reconstruit par bâtiments, puis la publication les classe avec
+   # les 61 EPCI bretons.
+   moyennes <- analytiques$moyennes_acces_territoires
+   brest_moyennes <- moyennes[moyennes$code == "242900314", ]
+   verifier_egale(sum(!is.na(brest_moyennes$value)), 6L,
+                  "Mobilité e2e — Brest les six moyennes d'accès")
+   verifier_egale(
+     round(brest_moyennes$value[match(CLES_MOYENNES_ACCES_MOBILITE,
+                                      brest_moyennes$key)], 4),
+     c(2306.4642, 795.0217, 324.3828, 51.7752, 42.0271, 35.1481),
+     "Mobilité e2e — les moyennes d'accès reconstruites de Brest"
+   )
+
+   # la saillance : seuils verrouillés sur la distribution réelle (q75 = 4,
   # q90 = 10) et les comptes de classification par niveau
   delta_communes <- div$delta[type_territoire_mobilite(div$code) == "commune"]
   verifier_egale(SEUIL_DELTA_REEL_VELO, 4L, "Mobilité e2e — le seuil du quartile")
@@ -1198,12 +1216,13 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci) {
   # directionnels (Rennes 1re de Rennes Métropole — jamais une fraction), une
   # commune avec EPCI n'a PAS de rang régional (le repli régional n'est que
   # pour les communes SANS EPCI), rang_dep est vide partout (la colonne reste
-  # dans le contrat, NA). Le payload porte les ONZE clés du thème :
-  # `nb_buildings` QUITTE le payload (issue #368, décision #196 — la
-  # « Taille » reste la pondération interne) et voitures_menage porte ses
-  # trois parts (1268 territoires × 3).
-  verifier_vrai(!("nb_buildings" %in% payload$indicateurs$key),
-                "Mobilité e2e", "nb_buildings publié (retiré du payload, #368)")
+   # dans le contrat, NA). Le payload porte la taille target-scoped des
+   # bâtiments ainsi que les faits de Mobilité, et voitures_menage porte ses
+   # trois parts (1268 territoires × 3).
+   verifier_egale(sum(payload$indicateurs$key == "nb_buildings" &
+                        !is.na(payload$indicateurs$value)),
+                  nrow(analytiques$nb_buildings_territoires),
+                  "Mobilité e2e — la taille des bâtiments publiée")
   verifier_egale(sum(payload$indicateurs$key == "voitures_menage"), 3804L,
                  "Mobilité e2e — les trois parts voitures du payload")
   lire_ind <- function(territoire, key, detail) {

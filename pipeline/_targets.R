@@ -560,7 +560,8 @@ VERIFICATIONS_RUN <- list(
     list(slug = "mobilite_e2e",
          verifier = verifier_mobilite_e2e_reel,
          sur_brut = TRUE,
-         args = list(base_epci = "epci"))
+         args = list(base_epci = "epci",
+                     raccordement = "raccordement"))
   ),
   milieux = list(
     list(slug = "milieux_consoenaf",

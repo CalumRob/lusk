@@ -581,7 +581,7 @@ fixture_snapshot_analytique_mobilite <- function() {
     key <- CLES_MOYENNES_ACCES_MOBILITE[[i]]
     base[[key]] <- i + seq_len(nrow(base))
     base[[paste0(key, "_epci")]] <- ifelse(
-      base$commune %in% c("22001", "22002"), i + 10, i + 20
+      base$commune %in% c("22001", "22002"), i + 10, NA_real_
     )
     base[[paste0(key, "_dep")]] <- ifelse(base$commune %in% c("22001", "22002"), i + 30, i + 40)
     base[[paste0(key, "_reg")]] <- i + 50
@@ -628,6 +628,23 @@ base_epci_mini_analytique <- function() {
     "29002", "Commune C", "200000002", "EPCI Y", "29", "53"
   )
 }
+
+test_that("construire_moyennes_acces_territoires : un bloc EPCI muet est reconstruit depuis les moyennes communales pondérées", {
+  moyennes <- construire_moyennes_acces_territoires(
+    fixture_snapshot_analytique_mobilite(),
+    base_epci_mini_analytique()
+  )
+
+  valeur <- function(code, key) {
+    moyennes$value[moyennes$code == code & moyennes$key == key]
+  }
+
+  # EPCI X porte une valeur dans le fichier : elle a priorité sur le recalcul.
+  expect_equal(valeur("200000001", "avg_tot_car"), 11)
+  # EPCI Y n'a pas de bloc `_epci` : (4 × 200 + 5 × 400) / 600.
+  expect_equal(valeur("200000002", "avg_tot_car"), 14 / 3)
+  expect_false(anyNA(moyennes$value[moyennes$code == "200000002"]))
+})
 
 test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc enchaînent les builders et persistent les artefacts", {
   # la garde de forme du chaînon consomme le snapshot normalisé : le fixture
@@ -2326,7 +2343,7 @@ test_that("agreger_offre_territoires : chaque indicateur agrégé par SA règle"
 })
 
 # INDICATEURS_MOBILITE -----------------------------------------------------------
-test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retiré), chacune estampillée de SA source de référence", {
+test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacune estampillée de SA source de référence", {
   ind <- INDICATEURS_MOBILITE
 
   # les clés multi-mesures de l'étage demande/réseaux (issue #139 :
@@ -2339,7 +2356,7 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
   # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
-   expect_equal(nrow(ind), 40L)
+   expect_equal(nrow(ind), 41L)
   expect_setequal(ind$key, c("voitures_menage", "reseaux",
                              "offre_tc", "bornes_recharge",
                               "places_stationnement_velo_1000",
@@ -2353,10 +2370,9 @@ test_that("INDICATEURS_MOBILITE : les seize clés du payload (nb_buildings retir
                                names(CLES_ACCES_MOBILITE),
                                CLES_MOYENNES_ACCES_MOBILITE,
                               "raccordement_tc", "raccordement_courbe",
-                             "raccordement_reference"))
-  # `nb_buildings` QUITTE le payload (issue #368, décision #196) — jamais
-  # publié, la « Taille » reste la pondération interne du thème
-  expect_false("nb_buildings" %in% ind$key)
+                              "raccordement_reference", "nb_buildings"))
+   expect_equal(ind$source_reference[ind$key == "nb_buildings"],
+                "mobilite_snapshot")
   expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 3L)
   expect_equal(ind$multiplicite[ind$key == "reseaux"], 6L)
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
@@ -2592,7 +2608,7 @@ fixture_indicateurs_mobilite <- function() {
   )
 }
 
-test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retiré, #368), avec les 5 parts d'isolation et LE RACCORDEMENT (#486), leurs rangs et leurs estampilles", {
+test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec les 5 parts d'isolation et LE RACCORDEMENT (#486), leurs rangs et leurs estampilles", {
   fx <- fixture_indicateurs_mobilite()
   base <- base_epci_mini_analytique()
   poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
@@ -2605,8 +2621,8 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
 
   # les seize clés : la demande/réseaux + le sous-bloc
   # (issue #140 + #231) + les 5 parts d'isolation (issue #141) + le
-  # raccordement (issue #486) — une ligne par (territoire × détail) ;
-  # `nb_buildings` n'est PLUS publié (issue #368, décision #196)
+   # raccordement (issue #486) — une ligne par (territoire × détail) ;
+   # `nb_buildings` publie la taille des bâtiments par territoire.
   expect_setequal(unique(ind$key), c(
     "voitures_menage", "reseaux",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
@@ -2617,15 +2633,16 @@ test_that("construire_indicateurs_mobilite : les seize clés (nb_buildings retir
     "iso_ecole", "iso_banque",
     names(CLES_ACCES_MOBILITE),
     CLES_MOYENNES_ACCES_MOBILITE,
-    "raccordement_tc", "raccordement_courbe", "raccordement_reference"
+     "raccordement_tc", "raccordement_courbe", "raccordement_reference",
+     "nb_buildings"
   ))
   grille_n <- length(grille_raccordement())
-  # 9 territoires × 27 lignes historiques = 243 ; + le raccordement :
+   # 9 territoires × 27 lignes historiques = 243 ; + la taille : 9 ; + le raccordement :
   # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
-  expect_equal(nrow(ind), 243 + 9 * length(CLES_ACCES_MOBILITE) +
-                 9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 +
-                 9 * grille_n + grille_n)
-  expect_false("nb_buildings" %in% ind$key)
+   expect_equal(nrow(ind), 243 + 9 + 9 * length(CLES_ACCES_MOBILITE) +
+                  9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 +
+                  9 * grille_n + grille_n)
+   expect_equal(sum(ind$key == "nb_buildings"), 9)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
   expect_equal(sum(ind$key == "reseaux"), 9 * 6)
   for (cle in c("offre_tc", "bornes_recharge",

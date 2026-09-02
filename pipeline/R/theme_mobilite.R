@@ -216,9 +216,11 @@ agreger_nb_buildings_territoires <- function(communes, base_epci) {
 # Les six moyennes du résumé : le nombre moyen d'équipements et de types
 # d'équipements accessibles par bâtiment, pour chacun des trois modes. Elles
 # sont déjà calculées dans le snapshot porté, avec une valeur par niveau
-# (`_epci`, `_dep`, `_reg`) ; le pipeline les publie comme des indicateurs
-# ordinaires, avec les mêmes rangs et la même estampille que le reste du
-# flagship. Aucune valeur n'est reconstruite côté application.
+# (`_epci`, `_dep`, `_reg`) ; si un bloc agrégé est absent, le chaînon analytique
+# le reconstruit depuis les moyennes communales pondérées par les bâtiments. Le
+# pipeline les publie comme des indicateurs ordinaires, avec les mêmes rangs et
+# la même estampille que le reste du flagship. Aucune valeur n'est reconstruite
+# côté application.
 CLES_MOYENNES_ACCES_MOBILITE <- c(
   "avg_tot_car", "avg_tot_b", "avg_tot_t",
   "avg_div_car", "avg_div_b", "avg_div_t"
@@ -484,11 +486,10 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 # INDICATEURS_MOBILITE ---------------------------------------------------------
 # La table déclarative des indicateurs du thème (issue #9/#97) : chaque clé du
 # payload y est déclarée avec sa source de référence (l'id du manifeste qui
-# l'estampille — les vintages T7) et sa multiplicité. ONZE clés depuis les
-# issues #139 + #140 + #141 + #231 — `nb_buildings` QUITTE le payload à l'issue
-# #368 (décision #196, jamais exécutée : la « Taille » reste la pondération
-# INTERNE du thème — le poids des agrégats et la règle de pluralité — mais
-# n'est plus une clé publiée) :
+# l'estampille — les vintages T7) et sa multiplicité. La taille des bâtiments
+# est publiée avec les faits de Mobilité afin que les surfaces éditoriales
+# restent target-scoped à tous les niveaux ; elle reste aussi le poids interne
+# des agrégats.
 #   - « voitures_menage » (l'étage demande, #139) : les TROIS parts réelles
 #     des ménages SANS voiture / avec UNE voiture / avec 2+ voitures (la
 #     dimension CARS du cube RP : C0 / C1 / C_GE2 — la catégorie du milieu
@@ -562,7 +563,8 @@ INDICATEURS_MOBILITE <- tibble::tibble(
             CLES_MOYENNES_ACCES_MOBILITE,
             names(CLES_ISOLATION_MOBILITE),
            names(CLES_ACCES_MOBILITE),
-           "raccordement_tc", "raccordement_courbe", "raccordement_reference"),
+            "raccordement_tc", "raccordement_courbe", "raccordement_reference",
+            "nb_buildings"),
   libelle = c(
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
@@ -603,7 +605,8 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "Part des bâtiments avec accès à la banque — en voiture",
      "Population bretonne joignable en 90 minutes en TC",
     "Courbe cumulative — population bretonne joignable en TC",
-    "Référence médiane — commune bretonne"
+     "Référence médiane — commune bretonne",
+     "Bâtiments résidentiels analysés"
   ),
   sources = list(
     "rp_logement_princ",
@@ -623,7 +626,8 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
-     "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies"
+      "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies",
+      "mobilite_snapshot"
   ),
    source_reference = c("rp_logement_princ", "amenagements_cyclables",
                         "korrigo", "bornes-recharges", "stationnement-velo",
@@ -633,13 +637,13 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                           rep("mobilite_snapshot", 5),
                          rep("mobilite_snapshot", 15),
                          "matrice_temps_mairies", "matrice_temps_mairies",
-                        "matrice_temps_mairies"),
+                         "matrice_temps_mairies", "mobilite_snapshot"),
    multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
                    rep(1L, 6), rep(1L, 5),
                      rep(1L, 15),
                     1L,
                     length(grille_raccordement()),
-                    NA_integer_)
+                     NA_integer_, 1L)
 )
 
 # APERCU_MOBILITE ---------------------------------------------------------------
@@ -673,9 +677,8 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
-# Les indicateurs publiés du thème : les ONZE clés déclarées (issue #368 :
-# `nb_buildings` QUITTE le payload — la décision #196, jamais exécutée ; la
-# « Taille » reste la pondération INTERNE du thème, elle n'est plus une clé),
+# Les indicateurs publiés du thème : les clés déclarées, dont `nb_buildings`,
+# la taille target-scoped des bâtiments résidentiels analysés,
 # alignées sur la référence (un territoire sans donnée porte NA — jamais une
 # ligne manquante, la multiplicité de la table déclarative l'exige), avec leurs
 # rangs et leurs estampilles T7 (la machinerie partagée compute_ranks +
@@ -735,10 +738,13 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     )
   }
 
-  # les clés scalaires : les trois clés du sous-bloc — le rang via la
-  # machinerie partagée (compute_ranks) — `nb_buildings` n'est PLUS publié
-  # (issue #368, décision #196)
+  # les clés scalaires : la taille des bâtiments et les trois clés du sous-bloc
+  # — le rang via la machinerie partagée (compute_ranks) n'est pas utile à la
+  # taille mais elle doit rester un fait complet pour la copie éditoriale.
   tables <- list(
+    nb_buildings = aligner(
+      analytiques$nb_buildings_territoires,
+      "nb_buildings", "bâtiments"),
     offre_tc = aligner(sous_bloc("offre_tc"), "offre_tc", "%"),
     bornes_recharge = aligner(sous_bloc("bornes_recharge"),
                               "bornes_recharge", "bornes"),
@@ -956,7 +962,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   )
 
   dplyr::bind_rows(
-    tables$offre_tc,
+     tables$nb_buildings,
+     tables$offre_tc,
     tables$bornes_recharge,
     tables$places_stationnement_velo_1000,
     tables$places_stationnement_voiture_1000,
@@ -1409,6 +1416,7 @@ verifier_descripteur_mobilite <- function(descripteur) {
 # theme_mobilite() depuis un builder (le graphe targets ne peut pas suivre le
 # cycle descriptor → builder → descriptor).
 DIRECTIONS_MOBILITE <- list(
+  nb_buildings = "high",
   voitures_menage = "high",
   reseaux = "high",
   offre_tc = "high",

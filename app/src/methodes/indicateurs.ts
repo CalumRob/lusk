@@ -262,6 +262,19 @@ const MOBILITE_AVG_INDICATORS: Record<string, IndicateurMethodes> = Object.fromE
   ]),
 )
 
+const MOBILITE_BUILDING_INDICATOR: Record<string, IndicateurMethodes> = {
+  nb_buildings: {
+    label: 'Bâtiments résidentiels analysés',
+    definition:
+      'Le nombre de bâtiments résidentiels analysés dans le territoire. Cette taille sert aussi de poids aux agrégations par bâtiment du thème Mobilité.',
+    unite: 'bâtiments',
+    source:
+      'Lusk — analyse d’accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+    sourceId: 'mobilite_snapshot',
+    direction: 'plus-est-mieux',
+  },
+}
+
 /**
  * Le registre complet — une entrée par thème construit. Ordre du registre =
  * ordre d'affichage de la page (démographie, habitat, économie). La forme
@@ -742,6 +755,7 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       },
       ...MOBILITE_AVG_INDICATORS,
       ...MOBILITE_SHARE_INDICATORS,
+      ...MOBILITE_BUILDING_INDICATOR,
     },
     stories: [
       {

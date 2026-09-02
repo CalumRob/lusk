@@ -267,12 +267,26 @@ valeur_fichier_niveau <- function(valeurs) {
   if (length(uniques) == 0) NA_real_ else uniques[[1]]
 }
 
+# moyenne_ponderee_niveau -------------------------------------------------------
+# La moyenne d'un indicateur déjà moyen par commune se reconstitue depuis les
+# parties seulement si TOUTES les parties portent une valeur : le poids est le
+# nombre de bâtiments, et une partie manquante doit rester une donnée absente,
+# jamais disparaître du dénominateur en silence.
+moyenne_ponderee_niveau <- function(valeurs, poids) {
+  if (length(valeurs) == 0 || anyNA(valeurs) || anyNA(poids) ||
+      any(poids < 0) || sum(poids) == 0) {
+    return(NA_real_)
+  }
+  sum(valeurs * poids) / sum(poids)
+}
+
 # construire_moyennes_acces_territoires -----------------------------------------
 # Les six moyennes du résumé, portées par le snapshot source. Le fichier porte
 # la valeur calculée à chaque niveau sur chacune de ses lignes communales ; on
 # vérifie donc l'unicité comme pour les autres statistiques de niveau, au lieu
-# de moyenner des valeurs déjà agrégées. Le trou d'un niveau reste NA : aucune
-# valeur de présentation n'est fabriquée pour le remplacer.
+# de moyenner des valeurs déjà agrégées. Si le bloc d'un niveau est muet, la
+# moyenne par bâtiment est reconstruite depuis les moyennes communales pondérées
+# par leurs bâtiments ; une partie manquante garde le niveau à NA.
 construire_moyennes_acces_territoires <- function(snapshot, base_epci) {
   colonnes <- CLES_MOYENNES_ACCES_MOBILITE
 
@@ -288,8 +302,11 @@ construire_moyennes_acces_territoires <- function(snapshot, base_epci) {
 
   niveau <- function(groupe, suffixe) {
     portees <- paste0(colonnes, "_", suffixe)
-    ctx %>%
+    membres <- ctx %>%
       dplyr::filter(!is.na(.data[[groupe]])) %>%
+      dplyr::mutate(code = .data[[groupe]])
+
+    fichier <- membres %>%
       dplyr::group_by(code = .data[[groupe]]) %>%
       dplyr::summarise(
         dplyr::across(dplyr::all_of(portees), valeur_fichier_niveau),
@@ -299,6 +316,22 @@ construire_moyennes_acces_territoires <- function(snapshot, base_epci) {
       tidyr::pivot_longer(
         cols = dplyr::all_of(colonnes), names_to = "key", values_to = "value"
       )
+
+    recalcul <- membres %>%
+      dplyr::select(code, nb_buildings, dplyr::all_of(colonnes)) %>%
+      tidyr::pivot_longer(
+        cols = dplyr::all_of(colonnes), names_to = "key", values_to = "commune_value"
+      ) %>%
+      dplyr::group_by(code, key) %>%
+      dplyr::summarise(
+        recalculated = moyenne_ponderee_niveau(commune_value, nb_buildings),
+        .groups = "drop"
+      )
+
+    fichier %>%
+      dplyr::left_join(recalcul, by = c("code", "key")) %>%
+      dplyr::mutate(value = dplyr::coalesce(value, recalculated)) %>%
+      dplyr::select(code, key, value)
   }
 
   epcis <- niveau("EPCI", "epci")

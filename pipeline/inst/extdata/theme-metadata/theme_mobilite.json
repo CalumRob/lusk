@@ -32,9 +32,10 @@
          "avg_tot_car",
          "avg_tot_b",
          "avg_tot_t",
-         "avg_div_car",
-         "avg_div_b",
-         "avg_div_t"
+      "avg_div_car",
+      "avg_div_b",
+      "avg_div_t",
+      "nb_buildings"
       ],
       "figure": {
         "family": "comparison-bars",
@@ -115,6 +116,7 @@
      "avg_div_car",
      "avg_div_b",
      "avg_div_t",
+     "nb_buildings",
      "raccordement_tc",
     "raccordement_courbe",
     "raccordement_reference"
@@ -158,6 +160,7 @@
      "avg_div_car": "mobilite_snapshot",
      "avg_div_b": "mobilite_snapshot",
      "avg_div_t": "mobilite_snapshot",
+     "nb_buildings": "mobilite_snapshot",
      "raccordement_tc": "matrice_temps_mairies",
     "raccordement_courbe": "matrice_temps_mairies",
     "raccordement_reference": "matrice_temps_mairies"
@@ -188,7 +191,8 @@
      "avg_tot_t": "Nombre moyen d’équipements accessibles — à pied ou en transports en commun",
      "avg_div_car": "Nombre moyen de types d’équipements accessibles — en voiture",
      "avg_div_b": "Nombre moyen de types d’équipements accessibles — à vélo",
-     "avg_div_t": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
+      "avg_div_t": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
+      "nb_buildings": "Bâtiments résidentiels analysés",
      "voitures_menage": "Voitures par ménage",
     "reseaux": "Réseaux à pied / vélo / voiture",
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
