@@ -29,12 +29,13 @@ const scope: ComparisonScope = {
 function comparison(
   value: number,
   direction: FactComparison['direction'] = 'moins-est-mieux',
+  kind: 'mean' | 'median' = 'median',
 ): FactComparison {
   return {
     direction,
     scope,
     rank: { position: 1, size: 2 },
-    reference: { kind: 'median', value },
+    reference: { kind, value },
   }
 }
 
@@ -66,13 +67,13 @@ function absentFact(key: string, unit = '%'): NumericFact {
 
 function accessModes(car: number, bike: number, walkTransit: number): MobiliteAccessModes {
   return {
-    car: fact('access.administration', car, '%', comparison(0.75, 'plus-est-mieux')),
-    bike: fact('access.administration', bike, '%', comparison(0.6, 'plus-est-mieux')),
+    car: fact('access.administration', car, '%', comparison(0.75, 'plus-est-mieux', 'mean')),
+    bike: fact('access.administration', bike, '%', comparison(0.6, 'plus-est-mieux', 'mean')),
     walkTransit: fact(
       'access.administration',
       walkTransit,
       '%',
-      comparison(0.45, 'plus-est-mieux'),
+      comparison(0.45, 'plus-est-mieux', 'mean'),
     ),
   }
 }
@@ -127,12 +128,32 @@ function summaryFacts(): MobiliteSummaryFacts {
       },
       averageLosses: {
         diversity: {
-          walkTransit: fact('avg_loss_div_t', 30, 'types d’équipement / bâtiment', comparison(20)),
-          bike: fact('avg_loss_div_b', 15, 'types d’équipement / bâtiment', comparison(10)),
+          walkTransit: fact(
+            'avg_loss_div_t',
+            30,
+            'types d’équipement / bâtiment',
+            comparison(20, 'moins-est-mieux', 'mean'),
+          ),
+          bike: fact(
+            'avg_loss_div_b',
+            15,
+            'types d’équipement / bâtiment',
+            comparison(10, 'moins-est-mieux', 'mean'),
+          ),
         },
         total: {
-          walkTransit: fact('avg_loss_tot_t', 60, 'équipements / bâtiment', comparison(30)),
-          bike: fact('avg_loss_tot_b', 30, 'équipements / bâtiment', comparison(20)),
+          walkTransit: fact(
+            'avg_loss_tot_t',
+            60,
+            'équipements / bâtiment',
+            comparison(30, 'moins-est-mieux', 'mean'),
+          ),
+          bike: fact(
+            'avg_loss_tot_b',
+            30,
+            'équipements / bâtiment',
+            comparison(20, 'moins-est-mieux', 'mean'),
+          ),
         },
       },
   }
@@ -285,6 +306,19 @@ describe('resolveMobiliteThemeContent', () => {
       ],
     })
     expect(profiles.lecture?.marelle).toBe('Service minimum ?')
+    expect(lectureText(profiles.lecture)).toContain(
+      'profil le plus représenté à Commune A est',
+    )
+    expect(profiles.lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'neutral',
+      value: 'celui des types inaccessibles ou presque',
+    })
+    expect(profiles.lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'default',
+      value: 'confirme',
+    })
 
     expect(distribution.availability).toBe('complete')
     expect(distribution.evidence).toMatchObject({
@@ -303,7 +337,7 @@ describe('resolveMobiliteThemeContent', () => {
     expect(distribution.lecture?.marelle).toBe('... Tous les bâtiments non plus')
     expect(summary.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
     expect(lectureText(summary.lecture)).toBe(
-      'À Commune A, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint 100 équipements au total et 50 types d’équipements. La voiture crée une dépendance pour de nombreux services. À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à 30 types d’équipements (la médiane des communes de EPCI X : 20). Le vélo atténue néanmoins cette difficulté. Il limite la perte à 15 types d’équipements (groupe comparé : 10).',
+      'À Commune A, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint 100 équipements au total et 50 types d’équipements. La voiture crée une dépendance pour de nombreux services. À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à 30 types d’équipements (la moyenne des communes de EPCI X : 20). Le vélo atténue néanmoins cette difficulté. Il limite la perte à 15 types d’équipements (groupe comparé : 10).',
     )
     expect(summary.lecture?.prose[1]).toContainEqual({
       kind: 'emphasis',
@@ -351,6 +385,53 @@ describe('resolveMobiliteThemeContent', () => {
     expect(JSON.stringify(content)).not.toContain('salience')
   })
 
+  it('bolds a nuanced profile reading', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.bpeAccess.profiles = [
+      {
+        profile: 'acces-pied-tc',
+        label: 'Accès à pied ou en TC possible',
+        count: 3,
+        exemplar: null,
+        comparison: null,
+      },
+    ]
+
+    const lecture = resolveMobiliteThemeContent(facts).units[0]?.sections[1]?.lecture
+
+    expect(lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'default',
+      value: 'nuance',
+    })
+    expect(lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'foot',
+      value: 'celui des types accessibles à pied ou en transports en commun',
+    })
+  })
+
+  it('uses the bike color for the bike profile reading', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.bpeAccess.profiles = [
+      {
+        profile: 'velo-compense',
+        label: 'Le vélo compense',
+        count: 3,
+        exemplar: null,
+        comparison: null,
+      },
+    ]
+
+    const lecture = resolveMobiliteThemeContent(facts).units[0]?.sections[1]?.lecture
+
+    expect(lecture?.prose[1]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'bike',
+      value: 'celui des types pour lesquels le vélo compense',
+    })
+  })
+
   it('uses the correct preposition for a department in the subtitle and prose', () => {
     const facts = structuredClone(completeFacts)
     facts.territory = {
@@ -384,8 +465,35 @@ describe('resolveMobiliteThemeContent', () => {
     const epciContent = resolveMobiliteThemeContent(epciFacts)
     const epciIntroduction = epciContent.introduction.map((block) => block.map((segment) => segment.value).join('')).join(' ')
 
-    expect(epciIntroduction).toContain('dont 100 à CA Lorient Agglomération.')
-    expect(lectureText(epciContent.units[0]!.sections[0]!.lecture)).toContain('À CA Lorient Agglomération')
+    expect(epciIntroduction).toContain('dont 100 à la CA Lorient Agglomération.')
+    expect(lectureText(epciContent.units[0]!.sections[0]!.lecture)).toContain('À la CA Lorient Agglomération')
+  })
+
+  it('handles articles and number in territorial prepositions', () => {
+    const cases = [
+      { type: 'commune' as const, name: 'Le Havre', expected: 'au Havre' },
+      { type: 'commune' as const, name: 'Les Ulis', expected: 'aux Ulis' },
+      { type: 'commune' as const, name: 'La Rochelle', expected: 'à La Rochelle' },
+      { type: 'epci' as const, name: 'CC de la Presqu’île', expected: 'à la CC de la Presqu’île' },
+      { type: 'departement' as const, name: 'Côtes-d’Armor', expected: 'dans les Côtes-d’Armor' },
+      { type: 'departement' as const, name: 'Morbihan', expected: 'dans le Morbihan' },
+      { type: 'departement' as const, name: 'Finistère', expected: 'dans le Finistère' },
+    ]
+
+    for (const territoryCase of cases) {
+      const facts = structuredClone(completeFacts)
+      facts.territory = {
+        ...facts.territory,
+        type: territoryCase.type,
+        name: territoryCase.name,
+      }
+      const content = resolveMobiliteThemeContent(facts)
+      const introduction = content.introduction
+        .map((block) => block.map((segment) => segment.value).join(''))
+        .join(' ')
+
+      expect(introduction).toContain(`dont 100 ${territoryCase.expected}.`)
+    }
   })
 
   it('bolds a car-independent loss without applying the car color', () => {

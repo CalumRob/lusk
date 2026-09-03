@@ -43,9 +43,18 @@ export interface ContentFact {
 
 export interface ContentIndicator extends ContentFact {}
 
+export type TextEmphasisTone =
+  | 'default'
+  | 'theme'
+  | 'region'
+  | 'car'
+  | 'bike'
+  | 'foot'
+  | 'neutral'
+
 export type TextSegment =
   | { kind: 'text'; value: string }
-  | { kind: 'emphasis'; tone: 'default' | 'theme' | 'region' | 'car'; value: string }
+  | { kind: 'emphasis'; tone: TextEmphasisTone; value: string }
 
 export type TextBlock = readonly TextSegment[]
 
@@ -470,13 +479,13 @@ function regionalEmphasis(value: string): TextSegment {
   return { kind: 'emphasis', tone: 'region', value }
 }
 
-function bold(value: string, tone: 'default' | 'car' = 'default'): TextSegment {
+function bold(value: string, tone: TextEmphasisTone = 'default'): TextSegment {
   return { kind: 'emphasis', tone, value }
 }
 
 type ComparisonContext = {
   scope: ComparisonScope
-  reference: { value: number } | null
+  reference: { kind: 'mean' | 'median'; value: number } | null
 }
 
 function comparisonScopeLabel(
@@ -501,7 +510,8 @@ function comparisonScopeLabel(
 function comparisonLabel(
   comparison: ComparisonContext | null,
   territory: TerritoryIdentity,
-  statistic: 'moyenne' | 'médiane' = 'médiane',
+  statistic: 'moyenne' | 'médiane' =
+    comparison?.reference?.kind === 'mean' ? 'moyenne' : 'médiane',
 ): string | null {
   const scopeLabel = comparisonScopeLabel(comparison, territory)
   return scopeLabel ? `${statistic} des ${scopeLabel}` : null
@@ -558,14 +568,45 @@ function comparisonLabelForFacts(
   return comparison ? comparisonLabel(comparison, territory) : null
 }
 
-function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
-  const name = territory.name
-  return `${territoryPreposition(territory, capitalized)} ${name}`
+interface TerritoryLeadParts {
+  lead: string
+  name: string
 }
 
-function territoryPreposition(territory: TerritoryIdentity, capitalized = false): string {
-  const preposition = territory.type === 'region' || territory.type === 'departement' ? 'en' : 'à'
-  return capitalized ? preposition[0]!.toUpperCase() + preposition.slice(1) : preposition
+function territoryLeadParts(
+  territory: TerritoryIdentity,
+  capitalized = true,
+): TerritoryLeadParts {
+  const name = territory.name.trim()
+  const parts = (() => {
+    switch (territory.type) {
+      case 'commune':
+        if (/^Le\s+/iu.test(name)) return { lead: 'au', name: name.replace(/^Le\s+/iu, '') }
+        if (/^Les\s+/iu.test(name)) return { lead: 'aux', name: name.replace(/^Les\s+/iu, '') }
+        return { lead: 'à', name }
+      case 'epci':
+        return /^(?:CA|CC)(?:\s|$)/iu.test(name)
+          ? { lead: 'à la', name }
+          : { lead: 'à', name }
+      case 'departement': {
+        const apostropheNormalisee = name.replace(/’/gu, "'")
+        if (apostropheNormalisee === "Côtes-d'Armor") return { lead: 'dans les', name }
+        if (name === 'Ille-et-Vilaine') return { lead: 'en', name }
+        return { lead: 'dans le', name }
+      }
+      case 'region':
+        return { lead: 'en', name }
+    }
+  })()
+  return {
+    lead: capitalized ? parts.lead[0]!.toUpperCase() + parts.lead.slice(1) : parts.lead,
+    name: parts.name,
+  }
+}
+
+function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
+  const parts = territoryLeadParts(territory, capitalized)
+  return `${parts.lead} ${parts.name}`
 }
 
 function accessQuantity(
@@ -661,7 +702,7 @@ function footOpening(
     if (carRelation === 'higher') return [text('L’accès reste '), bold('bien préservé sans voiture'), text('.')]
     if (carRelation === 'same') {
       return [
-        text('Le niveau d’accès en voiture est comparable à la médiane, mais l’accès reste '),
+        text('Le niveau d’accès en voiture est comparable à la moyenne, mais l’accès reste '),
         bold('relativement préservé sans voiture'),
         text('.'),
       ]
@@ -683,7 +724,7 @@ function footOpening(
       return [
         text('Le bâtiment moyen '),
         bold('dépend de la voiture', 'car'),
-        text(', même si son niveau d’accès en voiture est comparable à la médiane.'),
+        text(', même si son niveau d’accès en voiture est comparable à la moyenne.'),
       ]
     }
     return [text('La voiture '), bold('crée une dépendance', 'car'), text(' pour de nombreux services.')]
@@ -692,27 +733,27 @@ function footOpening(
     return [
       text('La voiture ouvre peu d’accès, mais la '),
       bold('perte lorsqu’on s’en passe est comparable'),
-      text(' à celle de la médiane.'),
+      text(' à celle de la moyenne.'),
     ]
   }
   if (carRelation === 'higher') {
     return [
       text('La voiture permet un bon accès, et la '),
       bold('perte lorsqu’on s’en passe est comparable'),
-      text(' à celle de la médiane.'),
+      text(' à celle de la moyenne.'),
     ]
   }
   if (carRelation === 'same') {
     return [
-      text('Le niveau d’accès en voiture est comparable à la médiane, et la '),
+      text('Le niveau d’accès en voiture est comparable à la moyenne, et la '),
       bold('perte lorsqu’on s’en passe l’est aussi'),
       text('.'),
     ]
   }
-  return [text('La '), bold('perte lorsqu’on s’en passe reste comparable'), text(' à la médiane.')]
+  return [text('La '), bold('perte lorsqu’on s’en passe reste comparable'), text(' à la moyenne.')]
 }
 
-function medianSuffix(
+function comparisonSuffix(
   fact: NumericFact,
   comparisonLabelForText: string | null,
   explainReference: boolean,
@@ -749,7 +790,7 @@ function footNarrative(
     text('À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à '),
     emphasis(formatNumber(footLoss.value)),
     text(' types d’équipements'),
-    ...medianSuffix(footLoss, comparisonLabelForText, explainReference),
+    ...comparisonSuffix(footLoss, comparisonLabelForText, explainReference),
   ]
 }
 
@@ -771,7 +812,7 @@ function bikeOpening(
   }
   if (bikeRelation === 'higher') return 'Le vélo améliore toutefois cette situation.'
   if (bikeRelation === 'lower') return 'Le vélo réduit moins l’écart.'
-  if (bikeRelation === 'same') return 'Le vélo réduit l’écart dans des proportions proches de la médiane.'
+  if (bikeRelation === 'same') return 'Le vélo réduit l’écart dans des proportions proches de la moyenne.'
   return 'Le vélo apporte une lecture complémentaire.'
 }
 
@@ -793,7 +834,10 @@ function bikeNarrative(
           value: footLoss.value - bikeLoss.value,
           comparison: {
             ...bikeLoss.comparison!,
-            reference: { kind: 'median', value: footReference - bikeReference },
+            reference: {
+              kind: bikeLoss.comparison?.reference?.kind ?? 'mean',
+              value: footReference - bikeReference,
+            },
           },
         })
   return [
@@ -801,7 +845,7 @@ function bikeNarrative(
     text('Il limite la perte à '),
     emphasis(formatNumber(bikeLoss.value)),
     text(' types d’équipements'),
-    ...medianSuffix(bikeLoss, comparisonLabelForText, explainReference),
+    ...comparisonSuffix(bikeLoss, comparisonLabelForText, explainReference),
   ]
 }
 
@@ -812,6 +856,15 @@ const PROFILE_READING_LABELS: Readonly<Record<BpeAccessProfileFact['profile'], s
   'velo-compense': 'celui des types pour lesquels le vélo compense',
   'voiture-requise': 'celui des types pour lesquels la voiture est requise',
   'inaccessible-20-minutes': 'celui des types inaccessibles ou presque',
+}
+
+function profileReadingTone(
+  profile: BpeAccessProfileFact['profile'],
+): Extract<TextEmphasisTone, 'foot' | 'bike' | 'car' | 'neutral'> {
+  if (profile === 'acces-pied-tc') return 'foot'
+  if (profile === 'velo-compense') return 'bike'
+  if (profile === 'voiture-requise') return 'car'
+  return 'neutral'
 }
 
 function dominantProfile(
@@ -851,32 +904,33 @@ function previousAccessReadingPolarity(
 function lectureProfils(
   profiles: readonly BpeAccessProfileFact[],
   summary: MobiliteSummaryFacts,
+  territory: TerritoryIdentity,
 ): Lecture {
   const dominant = dominantProfile(profiles)
   const prose: TextBlock[] = [
     [
-      text('Ici et pour chaque mode de transport, on cherche à définir le socle de types d’équipements accessibles en 20 minutes depuis les bâtiments du territoire. Un type d’équipement est retenu dès lors qu’au moins '),
+      text('Ici et pour chaque mode de transport, on cherche à définir un socle des types d’équipements accessibles. Un type d’équipement est retenu dès lors qu’au moins '),
       bold('un quart'),
-      text(' des bâtiments peut l’atteindre en 20 minutes. On regarde ensuite le premier mode qui franchit ce seuil. Si aucun mode ne l’atteint, il est classé « inaccessible ou presque ».'),
+      text(' des bâtiments peut l’atteindre. On regarde ensuite le premier mode qui franchit ce seuil. Si aucun mode ne l’atteint, il est classé « inaccessible ou presque ».'),
     ],
   ]
 
   if (dominant) {
     const previous = previousAccessReadingPolarity(summary)
     const current = profilesReadingPolarity(dominant)
-    const verdict = previous === null
-      ? null
-      : current === previous
-        ? 'confirme'
-        : 'infirme'
+    const verdict = previous === null ? null : current === previous ? 'confirme' : 'nuance'
     const reading: TextSegment[] = [
-      text('Avec ce seuil plus permissif, le profil le plus représenté est '),
-      emphasis(PROFILE_READING_LABELS[dominant.profile]),
+      text('Avec ce seuil plus permissif, le profil le plus représenté '),
+      text(territoryLead(territory, false)),
+      text(' est '),
+      bold(PROFILE_READING_LABELS[dominant.profile], profileReadingTone(dominant.profile)),
       text('.'),
     ]
     if (verdict) {
       reading.push(
-        text(` Il ${verdict} donc la lecture précédente, même avec un seuil plus permissif.`),
+        text(' Le seuil plus permissif '),
+        bold(verdict),
+        text(' donc la lecture précédente.'),
       )
     }
     prose.push(reading)
@@ -936,20 +990,21 @@ function lectureEssentiels(
   const voitureComplete = access.services.every(
     (service) => service.modes.car.fact.value === 1,
   )
+  const lead = territoryLeadParts(territory, true)
   return {
     marelle: 'Tous les équipements ne se valent pas...',
     prose: [
       voitureComplete
         ? [
-            text(`${territoryPreposition(territory, true)} `),
-            emphasis(territory.name),
+            text(`${lead.lead} `),
+            emphasis(lead.name),
             text(', les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.'),
           ]
-          : [
-              text(`${territoryPreposition(territory, true)} `),
-              emphasis(territory.name),
-              text(', l’accès aux services essentiels varie selon le mode de déplacement.'),
-            ],
+        : [
+            text(`${lead.lead} `),
+            emphasis(lead.name),
+            text(', l’accès aux services essentiels varie selon le mode de déplacement.'),
+          ],
     ],
   }
 }
@@ -1081,12 +1136,12 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
           accessibleEquipment,
           accessibleTypes,
           inaccessibleTypes,
-           averageLosses,
-           typeCount,
-            comparisonLabel: comparisonLabel(
-             summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
-              facts.territory,
-           ),
+          averageLosses,
+          typeCount,
+          comparisonLabel: comparisonLabel(
+            summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
+            facts.territory,
+          ),
           losses,
         }
       : null,
@@ -1203,7 +1258,7 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
             availability === 'complete'
               ? profiles.reduce((total, profile) => total + profile.count, 0)
               : null,
-           comparisonLabel: comparisonLabelForFigure,
+          comparisonLabel: comparisonLabelForFigure,
         }
       : null
   return {
@@ -1214,7 +1269,7 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
     evidence,
     provenance: [],
     lecture: availability === 'complete'
-      ? lectureProfils(profiles, facts.mobility.access.summary)
+      ? lectureProfils(profiles, facts.mobility.access.summary, facts.territory)
       : null,
     explorationTargets: [],
   }

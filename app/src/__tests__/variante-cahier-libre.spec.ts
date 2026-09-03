@@ -205,13 +205,13 @@ function factsForTarget(): TerritoryFacts {
   return facts
 }
 
-function withMedian(fact: NumericFact, value: number): NumericFact {
+function withMean(fact: NumericFact, value: number): NumericFact {
   if (!fact.comparison) throw new Error(`Expected a comparison for ${fact.key}`)
   return {
     ...fact,
     comparison: {
       ...fact.comparison,
-      reference: { kind: 'median', value },
+      reference: { kind: 'mean', value },
     },
   }
 }
@@ -258,7 +258,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'Services essentiels',
       "Distribution de l'accès par bâtiment",
     ])
-    expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(2)
+    expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(3)
     expect(wrapper.find('.summary-evidence').exists()).toBe(true)
     expect(wrapper.find('.summary-evidence .cahier-figure-title').text()).toBe('Équipements accessibles en 20 min., moyenne')
     expect(wrapper.find('.summary-evidence').text()).toContain('Équipements accessibles en 20 min., moyenne')
@@ -301,7 +301,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.cahier-comparison-value')).toHaveLength(15)
     expect(wrapper.findAll('.cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
-    expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : médiane des communes de EPCI X')
+    expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.bpe-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.cahier-comparison-value').text()).toContain('Groupe comparé')
     expect(wrapper.text()).toContain('À pied + TC')
@@ -503,8 +503,13 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'Accès à pied ou en TC possible',
       'Le vélo compense',
       'La voiture est requise',
-      'Inaccessible ou presque en 20 minutes',
+      'Inaccessible ou presque',
     ])
+    const profileArgument = wrapper.findAll('.argument-copy')[1]!
+    expect(profileArgument.find('.car-emphasis').exists()).toBe(true)
+    expect(profileArgument.find('.foot-emphasis').exists()).toBe(false)
+    expect(profileArgument.find('.bike-emphasis').exists()).toBe(false)
+    expect(profileArgument.find('.neutral-emphasis').exists()).toBe(false)
     expect(wrapper.findAll('.bpe-profile-count .cahier-comparison-value').map((note) => note.text().replace(/\s+/g, ' ').trim())).toEqual([
       'Groupe comparé : 10,51er/2',
       'Groupe comparé : 01er/2',
@@ -580,10 +585,10 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
   it('writes the first group as a territory-specific comparison story', async () => {
     const facts = structuredClone(factsForTarget())
     const summary = facts.mobility.access.summary
-    summary.accessibleEquipment.car = withMedian(summary.accessibleEquipment.car, 1_000)
-    summary.accessibleTypes.car = withMedian(summary.accessibleTypes.car, 60)
-    summary.averageLosses.diversity.walkTransit = withMedian(summary.averageLosses.diversity.walkTransit, 25)
-    summary.averageLosses.diversity.bike = withMedian(summary.averageLosses.diversity.bike, 20)
+    summary.accessibleEquipment.car = withMean(summary.accessibleEquipment.car, 1_000)
+    summary.accessibleTypes.car = withMean(summary.accessibleTypes.car, 60)
+    summary.averageLosses.diversity.walkTransit = withMean(summary.averageLosses.diversity.walkTransit, 25)
+    summary.averageLosses.diversity.bike = withMean(summary.averageLosses.diversity.bike, 20)
 
     const content = resolveMobiliteThemeContent(facts)
     const firstSection = content.units[0]!.sections[0]!

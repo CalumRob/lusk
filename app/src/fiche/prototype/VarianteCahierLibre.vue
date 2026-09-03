@@ -639,7 +639,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                     >{{ section.lecture.marelle }}</h4>
                     <CahierProse class="argument-copy" :blocks="section.lecture.prose" />
                     <div
-                      v-if="props.presentation !== 'plain' && sectionExploration(section)"
+                      v-if="props.presentation !== 'plain' && section.explorationTargets.length > 0 && sectionExploration(section)"
                       class="cahier-section-exploration"
                       aria-label="Explorer les indicateurs de cette section"
                     >

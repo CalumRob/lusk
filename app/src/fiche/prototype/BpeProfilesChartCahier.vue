@@ -91,6 +91,12 @@ function profileIcon(profile: ProfilAccesBpe): Component {
   return PROFILE_ICONS[profile]
 }
 
+function profileDisplayLabel(profile: BpeAccessProfileFact): string {
+  return profile.profile === 'inaccessible-20-minutes'
+    ? 'Inaccessible ou presque'
+    : profile.label
+}
+
 function profileTone(profile: ProfilAccesBpe): CahierTooltipRow['tone'] {
   if (profile === 'acces-pied-tc') return 't'
   if (profile === 'velo-compense') return 'b'
@@ -356,7 +362,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
             :mark-color="profileColor(profile.profile)"
             class="bpe-profile-swatch"
           />
-          <span>{{ profile.label }}</span>
+          <span>{{ profileDisplayLabel(profile) }}</span>
         </strong>
         <CahierFigureScalar
           class="bpe-profile-count"
