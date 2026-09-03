@@ -372,6 +372,24 @@ function mean(values: readonly number[]): number | null {
   return values.reduce((total, value) => total + value, 0) / values.length
 }
 
+function weightedMean(
+  values: readonly number[],
+  weights: readonly (number | null)[] | undefined,
+): number | null {
+  if (!weights || values.length === 0 || values.length !== weights.length) return null
+  let total = 0
+  let weightTotal = 0
+  for (const [index, value] of values.entries()) {
+    const weight = weights[index]
+    if (weight === null || weight === undefined || !Number.isFinite(weight) || weight < 0) {
+      return null
+    }
+    total += value * weight
+    weightTotal += weight
+  }
+  return weightTotal === 0 ? null : total / weightTotal
+}
+
 function rankOf(
   value: number | null,
   values: readonly number[],
@@ -388,22 +406,29 @@ function rankOf(
   }
 }
 
+type ComparisonStatistic = 'mean' | 'median'
+
 function comparisonOf(options: {
   scope: ComparisonScope | null
   direction: DirectionRang
   value: number | null
   values: readonly number[]
+  statistic?: ComparisonStatistic
+  weights?: readonly (number | null)[]
 }): FactComparison | null {
   if (!options.scope || options.values.length === 0) return null
 
-  const referenceValue = median(options.values)
+  const statistic = options.statistic ?? 'median'
+  const referenceValue = statistic === 'mean'
+    ? weightedMean(options.values, options.weights)
+    : median(options.values)
   const rank = rankOf(options.value, options.values, options.direction)
 
   return {
     direction: options.direction,
     scope: options.scope,
     rank,
-    reference: referenceValue === null ? null : { kind: 'median', value: referenceValue },
+    reference: referenceValue === null ? null : { kind: statistic, value: referenceValue },
   }
 }
 
@@ -415,6 +440,16 @@ function sourceIdForIndicator(payload: Payload, key: string): string | null {
   )
 }
 
+function buildingCountValueOf(payload: Payload, territoire: string): number | null {
+  return payload.indicateurs.find(
+    (row) =>
+      row.theme === 'mobilite' &&
+      row.territoire === territoire &&
+      row.key === 'nb_buildings' &&
+      (row.detail ?? null) === null,
+  )?.value ?? null
+}
+
 function directionForIndicator(key: string): DirectionRang | null {
   return THEMES_METHODES.mobilite.indicateurs[key]?.direction ?? null
 }
@@ -424,8 +459,9 @@ function indicatorComparison(
   scope: ComparisonScope | null,
   row: Indicateur,
   direction: DirectionRang,
+  statistic: ComparisonStatistic = 'median',
 ): FactComparison | null {
-  const values = payload.indicateurs
+  const observations = payload.indicateurs
     .filter(
       (candidate) =>
         candidate.theme === 'mobilite' &&
@@ -435,9 +471,24 @@ function indicatorComparison(
         (candidate.dimension ?? null) === (row.dimension ?? null) &&
         scope !== null && scope.territoryIds.includes(candidate.territoire),
     )
-    .flatMap((candidate) => (candidate.value === null ? [] : [candidate.value]))
+    .flatMap((candidate) =>
+      candidate.value === null
+        ? []
+        : [{ value: candidate.value, weight: buildingCountValueOf(payload, candidate.territoire) }],
+    )
 
-  return comparisonOf({ scope, direction, value: row.value, values })
+  return comparisonOf({
+    scope,
+    direction,
+    value: row.value,
+    values: observations.map(({ value }) => value),
+    weights: observations.map(({ weight }) => weight),
+    statistic,
+  })
+}
+
+function statisticForIndicator(key: string): ComparisonStatistic {
+  return key.startsWith('avg_') || key.startsWith('share_') ? 'mean' : 'median'
 }
 
 function storyComparison(
@@ -481,7 +532,7 @@ function indicatorsOf(
         present: true,
         provenance: provenanceFromRow(row, sourceId),
         comparison: direction
-          ? indicatorComparison(payload, scope, row, direction)
+          ? indicatorComparison(payload, scope, row, direction, statisticForIndicator(row.key))
           : null,
         reason: row.rider ?? null,
       })
@@ -536,7 +587,7 @@ function accessOf(
     row: Indicateur | null,
   ): FactComparison | null => {
     if (!scope) return null
-    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux') : null
+    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux', 'mean') : null
   }
 
   const summaryRowForTerritory = (territoire: string, key: string): Indicateur | null =>
@@ -565,7 +616,7 @@ function accessOf(
         unit,
         row !== null,
         row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : null,
-        row && direction ? indicatorComparison(payload, scope, row, direction) : null,
+        row && direction ? indicatorComparison(payload, scope, row, direction, 'mean') : null,
       )
     }
     return {
@@ -595,13 +646,14 @@ function accessOf(
       const car = values.car
       const current = values[mode]
       const value = car.value === null || current.value === null ? null : Math.max(0, car.value - current.value)
-      const peerValues = scope
+       const peerObservations = scope
         ? scope.territoryIds.flatMap((territoire) => {
             const peerCar = summaryRowForTerritory(territoire, sourceKeys.car)?.value
             const peerCurrent = summaryRowForTerritory(territoire, sourceKeys[mode])?.value
+            const peerWeight = buildingCountValueOf(payload, territoire)
             return peerCar === null || peerCar === undefined || peerCurrent === null || peerCurrent === undefined
               ? []
-              : [Math.max(0, peerCar - peerCurrent)]
+              : [{ value: Math.max(0, peerCar - peerCurrent), weight: peerWeight }]
           })
         : []
       return factOf({
@@ -614,7 +666,9 @@ function accessOf(
           scope,
           direction: 'moins-est-mieux',
           value,
-          values: peerValues,
+          values: peerObservations.map(({ value: peerValue }) => peerValue),
+          weights: peerObservations.map(({ weight }) => weight),
+          statistic: 'mean',
         }),
       })
     }

@@ -103,6 +103,7 @@ const payload: Payload = {
     row('22002', 0.4),
     row('29001', 0.1),
     buildingCountRow('22001', 100),
+    buildingCountRow('22002', 100),
     buildingCountRow('53', 1000),
     ...accessRows,
   ],
@@ -178,7 +179,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(facts?.mobility.access.byService.administration.walkTransit.comparison).toMatchObject({
       direction: 'plus-est-mieux',
       rank: { position: 1, size: 2 },
-      reference: { kind: 'median', value: 0.7 },
+      reference: { kind: 'mean', value: 0.7 },
     })
     expect(facts?.mobility.bpeAccess).toEqual({ availability: 'absent', profiles: [] })
   })
@@ -244,6 +245,8 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     const directAccessPayload: Payload = {
       ...payload,
       indicateurs: [
+        buildingCountRow('22001', 100),
+        buildingCountRow('22002', 100),
         { ...row('22001', 0.8), key: 'share_admin_t' },
         { ...row('22002', 0.6), key: 'share_admin_t' },
       ],
@@ -274,9 +277,35 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         direction: 'plus-est-mieux',
         scope: { kind: 'communes-epci', territoryIds: ['22001', '22002'] },
         rank: { position: 1, size: 2 },
-        reference: { kind: 'median', value: 0.7 },
+        reference: { kind: 'mean', value: 0.7 },
       },
     })
+  })
+
+  it('uses the mean rather than the median for access references', () => {
+    const meanPayload: Payload = {
+      ...payload,
+      territoires: [
+        ...payload.territoires,
+        {
+          territoire: '22003',
+          type: 'commune',
+          nom: 'Commune D',
+          departement: '22',
+          epci: '200000001',
+        },
+      ],
+      indicateurs: [
+        ...payload.indicateurs,
+        buildingCountRow('22003', 800),
+        { ...row('22003', 0.1), key: 'share_admin_t' },
+      ],
+    }
+
+    const facts = territoryFactsFor(meanPayload, '22001')
+    const comparison = facts?.mobility.access.byService.administration.walkTransit.comparison
+
+    expect(comparison?.reference).toEqual({ kind: 'mean', value: 0.22 })
   })
 
   it('uses all regional communes for a commune without an EPCI and keeps ties direction-aware', () => {
@@ -401,7 +430,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(facts?.mobility.losses).not.toHaveProperty('story_key')
   })
 
-  it('normalizes the walk/transit distribution and computes payload-owned summary ranks and medians for every mode', () => {
+  it('normalizes the walk/transit distribution and computes payload-owned summary ranks and means for every access mode', () => {
     const summaryPayload: Payload = {
       ...payload,
       indicateurs: [
@@ -452,7 +481,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         direction: 'plus-est-mieux',
         scope: { kind: 'communes-epci', territoryIds: ['22001', '22002'] },
         rank: { position: 1, size: 2 },
-        reference: { kind: 'median', value: expect.any(Number) },
+        reference: { kind: 'mean', value: expect.any(Number) },
       })
       expect(comparison?.reference?.value).toBeCloseTo(
         mode === 'car' ? 1 : mode === 'bike' ? 0.8 : 0.7,
