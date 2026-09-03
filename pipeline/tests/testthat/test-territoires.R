@@ -21,6 +21,72 @@ test_that("les EPCIs portent leur LIBEPCI, pas leur SIREN", {
   expect_false(any(grepl("^EPCI 200", epcis$nom)))
 })
 
+test_that("les EPCIs portent le nom Geo API épinglé quand le mapping est fourni", {
+  noms <- c(
+    "200000001" = "CA EPCI X",
+    "200000002" = "CC EPCI Y"
+  )
+
+  bt <- build_territoires(load_fixture(), noms_epci_geo_api = noms)
+  epcis <- bt[bt$type == "epci", ]
+
+  expect_setequal(epcis$nom, c("CA EPCI X", "CC EPCI Y"))
+})
+
+test_that("le mapping Geo API refuse un EPCI attendu manquant", {
+  noms <- c("200000001" = "CA EPCI X")
+
+  expect_error(
+    build_territoires(load_fixture(), noms_epci_geo_api = noms),
+    "absent"
+  )
+})
+
+test_that("le mapping Geo API refuse un code inattendu", {
+  noms <- c(
+    "200000001" = "CA EPCI X",
+    "200000002" = "CC EPCI Y",
+    "200000999" = "CC EPCI Z"
+  )
+
+  expect_error(
+    build_territoires(load_fixture(), noms_epci_geo_api = noms),
+    "inattendu"
+  )
+})
+
+test_that("le mapping Geo API refuse les codes dupliqués", {
+  noms <- c(
+    "200000001" = "CA EPCI X",
+    "200000001" = "CA EPCI X bis",
+    "200000002" = "CC EPCI Y"
+  )
+
+  expect_error(
+    build_territoires(load_fixture(), noms_epci_geo_api = noms),
+    "doublon"
+  )
+})
+
+test_that("le canon Geo API épinglé porte les 61 EPCIs bretons", {
+  noms <- lire_noms_epci_geo_api()
+
+  expect_length(noms, 61)
+  expect_named(noms)
+  expect_identical(unname(noms[["200042174"]]), "CA Lorient Agglomération")
+  expect_identical(unname(noms[["243500139"]]), "Rennes Métropole")
+})
+
+test_that("le canon Geo API couvre exactement les EPCIs du payload publié", {
+  noms <- lire_noms_epci_geo_api()
+  territoires <- jsonlite::fromJSON(
+    file.path(pkgload::pkg_path(), "..", "public", "data", "territoires.json")
+  )
+  codes_attendus <- territoires$territoire[territoires$type == "epci"]
+
+  expect_setequal(names(noms), codes_attendus)
+})
+
 test_that("les départements portent leur vrai nom INSEE (issue #115), la région son étiquette", {
   bt <- build_territoires(load_fixture())
   expect_equal(bt$nom[bt$type == "departement"], c("Côtes-d'Armor", "Finistère"))

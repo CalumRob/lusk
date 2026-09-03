@@ -126,23 +126,9 @@
 }
 
 .cahier-figure-legend-mark--slash {
-  width: 13px;
-  height: 13px;
-  border: 1.5px solid currentColor;
-  border-radius: 50%;
+  width: 16px;
+  height: 16px;
   background: transparent;
-}
-
-.cahier-figure-legend-mark--slash::after {
-  position: absolute;
-  top: 5px;
-  left: 1px;
-  width: 10px;
-  height: 1.5px;
-  background: currentColor;
-  content: '';
-  transform: rotate(-45deg);
-  transform-origin: center;
 }
 
 .cahier-figure-legend-mark--t,
@@ -273,13 +259,6 @@
   font: var(--type-figure-label, 400 0.6875rem/1.2 var(--font-sans, sans-serif));
 }
 
-.cahier-figure-scalar--extreme .cahier-figure-scalar-value strong {
-  text-decoration: underline;
-  text-decoration-color: var(--cahier-red, #a44f51);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 4px;
-}
-
 .cahier-figure-tooltip {
   position: absolute;
   z-index: 20;
@@ -364,6 +343,15 @@
   align-items: center;
   gap: 5px;
 }
+
+.cahier-figure-tooltip-icon {
+  flex: 0 0 auto;
+}
+
+.cahier-figure-tooltip-icon--t { color: var(--cahier-mode-foot, #448fa6); }
+.cahier-figure-tooltip-icon--b { color: var(--cahier-mode-bike, #2e6171); }
+.cahier-figure-tooltip-icon--c { color: var(--cahier-mode-car, #a94562); }
+.cahier-figure-tooltip-icon--neutral { color: var(--cahier-default, #62706c); }
 
 .cahier-figure-tooltip-row dd {
   color: var(--ink, #232a2a);

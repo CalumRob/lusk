@@ -33,7 +33,8 @@
 
 run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                          sortie = "public/data",
-                         mode = c("full", "cron")) {
+                         mode = c("full", "cron"),
+                         noms_epci_geo_api = lire_noms_epci_geo_api()) {
   mode <- match.arg(mode)
 
   # Le téléchargement renvoie les statuts par source — le cœur du rapport de
@@ -77,10 +78,28 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # gardent compute_payload + publish, à l'identique (régression
   # byte-identical).
   if (is.function(theme$publier)) {
-    payload <- theme$publier(brut, cache = cache, vintages = vintages,
-                             sortie = sortie)
+    args_publier <- list(
+      donnees = brut,
+      cache = cache,
+      vintages = vintages,
+      sortie = sortie
+    )
+    if ("noms_epci_geo_api" %in% names(formals(theme$publier)) &&
+        !is.null(noms_epci_geo_api)) {
+      args_publier$noms_epci_geo_api <- noms_epci_geo_api
+    }
+    payload <- do.call(theme$publier, args_publier)
   } else {
-    payload <- compute_payload(brut, theme = theme, vintages = vintages)
+    # Le mapping est une épingle du package : le payload publié porte le nom
+    # public Geo API, mais le run ne dépend jamais d'un appel réseau.
+    args_compute <- list(data = brut, theme = theme, vintages = vintages)
+    # Le dispatch sur la signature garde les seams de tests et les extensions
+    # historiques compatibles : seul le compute qui déclare l'épingle la lit.
+    if ("noms_epci_geo_api" %in% names(formals(compute_payload)) &&
+        !is.null(noms_epci_geo_api)) {
+      args_compute$noms_epci_geo_api <- noms_epci_geo_api
+    }
+    payload <- do.call(compute_payload, args_compute)
     publish(payload, sortie)
   }
   # Issue #311 : la publication des métadonnées du thème (theme_<theme>.json)

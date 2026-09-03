@@ -5,7 +5,7 @@ import CahierFigureScalar from '@/fiche/prototype/CahierFigureScalar.vue'
 import { Footprints } from 'lucide-vue-next'
 
 describe('CahierFigureScalar', () => {
-  it('keeps the value, optional mode icon, label, and reference in one reading seam', () => {
+  it('keeps the value, optional mode icon, label, and comparison in one reading seam', () => {
     const wrapper = mount(CahierFigureScalar, {
       props: {
         value: '31',
@@ -16,7 +16,7 @@ describe('CahierFigureScalar', () => {
         showLabel: false,
         ariaLabel: 'À pied + TC : 31 types',
       },
-      slots: { reference: 'vs ref* : 20' },
+      slots: { reference: 'Groupe comparé : 20' },
     })
 
     expect(wrapper.attributes('role')).toBe('img')
@@ -26,7 +26,7 @@ describe('CahierFigureScalar', () => {
     expect(wrapper.find('.cahier-figure-scalar-value').text()).toContain('31')
     expect(wrapper.find('.cahier-figure-scalar-icon').exists()).toBe(true)
     expect(wrapper.find('.cahier-figure-scalar-label').exists()).toBe(false)
-    expect(wrapper.find('.cahier-figure-scalar-reference').text()).toContain('vs ref* : 20')
+    expect(wrapper.find('.cahier-figure-scalar-reference').text()).toContain('Groupe comparé : 20')
   })
 
   it('keeps the same value and comparison typography in an inline brick', () => {
@@ -38,7 +38,7 @@ describe('CahierFigureScalar', () => {
         colorValue: true,
         ariaLabel: 'À pied + TC : 30,8 types',
       },
-      slots: { reference: 'vs ref* : 30,8' },
+      slots: { reference: 'Groupe comparé : 30,8' },
     })
 
     expect(wrapper.classes()).toContain('cahier-figure-scalar--inline')

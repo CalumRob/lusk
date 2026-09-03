@@ -76,7 +76,7 @@ test_that("une divergence d'une valeur agrégée arrête la matrice", {
   )
 })
 
-test_that("la projection est bornée et choisit l'exemplaire rare puis le code", {
+test_that("la projection est bornée et choisit la rareté puis le code à saillance égale", {
   matrice <- construire_matrice_profils_acces_bpe(
     fixture_snapshot_bpe(), base_epci_bpe
   )
@@ -100,6 +100,47 @@ test_that("la projection est bornée et choisit l'exemplaire rare puis le code",
     "A206"
   )
   expect_true(all(projection$nombre_typequ >= 1L))
+})
+
+test_that("la projection choisit la saillance puis la rareté et le code", {
+  candidats <- tibble::tribble(
+    ~territoire, ~type, ~typequ, ~libelle_typequ, ~description_typequ,
+    ~c, ~b, ~t, ~profil, ~profil_libelle,
+    "22", "departement", "A128", "Pied faible", "", 0.90, 0.10, 0.30,
+      "acces-pied-tc", "Accès à pied ou en TC possible",
+    "22", "departement", "A129", "Pied fort", "", 0.90, 0.80, 0.80,
+      "acces-pied-tc", "Accès à pied ou en TC possible",
+    "22", "departement", "A203", "Vélo égalité 1", "", 0.90, 0.40, 0.20,
+      "velo-compense", "Le vélo compense",
+    "22", "departement", "A204", "Vélo égalité 2", "", 0.90, 0.35, 0.15,
+      "velo-compense", "Le vélo compense",
+    "22", "departement", "A205", "Voiture alternative haute", "", 0.50, 0.1875, 0.10,
+      "voiture-requise", "La voiture est requise",
+    "22", "departement", "A206", "Voiture alternative basse", "", 0.375, 0.0625, 0.10,
+      "voiture-requise", "La voiture est requise",
+    "22", "departement", "A207", "Inaccessible seuil", "", 0.24, 0.24, 0.24,
+      "inaccessible-20-minutes", "Inaccessible ou presque en 20 minutes",
+    "22", "departement", "A208", "Inaccessible nette", "", 0.10, 0.10, 0.10,
+      "inaccessible-20-minutes", "Inaccessible ou presque en 20 minutes"
+  )
+  matrice <- dplyr::bind_rows(
+    candidats,
+    candidats[c(2, 4, 6, 7), ] %>% dplyr::mutate(territoire = "23")
+  )
+
+  projection <- construire_projection_profils_acces_bpe(matrice)
+  exemplar <- function(profil) {
+    projection$exemplar_typequ[
+      projection$territoire == "22" &
+        projection$type == "departement" &
+        projection$profil == profil
+    ]
+  }
+
+  expect_equal(exemplar("acces-pied-tc"), "A129")
+  expect_equal(exemplar("velo-compense"), "A203")
+  expect_equal(exemplar("voiture-requise"), "A206")
+  expect_equal(exemplar("inaccessible-20-minutes"), "A208")
 })
 
 test_that("un univers de codes snapshot incomplet est refusé", {

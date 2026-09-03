@@ -31,6 +31,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   appels$geometrie <- 0
   appels$donnees_vues <- NULL
   appels$vintages_compute_vus <- NULL
+  appels$noms_epci_geo_api_vus <- NULL
   appels$payload_vu <- NULL
   appels$vintages_vus <- NULL
   appels$mode_vu <- NULL
@@ -73,9 +74,11 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       load_fixture()
     },
     vintages_demographie = function() faux_vintages,
-    compute_payload = function(data, theme = NULL, vintages = NULL) {
+    compute_payload = function(data, theme = NULL, vintages = NULL,
+                               noms_epci_geo_api = NULL) {
       appels$donnees_vues <- data
       appels$vintages_compute_vus <- vintages
+      appels$noms_epci_geo_api_vus <- noms_epci_geo_api
       faux_payload
     },
     publish = function(payload, cible, backend = "static") {
@@ -153,6 +156,12 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
   # issue #9 : la table des vintages entière passe au compute — l'estampillage
   # est par indicateur (source de référence déclarée), plus de tampon de thème
   expect_identical(appels$vintages_compute_vus, faux_vintages)
+
+  # le compute reçoit le canon public épinglé — aucune requête Geo API live
+  expect_identical(
+    unname(appels$noms_epci_geo_api_vus[["200042174"]]),
+    "CA Lorient Agglomération"
+  )
 
   # publish reçoit le payload de compute, vers la cible du run, en "static"
   # (issue #10 : le run écrit l'artefact complet — parquet + JSON) ; les

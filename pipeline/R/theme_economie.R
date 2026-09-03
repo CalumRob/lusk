@@ -354,8 +354,13 @@ validations_economie <- list(
 # histoires (story_key ADR-0002), territoires (référence partagée) et apercu
 # (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
-construire_payload_economie <- function(analytiques, base_epci, vintages) {
+construire_payload_economie <- function(analytiques, base_epci, vintages,
+                                        noms_epci_geo_api = NULL) {
   territoires <- construire_territoires_economie(base_epci, analytiques)
+  if (!is.null(noms_epci_geo_api)) {
+    territoires <- appliquer_noms_epci_geo_api(territoires,
+                                                noms_epci_geo_api)
+  }
 
   payload <- list(
     indicateurs = construire_indicateurs_economie(
@@ -389,14 +394,20 @@ construire_payload_economie <- function(analytiques, base_epci, vintages) {
 publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie = "public/data",
                              sortie_analytiques = file.path(dirname(cache),
-                                                            "processed", "economie")) {
+                                                            "processed", "economie"),
+                             noms_epci_geo_api = NULL) {
   if (is.null(vintages)) vintages <- vintages_economie()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
   analytiques <- construire_analytiques_economie(donnees, base_epci,
                                                  artefact_egss(),
                                                  sortie = sortie_analytiques)
-  payload <- construire_payload_economie(analytiques, base_epci, vintages)
+  payload <- construire_payload_economie(
+    analytiques,
+    base_epci,
+    vintages,
+    noms_epci_geo_api = noms_epci_geo_api
+  )
   publish(payload, sortie)
   payload
 }

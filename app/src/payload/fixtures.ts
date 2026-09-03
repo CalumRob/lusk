@@ -748,7 +748,7 @@ const DETAILS_COURBE_RACCORDEMENT_FIXTURE = [
 /** A literal raccordement slice copied from public/data after artefact promotion (#487). */
 export const territoiresRaccordementFixture: Territoire[] = [
   { territoire: '22001', type: 'commune', nom: 'Allineuc', departement: '22', epci: '200067460' },
-  { territoire: '200027027', type: 'epci', nom: 'Communauté de communes Arc Sud Bretagne', departement: '56', epci: null },
+  { territoire: '200027027', type: 'epci', nom: 'CC Arc Sud Bretagne', departement: '56', epci: null },
   { territoire: '22', type: 'departement', nom: 'Côtes-d’Armor', departement: '22', epci: null },
   { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
 ]

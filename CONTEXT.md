@@ -8,6 +8,14 @@ The shared language for Lusk, a public open-data observatory covering the four B
 The object of analysis: a Commune, an EPCI, a Département, or the Région (Bretagne).
 _Avoid_: Entité (internal code-level term), zone
 
+**Nom de référence**:
+The exact name from the versioned administrative source that anchors Lusk's territorial data. For an EPCI, it is the INSEE `LIBEPCI` name attached to the selected data vintage; it remains source/provenance language, not necessarily the public label.
+_Avoid_: nom public, nom court
+
+**Nom public**:
+The exact label used to identify a territory on Lusk's surfaces. For an EPCI, it follows the Geo API label verbatim, including its administrative type abbreviation such as « CA » or « CC »; it is never shortened or reformulated in the app.
+_Avoid_: nom de référence, nom court, label fabriqué
+
 **Fiche d'identité**:
 Legacy product vocabulary for the current site: the territory's existing page with six theme tabs. The prototype replacement no longer treats this as the canonical product concept; new work uses **TerritoryFacts** and **TerritoryContent** until a new user-facing name is chosen.
 _Avoid_: Page d'indicateurs, profil, dashboard
@@ -228,7 +236,7 @@ A meaningful contrast in the access of one type d’équipement across voiture, 
 _Avoid_: score d’accessibilité, classement des modes, saillance (retired Story-selection vocabulary)
 
 **Profil d’accès**:
- The one mutually exclusive reading assigned to every Type d’équipement BPE in Accès aux services from its three mode values: « La voiture est requise », « Accès à pied ou en TC possible », « Le vélo compense », or « Inaccessible ou presque en 20 minutes » (the fixed public order). The chosen rule uses one flat threshold `U = 25 %` for every mode: if `t >= U`, the reading is foot/TC; otherwise if `b >= U`, it is bike; otherwise if `c >= U`, it is car; otherwise it is inaccessible or almost inaccessible. Equivalently, the car predicate is `c >= U & b < U & t < U`, the bike predicate is `b >= U & t < U`, and the final `t < U` residual is inaccessible. The foot/TC reading claims that at least 25 % of buildings have access by that mode, regardless of the other modes; « Le vélo compense » does not claim that cycling reaches the car's level. « La voiture est requise » is the public shorthand for car being the only mode above the 25 % coverage floor, not a claim about every individual journey or destination. The mode ordering is not a hard invariant: rare `b < t` and `c < b` observations remain valid inputs and are not silently clamped for this reading. The public reading carries the profile count and at most one exemplar per non-empty profile, with its three mode values; no gap calculation or entropy target is part of the rule.
+  The one mutually exclusive reading assigned to every Type d’équipement BPE in Accès aux services from its three mode values: « La voiture est requise », « Accès à pied ou en TC possible », « Le vélo compense », or « Inaccessible ou presque en 20 minutes » (the fixed public order). The chosen rule uses one flat threshold `U = 25 %` for every mode: if `t >= U`, the reading is foot/TC; otherwise if `b >= U`, it is bike; otherwise if `c >= U`, it is car; otherwise it is inaccessible or almost inaccessible. Equivalently, the car predicate is `c >= U & b < U & t < U`, the bike predicate is `b >= U & t < U`, and the final `t < U` residual is inaccessible. The foot/TC reading claims that at least 25 % of buildings have access by that mode, regardless of the other modes; « Le vélo compense » does not claim that cycling reaches the car's level. « La voiture est requise » is the public shorthand for car being the only mode above the 25 % coverage floor, not a claim about every individual journey or destination. The mode ordering is not a hard invariant: rare `b < t` and `c < b` observations remain valid inputs and are not silently clamped for this reading. The public reading carries the profile count and at most one exemplar per non-empty profile, with its three mode values. Within each profile, the exemplar maximizes a profile-specific salience: `t` for foot/TC, `b − t` for bike, the inverse of `max(b, t)` for car, and the inverse of `max(c, b, t)` for inaccessible. Profile rarity is the first tie-breaker, followed by stable TYPEQU order; no entropy-balancing target is part of the rule.
 The counts are unweighted counts of types: each BPE category contributes one, regardless of how many buildings it serves; building coverage belongs to the exemplar’s mode values.
 _Avoid_: rôle de saillance, score, catégorie d’équipement (a BPE category is the subject, not its access reading)
 

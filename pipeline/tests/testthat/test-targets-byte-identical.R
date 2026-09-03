@@ -80,7 +80,8 @@ test_that("graphe targets vs run_pipeline : chaque thème byte-identique sur le 
 
     # l'oracle — le run actuel, inchangé, sur le même cache
     run_pipeline(theme = THEMES_RUN_TEST[[nom]], cache = "data/raw",
-                 sortie = sortie_oracle)
+                 sortie = sortie_oracle,
+                 noms_epci_geo_api = lire_noms_epci_geo_api())
 
     neutraliser_time_stamp(sortie_graphe)
     neutraliser_time_stamp(sortie_oracle)
@@ -127,7 +128,8 @@ test_that("graphe cinq thèmes vs cinq run_pipeline séquentiels : sortie compl�
   # fusion_vintages unique)
   for (nom in names(THEMES_RUN_TEST)) {
     run_pipeline(theme = THEMES_RUN_TEST[[nom]], cache = "data/raw",
-                 sortie = sortie_oracle)
+                 sortie = sortie_oracle,
+                 noms_epci_geo_api = lire_noms_epci_geo_api())
   }
   # Issue #343 — la résolution du run complet : le graphe publie AUSSI le
   # payload PARTAGÉ programmes (programmes.json + les parquets par table,
@@ -141,7 +143,8 @@ test_that("graphe cinq thèmes vs cinq run_pipeline séquentiels : sortie compl�
   # par défaut » a été rejetée : le payload de production (public/data) porte
   # programmes.json — le câblage cron #343 le publierait sinon en régression.
   run_pipeline(theme = theme_programmes(), cache = "data/raw",
-               sortie = sortie_oracle)
+               sortie = sortie_oracle,
+               noms_epci_geo_api = lire_noms_epci_geo_api())
 
   neutraliser_time_stamp(sortie_graphe)
   neutraliser_time_stamp(sortie_oracle)

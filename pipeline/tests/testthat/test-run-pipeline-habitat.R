@@ -70,7 +70,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
     .package = "nanoparquet"
   )
 
-  run_pipeline(theme = theme_habitat(), cache = "data/raw/test-cache")
+  run_pipeline(theme = theme_habitat(), cache = "data/raw/test-cache",
+               noms_epci_geo_api = NULL)
   expect_equal(cache_vu, "data/raw/test-cache")
 })
 
@@ -94,7 +95,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
     .package = "lusk"
   )
 
-  payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible)
+  payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
 
   # le payload complet du thème
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
@@ -158,8 +160,10 @@ test_that("un re-run Habitat écrase sans dupliquer (upsert, issue #19)", {
     .package = "lusk"
   )
 
-  run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible)
-  run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible)
+  run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
+  run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_habitat.parquet"))
@@ -200,7 +204,8 @@ test_that("en mode cron, le rapport enregistre les sources manuel « à traiter 
     .package = "lusk"
   )
 
-  run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible, mode = "cron")
+  run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
+               mode = "cron", noms_epci_geo_api = NULL)
 
   rapport <- jsonlite::fromJSON(file.path(cible, "run-report.json"))
   expect_equal(rapport$mode, "cron")
@@ -239,7 +244,8 @@ test_that("le run Habitat estampille les DPE depuis le cache (base roulante)", {
     .package = "lusk"
   )
 
-  payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible)
+  payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
 
   # les estampilles DPE portent la date du pull — pas NA, jamais une date inventée
   for (cle in c("part_passoires", "distribution_dpe")) {

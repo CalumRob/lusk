@@ -54,7 +54,8 @@ nom_departement <- function(code) {
 # thème (build_territoires -> agreger_territoires_<theme>). `poids` est la
 # colonne qui pèse la pluralité départementale (la population par défaut — un
 # thème peut passer la sienne).
-squelette_territoires <- function(communes, poids = "population") {
+squelette_territoires <- function(communes, poids = "population",
+                                  noms_epci_geo_api = NULL) {
   base <- communes %>%
     dplyr::mutate(
       type = "commune",
@@ -118,12 +119,18 @@ squelette_territoires <- function(communes, poids = "population") {
       .groups = "drop"
     )
 
-  dplyr::bind_rows(
+  territoires <- dplyr::bind_rows(
     base[c("code", "nom", "type", "departement", "epci")],
     epcis,
     deps,
     region
   )
+
+  if (!is.null(noms_epci_geo_api)) {
+    territoires <- appliquer_noms_epci_geo_api(territoires,
+                                                noms_epci_geo_api)
+  }
+  territoires
 }
 
 # compute_ranks ---------------------------------------------------------------
@@ -371,7 +378,7 @@ assemble_apercu <- function(territoires, apercu) {
 }
 
 # reference_territoires -------------------------------------------------------
-# La table de référence des territoires — les noms réels (LIBGEO/LIBEPCI) et
+# La table de référence des territoires — les noms publics (LIBGEO/Geo API) et
 # l'appartenance départementale, une ligne par territoire. C'est la dimension
 # que l'app joint aux tables de faits : elle rend (les noms), elle ne calcule
 # pas. Projetée depuis la table des territoires — jamais une seconde source de
@@ -701,8 +708,13 @@ validate_payload <- function(payload,
 # réelle) ; run_pipeline() les passe explicitement. Pure : fixture + thème +
 # table -> payload.
 compute_payload <- function(data, theme = theme_demographie(),
-                            vintages = NULL) {
+                            vintages = NULL,
+                            noms_epci_geo_api = NULL) {
   territoires <- theme$construire_territoires(data)
+  if (!is.null(noms_epci_geo_api)) {
+    territoires <- appliquer_noms_epci_geo_api(territoires,
+                                                noms_epci_geo_api)
+  }
   indicateurs <- theme$construire_indicateurs(territoires)
   rangs <- compute_ranks(territoires, indicateurs, scalaires = theme$scalaires,
                          directions = theme$directions)

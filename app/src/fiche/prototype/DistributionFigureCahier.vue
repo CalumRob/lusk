@@ -19,7 +19,6 @@ import {
 } from '@/fiche/cahierFigureGrammaire'
 import {
   MOBILITE_MODE_LABELS,
-  nomTerritoirePourAffichage,
 } from '@/fiche/content/territoryFacts'
 import type { MobiliteDistributionPeer } from '@/fiche/content/territoryFacts'
 import CahierFigureAxes from './CahierFigureAxes.vue'
@@ -110,7 +109,7 @@ const aireDistribution = computed(() => {
 const nuagePoints = computed(() =>
   props.evidence.peers.map((point, index) => ({
     territoire: point.territoire,
-    nom: nomTerritoirePourAffichage(point.territoire),
+    nom: point.territoire.name,
     value: point.value,
     x: xPour(point.value),
     y: axeBas - 10 - (index % 4) * 10,
@@ -272,7 +271,7 @@ function pointTooltipRows(point: MobiliteDistributionPeer): readonly CahierToolt
       v-if="pointSelectionne"
       class="distribution-callout cahier-figure-tooltip--anchored"
       :style="styleInfobulle"
-      :title="nomTerritoirePourAffichage(pointSelectionne.territoire)"
+      :title="pointSelectionne.territoire.name"
       :rows="pointTooltipRows(pointSelectionne)"
       aria-live="polite"
     >

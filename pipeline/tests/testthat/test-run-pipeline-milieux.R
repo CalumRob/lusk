@@ -83,7 +83,8 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
     .package = "lusk"
   )
 
-  payload <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible)
+  payload <- run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
 
   # le payload de l'indicateur livré : les deux clés du thème (issue #239) —
   # l'état M2/M3 (artif_par_habitant) et la série annuelle (conso_enaf_annuel) ;
@@ -169,8 +170,10 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
     .package = "lusk"
   )
 
-  run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible)
-  run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible)
+  run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
+  run_pipeline(theme = theme_milieux(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
   ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))

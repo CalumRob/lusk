@@ -116,7 +116,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     const nom = (id: string) => payload.territoires.find((t) => t.territoire === id)?.nom
 
     expect(nom('22001')).toBe('Allineuc')
-    expect(nom('200067460')).toBe('Communauté de communes Loudéac Communauté - Bretagne Centre')
+    expect(nom('200067460')).toBe('CC Loudéac Communauté - Bretagne Centre')
     expect(nom('53')).toBe('Bretagne')
     expect(payload.territoires.every((t) => t.epci === null || t.type === 'commune')).toBe(true)
   })

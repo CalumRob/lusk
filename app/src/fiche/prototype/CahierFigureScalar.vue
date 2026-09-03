@@ -7,7 +7,6 @@ withDefaults(
     label: string
     icon?: Component
     tone?: string
-    extreme?: boolean
     /** Color the value when the scalar represents a declared mode or series. */
     colorValue?: boolean
     /** Keep the semantic label for assistive technology while omitting it visually. */
@@ -18,7 +17,6 @@ withDefaults(
   }>(),
   {
     tone: 'neutral',
-    extreme: false,
     colorValue: false,
     showLabel: true,
     layout: 'stacked',
@@ -31,7 +29,6 @@ withDefaults(
   <div
     class="cahier-figure-scalar"
     :class="{
-      'cahier-figure-scalar--extreme': extreme,
       'cahier-figure-scalar--colored': colorValue,
       [`cahier-figure-scalar--${tone}`]: colorValue,
       'cahier-figure-scalar--inline': layout === 'inline',

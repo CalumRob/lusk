@@ -5,21 +5,24 @@
  * module with a dynamic import() so the whole ECharts tree (~212 kB gzip)
  * loads only when a chart mounts — the landing/shell bundle never pays for
  * it. The tree-shaken registration (core + the components both charts need +
- * the canvas renderer) lives here, next to the imports, so the components
+ * the canvas and SVG renderers) lives here, next to the imports, so the components
  * stay thin consumers of a ready-made echarts.
  */
-import { LineChart, ScatterChart } from 'echarts/charts'
-import { GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
+import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
+import { AxisPointerComponent, GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
 import * as echarts from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import { CanvasRenderer, SVGRenderer } from 'echarts/renderers'
 
 echarts.use([
   LineChart,
   ScatterChart,
+  BarChart,
   GridComponent,
   MarkLineComponent,
   TooltipComponent,
+  AxisPointerComponent,
   CanvasRenderer,
+  SVGRenderer,
 ])
 
 export { echarts }

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import { nomTerritoirePourAffichage, territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type {
   NumericFact,
   TerritoryFacts,
@@ -232,16 +232,18 @@ async function render(content: ThemeContent, presentation: 'ruled' | 'plain' = '
 }
 
 describe('Variante D — le seam ThemeContent → Cahier', () => {
-  it('uses the public short name for an EPCI without changing its source identity', () => {
-    expect(
-      nomTerritoirePourAffichage({
-        code: '200042174',
-        type: 'epci',
-        name: "Communauté d'agglomération Lorient Agglomération",
-        department: '56',
-        epci: null,
-      }),
-    ).toBe('Lorient Agglomération')
+  it('uses the payload-owned EPCI name verbatim', () => {
+    const publicName = 'CA EPCI X'
+    const payloadWithPublicName: Payload = {
+      ...payload,
+      territoires: payload.territoires.map((territoire) =>
+        territoire.territoire === '200000001'
+          ? { ...territoire, nom: publicName }
+          : territoire,
+      ),
+    }
+
+    expect(territoryFactsFor(payloadWithPublicName, '22001')?.territory.epciName).toBe(publicName)
   })
 
   it('renders the body content, pagination, evidence, sources, and existing new-tab links', async () => {
@@ -266,7 +268,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.distribution-cahier-svg').exists()).toBe(true)
     expect(wrapper.find('.distribution-cahier').classes()).toContain('cahier-figure-frame')
     expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(4)
-    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(3)
     expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.find('.mode-figures').exists()).toBe(false)
@@ -296,17 +298,21 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(links.filter((link) => link.attributes('href')?.includes('/indicateurs/mobilite/tot_loss_t'))).toHaveLength(7)
     expect(wrapper.findAll('.cahier-section-exploration')).toHaveLength(2)
     expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(4)
-    expect(wrapper.findAll('.cahier-reference-note')).toHaveLength(15)
-    expect(wrapper.findAll('.cahier-reference-note').every((note) => !note.text().includes('Médiane'))).toBe(true)
-    expect(wrapper.find('.cahier-reference-note').text()).toContain('vs ref*')
+    expect(wrapper.findAll('.cahier-comparison-value')).toHaveLength(15)
+    expect(wrapper.findAll('.cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
+    expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : médiane des communes de EPCI X')
+    expect(wrapper.find('.bpe-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
+    expect(wrapper.find('.cahier-comparison-value').text()).toContain('Groupe comparé')
     expect(wrapper.text()).toContain('À pied + TC')
     expect(wrapper.text()).toContain('À vélo + TC')
     expect(wrapper.text()).not.toContain('À pied ou en transports en commun')
-    expect(wrapper.find('.access-tooltip').text()).toContain('vs ref*')
-    expect(wrapper.find('#access-administration-detail .cahier-figure-tooltip-marker--slash').exists()).toBe(true)
+    expect(wrapper.find('.access-tooltip').text()).toContain('Groupe comparé')
+    expect(wrapper.text()).not.toContain('vs ref*')
+    expect(wrapper.text()).not.toContain('*ref')
+    expect(wrapper.find('#access-administration-detail .cahier-figure-tooltip-icon--neutral').exists()).toBe(true)
     expect(wrapper.find('.access-figures .stacked-donut').attributes('aria-describedby')).toBe('access-administration-detail')
     expect(wrapper.find('#access-administration-detail').classes()).toContain('cahier-figure-tooltip')
-    expect(wrapper.find('.summary-value strong.is-extreme').exists()).toBe(true)
     expect(wrapper.find('.rank-emphasis.is-extreme').exists()).toBe(true)
     for (const link of links) {
       expect(link.attributes('rel')).toContain('noopener')
@@ -373,9 +379,13 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     const pairedMetrics = wrapper.findAll('.summary-bar-metrics .summary-metric')
     expect(pairedMetrics).toHaveLength(2)
     expect(wrapper.findAll('.summary-bar-row')).toHaveLength(4)
-    expect(wrapper.findAll('.summary-bar-row--territory .summary-bar-label')).toHaveLength(0)
-    expect(wrapper.findAll('.summary-bar-row--reference').every((row) => row.text().includes('vs ref*'))).toBe(true)
-    expect(wrapper.find('.summary-bar-label--reference').text()).toBe('vs ref*')
+    expect(wrapper.findAll('.summary-bar-row--territory .summary-bar-label')).toHaveLength(2)
+    expect(wrapper.findAll('.summary-bar-row--territory .summary-bar-label').map((label) => label.text())).toEqual([
+      'Commune A1',
+      'Commune A1',
+    ])
+    expect(wrapper.findAll('.summary-bar-row--reference').every((row) => row.text().includes('Groupe comparé'))).toBe(true)
+    expect(wrapper.find('.summary-bar-label--reference').text()).toBe('Groupe comparé')
     expect(wrapper.findAll('.summary-bar-row--reference .summary-bar-label').every((label) => !label.text().includes('Médiane'))).toBe(true)
     expect(wrapper.findAll('.summary-metric-title').map((title) => title.text())).toEqual([
       'Nombre d’équip. accessibles',
@@ -383,7 +393,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     ])
     expect(wrapper.findAll('.summary-metric-title').every((title) => title.classes().includes('type-figure-label'))).toBe(true)
     expect(wrapper.findAll('.summary-mode-key .cahier-figure-legend-item')).toHaveLength(4)
-    expect(wrapper.findAll('.cahier-figure-legend')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-legend')).toHaveLength(3)
     expect(wrapper.find('.summary-mode-key .cahier-figure-legend-mark--slash').exists()).toBe(true)
     expect(wrapper.find('.summary-values--paired').exists()).toBe(false)
     expect(wrapper.findAll('.summary-loss')).toHaveLength(2)
@@ -399,8 +409,8 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       const label = reading.attributes('aria-label') ?? ''
       return label.includes('À pied + TC') || label.includes('À vélo + TC')
     })).toBe(true)
-    expect(wrapper.findAll('.summary-loss .cahier-reference-note')).toHaveLength(4)
-    expect(wrapper.findAll('.summary-loss .cahier-reference-note').every((note) => !note.text().includes('Médiane'))).toBe(true)
+    expect(wrapper.findAll('.summary-loss .cahier-comparison-value')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-loss .cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
     expect(wrapper.findAll('.summary-loss .cahier-rank')).toHaveLength(4)
     expect(wrapper.findAll('.summary-loss .cahier-rank.is-extreme')).toHaveLength(4)
     const summaryExplorationHref = wrapper.find('.cahier-section-exploration--unit-footer a').attributes('href')
@@ -425,8 +435,12 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-icon--t')).toHaveLength(2)
     expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-icon--b')).toHaveLength(2)
     expect(wrapper.findAll('.summary-loss-reading .cahier-figure-scalar-label')).toHaveLength(0)
-    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-marker--slash')).toHaveLength(2)
-    expect(wrapper.findAll('.access-tooltip .cahier-figure-tooltip-marker--slash')).toHaveLength(5)
+    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-icon--neutral')).toHaveLength(2)
+    expect(wrapper.findAll('.access-tooltip .cahier-figure-tooltip-icon--neutral')).toHaveLength(5)
+    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-icon--t')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-icon--b')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-icon--c')).toHaveLength(4)
+    expect(wrapper.findAll('.summary-bar-tooltip .cahier-figure-tooltip-marker')).toHaveLength(0)
     expect(wrapper.findAll('.access-foot-summary.cahier-figure-scalar')).toHaveLength(5)
     expect(wrapper.findAll('.summary-bar-tooltip')).toHaveLength(4)
     expect(wrapper.findAll('.cahier-figure-tooltip')).toHaveLength(12)
@@ -465,7 +479,9 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.bpe-profile-chart .cahier-figure-axis')).toHaveLength(2)
     expect(wrapper.findAll('.bpe-profile-chart .cahier-figure-tick')).toHaveLength(9)
     expect(wrapper.findAll('.bpe-profile-chart .cahier-figure-tick-label')).toHaveLength(5)
-    expect(wrapper.findAll('.bpe-profile-visual .cahier-figure-axis-title')).toHaveLength(2)
+    expect(wrapper.findAll('.bpe-profile-visual .cahier-figure-axis-title')).toHaveLength(1)
+    expect(wrapper.find('.bpe-profile-visual .cahier-figure-axis-title--x').exists()).toBe(false)
+    expect(wrapper.find('.bpe-profile-visual .cahier-figure-axis-title--y').text()).toBe('Types d’équipements')
     expect(wrapper.find('.bpe-profile-chart .cahier-figure-axis-title').exists()).toBe(false)
     expect(wrapper.find('.bpe-profile-visual > .cahier-figure-frame__plot').exists()).toBe(true)
     expect(wrapper.findAll('.bpe-profile-bars[role="img"]')).toHaveLength(4)
@@ -489,13 +505,14 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'La voiture est requise',
       'Inaccessible ou presque en 20 minutes',
     ])
-    expect(wrapper.findAll('.bpe-profile-count .cahier-reference-note').map((note) => note.text().replace(/\s+/g, ' ').trim())).toEqual([
-      'vs ref* : 10,51er/2',
-      'vs ref* : 01er/2',
-      'vs ref* : 411er/2',
-      'vs ref* : 1,52e/2',
+    expect(wrapper.findAll('.bpe-profile-count .cahier-comparison-value').map((note) => note.text().replace(/\s+/g, ' ').trim())).toEqual([
+      'Groupe comparé : 10,51er/2',
+      'Groupe comparé : 01er/2',
+      'Groupe comparé : 411er/2',
+      'Groupe comparé : 1,52e/2',
     ])
-    expect(wrapper.findAll('.bpe-profile-count .cahier-reference-note').every((note) => note.classes().includes('cahier-figure-comparison'))).toBe(true)
+    expect(wrapper.findAll('.bpe-profile-count .cahier-comparison-value').every((note) => !note.text().includes('Rang :'))).toBe(true)
+    expect(wrapper.findAll('.bpe-profile-count .cahier-comparison-value').every((note) => note.classes().includes('cahier-figure-comparison'))).toBe(true)
     expect(wrapper.findAll('.bpe-profile-count .cahier-rank').map((rank) => rank.text())).toEqual([
       '1er/2',
       '1er/2',
@@ -512,11 +529,11 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       sectionExplorationHref,
       sectionExplorationHref,
     ])
-    expect(wrapper.findAll('.bpe-profile-series-key .cahier-figure-legend-item').map((item) => item.text())).toEqual([
-      'Commune A1',
-      'vs ref*',
-    ])
-    expect(wrapper.find('.bpe-profile-reference-note').text()).toBe('*ref : moyenne des communes de l’EPCI')
+    expect(wrapper.find('.bpe-profile-series-key').exists()).toBe(false)
+    expect(wrapper.find('.bpe-comparison-note').text()).toBe('Groupe comparé : moyenne des communes de EPCI X')
+    expect(wrapper.text()).not.toContain('Exemple indisponible')
+    expect(wrapper.find('.bpe-profile-column[data-profile="velo-compense"] .bpe-profile-donut-anchor').exists()).toBe(true)
+    expect(wrapper.find('.bpe-profile-column[data-profile="velo-compense"] .bpe-profile-exemplar').exists()).toBe(false)
     expect(wrapper.find('.bpe-profile-column[data-profile="inaccessible-20-minutes"]').attributes('aria-label')).toBe('Inaccessible ou presque en 20 minutes')
     expect(wrapper.find('.bpe-profile-chart').attributes('aria-label')).toContain('Inaccessible ou presque en 20 minutes')
     const firstProfileBars = wrapper.find('.bpe-profile-bars[data-profile="acces-pied-tc"]')
@@ -524,7 +541,11 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.bpe-profile-tooltip').exists()).toBe(true)
     expect(wrapper.find('.bpe-profile-tooltip').classes()).toContain('cahier-figure-tooltip--chart')
     expect(wrapper.find('.bpe-profile-tooltip').text()).toContain('10,5 types')
+    expect(wrapper.find('.bpe-profile-tooltip').text()).toContain('Groupe comparé')
+    expect(wrapper.find('.bpe-profile-tooltip').text()).not.toContain('moyenne des')
     expect(wrapper.find('.bpe-profile-tooltip').text()).toContain('Commune A1')
+    expect(wrapper.findAll('.bpe-profile-tooltip .cahier-figure-tooltip-icon--t')).toHaveLength(2)
+    expect(wrapper.findAll('.bpe-profile-tooltip .cahier-figure-tooltip-marker')).toHaveLength(0)
     expect(wrapper.find('.bpe-profile-tooltip').attributes('style')).toContain('--cahier-figure-tooltip-anchor-x:')
     expect(wrapper.find('.bpe-profile-tooltip').attributes('style')).not.toContain('--cahier-figure-tooltip-anchor-x: 50%')
     await firstProfileBars.trigger('mouseleave')
@@ -539,12 +560,15 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(firstDonutTooltip.classes()).toContain('cahier-figure-tooltip--popover')
     expect(firstDonutTooltip.find('.cahier-figure-tooltip > strong').text()).toBe('% des bâtiments ayant accès')
     expect(firstDonutTooltip.text()).toContain('Inaccessible')
-    expect(firstDonutTooltip.find('.cahier-figure-tooltip-marker--slash').exists()).toBe(true)
+    expect(firstDonutTooltip.find('.cahier-figure-tooltip-icon--neutral').exists()).toBe(true)
+    expect(firstDonutTooltip.find('.cahier-figure-tooltip-icon--t').exists()).toBe(true)
+    expect(firstDonutTooltip.find('.cahier-figure-tooltip-icon--b').exists()).toBe(true)
+    expect(firstDonutTooltip.find('.cahier-figure-tooltip-icon--c').exists()).toBe(true)
     expect(firstDonutTooltip.findAll('.cahier-figure-tooltip-row')).toHaveLength(4)
     expect(firstDonutTooltip.findAll('.cahier-figure-tooltip-row--t')).toHaveLength(1)
     expect(firstDonutTooltip.findAll('.cahier-figure-tooltip-row--b')).toHaveLength(1)
     expect(firstDonutTooltip.findAll('.cahier-figure-tooltip-row--c')).toHaveLength(1)
-    expect(firstDonutTooltip.findAll('.cahier-figure-tooltip-row').every((row) => !row.find('.cahier-figure-tooltip-marker').attributes('style'))).toBe(true)
+    expect(firstDonutTooltip.find('.cahier-figure-tooltip-icon--neutral').attributes('style')).toBeUndefined()
     const donutTooltips = wrapper.findAll('.bpe-profile-donut-tooltip')
     expect(donutTooltips).toHaveLength(wrapper.findAll('.bpe-profile-donut').length)
     expect(donutTooltips.every((tooltip) => tooltip.classes().includes('cahier-figure-tooltip--popover'))).toBe(true)
@@ -574,11 +598,11 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(prose[1]).toContain('À pied et/ou en transports en commun')
     expect(prose[1]).not.toContain('médiane des communes de l’EPCI')
     expect(prose[2]).toContain('Le vélo renforce cette situation')
-    expect(prose[2]).toContain('référence : 20')
+    expect(prose[2]).toContain('groupe comparé : 20')
     expect(wrapper.find('.margin-comparison').exists()).toBe(false)
-    expect(wrapper.findAll('.subgroup-reference')).toHaveLength(4)
-    expect(wrapper.findAll('.subgroup-reference').every((marker) => marker.text() === '*ref : médiane des communes de l’EPCI')).toBe(true)
-    expect(wrapper.findAll('.cahier-section-footer').every((footer) => footer.find('.subgroup-reference').exists())).toBe(true)
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-comparison-note').every((note) => note.text().startsWith('Groupe comparé :'))).toBe(true)
+    expect(wrapper.findAll('.cahier-section-footer').every((footer) => !footer.find('.cahier-comparison-note').exists())).toBe(true)
     expect(wrapper.findAll('.cahier-section-footer').every((footer) => footer.find('.cahier-section-exploration--unit-footer').exists())).toBe(true)
   })
 
@@ -593,7 +617,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.concept-group-heading-copy .concept-group-label').text()).toBe(firstSection?.label)
     expect(wrapper.findAll('.concept-group-narrative').map((heading) => heading.text())).toEqual([
       'Ce que l’on perd sans voiture',
-      'Service minimum assuré?',
+      'Service minimum ?',
       'Tous les équipements ne se valent pas...',
       '... Tous les bâtiments non plus',
     ])

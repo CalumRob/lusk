@@ -1318,8 +1318,13 @@ validations_mobilite <- list(
 # projection BPE bornée et apercu (vide — gating). Validé par la validation
 # GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
-construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
+construire_payload_mobilite <- function(analytiques, base_epci, vintages,
+                                        noms_epci_geo_api = NULL) {
   territoires <- construire_territoires_mobilite(base_epci, analytiques)
+  if (!is.null(noms_epci_geo_api)) {
+    territoires <- appliquer_noms_epci_geo_api(territoires,
+                                                noms_epci_geo_api)
+  }
 
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(analytiques, territoires, vintages),
@@ -1356,8 +1361,9 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages) {
 publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie = "public/data",
                              sortie_analytiques = file.path(dirname(cache),
-                                                            "processed", "mobilite"),
-                             raccordement = NULL) {
+                                                             "processed", "mobilite"),
+                             raccordement = NULL,
+                             noms_epci_geo_api = NULL) {
   if (is.null(vintages)) vintages <- vintages_mobilite()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -1365,7 +1371,12 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                                                  sortie = sortie_analytiques)
   analytiques$raccordement <- lire_raccordement(
     if (is.null(raccordement)) sortie_analytiques else raccordement)
-  payload <- construire_payload_mobilite(analytiques, base_epci, vintages)
+  payload <- construire_payload_mobilite(
+    analytiques,
+    base_epci,
+    vintages,
+    noms_epci_geo_api = noms_epci_geo_api
+  )
   publish(payload, sortie)
   payload
 }

@@ -141,7 +141,8 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
     .package = "lusk"
   )
 
-  payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
 
   # le payload complet du thème : les quatre tables du contrat
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
@@ -298,8 +299,10 @@ test_that("un re-run Économie écrase sans dupliquer (upsert, idempotence)", {
     .package = "lusk"
   )
 
-  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
-  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
+  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais —
   # aucune ligne en double, les comptes du premier run sont conservés
@@ -357,14 +360,15 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
   )
 
   # 1) un run Démographie écrit SA table (les 4 sources)
-  run_pipeline(cache = cache, sortie = cible)
+  run_pipeline(cache = cache, sortie = cible, noms_epci_geo_api = NULL)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_DEMOGRAPHIE))
   expect_setequal(vint$id, MANIFEST_DEMOGRAPHIE$id)
 
   # 2) un run Économie ensuite FUSIONNE ses 5 sources dans la table partagée —
   # l'union des deux thèmes, serie_historique et epci TOUJOURS présents
-  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
 
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_DEMOGRAPHIE) + nrow(MANIFEST_ECONOMIE))
@@ -378,7 +382,8 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
   expect_true(all(c("serie_historique", "epci") %in% vj$id))
 
   # 3) relancer Économie ne duplique pas : la dédupe par id est un upsert
-  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+               noms_epci_geo_api = NULL)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
   expect_equal(nrow(vint), nrow(MANIFEST_DEMOGRAPHIE) + nrow(MANIFEST_ECONOMIE))
 })
@@ -415,7 +420,8 @@ test_that("une dérive de valeur du payload Économie échoue bruyamment", {
 
   # la validation de valeur (validations_economie) l'attrape bruyamment
   expect_error(
-    run_pipeline(theme = theme_economie(), cache = cache, sortie = cible),
+    run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+                 noms_epci_geo_api = NULL),
     "chômage"
   )
 })
@@ -448,7 +454,8 @@ test_that("un payload avec `lq` encore dans les indicateurs échoue la validatio
   )
 
   # un run sain, puis le payload corrompu : une ligne `lq` réintroduite
-  payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible)
+  payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
+                          noms_epci_geo_api = NULL)
   payload$indicateurs <- dplyr::bind_rows(
     payload$indicateurs,
     tibble::tibble(

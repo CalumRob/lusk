@@ -17,8 +17,8 @@ vi.stubGlobal(
 )
 
 /**
- * ECharts renders to canvas — happy-dom has no canvas 2D implementation.
- * The GraphiqueSoldes component guards init with try/catch, but a stub keeps
+ * ECharts renders to canvas or SVG — happy-dom has no canvas 2D implementation.
+ * The chart components guard init with try/catch, but a stub keeps
  * every spec that mounts the fiche block free of canvas noise; the chart's
  * data is asserted through its text (aria-label + legend), never the canvas.
  */
@@ -32,13 +32,14 @@ vi.mock('echarts/core', () => ({
     off: vi.fn(),
   })),
 }))
-vi.mock('echarts/charts', () => ({ ScatterChart: {}, LineChart: {} }))
+vi.mock('echarts/charts', () => ({ BarChart: {}, ScatterChart: {}, LineChart: {} }))
 vi.mock('echarts/components', () => ({
+  AxisPointerComponent: {},
   GridComponent: {},
   TooltipComponent: {},
   MarkLineComponent: {},
 }))
-vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {}, SVGRenderer: {} }))
 
 /**
  * MapLibre — happy-dom has no WebGL. A structural fake records the map's

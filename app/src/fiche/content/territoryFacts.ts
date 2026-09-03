@@ -175,21 +175,8 @@ export interface TerritoryIdentity {
   name: string
   department: string | null
   epci: string | null
-}
-
-/**
- * The source identity remains the legal/reference name. Cahier prose uses the
- * public short name, so an EPCI reads “Lorient Agglomération”, not its legal
- * category prefix.
- */
-export function nomTerritoirePourAffichage(territory: TerritoryIdentity): string {
-  if (territory.type !== 'epci') return territory.name
-  return territory.name
-    .replace(/^CA\s+/i, '')
-    .replace(/^Communauté d['’]agglomération\s+/i, '')
-    .replace(/^Communauté de communes\s+/i, '')
-    .replace(/^Métropole\s+/i, '')
-    .trim()
+  /** The published EPCI name for a commune's comparison context, when available. */
+  epciName?: string | null
 }
 
 export interface MobilityFacts {
@@ -283,13 +270,14 @@ const STORY_METRICS = {
   },
 } as const
 
-function identityOf(territoire: Territoire): TerritoryIdentity {
+function identityOf(territoire: Territoire, epciName: string | null = null): TerritoryIdentity {
   return {
     code: territoire.territoire,
     type: territoire.type,
     name: territoire.nom,
     department: territoire.departement,
     epci: territoire.epci,
+    ...(epciName ? { epciName } : {}),
   }
 }
 
@@ -865,8 +853,13 @@ export function territoryFactsFor(
   if (!target) return null
 
   const scope = scopeFor(payload, target)
+  const epciName = target.epci
+    ? payload.territoires.find(
+        (candidate) => candidate.type === 'epci' && candidate.territoire === target.epci,
+      )?.nom ?? null
+    : null
   return {
-    territory: identityOf(target),
+    territory: identityOf(target, epciName),
     theme: 'mobilite',
     mobility: {
       indicators: indicatorsOf(payload, target, scope),

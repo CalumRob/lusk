@@ -481,8 +481,11 @@ agreger_territoires_demographie <- function(communes, squelette) {
 # thème. L'astuce du module profond : une fois que chaque territoire est une
 # ligne d'une seule table, les constructeurs d'indicateurs s'appliquent
 # uniformément — ils n'ont pas à savoir quel type de territoire ils calculent.
-build_territoires <- function(communes) {
-  squelette <- squelette_territoires(communes)
+build_territoires <- function(communes, noms_epci_geo_api = NULL) {
+  squelette <- squelette_territoires(
+    communes,
+    noms_epci_geo_api = noms_epci_geo_api
+  )
   agreger_territoires_demographie(communes, squelette)
 }
 

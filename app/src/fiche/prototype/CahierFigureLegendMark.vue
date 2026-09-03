@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CircleSlash2 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 import type { FigureLegendEntry } from '../cahierFigureGrammaire'
@@ -19,9 +20,17 @@ function markStyle(): Record<string, string> | undefined {
 </script>
 
 <template>
+  <CircleSlash2
+    v-if="entry.marker === 'slash'"
+    class="cahier-figure-legend-icon cahier-figure-legend-mark--slash"
+    :style="markStyle()"
+    :size="16"
+    :stroke-width="2.1"
+    aria-hidden="true"
+  />
   <component
     :is="iconFor()"
-    v-if="entry.marker === 'icon' && iconFor()"
+    v-else-if="entry.marker === 'icon' && iconFor()"
     class="cahier-figure-legend-icon"
     :class="`cahier-figure-legend-mark--${entry.tone ?? 'neutral'}`"
     :style="markStyle()"

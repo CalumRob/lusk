@@ -187,7 +187,7 @@ describe('raccordement — fiche et accessibilité', () => {
 
   it.each([
     ['22001', 'Allineuc'],
-    ['200027027', 'Communauté de communes Arc Sud Bretagne'],
+    ['200027027', 'CC Arc Sud Bretagne'],
     ['22', 'Côtes-d’Armor'],
   ])('rend le scalaire et la figure pour le niveau %s', async (territoire, nom) => {
     const wrapper = mount(OngletTheme, {

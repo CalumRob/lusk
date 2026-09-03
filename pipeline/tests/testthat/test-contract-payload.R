@@ -87,6 +87,19 @@ test_that("la table de référence porte les noms réels (LIBGEO/LIBEPCI)", {
   expect_equal(tr$nom[tr$type == "region"], "Bretagne")
 })
 
+test_that("la table de référence porte les noms publics Geo API des EPCIs", {
+  noms <- c(
+    "200000001" = "CA EPCI X",
+    "200000002" = "CC EPCI Y"
+  )
+  payload <- compute_payload(load_fixture(), noms_epci_geo_api = noms)
+  tr <- payload$territoires
+
+  expect_equal(tr$nom[tr$territoire == "200000001"], "CA EPCI X")
+  expect_equal(tr$nom[tr$territoire == "200000002"], "CC EPCI Y")
+  expect_equal(tr$nom[tr$territoire == "22001"], "Commune A1")
+})
+
 test_that("la table de référence porte le département d'appartenance", {
   payload <- compute_payload(load_fixture())
   tr <- payload$territoires

@@ -5,7 +5,7 @@ import CahierFigureLegend from '@/fiche/prototype/CahierFigureLegend.vue'
 import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 
 describe('CahierFigureLegend', () => {
-  it('renders the declared entries, optional icons, and the neutral slash marker', () => {
+  it('renders the declared entries, optional icons, and the centered inaccessible icon', () => {
     const wrapper = mount(CahierFigureLegend, {
       props: {
         entries: [
@@ -21,7 +21,7 @@ describe('CahierFigureLegend', () => {
 
     expect(wrapper.find('ul').attributes('aria-label')).toBe('Modes d’accès')
     expect(wrapper.findAll('li')).toHaveLength(4)
-    expect(wrapper.findAll('.cahier-figure-legend-icon')).toHaveLength(3)
+    expect(wrapper.findAll('.cahier-figure-legend-icon')).toHaveLength(4)
     expect(wrapper.find('.cahier-figure-legend-mark--slash').exists()).toBe(true)
     expect(wrapper.text()).toContain('Inaccessible')
   })

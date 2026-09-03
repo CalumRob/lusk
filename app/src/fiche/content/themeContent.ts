@@ -1,7 +1,6 @@
 import {
   MOBILITE_INACCESSIBLE_LABEL,
   MOBILITE_MODE_LABELS,
-  nomTerritoirePourAffichage,
 } from './territoryFacts'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type {
@@ -66,7 +65,7 @@ export interface DistributionEvidence {
   kind: 'distribution'
   legend: readonly FigureLegendEntry[]
   distribution: CompleteDistributionSignature
-  referenceLabel: string | null
+  comparisonLabel: string | null
   marks: {
     walkTransit: ContentFact
     bike: ContentFact | null
@@ -76,14 +75,13 @@ export interface DistributionEvidence {
 
 export interface BpeProfilesEvidence {
   kind: 'bpe-profiles'
-  legend: readonly FigureLegendEntry[]
   profiles: readonly BpeAccessProfileFact[]
   territoryName: string
   donutTooltipTitle: string
   /** Total canonical BPE types represented by the complete projection. */
   totalTypes: number | null
   /** Human-readable aggregation method and scope for the compositional reference. */
-  referenceLabel: string | null
+  comparisonLabel: string | null
 }
 
 export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
@@ -104,7 +102,7 @@ export interface SummaryEvidence {
     total: ContentLossFacts
   }
   typeCount: number | null
-  referenceLabel: string | null
+  comparisonLabel: string | null
   losses: {
     diversity: {
       walkTransit: ContentFact
@@ -130,7 +128,7 @@ export interface AccessEvidence {
   totalBuildings: ContentFact
   totalBrittanyBuildings: ContentFact
   services: readonly AccessServiceEvidence[]
-  referenceLabel: string | null
+  comparisonLabel: string | null
 }
 
 export type ContentEvidence =
@@ -273,15 +271,6 @@ const DISTRIBUTION_LEGEND: readonly FigureLegendEntry[] = [
   { key: 'peers', label: 'Territoires comparables', marker: 'dot', tone: 'peer' },
   { key: 'reference', label: 'Médianes', marker: 'dash', tone: 'reference' },
 ]
-
-function bpeLegend(referenceLabel: string | null, territoryName: string): readonly FigureLegendEntry[] {
-  return [
-    { key: 'territory', label: territoryName, marker: 'line', tone: 'territory' },
-    ...(referenceLabel
-      ? [{ key: 'reference', label: 'vs ref*', marker: 'line' as const, tone: 'reference' }]
-      : []),
-  ]
-}
 
 function complete(fact: NumericFact): fact is NumericFact & { value: number } {
   return fact.availability === 'complete' && fact.value !== null
@@ -490,11 +479,16 @@ type ComparisonContext = {
   reference: { value: number } | null
 }
 
-function comparisonReferenceLabel(comparison: ComparisonContext | null): string | null {
+function comparisonScopeLabel(
+  comparison: ComparisonContext | null,
+  territory: TerritoryIdentity,
+): string | null {
   if (!comparison?.reference) return null
   switch (comparison.scope.kind) {
     case 'communes-epci':
-      return 'communes de l’EPCI'
+      return territory.epciName
+        ? `communes de ${territory.epciName}`
+        : 'communes de l’EPCI'
     case 'communes-bretagne':
       return 'communes bretonnes'
     case 'epcis-bretagne':
@@ -504,9 +498,13 @@ function comparisonReferenceLabel(comparison: ComparisonContext | null): string 
   }
 }
 
-function bpeReferenceLabel(comparison: ComparisonContext | null): string | null {
-  const scopeLabel = comparisonReferenceLabel(comparison)
-  return scopeLabel ? `moyenne des ${scopeLabel}` : null
+function comparisonLabel(
+  comparison: ComparisonContext | null,
+  territory: TerritoryIdentity,
+  statistic: 'moyenne' | 'médiane' = 'médiane',
+): string | null {
+  const scopeLabel = comparisonScopeLabel(comparison, territory)
+  return scopeLabel ? `${statistic} des ${scopeLabel}` : null
 }
 
 function formatMillions(value: number): string {
@@ -552,13 +550,16 @@ function comparisonRelation(fact: NumericFact): ComparisonRelation {
   return 'same'
 }
 
-function comparisonLabelForFacts(facts: readonly NumericFact[]): string | null {
+function comparisonLabelForFacts(
+  facts: readonly NumericFact[],
+  territory: TerritoryIdentity,
+): string | null {
   const comparison = facts.find((fact) => fact.comparison?.reference)?.comparison
-  return comparison ? comparisonReferenceLabel(comparison) : null
+  return comparison ? comparisonLabel(comparison, territory) : null
 }
 
 function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
-  const name = nomTerritoirePourAffichage(territory)
+  const name = territory.name
   return `${territoryPreposition(territory, capitalized)} ${name}`
 }
 
@@ -608,12 +609,12 @@ function accessMetricText(
 function summaryOpening(
   territory: TerritoryIdentity,
   summary: MobiliteSummaryFacts,
-  referenceLabel: string | null,
+  comparisonLabelForText: string | null,
 ): TextBlock | null {
   const equipment = summary.accessibleEquipment.car
   const types = summary.accessibleTypes.car
   const comparable =
-    referenceLabel !== null &&
+    comparisonLabelForText !== null &&
     referenceValue(equipment) !== null &&
     referenceValue(types) !== null
   const equipmentText = accessMetricText(equipment, 'equipment', comparable)
@@ -640,8 +641,8 @@ function summaryOpening(
     ...equipmentText,
     text(contrasting ? ' mais ' : ' et '),
     ...typesText,
-    text(' que la médiane des '),
-    regionalEmphasis(referenceLabel),
+    text(' que la '),
+    regionalEmphasis(comparisonLabelForText),
     text('.'),
   ]
 }
@@ -713,21 +714,21 @@ function footOpening(
 
 function medianSuffix(
   fact: NumericFact,
-  referenceLabel: string | null,
+  comparisonLabelForText: string | null,
   explainReference: boolean,
 ): TextSegment[] {
   const reference = referenceValue(fact)
-  if (reference === null || referenceLabel === null) return [text('.')]
+  if (reference === null || comparisonLabelForText === null) return [text('.')]
   if (!explainReference) {
     return [
-      text(' (référence : '),
+      text(' (groupe comparé : '),
       regionalEmphasis(formatNumber(reference)),
       text(').'),
     ]
   }
   return [
-    text(' (la médiane des '),
-    regionalEmphasis(referenceLabel),
+    text(' (la '),
+    regionalEmphasis(comparisonLabelForText),
     text(' : '),
     regionalEmphasis(formatNumber(reference)),
     text(').'),
@@ -736,7 +737,7 @@ function medianSuffix(
 
 function footNarrative(
   summary: MobiliteSummaryFacts,
-  referenceLabel: string | null,
+  comparisonLabelForText: string | null,
   explainReference: boolean,
 ): TextBlock | null {
   const carTypes = summary.accessibleTypes.car
@@ -748,7 +749,7 @@ function footNarrative(
     text('À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à '),
     emphasis(formatNumber(footLoss.value)),
     text(' types d’équipements'),
-    ...medianSuffix(footLoss, referenceLabel, explainReference),
+    ...medianSuffix(footLoss, comparisonLabelForText, explainReference),
   ]
 }
 
@@ -776,7 +777,7 @@ function bikeOpening(
 
 function bikeNarrative(
   summary: MobiliteSummaryFacts,
-  referenceLabel: string | null,
+  comparisonLabelForText: string | null,
   explainReference: boolean,
 ): TextBlock | null {
   const footLoss = summary.averageLosses.diversity.walkTransit
@@ -800,8 +801,88 @@ function bikeNarrative(
     text('Il limite la perte à '),
     emphasis(formatNumber(bikeLoss.value)),
     text(' types d’équipements'),
-    ...medianSuffix(bikeLoss, referenceLabel, explainReference),
+    ...medianSuffix(bikeLoss, comparisonLabelForText, explainReference),
   ]
+}
+
+type ProfilesReadingPolarity = 'without-car' | 'limited'
+
+const PROFILE_READING_LABELS: Readonly<Record<BpeAccessProfileFact['profile'], string>> = {
+  'acces-pied-tc': 'celui des types accessibles à pied ou en transports en commun',
+  'velo-compense': 'celui des types pour lesquels le vélo compense',
+  'voiture-requise': 'celui des types pour lesquels la voiture est requise',
+  'inaccessible-20-minutes': 'celui des types inaccessibles ou presque',
+}
+
+function dominantProfile(
+  profiles: readonly BpeAccessProfileFact[],
+): BpeAccessProfileFact | null {
+  if (profiles.length === 0) return null
+  const maximum = Math.max(...profiles.map((profile) => profile.count))
+  const leaders = profiles.filter((profile) => profile.count === maximum)
+  return leaders.length === 1 ? leaders[0]! : null
+}
+
+function profilesReadingPolarity(profile: BpeAccessProfileFact): ProfilesReadingPolarity {
+  return profile.profile === 'acces-pied-tc' || profile.profile === 'velo-compense'
+    ? 'without-car'
+    : 'limited'
+}
+
+/**
+ * The first group's reading is the reference point for this second figure.
+ * Use the same two signals as `footOpening`: the loss without a car first,
+ * then the car-accessible type count as a tie-breaker. No comparison means no
+ * confirmation claim in the second figure.
+ */
+function previousAccessReadingPolarity(
+  summary: MobiliteSummaryFacts,
+): ProfilesReadingPolarity | null {
+  const footLossRelation = comparisonRelation(summary.averageLosses.diversity.walkTransit)
+  if (footLossRelation === 'higher') return 'limited'
+  if (footLossRelation === 'lower') return 'without-car'
+
+  const carTypesRelation = comparisonRelation(summary.accessibleTypes.car)
+  if (carTypesRelation === 'higher') return 'limited'
+  if (carTypesRelation === 'lower') return 'without-car'
+  return null
+}
+
+function lectureProfils(
+  profiles: readonly BpeAccessProfileFact[],
+  summary: MobiliteSummaryFacts,
+): Lecture {
+  const dominant = dominantProfile(profiles)
+  const prose: TextBlock[] = [
+    [
+      text('Ici et pour chaque mode de transport, on cherche à définir le socle de types d’équipements accessibles en 20 minutes depuis les bâtiments du territoire. Un type d’équipement est retenu dès lors qu’au moins '),
+      bold('un quart'),
+      text(' des bâtiments peut l’atteindre en 20 minutes. On regarde ensuite le premier mode qui franchit ce seuil. Si aucun mode ne l’atteint, il est classé « inaccessible ou presque ».'),
+    ],
+  ]
+
+  if (dominant) {
+    const previous = previousAccessReadingPolarity(summary)
+    const current = profilesReadingPolarity(dominant)
+    const verdict = previous === null
+      ? null
+      : current === previous
+        ? 'confirme'
+        : 'infirme'
+    const reading: TextSegment[] = [
+      text('Avec ce seuil plus permissif, le profil le plus représenté est '),
+      emphasis(PROFILE_READING_LABELS[dominant.profile]),
+      text('.'),
+    ]
+    if (verdict) {
+      reading.push(
+        text(` Il ${verdict} donc la lecture précédente, même avec un seuil plus permissif.`),
+      )
+    }
+    prose.push(reading)
+  }
+
+  return { marelle: 'Service minimum ?', prose }
 }
 
 function lectureDiversite(
@@ -811,27 +892,27 @@ function lectureDiversite(
   const footLoss = summary.averageLosses.diversity.walkTransit
   const bikeLoss = summary.averageLosses.diversity.bike
   if (!complete(footLoss) || !complete(bikeLoss)) return null
-  const referenceLabel = comparisonLabelForFacts([
+  const comparisonLabelForText = comparisonLabelForFacts([
     summary.accessibleEquipment.car,
     summary.accessibleTypes.car,
     footLoss,
     bikeLoss,
-  ])
-  const opening = summaryOpening(territory, summary, referenceLabel)
+  ], territory)
+  const opening = summaryOpening(territory, summary, comparisonLabelForText)
   const openingExplainsReference =
     opening !== null &&
-    referenceLabel !== null &&
+    comparisonLabelForText !== null &&
     referenceValue(summary.accessibleEquipment.car) !== null &&
     referenceValue(summary.accessibleTypes.car) !== null
-  const foot = footNarrative(summary, referenceLabel, !openingExplainsReference)
+  const foot = footNarrative(summary, comparisonLabelForText, !openingExplainsReference)
   const footExplainsReference =
     !openingExplainsReference &&
     foot !== null &&
-    referenceLabel !== null &&
+    comparisonLabelForText !== null &&
     referenceValue(footLoss) !== null
   const bike = bikeNarrative(
     summary,
-    referenceLabel,
+    comparisonLabelForText,
     !openingExplainsReference && !footExplainsReference,
   )
   const prose = [opening, foot, bike].filter((block): block is TextBlock => block !== null)
@@ -861,12 +942,12 @@ function lectureEssentiels(
       voitureComplete
         ? [
             text(`${territoryPreposition(territory, true)} `),
-            emphasis(nomTerritoirePourAffichage(territory)),
+            emphasis(territory.name),
             text(', les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.'),
           ]
           : [
               text(`${territoryPreposition(territory, true)} `),
-            emphasis(nomTerritoirePourAffichage(territory)),
+              emphasis(territory.name),
               text(', l’accès aux services essentiels varie selon le mode de déplacement.'),
             ],
     ],
@@ -884,7 +965,7 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
         kind: 'distribution',
         legend: DISTRIBUTION_LEGEND,
         distribution: walkDistribution,
-        referenceLabel: comparisonReferenceLabel(walkTransit.comparison),
+        comparisonLabel: comparisonLabel(walkTransit.comparison, facts.territory),
         marks: {
           walkTransit: contentFact(walkTransit, CONTENT_LABELS.div_loss_t),
           bike: complete(bike) ? contentFact(bike, CONTENT_LABELS.div_loss_b) : null,
@@ -1002,9 +1083,10 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
           inaccessibleTypes,
            averageLosses,
            typeCount,
-           referenceLabel: comparisonReferenceLabel(
-            summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
-          ),
+            comparisonLabel: comparisonLabel(
+             summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
+              facts.territory,
+           ),
           losses,
         }
       : null,
@@ -1048,10 +1130,11 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
         '%',
       ),
     })),
-    referenceLabel: comparisonReferenceLabel(
+    comparisonLabel: comparisonLabel(
       Object.values(facts.mobility.access.byService)
         .flatMap((modes) => Object.values(modes))
         .find((fact) => fact.comparison)?.comparison ?? null,
+      facts.territory,
     ),
   }
 }
@@ -1098,8 +1181,10 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
 
 function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
   const profiles = facts.mobility.bpeAccess.profiles
-  const referenceLabel = bpeReferenceLabel(
+  const comparisonLabelForFigure = comparisonLabel(
     profiles.find((profile) => profile.comparison?.reference)?.comparison ?? null,
+    facts.territory,
+    'moyenne',
   )
   const availability: FactAvailability =
     facts.mobility.bpeAccess.availability === 'incomplete'
@@ -1111,15 +1196,14 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
     profiles.length > 0
       ? {
           kind: 'bpe-profiles',
-          legend: bpeLegend(referenceLabel, nomTerritoirePourAffichage(facts.territory)),
           profiles,
-          territoryName: nomTerritoirePourAffichage(facts.territory),
+          territoryName: facts.territory.name,
           donutTooltipTitle: '% des bâtiments ayant accès',
           totalTypes:
             availability === 'complete'
               ? profiles.reduce((total, profile) => total + profile.count, 0)
               : null,
-          referenceLabel,
+           comparisonLabel: comparisonLabelForFigure,
         }
       : null
   return {
@@ -1130,7 +1214,7 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
     evidence,
     provenance: [],
     lecture: availability === 'complete'
-      ? { marelle: 'Service minimum assuré?', prose: [] }
+      ? lectureProfils(profiles, facts.mobility.access.summary)
       : null,
     explorationTargets: [],
   }

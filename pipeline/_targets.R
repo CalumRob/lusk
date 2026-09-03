@@ -86,6 +86,17 @@ if (nzchar(selection)) {
 }
 for (t in THEMES_RUN) assign(paste0("manifeste_", t$theme), t$manifest)
 
+# Le canon des noms publics EPCI — une épingle suivie PAR CONTENU, partagée par
+# tous les thèmes. Chaque target de compute/publication qui rend la référence
+# des territoires en dépend explicitement ; une mise à jour du snapshot rejoue
+# les publications sans rendre le graphe dépendant d'un appel réseau.
+fichier_epci_geo_api_cible <- tar_target_raw(
+  "fichier_epci_geo_api",
+  bquote(system.file("extdata", .(EPCI_GEO_API_FICHIER), package = "lusk")),
+  format = "file"
+)
+fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
+
 # attributs_nuls -----------------------------------------------------------------
 # Le corps d'une fonction chargée par parse() porte des attributs de source
 # (srcref, srcfile, wholeSrcref — en surface ET sur les éléments imbriqués)
@@ -189,6 +200,7 @@ symbole_ns <- function(piece, paquet = "lusk") {
 grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
                          cache = CACHE_RUN, sortie = SORTIE_RUN) {
   nom <- theme$theme
+  fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
   theme_c <- as.name(paste0("theme_", nom))   # le constructeur du descripteur
   theme_descripteur <- bquote(.(theme_c)())
   construire <- symbole_ns(theme$construire_donnees)
@@ -251,8 +263,13 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
     grappe <- c(grappe, list(
       tar_target_raw(
         as.character(payload),
-        bquote(compute_payload(.(brut), theme = .(theme_descripteur),
-                               vintages = .(vintages)))
+        bquote({
+          .(fichier_epci_geo_api_sym)
+          compute_payload(.(brut), theme = .(theme_descripteur),
+                          vintages = .(vintages),
+                          noms_epci_geo_api = lire_noms_epci_geo_api(
+                            .(fichier_epci_geo_api_sym)))
+        })
       )
     ))
   }
@@ -387,13 +404,29 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
 publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
                          precedent = NULL) {
   nom <- theme$theme
+  fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
   if (is.function(theme$publier)) {
     publier_fn <- symbole_ns(theme$publier)
-    command <- bquote(
-      .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
-                    vintages = .(as.name(paste0("vintages_table_", nom))),
-                    sortie = .(sortie))
-    )
+    if ("noms_epci_geo_api" %in% names(formals(theme$publier))) {
+      command <- bquote(
+        {
+          .(fichier_epci_geo_api_sym)
+          .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
+                        vintages = .(as.name(paste0("vintages_table_", nom))),
+                        sortie = .(sortie),
+                        noms_epci_geo_api = lire_noms_epci_geo_api(
+                          .(fichier_epci_geo_api_sym)))
+        }
+      )
+    } else {
+      command <- bquote(
+        {
+          .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
+                        vintages = .(as.name(paste0("vintages_table_", nom))),
+                        sortie = .(sortie))
+        }
+      )
+    }
     # LE RACCORDEMENT (issue #486) : le trait du descripteur CHAÎNE la
     # publication derrière la cible de calcul — elle lit une enveloppe fraîche
     # (ou refuse une périmée), jamais un recalcul au fil des republications.
@@ -978,6 +1011,7 @@ themes_fusion <- if (!nzchar(selection)) {
 }
 
 list(
+  fichier_epci_geo_api_cible,
   grappes,
   publies,
   fusion_themes(themes_fusion),

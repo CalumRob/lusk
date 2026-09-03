@@ -5,7 +5,9 @@
  * The figure's domain-specific marks are the grouped bars and the four
  * payload-owned profile details; no chart library owns the visual contract.
  */
+import { Bike, CarFront, CircleSlash2, Footprints } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
+import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import {
@@ -24,23 +26,20 @@ import {
   normaliserPartsDonut,
   type CahierTooltipRow,
 } from '@/fiche/cahierFigureGrammaire'
-import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { ProfilAccesBpe } from '@/payload/types'
 import CahierFigureAxes from './CahierFigureAxes.vue'
 import CahierDonut from './CahierDonut.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
-import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureLegendMark from './CahierFigureLegendMark.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
-import CahierReferenceNote from './CahierReferenceNote.vue'
+import CahierComparisonValue from './CahierComparisonValue.vue'
 
 const props = defineProps<{
   profiles: readonly BpeAccessProfileFact[]
   territoryName: string
   donutTooltipTitle: string
-  referenceLabel: string | null
-  legend: readonly FigureLegendEntry[]
+  comparisonLabel: string | null
   explorationTo: RouteLocationRaw | null
 }>()
 
@@ -65,6 +64,13 @@ const PROFILE_COLOR_TOKENS: Readonly<Record<ProfilAccesBpe, string>> = {
   'inaccessible-20-minutes': '--cahier-profile-inaccessible',
 }
 
+const PROFILE_ICONS: Readonly<Record<ProfilAccesBpe, Component>> = {
+  'acces-pied-tc': Footprints,
+  'velo-compense': Bike,
+  'voiture-requise': CarFront,
+  'inaccessible-20-minutes': CircleSlash2,
+}
+
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
@@ -79,6 +85,17 @@ function profileCountLabel(count: number): string {
 
 function profileColor(profile: ProfilAccesBpe): string {
   return `var(${PROFILE_COLOR_TOKENS[profile]})`
+}
+
+function profileIcon(profile: ProfilAccesBpe): Component {
+  return PROFILE_ICONS[profile]
+}
+
+function profileTone(profile: ProfilAccesBpe): CahierTooltipRow['tone'] {
+  if (profile === 'acces-pied-tc') return 't'
+  if (profile === 'velo-compense') return 'b'
+  if (profile === 'voiture-requise') return 'c'
+  return 'neutral'
 }
 
 function profileFact(profile: BpeAccessProfileFact): NumericFact {
@@ -168,14 +185,14 @@ function styleBarre(profile: ProfilAccesBpe): Record<string, string> {
 
 function accessibleLabel(): string {
   const total = props.profiles.reduce((sum, profile) => sum + profile.count, 0)
-  const reference = props.referenceLabel
-    ? ` Référence : ${props.referenceLabel}.`
-    : ' Référence indisponible.'
+  const reference = props.comparisonLabel
+    ? ` Groupe comparé : ${props.comparisonLabel}.`
+    : ' Groupe comparé indisponible.'
   const values = props.profiles
     .map((profile) => {
       const referenceValue = profileReference(profile)
       return `${profile.label} : ${formatNumber(profile.count)} types${
-        referenceValue === null ? '' : `, ${props.referenceLabel ?? 'référence'} : ${formatNumber(referenceValue)} types`
+        referenceValue === null ? '' : `, ${props.comparisonLabel ?? 'Groupe comparé'} : ${formatNumber(referenceValue)} types`
       }`
     })
     .join('; ')
@@ -183,23 +200,22 @@ function accessibleLabel(): string {
 }
 
 function tooltipRows(profile: BpeAccessProfileFact): readonly CahierTooltipRow[] {
-  const color = profileColor(profile.profile)
   const reference = profileReference(profile)
   return [
     {
       label: props.territoryName,
       value: profileCountLabel(profile.count),
-      tone: 'neutral',
-      markerColor: color,
+      tone: profileTone(profile.profile),
+      icon: profileIcon(profile.profile),
     },
     ...(reference === null
       ? []
       : [
           {
-            label: props.referenceLabel ?? 'Référence',
+            label: 'Groupe comparé',
             value: profileCountLabel(reference),
-            tone: 'neutral' as const,
-            markerColor: `color-mix(in srgb, ${color} 30%, var(--paper))`,
+            tone: profileTone(profile.profile),
+            icon: profileIcon(profile.profile),
           },
         ]),
   ]
@@ -213,22 +229,25 @@ function donutTooltipRows(profile: BpeAccessProfileFact): readonly CahierTooltip
       label: MOBILITE_MODE_LABELS.walkTransit,
       value: formatPercentage(values.walkTransit),
       tone: 't',
+      icon: Footprints,
     },
     {
       label: MOBILITE_MODE_LABELS.bike,
       value: formatPercentage(values.bike),
       tone: 'b',
+      icon: Bike,
     },
     {
       label: MOBILITE_MODE_LABELS.car,
       value: formatPercentage(values.car),
       tone: 'c',
+      icon: CarFront,
     },
     {
       label: MOBILITE_INACCESSIBLE_LABEL,
       value: formatPercentage(1 - values.car),
       tone: 'neutral',
-      marker: 'slash',
+      icon: CircleSlash2,
     },
   ]
 }
@@ -261,8 +280,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 <template>
   <CahierFigureFrame
     class="bpe-profile-visual"
-    x-title="Situation d’accès"
-    y-title="Nombre de types d’équipement"
+    y-title="Types d’équipements"
   >
     <template #plot>
       <div class="bpe-profile-chart cahier-figure-plot" role="group" :aria-label="accessibleLabel()">
@@ -282,7 +300,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
             role="img"
             tabindex="0"
             :aria-describedby="profilSelectionne === index ? `bpe-profile-tooltip-${profile.profile}` : undefined"
-            :aria-label="`${profile.label}. ${props.territoryName} : ${profileCountLabel(profile.count)}${profileReference(profile) === null ? '' : `. ${props.referenceLabel ?? 'Référence'} : ${profileCountLabel(profileReference(profile)!)}`}`"
+             :aria-label="`${profile.label}. ${props.territoryName} : ${profileCountLabel(profile.count)}${profileReference(profile) === null ? '' : `. ${props.comparisonLabel ?? 'Groupe comparé'} : ${profileCountLabel(profileReference(profile)!)}`}`"
             @mouseenter="selectionnerProfil(index)"
             @mouseleave="effacerProfil(index)"
             @focus="selectionnerProfil(index)"
@@ -323,12 +341,6 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
       :anchor="profilInfobulleAnchor"
     />
 
-    <CahierFigureLegend
-      :entries="props.legend"
-      label="Séries comparées"
-      class="bpe-profile-series-key"
-    />
-
     <div class="bpe-profile-details">
       <div
         v-for="profile in profiles"
@@ -344,7 +356,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
             :mark-color="profileColor(profile.profile)"
             class="bpe-profile-swatch"
           />
-          {{ profile.label }}
+          <span>{{ profile.label }}</span>
         </strong>
         <CahierFigureScalar
           class="bpe-profile-count"
@@ -356,15 +368,15 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
           :aria-label="`${profile.label} : ${profileCountLabel(profile.count)}`"
         >
           <template #reference>
-            <CahierReferenceNote
+            <CahierComparisonValue
               :fact="profileFact(profile)"
-              :reference-label="referenceLabel ? 'vs ref*' : null"
+              :comparison-label="comparisonLabel ? 'Groupe comparé' : null"
               :to="explorationTo"
             />
           </template>
         </CahierFigureScalar>
-        <template v-if="profile.exemplar">
-          <div class="bpe-profile-donut-anchor">
+        <div class="bpe-profile-donut-anchor">
+          <template v-if="profile.exemplar">
             <CahierDonut
               class="stacked-donut bpe-profile-donut cahier-tooltip-trigger"
               :data-profile="profile.profile"
@@ -381,10 +393,9 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
               :rows="donutTooltipRows(profile)"
               popover
             />
-          </div>
-          <span class="bpe-profile-exemplar">{{ profile.exemplar.label }}</span>
-        </template>
-        <span v-else class="bpe-profile-exemplar bpe-profile-exemplar--empty">Exemple indisponible</span>
+          </template>
+        </div>
+        <span v-if="profile.exemplar" class="bpe-profile-exemplar">{{ profile.exemplar.label }}</span>
       </div>
     </div>
   </CahierFigureFrame>
@@ -432,20 +443,24 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 .bpe-profile-details {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
-  margin: 8px var(--cahier-figure-grid-right) 0 var(--cahier-figure-grid-left);
+  grid-template-rows: repeat(4, max-content);
+  column-gap: 0;
+  row-gap: var(--space-2);
+  margin: var(--space-1) var(--cahier-figure-grid-right) 0 var(--cahier-figure-grid-left);
 }
 
 .bpe-profile-column {
   display: grid;
+  grid-row: span 4;
+  grid-template-rows: subgrid;
   min-width: 0;
-  gap: 8px;
   justify-items: center;
   text-align: center;
 }
 
 .bpe-profile-label {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 5px;
@@ -466,7 +481,11 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 
 .bpe-profile-donut-anchor {
   position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   width: 100%;
+  min-height: var(--cahier-donut-size);
 }
 
 .bpe-profile-donut-tooltip {
@@ -476,7 +495,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 }
 
 .bpe-profile-donut {
-  margin-top: var(--space-1);
+  margin: 0 auto;
 }
 
 .bpe-profile-exemplar {
@@ -488,15 +507,10 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
   overflow-wrap: anywhere;
 }
 
-.bpe-profile-exemplar--empty {
-  color: var(--cahier-default);
-  font-style: italic;
-}
-
 @container cahier-page (max-width: 620px) {
   .bpe-profile-details {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-6) var(--space-3);
+    column-gap: var(--space-3);
   }
 }
 </style>

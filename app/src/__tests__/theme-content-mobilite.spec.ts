@@ -145,6 +145,7 @@ const completeFacts: TerritoryFacts = {
     name: 'Commune A',
     department: '22',
     epci: '200000001',
+    epciName: 'EPCI X',
   },
   theme: 'mobilite',
   mobility: {
@@ -283,7 +284,7 @@ describe('resolveMobiliteThemeContent', () => {
         }),
       ],
     })
-    expect(profiles.lecture?.marelle).toBe('Service minimum assuré?')
+    expect(profiles.lecture?.marelle).toBe('Service minimum ?')
 
     expect(distribution.availability).toBe('complete')
     expect(distribution.evidence).toMatchObject({
@@ -302,7 +303,7 @@ describe('resolveMobiliteThemeContent', () => {
     expect(distribution.lecture?.marelle).toBe('... Tous les bâtiments non plus')
     expect(summary.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
     expect(lectureText(summary.lecture)).toBe(
-      'À Commune A, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint 100 équipements au total et 50 types d’équipements. La voiture crée une dépendance pour de nombreux services. À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à 30 types d’équipements (la médiane des communes de l’EPCI : 20). Le vélo atténue néanmoins cette difficulté. Il limite la perte à 15 types d’équipements (référence : 10).',
+      'À Commune A, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint 100 équipements au total et 50 types d’équipements. La voiture crée une dépendance pour de nombreux services. À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à 30 types d’équipements (la médiane des communes de EPCI X : 20). Le vélo atténue néanmoins cette difficulté. Il limite la perte à 15 types d’équipements (groupe comparé : 10).',
     )
     expect(summary.lecture?.prose[1]).toContainEqual({
       kind: 'emphasis',
@@ -377,14 +378,14 @@ describe('resolveMobiliteThemeContent', () => {
       ...epciFacts.territory,
       code: '200000001',
       type: 'epci',
-      name: 'Lorient Agglomération',
+      name: 'CA Lorient Agglomération',
       epci: '200000001',
     }
     const epciContent = resolveMobiliteThemeContent(epciFacts)
     const epciIntroduction = epciContent.introduction.map((block) => block.map((segment) => segment.value).join('')).join(' ')
 
-    expect(epciIntroduction).toContain('dont 100 à Lorient Agglomération.')
-    expect(lectureText(epciContent.units[0]!.sections[0]!.lecture)).toContain('À Lorient Agglomération')
+    expect(epciIntroduction).toContain('dont 100 à CA Lorient Agglomération.')
+    expect(lectureText(epciContent.units[0]!.sections[0]!.lecture)).toContain('À CA Lorient Agglomération')
   })
 
   it('bolds a car-independent loss without applying the car color', () => {
@@ -563,7 +564,7 @@ describe('resolveMobiliteThemeContent', () => {
     expect(first).toEqual(second)
     expect(JSON.stringify(first)).not.toContain('médiane')
     expect(first.units[0].sections[0].lecture).not.toBeNull()
-    expect(first.units[0].sections[1].lecture?.marelle).toBe('Service minimum assuré?')
+    expect(first.units[0].sections[1].lecture?.marelle).toBe('Service minimum ?')
     expect(first.units[0].sections[2].lecture).not.toBeNull()
     expect(first.units[0].sections[3].lecture?.marelle).toBe('... Tous les bâtiments non plus')
   })

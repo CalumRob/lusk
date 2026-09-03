@@ -92,6 +92,7 @@ export interface CahierTooltipRow {
   label: string
   value: string
   tone?: CahierTooltipTone
+  icon?: Component
   markerColor?: string
   marker?: 'dot' | 'slash'
   note?: string
@@ -102,3 +103,4 @@ export interface CahierFigureTooltipAnchor {
   x: string
   y?: string
 }
+import type { Component } from 'vue'

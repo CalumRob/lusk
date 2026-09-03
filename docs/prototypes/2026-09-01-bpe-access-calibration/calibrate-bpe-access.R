@@ -236,8 +236,10 @@ for (i in seq_len(nrow(candidate_grid))) {
     valid$b[classified == profiles[[4]]],
     valid$t[classified == profiles[[4]]]
   )
-  signal[classified == profiles[[1]]] <-
-    valid$c[classified == profiles[[1]]] - valid$b[classified == profiles[[1]]]
+  signal[classified == profiles[[1]]] <- -pmax(
+    valid$b[classified == profiles[[1]]],
+    valid$t[classified == profiles[[1]]]
+  )
   signal[classified == profiles[[3]]] <-
     valid$b[classified == profiles[[3]]] - valid$t[classified == profiles[[3]]]
   signal[classified == profiles[[2]]] <- valid$t[classified == profiles[[2]]]
@@ -248,7 +250,7 @@ for (i in seq_len(nrow(candidate_grid))) {
   exemplar <- do.call(rbind, lapply(profiles, function(profile) {
     rows <- valid[classified == profile, ]
     if (!nrow(rows)) return(NULL)
-    rows <- rows[order(rows$rarity, -rows$signal, rows$type_code,
+    rows <- rows[order(-rows$signal, rows$rarity, rows$type_code,
                        rows$commune), ]
     rows[1, c("candidate_id", "type_code", "commune", "nom", "context",
               "profile", "c", "t", "b", "rarity", "signal")]

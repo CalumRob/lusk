@@ -256,10 +256,11 @@ construire_matrice_profils_acces_bpe <- function(snapshot, base_epci,
 
 # construire_projection_profils_acces_bpe ---------------------------------------
 # Projection publique bornée : un compte de types par profil et, si le profil
-# est non vide, au plus un exemplaire. L'exemplaire est le type dont le profil
-# est le plus rare dans la matrice complète ; l'égalité est résolue par le code
-# TYPEQU croissant. La règle rend la sortie stable et évite de publier 53 lignes
-# par territoire.
+# est non vide, au plus un exemplaire. L'exemplaire maximise d'abord la saillance
+# propre à son profil : t pour l'accès à pied/TC, b - t pour le vélo,
+# -max(b, t) pour la voiture, et -max(c, b, t) pour l'inaccessible. L'égalité est
+# ensuite résolue par la rareté du profil puis par le code TYPEQU croissant. La
+# règle rend la sortie stable et évite de publier 53 lignes par territoire.
 construire_projection_profils_acces_bpe <- function(matrice) {
   manquantes <- setdiff(CLES_PROFILS_ACCES_BPE, names(matrice))
   if (length(manquantes)) {
@@ -270,7 +271,17 @@ construire_projection_profils_acces_bpe <- function(matrice) {
     dplyr::count(typequ, profil, name = "frequence_typequ")
   exemplaires <- matrice %>%
     dplyr::left_join(frequences, by = c("typequ", "profil")) %>%
-    dplyr::arrange(territoire, type, profil, frequence_typequ, typequ) %>%
+    dplyr::mutate(
+      salience = dplyr::case_when(
+        profil == "acces-pied-tc" ~ t,
+        profil == "velo-compense" ~ b - t,
+        profil == "voiture-requise" ~ -pmax(b, t),
+        profil == "inaccessible-20-minutes" ~ -pmax(c, b, t),
+        TRUE ~ NA_real_
+      )
+    ) %>%
+    dplyr::arrange(territoire, type, profil, dplyr::desc(salience),
+                   frequence_typequ, typequ) %>%
     dplyr::group_by(territoire, type, profil) %>%
     dplyr::slice_head(n = 1L) %>%
     dplyr::ungroup() %>%

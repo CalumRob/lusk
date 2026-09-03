@@ -41,7 +41,17 @@ withDefaults(
         :class="`cahier-figure-tooltip-row--${row.tone ?? 'neutral'}`"
       >
         <dt>
+          <component
+            :is="row.icon"
+            v-if="row.icon"
+            class="cahier-figure-tooltip-icon"
+            :class="`cahier-figure-tooltip-icon--${row.tone ?? 'neutral'}`"
+            :size="16"
+            :stroke-width="1.8"
+            aria-hidden="true"
+          />
           <i
+            v-else
             class="cahier-figure-tooltip-marker"
             :class="row.marker ? `cahier-figure-tooltip-marker--${row.marker}` : undefined"
             :style="row.markerColor ? { background: row.markerColor } : undefined"
