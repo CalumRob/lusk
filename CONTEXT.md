@@ -55,8 +55,16 @@ _Avoid_: Vue d'ensemble, overview, accueil (the landing page, not the tab)
 **Story**:
 **Retired product concept (2026-08-28).** Story selection, candidate pools, and salience no longer define the fiche: every territory uses the same underlying data and the app determines the data-deterministic text that presents it. `story_key`, `salience_reason`, `histoires`, and related pipeline fields remain historical/schema vocabulary until the payload is migrated; they must not become new product-side ownership rules.
 **Lecture**:
-The text presentation of a ContentSection's data: a **Marelle** and its associated prose, arranged deterministically by the app from the available facts. A lecture may have figures as evidence, but it does not require every ContentSection to have prose or every figure family to be implemented. The lecture is a presentation of data, not a pipeline-selected Story.
+The block-local reading aid for a ContentSection: a **Marelle** and, where needed, a compact **Comment lire** explanation of the measure or figure. The main interpretation of a Cahier page belongs to its **Page rundown**, not by default to every block. A lecture may have figures as evidence, but it does not require every ContentSection to have a prose paragraph or every figure family to be implemented. The lecture is a presentation of data, not a pipeline-selected Story.
 _Avoid_: Story (retired product concept), récit, insight
+
+**Page rundown**:
+The short, data-deterministic interpretation of a Cahier page, carried by its ContentUnit and rendered in the page subtitle. It states the page's central tension and most useful qualification without concatenating every block's prose or enumerating every value. The blocks retain their Marelles and compact Comment lire helpers; a longer block-level interpretation is exceptional rather than the default. A rundown is resolved from the available facts and remains honest when the page is incomplete or absent.
+_Avoid_: introduction (the theme-level preface), résumé (a semantic section and a generic summary), Story (retired product concept)
+
+**Comment lire**:
+The compact block-local explanation of how to interpret a figure or measure — its denominator, threshold, unit, mode semantics, or honest missing-data state. It answers « comment lire cette preuve ? », not « quelle est la conclusion de la page ? »; the latter belongs to the Page rundown. It may be shared or repeated when the figure grammar requires it, but it must not become a second narrative paragraph beside the figure.
+_Avoid_: lecture (the whole block-local reading aid), légende (the visual key alone), méthodologie (the retired standalone page)
 
 **Marelle**:
 The short, prominent title that opens a lecture — the phrase that names the tension or question the following prose and figures make readable. A Marelle and its prose form one **Lecture**; the Marelle is not a separate reading.
