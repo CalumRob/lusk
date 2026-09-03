@@ -3,14 +3,15 @@ import {
   CAHIER_FIGURE_AXIS,
   CAHIER_FIGURE_GEOMETRY,
 } from '../cahierFigureGrammaire'
-import type { CahierFigureAxisTick } from '../cahierFigureGrammaire'
+import type { CahierFigureAxisTick, CahierFigureGeometry } from '../cahierFigureGrammaire'
 
-defineProps<{
+const props = defineProps<{
   xTicks: readonly CahierFigureAxisTick[]
   yTicks: readonly CahierFigureAxisTick[]
+  geometry?: CahierFigureGeometry
 }>()
 
-const { width, height, margin } = CAHIER_FIGURE_GEOMETRY
+const { width, height, margin } = props.geometry ?? CAHIER_FIGURE_GEOMETRY
 const axeBas = height - margin.bottom
 const axeDroite = width - margin.right
 const axisStyle = { '--cahier-figure-axis-width': `${CAHIER_FIGURE_AXIS.width}` }
