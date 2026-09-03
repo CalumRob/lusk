@@ -11,7 +11,6 @@ import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
 import {
-  MOBILITE_INACCESSIBLE_LABEL,
   MOBILITE_MODE_LABELS,
 } from '@/fiche/content/territoryFacts'
 import type {
@@ -23,12 +22,12 @@ import {
   type CahierFigureAxisTick,
   type CahierFigureTooltipAnchor,
   CAHIER_FIGURE_GEOMETRY,
-  normaliserPartsDonut,
   type CahierTooltipRow,
+  valeursGraduationPourDomaine,
 } from '@/fiche/cahierFigureGrammaire'
 import type { ProfilAccesBpe } from '@/payload/types'
 import CahierFigureAxes from './CahierFigureAxes.vue'
-import CahierDonut from './CahierDonut.vue'
+import CahierDonut, { type CahierDonutRing } from './CahierDonut.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegendMark from './CahierFigureLegendMark.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
@@ -37,6 +36,7 @@ import CahierComparisonValue from './CahierComparisonValue.vue'
 
 const props = defineProps<{
   profiles: readonly BpeAccessProfileFact[]
+  totalTypes: number | null
   territoryName: string
   donutTooltipTitle: string
   comparisonLabel: string | null
@@ -56,6 +56,8 @@ const axeDroite = largeur - marge.droite
 const largeurBarre = 22
 const ecartBarres = 7
 const profilSelectionne = ref<number | null>(null)
+const BPE_DONUT_SCALE = 0.6
+const BPE_INACCESSIBLE_LABEL = 'Équipement inaccessible quel que soit le mode'
 
 const PROFILE_COLOR_TOKENS: Readonly<Record<ProfilAccesBpe, string>> = {
   'acces-pied-tc': '--cahier-mode-foot',
@@ -129,26 +131,31 @@ function formatPercentage(value: number): string {
   return `${formatNumber(value * 100)} %`
 }
 
-function donutStyle(values: BpeAccessExemplar): Record<string, string> {
-  const { walkTransit: walk, bike, car } = normaliserPartsDonut(values)
-  return {
-    '--donut-walk': `${walk * 360}deg`,
-    '--donut-bike': `${bike * 360}deg`,
-    '--donut-car': `${car * 360}deg`,
-  }
+function bounded(value: number): number {
+  return Math.max(0, Math.min(1, value))
 }
 
-const maximum = computed(() =>
-  Math.max(
-    1,
-    ...props.profiles.flatMap((profile) => [profile.count, profileReference(profile) ?? 0]),
-  ),
-)
+function donutRings(values: BpeAccessExemplar): readonly CahierDonutRing[] {
+  return [
+    { mode: 'car', value: bounded(values.car), color: 'var(--cahier-mode-car)' },
+    { mode: 'bike', value: bounded(values.bike), color: 'var(--cahier-mode-bike)' },
+    { mode: 'walkTransit', value: bounded(values.walkTransit), color: 'var(--cahier-mode-foot)' },
+  ]
+}
+
+function isFullyInaccessible(values: BpeAccessExemplar): boolean {
+  return values.car === 0 && values.bike === 0 && values.walkTransit === 0
+}
+
+const maximum = computed(() => Math.max(
+  1,
+  props.totalTypes ?? props.profiles.reduce((total, profile) => total + profile.count, 0),
+))
 
 const graduationsY = computed(() =>
-  Array.from({ length: 5 }, (_, index) => {
-    const ratio = index / 4
-    const valeur = maximum.value * ratio
+  valeursGraduationPourDomaine(maximum.value, {
+    grading: { kind: 'fixed', step: 10, maximumGap: 5 },
+  }).map((valeur) => {
     return {
       valeur,
       y: yPour(valeur),
@@ -229,31 +236,33 @@ function tooltipRows(profile: BpeAccessProfileFact): readonly CahierTooltipRow[]
 
 function donutTooltipRows(profile: BpeAccessProfileFact): readonly CahierTooltipRow[] {
   if (!profile.exemplar) return []
-  const values = normaliserPartsDonut(profile.exemplar)
+  const values = profile.exemplar
+  if (isFullyInaccessible(values)) {
+    return [{
+      label: 'Accès',
+      value: BPE_INACCESSIBLE_LABEL,
+      tone: 'neutral',
+      icon: CircleSlash2,
+    }]
+  }
   return [
     {
       label: MOBILITE_MODE_LABELS.walkTransit,
-      value: formatPercentage(values.walkTransit),
+      value: formatPercentage(bounded(values.walkTransit)),
       tone: 't',
       icon: Footprints,
     },
     {
       label: MOBILITE_MODE_LABELS.bike,
-      value: formatPercentage(values.bike),
+      value: formatPercentage(bounded(values.bike)),
       tone: 'b',
       icon: Bike,
     },
     {
       label: MOBILITE_MODE_LABELS.car,
-      value: formatPercentage(values.car),
+      value: formatPercentage(bounded(values.car)),
       tone: 'c',
       icon: CarFront,
-    },
-    {
-      label: MOBILITE_INACCESSIBLE_LABEL,
-      value: formatPercentage(1 - values.car),
-      tone: 'neutral',
-      icon: CircleSlash2,
     },
   ]
 }
@@ -262,7 +271,7 @@ function donutAccessibleLabel(profile: BpeAccessProfileFact): string {
   if (!profile.exemplar) return profile.label
   return `${profile.exemplar.label}. ${donutTooltipRows(profile)
     .map((row) => `${row.label} : ${row.value}`)
-    .join('; ')}`
+    .join('. ')}`
 }
 
 function selectionnerProfil(index: number): void {
@@ -348,6 +357,9 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
     />
 
     <div class="bpe-profile-details">
+      <span class="cahier-figure-axis-title cahier-figure-axis-title--y type-figure-label bpe-profile-examples-title">
+        Exemples
+      </span>
       <div
         v-for="profile in profiles"
         :key="profile.profile"
@@ -386,12 +398,12 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
             <CahierDonut
               class="stacked-donut bpe-profile-donut cahier-tooltip-trigger"
               :data-profile="profile.profile"
-              :style="donutStyle(profile.exemplar)"
+              :rings="donutRings(profile.exemplar)"
+              :scale="BPE_DONUT_SCALE"
+              :inaccessible="isFullyInaccessible(profile.exemplar)"
               :label-accessible="donutAccessibleLabel(profile)"
               :aria-describedby="`bpe-profile-donut-tooltip-${profile.profile}`"
-            >
-              <span>Exemple</span>
-            </CahierDonut>
+            />
             <CahierFigureTooltip
               :id="`bpe-profile-donut-tooltip-${profile.profile}`"
               class="bpe-profile-donut-tooltip"
@@ -400,6 +412,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
               popover
             />
           </template>
+          <span v-else class="bpe-profile-donut-placeholder">Aucun type</span>
         </div>
         <span v-if="profile.exemplar" class="bpe-profile-exemplar">{{ profile.exemplar.label }}</span>
       </div>
@@ -448,16 +461,25 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 
 .bpe-profile-details {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 34px repeat(4, minmax(0, 1fr));
   grid-template-rows: repeat(4, max-content);
   column-gap: 0;
   row-gap: var(--space-2);
   margin: var(--space-1) var(--cahier-figure-grid-right) 0 var(--cahier-figure-grid-left);
 }
 
+.bpe-profile-examples-title {
+  position: static;
+  grid-column: 1;
+  grid-row: 3;
+  align-self: center;
+  justify-self: center;
+  transform: rotate(-90deg);
+}
+
 .bpe-profile-column {
   display: grid;
-  grid-row: span 4;
+  grid-row: 1 / span 4;
   grid-template-rows: subgrid;
   min-width: 0;
   justify-items: center;
@@ -492,6 +514,15 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
   justify-content: center;
   width: 100%;
   min-height: var(--cahier-donut-size);
+}
+
+.bpe-profile-donut-placeholder {
+  align-self: center;
+  color: var(--cahier-default);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.2;
 }
 
 .bpe-profile-donut-tooltip {

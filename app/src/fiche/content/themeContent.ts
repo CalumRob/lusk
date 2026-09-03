@@ -128,7 +128,8 @@ export interface AccessServiceEvidence {
   service: MobiliteService
   label: string
   modes: Record<MobiliteAccessMode, ContentFact>
-  inaccessible: ContentFact
+  carGap: ContentFact
+  bikeGain: ContentFact
 }
 
 export interface AccessEvidence {
@@ -263,6 +264,10 @@ const ESSENTIAL_INDICATOR_KEYS = [
   'share_bank_b',
   'share_bank_c',
 ] as const
+
+const ESSENTIAL_COVERAGE_THRESHOLD = 0.75
+const ESSENTIAL_GAP_THRESHOLD = 0.25
+const ESSENTIAL_PEER_DEVIATION_THRESHOLD = 0.1
 
 const MOBILITE_ACCESS_LEGEND: readonly FigureLegendEntry[] = [
   { key: 'walkTransit', label: MOBILITE_MODE_LABELS.walkTransit, marker: 'icon', iconKey: 'walkTransit', tone: 't' },
@@ -410,6 +415,8 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
       add(section.evidence.totalBrittanyBuildings)
       for (const service of section.evidence.services) {
         for (const mode of Object.values(service.modes)) add(mode)
+        add(service.carGap)
+        add(service.bikeGain)
       }
     }
   }
@@ -973,6 +980,177 @@ function lectureDiversite(
   return { marelle: 'Ce que l’on perd sans voiture', prose }
 }
 
+const SERVICE_PREPOSITIONS: Readonly<Record<MobiliteService, string>> = {
+  administration: 'de l’administration',
+  alimentation: 'de l’alimentation',
+  sante: 'de la santé',
+  banque: 'de la banque',
+  ecole: 'de l’école',
+}
+
+function joinFrench(values: readonly string[]): string {
+  if (values.length === 0) return ''
+  if (values.length === 1) return values[0]!
+  if (values.length === 2) return `${values[0]} et ${values[1]}`
+  return `${values.slice(0, -1).join(', ')} et ${values[values.length - 1]}`
+}
+
+function serviceNames(services: readonly AccessServiceEvidence[]): string {
+  if (services.length === SERVICE_GRAMMAR.length) return 'les cinq services essentiels'
+  return `les services ${joinFrench(services.map(({ service }) => SERVICE_PREPOSITIONS[service]))}`
+}
+
+function covered(service: AccessServiceEvidence, mode: MobiliteAccessMode): boolean {
+  const value = service.modes[mode].fact.value
+  return value !== null && value >= ESSENTIAL_COVERAGE_THRESHOLD
+}
+
+function coverageNarrative(
+  territory: TerritoryIdentity,
+  services: readonly AccessServiceEvidence[],
+): TextBlock[] {
+  const groups = [
+    {
+      services: services.filter(
+        (service) => covered(service, 'car') && covered(service, 'bike') && covered(service, 'walkTransit'),
+      ),
+      sentence: (names: string) => `${names} sont couverts quel que soit le mode de transport.`,
+    },
+    {
+      services: services.filter(
+        (service) => !covered(service, 'car') && covered(service, 'bike') && covered(service, 'walkTransit'),
+      ),
+      sentence: (names: string) =>
+        `${names} sont couverts à pied ou en transports en commun et à vélo, mais pas en voiture.`,
+    },
+    {
+      services: services.filter(
+        (service) => covered(service, 'car') && covered(service, 'bike') && !covered(service, 'walkTransit'),
+      ),
+      sentence: (names: string) =>
+        `${names} sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.`,
+    },
+    {
+      services: services.filter(
+        (service) => !covered(service, 'car') && covered(service, 'bike') && !covered(service, 'walkTransit'),
+      ),
+      sentence: (names: string) =>
+        `${names} sont couverts à vélo, mais pas à pied ou en transports en commun ni en voiture.`,
+    },
+    {
+      services: services.filter(
+        (service) => covered(service, 'car') && !covered(service, 'bike') && !covered(service, 'walkTransit'),
+      ),
+      sentence: (names: string) => `${names} ne sont couverts qu’en voiture.`,
+    },
+    {
+      services: services.filter(
+        (service) => !covered(service, 'car') && !covered(service, 'bike') && !covered(service, 'walkTransit'),
+      ),
+      sentence: (names: string) => `${names} ne sont couverts par aucun mode de transport.`,
+    },
+  ].filter((group) => group.services.length > 0)
+
+  return groups.map((group, index) => [
+    text(index === 0 ? `${territoryLead(territory)}, ` : index === 1 ? 'Mais ' : ''),
+    text(group.sentence(serviceNames(group.services))),
+  ])
+}
+
+type GapKey = 'carGap' | 'bikeGain'
+
+function percentagePoints(value: number): string {
+  const formatted = formatNumber(value * 100)
+  return `${formatted} point${Math.abs(value * 100) > 1 ? 's' : ''} de pourcentage`
+}
+
+function strongestGap(
+  services: readonly AccessServiceEvidence[],
+  key: GapKey,
+): { services: AccessServiceEvidence[]; value: number } | null {
+  const candidates = services.filter((service) => {
+    const value = service[key].fact.value
+    return value !== null && value >= ESSENTIAL_GAP_THRESHOLD
+  })
+  if (candidates.length === 0) return null
+  const value = Math.max(...candidates.map((service) => service[key].fact.value!))
+  return {
+    services: candidates.filter((service) => service[key].fact.value === value),
+    value,
+  }
+}
+
+function gapNarrative(
+  services: readonly AccessServiceEvidence[],
+  key: GapKey,
+): TextBlock {
+  const strongest = strongestGap(services, key)
+  if (!strongest) {
+    return [
+      text(
+        key === 'carGap'
+          ? 'La voiture ne crée pas d’écart de couverture marqué entre ces services.'
+          : 'Le vélo n’apporte pas d’écart de couverture marqué entre ces services.',
+      ),
+    ]
+  }
+  if (key === 'carGap') {
+    return [
+      text('La voiture crée l’écart de couverture le plus marqué pour '),
+      bold(serviceNames(strongest.services), 'car'),
+      text(` : ${percentagePoints(strongest.value)} séparent l’accès en voiture de l’accès à pied ou en transports en commun.`),
+    ]
+  }
+  return [
+    text('Le vélo apporte le plus pour '),
+    bold(serviceNames(strongest.services), 'bike'),
+    text(` : ${percentagePoints(strongest.value)} de couverture en plus par rapport à l’accès à pied ou en transports en commun.`),
+  ]
+}
+
+function strongestPeerDeviation(
+  services: readonly AccessServiceEvidence[],
+  key: GapKey,
+): { services: AccessServiceEvidence[]; difference: number } | null {
+  const candidates = services.flatMap((service) => {
+    const fact = service[key].fact
+    const reference = fact.comparison?.reference?.value
+    if (fact.value === null || reference === null || reference === undefined) return []
+    const difference = fact.value - reference
+    return Math.abs(difference) >= ESSENTIAL_PEER_DEVIATION_THRESHOLD
+      ? [{ service, difference }]
+      : []
+  })
+  if (candidates.length === 0) return null
+  const strongest = Math.max(...candidates.map(({ difference }) => Math.abs(difference)))
+  const selected = candidates.filter(({ difference }) => Math.abs(difference) === strongest)
+  return {
+    services: selected.map(({ service }) => service),
+    difference: selected[0]!.difference,
+  }
+}
+
+function peerGapNarrative(
+  services: readonly AccessServiceEvidence[],
+  key: GapKey,
+  comparisonLabelForText: string | null,
+): TextBlock | null {
+  const deviation = strongestPeerDeviation(services, key)
+  if (!deviation || !comparisonLabelForText) return null
+  const label = key === 'carGap' ? 'L’écart voiture' : 'L’apport du vélo'
+  const tone = key === 'carGap' ? 'car' : 'bike'
+  const relation = deviation.difference > 0 ? 'plus marqué' : 'moins marqué'
+  return [
+    text(`${label} est `),
+    bold(relation, tone),
+    text(' pour '),
+    bold(serviceNames(deviation.services), tone),
+    text(' que dans la '),
+    regionalEmphasis(comparisonLabelForText),
+    text(` (${percentagePoints(Math.abs(deviation.difference))}).`),
+  ]
+}
+
 function lectureEssentiels(
   territory: TerritoryIdentity,
   access: AccessEvidence,
@@ -987,24 +1165,21 @@ function lectureEssentiels(
   ) {
     return null
   }
-  const voitureComplete = access.services.every(
-    (service) => service.modes.car.fact.value === 1,
-  )
-  const lead = territoryLeadParts(territory, true)
+  const peerCar = peerGapNarrative(access.services, 'carGap', access.comparisonLabel)
+  const peerBike = peerGapNarrative(access.services, 'bikeGain', access.comparisonLabel)
   return {
     marelle: 'Tous les équipements ne se valent pas...',
     prose: [
-      voitureComplete
-        ? [
-            text(`${lead.lead} `),
-            emphasis(lead.name),
-            text(', les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.'),
-          ]
-        : [
-            text(`${lead.lead} `),
-            emphasis(lead.name),
-            text(', l’accès aux services essentiels varie selon le mode de déplacement.'),
-          ],
+      [
+        text('Cette partie présente cinq regroupements de services essentiels. Étant donné leur importance, ils sont dits couverts lorsqu’au moins '),
+        bold('trois bâtiments sur quatre'),
+        text(' peuvent y accéder.'),
+      ],
+      ...coverageNarrative(territory, access.services),
+      gapNarrative(access.services, 'carGap'),
+      gapNarrative(access.services, 'bikeGain'),
+      ...(peerCar ? [peerCar] : []),
+      ...(peerBike ? [peerBike] : []),
     ],
   }
 }
@@ -1158,7 +1333,7 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
   if (facts.mobility.access.availability === 'absent') return null
   return {
     kind: 'access',
-    legend: MOBILITE_ACCESS_LEGEND,
+    legend: mobiliteAccessLegend(false),
     totalBuildings: contentFact(
       facts.mobility.access.totalBuildings,
       'Bâtiments du territoire analysés',
@@ -1178,11 +1353,13 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
           MOBILITE_MODE_LABELS.walkTransit,
         ),
       },
-      inaccessible: inaccessibleFact(
-        1,
-        facts.mobility.access.byService[key].car,
-        `access.${key}.inaccessible`,
-        '%',
+      carGap: contentFact(
+        facts.mobility.access.gapsByService[key].carGap,
+        'Écart voiture',
+      ),
+      bikeGain: contentFact(
+        facts.mobility.access.gapsByService[key].bikeGain,
+        'Apport du vélo',
       ),
     })),
     comparisonLabel: comparisonLabel(
@@ -1205,7 +1382,9 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
     complete(evidence.totalBuildings.fact) &&
     complete(evidence.totalBrittanyBuildings.fact) &&
     evidence.services.every((service) =>
-      Object.values(service.modes).every((mode) => complete(mode.fact)),
+      [...Object.values(service.modes), service.carGap, service.bikeGain].every((fact) =>
+        complete(fact.fact),
+      ),
     )
   const hasAny = indicators.length > 0 || evidence !== null
   const availability: FactAvailability =
@@ -1217,7 +1396,9 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
   const contentFacts: ContentFact[] = [...indicators]
   if (evidence) {
     contentFacts.push(evidence.totalBuildings, evidence.totalBrittanyBuildings)
-    for (const service of evidence.services) contentFacts.push(...Object.values(service.modes))
+    for (const service of evidence.services) {
+      contentFacts.push(...Object.values(service.modes), service.carGap, service.bikeGain)
+    }
   }
   return {
     key: 'services-essentiels',

@@ -90,12 +90,18 @@ export interface MobiliteAccessModes {
   walkTransit: NumericFact
 }
 
+export interface MobiliteAccessGaps {
+  carGap: NumericFact
+  bikeGain: NumericFact
+}
+
 export interface MobiliteAccessFacts {
   availability: FactAvailability
   totalBuildings: NumericFact
   totalBrittanyBuildings: NumericFact
   summary: MobiliteSummaryFacts
   byService: Record<MobiliteService, MobiliteAccessModes>
+  gapsByService: Record<MobiliteService, MobiliteAccessGaps>
 }
 
 export interface MobiliteSummaryFacts {
@@ -488,7 +494,7 @@ function indicatorComparison(
 }
 
 function statisticForIndicator(key: string): ComparisonStatistic {
-  return key.startsWith('avg_') || key.startsWith('share_') ? 'mean' : 'median'
+  return key.startsWith('avg_') ? 'mean' : 'median'
 }
 
 function storyComparison(
@@ -574,20 +580,27 @@ function accessOf(
     ) ?? null
   const territoryBuildingCount = buildingCountFor(target.territoire)
   const brittanyBuildingCount = buildingCountFor('53')
-  const rowFor = (service: MobiliteService, mode: MobiliteAccessMode): Indicateur | null =>
+  const rowForTerritory = (
+    territoire: string,
+    service: MobiliteService,
+    mode: MobiliteAccessMode,
+  ): Indicateur | null =>
     payload.indicateurs.find(
       (row) =>
         row.theme === 'mobilite' &&
-        row.territoire === target.territoire &&
+        row.territoire === territoire &&
         row.key === ACCESS_INDICATOR_KEYS[service][ACCESS_MODES[mode]] &&
         (row.detail ?? null) === null,
     ) ?? null
+
+  const rowFor = (service: MobiliteService, mode: MobiliteAccessMode): Indicateur | null =>
+    rowForTerritory(target.territoire, service, mode)
 
   const comparisonFor = (
     row: Indicateur | null,
   ): FactComparison | null => {
     if (!scope) return null
-    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux', 'mean') : null
+    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux') : null
   }
 
   const summaryRowForTerritory = (territoire: string, key: string): Indicateur | null =>
@@ -717,6 +730,55 @@ function accessOf(
     }),
   ) as Record<MobiliteService, MobiliteAccessModes>
 
+  const differenceFact = (
+    service: MobiliteService,
+    key: 'carGap' | 'bikeGain',
+    minuendMode: MobiliteAccessMode,
+    subtrahendMode: MobiliteAccessMode,
+    direction: DirectionRang,
+  ): NumericFact => {
+    const minuend = byService[service][minuendMode]
+    const subtrahend = byService[service][subtrahendMode]
+    const value =
+      minuend.value === null || subtrahend.value === null
+        ? null
+        : minuend.value - subtrahend.value
+    const peerValues = scope
+      ? scope.territoryIds.flatMap((territoire) => {
+          const peerMinuend = rowForTerritory(territoire, service, minuendMode)?.value
+          const peerSubtrahend = rowForTerritory(territoire, service, subtrahendMode)?.value
+          return peerMinuend === null || peerMinuend === undefined ||
+            peerSubtrahend === null || peerSubtrahend === undefined
+            ? []
+            : [peerMinuend - peerSubtrahend]
+        })
+      : []
+    const comparison = comparisonOf({
+      scope,
+      direction,
+      value,
+      values: peerValues,
+    })
+    return factOf({
+      key: `access.${service}.${key}`,
+      value,
+      unit: '%',
+      present: minuend.availability !== 'absent' && subtrahend.availability !== 'absent',
+      provenance: minuend.provenance ?? subtrahend.provenance,
+      comparison: comparison ? { ...comparison, rank: null } : null,
+    })
+  }
+
+  const gapsByService = Object.fromEntries(
+    SERVICES.map((service) => [
+      service,
+      {
+        carGap: differenceFact(service, 'carGap', 'car', 'walkTransit', 'moins-est-mieux'),
+        bikeGain: differenceFact(service, 'bikeGain', 'bike', 'walkTransit', 'plus-est-mieux'),
+      },
+    ]),
+  ) as Record<MobiliteService, MobiliteAccessGaps>
+
   const totalBuildings = accessFact(
     'access.totalBuildings',
     null,
@@ -758,6 +820,7 @@ function accessOf(
     totalBrittanyBuildings,
     summary,
     byService,
+    gapsByService,
   }
 }
 

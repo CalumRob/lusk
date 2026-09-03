@@ -39,18 +39,19 @@ import {
   MOBILITE_MODE_LABELS,
 } from '@/fiche/content/territoryFacts'
 import type { MobiliteAccessMode, MobiliteService, NumericFact } from '@/fiche/content/territoryFacts'
-import { CAHIER_FIGURE_STYLE, normaliserPartsDonut } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { layoutMasonry } from '@/fiche/masonryLayout'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
-import CahierDonut from './CahierDonut.vue'
+import CahierDonut, { type CahierDonutRing } from './CahierDonut.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonNote from './CahierComparisonNote.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
+import CahierSummaryPlot from './CahierSummaryPlot.vue'
 import DistributionFigureCahier from './DistributionFigureCahier.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
@@ -188,10 +189,6 @@ function formatFact(fact: NumericFact | null | undefined): string {
   return fact.unit === '%' ? `${formatNumber(fact.value * 100, 0)} %` : formatNumber(fact.value)
 }
 
-function formatFactValue(fact: NumericFact, value: number | null): string {
-  return formatFact({ ...fact, value })
-}
-
 function summaryMetrics(evidence: SummaryEvidence): readonly {
   key: 'equipment' | 'types'
   title: string
@@ -224,10 +221,6 @@ type RenderedSummaryBarSegment = SummaryBarSegment & {
 
 function summaryHasValues(values: SummaryEvidence['accessibleEquipment']): boolean {
   return Object.values(values).some((value) => value.fact.value !== null)
-}
-
-function summaryHasReference(values: SummaryEvidence['accessibleEquipment']): boolean {
-  return Object.values(values).some((value) => value.fact.comparison?.reference?.value !== undefined)
 }
 
 function summaryScale(
@@ -311,27 +304,6 @@ function summarySegmentClass(mode: MobiliteAccessMode | 'inaccessible'): string 
   return mode === 'inaccessible' ? 'inaccessible' : MODE_CLASSES[mode]
 }
 
-function summaryBarTooltipId(key: 'equipment' | 'types', reference: boolean): string {
-  return `summary-${key}-${reference ? 'reference' : 'territory'}-detail`
-}
-
-function summaryTooltipRows(
-  values: SummaryEvidence['accessibleEquipment'],
-  reference: boolean,
-  metric?: 'equipment' | 'types',
-  typeCount?: number | null,
-  inaccessibleTypes?: ContentFact,
-): readonly CahierTooltipRow[] {
-  return summaryBarSegments(values, reference, metric, typeCount, inaccessibleTypes).map((segment) => ({
-    label: segment.label,
-    value: formatFactValue(segment.fact.fact, segment.value),
-    tone: segment.mode === 'inaccessible'
-      ? 'neutral'
-      : MODE_CLASSES[segment.mode] as CahierTooltipRow['tone'],
-    icon: segment.icon ?? undefined,
-  }))
-}
-
 function summaryLosses(
   evidence: SummaryEvidence,
   metric: 'equipment' | 'types',
@@ -368,13 +340,16 @@ function summaryLossForSegment(
   return segment.mode === 'inaccessible' ? null : summaryLoss(values, segment.mode)
 }
 
-function donutStyle(values: { car: number; bike: number; walkTransit: number }): Record<string, string> {
-  const { walkTransit: walk, bike, car } = normaliserPartsDonut(values)
-  return {
-    '--donut-walk': `${walk * 360}deg`,
-    '--donut-bike': `${bike * 360}deg`,
-    '--donut-car': `${car * 360}deg`,
-  }
+function donutRings(values: {
+  car: number | null
+  bike: number | null
+  walkTransit: number | null
+}): readonly CahierDonutRing[] {
+  return [
+    { mode: 'car', value: values.car, color: 'var(--cahier-mode-car)' },
+    { mode: 'bike', value: values.bike, color: 'var(--cahier-mode-bike)' },
+    { mode: 'walkTransit', value: values.walkTransit, color: 'var(--cahier-mode-foot)' },
+  ]
 }
 
 function referenceFactText(fact: NumericFact): string {
@@ -413,12 +388,16 @@ function percentage(value: NumericFact): number | null {
   return value.value === null ? null : Math.max(0, Math.min(1, value.value))
 }
 
-function accessDonutStyle(service: AccessEvidence['services'][number]): Record<string, string> {
-  return donutStyle({
-    walkTransit: percentage(service.modes.walkTransit.fact) ?? 0,
-    bike: percentage(service.modes.bike.fact) ?? 0,
-    car: percentage(service.modes.car.fact) ?? 0,
+function accessDonutRings(service: AccessEvidence['services'][number]): readonly CahierDonutRing[] {
+  return donutRings({
+    walkTransit: percentage(service.modes.walkTransit.fact),
+    bike: percentage(service.modes.bike.fact),
+    car: percentage(service.modes.car.fact),
   })
+}
+
+function accessibleModeValue(fact: NumericFact): string {
+  return fact.value === null ? 'Indisponible' : formatFact(fact)
 }
 
 function accessTooltipId(service: MobiliteService): string {
@@ -429,26 +408,15 @@ function accessTooltipRows(
   service: AccessEvidence['services'][number],
   comparisonLabel: string | null,
 ): readonly CahierTooltipRow[] {
-  return [
-    ...SUMMARY_MODES.map((mode) => ({
-      label: service.modes[mode].label,
-      value: formatFact(service.modes[mode].fact),
-      tone: MODE_CLASSES[mode] as CahierTooltipRow['tone'],
-      icon: modeIcon(mode),
-      note: service.modes[mode].fact.comparison?.reference
+  return SUMMARY_MODES.map((mode) => ({
+       label: service.modes[mode].label,
+       value: accessibleModeValue(service.modes[mode].fact),
+       tone: MODE_CLASSES[mode] as CahierTooltipRow['tone'],
+       icon: modeIcon(mode),
+       note: service.modes[mode].fact.comparison?.reference
          ? `${comparisonLabelForFigure(comparisonLabel) ?? 'Groupe comparé'} : ${referenceFactText(service.modes[mode].fact)}`
-        : undefined,
-    })),
-    {
-      label: service.inaccessible.label,
-      value: formatFact(service.inaccessible.fact),
-      tone: 'neutral' as const,
-      icon: modeIcon('inaccessible'),
-      note: service.inaccessible.fact.comparison?.reference
-        ? `${comparisonLabelForFigure(comparisonLabel) ?? 'Groupe comparé'} : ${referenceFactText(service.inaccessible.fact)}`
-        : undefined,
-    },
-  ]
+         : undefined,
+     }))
 }
 
 function serviceIcon(service: MobiliteService): Component {
@@ -694,81 +662,23 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                  </figure>
 
                 <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Équipements accessibles en 20 min., moyenne</figcaption>
+                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>
                   <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                   <template v-if="props.presentation === 'plain'">
                     <div class="summary-metrics summary-metrics--paired summary-bar-metrics">
-                      <section
+                      <CahierSummaryPlot
                         v-for="metric in summaryMetrics(section.evidence)"
                         :key="metric.key"
                         v-show="summaryHasValues(metric.values)"
                         class="summary-metric"
-                      >
-                        <h4 class="summary-metric-title type-figure-label">{{ summaryMetricTitle(metric.key) }}</h4>
-                        <div class="summary-bar-pair">
-                          <div class="summary-bar-row summary-bar-row--territory">
-                           <div class="summary-bar-visual">
-                             <div
-                               class="summary-stack cahier-tooltip-trigger"
-                                role="img"
-                                tabindex="0"
-                                :aria-describedby="summaryBarTooltipId(metric.key, false)"
-                                 :aria-label="`${summaryMetricTitle(metric.key)}, territoire : ${summarySegments(metric.values, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
-                               >
-                                <span
-                                   v-for="segment in summarySegments(metric.values, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
-                                  :key="segment.mode"
-                                  class="summary-stack-segment"
-                                   :class="`summary-stack-segment--${summarySegmentClass(segment.mode)}`"
-                                  :style="{ left: segment.left, right: segment.right }"
-                                />
-                              </div>
-                              <CahierFigureTooltip
-                                :id="summaryBarTooltipId(metric.key, false)"
-                                class="summary-bar-tooltip"
-                                title="Détail par mode"
-                                 :rows="summaryTooltipRows(metric.values, false, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
-                                popover
-                                compact
-                               />
-                             </div>
-                             <span class="summary-bar-label summary-bar-label--territory type-figure-label">
-                                {{ content.territory.name }}
-                             </span>
-                           </div>
-                           <div
-                            v-if="summaryHasReference(metric.values)"
-                            class="summary-bar-row summary-bar-row--reference"
-                          >
-                            <div class="summary-bar-visual">
-                              <div
-                                 class="summary-stack summary-stack--reference cahier-tooltip-trigger"
-                                role="img"
-                                tabindex="0"
-                                :aria-describedby="summaryBarTooltipId(metric.key, true)"
-                                   :aria-label="`${summaryMetricTitle(metric.key)}, ${comparisonLabelForFigure(section.evidence.comparisonLabel) ?? 'Groupe comparé indisponible'} : ${summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes).map((segment) => `${segment.label} ${formatFactValue(segment.fact.fact, segment.value)}`).join('; ')}`"
-                               >
-                                <span
-                                   v-for="segment in summaryBarSegments(metric.values, true, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
-                                  :key="segment.mode"
-                                  class="summary-stack-segment"
-                                   :class="`summary-stack-segment--${summarySegmentClass(segment.mode)}`"
-                                  :style="{ left: segment.left, right: segment.right }"
-                                />
-                              </div>
-                               <CahierFigureTooltip
-                                 :id="summaryBarTooltipId(metric.key, true)"
-                                 class="summary-bar-tooltip"
-                                 title="Détail par mode"
-                                 :rows="summaryTooltipRows(metric.values, true, metric.key, section.evidence.typeCount, section.evidence.inaccessibleTypes)"
-                                 popover
-                                 compact
-                               />
-                            </div>
-                             <span class="summary-bar-label summary-bar-label--reference type-figure-label">{{ comparisonLabelForFigure(section.evidence.comparisonLabel) ?? 'Groupe comparé indisponible' }}</span>
-                          </div>
-                        </div>
-                      </section>
+                        :metric="metric.key"
+                        :axis-title="summaryMetricTitle(metric.key)"
+                        :values="metric.values"
+                        :territory-name="content.territory.name"
+                        :type-count="section.evidence.typeCount"
+                        :inaccessible-types="metric.key === 'types' ? section.evidence.inaccessibleTypes : undefined"
+                        :show-group-labels="true"
+                      />
                     </div>
                     <CahierFigureLegend
                       class="summary-mode-key"
@@ -871,9 +781,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                   <p v-if="section.evidence.totalTypes !== null" class="bpe-profile-total">
                     {{ formatNumber(section.evidence.totalTypes, 0) }} types d’équipement
                   </p>
-                  <BpeProfilesChartCahier
-                    :profiles="section.evidence.profiles"
-                    :territory-name="section.evidence.territoryName"
+                   <BpeProfilesChartCahier
+                     :profiles="section.evidence.profiles"
+                     :total-types="section.evidence.totalTypes"
+                     :territory-name="section.evidence.territoryName"
                     :donut-tooltip-title="section.evidence.donutTooltipTitle"
                      :comparison-label="section.evidence.comparisonLabel"
                     :exploration-to="sectionExploration(section)"
@@ -891,17 +802,17 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                       v-for="service in section.evidence.services"
                       :key="service.service"
                       class="access-figure"
-                      :class="{ 'access-figure--incomplete': !hasAnyAccessValue(service) }"
-                    >
-                      <CahierDonut
-                        class="stacked-donut cahier-tooltip-trigger"
-                         :style="accessDonutStyle(service)"
-                         :aria-describedby="accessTooltipId(service.service)"
-                        :label-accessible="`${service.label}. ${[...Object.values(service.modes), service.inaccessible].map((mode) => `${mode.label} : ${formatFact(mode.fact)}`).join('; ')}`"
-                      >
-                        <component :is="serviceIcon(service.service)" class="stacked-donut-icon" :size="16" stroke-width="1.5" aria-hidden="true" />
-                        <span>{{ service.label }}</span>
-                      </CahierDonut>
+                       :class="{ 'access-figure--incomplete': !hasAnyAccessValue(service) }"
+                     >
+                       <span class="access-service-label">{{ service.label }}</span>
+                        <CahierDonut
+                          class="stacked-donut cahier-tooltip-trigger"
+                           :rings="accessDonutRings(service)"
+                           :aria-describedby="accessTooltipId(service.service)"
+                          :label-accessible="`${service.label}. ${Object.values(service.modes).map((mode) => `${mode.label} : ${accessibleModeValue(mode.fact)}`).join('. ')}`"
+                        >
+                         <component :is="serviceIcon(service.service)" class="stacked-donut-icon" :size="16" stroke-width="1.5" aria-hidden="true" />
+                       </CahierDonut>
                       <CahierFigureScalar
                         class="access-foot-summary"
                         :value="formatFact(service.modes.walkTransit.fact)"
@@ -928,8 +839,8 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                         popover
                       />
                     </figure>
-                    <div class="access-legend">
-                      <p>Chaque cercle montre les parts disponibles par mode.</p>
+                     <div class="access-legend">
+                       <p>Chaque anneau montre la part accessible par mode.</p>
                       <CahierFigureLegend
                         :entries="section.evidence.legend"
                         :icons="MODE_ICONS"
@@ -1124,6 +1035,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 10%;
 }
+.cahier--sans-grille .summary-bar-metrics {
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+}
 .cahier--sans-grille .summary-metric-title {
   color: var(--cahier-default);
   font: var(--type-figure-label);
@@ -1132,21 +1047,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
   text-align: center;
   text-transform: uppercase;
 }
-.cahier--sans-grille .summary-metrics--paired .summary-stack { margin: 8px 0 0; }
-.summary-bar-pair { display: grid; gap: 8px; margin-top: 8px; }
-.summary-bar-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px; align-items: center; }
-.summary-bar-label { display: block; margin-top: 4px; color: var(--cahier-default); font-size: 9px; line-height: 1.1; text-align: center; white-space: nowrap; }
-.summary-bar-label--reference { color: var(--cahier-region-emphasis); }
-.summary-bar-row--territory { display: block; }
-.summary-bar-row--reference { grid-template-columns: 1fr; gap: 5px; }
-.summary-bar-row--reference .summary-bar-label { display: block; text-align: center; }
-.summary-bar-visual { position: relative; }
-.summary-stack--reference { border: 1px solid color-mix(in srgb, var(--cahier-default) 24%, transparent); background: transparent; }
-.summary-stack--reference .summary-stack-segment { opacity: .48; }
 .cahier-tooltip-trigger { cursor: help; }
 .summary-stack[tabindex]:focus-visible { outline: 2px solid var(--cahier-region-emphasis); outline-offset: 4px; }
  .summary-mode-key { --cahier-figure-legend-margin: var(--space-4) 0 0; }
-.summary-bar-metrics { gap: var(--space-6); }
+.summary-bar-metrics { gap: var(--space-3); }
 .summary-loss-metrics { margin-top: var(--space-3); }
 .summary-metrics { display: grid; gap: 42px; }
 .summary-metric { min-width: 0; }
@@ -1186,6 +1090,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .access-figure-collection { margin: 0; padding: 12px 0 0; }
 .access-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 18px; align-items: start; }
 .access-figure { position: relative; display: grid; min-width: 0; gap: 8px; justify-items: center; margin: 0; }
+.access-service-label { min-height: 1.4em; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.4; text-align: center; }
 .access-legend { display: grid; gap: 7px; justify-items: center; margin-top: var(--space-5); color: var(--cahier-default); text-align: center; }
 .access-legend p { margin: 0 0 3px; }
 

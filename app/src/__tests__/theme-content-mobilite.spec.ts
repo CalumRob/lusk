@@ -5,6 +5,7 @@ import type {
   FactComparison,
   FactProvenance,
   MobiliteAccessFacts,
+  MobiliteAccessGaps,
   MobiliteAccessModes,
   MobiliteSummaryFacts,
   NumericFact,
@@ -67,13 +68,13 @@ function absentFact(key: string, unit = '%'): NumericFact {
 
 function accessModes(car: number, bike: number, walkTransit: number): MobiliteAccessModes {
   return {
-    car: fact('access.administration', car, '%', comparison(0.75, 'plus-est-mieux', 'mean')),
-    bike: fact('access.administration', bike, '%', comparison(0.6, 'plus-est-mieux', 'mean')),
+    car: fact('access.administration', car, '%', comparison(0.75, 'plus-est-mieux')),
+    bike: fact('access.administration', bike, '%', comparison(0.6, 'plus-est-mieux')),
     walkTransit: fact(
       'access.administration',
       walkTransit,
       '%',
-      comparison(0.45, 'plus-est-mieux', 'mean'),
+      comparison(0.45, 'plus-est-mieux'),
     ),
   }
 }
@@ -102,6 +103,15 @@ function lectureText(lecture: Lecture | null): string {
 }
 
 function accessFacts(): MobiliteAccessFacts {
+  const gapsByService = Object.fromEntries(
+    services.map((service) => [
+      service,
+      {
+        carGap: fact(`access.${service}.carGap`, 0.4, '%', comparison(0.3, 'moins-est-mieux')),
+        bikeGain: fact(`access.${service}.bikeGain`, 0.2, '%', comparison(0.15, 'plus-est-mieux')),
+      },
+    ]),
+  ) as Record<(typeof services)[number], MobiliteAccessGaps>
   return {
     availability: 'complete',
     totalBuildings: fact('access.totalBuildings', 100, 'bâtiments', null),
@@ -110,6 +120,7 @@ function accessFacts(): MobiliteAccessFacts {
     byService: Object.fromEntries(
       services.map((service) => [service, accessModes(1, 0.8, 0.6)]),
     ) as Record<(typeof services)[number], MobiliteAccessModes>,
+    gapsByService,
   }
 }
 
@@ -356,14 +367,17 @@ describe('resolveMobiliteThemeContent', () => {
         { key: 'walkTransit', label: 'À pied + TC', marker: 'icon', iconKey: 'walkTransit', tone: 't' },
         { key: 'bike', label: 'À vélo + TC', marker: 'icon', iconKey: 'bike', tone: 'b' },
         { key: 'car', label: 'Voiture', marker: 'icon', iconKey: 'car', tone: 'c' },
-        { key: 'inaccessible', label: 'Inaccessible', marker: 'slash', tone: 'neutral' },
       ],
     })
-    expect(essentials.evidence?.kind === 'access' ? essentials.evidence.services[0]?.inaccessible : null).toMatchObject({
-      label: 'Inaccessible',
-      fact: { value: 0 },
-    })
     if (essentials.evidence?.kind === 'access') {
+      expect(essentials.evidence.services[0]?.carGap).toMatchObject({
+        label: 'Écart voiture',
+        fact: { value: 0.4 },
+      })
+      expect(essentials.evidence.services[0]?.bikeGain).toMatchObject({
+        label: 'Apport du vélo',
+        fact: { value: 0.2 },
+      })
       for (const service of essentials.evidence.services) {
         for (const mode of Object.values(service.modes)) {
           expect(mode.fact.comparison?.rank).toEqual({ position: 1, size: 2 })
@@ -374,8 +388,11 @@ describe('resolveMobiliteThemeContent', () => {
       accessIndicators,
     )
     expect(essentials.lecture?.marelle).toBe('Tous les équipements ne se valent pas...')
-    expect(lectureText(essentials.lecture)).toBe(
-      'À Commune A, les cinq types de services sont accessibles en voiture depuis tous les bâtiments analysés.',
+    expect(lectureText(essentials.lecture)).toContain(
+      'Cette partie présente cinq regroupements de services essentiels.',
+    )
+    expect(lectureText(essentials.lecture)).toContain(
+      'À Commune A, les cinq services essentiels sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.',
     )
     expect(completeFacts.mobility.access.totalBuildings.value).toBe(100)
     expect(content.introduction[1]?.map((segment) => segment.value).join('')).toContain(
@@ -383,6 +400,65 @@ describe('resolveMobiliteThemeContent', () => {
     )
     expect(JSON.stringify(content)).not.toContain('story_key')
     expect(JSON.stringify(content)).not.toContain('salience')
+  })
+
+  it('uses the 75% threshold and renders every supported coverage pattern', () => {
+    const cases = [
+      {
+        values: [0.75, 0.75, 0.75],
+        expected: 'sont couverts quel que soit le mode de transport.',
+      },
+      {
+        values: [0.74, 0.75, 0.75],
+        expected: 'sont couverts à pied ou en transports en commun et à vélo, mais pas en voiture.',
+      },
+      {
+        values: [0.75, 0.75, 0.74],
+        expected: 'sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.',
+      },
+      {
+        values: [0.74, 0.75, 0.74],
+        expected: 'sont couverts à vélo, mais pas à pied ou en transports en commun ni en voiture.',
+      },
+      {
+        values: [0.75, 0.74, 0.74],
+        expected: 'ne sont couverts qu’en voiture.',
+      },
+      {
+        values: [0.74, 0.74, 0.74],
+        expected: 'ne sont couverts par aucun mode de transport.',
+      },
+    ] as const
+
+    for (const testCase of cases) {
+      const facts = structuredClone(completeFacts)
+      for (const service of services) {
+        facts.mobility.access.byService[service] = accessModes(
+          testCase.values[0],
+          testCase.values[1],
+          testCase.values[2],
+        )
+      }
+
+      const lecture = resolveMobiliteThemeContent(facts).units[0]!.sections[2]!.lecture
+
+      expect(lectureText(lecture)).toContain(`À Commune A, les cinq services essentiels ${testCase.expected}`)
+    }
+  })
+
+  it('bolds the coverage definition and keeps peer gap readings above the 10-point threshold', () => {
+    const essentials = resolveMobiliteThemeContent(completeFacts).units[0]!.sections[2]!
+    const lecture = essentials.lecture!
+
+    expect(lecture.prose[0]).toContainEqual({
+      kind: 'emphasis',
+      tone: 'default',
+      value: 'trois bâtiments sur quatre',
+    })
+    expect(lectureText(lecture)).toContain(
+      'L’écart voiture est plus marqué pour les cinq services essentiels que dans la médiane des communes de EPCI X (10 points de pourcentage).',
+    )
+    expect(lectureText(lecture)).not.toContain('L’apport du vélo est')
   })
 
   it('bolds a nuanced profile reading', () => {
@@ -635,6 +711,15 @@ describe('resolveMobiliteThemeContent', () => {
           },
         ]),
       ) as Record<(typeof services)[number], MobiliteAccessModes>,
+      gapsByService: Object.fromEntries(
+        services.map((service) => [
+          service,
+          {
+            carGap: absentFact(`access.${service}.carGap`, '%'),
+            bikeGain: absentFact(`access.${service}.bikeGain`, '%'),
+          },
+        ]),
+      ) as Record<(typeof services)[number], MobiliteAccessGaps>,
     }
     facts.mobility.bpeAccess = { availability: 'absent', profiles: [] }
 
