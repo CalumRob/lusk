@@ -167,11 +167,21 @@ VINTAGES_RACCORDEMENT <- tibble::tribble(
 # vintages_mobilite ------------------------------------------------------------
 # Le builder de vintages du thème : la projection générique depuis le
 # manifeste — une source, SA référence (l'instantané de l'analyse) et SA
-# publication (le portage), jamais alignées. Depuis l'issue #486, les DEUX
-# faits construits du raccordement voyagent à leurs côtés.
+# publication (le portage), jamais alignées. L'export bâtiment est conservé
+# dans le manifeste comme entrée opérationnelle, mais ses projections publiques
+# citent mobilite_snapshot : il ne doit donc pas devenir une seconde ligne de
+# source dans vintages.json. Depuis l'issue #486, les DEUX faits construits du
+# raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
-  dplyr::bind_rows(vintages_depuis_manifest(MANIFEST_MOBILITE),
-                   VINTAGES_RACCORDEMENT)
+  dplyr::bind_rows(
+    vintages_depuis_manifest(
+      MANIFEST_MOBILITE[
+        MANIFEST_MOBILITE$id != DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
+        , drop = FALSE
+      ]
+    ),
+    VINTAGES_RACCORDEMENT
+  )
 }
 
 # agreger_nb_buildings_territoires ---------------------------------------------
@@ -346,6 +356,28 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   profils_acces_bpe <- construire_projection_profils_acces_bpe(
     matrice_profils_acces_bpe
   )
+  distribution_acces_batiments <- if (
+    "accessibilite_batiments" %in% names(donnees) &&
+      !is.null(donnees$accessibilite_batiments)
+  ) {
+    agreger_distribution_acces_batiments(
+      donnees$accessibilite_batiments,
+      base_epci
+    )
+  } else {
+    NULL
+  }
+  rampe_acces_batiments <- if (
+    "rampe_acces_batiments" %in% names(donnees) &&
+      !is.null(donnees$rampe_acces_batiments)
+  ) {
+    agreger_rampe_acces_batiments(
+      donnees$rampe_acces_batiments,
+      base_epci
+    )
+  } else {
+    NULL
+  }
   acces_rangs <- construire_rangs_acces(acces_territoires, territoires)
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
                                                 territoires)
@@ -455,6 +487,18 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "matrice_profils_acces_bpe.rds"))
   readr::write_rds(profils_acces_bpe,
                    file.path(sortie, "profils_acces_bpe.rds"))
+  if (!is.null(distribution_acces_batiments)) {
+    readr::write_rds(
+      distribution_acces_batiments,
+      file.path(sortie, "distribution_acces_batiments.rds")
+    )
+  }
+  if (!is.null(rampe_acces_batiments)) {
+    readr::write_rds(
+      rampe_acces_batiments,
+      file.path(sortie, "rampe_acces_batiments.rds")
+    )
+  }
 
   list(
     mobilite_communes = mobilite_communes,
@@ -479,7 +523,9 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
     matrice_profils_acces_bpe = matrice_profils_acces_bpe,
-    profils_acces_bpe = profils_acces_bpe
+     profils_acces_bpe = profils_acces_bpe,
+     distribution_acces_batiments = distribution_acces_batiments,
+     rampe_acces_batiments = rampe_acces_batiments
   )
 }
 
@@ -1286,6 +1332,25 @@ validations_mobilite <- list(
     verifier_contrat_projection_profils_acces_bpe(payload$profils_acces_bpe)
     invisible(payload)
   },
+  # La grille bâtiment × équipement est une projection compacte optionnelle :
+  # ses bornes et ses libellés sont des faits de payload, et la matrice source
+  # ne doit jamais franchir la publication.
+  function(payload) {
+    if (!"distribution_acces_batiments" %in% names(payload) ||
+        is.null(payload$distribution_acces_batiments)) return(invisible(payload))
+    verifier_contrat_distribution_acces_batiments(
+      payload$distribution_acces_batiments
+    )
+    invisible(payload)
+  },
+  # La rampe marginale est une seconde projection de la même source : elle
+  # porte les trois modes, onze quantiles et aucun bâtiment individuel.
+  function(payload) {
+    if (!"rampe_acces_batiments" %in% names(payload) ||
+        is.null(payload$rampe_acces_batiments)) return(invisible(payload))
+    verifier_contrat_rampe_acces_batiments(payload$rampe_acces_batiments)
+    invisible(payload)
+  },
   # la GRILLE de la courbe du raccordement : les 11 détails déclarés « t0000 »
   # → « t0360 » — un détail hors grille, ancien ou mal formé est une
   # corruption, jamais une courbe qui ment sur son axe
@@ -1335,6 +1400,8 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
       compute_histoires_mobilite(analytiques, vintages), "mobilite"),
     territoires = reference_territoires(territoires),
     profils_acces_bpe = analytiques$profils_acces_bpe,
+    distribution_acces_batiments = analytiques$distribution_acces_batiments,
+    rampe_acces_batiments = analytiques$rampe_acces_batiments,
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
 
@@ -1393,7 +1460,7 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
 MEMBRES_DESCRIPTEUR_MOBILITE <- c(
   "theme", "manifest", "vintages", "construire_donnees",
   "construire_analytiques", "publier", "directions", "metadata",
-  "raccordement"
+  "retire_vintages", "raccordement"
 )
 
 # verifier_descripteur_mobilite -------------------------------------------------
@@ -1480,6 +1547,10 @@ theme_mobilite <- function() {
     # inst/extdata/theme-metadata/) — publiées par run_pipeline après le
     # payload, jamais un recompute des tables de faits
     metadata = function() lire_theme_metadata("mobilite"),
+    # L'export bâtiment reste une entrée du manifeste pour l'ingestion, mais
+    # n'est pas un vintage public distinct : les projections citent le snapshot
+    # porté et la table partagée doit retirer l'ancien id s'il existe déjà.
+    retire_vintages = DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
     # LE TRAIT RACCORDEMENT (issue #486) : le graphe le voit et câble la
     # chaîne de calcul — les épingles du package en cibles de fichiers, la
     # cible raccordement_mobilite (le calcul, persisté), la publication

@@ -25,6 +25,9 @@
 
 import type {
   ApercuRow,
+  DistributionAccesBatimentsRow,
+  DistributionAccesBatimentsAvailability,
+  RampeAccesBatimentsRow,
   Histoire,
   HistoireEconomie,
   HistoireMobilite,
@@ -60,6 +63,14 @@ import {
   THEMES_CANONIQUES,
   TYPES_NOEUD_TEXTE_RICHE,
   LIBELLES_PROFILS_ACCES_BPE,
+  DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL,
+  DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL,
+  DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL,
+  DISTRIBUTION_ACCES_BATIMENTS_GRID_SIZE,
+  RAMPE_ACCES_BATIMENTS_X_LABEL,
+  RAMPE_ACCES_BATIMENTS_Y_LABEL,
+  RAMPE_ACCES_BATIMENTS_QUANTILE_COUNT,
+  RAMPE_ACCES_BATIMENTS_MODE_LABELS,
   PROFILS_ACCES_BPE,
 } from './types'
 
@@ -1499,6 +1510,351 @@ export function validerProfilsAccesBpe(
   })
 }
 
+/**
+ * The compact same-building breadth × depth projection (#550). Bucket labels
+ * and boundaries are payload-owned; the validator checks that each cell is
+ * internally coherent without recreating the upstream ranges in the renderer.
+ */
+export function validerDistributionAccesBatiments(
+  brut: unknown,
+  fichier: string,
+  territoires: Territoire[],
+): DistributionAccesBatimentsRow[] | null {
+  if (brut === null) return null
+  exiger(Array.isArray(brut), fichier, 0, 'la distribution des bâtiments doit être un tableau')
+  const reference = indexerReference(territoires)
+  const vus = new Set<string>()
+
+  const lireNombreNullable = (ligne: LigneBrute, champ: string, i: number): number | null => {
+    const valeur = ligne[champ]
+    exiger(valeur === null || estNombre(valeur), fichier, i, `« ${champ} » doit être un nombre ou null`)
+    return valeur as number | null
+  }
+
+  const lignes = (brut as unknown[]).map((ligne, i): DistributionAccesBatimentsRow => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque cellule doit être un objet')
+    verifierReference(ligne, reference, fichier, ligneIndexee)
+
+    const territoire = ligne['territoire'] as string
+    const type = lireType(ligne, fichier, ligneIndexee)
+    const availability = ligne['availability']
+    exiger(
+      availability === 'complete' || availability === 'incomplete' || availability === 'absent',
+      fichier,
+      ligneIndexee,
+      `« availability » inconnu « ${String(availability)} »`,
+    )
+    const totalBuildings = ligne['total_buildings']
+    exiger(
+      estNombre(totalBuildings) && totalBuildings >= 0 && Number.isInteger(totalBuildings),
+      fichier,
+      ligneIndexee,
+      '« total_buildings » doit être un entier positif ou nul',
+    )
+
+    const lireChaineNullable = (champ: string): string | null => {
+      const valeur = ligne[champ]
+      exiger(valeur === null || estChaineNonVide(valeur), fichier, ligneIndexee, `« ${champ} » doit être une chaîne non vide ou null`)
+      return valeur as string | null
+    }
+    const breadthBucket = lireChaineNullable('breadth_bucket')
+    const breadthMin = lireNombreNullable(ligne, 'breadth_min', ligneIndexee)
+    const breadthMax = lireNombreNullable(ligne, 'breadth_max', ligneIndexee)
+    const breadthLabel = lireChaineNullable('breadth_label')
+    const depthBucket = lireChaineNullable('depth_bucket')
+    const depthMin = lireNombreNullable(ligne, 'depth_min', ligneIndexee)
+    const depthMax = lireNombreNullable(ligne, 'depth_max', ligneIndexee)
+    const depthLabel = lireChaineNullable('depth_label')
+    const buildingCount = lireNombreNullable(ligne, 'building_count', ligneIndexee)
+    const share = lireNombreNullable(ligne, 'share', ligneIndexee)
+    const mode = ligne['mode']
+    exiger(mode === 't', fichier, ligneIndexee, '« mode » doit être « t »')
+    const modeLabel = lireChaine(ligne, 'mode_label', fichier, ligneIndexee)
+    exiger(modeLabel === DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL, fichier, ligneIndexee, '« mode_label » incohérent')
+    const breadthAxisLabel = lireChaine(ligne, 'breadth_axis_label', fichier, ligneIndexee)
+    const depthAxisLabel = lireChaine(ligne, 'depth_axis_label', fichier, ligneIndexee)
+    exiger(breadthAxisLabel === DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL, fichier, ligneIndexee, '« breadth_axis_label » incohérent')
+    exiger(depthAxisLabel === DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL, fichier, ligneIndexee, '« depth_axis_label » incohérent')
+    const sourceId = lireChaine(ligne, 'source_id', fichier, ligneIndexee)
+    const source = lireChaine(ligne, 'source', fichier, ligneIndexee)
+    const version = lireChaine(ligne, 'version', fichier, ligneIndexee)
+    const dateReference = lireChaine(ligne, 'date_reference', fichier, ligneIndexee)
+    const datePublication = lireChaine(ligne, 'date_publication', fichier, ligneIndexee)
+    exiger(estDateIso(dateReference), fichier, ligneIndexee, '« date_reference » doit être une date ISO')
+    exiger(estDateIso(datePublication), fichier, ligneIndexee, '« date_publication » doit être une date ISO')
+    const comparisonLabel = lireChaineNullable('comparison_label')
+
+    const cle = `${territoire}\u0000${type}\u0000${breadthBucket ?? ''}\u0000${depthBucket ?? ''}`
+    exiger(!vus.has(cle), fichier, ligneIndexee, 'cellule en double pour ce territoire et ces tranches')
+    vus.add(cle)
+
+    if (availability === 'absent') {
+      exiger(totalBuildings === 0, fichier, ligneIndexee, 'un territoire absent doit avoir zéro bâtiment')
+      exiger(
+        breadthBucket === null && breadthMin === null && breadthMax === null && breadthLabel === null &&
+          depthBucket === null && depthMin === null && depthMax === null && depthLabel === null &&
+          buildingCount === null && share === null,
+        fichier,
+        ligneIndexee,
+        'un territoire absent ne doit pas porter de cellule',
+      )
+    } else {
+      exiger(totalBuildings >= 1, fichier, ligneIndexee, 'un territoire présent doit avoir un dénominateur positif')
+      exiger(breadthBucket !== null && breadthMin !== null && breadthLabel !== null, fichier, ligneIndexee, 'la tranche breadth est requise')
+      exiger(depthBucket !== null && depthMin !== null && depthLabel !== null, fichier, ligneIndexee, 'la tranche depth est requise')
+      exiger(breadthMax === null || breadthMax >= breadthMin!, fichier, ligneIndexee, 'les bornes breadth sont incohérentes')
+      exiger(depthMax === null || depthMax >= depthMin!, fichier, ligneIndexee, 'les bornes depth sont incohérentes')
+      exiger(buildingCount !== null && Number.isInteger(buildingCount) && buildingCount >= 0, fichier, ligneIndexee, '« building_count » doit être un entier positif ou nul')
+      exiger(share !== null && share >= 0 && share <= 1, fichier, ligneIndexee, '« share » doit être dans [0, 1]')
+    }
+
+    return {
+      territoire,
+      type,
+      availability: availability as DistributionAccesBatimentsAvailability,
+      total_buildings: totalBuildings as number,
+      breadth_bucket: breadthBucket,
+      breadth_min: breadthMin,
+      breadth_max: breadthMax,
+      breadth_label: breadthLabel,
+      depth_bucket: depthBucket,
+      depth_min: depthMin,
+      depth_max: depthMax,
+      depth_label: depthLabel,
+      building_count: buildingCount,
+      share,
+      mode,
+      mode_label: modeLabel,
+      breadth_axis_label: breadthAxisLabel,
+      depth_axis_label: depthAxisLabel,
+      source_id: sourceId,
+      source,
+      version,
+      date_reference: dateReference,
+      date_publication: datePublication,
+      comparison_label: comparisonLabel,
+    }
+  })
+
+  const groupes = new Map<string, DistributionAccesBatimentsRow[]>()
+  for (const ligne of lignes) {
+    const cle = `${ligne.territoire}\u0000${ligne.type}`
+    const groupe = groupes.get(cle) ?? []
+    groupe.push(ligne)
+    groupes.set(cle, groupe)
+  }
+  for (const groupe of groupes.values()) {
+    const etat = groupe[0]!.availability
+    exiger(groupe.every((ligne) => ligne.availability === etat), fichier, 0, 'états mélangés pour un territoire')
+    if (etat !== 'absent') {
+      const total = groupe[0]!.total_buildings
+      exiger(
+        groupe.length === DISTRIBUTION_ACCES_BATIMENTS_GRID_SIZE,
+        fichier,
+        0,
+        'la grille de cellules est incomplète',
+      )
+      exiger(
+        groupe.every((ligne) =>
+          ligne.total_buildings === total &&
+          ligne.mode === groupe[0]!.mode &&
+          ligne.mode_label === groupe[0]!.mode_label &&
+          ligne.breadth_axis_label === groupe[0]!.breadth_axis_label &&
+          ligne.depth_axis_label === groupe[0]!.depth_axis_label &&
+          ligne.source_id === groupe[0]!.source_id &&
+          ligne.source === groupe[0]!.source &&
+          ligne.version === groupe[0]!.version &&
+          ligne.date_reference === groupe[0]!.date_reference &&
+          ligne.date_publication === groupe[0]!.date_publication &&
+          ligne.comparison_label === groupe[0]!.comparison_label,
+        ),
+        fichier,
+        0,
+        'les métadonnées ou le dénominateur divergent dans un territoire',
+      )
+      const compte = groupe.reduce((somme, ligne) => somme + (ligne.building_count ?? 0), 0)
+      const part = groupe.reduce((somme, ligne) => somme + (ligne.share ?? 0), 0)
+      exiger(compte === total, fichier, 0, 'les cellules ne recomposent pas total_buildings')
+      exiger(Math.abs(part - 1) <= 1e-12, fichier, 0, 'les parts de cellules ne recomposent pas 1')
+    }
+  }
+  return lignes
+}
+
+/** Validate the compact three-mode access-ramp quantile projection. */
+export function validerRampeAccesBatiments(
+  brut: unknown,
+  fichier: string,
+  territoires: Territoire[],
+): RampeAccesBatimentsRow[] | null {
+  if (brut === null) return null
+  exiger(Array.isArray(brut), fichier, 0, 'la rampe d’accès doit être un tableau')
+  const reference = indexerReference(territoires)
+  const vus = new Set<string>()
+
+  const lireNombreNullable = (ligne: LigneBrute, champ: string, i: number): number | null => {
+    const valeur = ligne[champ]
+    exiger(valeur === null || estNombre(valeur), fichier, i, `« ${champ} » doit être un nombre ou null`)
+    return valeur as number | null
+  }
+  const lireChaineNullable = (ligne: LigneBrute, champ: string, i: number): string | null => {
+    const valeur = ligne[champ]
+    exiger(valeur === null || estChaineNonVide(valeur), fichier, i, `« ${champ} » doit être une chaîne non vide ou null`)
+    return valeur as string | null
+  }
+
+  const lignes = (brut as unknown[]).map((ligne, i): RampeAccesBatimentsRow => {
+    const ligneIndexee = i + 1
+    exiger(estObjet(ligne), fichier, ligneIndexee, 'chaque point de rampe doit être un objet')
+    verifierReference(ligne, reference, fichier, ligneIndexee)
+
+    const territoire = ligne['territoire'] as string
+    const type = lireType(ligne, fichier, ligneIndexee)
+    const availability = ligne['availability']
+    exiger(
+      availability === 'complete' || availability === 'incomplete' || availability === 'absent',
+      fichier,
+      ligneIndexee,
+      `« availability » inconnu « ${String(availability)} »`,
+    )
+    const totalBuildings = ligne['total_buildings']
+    exiger(
+      estNombre(totalBuildings) && totalBuildings >= 0 && Number.isInteger(totalBuildings),
+      fichier,
+      ligneIndexee,
+      '« total_buildings » doit être un entier positif ou nul',
+    )
+    const mode = ligne['mode']
+    exiger(mode === 'c' || mode === 'b' || mode === 't', fichier, ligneIndexee, '« mode » inconnu')
+    const modeLabel = lireChaine(ligne, 'mode_label', fichier, ligneIndexee)
+    exiger(modeLabel === RAMPE_ACCES_BATIMENTS_MODE_LABELS[mode], fichier, ligneIndexee, '« mode_label » incohérent')
+    const quantile = lireNombreNullable(ligne, 'quantile', ligneIndexee)
+    const quantileLabel = lireChaineNullable(ligne, 'quantile_label', ligneIndexee)
+    const accessibleTypes = lireNombreNullable(ligne, 'accessible_types', ligneIndexee)
+    const xAxisLabel = lireChaine(ligne, 'x_axis_label', fichier, ligneIndexee)
+    const yAxisLabel = lireChaine(ligne, 'y_axis_label', fichier, ligneIndexee)
+    exiger(xAxisLabel === RAMPE_ACCES_BATIMENTS_X_LABEL, fichier, ligneIndexee, '« x_axis_label » incohérent')
+    exiger(yAxisLabel === RAMPE_ACCES_BATIMENTS_Y_LABEL, fichier, ligneIndexee, '« y_axis_label » incohérent')
+    const sourceId = lireChaine(ligne, 'source_id', fichier, ligneIndexee)
+    const source = lireChaine(ligne, 'source', fichier, ligneIndexee)
+    const version = lireChaine(ligne, 'version', fichier, ligneIndexee)
+    const dateReference = lireChaine(ligne, 'date_reference', fichier, ligneIndexee)
+    const datePublication = lireChaine(ligne, 'date_publication', fichier, ligneIndexee)
+    exiger(estDateIso(dateReference), fichier, ligneIndexee, '« date_reference » doit être une date ISO')
+    exiger(estDateIso(datePublication), fichier, ligneIndexee, '« date_publication » doit être une date ISO')
+    const comparisonLabel = lireChaineNullable(ligne, 'comparison_label', ligneIndexee)
+
+    const cle = `${territoire}\u0000${type}\u0000${mode}\u0000${quantile ?? ''}`
+    exiger(!vus.has(cle), fichier, ligneIndexee, 'point de rampe en double pour ce territoire, mode et quantile')
+    vus.add(cle)
+
+    if (availability === 'absent') {
+      exiger(totalBuildings === 0, fichier, ligneIndexee, 'un territoire absent doit avoir zéro bâtiment')
+      exiger(
+        quantile === null && quantileLabel === null && accessibleTypes === null,
+        fichier,
+        ligneIndexee,
+        'un territoire absent ne doit pas porter de point de courbe',
+      )
+    } else {
+      exiger(totalBuildings >= 1, fichier, ligneIndexee, 'un territoire présent doit avoir un dénominateur positif')
+      exiger(quantile !== null && quantile >= 0 && quantile <= 1, fichier, ligneIndexee, '« quantile » doit être dans [0, 1]')
+      exiger(quantileLabel !== null, fichier, ligneIndexee, '« quantile_label » est requis')
+      exiger(accessibleTypes !== null && Number.isFinite(accessibleTypes) && accessibleTypes >= 0, fichier, ligneIndexee, '« accessible_types » est invalide')
+    }
+
+    return {
+      territoire,
+      type,
+      availability: availability as DistributionAccesBatimentsAvailability,
+      total_buildings: totalBuildings as number,
+      mode,
+      mode_label: modeLabel,
+      quantile,
+      quantile_label: quantileLabel,
+      accessible_types: accessibleTypes,
+      x_axis_label: xAxisLabel,
+      y_axis_label: yAxisLabel,
+      source_id: sourceId,
+      source,
+      version,
+      date_reference: dateReference,
+      date_publication: datePublication,
+      comparison_label: comparisonLabel,
+    }
+  })
+
+  const groupes = new Map<string, RampeAccesBatimentsRow[]>()
+  for (const ligne of lignes) {
+    const cle = `${ligne.territoire}\u0000${ligne.type}\u0000${ligne.mode}`
+    const groupe = groupes.get(cle) ?? []
+    groupe.push(ligne)
+    groupes.set(cle, groupe)
+  }
+  for (const groupe of groupes.values()) {
+    const etat = groupe[0]!.availability
+    exiger(groupe.every((ligne) => ligne.availability === etat), fichier, 0, 'états mélangés pour un territoire et un mode')
+    exiger(
+      groupe.every((ligne) =>
+        ligne.total_buildings === groupe[0]!.total_buildings &&
+        ligne.mode_label === groupe[0]!.mode_label &&
+        ligne.x_axis_label === groupe[0]!.x_axis_label &&
+        ligne.y_axis_label === groupe[0]!.y_axis_label &&
+        ligne.source_id === groupe[0]!.source_id &&
+        ligne.source === groupe[0]!.source &&
+        ligne.version === groupe[0]!.version &&
+        ligne.date_reference === groupe[0]!.date_reference &&
+        ligne.date_publication === groupe[0]!.date_publication &&
+        ligne.comparison_label === groupe[0]!.comparison_label,
+      ),
+      fichier,
+      0,
+      'métadonnée ou dénominateur divergent dans un groupe',
+    )
+    if (etat === 'absent') {
+      exiger(groupe.length === 1, fichier, 0, 'une absence doit tenir sur un point')
+      continue
+    }
+    exiger(groupe.length === RAMPE_ACCES_BATIMENTS_QUANTILE_COUNT, fichier, 0, 'la courbe de rampe est incomplète')
+    const points = groupe
+      .slice()
+      .sort((left, right) => (left.quantile ?? 0) - (right.quantile ?? 0))
+    exiger(
+      points.every((point, index) =>
+        point.quantile_label === `${Math.round((point.quantile ?? 0) * 100)} %` &&
+        (index === 0 || point.accessible_types! >= points[index - 1]!.accessible_types!),
+      ),
+      fichier,
+      0,
+      'points de courbe incohérents',
+    )
+  }
+
+  const territoiresRampes = new Map<string, RampeAccesBatimentsRow[]>()
+  for (const ligne of lignes) {
+    const cle = `${ligne.territoire}\u0000${ligne.type}`
+    const groupe = territoiresRampes.get(cle) ?? []
+    groupe.push(ligne)
+    territoiresRampes.set(cle, groupe)
+  }
+  for (const groupe of territoiresRampes.values()) {
+    exiger(
+      new Set(groupe.map((ligne) => ligne.mode)).size === 3,
+      fichier,
+      0,
+      'chaque territoire doit porter les trois modes de la rampe',
+    )
+    exiger(
+      new Set(groupe.map((ligne) => ligne.availability)).size === 1,
+      fichier,
+      0,
+      'états mélangés entre les modes d’un territoire',
+    )
+  }
+  return lignes
+}
+
 /** The run report (CONTEXT.md §Run report) — null when absent. */
 export function validerRapportRun(brut: unknown, fichier: string): RunReport | null {
   if (brut === null) return null
@@ -1767,6 +2123,8 @@ function validerSubventionsProgrammes(
   vintages?: unknown
   programmes?: unknown
   profilsAccesBpe?: unknown
+  distributionAccesBatiments?: unknown
+  rampeAccesBatiments?: unknown
 }): Payload {
   const territoires = validerTerritoires(documents.territoires, 'territoires.json')
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
@@ -1780,8 +2138,29 @@ function validerSubventionsProgrammes(
     'profils_acces_bpe.json',
     territoires,
   )
+  const distributionAccesBatiments = validerDistributionAccesBatiments(
+    documents.distributionAccesBatiments ?? null,
+    'distribution_acces_batiments.json',
+    territoires,
+  )
+  const rampeAccesBatiments = validerRampeAccesBatiments(
+    documents.rampeAccesBatiments ?? null,
+    'rampe_acces_batiments.json',
+    territoires,
+  )
 
-  return { territoires, indicateurs, histoires, apercu, runReport, vintages, programmes, profilsAccesBpe }
+  return {
+    territoires,
+    indicateurs,
+    histoires,
+    apercu,
+    runReport,
+    vintages,
+    programmes,
+    profilsAccesBpe,
+    distributionAccesBatiments,
+    rampeAccesBatiments,
+  }
 }
 
 /**

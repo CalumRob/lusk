@@ -53,6 +53,8 @@ import CahierComparisonValue from './CahierComparisonValue.vue'
 import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
 import CahierSummaryPlot from './CahierSummaryPlot.vue'
 import DistributionFigureCahier from './DistributionFigureCahier.vue'
+import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahier.vue'
+import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
@@ -652,16 +654,38 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 
                 </div>
 
-                <figure v-if="section.evidence?.kind === 'distribution'" class="evidence-side evidence-figure">
-                  <figcaption class="cahier-figure-title cahier-baseline-anchor">Distribution des bâtiments selon les services perdus</figcaption>
-                   <DistributionFigureCahier
+                 <figure v-if="section.evidence?.kind === 'distribution'" class="evidence-side evidence-figure">
+                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Distribution des bâtiments selon les services perdus</figcaption>
+                    <DistributionFigureCahier
                      :evidence="section.evidence"
                      :nom="content.territory.name"
+                    />
+                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
+                  </figure>
+
+                 <figure
+                   v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"
+                   class="evidence-side evidence-figure bivariate-evidence"
+                 >
+                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Les bâtiments n’ont pas tous le même accès</figcaption>
+                   <BivariateDistributionFigureCahier
+                     :distribution="section.evidence.buildingDistribution!"
+                     :territory-name="content.territory.name"
                    />
-                   <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                  </figure>
 
-                <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
+                 <figure
+                   v-if="section.evidence?.kind === 'distribution' && section.evidence.accessRamp?.availability === 'complete'"
+                   class="evidence-side evidence-figure access-ramp-evidence"
+                 >
+                   <figcaption class="cahier-figure-title cahier-baseline-anchor">L’échelle des paniers accessibles</figcaption>
+                   <AccessRampFigureCahier
+                     :ramp="section.evidence.accessRamp!"
+                     :territory-name="content.territory.name"
+                   />
+                 </figure>
+
+                 <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>
                   <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                   <template v-if="props.presentation === 'plain'">

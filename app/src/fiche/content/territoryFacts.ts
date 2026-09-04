@@ -6,6 +6,7 @@ import type {
   Indicateur,
   Payload,
   ProfilAccesBpe,
+  RampeAccesBatimentsRow,
   Territoire,
   TerritoireType,
 } from '@/payload/types'
@@ -175,6 +176,58 @@ export interface MobiliteDistributionPeer {
   value: number
 }
 
+export interface MobiliteDistributionBin {
+  key: string
+  min: number
+  max: number | null
+  label: string
+}
+
+export interface MobiliteBuildingDistributionCell {
+  breadthBucket: string
+  depthBucket: string
+  buildingCount: number
+  share: number
+}
+
+/** Normalized compact same-building breadth × depth facts for the Cahier. */
+export interface MobiliteBuildingDistribution {
+  availability: FactAvailability
+  mode: 't'
+  modeLabel: string
+  breadthAxisLabel: string
+  depthAxisLabel: string
+  breadthBins: readonly MobiliteDistributionBin[]
+  depthBins: readonly MobiliteDistributionBin[]
+  cells: readonly MobiliteBuildingDistributionCell[]
+  totalBuildings: number
+  provenance: FactProvenance | null
+  comparisonLabel: string | null
+}
+
+export interface MobiliteAccessRampPoint {
+  quantile: number
+  quantileLabel: string
+  accessibleTypes: number
+}
+
+export interface MobiliteAccessRampCurve {
+  mode: MobiliteAccessMode
+  modeLabel: string
+  points: readonly MobiliteAccessRampPoint[]
+}
+
+/** Normalized three-mode marginal access ramp for the Cahier. */
+export interface MobiliteAccessRamp {
+  availability: FactAvailability
+  xAxisLabel: string
+  yAxisLabel: string
+  curves: Readonly<Record<MobiliteAccessMode, MobiliteAccessRampCurve>>
+  totalBuildings: number
+  provenance: FactProvenance | null
+  comparisonLabel: string | null
+}
+
 export interface TerritoryIdentity {
   code: string
   type: TerritoireType
@@ -190,6 +243,8 @@ export interface MobilityFacts {
   access: MobiliteAccessFacts
   bpeAccess: MobiliteBpeAccessFacts
   losses: MobiliteLossFacts
+  buildingDistribution: MobiliteBuildingDistribution | null
+  accessRamp: MobiliteAccessRamp | null
 }
 
 /**
@@ -879,6 +934,115 @@ function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFac
   }
 }
 
+function buildingDistributionOf(
+  payload: Payload,
+  target: Territoire,
+): MobiliteBuildingDistribution | null {
+  const rows = (payload.distributionAccesBatiments ?? []).filter(
+    (row) => row.territoire === target.territoire,
+  )
+  const first = rows[0]
+  if (!first) return null
+
+  const breadthBins = rows
+    .filter((row) => row.breadth_bucket !== null)
+    .map((row) => ({
+      key: row.breadth_bucket!,
+      min: row.breadth_min!,
+      max: row.breadth_max,
+      label: row.breadth_label!,
+    }))
+    .filter((bin, index, bins) => bins.findIndex((candidate) => candidate.key === bin.key) === index)
+    .sort((left, right) => left.min - right.min)
+  const depthBins = rows
+    .filter((row) => row.depth_bucket !== null)
+    .map((row) => ({
+      key: row.depth_bucket!,
+      min: row.depth_min!,
+      max: row.depth_max,
+      label: row.depth_label!,
+    }))
+    .filter((bin, index, bins) => bins.findIndex((candidate) => candidate.key === bin.key) === index)
+    .sort((left, right) => left.min - right.min)
+  const cells = rows
+    .filter(
+      (row) => row.breadth_bucket !== null && row.depth_bucket !== null && row.building_count !== null && row.share !== null,
+    )
+    .map((row) => ({
+      breadthBucket: row.breadth_bucket!,
+      depthBucket: row.depth_bucket!,
+      buildingCount: row.building_count!,
+      share: row.share!,
+    }))
+
+  return {
+    availability: first.availability,
+    mode: first.mode,
+    modeLabel: first.mode_label,
+    breadthAxisLabel: first.breadth_axis_label,
+    depthAxisLabel: first.depth_axis_label,
+    breadthBins,
+    depthBins,
+    cells,
+    totalBuildings: first.total_buildings,
+    provenance: {
+      sourceId: first.source_id,
+      source: first.source,
+      version: first.version,
+      referenceDate: first.date_reference,
+      publicationDate: first.date_publication,
+    },
+    comparisonLabel: first.comparison_label,
+  }
+}
+
+function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp | null {
+  const rows = (payload.rampeAccesBatiments ?? []).filter(
+    (row) => row.territoire === target.territoire,
+  )
+  const first = rows[0]
+  if (!first) return null
+
+  const modeNames: Readonly<Record<RampeAccesBatimentsRow['mode'], MobiliteAccessMode>> = {
+    c: 'car',
+    b: 'bike',
+    t: 'walkTransit',
+  }
+  const curves = Object.fromEntries(
+    (Object.keys(modeNames) as RampeAccesBatimentsRow['mode'][]).map((mode) => {
+      const modeRows = rows
+        .filter((row) => row.mode === mode && row.quantile !== null && row.quantile_label !== null && row.accessible_types !== null)
+        .sort((left, right) => (left.quantile ?? 0) - (right.quantile ?? 0))
+      const normalizedMode = modeNames[mode]
+      return [normalizedMode, {
+        mode: normalizedMode,
+        modeLabel: rows.find((row) => row.mode === mode)?.mode_label ?? '',
+        points: modeRows.map((row) => ({
+          quantile: row.quantile!,
+          quantileLabel: row.quantile_label!,
+          accessibleTypes: row.accessible_types!,
+        })),
+      }]
+    }),
+  ) as unknown as Record<MobiliteAccessMode, MobiliteAccessRampCurve>
+
+  return {
+    availability: first.availability,
+    xAxisLabel: first.x_axis_label,
+    yAxisLabel: first.y_axis_label,
+    curves,
+    totalBuildings: first.total_buildings,
+    provenance: {
+      sourceId: first.source_id,
+      source: first.source,
+      version: first.version,
+      referenceDate: first.date_reference,
+      publicationDate: first.date_publication,
+    },
+    comparisonLabel: first.comparison_label,
+  }
+}
+
 function lossesOf(
   payload: Payload,
   target: Territoire,
@@ -983,6 +1147,8 @@ export function territoryFactsFor(
       access: accessOf(payload, target, scope),
       bpeAccess: bpeAccessOf(payload, target),
       losses: lossesOf(payload, target, scope),
+      buildingDistribution: buildingDistributionOf(payload, target),
+      accessRamp: accessRampOf(payload, target),
     },
   }
 }

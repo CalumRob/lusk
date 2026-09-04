@@ -132,20 +132,21 @@ test_that("TRIPWIRE — les contrats des nouvelles sources refusent les corrupti
   expect_error(verifier_contrat_mobilite_dila_bdl(faux_dila), "fichier")
 })
 
-test_that("le manifeste concaténé porte les TREIZE sources du thème", {
+test_that("le manifeste concaténé porte les QUATORZE sources du thème", {
   m <- MANIFEST_MOBILITE
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 13L)
+  expect_equal(nrow(m), 14L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id, c("mobilite_snapshot", "rp_logement_princ",
                           "osm_reseaux", "amenagements_cyclables",
                           "communes_limites", "korrigo",
-                          "batiments_residentiels", "bornes-recharges",
+                          "batiments_residentiels", "accessibilite_batiments",
+                          "bornes-recharges",
                           "stationnement-velo", "bpe_b316", "cog_passage",
                           "sncf_voyageurs", "dila_bdl"))
   expect_true(verifier_contrat_manifest_mobilite(m))
 
-  # amputer une source reste un échec bruyant — maintenant TREIZE
+  # amputer une source reste un échec bruyant — maintenant QUATORZE
   defectueux <- m[m$id != "batiments_residentiels", ]
-  expect_error(verifier_contrat_manifest_mobilite(defectueux), "TREIZE")
+  expect_error(verifier_contrat_manifest_mobilite(defectueux), "QUATORZE")
 })

@@ -8,7 +8,8 @@
 #   - batiments_residentiels : la couche des bâtiments résidentiels de Bretagne
 #     (BDNB, portée comme le snapshot) — les geom_adresse POINT (EPSG:2154)
 #     avec leur code_commune_insee, la VRAIE matière de la part des bâtiments
-#     près d'un arrêt (la correction de la méthode) ;
+#     près d'un arrêt (la correction de la méthode) et l'identité stable
+#     batiment_groupe_id, utilisée pour joindre l'export d'accessibilité ;
 #   - bornes-recharges     : le fichier consolidé IRVE (une ligne par point de
 #     charge, avec code_insee_commune et id_station_itinerance) ;
 #   - stationnement-velo   : le fichier par commune du hub Ecolab (une ligne
@@ -107,12 +108,13 @@ lire_batiments_residentiels <- function(chemin) {
 # code_commune_insee en caractères (jamais deviné numérique). Gardes : les
 # colonnes requises, un fichier non vide, un geom_adresse présent et convertible
 # en POINT (une géométrie non POINT ou mal formée est une corruption), un code
-# commune au format COG (5 chiffres). Les bâtiments SANS geom_adresse ni code
-# (103 174 lignes du fichier réel) ne sont pas des bâtiments spatialisables —
-# ils tombent (le compte verrouillé : 1 235 417 bâtiments, 1 200 communes).
-# Trié par code_commune_insee — déterministe.
+# commune au format COG (5 chiffres), une identité batiment_groupe_id non vide
+# et unique. Les bâtiments SANS geom_adresse ni code (103 174 lignes du fichier
+# réel) ne sont pas des bâtiments spatialisables — ils tombent (le compte
+# verrouillé : 1 235 417 bâtiments, 1 200 communes). Trié par code puis identité
+# — déterministe.
 normaliser_batiments_residentiels <- function(batiments_brut) {
-  requis <- c("code_commune_insee", "geom_adresse")
+  requis <- c("code_commune_insee", "geom_adresse", "batiment_groupe_id")
   manquantes <- setdiff(requis, names(batiments_brut))
   if (length(manquantes) > 0) {
     stop("Couche bâtiments corrompue — colonne(s) requise(s) manquante(s) : ",
@@ -137,6 +139,16 @@ normaliser_batiments_residentiels <- function(batiments_brut) {
   }
   table <- batiments_brut[spatialisables, ]
 
+  if (any(is.na(table$batiment_groupe_id) |
+          !nzchar(table$batiment_groupe_id))) {
+    stop("Couche bâtiments corrompue — un batiment_groupe_id vide.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(table$batiment_groupe_id)) {
+    stop("Couche bâtiments corrompue — des batiment_groupe_id dupliqués.",
+         call. = FALSE)
+  }
+
   if (any(!grepl("^[0-9]{5}$", table$code_commune_insee))) {
     stop("Couche bâtiments corrompue — un code_commune_insee hors format COG ",
          "(5 chiffres).", call. = FALSE)
@@ -152,8 +164,8 @@ normaliser_batiments_residentiels <- function(batiments_brut) {
   }
 
   sf_table %>%
-    dplyr::select(code_commune_insee) %>%
-    dplyr::arrange(code_commune_insee)
+    dplyr::select(batiment_groupe_id, code_commune_insee) %>%
+    dplyr::arrange(code_commune_insee, batiment_groupe_id)
 }
 
 # lire_bornes_recharges ---------------------------------------------------------
@@ -316,21 +328,37 @@ normaliser_stationnement_velo <- function(velo_brut) {
 # lue dans le cache (le nom de fichier du manifeste par id — jamais un chemin
 # codé en dur) puis normalisée. Retourne la liste nommée (la forme que
 # construire_donnees_mobilite assemble à mobilite_snapshot) : les arrêts GTFS
-# (korrigo), la couche bâtiments (batiments_residentiels), les bornes IRVE
-# (bornes_recharges) et le hub vélo (stationnement_velo).
+# (korrigo), la couche bâtiments (batiments_residentiels), l'export bâtiment par
+# équipement (accessibilite_batiments), les bornes IRVE (bornes_recharges) et le
+# hub vélo (stationnement_velo).
 construire_sources_offre_mobilite <- function(cache = "data/raw") {
   fichier <- function(id) {
     MANIFEST_MOBILITE$fichier[MANIFEST_MOBILITE$id == id]
   }
+  batiments <- normaliser_batiments_residentiels(
+    lire_batiments_residentiels(
+      file.path(cache, fichier("batiments_residentiels"))
+      )
+  )
+  accessibilite <- lire_accessibilite_batiments(
+    file.path(cache, fichier("accessibilite_batiments")),
+    modes = c("c", "b", "t")
+  )
+  accessibilite_modes <- normaliser_accessibilite_batiments_modes(
+    accessibilite, batiments
+  )
   list(
     korrigo = normaliser_stops_gtfs(
       lire_stops_gtfs(file.path(cache, fichier("korrigo")))
     ),
-    batiments_residentiels = normaliser_batiments_residentiels(
-      lire_batiments_residentiels(
-        file.path(cache, fichier("batiments_residentiels"))
-      )
-    ),
+    batiments_residentiels = batiments,
+    accessibilite_batiments = accessibilite_modes %>%
+      dplyr::transmute(
+        batiment_groupe_id, commune,
+        breadth = breadth_t,
+        depth = depth_t
+      ),
+    rampe_acces_batiments = accessibilite_modes,
     bornes_recharges = normaliser_bornes_recharges(
       lire_bornes_recharges(file.path(cache, fichier("bornes-recharges")))
     ),

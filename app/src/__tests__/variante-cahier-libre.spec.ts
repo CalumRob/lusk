@@ -19,7 +19,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '@/payload/fixtures'
-import type { Indicateur, Payload } from '@/payload/types'
+import type { Indicateur, Payload, RampeAccesBatimentsRow } from '@/payload/types'
 import { routes } from '@/router'
 
 const vintage = {
@@ -91,6 +91,32 @@ function averageRows(): Indicateur[] {
     ...vintage,
   }))
 }
+
+const rampRows: RampeAccesBatimentsRow[] = [
+  ['c', 'Voiture'],
+  ['b', 'À vélo + TC'],
+  ['t', 'À pied + TC'],
+].flatMap(([mode, modeLabel]) =>
+  Array.from({ length: 11 }, (_, index) => ({
+    territoire: '22001',
+    type: 'commune' as const,
+    availability: 'complete' as const,
+    total_buildings: 65_078,
+    mode: mode as RampeAccesBatimentsRow['mode'],
+    mode_label: modeLabel,
+    quantile: index / 10,
+    quantile_label: `${index * 10} %`,
+    accessible_types: index * 3,
+    x_axis_label: 'Part cumulée des bâtiments',
+    y_axis_label: 'types d’équipements accessibles',
+     source_id: 'mobilite_snapshot',
+     source: 'Lusk — analyse d\'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+     version: '2026-02',
+     date_reference: '2026-02-28',
+     date_publication: '2026-08-06',
+    comparison_label: null,
+  })),
+)
 
 const payload: Payload = {
   territoires: territoiresFixture,
@@ -198,6 +224,7 @@ const payload: Payload = {
     },
   ],
   themeMetadata: { mobilite: structuredClone(metadonneesThemesFixtures.mobilite) },
+  rampeAccesBatiments: rampRows,
 }
 
 function factsForTarget(): TerritoryFacts {
@@ -268,8 +295,10 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.summary-value')).toHaveLength(6)
     expect(wrapper.find('.distribution-cahier-svg').exists()).toBe(true)
     expect(wrapper.find('.distribution-cahier').classes()).toContain('cahier-figure-frame')
-    expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(4)
-    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
+    expect(wrapper.find('.access-ramp-evidence').exists()).toBe(true)
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Commune A')
+    expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(5)
+    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(6)
     expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.find('.mode-figures').exists()).toBe(false)
@@ -306,7 +335,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(links.filter((link) => /^\d+(?:er|e)\/\d+$/.test(link.text()))).toHaveLength(15)
     expect(links.filter((link) => link.attributes('href')?.includes('/indicateurs/mobilite/tot_loss_t'))).toHaveLength(7)
     expect(wrapper.findAll('.cahier-section-exploration')).toHaveLength(2)
-    expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(5)
     expect(wrapper.findAll('.cahier-comparison-value')).toHaveLength(15)
     expect(wrapper.findAll('.cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
@@ -748,9 +777,10 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
             bikeGain: { ...gaps.bikeGain, value: null, availability: 'absent', provenance: null, comparison: null },
           },
         ]),
-      ) as Record<string, MobiliteAccessGaps>,
+    ) as Record<string, MobiliteAccessGaps>,
     }
     facts.mobility.bpeAccess = { availability: 'absent', profiles: [] }
+    facts.mobility.accessRamp = null
     const wrapper = await render(resolveMobiliteThemeContent(facts))
 
     expect(wrapper.findAll('.cahier-section--absent')).toHaveLength(4)

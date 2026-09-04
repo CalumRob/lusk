@@ -39,11 +39,13 @@
 
 import type {
   ApercuRow,
+  DistributionAccesBatimentsRow,
   Histoire,
   Indicateur,
   Payload,
   ProgrammesPayload,
   ProfilAccesBpeRow,
+  RampeAccesBatimentsRow,
   RunReport,
   Territoire,
   Theme,
@@ -54,10 +56,12 @@ import { THEMES_CANONIQUES } from './types'
 import {
   PayloadError,
   validerApercu,
+  validerDistributionAccesBatiments,
   validerHistoires,
   validerIndicateurs,
   validerProgrammes,
   validerProfilsAccesBpe,
+  validerRampeAccesBatiments,
   validerRapportRun,
   validerTerritoires,
   validerThemeMetadata,
@@ -96,6 +100,8 @@ export type Fichier =
   | 'apercu'
   | 'programmes'
   | 'profils_acces_bpe'
+  | 'distribution_acces_batiments'
+  | 'rampe_acces_batiments'
   | `indicateurs_${Theme}`
   | `histoires_${Theme}`
   | `theme_${Theme}`
@@ -155,6 +161,8 @@ const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['apercu', (brut, fichier, territoires) => validerApercu(brut, fichier, territoires)],
   ['programmes', (brut, fichier, territoires) => validerProgrammes(brut, fichier, territoires)],
   ['profils_acces_bpe', (brut, fichier, territoires) => validerProfilsAccesBpe(brut, fichier, territoires)],
+  ['distribution_acces_batiments', (brut, fichier, territoires) => validerDistributionAccesBatiments(brut, fichier, territoires)],
+  ['rampe_acces_batiments', (brut, fichier, territoires) => validerRampeAccesBatiments(brut, fichier, territoires)],
 ])
 
 // Les fichiers de thème (ADR-0007) : les mêmes validateurs par thème, la
@@ -212,6 +220,16 @@ export async function chargerFichier(
   options?: ChargerOptions,
 ): Promise<ProfilAccesBpeRow[] | null>
 export async function chargerFichier(
+  nom: 'distribution_acces_batiments',
+  territoires: Territoire[],
+  options?: ChargerOptions,
+): Promise<DistributionAccesBatimentsRow[] | null>
+export async function chargerFichier(
+  nom: 'rampe_acces_batiments',
+  territoires: Territoire[],
+  options?: ChargerOptions,
+): Promise<RampeAccesBatimentsRow[] | null>
+export async function chargerFichier(
   nom: `indicateurs_${Theme}`,
   territoires: Territoire[],
   options?: ChargerOptions,
@@ -248,6 +266,16 @@ export async function chargerFichier(
 export async function chargerPayload(options: ChargerOptions = {}): Promise<Payload> {
   const territoires = await chargerFichier('territoires', options)
   const profilsAccesBpe = await chargerFichier('profils_acces_bpe', territoires, options)
+  const distributionAccesBatiments = await chargerFichier(
+    'distribution_acces_batiments',
+    territoires,
+    options,
+  )
+  const rampeAccesBatiments = await chargerFichier(
+    'rampe_acces_batiments',
+    territoires,
+    options,
+  )
 
   const indicateurs: Indicateur[] = []
   const histoires: Histoire[] = []
@@ -305,6 +333,8 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
     vintages,
     programmes,
     profilsAccesBpe,
+    distributionAccesBatiments,
+    rampeAccesBatiments,
     themeMetadata,
   }
   verifierPariteLibelles(payload)

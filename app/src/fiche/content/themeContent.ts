@@ -10,6 +10,8 @@ import type {
   FactProvenance,
   MobiliteAccessMode,
   MobiliteAccessModes,
+  MobiliteAccessRamp,
+  MobiliteBuildingDistribution,
   MobiliteDistributionPeer,
   MobiliteDistributionSignature,
   MobiliteService,
@@ -80,6 +82,8 @@ export interface DistributionEvidence {
     bike: ContentFact | null
   }
   peers: readonly MobiliteDistributionPeer[]
+  buildingDistribution: MobiliteBuildingDistribution | null
+  accessRamp: MobiliteAccessRamp | null
 }
 
 export interface BpeProfilesEvidence {
@@ -397,6 +401,14 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
     if (section.evidence?.kind === 'distribution') {
       add(section.evidence.marks.walkTransit)
       if (section.evidence.marks.bike) add(section.evidence.marks.bike)
+      const buildingSource = sourceFrom(section.evidence.buildingDistribution?.provenance ?? null)
+      if (buildingSource && !sources.has(buildingSource.id)) {
+        sources.set(buildingSource.id, buildingSource)
+      }
+      const rampSource = sourceFrom(section.evidence.accessRamp?.provenance ?? null)
+      if (rampSource && !sources.has(rampSource.id)) {
+        sources.set(rampSource.id, rampSource)
+      }
     }
     if (section.evidence?.kind === 'summary') {
       for (const mode of Object.values(section.evidence.accessibleEquipment)) add(mode)
@@ -1190,6 +1202,8 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
   const walkDistribution = completeDistribution(
     facts.mobility.losses.distributionWalkTransit,
   )
+  const buildingDistribution = facts.mobility.buildingDistribution
+  const accessRamp = facts.mobility.accessRamp
   const evidence: DistributionEvidence | null = walkDistribution
       ? {
         kind: 'distribution',
@@ -1199,13 +1213,21 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
         marks: {
           walkTransit: contentFact(walkTransit, CONTENT_LABELS.div_loss_t),
           bike: complete(bike) ? contentFact(bike, CONTENT_LABELS.div_loss_b) : null,
-        },
-        peers: facts.mobility.losses.distributionPeers,
-      }
+          },
+          peers: facts.mobility.losses.distributionPeers,
+          buildingDistribution,
+          accessRamp,
+        }
     : null
-  const hasAny = [walkTransit, bike].some(hasValue) || evidence !== null
+  const hasAny = [walkTransit, bike].some(hasValue) || evidence !== null || buildingDistribution !== null || accessRamp !== null
   const availability: FactAvailability =
-    !hasAny ? 'absent' : complete(walkTransit) && evidence !== null ? 'complete' : 'incomplete'
+    !hasAny
+      ? 'absent'
+      : complete(walkTransit) && evidence !== null &&
+          (buildingDistribution === null || buildingDistribution.availability === 'complete') &&
+          (accessRamp === null || accessRamp.availability === 'complete')
+        ? 'complete'
+        : 'incomplete'
   const targets = targetsFor(
     [walkTransit, bike].filter((fact): fact is NumericFact => hasValue(fact)),
     facts.territory,
@@ -1221,7 +1243,11 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
     availability,
     indicators,
     evidence,
-    provenance: sourceIdsFor(sectionFacts),
+    provenance: [
+      ...sourceIdsFor(sectionFacts),
+      ...(buildingDistribution?.provenance?.sourceId ? [buildingDistribution.provenance.sourceId] : []),
+      ...(accessRamp?.provenance?.sourceId ? [accessRamp.provenance.sourceId] : []),
+    ].filter((sourceId, index, sourceIds) => sourceIds.indexOf(sourceId) === index),
     lecture: availability === 'complete'
       ? { marelle: '... Tous les bâtiments non plus', prose: [] }
       : null,

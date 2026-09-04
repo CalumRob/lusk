@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { histoiresMobiliteFixture } from '@/payload/fixtures'
-import type { Indicateur, Payload } from '@/payload/types'
+import type { Indicateur, Payload, RampeAccesBatimentsRow } from '@/payload/types'
 
 const vintage = {
   vintage_source: 'Source de test',
@@ -91,6 +91,32 @@ const accessRows: Indicateur[] = [
   })),
 )
 
+const rampRows: RampeAccesBatimentsRow[] = [
+  ['c', 'Voiture'],
+  ['b', 'À vélo + TC'],
+  ['t', 'À pied + TC'],
+].flatMap(([mode, modeLabel]) =>
+  Array.from({ length: 11 }, (_, index) => ({
+    territoire: '22001',
+    type: 'commune' as const,
+    availability: 'complete' as const,
+    total_buildings: 100,
+    mode: mode as RampeAccesBatimentsRow['mode'],
+    mode_label: modeLabel,
+    quantile: index / 10,
+    quantile_label: `${index * 10} %`,
+    accessible_types: index * 2,
+    x_axis_label: 'Part cumulée des bâtiments',
+    y_axis_label: 'types d’équipements accessibles',
+     source_id: 'mobilite_snapshot',
+     source: 'Lusk — analyse d\'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+     version: '2026-02',
+     date_reference: '2026-02-28',
+     date_publication: '2026-08-06',
+    comparison_label: null,
+  })),
+)
+
 const payload: Payload = {
   territoires: [
     { territoire: '22001', type: 'commune', nom: 'Commune A', departement: '22', epci: '200000001' },
@@ -121,6 +147,7 @@ const payload: Payload = {
     },
   ],
   programmes: null,
+  rampeAccesBatiments: rampRows,
 }
 
 describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
@@ -181,6 +208,18 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       rank: { position: 1, size: 2 },
       reference: { kind: 'median', value: 0.7 },
     })
+    expect(facts?.mobility.accessRamp).toMatchObject({
+      availability: 'complete',
+      xAxisLabel: 'Part cumulée des bâtiments',
+      yAxisLabel: 'types d’équipements accessibles',
+      totalBuildings: 100,
+      curves: {
+        car: { modeLabel: 'Voiture' },
+        bike: { modeLabel: 'À vélo + TC' },
+        walkTransit: { modeLabel: 'À pied + TC' },
+      },
+    })
+    expect(facts?.mobility.accessRamp?.curves.walkTransit.points).toHaveLength(11)
     expect(facts?.mobility.access.gapsByService.administration).toMatchObject({
       carGap: {
         value: 0.30000000000000004,

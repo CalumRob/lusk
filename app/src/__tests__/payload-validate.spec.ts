@@ -24,6 +24,100 @@ import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } 
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
 
+function distributionAbsenteFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    territoire: '22001',
+    type: 'commune',
+    availability: 'absent',
+    total_buildings: 0,
+    breadth_bucket: null,
+    breadth_min: null,
+    breadth_max: null,
+    breadth_label: null,
+    depth_bucket: null,
+    depth_min: null,
+    depth_max: null,
+    depth_label: null,
+    building_count: null,
+    share: null,
+    mode: 't',
+    mode_label: 'À pied + TC',
+    breadth_axis_label: 'types d’équipements accessibles',
+    depth_axis_label: 'équipements accessibles',
+     source_id: 'mobilite_snapshot',
+     source: 'Lusk — analyse d\'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+     version: '2026-02',
+     date_reference: '2026-02-28',
+     date_publication: '2026-08-06',
+    comparison_label: null,
+    ...overrides,
+  }
+}
+
+function distributionCompleteFixture() {
+  const breadthBins = [
+    { key: '0', min: 0, max: 0, label: '0 type' },
+    { key: '1-9', min: 1, max: 9, label: '1 à 9 types' },
+    { key: '10-24', min: 10, max: 24, label: '10 à 24 types' },
+    { key: '25-39', min: 25, max: 39, label: '25 à 39 types' },
+    { key: '40-53', min: 40, max: 53, label: '40 à 53 types' },
+  ]
+  const depthBins = [
+    { key: '0', min: 0, max: 0, label: '0 équipement' },
+    { key: '1-9', min: 1, max: 9, label: '1 à 9 équipements' },
+    { key: '10-49', min: 10, max: 49, label: '10 à 49 équipements' },
+    { key: '50-199', min: 50, max: 199, label: '50 à 199 équipements' },
+    { key: '200-499', min: 200, max: 499, label: '200 à 499 équipements' },
+    { key: '500+', min: 500, max: null, label: '500 équipements ou plus' },
+  ]
+  return breadthBins.flatMap((breadth) => depthBins.map((depth, index) =>
+    distributionAbsenteFixture({
+      availability: 'complete',
+      total_buildings: 1,
+      breadth_bucket: breadth.key,
+      breadth_min: breadth.min,
+      breadth_max: breadth.max,
+      breadth_label: breadth.label,
+      depth_bucket: depth.key,
+      depth_min: depth.min,
+      depth_max: depth.max,
+      depth_label: depth.label,
+      building_count: breadth.key === '0' && index === 0 ? 1 : 0,
+      share: breadth.key === '0' && index === 0 ? 1 : 0,
+    }),
+  ))
+}
+
+function rampCompleteFixture(overrides: Record<string, unknown> = {}) {
+  const modes = [
+    ['c', 'Voiture'],
+    ['b', 'À vélo + TC'],
+    ['t', 'À pied + TC'],
+  ] as const
+  return modes.flatMap(([mode, modeLabel]) =>
+    Array.from({ length: 11 }, (_, index) => ({
+      territoire: '22001',
+      type: 'commune',
+      availability: 'complete',
+      total_buildings: 100,
+      mode,
+      mode_label: modeLabel,
+      quantile: index === 3 ? 0.30000000000000004 : index / 10,
+      quantile_label: `${index * 10} %`,
+      accessible_types: index * 2,
+      x_axis_label: 'Part cumulée des bâtiments',
+      y_axis_label: 'types d’équipements accessibles',
+       source_id: 'mobilite_snapshot',
+       source: 'Lusk — analyse d\'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)',
+       version: '2026-02',
+       date_reference: '2026-02-28',
+       date_publication: '2026-08-06',
+      comparison_label: null,
+      ...overrides,
+    })),
+  )
+}
+
 /**
  * The app's half of validate_payload() (docs/architecture.md §The fiche
  * payload): drift on the pipeline side must surface here as a loud,
@@ -110,9 +204,73 @@ describe('parsePayload — accepts the contract shape', () => {
     const epci = payload.indicateurs.find((i) => i.territoire === '200000001')
     expect(epci?.rang_epci).toBeNull()
   })
+
+  it('accepts an explicit absent building-distribution territory', () => {
+    const payload = parsePayload(documentsMobilite({
+      distributionAccesBatiments: [distributionAbsenteFixture()],
+    }))
+
+    expect(payload.distributionAccesBatiments).toMatchObject([
+      { territoire: '22001', availability: 'absent', total_buildings: 0 },
+    ])
+  })
+
+  it('accepts a complete 5 by 6 building-distribution grid', () => {
+    const payload = parsePayload(documentsMobilite({
+      distributionAccesBatiments: distributionCompleteFixture(),
+    }))
+
+    expect(payload.distributionAccesBatiments).toHaveLength(30)
+  })
+
+  it('accepts complete three-mode access-ramp curves', () => {
+    const payload = parsePayload(documentsMobilite({
+      rampeAccesBatiments: rampCompleteFixture(),
+    }))
+
+    expect(payload.rampeAccesBatiments).toHaveLength(33)
+  })
 })
 
 describe('parsePayload — rejects contract drift, loudly', () => {
+  it('rejects a building-distribution mode label that drifts from the canonical contract', () => {
+    const erreur = attendErreurValidation(documentsMobilite({
+      distributionAccesBatiments: [distributionAbsenteFixture({ mode_label: 'Marche' })],
+    }))
+
+    expect(erreur.file).toBe('distribution_acces_batiments.json')
+    expect(erreur.message).toContain('mode_label')
+  })
+
+  it('rejects a building-distribution grid with a missing cell', () => {
+    const erreur = attendErreurValidation(documentsMobilite({
+      distributionAccesBatiments: distributionCompleteFixture().slice(0, -1),
+    }))
+
+    expect(erreur.file).toBe('distribution_acces_batiments.json')
+    expect(erreur.message).toContain('grille de cellules')
+  })
+
+  it('rejects a non-monotone access-ramp curve', () => {
+    const rampe = rampCompleteFixture()
+    rampe[10]!.accessible_types = 1
+    const erreur = attendErreurValidation(documentsMobilite({
+      rampeAccesBatiments: rampe,
+    }))
+
+    expect(erreur.file).toBe('rampe_acces_batiments.json')
+    expect(erreur.message).toContain('points de courbe incohérents')
+  })
+
+  it('rejects a territory that does not carry all three access modes', () => {
+    const erreur = attendErreurValidation(documentsMobilite({
+      rampeAccesBatiments: rampCompleteFixture().filter((ligne) => ligne.mode !== 't'),
+    }))
+
+    expect(erreur.file).toBe('rampe_acces_batiments.json')
+    expect(erreur.message).toContain('trois modes')
+  })
+
   it('rejects a fractional rank (the legacy percentile form — ADR-0015 retires Pxx)', () => {
     const indicateurs = JSON.parse(JSON.stringify(indicateursDemographieFixture)) as typeof indicateursDemographieFixture
     indicateurs[0].rang_epci = 0.25

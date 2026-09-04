@@ -1260,6 +1260,10 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
         return payload.programmes
       case 'profils_acces_bpe':
         return payload.profilsAccesBpe ?? null
+      case 'distribution_acces_batiments':
+        return payload.distributionAccesBatiments ?? null
+      case 'rampe_acces_batiments':
+        return payload.rampeAccesBatiments ?? null
       default:
         if (fichier.startsWith('indicateurs_')) {
           const theme = fichier.slice('indicateurs_'.length) as Theme

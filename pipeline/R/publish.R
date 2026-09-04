@@ -69,6 +69,20 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     nanoparquet::write_parquet(payload$profils_acces_bpe,
                                file.path(cible, "profils_acces_bpe.parquet"))
   }
+  if ("distribution_acces_batiments" %in% names(payload) &&
+      !is.null(payload$distribution_acces_batiments)) {
+    nanoparquet::write_parquet(
+      payload$distribution_acces_batiments,
+      file.path(cible, "distribution_acces_batiments.parquet")
+    )
+  }
+  if ("rampe_acces_batiments" %in% names(payload) &&
+      !is.null(payload$rampe_acces_batiments)) {
+    nanoparquet::write_parquet(
+      payload$rampe_acces_batiments,
+      file.path(cible, "rampe_acces_batiments.parquet")
+    )
+  }
 
   if (backend == "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
@@ -93,6 +107,20 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     if ("profils_acces_bpe" %in% names(payload) &&
         !is.null(payload$profils_acces_bpe)) {
       ecrire_projection(payload$profils_acces_bpe, "profils_acces_bpe.json")
+    }
+    if ("distribution_acces_batiments" %in% names(payload) &&
+        !is.null(payload$distribution_acces_batiments)) {
+      ecrire_projection(
+        payload$distribution_acces_batiments,
+        "distribution_acces_batiments.json"
+      )
+    }
+    if ("rampe_acces_batiments" %in% names(payload) &&
+        !is.null(payload$rampe_acces_batiments)) {
+      ecrire_projection(
+        payload$rampe_acces_batiments,
+        "rampe_acces_batiments.json"
+      )
     }
   }
 

@@ -364,6 +364,72 @@ export interface ProfilAccesBpeRow {
   exemplar_t: number
 }
 
+/** Availability state of a published building-distribution territory. */
+export type DistributionAccesBatimentsAvailability = 'complete' | 'incomplete' | 'absent'
+
+/** Canonical axis labels for the same-building breadth × depth figure (#550). */
+export const DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL = 'À pied + TC'
+export const DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL = 'types d’équipements accessibles'
+export const DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL = 'équipements accessibles'
+export const DISTRIBUTION_ACCES_BATIMENTS_GRID_SIZE = 5 * 6
+export const RAMPE_ACCES_BATIMENTS_X_LABEL = 'Part cumulée des bâtiments'
+export const RAMPE_ACCES_BATIMENTS_Y_LABEL = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL
+export const RAMPE_ACCES_BATIMENTS_QUANTILE_COUNT = 11
+export const RAMPE_ACCES_BATIMENTS_MODE_LABELS = {
+  c: 'Voiture',
+  b: 'À vélo + TC',
+  t: 'À pied + TC',
+} as const
+
+/** One cell of the compact bivariate distribution projection. */
+export interface DistributionAccesBatimentsRow {
+  territoire: string
+  type: TerritoireType
+  availability: DistributionAccesBatimentsAvailability
+  total_buildings: number
+  breadth_bucket: string | null
+  breadth_min: number | null
+  breadth_max: number | null
+  breadth_label: string | null
+  depth_bucket: string | null
+  depth_min: number | null
+  depth_max: number | null
+  depth_label: string | null
+  building_count: number | null
+  share: number | null
+  mode: 't'
+  mode_label: string
+  breadth_axis_label: string
+  depth_axis_label: string
+  source_id: string
+  source: string
+  version: string
+  date_reference: string
+  date_publication: string
+  comparison_label: string | null
+}
+
+/** One quantile point of the compact three-mode access-ramp projection. */
+export interface RampeAccesBatimentsRow {
+  territoire: string
+  type: TerritoireType
+  availability: DistributionAccesBatimentsAvailability
+  total_buildings: number
+  mode: 'c' | 'b' | 't'
+  mode_label: string
+  quantile: number | null
+  quantile_label: string | null
+  accessible_types: number | null
+  x_axis_label: string
+  y_axis_label: string
+  source_id: string
+  source: string
+  version: string
+  date_reference: string
+  date_publication: string
+  comparison_label: string | null
+}
+
 /**
  * The programme sigles of the payload contract (ADR-0013, the ANCT/DGALN
  * sources of the MANIFEST_PROGRAMMES_COMPLET): the two commune labels (ACV,
@@ -486,6 +552,10 @@ export interface Payload {
   programmes: ProgrammesPayload | null
   /** Bounded Mobilité BPE projection; null/undefined means the element is absent. */
   profilsAccesBpe?: ProfilAccesBpeRow[] | null
+  /** Compact same-building breadth × depth projection; null means absent. */
+  distributionAccesBatiments?: DistributionAccesBatimentsRow[] | null
+  /** Compact three-mode access-ramp quantiles; null means absent. */
+  rampeAccesBatiments?: RampeAccesBatimentsRow[] | null
   /**
    * The per-theme metadata files (theme_<theme>.json, issue #309, wired by
    * #313) — keyed by theme, present themes only. Optional at the type level:
