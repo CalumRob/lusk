@@ -114,6 +114,8 @@ const rampRows: RampeAccesBatimentsRow[] = [
      date_reference: '2026-02-28',
      date_publication: '2026-08-06',
     comparison_label: null,
+    comparison_total_buildings: null,
+    comparison_accessible_types: null,
   })),
 )
 
@@ -530,25 +532,6 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     )
 
     expect(facts?.mobility.losses).not.toHaveProperty('fullyIsolatedShare')
-    expect(facts?.mobility.losses.distributionWalkTransit).toMatchObject({ min: 28, max: 47 })
-    expect(facts?.mobility.losses.distributionWalkTransit?.densities.slice(0, 2)).toEqual([
-      0.005915,
-      0.014869,
-    ])
-    expect(facts?.mobility.losses.distributionWalkTransit?.quantiles.slice(0, 2)).toEqual([
-      33.7,
-      35,
-    ])
-    expect(facts?.mobility.losses.distributionPeers).toEqual([
-      expect.objectContaining({
-        territoire: expect.objectContaining({ code: '22001' }),
-        value: 38,
-      }),
-      expect.objectContaining({
-        territoire: expect.objectContaining({ code: '22002' }),
-        value: 24,
-      }),
-    ])
 
     for (const mode of ['car', 'bike', 'walkTransit'] as const) {
       const comparison = facts?.mobility.access.byService.administration[mode].comparison

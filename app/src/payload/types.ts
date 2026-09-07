@@ -407,6 +407,9 @@ export interface DistributionAccesBatimentsRow {
   date_reference: string
   date_publication: string
   comparison_label: string | null
+  comparison_total_buildings: number | null
+  comparison_building_count: number | null
+  comparison_share: number | null
 }
 
 /** One quantile point of the compact three-mode access-ramp projection. */
@@ -428,6 +431,8 @@ export interface RampeAccesBatimentsRow {
   date_reference: string
   date_publication: string
   comparison_label: string | null
+  comparison_total_buildings: number | null
+  comparison_accessible_types: number | null
 }
 
 /**

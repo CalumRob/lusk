@@ -1584,6 +1584,9 @@ export function validerDistributionAccesBatiments(
     exiger(estDateIso(dateReference), fichier, ligneIndexee, '« date_reference » doit être une date ISO')
     exiger(estDateIso(datePublication), fichier, ligneIndexee, '« date_publication » doit être une date ISO')
     const comparisonLabel = lireChaineNullable('comparison_label')
+    const comparisonTotalBuildings = lireNombreNullable(ligne, 'comparison_total_buildings', ligneIndexee)
+    const comparisonBuildingCount = lireNombreNullable(ligne, 'comparison_building_count', ligneIndexee)
+    const comparisonShare = lireNombreNullable(ligne, 'comparison_share', ligneIndexee)
 
     const cle = `${territoire}\u0000${type}\u0000${breadthBucket ?? ''}\u0000${depthBucket ?? ''}`
     exiger(!vus.has(cle), fichier, ligneIndexee, 'cellule en double pour ce territoire et ces tranches')
@@ -1594,7 +1597,8 @@ export function validerDistributionAccesBatiments(
       exiger(
         breadthBucket === null && breadthMin === null && breadthMax === null && breadthLabel === null &&
           depthBucket === null && depthMin === null && depthMax === null && depthLabel === null &&
-          buildingCount === null && share === null,
+          buildingCount === null && share === null && comparisonLabel === null &&
+          comparisonTotalBuildings === null && comparisonBuildingCount === null && comparisonShare === null,
         fichier,
         ligneIndexee,
         'un territoire absent ne doit pas porter de cellule',
@@ -1607,6 +1611,18 @@ export function validerDistributionAccesBatiments(
       exiger(depthMax === null || depthMax >= depthMin!, fichier, ligneIndexee, 'les bornes depth sont incohérentes')
       exiger(buildingCount !== null && Number.isInteger(buildingCount) && buildingCount >= 0, fichier, ligneIndexee, '« building_count » doit être un entier positif ou nul')
       exiger(share !== null && share >= 0 && share <= 1, fichier, ligneIndexee, '« share » doit être dans [0, 1]')
+      if (comparisonLabel === null) {
+        exiger(
+          comparisonTotalBuildings === null && comparisonBuildingCount === null && comparisonShare === null,
+          fichier,
+          ligneIndexee,
+          'les valeurs du groupe comparé doivent être absentes avec son libellé',
+        )
+      } else {
+        exiger(comparisonTotalBuildings !== null && Number.isInteger(comparisonTotalBuildings) && comparisonTotalBuildings >= 1, fichier, ligneIndexee, '« comparison_total_buildings » doit être un entier positif')
+        exiger(comparisonBuildingCount !== null && Number.isInteger(comparisonBuildingCount) && comparisonBuildingCount >= 0 && comparisonBuildingCount <= comparisonTotalBuildings, fichier, ligneIndexee, '« comparison_building_count » est invalide')
+        exiger(comparisonShare !== null && comparisonShare >= 0 && comparisonShare <= 1, fichier, ligneIndexee, '« comparison_share » doit être dans [0, 1]')
+      }
     }
 
     return {
@@ -1634,6 +1650,9 @@ export function validerDistributionAccesBatiments(
       date_reference: dateReference,
       date_publication: datePublication,
       comparison_label: comparisonLabel,
+      comparison_total_buildings: comparisonTotalBuildings,
+      comparison_building_count: comparisonBuildingCount,
+      comparison_share: comparisonShare,
     }
   })
 
@@ -1665,9 +1684,10 @@ export function validerDistributionAccesBatiments(
           ligne.source_id === groupe[0]!.source_id &&
           ligne.source === groupe[0]!.source &&
           ligne.version === groupe[0]!.version &&
-          ligne.date_reference === groupe[0]!.date_reference &&
-          ligne.date_publication === groupe[0]!.date_publication &&
-          ligne.comparison_label === groupe[0]!.comparison_label,
+           ligne.date_reference === groupe[0]!.date_reference &&
+           ligne.date_publication === groupe[0]!.date_publication &&
+           ligne.comparison_label === groupe[0]!.comparison_label &&
+           ligne.comparison_total_buildings === groupe[0]!.comparison_total_buildings,
         ),
         fichier,
         0,
@@ -1677,6 +1697,13 @@ export function validerDistributionAccesBatiments(
       const part = groupe.reduce((somme, ligne) => somme + (ligne.share ?? 0), 0)
       exiger(compte === total, fichier, 0, 'les cellules ne recomposent pas total_buildings')
       exiger(Math.abs(part - 1) <= 1e-12, fichier, 0, 'les parts de cellules ne recomposent pas 1')
+      if (groupe[0]!.comparison_label !== null) {
+        const comparisonTotal = groupe[0]!.comparison_total_buildings!
+        const comparisonCount = groupe.reduce((somme, ligne) => somme + (ligne.comparison_building_count ?? 0), 0)
+        const comparisonPart = groupe.reduce((somme, ligne) => somme + (ligne.comparison_share ?? 0), 0)
+        exiger(comparisonCount === comparisonTotal, fichier, 0, 'les cellules comparées ne recomposent pas comparison_total_buildings')
+        exiger(Math.abs(comparisonPart - 1) <= 1e-12, fichier, 0, 'les parts comparées ne recomposent pas 1')
+      }
     }
   }
   return lignes
@@ -1744,6 +1771,8 @@ export function validerRampeAccesBatiments(
     exiger(estDateIso(dateReference), fichier, ligneIndexee, '« date_reference » doit être une date ISO')
     exiger(estDateIso(datePublication), fichier, ligneIndexee, '« date_publication » doit être une date ISO')
     const comparisonLabel = lireChaineNullable(ligne, 'comparison_label', ligneIndexee)
+    const comparisonTotalBuildings = lireNombreNullable(ligne, 'comparison_total_buildings', ligneIndexee)
+    const comparisonAccessibleTypes = lireNombreNullable(ligne, 'comparison_accessible_types', ligneIndexee)
 
     const cle = `${territoire}\u0000${type}\u0000${mode}\u0000${quantile ?? ''}`
     exiger(!vus.has(cle), fichier, ligneIndexee, 'point de rampe en double pour ce territoire, mode et quantile')
@@ -1752,7 +1781,8 @@ export function validerRampeAccesBatiments(
     if (availability === 'absent') {
       exiger(totalBuildings === 0, fichier, ligneIndexee, 'un territoire absent doit avoir zéro bâtiment')
       exiger(
-        quantile === null && quantileLabel === null && accessibleTypes === null,
+        quantile === null && quantileLabel === null && accessibleTypes === null &&
+          comparisonLabel === null && comparisonTotalBuildings === null && comparisonAccessibleTypes === null,
         fichier,
         ligneIndexee,
         'un territoire absent ne doit pas porter de point de courbe',
@@ -1762,6 +1792,17 @@ export function validerRampeAccesBatiments(
       exiger(quantile !== null && quantile >= 0 && quantile <= 1, fichier, ligneIndexee, '« quantile » doit être dans [0, 1]')
       exiger(quantileLabel !== null, fichier, ligneIndexee, '« quantile_label » est requis')
       exiger(accessibleTypes !== null && Number.isFinite(accessibleTypes) && accessibleTypes >= 0, fichier, ligneIndexee, '« accessible_types » est invalide')
+      if (comparisonLabel === null) {
+        exiger(
+          comparisonTotalBuildings === null && comparisonAccessibleTypes === null,
+          fichier,
+          ligneIndexee,
+          'les valeurs du groupe comparé doivent être absentes avec son libellé',
+        )
+      } else {
+        exiger(comparisonTotalBuildings !== null && Number.isInteger(comparisonTotalBuildings) && comparisonTotalBuildings >= 1, fichier, ligneIndexee, '« comparison_total_buildings » doit être un entier positif')
+        exiger(comparisonAccessibleTypes !== null && Number.isFinite(comparisonAccessibleTypes) && comparisonAccessibleTypes >= 0, fichier, ligneIndexee, '« comparison_accessible_types » est invalide')
+      }
     }
 
     return {
@@ -1782,6 +1823,8 @@ export function validerRampeAccesBatiments(
       date_reference: dateReference,
       date_publication: datePublication,
       comparison_label: comparisonLabel,
+      comparison_total_buildings: comparisonTotalBuildings,
+      comparison_accessible_types: comparisonAccessibleTypes,
     }
   })
 
@@ -1806,7 +1849,8 @@ export function validerRampeAccesBatiments(
         ligne.version === groupe[0]!.version &&
         ligne.date_reference === groupe[0]!.date_reference &&
         ligne.date_publication === groupe[0]!.date_publication &&
-        ligne.comparison_label === groupe[0]!.comparison_label,
+        ligne.comparison_label === groupe[0]!.comparison_label &&
+        ligne.comparison_total_buildings === groupe[0]!.comparison_total_buildings,
       ),
       fichier,
       0,
@@ -1829,6 +1873,16 @@ export function validerRampeAccesBatiments(
       0,
       'points de courbe incohérents',
     )
+    if (groupe[0]!.comparison_label !== null) {
+      const comparisonPoints = points.map((point) => point.comparison_accessible_types)
+      exiger(
+        comparisonPoints.every((value): value is number => value !== null) &&
+          comparisonPoints.every((value, index) => index === 0 || value >= comparisonPoints[index - 1]!),
+        fichier,
+        0,
+        'points comparés de courbe incohérents',
+      )
+    }
   }
 
   const territoiresRampes = new Map<string, RampeAccesBatimentsRow[]>()

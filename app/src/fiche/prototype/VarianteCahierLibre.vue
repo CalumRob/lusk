@@ -26,7 +26,6 @@ import type {
   AccessEvidence,
   ContentFact,
   ContentSection,
-  DistributionEvidence,
   ExplorationTarget,
   SummaryEvidence,
   ThemeContent,
@@ -52,7 +51,6 @@ import CahierComparisonNote from './CahierComparisonNote.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
 import CahierSummaryPlot from './CahierSummaryPlot.vue'
-import DistributionFigureCahier from './DistributionFigureCahier.vue'
 import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahier.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
@@ -429,35 +427,6 @@ function modeIcon(mode: MobiliteAccessMode | 'inaccessible'): Component {
   return MODE_ICONS[mode]
 }
 
-function diversityModes(evidence: DistributionEvidence): readonly {
-  key: string
-  mode: 't' | 'b'
-  label: string
-  icon: Component
-  fact: ContentFact
-}[] {
-  return [
-    {
-      key: 'div_loss_t',
-      mode: 't',
-      label: MOBILITE_MODE_LABELS.walkTransit,
-      icon: Footprints,
-      fact: evidence.marks.walkTransit,
-    },
-    ...(evidence.marks.bike
-      ? [
-          {
-            key: 'div_loss_b' as const,
-            mode: 'b' as const,
-            label: MOBILITE_MODE_LABELS.bike,
-            icon: Bike,
-            fact: evidence.marks.bike,
-          },
-        ]
-      : []),
-  ]
-}
-
 function hasAnyAccessValue(service: AccessEvidence['services'][number]): boolean {
   return Object.values(service.modes).some((mode) => mode.fact.value !== null)
 }
@@ -602,12 +571,12 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                 :data-figure="`section-${section.key}`"
               >
                 <div class="argument-side">
-                  <template v-if="section.lecture?.prose.length">
+                  <template v-if="section.lecture">
                     <h4
-                      v-if="props.presentation !== 'plain' && section.lecture?.prose.length"
+                      v-if="props.presentation !== 'plain'"
                       class="cahier-baseline-anchor cahier-marelle-anchor"
                     >{{ section.lecture.marelle }}</h4>
-                    <CahierProse class="argument-copy" :blocks="section.lecture.prose" />
+                    <CahierProse v-if="section.lecture.prose.length" class="argument-copy" :blocks="section.lecture.prose" />
                     <div
                       v-if="props.presentation !== 'plain' && section.explorationTargets.length > 0 && sectionExploration(section)"
                       class="cahier-section-exploration"
@@ -620,70 +589,34 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                         class="cahier-baseline-anchor"
                       />
                     </div>
-                    <div v-if="section.evidence?.kind === 'distribution'" class="mode-figures">
-                      <div class="mode-figures-heading type-figure-column" aria-hidden="true">
-                        <span />
-                        <span>Types de services perdus</span>
-                      </div>
-                      <dl>
-                        <div
-                          v-for="mode in diversityModes(section.evidence)"
-                          :key="mode.key"
-                          class="mode-figure"
-                          :class="`mode-figure--${mode.mode}`"
-                        >
-                          <dt>
-                            <component :is="mode.icon" :size="20" stroke-width="1.6" />
-                            {{ mode.label }}
-                          </dt>
-                          <dd>
-                    <strong class="mode-value cahier-scalar-value">
-                              {{ formatFact(mode.fact.fact) }}
-                            </strong>
-                             <CahierComparisonValue
-                              :fact="mode.fact.fact"
-                              :comparison-label="comparisonLabelForFigure(section.evidence.comparisonLabel)"
-                               :to="sectionExploration(section)"
-                            />
-                          </dd>
-                        </div>
-                      </dl>
-                    </div>
                   </template>
                   <p v-else-if="section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
 
                 </div>
 
-                 <figure v-if="section.evidence?.kind === 'distribution'" class="evidence-side evidence-figure">
-                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Distribution des bâtiments selon les services perdus</figcaption>
-                    <DistributionFigureCahier
-                     :evidence="section.evidence"
-                     :nom="content.territory.name"
-                    />
-                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
-                  </figure>
-
-                 <figure
+                  <figure
                    v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"
                    class="evidence-side evidence-figure bivariate-evidence"
                  >
-                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Les bâtiments n’ont pas tous le même accès</figcaption>
+                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments par nombre de types et d’équipements accessibles — {{ section.evidence.buildingDistribution!.modeLabel }}</figcaption>
                    <BivariateDistributionFigureCahier
                      :distribution="section.evidence.buildingDistribution!"
                      :territory-name="content.territory.name"
                    />
-                 </figure>
+                   <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                  </figure>
 
                  <figure
                    v-if="section.evidence?.kind === 'distribution' && section.evidence.accessRamp?.availability === 'complete'"
                    class="evidence-side evidence-figure access-ramp-evidence"
                  >
-                   <figcaption class="cahier-figure-title cahier-baseline-anchor">L’échelle des paniers accessibles</figcaption>
+                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Nombre de types accessibles par part cumulée des bâtiments</figcaption>
                    <AccessRampFigureCahier
                      :ramp="section.evidence.accessRamp!"
                      :territory-name="content.territory.name"
                    />
-                 </figure>
+                   <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                  </figure>
 
                  <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>

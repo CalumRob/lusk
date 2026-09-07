@@ -158,22 +158,6 @@ export interface MobiliteBpeAccessFacts {
 export interface MobiliteLossFacts {
   diversityWalkTransit: NumericFact
   diversityBike: NumericFact
-  distributionWalkTransit: MobiliteDistributionSignature | null
-  distributionPeers: readonly MobiliteDistributionPeer[]
-}
-
-/** The normalized building-level signature used by the Mobilité distribution figure. */
-export interface MobiliteDistributionSignature {
-  densities: readonly (number | null)[]
-  quantiles: readonly (number | null)[]
-  min: number | null
-  max: number | null
-}
-
-/** One same-scope walk/transit value for the distribution context cloud. */
-export interface MobiliteDistributionPeer {
-  territoire: TerritoryIdentity
-  value: number
 }
 
 export interface MobiliteDistributionBin {
@@ -188,6 +172,8 @@ export interface MobiliteBuildingDistributionCell {
   depthBucket: string
   buildingCount: number
   share: number
+  comparisonBuildingCount: number | null
+  comparisonShare: number | null
 }
 
 /** Normalized compact same-building breadth × depth facts for the Cahier. */
@@ -203,12 +189,14 @@ export interface MobiliteBuildingDistribution {
   totalBuildings: number
   provenance: FactProvenance | null
   comparisonLabel: string | null
+  comparisonTotalBuildings: number | null
 }
 
 export interface MobiliteAccessRampPoint {
   quantile: number
   quantileLabel: string
   accessibleTypes: number
+  comparisonAccessibleTypes: number | null
 }
 
 export interface MobiliteAccessRampCurve {
@@ -226,6 +214,7 @@ export interface MobiliteAccessRamp {
   totalBuildings: number
   provenance: FactProvenance | null
   comparisonLabel: string | null
+  comparisonTotalBuildings: number | null
 }
 
 export interface TerritoryIdentity {
@@ -973,6 +962,8 @@ function buildingDistributionOf(
       depthBucket: row.depth_bucket!,
       buildingCount: row.building_count!,
       share: row.share!,
+      comparisonBuildingCount: row.comparison_building_count,
+      comparisonShare: row.comparison_share,
     }))
 
   return {
@@ -985,6 +976,7 @@ function buildingDistributionOf(
     depthBins,
     cells,
     totalBuildings: first.total_buildings,
+    comparisonTotalBuildings: first.comparison_total_buildings,
     provenance: {
       sourceId: first.source_id,
       source: first.source,
@@ -1021,6 +1013,7 @@ function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp 
           quantile: row.quantile!,
           quantileLabel: row.quantile_label!,
           accessibleTypes: row.accessible_types!,
+          comparisonAccessibleTypes: row.comparison_accessible_types,
         })),
       }]
     }),
@@ -1032,6 +1025,7 @@ function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp 
     yAxisLabel: first.y_axis_label,
     curves,
     totalBuildings: first.total_buildings,
+    comparisonTotalBuildings: first.comparison_total_buildings,
     provenance: {
       sourceId: first.source_id,
       source: first.source,
@@ -1079,49 +1073,6 @@ function lossesOf(
   return {
     diversityWalkTransit: makeLossFact('diversityWalkTransit'),
     diversityBike: makeLossFact('diversityBike'),
-    distributionWalkTransit: histoire
-      ? {
-          densities: [
-            histoire.dens_1,
-            histoire.dens_2,
-            histoire.dens_3,
-            histoire.dens_4,
-            histoire.dens_5,
-            histoire.dens_6,
-            histoire.dens_7,
-            histoire.dens_8,
-            histoire.dens_9,
-            histoire.dens_10,
-          ],
-          quantiles: [
-            histoire.dec_1,
-            histoire.dec_2,
-            histoire.dec_3,
-            histoire.dec_4,
-            histoire.dec_5,
-            histoire.dec_6,
-            histoire.dec_7,
-            histoire.dec_8,
-            histoire.dec_9,
-            histoire.dec_10,
-          ],
-          min: histoire.dens_min,
-          max: histoire.dens_max,
-        }
-      : null,
-    distributionPeers: scope
-      ? scope.territoryIds.flatMap((territoire) => {
-          const peer = payload.histoires.find(
-            (candidate): candidate is HistoireMobilite =>
-              candidate.theme === 'mobilite' && candidate.territoire === territoire,
-          )
-          const reference = payload.territoires.find(
-            (candidate) => candidate.territoire === territoire,
-          )
-          if (!peer || !reference) return []
-          return [{ territoire: identityOf(reference), value: peer.div_loss_t }]
-        })
-      : [],
   }
 }
 

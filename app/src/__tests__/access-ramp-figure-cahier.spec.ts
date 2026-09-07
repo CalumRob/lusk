@@ -16,6 +16,7 @@ const ramp: MobiliteAccessRamp = {
         quantile: index / 10,
         quantileLabel: `${index * 10} %`,
         accessibleTypes: index,
+        comparisonAccessibleTypes: index + 0.5,
       })),
     },
     bike: {
@@ -25,6 +26,7 @@ const ramp: MobiliteAccessRamp = {
         quantile: index / 10,
         quantileLabel: `${index * 10} %`,
         accessibleTypes: index + 1,
+        comparisonAccessibleTypes: index + 1.5,
       })),
     },
     walkTransit: {
@@ -34,29 +36,55 @@ const ramp: MobiliteAccessRamp = {
         quantile: index / 10,
         quantileLabel: `${index * 10} %`,
         accessibleTypes: index + 2,
+        comparisonAccessibleTypes: index + 2.5,
       })),
     },
   },
   totalBuildings: 100,
   provenance: null,
-  comparisonLabel: null,
+  comparisonLabel: 'communes de l’EPCI',
+  comparisonTotalBuildings: 100,
 }
 
 describe('AccessRampFigureCahier', () => {
-  it('renders the three payload-owned curves and a complete accessible table', () => {
+  it('renders territory and comparison curves with cut-wide anchored tooltips', async () => {
     const wrapper = mount(AccessRampFigureCahier, {
-      props: { ramp, territoryName: 'Commune A' },
+      props: {
+        ramp,
+        territoryName: 'Communauté de communes du Pays de la Roche aux Fées',
+      },
     })
 
-    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Commune A')
-    expect(wrapper.findAll('.access-ramp-line')).toHaveLength(3)
-    expect(wrapper.findAll('.access-ramp-legend li')).toHaveLength(3)
-    expect(wrapper.text()).toContain('Voiture')
-    expect(wrapper.text()).toContain('À vélo + TC')
-    expect(wrapper.text()).toContain('À pied + TC')
-    expect(wrapper.text()).toContain('Chaque courbe classe séparément')
-    expect(wrapper.find('table caption').text()).toContain('Commune A')
-    expect(wrapper.findAll('tbody tr')).toHaveLength(33)
-    expect(wrapper.findAll('tbody tr')[1]?.text()).toContain('10 %')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Communauté de communes du Pays de la Roche aux Fées')
+    expect(wrapper.findAll('.access-ramp-line--territory')).toHaveLength(3)
+    expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(3)
+    expect(wrapper.findAll('.cahier-figure-legend-item')).toHaveLength(2)
+    expect(wrapper.findAll('.access-ramp-mode-annotation')).toHaveLength(3)
+    expect(wrapper.findAll('.access-ramp-mode-annotation').map((annotation) => annotation.attributes('aria-label'))).toEqual([
+      'Voiture',
+      'À vélo + TC',
+      'À pied + TC',
+    ])
+    expect(wrapper.findAll('.access-ramp-mode-annotation text')).toHaveLength(0)
+    expect(wrapper.find('.access-ramp-median-label').exists()).toBe(false)
+    expect(wrapper.find('.cahier-figure-legend').text()).toContain('Communauté de communes du Pays de la Roche aux Fées')
+    expect(wrapper.text()).toContain('Pour chaque mode, les bâtiments sont classés')
+    expect(wrapper.find('.cahier-figure-lecture__content').text()).toContain('La courbe du groupe comparé suit les mêmes quantiles')
+    expect(wrapper.find('table').exists()).toBe(false)
+    expect(wrapper.find('.access-ramp-note').exists()).toBe(false)
+    expect(wrapper.findAll('.access-ramp-cut-hitbox')).toHaveLength(11)
+
+    await wrapper.find<HTMLButtonElement>('[data-quantile="0.5"]').trigger('focus')
+    const tooltip = wrapper.find('[role="tooltip"]')
+    expect(tooltip.text()).toContain('Part cumulée : 50 %')
+    expect(tooltip.findAll('.cahier-figure-tooltip-row')).toHaveLength(6)
+    expect(tooltip.findAll('.cahier-figure-tooltip-icon')).toHaveLength(6)
+    expect(tooltip.text()).toContain('Communauté de communes du Pays de la Roche aux Fées · Voiture5')
+    expect(tooltip.findAll('dd').every((value) => !value.text().includes('Communauté de communes'))).toBe(true)
+    expect(tooltip.text()).not.toContain('Territoire')
+    expect(tooltip.text()).toContain('Groupe comparé · Voiture5,5')
+    expect(tooltip.text()).not.toContain('communes de l’EPCI')
+    expect(tooltip.text()).not.toContain('types accessibles')
+    expect(tooltip.classes()).toContain('cahier-figure-tooltip--chart')
   })
 })

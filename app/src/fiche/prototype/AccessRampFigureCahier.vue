@@ -6,11 +6,16 @@
  * buildings. Each curve is therefore a separately ranked building population;
  * equal x positions do not identify the same building across modes.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 
-import type { MobiliteAccessMode, MobiliteAccessRamp } from '@/fiche/content/territoryFacts'
+import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint } from '@/fiche/content/territoryFacts'
+import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureFrame from './CahierFigureFrame.vue'
+import CahierFigureLegend from './CahierFigureLegend.vue'
+import CahierFigureLecture from './CahierFigureLecture.vue'
+import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
 const props = defineProps<{
   ramp: MobiliteAccessRamp
@@ -20,7 +25,7 @@ const props = defineProps<{
 const MODE_ORDER: readonly MobiliteAccessMode[] = ['car', 'bike', 'walkTransit']
 const WIDTH = 640
 const HEIGHT = 300
-const MARGIN = { top: 22, right: 24, bottom: 62, left: 64 }
+const MARGIN = { top: 22, right: 68, bottom: 62, left: 64 }
 const PLOT_WIDTH = WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom
 
@@ -32,7 +37,10 @@ const curves = computed(() => MODE_ORDER.map((mode) => props.ramp.curves[mode]))
 
 const maximum = computed(() => Math.max(
   1,
-  ...curves.value.flatMap((curve) => curve.points.map((point) => point.accessibleTypes)),
+  ...curves.value.flatMap((curve) => curve.points.flatMap((point) => [
+    point.accessibleTypes,
+    ...(point.comparisonAccessibleTypes === null ? [] : [point.comparisonAccessibleTypes]),
+  ])),
 ))
 
 function xFor(quantile: number): number {
@@ -52,11 +60,136 @@ function pathFor(points: MobiliteAccessRamp['curves'][MobiliteAccessMode]['point
 const xLabels = computed(() => curves.value[0]?.points ?? [])
 const yLabels = computed(() => [0, maximum.value])
 
-const tablePoints = computed(() => curves.value.flatMap((curve) => curve.points.map((point) => ({
-  modeLabel: curve.modeLabel,
-  mode: curve.mode,
-  ...point,
-}))))
+const comparisonCurves = computed(() => curves.value.map((curve) => ({
+  ...curve,
+  points: curve.points.filter((point) => point.comparisonAccessibleTypes !== null).map((point) => ({
+    ...point,
+    accessibleTypes: point.comparisonAccessibleTypes!,
+  })),
+})).filter((curve) => curve.points.length > 1))
+
+const MODE_ICONS = {
+  car: CarFront,
+  bike: Bike,
+  walkTransit: Footprints,
+} as const
+
+const legend = computed<readonly FigureLegendEntry[]>(() => [
+  { key: 'territory', label: props.territoryName, marker: 'line', tone: 'territory' },
+  { key: 'comparison', label: 'Groupe comparé', marker: 'dash', tone: 'peer' },
+])
+
+type ModeAnnotation = {
+  mode: MobiliteAccessMode
+  modeLabel: string
+  value: number
+  pointX: number
+  pointY: number
+  labelY: number
+  labelX: number
+}
+
+const modeAnnotations = computed<readonly ModeAnnotation[]>(() => {
+  const desired = curves.value.map((curve) => ({
+    mode: curve.mode,
+    modeLabel: curve.modeLabel,
+    value: curve.points.find((point) => point.quantile === 1)?.accessibleTypes ?? curve.points.at(-1)?.accessibleTypes ?? 0,
+  }))
+  const placed: ModeAnnotation[] = []
+  for (const item of [...desired].sort((left, right) => yFor(left.value) - yFor(right.value))) {
+    let labelY = Math.max(MARGIN.top + 12, Math.min(MARGIN.top + PLOT_HEIGHT - 8, yFor(item.value)))
+    const previous = placed.at(-1)
+    if (previous) labelY = Math.max(labelY, previous.labelY + 18)
+    placed.push({
+      ...item,
+      pointX: xFor(1),
+      pointY: yFor(item.value),
+      labelY,
+      labelX: xFor(1) + 28,
+    })
+  }
+  const bounded = placed.map((annotation) => ({
+      ...annotation,
+      labelY: Math.min(annotation.labelY, MARGIN.top + PLOT_HEIGHT - 8),
+    }))
+  return MODE_ORDER.flatMap((mode) => bounded.filter((annotation) => annotation.mode === mode))
+})
+
+type SelectedCut = {
+  quantile: number
+  quantileLabel: string
+  points: readonly {
+    mode: MobiliteAccessMode
+    modeLabel: string
+    point: MobiliteAccessRampPoint
+  }[]
+}
+
+const selectedCut = ref<SelectedCut | null>(null)
+
+function selectCut(quantile: number): void {
+  const points = curves.value.flatMap((curve) => {
+    const point = curve.points.find((candidate) => candidate.quantile === quantile)
+    return point ? [{ mode: curve.mode, modeLabel: curve.modeLabel, point }] : []
+  })
+  const quantileLabel = points[0]?.point.quantileLabel
+  if (!quantileLabel) return
+  selectedCut.value = { quantile, quantileLabel, points }
+}
+
+function clearCut(quantile: number): void {
+  if (selectedCut.value?.quantile === quantile) selectedCut.value = null
+}
+
+function cutTooltipRows(selection: SelectedCut): readonly CahierTooltipRow[] {
+  return selection.points.flatMap(({ mode, modeLabel, point }) => {
+    const presentation = {
+      tone: mode === 'walkTransit' ? 't' as const : mode === 'bike' ? 'b' as const : 'c' as const,
+      icon: MODE_ICONS[mode],
+    }
+    return [
+      {
+        label: `${props.territoryName} · ${modeLabel}`,
+        value: formatNumber(point.accessibleTypes),
+        ...presentation,
+      },
+      {
+        label: `Groupe comparé · ${modeLabel}`,
+        value: point.comparisonAccessibleTypes === null
+          ? '—'
+          : formatNumber(point.comparisonAccessibleTypes),
+        ...presentation,
+      },
+    ]
+  })
+}
+
+function cutHitboxStyle(point: MobiliteAccessRampPoint, index: number): Record<string, string> {
+  const points = xLabels.value
+  const previous = points[index - 1]
+  const next = points[index + 1]
+  const leftQuantile = previous ? (previous.quantile + point.quantile) / 2 : point.quantile
+  const rightQuantile = next ? (point.quantile + next.quantile) / 2 : point.quantile
+  return {
+    left: `${((xFor(leftQuantile) / WIDTH) * 100)}%`,
+    top: `${(MARGIN.top / HEIGHT) * 100}%`,
+    width: `${((xFor(rightQuantile) - xFor(leftQuantile)) / WIDTH) * 100}%`,
+    height: `${(PLOT_HEIGHT / HEIGHT) * 100}%`,
+  }
+}
+
+const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
+  if (!selectedCut.value) return undefined
+  const values = selectedCut.value.points.flatMap(({ point }) => [
+    point.accessibleTypes,
+    ...(point.comparisonAccessibleTypes === null ? [] : [point.comparisonAccessibleTypes]),
+  ])
+  const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1)
+  return {
+    x: `${Math.max(0.18, Math.min(0.82, xFor(selectedCut.value.quantile) / WIDTH)) * 100}%`,
+    y: `${Math.max(0.04, Math.min(0.48, yFor(average) / HEIGHT)) * 100}%`,
+  }
+})
 
 function curveLabel(curve: MobiliteAccessRamp['curves'][MobiliteAccessMode]): string {
   return `${curve.modeLabel} : ${curve.points.map((point) => `${point.quantileLabel}, ${formatNumber(point.accessibleTypes)} types`).join('; ')}`
@@ -130,55 +263,95 @@ const accessibleLabel = computed(() =>
               :y="yFor(value) + 4"
               text-anchor="end"
             >{{ formatNumber(value) }}</text>
-            <text
-              class="access-ramp-median-label"
-              :x="xFor(0.5) + 7"
-              :y="MARGIN.top - 7"
-            >médiane</text>
           </g>
           <path
-            v-for="curve in curves"
-            :key="curve.mode"
-            class="access-ramp-line"
+            v-for="curve in comparisonCurves"
+            :key="`comparison-${curve.mode}`"
+            class="access-ramp-line access-ramp-line--comparison"
             :class="`access-ramp-line--${curve.mode}`"
             :d="pathFor(curve.points)"
             aria-hidden="true"
           />
+          <path
+            v-for="curve in curves"
+            :key="curve.mode"
+            class="access-ramp-line access-ramp-line--territory"
+            :class="`access-ramp-line--${curve.mode}`"
+            :d="pathFor(curve.points)"
+            aria-hidden="true"
+          />
+          <path
+            v-for="annotation in modeAnnotations"
+            :key="`leader-${annotation.mode}`"
+            class="access-ramp-mode-leader"
+            :d="`M ${annotation.pointX} ${annotation.pointY} L ${annotation.labelX - 10} ${annotation.labelY}`"
+            aria-hidden="true"
+          />
+          <g
+            v-for="annotation in modeAnnotations"
+            :key="`annotation-${annotation.mode}`"
+            class="access-ramp-mode-annotation"
+            :class="`access-ramp-mode-annotation--${annotation.mode}`"
+            :transform="`translate(${annotation.labelX}, ${annotation.labelY})`"
+            role="img"
+            :aria-label="annotation.modeLabel"
+          >
+            <component
+              :is="MODE_ICONS[annotation.mode]"
+              :size="16"
+              :stroke-width="1.8"
+              x="-8"
+              y="-8"
+              aria-hidden="true"
+            />
+          </g>
+          <g v-for="curve in curves" :key="`points-${curve.mode}`" class="access-ramp-points" aria-hidden="true">
+            <circle
+              v-for="point in curve.points"
+              :key="`${curve.mode}-${point.quantile}`"
+              class="access-ramp-point"
+              :class="`access-ramp-point--${curve.mode}`"
+              :cx="xFor(point.quantile)"
+              :cy="yFor(point.accessibleTypes)"
+              r="4"
+            />
+          </g>
         </svg>
+        <div class="access-ramp-cut-hitboxes" aria-label="Détails par part cumulée de bâtiments">
+          <button
+            v-for="(point, index) in xLabels"
+            :key="`cut-${point.quantile}`"
+            class="access-ramp-cut-hitbox"
+            type="button"
+            :data-quantile="point.quantile"
+            :style="cutHitboxStyle(point, index)"
+            :aria-label="`Part cumulée : ${point.quantileLabel}`"
+            @mouseenter="selectCut(point.quantile)"
+            @mouseleave="clearCut(point.quantile)"
+            @focus="selectCut(point.quantile)"
+            @blur="clearCut(point.quantile)"
+            @click="selectCut(point.quantile)"
+          />
+        </div>
+        <CahierFigureTooltip
+          v-if="selectedCut"
+          class="access-ramp-tooltip cahier-figure-tooltip--chart"
+          :title="`Part cumulée : ${selectedCut.quantileLabel}`"
+          :rows="cutTooltipRows(selectedCut)"
+          :anchor="tooltipAnchor"
+          aria-live="polite"
+        />
       </div>
     </template>
-    <ul class="access-ramp-legend" aria-label="Modes d’accès">
-      <li v-for="curve in curves" :key="`legend-${curve.mode}`">
-        <span class="access-ramp-legend-line" :class="`access-ramp-legend-line--${curve.mode}`" aria-hidden="true" />
-        {{ curve.modeLabel }}
-      </li>
-    </ul>
-    <p class="access-ramp-note">
-      Chaque courbe classe séparément les {{ formatNumber(ramp.totalBuildings) }} bâtiments selon le nombre de {{ ramp.yAxisLabel }} atteignables.
-      La médiane ne désigne pas nécessairement le même bâtiment d’un mode à l’autre.
-    </p>
-    <details class="access-ramp-details">
-      <summary>Lire les points de la courbe</summary>
-      <table>
-        <caption>
-          Points de la rampe d’accès de {{ territoryName }}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Mode</th>
-            <th scope="col">Part cumulée</th>
-            <th scope="col">Types accessibles</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="point in tablePoints" :key="`${point.mode}-${point.quantile}`">
-            <th scope="row">{{ point.modeLabel }}</th>
-            <td>{{ point.quantileLabel }}</td>
-            <td>{{ formatNumber(point.accessibleTypes) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </details>
+    <CahierFigureLegend :entries="legend" label="Séries comparées" />
+    <CahierFigureLecture>
+      <p>
+        Pour chaque mode, les bâtiments sont classés du moins au plus grand nombre de types accessibles.
+        À une position donnée, les courbes ne décrivent donc pas nécessairement les mêmes bâtiments.
+        La courbe du groupe comparé suit les mêmes quantiles, calculés sur l’ensemble de ses bâtiments.
+        Le point à 50 % correspond à sa médiane.
+      </p>
+    </CahierFigureLecture>
   </CahierFigureFrame>
 </template>
 
@@ -191,6 +364,7 @@ const accessibleLabel = computed(() =>
 .access-ramp-plot {
   position: relative;
   width: 100%;
+  aspect-ratio: 640 / 300;
 }
 
 .access-ramp-svg {
@@ -222,10 +396,6 @@ const accessibleLabel = computed(() =>
   font-size: 11px;
 }
 
-.access-ramp-median-label {
-  font-weight: 700;
-}
-
 .access-ramp-line {
   fill: none;
   stroke-linecap: round;
@@ -233,90 +403,97 @@ const accessibleLabel = computed(() =>
   stroke-width: 2.5;
 }
 
-.access-ramp-line--car,
-.access-ramp-legend-line--car {
+.access-ramp-line--comparison {
+  stroke-dasharray: 10 6;
+  opacity: 0.68;
+  stroke-width: 2.5;
+}
+
+.access-ramp-line--territory {
+  position: relative;
+  z-index: 2;
+}
+
+.access-ramp-mode-leader {
+  fill: none;
+  stroke: var(--cahier-default);
+  stroke-dasharray: 2 3;
+  stroke-width: 1;
+}
+
+.access-ramp-mode-annotation {
+  fill: var(--cahier-default);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.access-ramp-mode-annotation--car { color: var(--cahier-mode-car); }
+.access-ramp-mode-annotation--bike { color: var(--cahier-mode-bike); }
+.access-ramp-mode-annotation--walkTransit { color: var(--cahier-mode-foot); }
+
+.access-ramp-mode-annotation :deep(svg) {
+  color: currentColor;
+}
+
+.access-ramp-point {
+  fill: var(--cahier-figure-surface, #f1f2ec);
+  stroke-width: 2;
+}
+
+.access-ramp-point--car { stroke: var(--cahier-mode-car); }
+.access-ramp-point--bike { stroke: var(--cahier-mode-bike); }
+.access-ramp-point--walkTransit { stroke: var(--cahier-mode-foot); }
+
+.access-ramp-tooltip {
+  width: min(290px, calc(100% - 24px));
+  pointer-events: none;
+}
+
+.access-ramp-tooltip .cahier-figure-tooltip-row dt {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.access-ramp-cut-hitboxes {
+  position: absolute;
+  inset: 0;
+}
+
+.access-ramp-cut-hitbox {
+  position: absolute;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: help;
+}
+
+.access-ramp-cut-hitbox:hover,
+.access-ramp-cut-hitbox:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--cahier-theme-strong) 34%, transparent);
+  outline-offset: -1px;
+}
+
+.access-ramp-cahier .cahier-figure-legend-mark--dash {
+  width: 28px;
+  border-top-width: 3px;
+}
+
+.access-ramp-line--car {
   stroke: var(--cahier-mode-car);
   color: var(--cahier-mode-car);
 }
 
-.access-ramp-line--bike,
-.access-ramp-legend-line--bike {
+.access-ramp-line--bike {
   stroke: var(--cahier-mode-bike);
   color: var(--cahier-mode-bike);
 }
 
-.access-ramp-line--walkTransit,
-.access-ramp-legend-line--walkTransit {
+.access-ramp-line--walkTransit {
   stroke: var(--cahier-mode-foot);
   color: var(--cahier-mode-foot);
-}
-
-.access-ramp-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  margin: 8px 0 0;
-  padding: 0;
-  color: var(--cahier-default);
-  font-size: 13px;
-  list-style: none;
-}
-
-.access-ramp-legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.access-ramp-legend-line {
-  display: inline-block;
-  width: 20px;
-  border-top: 3px solid currentColor;
-}
-
-.access-ramp-note {
-  margin: 10px 0 0;
-  color: var(--cahier-default);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.access-ramp-details {
-  margin-top: 12px;
-  color: var(--cahier-default);
-  font-size: 13px;
-}
-
-.access-ramp-details summary {
-  cursor: pointer;
-  color: var(--cahier-theme-strong);
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.access-ramp-details summary:focus-visible {
-  outline: 2px solid var(--cahier-theme-strong);
-  outline-offset: 4px;
-}
-
-.access-ramp-details table {
-  width: 100%;
-  margin-top: 10px;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.access-ramp-details th,
-.access-ramp-details td {
-  padding: 5px 6px;
-  border-bottom: 1px solid color-mix(in srgb, var(--cahier-theme) 20%, transparent);
-  text-align: left;
-}
-
-.access-ramp-details caption {
-  margin-bottom: 8px;
-  text-align: left;
 }
 
 @media (max-width: 640px) {

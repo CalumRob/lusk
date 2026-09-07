@@ -81,8 +81,8 @@ test_that("agreger_distribution_acces_batiments publie une grille complète par 
   expect_equal(cellule$building_count, 1L)
   expect_equal(cellule$total_buildings, 2L)
   expect_equal(cellule$share, 0.5)
-  expect_equal(cellule$breadth_label, "1 à 9 types")
-  expect_equal(cellule$depth_label, "1 à 9 équipements")
+  expect_equal(cellule$breadth_label, "1–9")
+  expect_equal(cellule$depth_label, "1–9")
   expect_equal(cellule$mode, "t")
   expect_equal(cellule$mode_label, "À pied + TC")
   expect_equal(cellule$source_id, "mobilite_snapshot")
@@ -90,7 +90,10 @@ test_that("agreger_distribution_acces_batiments publie une grille complète par 
   expect_equal(cellule$version, "2026-02")
   expect_equal(cellule$date_reference, "2026-02-28")
   expect_equal(cellule$date_publication, "2026-08-06")
-  expect_true(is.na(cellule$comparison_label))
+  expect_equal(cellule$comparison_label, "communes de l'EPCI")
+  expect_equal(cellule$comparison_total_buildings, 2L)
+  expect_equal(cellule$comparison_building_count, 1L)
+  expect_equal(cellule$comparison_share, 0.5)
 
   verifier_contrat_distribution_acces_batiments(resultat)
 })
@@ -145,6 +148,9 @@ test_that("agreger_rampe_acces_batiments publie onze points monotones par mode",
   expect_equal(mediane$version, "2026-02")
   expect_equal(mediane$date_reference, "2026-02-28")
   expect_equal(mediane$date_publication, "2026-08-06")
+  expect_equal(mediane$comparison_label, "communes de l'EPCI")
+  expect_equal(mediane$comparison_total_buildings, 2L)
+  expect_equal(mediane$comparison_accessible_types, 1)
 
   absent <- resultat[resultat$territoire == "22002", , drop = FALSE]
   expect_equal(nrow(absent), 3L)

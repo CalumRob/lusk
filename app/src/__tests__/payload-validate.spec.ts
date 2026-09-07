@@ -50,25 +50,28 @@ function distributionAbsenteFixture(overrides: Record<string, unknown> = {}) {
      date_reference: '2026-02-28',
      date_publication: '2026-08-06',
     comparison_label: null,
+    comparison_total_buildings: null,
+    comparison_building_count: null,
+    comparison_share: null,
     ...overrides,
   }
 }
 
 function distributionCompleteFixture() {
   const breadthBins = [
-    { key: '0', min: 0, max: 0, label: '0 type' },
-    { key: '1-9', min: 1, max: 9, label: '1 à 9 types' },
-    { key: '10-24', min: 10, max: 24, label: '10 à 24 types' },
-    { key: '25-39', min: 25, max: 39, label: '25 à 39 types' },
-    { key: '40-53', min: 40, max: 53, label: '40 à 53 types' },
+    { key: '0', min: 0, max: 0, label: '0' },
+    { key: '1-9', min: 1, max: 9, label: '1–9' },
+    { key: '10-24', min: 10, max: 24, label: '10–24' },
+    { key: '25-39', min: 25, max: 39, label: '25–39' },
+    { key: '40-53', min: 40, max: 53, label: '40–53' },
   ]
   const depthBins = [
-    { key: '0', min: 0, max: 0, label: '0 équipement' },
-    { key: '1-9', min: 1, max: 9, label: '1 à 9 équipements' },
-    { key: '10-49', min: 10, max: 49, label: '10 à 49 équipements' },
-    { key: '50-199', min: 50, max: 199, label: '50 à 199 équipements' },
-    { key: '200-499', min: 200, max: 499, label: '200 à 499 équipements' },
-    { key: '500+', min: 500, max: null, label: '500 équipements ou plus' },
+    { key: '0', min: 0, max: 0, label: '0' },
+    { key: '1-9', min: 1, max: 9, label: '1–9' },
+    { key: '10-49', min: 10, max: 49, label: '10–49' },
+    { key: '50-199', min: 50, max: 199, label: '50–199' },
+    { key: '200-499', min: 200, max: 499, label: '200–499' },
+    { key: '500+', min: 500, max: null, label: '500 ou +' },
   ]
   return breadthBins.flatMap((breadth) => depthBins.map((depth, index) =>
     distributionAbsenteFixture({
@@ -113,6 +116,8 @@ function rampCompleteFixture(overrides: Record<string, unknown> = {}) {
        date_reference: '2026-02-28',
        date_publication: '2026-08-06',
       comparison_label: null,
+      comparison_total_buildings: null,
+      comparison_accessible_types: null,
       ...overrides,
     })),
   )

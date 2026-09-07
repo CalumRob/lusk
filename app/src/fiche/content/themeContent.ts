@@ -12,8 +12,6 @@ import type {
   MobiliteAccessModes,
   MobiliteAccessRamp,
   MobiliteBuildingDistribution,
-  MobiliteDistributionPeer,
-  MobiliteDistributionSignature,
   MobiliteService,
   MobiliteSummaryFacts,
   NumericFact,
@@ -65,25 +63,11 @@ export interface Lecture {
   prose: readonly TextBlock[]
 }
 
-export interface CompleteDistributionSignature {
-  densities: readonly number[]
-  quantiles: readonly number[]
-  min: number
-  max: number
-}
-
 export interface DistributionEvidence {
   kind: 'distribution'
-  legend: readonly FigureLegendEntry[]
-  distribution: CompleteDistributionSignature
-  comparisonLabel: string | null
-  marks: {
-    walkTransit: ContentFact
-    bike: ContentFact | null
-  }
-  peers: readonly MobiliteDistributionPeer[]
   buildingDistribution: MobiliteBuildingDistribution | null
   accessRamp: MobiliteAccessRamp | null
+  comparisonPopulationLabel: string | null
 }
 
 export interface BpeProfilesEvidence {
@@ -284,12 +268,6 @@ function mobiliteAccessLegend(includeInaccessible: boolean): readonly FigureLege
   return includeInaccessible ? MOBILITE_ACCESS_LEGEND : MOBILITE_ACCESS_LEGEND.slice(0, 3)
 }
 
-const DISTRIBUTION_LEGEND: readonly FigureLegendEntry[] = [
-  { key: 'territory', label: 'Distribution du territoire', marker: 'line', tone: 'territory' },
-  { key: 'peers', label: 'Territoires comparables', marker: 'dot', tone: 'peer' },
-  { key: 'reference', label: 'Médianes', marker: 'dash', tone: 'reference' },
-]
-
 function complete(fact: NumericFact): fact is NumericFact & { value: number } {
   return fact.availability === 'complete' && fact.value !== null
 }
@@ -399,8 +377,6 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
   for (const section of sections) {
     for (const indicator of section.indicators) add(indicator)
     if (section.evidence?.kind === 'distribution') {
-      add(section.evidence.marks.walkTransit)
-      if (section.evidence.marks.bike) add(section.evidence.marks.bike)
       const buildingSource = sourceFrom(section.evidence.buildingDistribution?.provenance ?? null)
       if (buildingSource && !sources.has(buildingSource.id)) {
         sources.set(buildingSource.id, buildingSource)
@@ -459,27 +435,6 @@ function targetsFor(
   return facts
     .map((fact) => targetFor(fact, territory))
     .filter((target): target is ExplorationTarget => target !== null)
-}
-
-function completeDistribution(
-  signature: MobiliteDistributionSignature | null,
-): CompleteDistributionSignature | null {
-  if (!signature) return null
-  if (signature.densities.length !== 10 || signature.quantiles.length !== 10) return null
-  const numbersOnly = (values: readonly (number | null)[]): values is readonly number[] =>
-    values.every((value): value is number => value !== null)
-  if (!numbersOnly(signature.densities) || !numbersOnly(signature.quantiles)) {
-    return null
-  }
-  if (signature.min === null || signature.max === null) {
-    return null
-  }
-  return {
-    densities: signature.densities,
-    quantiles: signature.quantiles,
-    min: signature.min,
-    max: signature.max,
-  }
 }
 
 function formatNumber(value: number): string {
@@ -1196,62 +1151,52 @@ function lectureEssentiels(
   }
 }
 
+function buildingComparisonPopulationLabel(
+  rawLabel: string | null,
+  territory: TerritoryIdentity,
+): string | null {
+  if (!rawLabel) return null
+  if (territory.type === 'commune' && territory.epciName) {
+    return `bâtiments de ${territory.epciName}`
+  }
+  return 'bâtiments de Bretagne'
+}
+
 function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
-  const walkTransit = facts.mobility.losses.diversityWalkTransit
-  const bike = facts.mobility.losses.diversityBike
-  const walkDistribution = completeDistribution(
-    facts.mobility.losses.distributionWalkTransit,
-  )
   const buildingDistribution = facts.mobility.buildingDistribution
   const accessRamp = facts.mobility.accessRamp
-  const evidence: DistributionEvidence | null = walkDistribution
-      ? {
+  const rawComparisonLabel = buildingDistribution?.comparisonLabel ?? accessRamp?.comparisonLabel ?? null
+  const hasAny = buildingDistribution !== null || accessRamp !== null
+  const evidence: DistributionEvidence | null = hasAny
+    ? {
         kind: 'distribution',
-        legend: DISTRIBUTION_LEGEND,
-        distribution: walkDistribution,
-        comparisonLabel: comparisonLabel(walkTransit.comparison, facts.territory),
-        marks: {
-          walkTransit: contentFact(walkTransit, CONTENT_LABELS.div_loss_t),
-          bike: complete(bike) ? contentFact(bike, CONTENT_LABELS.div_loss_b) : null,
-          },
-          peers: facts.mobility.losses.distributionPeers,
-          buildingDistribution,
-          accessRamp,
-        }
+        buildingDistribution,
+        accessRamp,
+        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, facts.territory),
+      }
     : null
-  const hasAny = [walkTransit, bike].some(hasValue) || evidence !== null || buildingDistribution !== null || accessRamp !== null
   const availability: FactAvailability =
     !hasAny
       ? 'absent'
-      : complete(walkTransit) && evidence !== null &&
+      : evidence !== null &&
           (buildingDistribution === null || buildingDistribution.availability === 'complete') &&
           (accessRamp === null || accessRamp.availability === 'complete')
         ? 'complete'
         : 'incomplete'
-  const targets = targetsFor(
-    [walkTransit, bike].filter((fact): fact is NumericFact => hasValue(fact)),
-    facts.territory,
-  )
-  const sectionFacts = [
-    contentFact(walkTransit, CONTENT_LABELS.div_loss_t),
-    contentFact(bike, CONTENT_LABELS.div_loss_b),
-  ]
-  const indicators = sectionFacts.filter(({ fact }) => hasValue(fact))
   return {
     key: 'distribution-acces-par-batiment',
     label: "Distribution de l'accès par bâtiment",
     availability,
-    indicators,
+    indicators: [],
     evidence,
     provenance: [
-      ...sourceIdsFor(sectionFacts),
       ...(buildingDistribution?.provenance?.sourceId ? [buildingDistribution.provenance.sourceId] : []),
       ...(accessRamp?.provenance?.sourceId ? [accessRamp.provenance.sourceId] : []),
     ].filter((sourceId, index, sourceIds) => sourceIds.indexOf(sourceId) === index),
     lecture: availability === 'complete'
-      ? { marelle: '... Tous les bâtiments non plus', prose: [] }
+      ? { marelle: '... Toutes les résidences non plus.', prose: [] }
       : null,
-    explorationTargets: targets,
+    explorationTargets: [],
   }
 }
 

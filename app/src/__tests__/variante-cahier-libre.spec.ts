@@ -115,6 +115,8 @@ const rampRows: RampeAccesBatimentsRow[] = [
      date_reference: '2026-02-28',
      date_publication: '2026-08-06',
     comparison_label: null,
+    comparison_total_buildings: null,
+    comparison_accessible_types: null,
   })),
 )
 
@@ -286,19 +288,21 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'Services essentiels',
       "Distribution de l'accès par bâtiment",
     ])
-    expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(3)
+    expect(wrapper.find('[data-section="distribution-acces-par-batiment"] .cahier-marelle-anchor').text()).toBe('... Toutes les résidences non plus.')
+    expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(4)
     expect(wrapper.find('.summary-evidence').exists()).toBe(true)
     expect(wrapper.find('.summary-evidence .cahier-figure-title').text()).toBe("Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)")
     expect(wrapper.find('.summary-evidence').text()).toContain("Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)")
     expect(wrapper.find('.summary-evidence').text()).toContain('Types d’équipements accessibles')
     expect(wrapper.find('.summary-evidence').text()).toContain('1 467,8')
     expect(wrapper.findAll('.summary-value')).toHaveLength(6)
-    expect(wrapper.find('.distribution-cahier-svg').exists()).toBe(true)
-    expect(wrapper.find('.distribution-cahier').classes()).toContain('cahier-figure-frame')
+    expect(wrapper.find('.distribution-cahier-svg').exists()).toBe(false)
+    expect(wrapper.find('.bivariate-distribution-svg').exists()).toBe(false)
     expect(wrapper.find('.access-ramp-evidence').exists()).toBe(true)
+    expect(wrapper.find('.access-ramp-evidence .cahier-figure-title').text()).toBe('Nombre de types accessibles par part cumulée des bâtiments')
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Commune A')
-    expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(5)
-    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(6)
+    expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
     expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.find('.mode-figures').exists()).toBe(false)
@@ -335,10 +339,10 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(links.filter((link) => /^\d+(?:er|e)\/\d+$/.test(link.text()))).toHaveLength(15)
     expect(links.filter((link) => link.attributes('href')?.includes('/indicateurs/mobilite/tot_loss_t'))).toHaveLength(7)
     expect(wrapper.findAll('.cahier-section-exploration')).toHaveLength(2)
-    expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(5)
+    expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(4)
     expect(wrapper.findAll('.cahier-comparison-value')).toHaveLength(15)
     expect(wrapper.findAll('.cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
-    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(3)
     expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.bpe-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.cahier-comparison-value').text()).toContain('Groupe comparé')
@@ -666,7 +670,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(prose[2]).toContain('Le vélo renforce cette situation')
     expect(prose[2]).toContain('groupe comparé : 20')
     expect(wrapper.find('.margin-comparison').exists()).toBe(false)
-    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(3)
     expect(wrapper.findAll('.cahier-comparison-note').every((note) => note.text().startsWith('Groupe comparé :'))).toBe(true)
     expect(wrapper.findAll('.cahier-section-footer').every((footer) => !footer.find('.cahier-comparison-note').exists())).toBe(true)
     expect(wrapper.findAll('.cahier-section-footer').every((footer) => footer.find('.cahier-section-exploration--unit-footer').exists())).toBe(true)
@@ -685,17 +689,14 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'Ce que l’on perd sans voiture',
       'Service minimum ?',
       'Tous les équipements ne se valent pas...',
-      '... Tous les bâtiments non plus',
+      '... Toutes les résidences non plus.',
     ])
     expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(0)
   })
 
   it('renders incomplete sections without inventing a figure or lecture', async () => {
     const facts = structuredClone(factsForTarget())
-    facts.mobility.losses.distributionWalkTransit = {
-      ...facts.mobility.losses.distributionWalkTransit!,
-      densities: [null, ...facts.mobility.losses.distributionWalkTransit!.densities.slice(1)],
-    }
+    facts.mobility.accessRamp!.availability = 'incomplete'
     facts.mobility.access.byService.administration.walkTransit = {
       ...facts.mobility.access.byService.administration.walkTransit,
       value: null,
@@ -720,15 +721,25 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('#access-administration-detail').text()).toContain('Indisponible')
   })
 
+  it('shows the standard comparison helper for the building-distribution subgroup', async () => {
+    const facts = structuredClone(factsForTarget())
+    if (!facts.mobility.accessRamp) throw new Error('Expected access-ramp facts')
+    facts.mobility.accessRamp.comparisonLabel = 'communes de l’EPCI'
+
+    const wrapper = await render(resolveMobiliteThemeContent(facts))
+
+    expect(wrapper.find('.access-ramp-evidence .cahier-comparison-note').text()).toBe('Groupe comparé : bâtiments de EPCI X')
+  })
+
   it('renders absent sections as an honest, link-free state', async () => {
     const facts = structuredClone(factsForTarget())
     facts.mobility.indicators = []
     facts.mobility.losses = {
       diversityWalkTransit: { ...facts.mobility.losses.diversityWalkTransit, value: null, availability: 'absent', provenance: null },
       diversityBike: { ...facts.mobility.losses.diversityBike, value: null, availability: 'absent', provenance: null },
-      distributionWalkTransit: null,
-      distributionPeers: [],
     }
+    facts.mobility.buildingDistribution = null
+    facts.mobility.accessRamp = null
     facts.mobility.access = {
       availability: 'absent',
       totalBuildings: { ...facts.mobility.access.totalBuildings, value: null, availability: 'absent', provenance: null },
