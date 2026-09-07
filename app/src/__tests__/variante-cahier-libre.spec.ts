@@ -307,6 +307,8 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.bpe-evidence .cahier-figure-lecture').text()).toContain('un quart des bâtiments')
     expect(wrapper.find('.access-figure-collection .cahier-figure-lecture').text()).toContain('trois bâtiments sur quatre')
     expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('mêmes quantiles')
+    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('on lit 15 types')
+    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('non la perte du bâtiment médian')
     expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
     expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
@@ -735,6 +737,8 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       wrapper.findAll('.cahier-figure-lecture__content').map((lecture) => lecture.text())
 
     expect(lectureTexts(plain)).toEqual(lectureTexts(ruled))
+    expect(plain.find('.page-rundown').text()).toBe(ruled.find('.page-rundown').text())
+    expect(plain.find('.page-rundown').text()).toBe(content.units[0].rundown.map((block) => block.map((segment) => segment.value).join('')).join(' '))
   })
 
   it('shows the standard comparison helper for the building-distribution subgroup', async () => {

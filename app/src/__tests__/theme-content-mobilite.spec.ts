@@ -107,6 +107,173 @@ function blocksText(blocks: readonly (readonly { value: string }[])[]): string {
   return blocks.map((block) => block.map((segment) => segment.value).join('')).join(' ')
 }
 
+describe('Mobilité page rundown', () => {
+  it('grounds figure-reading examples in the current distribution and summary', () => {
+    const content = resolveMobiliteThemeContent(completeFacts)
+    const summary = content.units[0].sections[0].evidence!
+    const distribution = content.units[0].sections[3].evidence!
+    expect(blocksText(summary.figureLecture)).toContain('Ici,')
+    expect(blocksText(summary.figureLecture)).toContain('30')
+    expect(blocksText(distribution.buildingDistributionLecture)).toContain('60 %')
+    expect(blocksText(distribution.buildingDistributionLecture)).toContain('10–24')
+    expect(blocksText(content.units[0].sections[1].evidence!.figureLecture)).toContain('France services')
+    expect(blocksText(content.units[0].sections[2].evidence!.figureLecture)).toContain('La part à vélo atteint donc ce niveau')
+    const changed = structuredClone(completeFacts)
+    changed.mobility.access.summary.averageLosses.diversity.walkTransit.value = 12
+    expect(blocksText(resolveMobiliteThemeContent(changed).units[0].sections[0].evidence!.figureLecture)).toContain('12')
+  })
+
+  it('resolves the current territory as a bike bridge without turning the rundown into a figure reading', () => {
+    const content = resolveMobiliteThemeContent(completeFacts)
+    const rundown = content.units[0].rundown
+    expect(rundown).toHaveLength(1)
+    expect(blocksText(rundown)).toContain('vélo')
+    expect(blocksText(rundown)).toContain('voiture')
+    expect(blocksText(rundown)).not.toContain(';')
+    expect(blocksText(rundown)).toContain('services essentiels')
+    expect(rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'bike' }))
+    expect(rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'car' }))
+    expect(content.units[0].sections[0].lecture?.prose.length).toBeGreaterThan(0)
+    expect(resolveMobiliteThemeContent(completeFacts).units[0].rundown).toEqual(rundown)
+  })
+
+  it('reads a hub as broad walking diversity with greater car depth', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 40
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 40
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('gamme de services déjà diversifiée')
+    expect(paragraph).toContain('choix entre plusieurs établissements')
+    expect(paragraph).toContain('profondeur d’offre')
+    expect(paragraph).toContain('compense une partie du volume perdu')
+    expect(paragraph).not.toContain('dépend')
+    expect(resolveMobiliteThemeContent(facts).units[0].rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'foot' }))
+    const tones = resolveMobiliteThemeContent(facts).units[0].rundown[0]
+      .filter((segment) => segment.kind === 'emphasis')
+      .map((segment) => segment.tone)
+    expect(tones).toEqual(['foot', 'default', 'bike'])
+  })
+
+  it('does not call a high-access concentration uneven', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 40
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 40
+    facts.mobility.buildingDistribution!.cells = facts.mobility.buildingDistribution!.cells.map((cell, index) => ({
+      ...cell,
+      buildingCount: cell.breadthBucket === '40-53' && cell.depthBucket === '500+' ? 88 : index === 0 ? 12 : 0,
+      share: cell.breadthBucket === '40-53' && cell.depthBucket === '500+' ? 0.88 : index === 0 ? 0.12 : 0,
+    }))
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).not.toContain('socle pour une partie')
+    expect(paragraph).not.toContain('très limité')
+  })
+
+  it('reads strong walking access positively', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 40
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 70
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('marche et les transports en commun')
+    expect(paragraph).toContain('accès sans voiture reste largement possible')
+    expect(paragraph).not.toContain('profondeur d’offre')
+    const tones = resolveMobiliteThemeContent(facts).units[0].rundown[0]
+      .filter((segment) => segment.kind === 'emphasis')
+      .map((segment) => segment.tone)
+    expect(tones).toEqual(['foot', 'default'])
+  })
+
+  it('does not mistake similar low access across modes for walkability', () => {
+    const facts = structuredClone(completeFacts)
+    for (const mode of Object.values(facts.mobility.access.summary.accessibleTypes)) mode.value = 8
+    for (const mode of Object.values(facts.mobility.access.summary.accessibleEquipment)) mode.value = 20
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('offre accessible reste limitée quel que soit le mode')
+    expect(paragraph).not.toContain('accès sans voiture reste largement possible')
+  })
+
+  it('does not use BPE profile classifications as average access narrative', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.bike.value = 20
+    facts.mobility.access.summary.accessibleEquipment.bike.value = 40
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 20
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 40
+    const profile = completeFacts.mobility.bpeAccess.profiles[0]!
+    facts.mobility.bpeAccess.profiles = [
+      { ...profile, profile: 'voiture-requise', count: 8 },
+      { ...profile, profile: 'inaccessible-20-minutes', count: 4 },
+      { ...profile, profile: 'acces-pied-tc', count: 2 },
+    ]
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('structure largement')
+    expect(paragraph).not.toContain('uniquement en voiture')
+  })
+
+  it('reads broad car advantage as dependence only when both dimensions and both alternatives fall behind', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.bike.value = 24
+    facts.mobility.access.summary.accessibleEquipment.bike.value = 45
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 20
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 40
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('voiture')
+    expect(paragraph).toContain('structure largement')
+    expect(paragraph).not.toContain('vélo')
+    expect(paragraph).toContain('socle pour une partie')
+    expect(resolveMobiliteThemeContent(facts).units[0].rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'car' }))
+  })
+
+  it('reads a meaningful bike recovery with both bike and car emphasis', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.bike.value = 38
+    facts.mobility.access.summary.accessibleEquipment.bike.value = 75
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('vélo')
+    expect(paragraph).toContain('véritable relais')
+    expect(resolveMobiliteThemeContent(facts).units[0].rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'bike' }))
+    expect(resolveMobiliteThemeContent(facts).units[0].rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'car' }))
+  })
+
+  it('keeps mixed territories mixed when no mode signature clears the branch', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.bike.value = 38
+    facts.mobility.access.summary.accessibleEquipment.bike.value = 80
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 35
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 50
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('ne produisent pas la même forme d’accès')
+    expect(paragraph).toContain('Le vélo élargit l’offre accessible sans voiture')
+    expect(resolveMobiliteThemeContent(facts).units[0].rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'car' }))
+    expect(resolveMobiliteThemeContent(facts).units[0].rundown[0]).toContainEqual(expect.objectContaining({ kind: 'emphasis', tone: 'foot' }))
+  })
+
+  it('makes a genuinely uneven walking distribution a distinct second reading', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.access.summary.accessibleTypes.walkTransit.value = 40
+    facts.mobility.access.summary.accessibleEquipment.walkTransit.value = 40
+    facts.mobility.buildingDistribution!.cells = facts.mobility.buildingDistribution!.cells.map((cell) => ({
+      ...cell,
+      buildingCount: cell.breadthBucket === '0' && cell.depthBucket === '0' ? 60 : 0,
+      share: cell.breadthBucket === '0' && cell.depthBucket === '0' ? 0.6 : 0,
+    }))
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('Pour une majorité des bâtiments')
+    expect(paragraph).not.toContain('socle pour une partie')
+  })
+
+  it('keeps the incomplete state honest instead of classifying a mode', () => {
+    const facts = structuredClone(completeFacts)
+    for (const modes of [facts.mobility.access.summary.accessibleTypes, facts.mobility.access.summary.accessibleEquipment]) {
+      for (const mode of Object.values(modes)) {
+        mode.value = null
+        mode.availability = 'absent'
+      }
+    }
+    const paragraph = blocksText(resolveMobiliteThemeContent(facts).units[0].rundown)
+    expect(paragraph).toContain('ne permettent pas de dégager une lecture d’ensemble')
+    expect(paragraph).not.toContain('voiture')
+  })
+})
+
 function accessFacts(): MobiliteAccessFacts {
   const gapsByService = Object.fromEntries(
     services.map((service) => [
@@ -445,7 +612,7 @@ describe('resolveMobiliteThemeContent', () => {
     )
     expect(essentials.evidence?.kind === 'access' ? blocksText(essentials.evidence.figureLecture) : '').toContain('trois bâtiments sur quatre')
     expect(lectureText(essentials.lecture)).toContain(
-      'À Commune A, les cinq services essentiels sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.',
+      'À Commune A, pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès à vélo et en voiture, mais pas à pied ou en transports en commun.',
     )
     expect(completeFacts.mobility.access.totalBuildings.value).toBe(100)
     expect(content.introduction[1]?.map((segment) => segment.value).join('')).toContain(
@@ -459,27 +626,27 @@ describe('resolveMobiliteThemeContent', () => {
     const cases = [
       {
         values: [0.75, 0.75, 0.75],
-        expected: 'sont couverts quel que soit le mode de transport.',
+        expected: 'pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès, quel que soit le mode de transport.',
       },
       {
         values: [0.74, 0.75, 0.75],
-        expected: 'sont couverts à pied ou en transports en commun et à vélo, mais pas en voiture.',
+        expected: 'pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès à pied ou en transports en commun et à vélo, mais pas en voiture.',
       },
       {
         values: [0.75, 0.75, 0.74],
-        expected: 'sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.',
+        expected: 'pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès à vélo et en voiture, mais pas à pied ou en transports en commun.',
       },
       {
         values: [0.74, 0.75, 0.74],
-        expected: 'sont couverts à vélo, mais pas à pied ou en transports en commun ni en voiture.',
+        expected: 'pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès à vélo, mais pas à pied ou en transports en commun ni en voiture.',
       },
       {
         values: [0.75, 0.74, 0.74],
-        expected: 'ne sont couverts qu’en voiture.',
+        expected: 'pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès en voiture, mais pas avec les autres modes.',
       },
       {
         values: [0.74, 0.74, 0.74],
-        expected: 'ne sont couverts par aucun mode de transport.',
+        expected: 'pour les cinq services essentiels, aucun mode ne permet à trois bâtiments sur quatre d’y accéder.',
       },
     ] as const
 
@@ -495,7 +662,7 @@ describe('resolveMobiliteThemeContent', () => {
 
       const lecture = resolveMobiliteThemeContent(facts).units[0]!.sections[2]!.lecture
 
-      expect(lectureText(lecture)).toContain(`À Commune A, les cinq services essentiels ${testCase.expected}`)
+       expect(lectureText(lecture)).toContain(`À Commune A, ${testCase.expected}`)
     }
   })
 

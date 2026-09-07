@@ -181,6 +181,7 @@ export type ContentSection = MobiliteContentSection
 export interface MobiliteContentUnit {
   key: 'acces-aux-services'
   label: 'Accès aux services'
+  rundown: readonly TextBlock[]
   sections: readonly [
     ResumeSection,
     ProfilsAccesParModeSection,
@@ -880,12 +881,13 @@ function previousAccessReadingPolarity(
   return null
 }
 
-function profilesFigureLecture(): readonly TextBlock[] {
+function profilesFigureLecture(profiles: readonly BpeAccessProfileFact[]): readonly TextBlock[] {
+  const exemplar = dominantProfile(profiles)?.exemplar
   return [[
     text('Pour chaque mode de transport, un type d’équipement entre dans le socle dès lors qu’au moins '),
     bold('un quart des bâtiments'),
     text(' peut l’atteindre. La figure retient ensuite le premier mode qui franchit ce seuil ; si aucun ne l’atteint, le type est classé « inaccessible ou presque ».'),
-  ]]
+  ], ...(exemplar ? [[text(`Par exemple, « ${exemplar.label} » est accessible à ${formatNumber(exemplar.walkTransit * 100)} % des bâtiments à pied ou en transports en commun, ${formatNumber(exemplar.bike * 100)} % à vélo avec les transports en commun et ${formatNumber(exemplar.car * 100)} % en voiture. Ces parts expliquent son classement ; le profil compte des types d’équipements, pas des bâtiments.`)]] : [])]
 }
 
 function lectureProfils(
@@ -954,10 +956,11 @@ function lectureDiversite(
   return { marelle: 'Ce que l’on perd sans voiture', prose }
 }
 
-function summaryFigureLecture(): readonly TextBlock[] {
+function summaryFigureLecture(summary: MobiliteSummaryFacts): readonly TextBlock[] {
+  const loss = narrativeValue(summary.averageLosses.diversity.walkTransit)
   return [[
     text('Les valeurs comparent, pour chaque mode, le nombre moyen d’équipements et de types accessibles par bâtiment. Les pertes correspondent à l’écart avec la voiture.'),
-  ]]
+  ], ...(loss !== null && loss >= 0 ? [[text(`Ici, la perte moyenne de ${formatNumber(loss)} types à pied ou en transports en commun se lit par rapport à la voiture. Elle ne signifie pas que chaque bâtiment perd exactement ${formatNumber(loss)} types : la figure de distribution décrit séparément les niveaux d’accès.`)]] : [])]
 }
 
 const SERVICE_PREPOSITIONS: Readonly<Record<MobiliteService, string>> = {
@@ -994,40 +997,42 @@ function coverageNarrative(
       services: services.filter(
         (service) => covered(service, 'car') && covered(service, 'bike') && covered(service, 'walkTransit'),
       ),
-      sentence: (names: string) => `${names} sont couverts quel que soit le mode de transport.`,
+      sentence: (names: string) => `pour ${names}, au moins trois bâtiments sur quatre y ont accès, quel que soit le mode de transport.`,
     },
     {
       services: services.filter(
         (service) => !covered(service, 'car') && covered(service, 'bike') && covered(service, 'walkTransit'),
       ),
       sentence: (names: string) =>
-        `${names} sont couverts à pied ou en transports en commun et à vélo, mais pas en voiture.`,
+        `pour ${names}, au moins trois bâtiments sur quatre y ont accès à pied ou en transports en commun et à vélo, mais pas en voiture.`,
     },
     {
       services: services.filter(
         (service) => covered(service, 'car') && covered(service, 'bike') && !covered(service, 'walkTransit'),
       ),
       sentence: (names: string) =>
-        `${names} sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.`,
+        `pour ${names}, au moins trois bâtiments sur quatre y ont accès à vélo et en voiture, mais pas à pied ou en transports en commun.`,
     },
     {
       services: services.filter(
         (service) => !covered(service, 'car') && covered(service, 'bike') && !covered(service, 'walkTransit'),
       ),
       sentence: (names: string) =>
-        `${names} sont couverts à vélo, mais pas à pied ou en transports en commun ni en voiture.`,
+        `pour ${names}, au moins trois bâtiments sur quatre y ont accès à vélo, mais pas à pied ou en transports en commun ni en voiture.`,
     },
     {
       services: services.filter(
         (service) => covered(service, 'car') && !covered(service, 'bike') && !covered(service, 'walkTransit'),
       ),
-      sentence: (names: string) => `${names} ne sont couverts qu’en voiture.`,
+      sentence: (names: string) =>
+        `pour ${names}, au moins trois bâtiments sur quatre y ont accès en voiture, mais pas avec les autres modes.`,
     },
     {
       services: services.filter(
         (service) => !covered(service, 'car') && !covered(service, 'bike') && !covered(service, 'walkTransit'),
       ),
-      sentence: (names: string) => `${names} ne sont couverts par aucun mode de transport.`,
+      sentence: (names: string) =>
+        `pour ${names}, aucun mode ne permet à trois bâtiments sur quatre d’y accéder.`,
     },
   ].filter((group) => group.services.length > 0)
 
@@ -1069,22 +1074,22 @@ function gapNarrative(
     return [
       text(
         key === 'carGap'
-          ? 'La voiture ne crée pas d’écart de couverture marqué entre ces services.'
-          : 'Le vélo n’apporte pas d’écart de couverture marqué entre ces services.',
+          ? 'La voiture ne crée pas d’écart marqué entre la part des bâtiments ayant accès à ces services.'
+          : 'Le vélo n’apporte pas d’écart marqué entre la part des bâtiments ayant accès à ces services.',
       ),
     ]
   }
   if (key === 'carGap') {
     return [
-      text('La voiture crée l’écart de couverture le plus marqué pour '),
+      text('La voiture crée l’écart le plus marqué pour '),
       bold(serviceNames(strongest.services), 'car'),
-      text(` : ${percentagePoints(strongest.value)} séparent l’accès en voiture de l’accès à pied ou en transports en commun.`),
+      text(` : ${percentagePoints(strongest.value)} séparent la part des bâtiments qui y ont accès en voiture de celle qui y a accès à pied ou en transports en commun.`),
     ]
   }
   return [
     text('Le vélo apporte le plus pour '),
     bold(serviceNames(strongest.services), 'bike'),
-    text(` : ${percentagePoints(strongest.value)} de couverture en plus par rapport à l’accès à pied ou en transports en commun.`),
+    text(` : ${percentagePoints(strongest.value)} de bâtiments supplémentaires y ont accès par rapport à l’accès à pied ou en transports en commun.`),
   ]
 }
 
@@ -1159,12 +1164,19 @@ function lectureEssentiels(
   }
 }
 
-function essentialsFigureLecture(): readonly TextBlock[] {
+function essentialsFigureLecture(facts: TerritoryFacts): readonly TextBlock[] {
+  const examples = SERVICE_GRAMMAR.flatMap(({ key, label }) => {
+    const modes = facts.mobility.access.byService[key]
+    const foot = narrativeValue(modes.walkTransit)
+    const bike = narrativeValue(modes.bike)
+    return foot !== null && bike !== null ? [{ label, foot, bike, gap: Math.abs(bike - foot) }] : []
+  })
+  const example = examples.reduce<typeof examples[number] | null>((best, item) => !best || item.gap > best.gap ? item : best, null)
   return [[
-    text('Chaque anneau montre la part des bâtiments ayant accès à un regroupement de services selon le mode. Étant donné leur importance, ces services sont dits couverts lorsqu’au moins '),
+    text('Chaque anneau montre la part des bâtiments ayant accès à un regroupement de services selon le mode. Étant donné leur importance, on retient un accès large lorsqu’au moins '),
     bold('trois bâtiments sur quatre'),
     text(' peuvent y accéder.'),
-  ]]
+  ], ...(example ? [[text(`Ici, pour « ${example.label} », les parts sont de ${formatNumber(example.foot * 100)} % à pied ou en transports en commun et de ${formatNumber(example.bike * 100)} % à vélo avec les transports en commun. ${example.foot < ESSENTIAL_COVERAGE_THRESHOLD && example.bike >= ESSENTIAL_COVERAGE_THRESHOLD ? 'La part à vélo atteint donc ce niveau pour une majorité de bâtiments, contrairement à celle à pied.' : `Chaque part se compare au niveau de ${formatNumber(ESSENTIAL_COVERAGE_THRESHOLD * 100)} %, sans additionner les anneaux : un bâtiment peut être accessible par plusieurs modes.`}`)]] : [])]
 }
 
 function buildingDistributionFigureLecture(
@@ -1172,17 +1184,23 @@ function buildingDistributionFigureLecture(
   territory: TerritoryIdentity,
 ): readonly TextBlock[] {
   const mode = distribution?.modeLabel ?? 'À pied + TC'
+  const cells = distribution?.availability === 'complete'
+    ? [...distribution.cells].sort((a, b) => b.share - a.share || a.breadthBucket.localeCompare(b.breadthBucket) || a.depthBucket.localeCompare(b.depthBucket)) : []
+  const cell = cells[0]
+  const breadth = distribution?.breadthBins.find((bin) => bin.key === cell?.breadthBucket)
+  const depth = distribution?.depthBins.find((bin) => bin.key === cell?.depthBucket)
   return [[
     text('Chaque case croise le nombre de types et le nombre total d’équipements accessibles en vingt minutes, en mode « '),
     text(mode),
     text(` ». Le triangle bleu représente ${territory.name} ; le triangle vert, le groupe comparé. Dans les deux cas, plus la couleur est soutenue, plus cette situation concerne de bâtiments.`),
-  ]]
+  ], ...(cell && cell.share > 0 && breadth && depth ? [[text(`Ici, la case la plus représentée réunit ${formatNumber(cell.share * 100)} % des bâtiments : tranche « ${breadth.label} » pour les types et « ${depth.label} » pour les équipements. Ce sont bien les mêmes bâtiments sur les deux axes${cell.comparisonShare !== null ? ` ; cette case représente ${formatNumber(cell.comparisonShare * 100)} % des bâtiments du groupe comparé` : ''}.`)]] : [])]
 }
 
-function accessRampFigureLecture(): readonly TextBlock[] {
+function accessRampFigureLecture(ramp: MobiliteAccessRamp | null): readonly TextBlock[] {
+  const example = ramp?.availability === 'complete' ? ramp.curves.walkTransit.points.find((point) => point.quantile === 0.5) : null
   return [[
     text('Pour chaque mode, les bâtiments sont classés du moins au plus grand nombre de types accessibles. À une position donnée, les courbes ne décrivent donc pas nécessairement les mêmes bâtiments. La courbe du groupe comparé suit les mêmes quantiles, calculés sur l’ensemble de ses bâtiments. Le point à 50 % correspond à sa médiane.'),
-  ]]
+  ], ...(example ? [[text(`Ici, à 50 % de la courbe « ${ramp!.curves.walkTransit.modeLabel} », on lit ${formatNumber(example.accessibleTypes)} types : c’est la médiane de l’accès des bâtiments dans ce mode, et non la perte du bâtiment médian par rapport à la voiture.`)]] : [])]
 }
 
 function buildingComparisonPopulationLabel(
@@ -1208,7 +1226,7 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
         accessRamp,
         comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, facts.territory),
         buildingDistributionLecture: buildingDistributionFigureLecture(buildingDistribution, facts.territory),
-        accessRampLecture: accessRampFigureLecture(),
+        accessRampLecture: accessRampFigureLecture(accessRamp),
       }
     : null
   const availability: FactAvailability =
@@ -1324,7 +1342,7 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
             summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
             facts.territory,
           ),
-          figureLecture: summaryFigureLecture(),
+          figureLecture: summaryFigureLecture(summary),
           losses,
         }
       : null,
@@ -1376,7 +1394,7 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
         .find((fact) => fact.comparison)?.comparison ?? null,
       facts.territory,
     ),
-    figureLecture: essentialsFigureLecture(),
+    figureLecture: essentialsFigureLecture(facts),
   }
 }
 
@@ -1449,7 +1467,7 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
               ? profiles.reduce((total, profile) => total + profile.count, 0)
               : null,
           comparisonLabel: comparisonLabelForFigure,
-          figureLecture: profilesFigureLecture(),
+          figureLecture: profilesFigureLecture(availability === 'complete' ? profiles : []),
         }
       : null
   return {
@@ -1464,6 +1482,356 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
       : null,
     explorationTargets: [],
   }
+}
+
+/** Only complete, finite facts can support a narrative claim. */
+function narrativeValue(fact: NumericFact): number | null {
+  return fact.availability === 'complete' && fact.value !== null && Number.isFinite(fact.value) ? fact.value : null
+}
+
+function walkingDistributionFinding(distribution: MobiliteBuildingDistribution | null): TextBlock | null {
+  if (distribution?.availability !== 'complete') return null
+  const zeroShare = distribution.cells
+    .filter((cell) =>
+      distribution.breadthBins.some((bin) => bin.key === cell.breadthBucket && bin.min === 0 && bin.max === 0) &&
+      distribution.depthBins.some((bin) => bin.key === cell.depthBucket && bin.min === 0 && bin.max === 0),
+    )
+    .reduce((sum, cell) => sum + cell.share, 0)
+  const nonEmptyCells = distribution.cells
+    .filter((cell) => cell.share > 0)
+    .sort((a, b) => b.share - a.share)
+  const top = nonEmptyCells[0]
+  if (!top) return null
+  const breadthIndex = distribution.breadthBins.findIndex((bin) => bin.key === top.breadthBucket)
+  const depthIndex = distribution.depthBins.findIndex((bin) => bin.key === top.depthBucket)
+  const highCells = distribution.cells.filter((cell) => {
+    const breadth = distribution.breadthBins.findIndex((bin) => bin.key === cell.breadthBucket)
+    const depth = distribution.depthBins.findIndex((bin) => bin.key === cell.depthBucket)
+    return breadth === distribution.breadthBins.length - 1 && depth >= distribution.depthBins.length - 2
+  })
+  const highShare = highCells.reduce((sum, cell) => sum + cell.share, 0)
+  const lowAccess = breadthIndex <= 1
+  if (zeroShare > 0.5) {
+    return [text('Pour une majorité des bâtiments, l’accès à pied ou en transports en commun reste très limité.')]
+  }
+  if (zeroShare > 0.25) {
+    return [text('Une part importante des bâtiments reste très limitée dans son accès à pied ou en transports en commun.')]
+  }
+  if (highShare >= 0.6) {
+    return [text('Cette accessibilité à pied est largement partagée entre les bâtiments.')]
+  }
+  if (lowAccess && top.share >= 0.5) {
+    return [text('Pour la plupart des bâtiments, l’accès à pied ou en transports en commun reste cantonné à une offre limitée.')]
+  }
+  if (breadthIndex >= distribution.breadthBins.length - 2 && depthIndex >= distribution.depthBins.length - 2 && top.share >= 0.4) {
+    return [text('Une large part des bâtiments conserve un accès piéton étendu, même si cette situation ne se retrouve pas partout.')]
+  }
+  if (nonEmptyCells.length >= 2 && top.share >= 0.4) {
+    return [text('L’accès à pied ou en transports en commun forme un socle pour une partie des bâtiments, mais ne se retrouve pas partout.')]
+  }
+  return null
+}
+
+// These are semantic bands, not claims shown to the reader. They are deliberately
+// not the Services essentiels threshold: retention compares one mode with the
+// territory's own car access. Three quarters of the car-accessible range is a
+// broad diversity; half of the car-accessible establishments is a broad volume.
+// Keeping the dimensions separate is what makes the hub reading possible.
+const RUNDOWN_STRONG_DIVERSITY_RETENTION = 0.75
+const RUNDOWN_STRONG_VOLUME_RETENTION = 0.5
+const RUNDOWN_LOW_RETENTION = 0.5
+const RUNDOWN_BIKE_RECOVERY = 0.33
+const RUNDOWN_BIKE_GAIN = 0.15
+const RUNDOWN_LIMITED_TYPES = 15
+const RUNDOWN_LIMITED_EQUIPMENT = 100
+const RUNDOWN_BUILDING_SPREAD = 15
+const RUNDOWN_CAR_SPREAD_RATIO = 0.5
+
+type AccessDimension = 'types' | 'equipment'
+type AccessProfile = Record<AccessDimension, number>
+
+function accessProfile(summary: MobiliteSummaryFacts, mode: MobiliteAccessMode): AccessProfile | null {
+  const types = narrativeValue(summary.accessibleTypes[mode])
+  const equipment = narrativeValue(summary.accessibleEquipment[mode])
+  return types !== null && equipment !== null ? { types, equipment } : null
+}
+
+function retention(profile: AccessProfile, car: AccessProfile, dimension: AccessDimension): number {
+  return car[dimension] > 0 ? profile[dimension] / car[dimension] : 0
+}
+
+function averageRecovery(
+  bike: AccessProfile,
+  walk: AccessProfile,
+  car: AccessProfile,
+): number {
+  const recoveries = (['types', 'equipment'] as const).flatMap((dimension) => {
+    const gap = car[dimension] - walk[dimension]
+    return gap > 0 ? [(bike[dimension] - walk[dimension]) / gap] : []
+  })
+  return recoveries.length > 0 ? recoveries.reduce((sum, value) => sum + value, 0) / recoveries.length : 0
+}
+
+function hasStrongWalkingAccess(walk: AccessProfile, car: AccessProfile): boolean {
+  return walk.types >= RUNDOWN_LIMITED_TYPES &&
+    retention(walk, car, 'types') >= RUNDOWN_STRONG_DIVERSITY_RETENTION &&
+    retention(walk, car, 'equipment') >= RUNDOWN_STRONG_VOLUME_RETENTION
+}
+
+function hasHubWalkingAccess(walk: AccessProfile, car: AccessProfile): boolean {
+  return walk.types >= RUNDOWN_LIMITED_TYPES &&
+    retention(walk, car, 'types') >= RUNDOWN_STRONG_DIVERSITY_RETENTION &&
+    retention(walk, car, 'equipment') < RUNDOWN_STRONG_VOLUME_RETENTION
+}
+
+function hasLimitedAccess(car: AccessProfile, bike: AccessProfile, walk: AccessProfile): boolean {
+  return [car, bike, walk].every((profile) =>
+    profile.types < RUNDOWN_LIMITED_TYPES && profile.equipment < RUNDOWN_LIMITED_EQUIPMENT,
+  )
+}
+
+function hasCarDependence(walk: AccessProfile, bike: AccessProfile, car: AccessProfile): boolean {
+  return retention(walk, car, 'types') < RUNDOWN_LOW_RETENTION &&
+    retention(walk, car, 'equipment') < RUNDOWN_LOW_RETENTION &&
+    retention(bike, car, 'types') < RUNDOWN_LOW_RETENTION &&
+    retention(bike, car, 'equipment') < RUNDOWN_LOW_RETENTION
+}
+
+function hasBikeBridge(walk: AccessProfile, bike: AccessProfile, car: AccessProfile): boolean {
+  return averageRecovery(bike, walk, car) >= RUNDOWN_BIKE_RECOVERY &&
+    (bike.types - walk.types) / Math.max(car.types, 1) >= RUNDOWN_BIKE_GAIN &&
+    (bike.equipment - walk.equipment) / Math.max(car.equipment, 1) >= RUNDOWN_BIKE_GAIN
+}
+
+type RundownFindingKey = 'hub' | 'walking' | 'bike-bridge' | 'car-dependent' | 'limited' | 'mixed'
+
+interface RundownFinding {
+  key: RundownFindingKey
+  priority: number
+  prose: TextBlock
+}
+
+function hubFinding(territory: TerritoryIdentity): RundownFinding {
+  return {
+    key: 'hub',
+    priority: 100,
+    prose: [
+      text(`${territoryLead(territory)}, `),
+      bold('la marche et les transports en commun', 'foot'),
+      text(' donnent accès à une gamme de services déjà diversifiée. Sans voiture, la perte porte surtout sur le choix entre plusieurs établissements de ces mêmes types.'),
+    ],
+  }
+}
+
+function hubDepthFinding(): TextBlock {
+  return [text('La voiture apporte donc une plus grande '), bold('profondeur d’offre'), text('.')]
+}
+
+function walkingFinding(territory: TerritoryIdentity): RundownFinding {
+  return {
+    key: 'walking',
+    priority: 95,
+    prose: [
+      text(`${territoryLead(territory)}, `),
+      bold('la marche et les transports en commun', 'foot'),
+      text(' donnent accès à une gamme de services étendue. La voiture élargit encore l’offre, mais '),
+      bold('l’accès sans voiture reste largement possible'),
+      text('.'),
+    ],
+  }
+}
+
+function bikeBridgeFinding(territory: TerritoryIdentity): RundownFinding {
+  return {
+    key: 'bike-bridge',
+    priority: 85,
+    prose: [
+      text(`${territoryLead(territory)}, `),
+      bold('le vélo', 'bike'),
+      text(' offre un véritable relais entre la marche et la voiture. Il élargit nettement l’offre accessible sans retrouver toute l’amplitude de la '),
+      bold('voiture', 'car'),
+      text('.'),
+    ],
+  }
+}
+
+function carDependenceFinding(territory: TerritoryIdentity): RundownFinding {
+  return {
+    key: 'car-dependent',
+    priority: 80,
+    prose: [
+      text(`${territoryLead(territory)}, `),
+      bold('la voiture', 'car'),
+      text(' structure largement l’accès aux services. Elle donne accès à la fois à une gamme plus large et à davantage d’établissements. Les autres modes ne prennent pas vraiment le relais.'),
+    ],
+  }
+}
+
+function limitedAccessFinding(territory: TerritoryIdentity): RundownFinding {
+  return {
+    key: 'limited',
+    priority: 110,
+    prose: [
+      text(`${territoryLead(territory)}, `),
+      bold('l’offre accessible reste limitée quel que soit le mode'),
+      text('. La voiture améliore peu la gamme disponible, ce qui décrit moins une dépendance automobile qu’un faible volume de services atteignables.'),
+    ],
+  }
+}
+
+function mixedFinding(territory: TerritoryIdentity): RundownFinding {
+  return {
+    key: 'mixed',
+    priority: 10,
+    prose: [
+      text(`${territoryLead(territory)}, les modes ne produisent pas la même forme d’accès. `),
+      bold('La voiture', 'car'),
+      text(' ouvre l’offre la plus large, tandis que '),
+      bold('la marche et les transports en commun', 'foot'),
+      text(' conservent une partie de la diversité accessible.'),
+    ],
+  }
+}
+
+function spreadFinding(ramp: MobiliteAccessRamp | null): TextBlock | null {
+  if (ramp?.availability !== 'complete') return null
+  const readings = (['walkTransit', 'bike', 'car'] as const).map((mode) => {
+    const curve = ramp.curves[mode]
+    const low = curve.points.find((point) => point.quantile === 0.1)?.accessibleTypes
+    const high = curve.points.find((point) => point.quantile === 0.9)?.accessibleTypes
+    return { mode, low, high, spread: low !== undefined && high !== undefined ? high - low : 0 }
+  })
+  const walking = readings.find((reading) => reading.mode === 'walkTransit')!
+  const cycling = readings.find((reading) => reading.mode === 'bike')!
+  const driving = readings.find((reading) => reading.mode === 'car')!
+  if (walking.spread >= RUNDOWN_BUILDING_SPREAD && cycling.spread >= RUNDOWN_BUILDING_SPREAD && driving.spread < RUNDOWN_CAR_SPREAD_RATIO * Math.min(walking.spread, cycling.spread)) {
+    return [text('L’accès à pied et à vélo varie fortement selon les bâtiments, alors que la voiture est plus homogène.')]
+  }
+  const selected = readings.reduce((best, reading) => reading.spread > best.spread ? reading : best)
+  if (selected.spread <= 0) return null
+  const prose = selected.mode === 'walkTransit'
+    ? 'Même cet accès à pied ou en transports en commun varie fortement selon les bâtiments.'
+    : selected.mode === 'bike'
+      ? 'Le relais du vélo ne produit toutefois pas la même amélioration pour tous les bâtiments.'
+      : 'La voiture ne gomme toutefois pas toutes les différences entre les bâtiments.'
+  return selected.spread > 0
+    ? [text(prose)]
+    : null
+}
+
+function bikeVolumeCompensationFinding(
+  walk: AccessProfile,
+  bike: AccessProfile,
+  car: AccessProfile,
+): TextBlock | null {
+  const recoveries = (['types', 'equipment'] as const).map((dimension) => {
+    const gap = car[dimension] - walk[dimension]
+    return gap > 0 ? (bike[dimension] - walk[dimension]) / gap : 0
+  })
+  const volumeRecovery = recoveries[1]!
+  const volumeGain = (bike.equipment - walk.equipment) / Math.max(car.equipment, 1)
+  if (volumeRecovery < 0.25 || volumeGain < 0.15) return null
+  return [
+    bold('Le vélo', 'bike'),
+    text(' compense une partie du volume perdu, sans retrouver toute la profondeur de l’offre.'),
+  ]
+}
+
+function bikeAggregateFinding(
+  walk: AccessProfile,
+  bike: AccessProfile,
+): TextBlock | null {
+  if (bike.types <= walk.types || bike.equipment <= walk.equipment) return null
+  return [
+    bold('Le vélo', 'bike'),
+    text(' élargit l’offre accessible sans voiture, mais reste en dessous de la voiture pour la gamme comme pour le nombre d’établissements.'),
+  ]
+}
+
+function essentialAccessFinding(
+  facts: TerritoryFacts,
+  anchor: RundownFindingKey,
+): TextBlock | null {
+  const services = Object.values(facts.mobility.access.byService)
+  const coveredBy = (mode: MobiliteAccessMode) => services.filter((service) => {
+    const value = narrativeValue(service[mode])
+    return value !== null && value >= ESSENTIAL_COVERAGE_THRESHOLD
+  })
+  const foot = coveredBy('walkTransit').length
+  const bike = coveredBy('bike').length
+  const car = coveredBy('car').length
+  if (anchor === 'hub' || anchor === 'walking') {
+    return foot >= 4
+      ? [text('Pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès à pied ou en transports en commun.')]
+      : null
+  }
+  if (anchor === 'bike-bridge' && bike >= foot + 2) {
+    return [bold('Le vélo', 'bike'), text(' permet aussi à au moins trois bâtiments sur quatre d’atteindre certains services essentiels que la marche n’atteint pas.')]
+  }
+  if (anchor === 'car-dependent' && car === SERVICE_GRAMMAR.length && foot === 0 && bike === 0) {
+    return [text('Pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès en voiture, mais aucune alternative n’atteint ce niveau.')]
+  }
+  if (anchor === 'car-dependent' && car >= foot + 2) {
+    return [text('Pour les services essentiels, la voiture permet à au moins trois bâtiments sur quatre d’en atteindre davantage que les alternatives.')]
+  }
+  if (anchor === 'mixed') {
+    const total = SERVICE_GRAMMAR.length
+    if (car === total && foot === total && bike === total) {
+      return [text('Pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès quel que soit le mode de transport.')]
+    }
+    if (car === total && foot === 0 && bike === 0) {
+      return [text('Pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès en voiture, mais aucune alternative n’atteint ce niveau.')]
+    }
+    if (car === total && foot === 0 && bike > 0) {
+      return [text('Pour les cinq services essentiels, au moins trois bâtiments sur quatre y ont accès en voiture ; le vélo atteint ce niveau pour une partie d’entre eux, mais pas la marche ni les transports en commun.')]
+    }
+  }
+  return null
+}
+
+function mobiliteRundown(facts: TerritoryFacts): readonly TextBlock[] {
+  const summary = facts.mobility.access.summary
+  const car = accessProfile(summary, 'car')
+  const bike = accessProfile(summary, 'bike')
+  const walk = accessProfile(summary, 'walkTransit')
+  if (!car || !bike || !walk) {
+    return [[text('Les données disponibles ne permettent pas de dégager une lecture d’ensemble de l’accès aux services.')]]
+  }
+  const findings: RundownFinding[] = []
+  if (hasLimitedAccess(car, bike, walk)) findings.push(limitedAccessFinding(facts.territory))
+  if (hasHubWalkingAccess(walk, car)) findings.push(hubFinding(facts.territory))
+  if (hasStrongWalkingAccess(walk, car)) findings.push(walkingFinding(facts.territory))
+  if (hasBikeBridge(walk, bike, car)) findings.push(bikeBridgeFinding(facts.territory))
+  if (hasCarDependence(walk, bike, car)) findings.push(carDependenceFinding(facts.territory))
+  if (findings.length === 0) findings.push(mixedFinding(facts.territory))
+
+  const anchor = findings.sort((a, b) => b.priority - a.priority)[0]!
+  const distribution = walkingDistributionFinding(facts.mobility.buildingDistribution)
+  const spread = spreadFinding(facts.mobility.accessRamp)
+  const complements: TextBlock[] = []
+  const essential = essentialAccessFinding(facts, anchor.key)
+  if (anchor.key === 'hub' || anchor.key === 'walking') {
+    if (distribution) complements.push(distribution)
+    if (essential) complements.push(essential)
+    if (anchor.key === 'hub') complements.push(hubDepthFinding())
+    const bikeVolume = bikeVolumeCompensationFinding(walk, bike, car)
+    if (bikeVolume) complements.push(bikeVolume)
+  } else if (anchor.key === 'bike-bridge') {
+    if (distribution) complements.push(distribution)
+    if (essential) complements.push(essential)
+    if (spread) complements.push(spread)
+  } else if (anchor.key === 'car-dependent') {
+    if (distribution) complements.push(distribution)
+    if (essential) complements.push(essential)
+  } else if (anchor.key === 'limited') {
+    if (distribution) complements.push(distribution)
+  } else {
+    if (essential) complements.push(essential)
+    const bikeAggregate = bikeAggregateFinding(walk, bike)
+    if (bikeAggregate) complements.push(bikeAggregate)
+    if (spread) complements.push(spread)
+  }
+  return [complements.reduce((prose, complement) => [...prose, text(' '), ...complement], anchor.prose)]
 }
 
 export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent {
@@ -1483,6 +1851,7 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent
       {
         key: 'acces-aux-services',
         label: 'Accès aux services',
+        rundown: mobiliteRundown(facts),
         sections,
       },
     ],

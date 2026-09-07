@@ -536,6 +536,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
           <header class="page-heading">
             <h2 class="cahier-baseline-anchor" :id="`${pageEntry?.anchor ?? 'figure-lecture'}-title`">{{ unit?.label }}</h2>
             <CahierProse class="page-subtitle" :blocks="content.introduction" />
+            <CahierProse v-if="unit?.rundown" class="page-subtitle page-rundown" :blocks="unit.rundown" />
           </header>
 
           <div
