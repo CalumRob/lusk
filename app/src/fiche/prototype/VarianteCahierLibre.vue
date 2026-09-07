@@ -46,6 +46,7 @@ import CahierProse from './CahierProse.vue'
 import CahierDonut, { type CahierDonutRing } from './CahierDonut.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
+import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonNote from './CahierComparisonNote.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
@@ -599,11 +600,14 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                    class="evidence-side evidence-figure bivariate-evidence"
                  >
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments par nombre de types et d’équipements accessibles — {{ section.evidence.buildingDistribution!.modeLabel }}</figcaption>
-                   <BivariateDistributionFigureCahier
-                     :distribution="section.evidence.buildingDistribution!"
-                     :territory-name="content.territory.name"
-                   />
-                   <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                    <BivariateDistributionFigureCahier
+                      :distribution="section.evidence.buildingDistribution!"
+                      :territory-name="content.territory.name"
+                    />
+                    <CahierFigureLecture>
+                      <CahierProse :blocks="section.evidence.buildingDistributionLecture" />
+                    </CahierFigureLecture>
+                    <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
                   </figure>
 
                  <figure
@@ -611,11 +615,14 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                    class="evidence-side evidence-figure access-ramp-evidence"
                  >
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Nombre de types accessibles par part cumulée des bâtiments</figcaption>
-                   <AccessRampFigureCahier
-                     :ramp="section.evidence.accessRamp!"
-                     :territory-name="content.territory.name"
-                   />
-                   <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                    <AccessRampFigureCahier
+                      :ramp="section.evidence.accessRamp!"
+                      :territory-name="content.territory.name"
+                    />
+                    <CahierFigureLecture>
+                      <CahierProse :blocks="section.evidence.accessRampLecture" />
+                    </CahierFigureLecture>
+                    <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
                   </figure>
 
                  <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
@@ -730,6 +737,9 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                     </section>
                    </div>
                    </div>
+                   <CahierFigureLecture>
+                     <CahierProse :blocks="section.evidence.figureLecture" />
+                   </CahierFigureLecture>
                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                  </figure>
 
@@ -744,8 +754,11 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                      :territory-name="section.evidence.territoryName"
                     :donut-tooltip-title="section.evidence.donutTooltipTitle"
                      :comparison-label="section.evidence.comparisonLabel"
-                    :exploration-to="sectionExploration(section)"
-                  />
+                     :exploration-to="sectionExploration(section)"
+                   />
+                   <CahierFigureLecture>
+                     <CahierProse :blocks="section.evidence.figureLecture" />
+                   </CahierFigureLecture>
                    <CahierComparisonNote
                      class="bpe-comparison-note"
                      :label="section.evidence.comparisonLabel"
@@ -806,6 +819,9 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                              </div>
                            </div>
                           </div>
+                    <CahierFigureLecture>
+                      <CahierProse :blocks="section.evidence.figureLecture" />
+                    </CahierFigureLecture>
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                   </figure>
 

@@ -68,6 +68,8 @@ export interface DistributionEvidence {
   buildingDistribution: MobiliteBuildingDistribution | null
   accessRamp: MobiliteAccessRamp | null
   comparisonPopulationLabel: string | null
+  buildingDistributionLecture: readonly TextBlock[]
+  accessRampLecture: readonly TextBlock[]
 }
 
 export interface BpeProfilesEvidence {
@@ -79,6 +81,7 @@ export interface BpeProfilesEvidence {
   totalTypes: number | null
   /** Human-readable aggregation method and scope for the compositional reference. */
   comparisonLabel: string | null
+  figureLecture: readonly TextBlock[]
 }
 
 export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
@@ -100,6 +103,7 @@ export interface SummaryEvidence {
   }
   typeCount: number | null
   comparisonLabel: string | null
+  figureLecture: readonly TextBlock[]
   losses: {
     diversity: {
       walkTransit: ContentFact
@@ -127,6 +131,7 @@ export interface AccessEvidence {
   totalBrittanyBuildings: ContentFact
   services: readonly AccessServiceEvidence[]
   comparisonLabel: string | null
+  figureLecture: readonly TextBlock[]
 }
 
 export type ContentEvidence =
@@ -875,19 +880,21 @@ function previousAccessReadingPolarity(
   return null
 }
 
+function profilesFigureLecture(): readonly TextBlock[] {
+  return [[
+    text('Pour chaque mode de transport, un type d’équipement entre dans le socle dès lors qu’au moins '),
+    bold('un quart des bâtiments'),
+    text(' peut l’atteindre. La figure retient ensuite le premier mode qui franchit ce seuil ; si aucun ne l’atteint, le type est classé « inaccessible ou presque ».'),
+  ]]
+}
+
 function lectureProfils(
   profiles: readonly BpeAccessProfileFact[],
   summary: MobiliteSummaryFacts,
   territory: TerritoryIdentity,
 ): Lecture {
   const dominant = dominantProfile(profiles)
-  const prose: TextBlock[] = [
-    [
-      text('Ici et pour chaque mode de transport, on cherche à définir un socle des types d’équipements accessibles. Un type d’équipement est retenu dès lors qu’au moins '),
-      bold('un quart'),
-      text(' des bâtiments peut l’atteindre. On regarde ensuite le premier mode qui franchit ce seuil. Si aucun mode ne l’atteint, il est classé « inaccessible ou presque ».'),
-    ],
-  ]
+  const prose: TextBlock[] = []
 
   if (dominant) {
     const previous = previousAccessReadingPolarity(summary)
@@ -945,6 +952,12 @@ function lectureDiversite(
   )
   const prose = [opening, foot, bike].filter((block): block is TextBlock => block !== null)
   return { marelle: 'Ce que l’on perd sans voiture', prose }
+}
+
+function summaryFigureLecture(): readonly TextBlock[] {
+  return [[
+    text('Les valeurs comparent, pour chaque mode, le nombre moyen d’équipements et de types accessibles par bâtiment. Les pertes correspondent à l’écart avec la voiture.'),
+  ]]
 }
 
 const SERVICE_PREPOSITIONS: Readonly<Record<MobiliteService, string>> = {
@@ -1137,11 +1150,6 @@ function lectureEssentiels(
   return {
     marelle: 'Tous les équipements ne se valent pas...',
     prose: [
-      [
-        text('Cette partie présente cinq regroupements de services essentiels. Étant donné leur importance, ils sont dits couverts lorsqu’au moins '),
-        bold('trois bâtiments sur quatre'),
-        text(' peuvent y accéder.'),
-      ],
       ...coverageNarrative(territory, access.services),
       gapNarrative(access.services, 'carGap'),
       gapNarrative(access.services, 'bikeGain'),
@@ -1149,6 +1157,32 @@ function lectureEssentiels(
       ...(peerBike ? [peerBike] : []),
     ],
   }
+}
+
+function essentialsFigureLecture(): readonly TextBlock[] {
+  return [[
+    text('Chaque anneau montre la part des bâtiments ayant accès à un regroupement de services selon le mode. Étant donné leur importance, ces services sont dits couverts lorsqu’au moins '),
+    bold('trois bâtiments sur quatre'),
+    text(' peuvent y accéder.'),
+  ]]
+}
+
+function buildingDistributionFigureLecture(
+  distribution: MobiliteBuildingDistribution | null,
+  territory: TerritoryIdentity,
+): readonly TextBlock[] {
+  const mode = distribution?.modeLabel ?? 'À pied + TC'
+  return [[
+    text('Chaque case croise le nombre de types et le nombre total d’équipements accessibles en vingt minutes, en mode « '),
+    text(mode),
+    text(` ». Le triangle bleu représente ${territory.name} ; le triangle vert, le groupe comparé. Dans les deux cas, plus la couleur est soutenue, plus cette situation concerne de bâtiments.`),
+  ]]
+}
+
+function accessRampFigureLecture(): readonly TextBlock[] {
+  return [[
+    text('Pour chaque mode, les bâtiments sont classés du moins au plus grand nombre de types accessibles. À une position donnée, les courbes ne décrivent donc pas nécessairement les mêmes bâtiments. La courbe du groupe comparé suit les mêmes quantiles, calculés sur l’ensemble de ses bâtiments. Le point à 50 % correspond à sa médiane.'),
+  ]]
 }
 
 function buildingComparisonPopulationLabel(
@@ -1173,6 +1207,8 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
         buildingDistribution,
         accessRamp,
         comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, facts.territory),
+        buildingDistributionLecture: buildingDistributionFigureLecture(buildingDistribution, facts.territory),
+        accessRampLecture: accessRampFigureLecture(),
       }
     : null
   const availability: FactAvailability =
@@ -1288,6 +1324,7 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
             summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
             facts.territory,
           ),
+          figureLecture: summaryFigureLecture(),
           losses,
         }
       : null,
@@ -1339,6 +1376,7 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
         .find((fact) => fact.comparison)?.comparison ?? null,
       facts.territory,
     ),
+    figureLecture: essentialsFigureLecture(),
   }
 }
 
@@ -1411,6 +1449,7 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
               ? profiles.reduce((total, profile) => total + profile.count, 0)
               : null,
           comparisonLabel: comparisonLabelForFigure,
+          figureLecture: profilesFigureLecture(),
         }
       : null
   return {

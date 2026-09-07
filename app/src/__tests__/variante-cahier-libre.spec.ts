@@ -302,6 +302,11 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.access-ramp-evidence .cahier-figure-title').text()).toBe('Nombre de types accessibles par part cumulée des bâtiments')
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Commune A')
     expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(4)
+    expect(wrapper.find('.summary-evidence .cahier-figure-lecture').text()).toContain('Les valeurs comparent, pour chaque mode')
+    expect(wrapper.find('.bpe-evidence .cahier-figure-lecture').text()).toContain('un quart des bâtiments')
+    expect(wrapper.find('.access-figure-collection .cahier-figure-lecture').text()).toContain('trois bâtiments sur quatre')
+    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('mêmes quantiles')
     expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
     expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
@@ -721,14 +726,48 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('#access-administration-detail').text()).toContain('Indisponible')
   })
 
+  it('renders the same figure Lectures in ruled and plain presentations', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const ruled = await render(content, 'ruled')
+    const plain = await render(content, 'plain')
+
+    const lectureTexts = (wrapper: Awaited<ReturnType<typeof render>>) =>
+      wrapper.findAll('.cahier-figure-lecture__content').map((lecture) => lecture.text())
+
+    expect(lectureTexts(plain)).toEqual(lectureTexts(ruled))
+  })
+
   it('shows the standard comparison helper for the building-distribution subgroup', async () => {
     const facts = structuredClone(factsForTarget())
     if (!facts.mobility.accessRamp) throw new Error('Expected access-ramp facts')
     facts.mobility.accessRamp.comparisonLabel = 'communes de l’EPCI'
+    facts.mobility.buildingDistribution = {
+      availability: 'complete',
+      mode: 't',
+      modeLabel: 'À pied + TC',
+      breadthAxisLabel: 'types d’équipements accessibles',
+      depthAxisLabel: 'équipements accessibles',
+      breadthBins: [{ key: '0', min: 0, max: 0, label: '0' }],
+      depthBins: [{ key: '0', min: 0, max: 0, label: '0' }],
+      cells: [{
+        breadthBucket: '0',
+        depthBucket: '0',
+        buildingCount: 100,
+        share: 1,
+        comparisonBuildingCount: 100,
+        comparisonShare: 1,
+      }],
+      totalBuildings: 100,
+      provenance: facts.mobility.accessRamp.provenance,
+      comparisonLabel: 'communes de l’EPCI',
+      comparisonTotalBuildings: 100,
+    }
 
     const wrapper = await render(resolveMobiliteThemeContent(facts))
 
     expect(wrapper.find('.access-ramp-evidence .cahier-comparison-note').text()).toBe('Groupe comparé : bâtiments de EPCI X')
+    expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('Chaque case croise le nombre de types')
+    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(5)
   })
 
   it('renders absent sections as an honest, link-free state', async () => {
@@ -795,6 +834,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     const wrapper = await render(resolveMobiliteThemeContent(facts))
 
     expect(wrapper.findAll('.cahier-section--absent')).toHaveLength(4)
+    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(0)
     expect(wrapper.findAll('.cahier-section-state')).toHaveLength(4)
     expect(wrapper.find('.distribution-cahier-svg').exists()).toBe(false)
     expect(wrapper.find('.summary-evidence').exists()).toBe(false)

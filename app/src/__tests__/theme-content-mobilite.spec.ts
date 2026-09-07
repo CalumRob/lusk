@@ -103,6 +103,10 @@ function lectureText(lecture: Lecture | null): string {
   return lecture?.prose.map((block) => block.map((segment) => segment.value).join('')).join(' ') ?? ''
 }
 
+function blocksText(blocks: readonly (readonly { value: string }[])[]): string {
+  return blocks.map((block) => block.map((segment) => segment.value).join('')).join(' ')
+}
+
 function accessFacts(): MobiliteAccessFacts {
   const gapsByService = Object.fromEntries(
     services.map((service) => [
@@ -351,12 +355,12 @@ describe('resolveMobiliteThemeContent', () => {
     expect(lectureText(profiles.lecture)).toContain(
       'profil le plus représenté à Commune A est',
     )
-    expect(profiles.lecture?.prose[1]).toContainEqual({
+    expect(profiles.lecture?.prose[0]).toContainEqual({
       kind: 'emphasis',
       tone: 'neutral',
       value: 'celui des types inaccessibles ou presque',
     })
-    expect(profiles.lecture?.prose[1]).toContainEqual({
+    expect(profiles.lecture?.prose[0]).toContainEqual({
       kind: 'emphasis',
       tone: 'default',
       value: 'confirme',
@@ -373,6 +377,8 @@ describe('resolveMobiliteThemeContent', () => {
         depthAxisLabel: 'équipements accessibles',
       },
       comparisonPopulationLabel: 'bâtiments de EPCI X',
+      buildingDistributionLecture: expect.any(Array),
+      accessRampLecture: expect.any(Array),
     })
     expect(
       distribution.evidence?.kind === 'distribution'
@@ -392,6 +398,7 @@ describe('resolveMobiliteThemeContent', () => {
       prose: [],
     })
     expect(summary.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
+    expect(summary.evidence?.kind === 'summary' ? blocksText(summary.evidence.figureLecture) : '').toContain('Les valeurs comparent, pour chaque mode')
     expect(lectureText(summary.lecture)).toBe(
       'À Commune A, dans un rayon de 20 minutes en voiture, le bâtiment moyen atteint 100 équipements au total et 50 types d’équipements. La voiture crée une dépendance pour de nombreux services. À pied et/ou en transports en commun, le bâtiment moyen perd l’accès à 30 types d’équipements (la moyenne des communes de EPCI X : 20). Le vélo atténue néanmoins cette difficulté. Il limite la perte à 15 types d’équipements (groupe comparé : 10).',
     )
@@ -433,9 +440,10 @@ describe('resolveMobiliteThemeContent', () => {
       accessIndicators,
     )
     expect(essentials.lecture?.marelle).toBe('Tous les équipements ne se valent pas...')
-    expect(lectureText(essentials.lecture)).toContain(
+    expect(lectureText(essentials.lecture)).not.toContain(
       'Cette partie présente cinq regroupements de services essentiels.',
     )
+    expect(essentials.evidence?.kind === 'access' ? blocksText(essentials.evidence.figureLecture) : '').toContain('trois bâtiments sur quatre')
     expect(lectureText(essentials.lecture)).toContain(
       'À Commune A, les cinq services essentiels sont couverts à vélo et en voiture, mais pas à pied ou en transports en commun.',
     )
@@ -495,7 +503,7 @@ describe('resolveMobiliteThemeContent', () => {
     const essentials = resolveMobiliteThemeContent(completeFacts).units[0]!.sections[2]!
     const lecture = essentials.lecture!
 
-    expect(lecture.prose[0]).toContainEqual({
+    expect(essentials.evidence?.kind === 'access' ? essentials.evidence.figureLecture[0] : []).toContainEqual({
       kind: 'emphasis',
       tone: 'default',
       value: 'trois bâtiments sur quatre',
@@ -520,12 +528,12 @@ describe('resolveMobiliteThemeContent', () => {
 
     const lecture = resolveMobiliteThemeContent(facts).units[0]?.sections[1]?.lecture
 
-    expect(lecture?.prose[1]).toContainEqual({
+    expect(lecture?.prose[0]).toContainEqual({
       kind: 'emphasis',
       tone: 'default',
       value: 'nuance',
     })
-    expect(lecture?.prose[1]).toContainEqual({
+    expect(lecture?.prose[0]).toContainEqual({
       kind: 'emphasis',
       tone: 'foot',
       value: 'celui des types accessibles à pied ou en transports en commun',
@@ -546,7 +554,7 @@ describe('resolveMobiliteThemeContent', () => {
 
     const lecture = resolveMobiliteThemeContent(facts).units[0]?.sections[1]?.lecture
 
-    expect(lecture?.prose[1]).toContainEqual({
+    expect(lecture?.prose[0]).toContainEqual({
       kind: 'emphasis',
       tone: 'bike',
       value: 'celui des types pour lesquels le vélo compense',
@@ -796,7 +804,7 @@ describe('resolveMobiliteThemeContent', () => {
     const second = resolveMobiliteThemeContent(facts)
 
     expect(first).toEqual(second)
-    expect(JSON.stringify(first)).not.toContain('médiane')
+    expect(JSON.stringify(first.units[0].sections.map((section) => section.lecture))).not.toContain('médiane')
     expect(first.units[0].sections[0].lecture).not.toBeNull()
     expect(first.units[0].sections[1].lecture?.marelle).toBe('Service minimum ?')
     expect(first.units[0].sections[2].lecture).not.toBeNull()

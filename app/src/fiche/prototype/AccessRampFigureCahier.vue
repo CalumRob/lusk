@@ -14,7 +14,6 @@ import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } f
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
-import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
 const props = defineProps<{
@@ -344,14 +343,6 @@ const accessibleLabel = computed(() =>
       </div>
     </template>
     <CahierFigureLegend :entries="legend" label="Séries comparées" />
-    <CahierFigureLecture>
-      <p>
-        Pour chaque mode, les bâtiments sont classés du moins au plus grand nombre de types accessibles.
-        À une position donnée, les courbes ne décrivent donc pas nécessairement les mêmes bâtiments.
-        La courbe du groupe comparé suit les mêmes quantiles, calculés sur l’ensemble de ses bâtiments.
-        Le point à 50 % correspond à sa médiane.
-      </p>
-    </CahierFigureLecture>
   </CahierFigureFrame>
 </template>
 

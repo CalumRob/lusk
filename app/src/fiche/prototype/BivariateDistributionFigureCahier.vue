@@ -12,7 +12,6 @@ import type { MobiliteBuildingDistribution } from '@/fiche/content/territoryFact
 import type { CahierFigureTooltipAnchor, CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureFrame from './CahierFigureFrame.vue'
-import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
 const props = defineProps<{
@@ -294,13 +293,6 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
         <strong>Groupe comparé</strong>
       </div>
     </div>
-    <CahierFigureLecture>
-      <p>
-        Chaque case croise le nombre de types et le nombre total d’équipements accessibles en vingt minutes,
-        en mode « {{ distribution.modeLabel }} ». Le triangle bleu représente {{ territoryName }} ; le triangle vert,
-        le groupe comparé. Dans les deux cas, plus la couleur est soutenue, plus cette situation concerne de bâtiments.
-      </p>
-    </CahierFigureLecture>
   </CahierFigureFrame>
 </template>
 
