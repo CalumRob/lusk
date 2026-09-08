@@ -114,9 +114,9 @@ const rampRows: RampeAccesBatimentsRow[] = [
      version: '2026-02',
      date_reference: '2026-02-28',
      date_publication: '2026-08-06',
-    comparison_label: null,
-    comparison_total_buildings: null,
-    comparison_accessible_types: null,
+    comparison_label: 'communes de l’EPCI',
+    comparison_total_buildings: 100_000,
+    comparison_accessible_types: index * 4,
   })),
 )
 
@@ -288,7 +288,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'Services essentiels',
       "Distribution de l'accès par bâtiment",
     ])
-    expect(wrapper.find('[data-section="distribution-acces-par-batiment"] .cahier-marelle-anchor').text()).toBe('... Toutes les résidences non plus.')
+    expect(wrapper.find('[data-section="distribution-acces-par-batiment"] .cahier-marelle-anchor').text()).toBe('... Tous les bâtiments non plus')
     expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(4)
     expect(wrapper.find('.summary-evidence').exists()).toBe(true)
     expect(wrapper.find('.summary-evidence .cahier-figure-title').text()).toBe("Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)")
@@ -303,12 +303,17 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Commune A')
     expect(wrapper.findAll('.cahier-figure-frame')).toHaveLength(4)
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(4)
-    expect(wrapper.find('.summary-evidence .cahier-figure-lecture').text()).toContain('Les valeurs comparent, pour chaque mode')
-    expect(wrapper.find('.bpe-evidence .cahier-figure-lecture').text()).toContain('un quart des bâtiments')
-    expect(wrapper.find('.access-figure-collection .cahier-figure-lecture').text()).toContain('trois bâtiments sur quatre')
-    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('mêmes quantiles')
-    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('on lit 15 types')
-    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('non la perte du bâtiment médian')
+    for (const selector of [
+      '.summary-evidence',
+      '.bpe-evidence',
+      '.access-figure-collection',
+      '.access-ramp-evidence',
+    ]) {
+      expect(wrapper.find(`${selector} .cahier-figure-lecture`).text()).toContain('Exemple :')
+      expect(wrapper.find(`${selector} .cahier-figure-lecture`).text()).toContain('contre')
+    }
+    expect(wrapper.find('.access-figure-collection .cahier-figure-lecture').text()).not.toContain('trois bâtiments sur quatre')
+    expect(wrapper.find('.access-ramp-evidence .cahier-figure-lecture').text()).toContain('la moitié des bâtiments accèdent à au plus 15 types')
     expect(wrapper.findAll('.cahier-figure-frame .cahier-figure-axis-title')).toHaveLength(4)
     expect(wrapper.findAll('.summary-evidence .cahier-figure-axis')).toHaveLength(0)
     expect(wrapper.findAll('.access-figure-collection .cahier-figure-axis')).toHaveLength(0)
@@ -349,7 +354,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.cahier-figure-title')).toHaveLength(4)
     expect(wrapper.findAll('.cahier-comparison-value')).toHaveLength(15)
     expect(wrapper.findAll('.cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
-    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(3)
+    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
     expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.bpe-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.cahier-comparison-value').text()).toContain('Groupe comparé')
@@ -550,8 +555,9 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       'La voiture est requise',
       'Inaccessible ou presque',
     ])
-    const profileArgument = wrapper.findAll('.argument-copy')[1]!
-    expect(profileArgument.find('.car-emphasis').exists()).toBe(true)
+    const profileArgument = wrapper.findAll('.argument-copy')[0]!
+    expect(profileArgument.text()).toContain('types d’équipements BPE')
+    expect(profileArgument.find('.car-emphasis').exists()).toBe(false)
     expect(profileArgument.find('.foot-emphasis').exists()).toBe(false)
     expect(profileArgument.find('.bike-emphasis').exists()).toBe(false)
     expect(profileArgument.find('.neutral-emphasis').exists()).toBe(false)
@@ -654,49 +660,25 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(tooltip.findAll('.cahier-figure-tooltip-row')).toHaveLength(1)
   })
 
-  it('writes the first group as a territory-specific comparison story', async () => {
-    const facts = structuredClone(factsForTarget())
-    const summary = facts.mobility.access.summary
-    summary.accessibleEquipment.car = withMean(summary.accessibleEquipment.car, 1_000)
-    summary.accessibleTypes.car = withMean(summary.accessibleTypes.car, 60)
-    summary.averageLosses.diversity.walkTransit = withMean(summary.averageLosses.diversity.walkTransit, 25)
-    summary.averageLosses.diversity.bike = withMean(summary.averageLosses.diversity.bike, 20)
-
-    const content = resolveMobiliteThemeContent(facts)
-    const firstSection = content.units[0]!.sections[0]!
-    const prose = firstSection.lecture!.prose.map((block) => block.map((segment) => segment.value).join(''))
+  it('removes the summary subgroup argument while keeping its figure', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
     const wrapper = await render(content, 'plain')
 
-    expect(prose).toHaveLength(3)
-    expect(prose[0]).toContain('À Commune A1, dans un rayon de 20 minutes en voiture')
-    expect(prose[0]).toContain('atteint plus d’équipements au total')
-    expect(prose[0]).toContain('mais moins de types d’équipements')
-    expect(prose[1]).toContain('La voiture ouvre peu d’accès')
-    expect(prose[1]).toContain('À pied et/ou en transports en commun')
-    expect(prose[1]).not.toContain('médiane des communes de l’EPCI')
-    expect(prose[2]).toContain('Le vélo renforce cette situation')
-    expect(prose[2]).toContain('groupe comparé : 20')
-    expect(wrapper.find('.margin-comparison').exists()).toBe(false)
-    expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(3)
-    expect(wrapper.findAll('.cahier-comparison-note').every((note) => note.text().startsWith('Groupe comparé :'))).toBe(true)
-    expect(wrapper.findAll('.cahier-section-footer').every((footer) => !footer.find('.cahier-comparison-note').exists())).toBe(true)
-    expect(wrapper.findAll('.cahier-section-footer').every((footer) => footer.find('.cahier-section-exploration--unit-footer').exists())).toBe(true)
+    expect(content.units[0]!.sections[0]!.lecture?.marelle).toBe('Ce que l’on perd sans voiture')
+    expect(wrapper.find('.summary-evidence').exists()).toBe(true)
+    expect(wrapper.findAll('.argument-copy')).toHaveLength(2)
+    expect(wrapper.find('.summary-evidence .cahier-figure-lecture').exists()).toBe(true)
   })
 
   it('uses the narrative sentence as E’s single unit heading without the Marelle duplicate', async () => {
     const content = resolveMobiliteThemeContent(factsForTarget())
-    const firstSection = content.units[0]?.sections[0]
     const wrapper = await render(content, 'plain')
 
-    expect(firstSection?.lecture?.marelle).toBeTruthy()
-    expect(wrapper.find('.concept-group-narrative').text()).toBe(firstSection?.lecture?.marelle)
-    expect(wrapper.find('.concept-group-narrative').element.tagName).toBe('H3')
-    expect(wrapper.find('.concept-group-heading-copy .concept-group-label').text()).toBe(firstSection?.label)
     expect(wrapper.findAll('.concept-group-narrative').map((heading) => heading.text())).toEqual([
       'Ce que l’on perd sans voiture',
       'Service minimum ?',
-      'Tous les équipements ne se valent pas...',
-      '... Toutes les résidences non plus.',
+      'Tous les services ne se valent pas...',
+      '... Tous les bâtiments non plus',
     ])
     expect(wrapper.findAll('.cahier-marelle-anchor')).toHaveLength(0)
   })
@@ -770,7 +752,9 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     const wrapper = await render(resolveMobiliteThemeContent(facts))
 
     expect(wrapper.find('.access-ramp-evidence .cahier-comparison-note').text()).toBe('Groupe comparé : bâtiments de EPCI X')
-    expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('Chaque case croise le nombre de types')
+    expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('Chaque case regroupe les bâtiments')
+    expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('Exemple :')
+    expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('contre')
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(5)
   })
 

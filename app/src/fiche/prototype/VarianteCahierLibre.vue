@@ -579,20 +579,20 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                       class="cahier-baseline-anchor cahier-marelle-anchor"
                     >{{ section.lecture.marelle }}</h4>
                     <CahierProse v-if="section.lecture.prose.length" class="argument-copy" :blocks="section.lecture.prose" />
-                    <div
-                      v-if="props.presentation !== 'plain' && section.explorationTargets.length > 0 && sectionExploration(section)"
-                      class="cahier-section-exploration"
-                      aria-label="Explorer les indicateurs de cette section"
-                    >
-                      <PassarelleExploration
-                        :to="sectionExploration(section)!"
-                        libelle="En savoir plus"
-                        sans-soulignement
-                        class="cahier-baseline-anchor"
-                      />
-                    </div>
                   </template>
-                  <p v-else-if="section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
+                  <div
+                    v-if="props.presentation !== 'plain' && section.explorationTargets.length > 0 && sectionExploration(section)"
+                    class="cahier-section-exploration"
+                    aria-label="Explorer les indicateurs de cette section"
+                  >
+                    <PassarelleExploration
+                      :to="sectionExploration(section)!"
+                      libelle="En savoir plus"
+                      sans-soulignement
+                      class="cahier-baseline-anchor"
+                    />
+                  </div>
+                  <p v-if="!section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
 
                 </div>
 
