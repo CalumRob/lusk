@@ -59,6 +59,18 @@ test_that("valider_theme_metadata : les sources de référence existent dans les
   )
 })
 
+test_that("la source OSM porte la méthodologie des places de stationnement", {
+  meta <- lire_theme_metadata("mobilite")
+  validee <- valider_theme_metadata(meta)
+  methodology <- validee$source_records$osm_reseaux$methodology
+  expect_true(is.list(methodology))
+  expect_identical(methodology$factors[[1]]$key, "surface")
+  expect_identical(methodology$factors[[1]]$unit, "m²/place")
+
+  meta$source_records$osm_reseaux$methodology$factors[[1]]$value <- "25"
+  expect_error(valider_theme_metadata(meta), "methodology")
+})
+
 test_that("valider_theme_metadata : un thème hors du canon est rejeté (les six thèmes, #408)", {
   meta <- lire_metadata("theme-demographie-valide.json")
   meta$theme <- NULL

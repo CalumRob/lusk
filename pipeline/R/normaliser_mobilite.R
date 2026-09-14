@@ -226,15 +226,47 @@ lire_communes_limites <- function(chemin) {
 # builder.
 lire_lignes_osm <- function(chemin_pbf) {
   lignes <- osmextract::oe_read(chemin_pbf, layer = "lines", quiet = TRUE)
-  if (!"highway" %in% names(lignes)) {
-    stop("Extrait OSM corrompu — la couche des lignes ne porte pas highway.",
-         call. = FALSE)
-  }
-  lignes
+  normaliser_lignes_osm(lignes)
 }
 
 # Parking fermé (ways + relations) shares the Geofabrik extract with networks.
 # Nodes and non-parking features are deliberately not admitted to the contract.
+extraire_tag_osm <- function(tags, key) {
+  pattern <- paste0('"', key, '"=>"', '([^"]*)', '"')
+  values <- ifelse(is.na(tags), "", as.character(tags))
+  matches <- regexec(pattern, values, perl = TRUE)
+  vapply(regmatches(values, matches), function(match) {
+    if (length(match) > 1) match[[2]] else NA_character_
+  }, character(1))
+}
+
+normaliser_lignes_osm <- function(x) {
+  if (!"highway" %in% names(x)) {
+    stop("Extrait OSM corrompu — la couche des lignes ne porte pas highway.",
+         call. = FALSE)
+  }
+  cles_stationnement <- c(
+    "parking:lane:left", "parking:lane:right", "parking:lane:both",
+    "parking:left", "parking:right", "parking:both",
+    "parking_lane_left", "parking_lane_right", "parking_lane_both"
+  )
+  other_tags <- if ("other_tags" %in% names(x)) x$other_tags else rep(NA_character_, nrow(x))
+  for (cle in cles_stationnement) {
+    extrait <- extraire_tag_osm(other_tags, cle)
+    existant <- if (cle %in% names(x)) as.character(x[[cle]]) else rep(NA_character_, nrow(x))
+    x[[cle]] <- ifelse(!is.na(existant) & nzchar(existant), existant, extrait)
+  }
+  # Network-scope tags are also stored in GDAL's other_tags column. Promote
+  # them so downstream mode filters can exclude explicit access denials without
+  # making the calculator parse provider-specific serialization.
+  for (cle in c("foot", "access", "tracktype")) {
+    extrait <- extraire_tag_osm(other_tags, cle)
+    existant <- if (cle %in% names(x)) as.character(x[[cle]]) else rep(NA_character_, nrow(x))
+    x[[cle]] <- ifelse(!is.na(existant) & nzchar(existant), existant, extrait)
+  }
+  x
+}
+
 normaliser_parkings_osm <- function(x) {
   if (!"amenity" %in% names(x)) stop("OSM parkings : colonne amenity absente.", call. = FALSE)
   # Do not let NA in the GDAL attribute vector select an NA feature row.
@@ -242,8 +274,38 @@ normaliser_parkings_osm <- function(x) {
   # it is not a parking feature and has no polygonal area to attribute.
   amenity <- as.character(x$amenity)
   x <- x[!is.na(amenity) & amenity == "parking", , drop = FALSE]
-  if (!"osm_id" %in% names(x)) stop("OSM parkings : osm_id absent.", call. = FALSE)
-  x <- x[!duplicated(as.character(x$osm_id)), , drop = FALSE]
+  other_tags <- if ("other_tags" %in% names(x)) x$other_tags else rep(NA_character_, nrow(x))
+  parking_tag <- extraire_tag_osm(other_tags, "parking")
+  if ("parking" %in% names(x)) {
+    existing_parking_tag <- as.character(x$parking)
+    x$parking <- ifelse(
+      !is.na(existing_parking_tag) & nzchar(existing_parking_tag),
+      existing_parking_tag,
+      parking_tag
+    )
+  } else {
+    x$parking <- parking_tag
+  }
+  for (cle in c("capacity", "capacity:cars")) {
+    extrait <- extraire_tag_osm(other_tags, cle)
+    existant <- if (cle %in% names(x)) as.character(x[[cle]]) else rep(NA_character_, nrow(x))
+    x[[cle]] <- ifelse(!is.na(existant) & nzchar(existant), existant, extrait)
+  }
+  if (!any(c("osm_id", "osm_way_id") %in% names(x))) {
+    stop("OSM parkings : osm_id ou osm_way_id absent.", call. = FALSE)
+  }
+  # GDAL's OSM multipolygon driver puts relation identifiers in `osm_id` and
+  # closed-way identifiers in `osm_way_id`.  Using osm_id alone collapses every
+  # way with a missing relation id into one row (the real Bretagne extract has
+  # 36,164 such parking ways).
+  osm_id <- if ("osm_id" %in% names(x)) as.character(x$osm_id) else rep(NA_character_, nrow(x))
+  way_id <- if ("osm_way_id" %in% names(x)) as.character(x$osm_way_id) else rep(NA_character_, nrow(x))
+  identity <- ifelse(!is.na(osm_id) & nzchar(osm_id), osm_id, way_id)
+  if (any(is.na(identity) | !nzchar(identity))) {
+    stop("OSM parkings : un objet ne porte ni osm_id ni osm_way_id.", call. = FALSE)
+  }
+  x$osm_id <- identity
+  x <- x[!duplicated(identity), , drop = FALSE]
   # The OSM multipolygon layer contains a small number of invalid relations
   # (usually duplicate edges between member ways).  Repair at ingestion, before
   # any area or commune attribution operation.  st_make_valid preserves the
@@ -251,6 +313,11 @@ normaliser_parkings_osm <- function(x) {
   x <- sf::st_make_valid(x)
   if (any(!sf::st_is_valid(x)))
     stop("OSM parkings : géométrie invalide après réparation.", call. = FALSE)
+  # A malformed empty relation can be returned as a valid, empty
+  # GEOMETRYCOLLECTION. It has no area to turn into places; remove it before
+  # the calculator's polygon-only contract rather than failing the whole run.
+  area_geometry <- sf::st_geometry_type(x) %in% c("POLYGON", "MULTIPOLYGON")
+  x <- x[area_geometry, , drop = FALSE]
   x
 }
 

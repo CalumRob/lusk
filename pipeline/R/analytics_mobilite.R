@@ -797,59 +797,155 @@ calculer_part_proches_arret_communes <- function(stops, batiments,
     dplyr::arrange(commune)
 }
 
-FACTEUR_PLACE_VOITURE_M2 <- c(lot = 25, street_side = 11.5)
+# Capacity is calibration data, not a production count. Production estimates
+# use polygon area divided by a factor derived from parent polygons carrying a
+# plausible positive capacity; these defaults cover types without enough
+# calibration observations.
+FACTEUR_PLACE_VOITURE_M2 <- c(surface = 25, street_side = 11.5, lane = 25)
+CAPACITE_CALIBRATION_MIN_OBSERVATIONS <- 5L
+CAPACITE_RATIO_PLAUSIBLE_M2_MIN <- 8
+CAPACITE_RATIO_PLAUSIBLE_M2_MAX <- 60
+
+valeur_tag_stationnement <- function(x, cle) {
+  direct <- if (cle %in% names(x)) as.character(x[[cle]]) else rep(NA_character_, nrow(x))
+  other_tags <- if ("other_tags" %in% names(x)) x$other_tags else rep(NA_character_, nrow(x))
+  extrait <- extraire_tag_osm(other_tags, cle)
+  ifelse(!is.na(direct) & nzchar(direct), direct, extrait)
+}
+
+type_stationnement_voiture <- function(parkings) {
+  type <- tolower(trimws(valeur_tag_stationnement(parkings, "parking")))
+  type[is.na(type) | !nzchar(type)] <- "surface"
+  type
+}
+
+calibrer_facteurs_stationnement <- function(parkings, aire_m2, type) {
+  facteurs <- FACTEUR_PLACE_VOITURE_M2
+  capacite <- suppressWarnings(as.numeric(valeur_tag_stationnement(parkings, "capacity")))
+  capacite_cars <- suppressWarnings(as.numeric(valeur_tag_stationnement(parkings, "capacity:cars")))
+  capacite <- ifelse(!is.na(capacite) & capacite > 0, capacite, capacite_cars)
+  ratio <- aire_m2 / capacite
+  utilisables <- is.finite(aire_m2) & aire_m2 > 0 & is.finite(capacite) & capacite > 0 &
+    is.finite(ratio) & ratio >= CAPACITE_RATIO_PLAUSIBLE_M2_MIN &
+    ratio <= CAPACITE_RATIO_PLAUSIBLE_M2_MAX
+  for (kind in unique(type[utilisables])) {
+    lignes <- utilisables & type == kind
+    if (sum(lignes) >= CAPACITE_CALIBRATION_MIN_OBSERVATIONS)
+      facteurs[[kind]] <- sum(aire_m2[lignes]) / sum(capacite[lignes])
+  }
+  facteurs
+}
+
+compter_cotes_stationnement <- function(ligne, colonnes) {
+  valeurs <- tolower(trimws(as.character(ligne)))
+  actifs <- !is.na(valeurs) & nzchar(valeurs) &
+    !valeurs %in% c("no", "no_parking", "no_stopping", "separate", "none", "0")
+  if (any(actifs & (grepl("both$", colonnes) | valeurs == "both"))) return(2)
+  gauche <- any(actifs & grepl("(left|_left)$", colonnes))
+  droite <- any(actifs & grepl("(right|_right)$", colonnes))
+  as.numeric(gauche) + as.numeric(droite)
+}
+
+compter_cotes_stationnement_vecteur <- function(lignes, colonnes) {
+  n <- nrow(lignes)
+  if (length(colonnes) == 0) return(rep(0, n))
+
+  gauche <- droite <- both <- rep(FALSE, n)
+  for (colonne in colonnes) {
+    valeurs <- tolower(trimws(as.character(lignes[[colonne]])))
+    actifs <- !is.na(valeurs) & nzchar(valeurs) &
+      !valeurs %in% c("no", "no_parking", "no_stopping", "separate", "none", "0")
+    both <- both | (actifs & (grepl("both$", colonne) | valeurs == "both"))
+    gauche <- gauche | (actifs & grepl("(left|_left)$", colonne))
+    droite <- droite | (actifs & grepl("(right|_right)$", colonne))
+  }
+
+  ifelse(both, 2, as.numeric(gauche) + as.numeric(droite))
+}
+
 # Empirical decision recorded by the contract: publish the count ratio
 # (places vélo / places voiture), not the discarded area proxy.
 RATIO_STATIONNEMENT_VELO_DECISION <- "places_velo_par_places_voiture"
 # calculer_stationnement_voiture_communes ---------------------------------------
-# Les surfaces OSM sont converties en places estimées. `capacity` est
-# volontairement ignoré : sa couverture est insuffisante et son sens varie.
-# Les objets fermés sont dédupliqués par osm_id (ways/relations compris) ; les
-# lignes ne contribuent que par leurs côtés parking:lane explicitement tagués.
+# Les surfaces OSM sont converties en places estimées avec des facteurs calibrés
+# sur les capacités déclarées, sans ajouter ces capacités directement. Les objets
+# fermés sont dédupliqués par osm_id (ways/relations compris). Les lignes
+# contribuent par leurs côtés parking explicitement tagués, mais leur portion
+# couverte par un parking parent est retirée pour éviter le double-compte.
 calculer_stationnement_voiture_communes <- function(parkings, lignes, limites) {
   if (!inherits(parkings, "sf") || !inherits(lignes, "sf") || !inherits(limites, "sf"))
     stop("Stationnement voiture : parkings, lignes et limites doivent être sf.", call. = FALSE)
   if (any(!sf::st_geometry_type(parkings) %in% c("POLYGON", "MULTIPOLYGON")))
     stop("Stationnement voiture : seuls les ways fermés et relations sont acceptés.", call. = FALSE)
   if (!"code_insee" %in% names(limites)) stop("Stationnement voiture : limites sans code_insee.", call. = FALSE)
+  limites <- sf::st_transform(limites, CRS_OFFRE_MOBILITE) %>% sf::st_make_valid()
   if (!"osm_id" %in% names(parkings)) parkings$osm_id <- seq_len(nrow(parkings))
   parkings <- parkings[!duplicated(parkings$osm_id), ]
   parkings <- sf::st_transform(parkings, sf::st_crs(limites))
+  parkings$type_stationnement <- type_stationnement_voiture(parkings)
+  parkings$aire_m2 <- as.numeric(sf::st_area(parkings))
+  facteurs <- calibrer_facteurs_stationnement(
+    parkings, parkings$aire_m2, parkings$type_stationnement
+  )
   # Attribute once, at the representative point: a large polygon crossing a
   # commune boundary must not be counted once per intersected commune.
   points <- sf::st_point_on_surface(parkings)
-  points$parking_area <- as.numeric(sf::st_area(parkings))
   pol <- sf::st_join(points, limites["code_insee"], left = FALSE)
-  parking_tag <- if ("parking" %in% names(pol)) tolower(as.character(pol$parking)) else rep(NA_character_, nrow(pol))
-  kind <- ifelse(!is.na(parking_tag) & parking_tag == "street_side", "street_side", "lot")
+  places_factor <- facteurs[pol$type_stationnement]
+  places_factor[is.na(places_factor)] <- facteurs[["surface"]]
   areas <- tibble::tibble(commune = pol$code_insee,
-                            places = pol$parking_area /
-                             ifelse(kind == "street_side", 11.5, 25))
+                          places = pol$aire_m2 / as.numeric(places_factor))
   lignes <- lignes[!is.na(lignes$highway) & nzchar(as.character(lignes$highway)), ]
   lane_cols <- grep("^(parking:lane:(left|right|both)|parking:(left|right|both)|parking_lane_(left|right|both))$",
                     names(lignes), value = TRUE)
   linear <- tibble::tibble(commune = character(), places = numeric())
   if (length(lane_cols) > 0) {
-      tagged <- apply(sf::st_drop_geometry(lignes[, lane_cols, drop = FALSE]), 1,
-      function(x) sum(vapply(seq_along(x), function(j) {
-        v <- x[[j]]
-         v <- tolower(as.character(v)); !is.na(v) && nzchar(v) &&
-           !v %in% c("no", "no_parking", "no_stopping", "separate", "none", "0")
-       }, logical(1)) * ifelse(grepl("both", lane_cols) | tolower(as.character(x)) == "both", 2, 1))
-    )
-    tagged <- which(tagged > 0)
+    lane_counts <- compter_cotes_stationnement_vecteur(lignes, lane_cols)
+    tagged <- which(lane_counts > 0)
     if (length(tagged) > 0) {
-      ln <- sf::st_join(lignes[tagged, , drop = FALSE], limites["code_insee"], left = FALSE)
-      lane_count <- apply(sf::st_drop_geometry(ln[, lane_cols, drop = FALSE]), 1,
-        function(x) sum(vapply(seq_along(x), function(j) {
-          v <- x[[j]]
-          v <- tolower(as.character(v)); !is.na(v) && nzchar(v) &&
-            !v %in% c("no", "no_parking", "no_stopping", "separate", "none", "0")
-        }, logical(1)) * ifelse(grepl("both", lane_cols) | tolower(as.character(x)) == "both", 2, 1)))
-      ln <- sf::st_transform(ln, sf::st_crs(limites))
-      linear <- tibble::tibble(commune = ln$code_insee,
-                                places = as.numeric(sf::st_length(ln)) *
-                                  (lane_count * 2.3) / 11.5)
+      ln <- sf::st_transform(lignes[tagged, , drop = FALSE], sf::st_crs(limites))
+      ln$lane_count <- lane_counts[tagged]
+      ln$line_length_m <- as.numeric(sf::st_length(ln))
+      if (nrow(parkings) > 0) {
+        # Restrict the union to polygons that can actually intersect a tagged
+        # line. Unioning the whole Bretagne parking layer is needlessly costly
+        # and can make a read-only metric calculation look like a failed run.
+        candidates <- unique(unlist(sf::st_intersects(ln, parkings)))
+        if (length(candidates) > 0) {
+          parking_union <- sf::st_union(
+            sf::st_make_valid(sf::st_geometry(parkings)[candidates])
+          )
+          ln$line_id <- seq_len(nrow(ln))
+          # line_id is constant for each source line by construction; sf's
+          # generic attribute warning is therefore expected for this split.
+          overlaps <- suppressWarnings(
+            sf::st_intersection(ln["line_id"], parking_union)
+          )
+          overlap_lengths <- sf::st_drop_geometry(overlaps) %>%
+            dplyr::mutate(overlap_m = as.numeric(sf::st_length(overlaps))) %>%
+            dplyr::group_by(line_id) %>%
+            dplyr::summarise(overlap_m = sum(overlap_m), .groups = "drop")
+          ln <- ln %>%
+            dplyr::left_join(overlap_lengths, by = "line_id") %>%
+            dplyr::mutate(
+              line_length_m = pmax(line_length_m - dplyr::coalesce(overlap_m, 0), 0)
+            )
+        }
+      }
+      ln <- ln[ln$line_length_m > 0, , drop = FALSE]
+      if (nrow(ln) > 0) {
+        line_points <- sf::st_sf(
+          lane_count = ln$lane_count,
+          line_length_m = ln$line_length_m,
+          geometry = sf::st_centroid(sf::st_geometry(ln)),
+          crs = sf::st_crs(limites)
+        )
+        line_points <- sf::st_join(line_points, limites["code_insee"], left = FALSE)
+        linear <- tibble::tibble(
+          commune = line_points$code_insee,
+          places = line_points$line_length_m * (line_points$lane_count * 2.3) / 11.5
+        )
+      }
     }
   }
   dplyr::bind_rows(areas, linear) %>% dplyr::group_by(commune) %>%

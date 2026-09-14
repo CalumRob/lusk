@@ -199,6 +199,32 @@ _Avoid_: benchmark (too vague), comparaison implicite, contexte régional (a sco
 The Mobilité block's supply-side sub-block (named 2026-08-06): the infrastructure-offer indicators grouped under one label — **Offre TC** (part des bâtiments près d'un arrêt, Korrigo), **Bornes de recharge** (IRVE — la **comparaison bornes vs stations-service** (EV contre fuel) se construit dans #369, triage 2026-08-12 : numérateur les bornes IRVE (stations, jamais les points de charge), dénominateur les stations-service **BPE B316** — la source officielle (définition INSEE : stations ayant vendu ≥ 500 000 L l'année précédente, petites stations sur volontariat ; dénombrements FACILITIES par commune, l'INSEE recommandant la présence/absence aux niveaux fins) ; ratio publié seulement là où fuel > 0 — bornes = 0 → 0 classé (les égalités partagent le rang, ADR-0015), fuel = 0 → NA avec le texte « Aucune station-service sur le territoire » / « Aucune borne ni station-service » ; BPE B326 (bornes EV depuis 2024) reste la référence officielle de croisement des bornes IRVE), **Stationnement vélo** (places / 1 000 hab, hub Ecolab pris tel quel), **Stationnement voiture** (les PLACES ESTIMÉES depuis la surface des parkings OSM `amenity=parking` — ways fermés + relations, jamais les nodes sans déduplication, jamais `capacity` (porté par seulement 15,7 % des surfaces) — divisée par les facteurs documentés : **25 m²/place** en parc de surface (le module 2,5×5 m = 12,5 m², dégagement inclus), **~11,5 m²/place** en voirie (module parallèle 5×2,3 m, NF P91-100, Héran & Ravalet 2008) — `places_stationnement_voiture_1000` (places/1 000 hab, #369, triage 2026-08-12), direction **moins = mieux** : la part de l'espace public que prend la voiture. Le stationnement de rue MAPPÉ est déjà largement dans les polygones (5 508 aires fermées `parking=street_side` des 38 376 objets — la couche lines n'en porte que 10) ; l'incrément linéaire tagué sur les highways (`parking:lane:*` ou l'ancien schéma, × 2,3 m par côté tagué) s'ajoute à la surface — mais seulement 0,40 % de la longueur routière est taguée : le stationnement de rue NON tagué (la majorité dans les communes denses) reste non mesurable, le biais anti-communes-denses est documenté, pas éliminé ; docs/research/stationnement-voiture-osm.md + stationnement-rue-osm.md), and, since 2026-08-08 (issue #222), **L'offre cyclable** — the Geovelo « Aménagements cyclables » network figure: a headline reading **bike infrastructure as a share of car infrastructure** (« X % de l'infrastructure routière », the bike total ÷ the full `c` network, motorways included) plus **protégé vs partagé bars** (km / 1 000 hab) — the composition of the bike offer, split between space separated from motor traffic (pistes, voies vertes, CVCB…) and shared space (bandes, vélos rues, couloirs bus+vélo…). Never suppressed for small n; a territory with no aménagements shows the 0 as a fact. "What the territory offers," the counterpart to the flagship's "what residents can reach." A label, not a merge — each figure keeps its own vintage stamp and rank-in-context. **Le ratio stationnement vélo÷voiture (HIGH) se construit en deux formes concurrentes** (#369, décision 2026-08-12), la forme retenue étant celle qui lit le mieux sur le réel : (a) **m² vélo ÷ m² voiture** — la surface vélo = places × **2,0 m²/place** (le facteur documenté : arrêté du 30/06/2022 → 1,5 m²/place hors dégagement, MRAe 2024 → 2,0 m² dégagement inclus ; uniforme sur les quatre types d'accroche — les guides dimensionnent l'emplacement par l'enveloppe du vélo, jamais par le type d'accroche, qui est un axe de qualité ; docs/research/stationnement-velo-surface.md) ; (b) **places vélo brutes ÷ m² voiture**. Les deux candidates partagent la direction HIGH ; le carré vélo÷voiture de surface tombe dans la bande lisible (quelques % à ~10 %).
 _Avoid_: Équipements (the dropped BPE 229-types indicator — see that entry), infrastructure (too generic)
 
+**Réseau piéton (t)**:
+The OSM-derived walking network used by the Mobilité network profile. It includes
+shared paths (`highway=path`) alongside footways, pedestrian ways, and steps.
+Explicit `foot=no|private` and denying `access` values are excluded.
+Agricultural and forestry tracks (`highway=track`) are not part of the default
+network: their tag describes the way's setting, not public pedestrian access.
+Track inclusion remains a sensitivity question, with explicit pedestrian-access
+and surface-quality variants documented separately before any future scope
+change.
+_Avoid_: réseau cyclable (the `b` Geovelo profile), itinéraire piéton (a route,
+not the measured network), track as an automatic synonym for walkable
+
+**Stationnement voiture — contrat #553**:
+The Mobility supply estimate combines two non-overlapping mapped sources: parent
+parking areas (`amenity=parking`) and explicitly tagged linear parking on
+highways. Parent areas own any overlapping geometry; child `parking_space`
+features are not added to them. The published quantity is an estimate derived
+from mapped polygon area and linear length. Declared OSM capacities calibrate the
+area factors but are not counted directly as observed places. This supersedes
+the earlier area-only recommendation in the historical stationnement wording.
+The effective factors, fallback factors, calibration threshold and exclusions are
+source-owned methodology metadata on `osm_reseaux`, and the Sources page renders
+that record; the indicator page does not duplicate those domain values.
+_Avoid_: capacité observée (the production value is derived), parking_space
+added to its parent, linear parking silently omitted
+
 **Voitures par ménage (motorisation)**:
 The Mobilité block's motorisation indicator (reworked 2026-08-12, #367): the household car-ownership split as the **three real parts — 0 / 1 / 2+ voitures, summing to exactly 100 %** (the middle category was missing today, #368). The **car-free share (ménages sans voiture) is the headline** — the part the rank reads (HIGH: plus = mieux) and the figure leads with; the 2+ share is the counterweight the tension reads. The three parts come from the census (RP LOG T12, the CARS dimension, the same source as before).
 _Avoid_: « part sans voiture et part 2+ » (the pre-#367 two-part form — the middle category was dropped), taux de motorisation (a single rate hides the composition)

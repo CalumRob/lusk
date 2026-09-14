@@ -1054,7 +1054,81 @@
           "reference": "extrait du 5 août 2026",
           "trigger": "La figure se recalcule quand l’une des deux horloges bouge."
         }
-      ]
+      ],
+      "methodology": {
+        "title": "Estimation des places de stationnement voiture",
+        "summary": "Les places sont estimées à partir des surfaces de stationnement cartographiées dans OpenStreetMap et de leurs facteurs d’espace par place.",
+        "factors": [
+          {
+            "key": "surface",
+            "label": "Parking de surface",
+            "value": 26.702079999999999,
+            "unit": "m²/place"
+          },
+          {
+            "key": "street_side",
+            "label": "Parking en bordure de chaussée (aire)",
+            "value": 15.427490000000001,
+            "unit": "m²/place"
+          },
+          {
+            "key": "lane",
+            "label": "Parking sur la chaussée (aire)",
+            "value": 17.442170000000001,
+            "unit": "m²/place"
+          },
+          {
+            "key": "multi-storey",
+            "label": "Parking en ouvrage",
+            "value": 11.27528,
+            "unit": "m²/place"
+          },
+          {
+            "key": "underground",
+            "label": "Parking souterrain",
+            "value": 16.237500000000001,
+            "unit": "m²/place"
+          },
+          {
+            "key": "linear",
+            "label": "Stationnement linéaire par côté",
+            "value": 11.5,
+            "unit": "m²/place"
+          }
+        ],
+        "fallbackFactors": [
+          {
+            "key": "surface",
+            "label": "Parking de surface",
+            "value": 25,
+            "unit": "m²/place"
+          },
+          {
+            "key": "street_side",
+            "label": "Parking en bordure de chaussée (aire)",
+            "value": 11.5,
+            "unit": "m²/place"
+          },
+          {
+            "key": "lane",
+            "label": "Parking sur la chaussée (aire)",
+            "value": 25,
+            "unit": "m²/place"
+          },
+          {
+            "key": "linear",
+            "label": "Stationnement linéaire par côté",
+            "value": 11.5,
+            "unit": "m²/place"
+          }
+        ],
+        "notes": [
+          "Les facteurs principaux sont calibrés séparément par type à partir des capacités positives et plausibles déclarées dans OSM : au moins cinq observations et un ratio compris entre 8 et 60 m²/place.",
+          "Quand un type n’atteint pas ce seuil, le calcul utilise les valeurs de repli explicites ; un type inconnu retombe sur le facteur de surface.",
+          "Le stationnement linéaire utilise 2,3 m par place et par côté ; seule la longueur hors de l’union des parkings parents est ajoutée.",
+          "Les parkings parents amenity=parking sont dédupliqués ; les amenity=parking_space enfants et les capacités déclarées ne sont pas ajoutés comme des places observées."
+        ]
+      }
     },
     "mobilite_snapshot": {
       "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",

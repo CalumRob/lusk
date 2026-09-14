@@ -238,6 +238,63 @@ test_that("street-side parking uses both legacy and lane tags", {
   expect_equal(out$places_voiture, 100 + 10 * 2 * 2.3 / 11.5)
 })
 
+test_that("linear parking is retained outside parent parking polygons", {
+  skip_if_not_installed("sf")
+  lim <- sf::st_sf(code_insee = "29001", geometry = sf::st_sfc(
+    sf::st_polygon(list(rbind(c(0, 0), c(100, 0), c(100, 100), c(0, 100), c(0, 0)))),
+    crs = 2154))
+  parking <- sf::st_sf(
+    osm_id = "parent",
+    amenity = "parking",
+    parking = "surface",
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(25, 25), c(75, 25), c(75, 75), c(25, 75), c(25, 25)
+    ))), crs = 2154)
+  )
+  lines <- sf::st_sf(
+    highway = "residential",
+    `parking:left` = "street_side",
+    geometry = sf::st_sfc(sf::st_linestring(rbind(c(0, 50), c(100, 50))), crs = 2154)
+  )
+
+  out <- calculer_stationnement_voiture_communes(parking, lines, lim)
+
+  # The 2,500 m² parent contributes 100 estimated places.  The tagged line
+  # contributes only its 50 m outside the parent: 50 × 2.3 / 11.5 = 10.
+  expect_equal(out$places_voiture, 110)
+})
+
+test_that("capacity calibrates polygon estimates without being counted directly", {
+  skip_if_not_installed("sf")
+  lim <- sf::st_sf(code_insee = "29001", geometry = sf::st_sfc(
+    sf::st_polygon(list(rbind(c(0, 0), c(1000, 0), c(1000, 1000), c(0, 1000), c(0, 0)))),
+    crs = 2154))
+  widths <- c(50, 60, 80, 50, 60, 50)
+  rectangles <- lapply(seq_len(6), function(i) {
+    x <- if (i == 1) 0 else sum(widths[seq_len(i - 1)])
+    sf::st_polygon(list(rbind(c(x, 0), c(x + widths[i], 0),
+                              c(x + widths[i], 50), c(x, 50), c(x, 0))))
+  })
+  parking <- sf::st_sf(
+    osm_id = as.character(seq_len(6)),
+    amenity = "parking",
+    parking = "surface",
+    capacity = c(100, 100, 100, 100, 100, NA_real_),
+    geometry = do.call(sf::st_sfc, c(rectangles, list(crs = 2154)))
+  )
+
+  out <- calculer_stationnement_voiture_communes(
+    parking,
+    sf::st_sf(highway = character(), geometry = sf::st_sfc(crs = 2154)),
+    lim
+  )
+
+  # Five calibration polygons total 15,000 m² / 500 places = 30 m² per place.
+  # All six polygons use that derived factor, including the tagged rows; the
+  # declared capacities are not added to the production estimate.
+  expect_equal(out$places_voiture, 17500 / 30)
+})
+
 test_that("invalid closed parking geometry is repaired before attribution", {
   skip_if_not_installed("sf")
   # A self-crossing closed way is the minimal form of the OSM defect seen in
@@ -264,6 +321,111 @@ test_that("invalid closed parking geometry is repaired before attribution", {
   out <- calculer_stationnement_voiture_communes(repaired, lignes, limites)
   expect_equal(out$commune, "29001")
   expect_equal(out$places_voiture, as.numeric(sf::st_area(repaired)) / 25)
+})
+
+test_that("parking measurements project WGS84 inputs before measuring", {
+  skip_if_not_installed("sf")
+  lim <- sf::st_sf(code_insee = "29001", geometry = sf::st_sfc(
+    sf::st_polygon(list(rbind(c(0, 0), c(100, 0), c(100, 100), c(0, 100), c(0, 0)))),
+    crs = 2154))
+  parking <- sf::st_sf(
+    osm_id = "projected-before-measurement",
+    amenity = "parking",
+    parking = "surface",
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(1, 1), c(51, 1), c(51, 51), c(1, 51), c(1, 1)
+    ))), crs = 2154)
+  )
+  wgs84_parking <- sf::st_transform(parking, 4326)
+  wgs84_limites <- sf::st_transform(lim, 4326)
+
+  out <- calculer_stationnement_voiture_communes(
+    wgs84_parking,
+    sf::st_sf(highway = character(), geometry = sf::st_sfc(crs = 4326)),
+    wgs84_limites
+  )
+
+  expect_equal(out$places_voiture, 100, tolerance = 0.1)
+})
+
+test_that("parking normalization keeps ways whose GDAL identity is osm_way_id", {
+  skip_if_not_installed("sf")
+  parking <- sf::st_sf(
+    osm_id = c(NA_character_, NA_character_),
+    osm_way_id = c("4300620", "4305600"),
+    amenity = c("parking", "parking"),
+    geometry = sf::st_sfc(
+      sf::st_polygon(list(rbind(c(1, 1), c(3, 1), c(3, 3), c(1, 3), c(1, 1)))),
+      sf::st_polygon(list(rbind(c(5, 5), c(7, 5), c(7, 7), c(5, 7), c(5, 5)))),
+      crs = 2154
+    )
+  )
+
+  normalized <- normaliser_parkings_osm(parking)
+
+  expect_equal(nrow(normalized), 2)
+  expect_setequal(normalized$osm_id, c("4300620", "4305600"))
+})
+
+test_that("parking normalization drops empty repaired geometries", {
+  skip_if_not_installed("sf")
+  parking <- sf::st_sf(
+    osm_id = "empty-relation",
+    amenity = "parking",
+    geometry = sf::st_sfc(sf::st_geometrycollection(), crs = 2154)
+  )
+
+  normalized <- normaliser_parkings_osm(parking)
+
+  expect_equal(nrow(normalized), 0)
+})
+
+test_that("parking normalization promotes parking tags from GDAL other_tags", {
+  skip_if_not_installed("sf")
+  parking <- sf::st_sf(
+    osm_id = "parking-way",
+    amenity = "parking",
+    other_tags = '"parking"=>"street_side","capacity"=>"42"',
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(1, 1), c(3, 1), c(3, 3), c(1, 3), c(1, 1)
+    ))), crs = 2154)
+  )
+
+  normalized <- normaliser_parkings_osm(parking)
+
+  expect_equal(normalized$parking, "street_side")
+  expect_equal(normalized$capacity, "42")
+})
+
+test_that("line normalization promotes parking lane tags from GDAL other_tags", {
+  skip_if_not_installed("sf")
+  lines <- sf::st_sf(
+    highway = "residential",
+    other_tags = '"parking:both"=>"street_side","foot"=>"no","access"=>"private","tracktype"=>"grade5"',
+    geometry = sf::st_sfc(sf::st_linestring(rbind(c(1, 80), c(11, 80))), crs = 2154)
+  )
+
+  normalized <- normaliser_lignes_osm(lines)
+
+  expect_equal(normalized[["parking:both"]], "street_side")
+  expect_equal(normalized$foot, "no")
+  expect_equal(normalized$access, "private")
+  expect_equal(normalized$tracktype, "grade5")
+})
+
+test_that("vectorized parking side counts match the scalar contract", {
+  lines <- data.frame(
+    `parking:lane:left` = c("parallel", "no", NA),
+    `parking:lane:right` = c("no", "parallel", NA),
+    `parking:both` = c(NA, NA, "parallel"),
+    check.names = FALSE
+  )
+  columns <- names(lines)
+
+  expect_equal(
+    compter_cotes_stationnement_vecteur(lines, columns),
+    c(1, 1, 2)
+  )
 })
 
 test_that("parking per 1000 inhabitants keeps population through aggregation", {

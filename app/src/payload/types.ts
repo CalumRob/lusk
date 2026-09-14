@@ -838,6 +838,25 @@ export interface SourceRecord {
   /** Named clocks are structured facts, never prose concatenated by a view. */
   clocks?: SourceClock[]
   caveat?: string
+  /** Structured methodology facts owned by the source record. */
+  methodology?: SourceMethodology
+}
+
+/** A numeric parameter exposed by a source's methodology contract. */
+export interface SourceMethodologyFactor {
+  key: string
+  label: string
+  value: number
+  unit: string
+}
+
+/** Payload-owned explanation of how a source-derived measure is estimated. */
+export interface SourceMethodology {
+  title: string
+  summary: string
+  factors: SourceMethodologyFactor[]
+  fallbackFactors?: SourceMethodologyFactor[]
+  notes: string[]
 }
 
 export interface SourceVintageRecord {

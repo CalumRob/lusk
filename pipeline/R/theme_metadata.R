@@ -725,6 +725,74 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     }
   }
 
+  # Méthodologie de source (#553) — les facteurs et les notes sont des faits
+  # portés par le payload, jamais des constantes recopiées dans le rendu. La
+  # forme reste générique : une source peut documenter n'importe quel
+  # estimateur numérique avec ses valeurs de repli.
+  valider_methodologie <- function(methodology) {
+    if (!est_liste(methodology)) {
+      manquer("source_records.methodology", "la méthodologie doit être un objet")
+    }
+    if (!est_chaine_non_vide(methodology$title)) {
+      manquer("source_records.methodology.title", "le titre est absent ou vide")
+    }
+    if (!est_chaine_non_vide(methodology$summary)) {
+      manquer("source_records.methodology.summary", "le résumé est absent ou vide")
+    }
+    valider_facteurs <- function(facteurs, champ) {
+      if (!est_liste(facteurs) || length(facteurs) == 0L) {
+        manquer(paste0("source_records.methodology.", champ),
+                "le tableau de facteurs est absent ou vide")
+      }
+      cles <- vapply(facteurs, function(facteur) {
+        if (est_liste(facteur) && est_chaine_non_vide(facteur$key)) facteur$key else ""
+      }, character(1L))
+      if (any(!nzchar(cles)) || anyDuplicated(cles)) {
+        manquer(paste0("source_records.methodology.", champ),
+                "une clé de facteur est absente, vide ou en double")
+      }
+      for (i in seq_along(facteurs)) {
+        facteur <- facteurs[[i]]
+        if (!est_liste(facteur)) {
+          manquer(paste0("source_records.methodology.", champ),
+                  "un facteur doit être un objet")
+        }
+        if (!est_chaine_non_vide(facteur$label)) {
+          manquer(paste0("source_records.methodology.", champ),
+                  "un facteur doit porter un libellé non vide")
+        }
+        if (!is.numeric(facteur$value) || length(facteur$value) != 1L ||
+            is.na(facteur$value) || !is.finite(facteur$value)) {
+          manquer(paste0("source_records.methodology.", champ),
+                  "la valeur d'un facteur doit être un nombre fini")
+        }
+        if (!est_chaine_non_vide(facteur$unit)) {
+          manquer(paste0("source_records.methodology.", champ),
+                  "un facteur doit porter une unité non vide")
+        }
+      }
+    }
+    valider_facteurs(methodology$factors, "factors")
+    if (!is.null(methodology$fallbackFactors)) {
+      valider_facteurs(methodology$fallbackFactors, "fallbackFactors")
+    }
+    if (!est_liste(methodology$notes) || length(methodology$notes) == 0L ||
+        any(!vapply(methodology$notes, est_chaine_non_vide, logical(1L)))) {
+      manquer("source_records.methodology.notes",
+              "les notes doivent être un tableau non vide de chaînes")
+    }
+  }
+  if (!is.null(metadata$source_records)) {
+    if (!est_liste(metadata$source_records)) {
+      manquer("source_records", "les références de source doivent être un objet")
+    }
+    for (source in metadata$source_records) {
+      if (est_liste(source) && !is.null(source$methodology)) {
+        valider_methodologie(source$methodology)
+      }
+    }
+  }
+
   # Page d'indicateur scalaire (#401) : optional for legacy descriptors, but
   # once declared it is a complete, self-contained publication contract.
   if (!is.null(metadata$indicator_pages)) {

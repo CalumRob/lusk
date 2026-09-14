@@ -49,6 +49,12 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
           serie_historique: {
             dataset: 'Canonique série', publisher: 'Canonique', url: 'https://canonique.example', licence: 'Canonique', vintage: 'V-custom', freshness: 'Fraîcheur custom',
             vintages: [{ id: 'custom-row', label: 'Ligne custom', version: 'V-custom', licence: 'Canonique', dateReference: null, datePublication: null }],
+            methodology: {
+              title: 'Méthode canonique',
+              summary: 'Une méthode portée par la source.',
+              factors: [{ key: 'surface', label: 'Surface', value: 25, unit: 'm²/place' }],
+              notes: ['La note est portée par le payload.'],
+            },
           },
         },
       },
@@ -57,6 +63,10 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
     const serie = records.find((record) => record.id === 'serie_historique')!
     expect(serie.dataset).toBe('Canonique série')
     expect(serie.vintages.map((vintage) => vintage.id)).toEqual(['custom-row'])
+    expect(serie.methodology).toMatchObject({
+      title: 'Méthode canonique',
+      factors: [{ key: 'surface', value: 25, unit: 'm²/place' }],
+    })
     expect(records.find((record) => record.id === 'menages')?.consumers.map((consumer) => consumer.key)).toEqual(['densite', 'taille_menages'])
   })
 })

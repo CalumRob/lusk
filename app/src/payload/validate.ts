@@ -224,6 +224,35 @@ function exiger(x: unknown, fichier: string, ligne: number, detail: string): ass
   if (!x) throw erreur(fichier, ligne, detail)
 }
 
+/** The source-owned methodology contract: structured facts, not renderer literals. */
+function validerMethodologieSource(brut: unknown, fichier: string): void {
+  exiger(estObjet(brut), fichier, 0, '« source_records.methodology » doit être un objet')
+  const methodology = brut as LigneBrute
+  exiger(estChaineNonVide(methodology['title']), fichier, 0, '« source_records.methodology.title » doit être renseigné')
+  exiger(estChaineNonVide(methodology['summary']), fichier, 0, '« source_records.methodology.summary » doit être renseigné')
+
+  const validerFacteurs = (champ: 'factors' | 'fallbackFactors'): void => {
+    const brutFacteurs = methodology[champ]
+    exiger(Array.isArray(brutFacteurs) && brutFacteurs.length > 0, fichier, 0, `« source_records.methodology.${champ} » doit être un tableau non vide`)
+    const cles = new Set<string>()
+    for (const [index, facteurBrut] of (brutFacteurs as unknown[]).entries()) {
+      exiger(estObjet(facteurBrut), fichier, 0, `« source_records.methodology.${champ}[${index}] » doit être un objet`)
+      const facteur = facteurBrut as LigneBrute
+      exiger(estChaineNonVide(facteur['key']), fichier, 0, `« source_records.methodology.${champ}[${index}].key » doit être renseignée`)
+      exiger(!cles.has(facteur['key'] as string), fichier, 0, `« source_records.methodology.${champ} » ne doit pas répéter une clé`)
+      cles.add(facteur['key'] as string)
+      exiger(estChaineNonVide(facteur['label']), fichier, 0, `« source_records.methodology.${champ}[${index}].label » doit être renseigné`)
+      exiger(estNombre(facteur['value']), fichier, 0, `« source_records.methodology.${champ}[${index}].value » doit être un nombre fini`)
+      exiger(estChaineNonVide(facteur['unit']), fichier, 0, `« source_records.methodology.${champ}[${index}].unit » doit être renseignée`)
+    }
+  }
+
+  validerFacteurs('factors')
+  if (methodology['fallbackFactors'] !== undefined) validerFacteurs('fallbackFactors')
+  const notes = methodology['notes']
+  exiger(Array.isArray(notes) && notes.length > 0 && notes.every(estChaineNonVide), fichier, 0, '« source_records.methodology.notes » doit être un tableau non vide de chaînes')
+}
+
 function lireChaine(ligne: LigneBrute, champ: string, fichier: string, i: number): string {
   const valeur = ligne[champ]
   exiger(estChaine(valeur), fichier, i, `« ${champ} » doit être une chaîne`)
@@ -2573,6 +2602,14 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(typeof eligible === 'boolean', fichier, 0, `« map_layers.${key} » doit être booléen`)
     }
     map_layers = declarations as Record<string, boolean>
+  }
+  if (meta['source_records'] !== undefined) {
+    exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » doit être un objet')
+    for (const record of Object.values(meta['source_records'] as LigneBrute)) {
+      if (estObjet(record) && record['methodology'] !== undefined) {
+        validerMethodologieSource(record['methodology'], fichier)
+      }
+    }
   }
   if (meta['indicator_pages'] !== undefined) {
     exiger(estObjet(meta['indicator_pages']), fichier, 0, '« indicator_pages » doit être un objet')

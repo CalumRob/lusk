@@ -1441,14 +1441,14 @@ test_that("agreger_voitures_territoires : une commune absente de la demande n'ag
 # L'extrait OSM MINUSCULE du motif 3 communes (le contrat, testing note) : trois
 # polygones communaux carrés de 2 km de côté (4 km²) en EPSG:2154 — Lambert-93,
 # comme le vrai extract — et sept lignes highway=* dont les longueurs se
-# calculent à la main. Le motif exerce le mapping des modes (c/b/t), l'exclusion
-# de path/track, et l'attribution par centroïde :
+# calculent à la main. Le motif exerce le mapping des modes (c/b/t), l'inclusion
+# de path, l'exclusion de track, et l'attribution par centroïde :
 #   L1 residential  (0,0)-(2000,0)        2 000 m → 22001 (c)
 #   L2 cycleway     (500,500)-(1500,500)  1 000 m → 22001 (b)
 #   L3 footway      (100,100)-(100,900)     800 m → 22001 (t)
 #   L4 residential  (2000,0)-(4000,0)     2 000 m → 22002 (c)
 #   L7 service      (2100,1500)-(3900,1500) 1 800 m → 22002 (c)
-#   L5 path         (500,2500)-(1500,2500) 1 000 m → 29001 (EXCLU)
+#   L5 path         (500,2500)-(1500,2500) 1 000 m → 29001 (t)
 #   L6 track        (500,3000)-(1500,3000) 1 000 m → 29001 (EXCLU)
 fixture_limites_mini <- function() {
   sf::st_sf(
@@ -1547,16 +1547,27 @@ test_that("calculer_reseaux_communes : longueurs et densités par mode, EPSG:215
   expect_equal(lire("22002")$longueur_c, 3.8)
   expect_equal(lire("22002")$longueur_t, 0)
   expect_equal(lire("22002")$densite_c, 0.95)
-  # 29001 : path et track EXCLUS du mapping — zéro réseau (un fait, jamais une
-  # ligne manquante), surface portée
+  # 29001 : path est inclus dans le réseau piéton ; track reste exclu (un fait,
+  # jamais une ligne manquante), surface portée
   expect_equal(lire("29001")$longueur_c, 0)
-  expect_equal(lire("29001")$longueur_t, 0)
+  expect_equal(lire("29001")$longueur_t, 1.0)
   expect_equal(lire("29001")$aire_m2, 4e6)
-  # la longueur totale de la région est conservée : 2 + 3.8 km de c, 0.8 km de t
+  # la longueur totale de la région est conservée : 2 + 3.8 km de c, 0.8 + 1 km de t
   expect_equal(sum(res$longueur_c), 5.8)
-  expect_equal(sum(res$longueur_t), 0.8)
+  expect_equal(sum(res$longueur_t), 1.8)
   # déterministe : trié par commune
   expect_true(!is.unsorted(res$commune))
+})
+
+test_that("calculer_reseaux_communes : les dénégations explicites retirent un path du réseau piéton", {
+  lignes <- fixture_lignes_mini()
+  lignes$foot <- NA_character_
+  lignes$access <- NA_character_
+  lignes$foot[lignes$highway == "path"] <- "no"
+
+  res <- calculer_reseaux_communes(lignes, fixture_limites_mini())
+
+  expect_equal(res$longueur_t[res$commune == "29001"], 0)
 })
 
 test_that("agreger_reseaux_territoires : longueurs sommées, densités recalculées depuis les parties (Σ L ÷ Σ surface)", {
@@ -1591,10 +1602,12 @@ test_that("agreger_reseaux_territoires : longueurs sommées, densités recalcul�
   expect_equal(lire("200000001", "b_densite"), 8.7 / 8)
   expect_equal(lire("200000001", "t_longueur"), 0.8)
   expect_equal(lire("200000001", "t_densite"), 0.8 / 8)
-  # EPCI 200000002 : n'agrège que 29001 (b 1.0 — le Geovelo —, zéro route ;
-  # 29002 absente)
+  # EPCI 200000002 : n'agrège que 29001 (b 1.0 — le Geovelo —, t 1.0 — le
+  # path —, zéro route ; 29002 absente)
   expect_equal(lire("200000002", "b_longueur"), 1.0)
   expect_equal(lire("200000002", "b_densite"), 1.0 / 4)
+  expect_equal(lire("200000002", "t_longueur"), 1.0)
+  expect_equal(lire("200000002", "t_densite"), 1.0 / 4)
   expect_equal(lire("200000002", "c_longueur"), 0)
   expect_equal(lire("200000002", "c_densite"), 0)
   # département 22 = EPCI 200000001 ; région : Σ L ÷ Σ surface sur 12 km²
@@ -1603,7 +1616,7 @@ test_that("agreger_reseaux_territoires : longueurs sommées, densités recalcul�
   expect_equal(lire("53", "c_densite"), 5.8 / 12)
   expect_equal(lire("53", "b_longueur"), 9.7)
   expect_equal(lire("53", "b_densite"), 9.7 / 12)
-  expect_equal(lire("53", "t_densite"), 0.8 / 12)
+  expect_equal(lire("53", "t_densite"), 1.8 / 12)
   # la commune garde SES valeurs telles quelles
   expect_equal(lire("22001", "c_longueur"), 2.0)
   expect_equal(lire("22001", "b_longueur"), 7.6)

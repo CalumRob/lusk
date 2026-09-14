@@ -129,18 +129,18 @@ agreger_voitures_territoires <- function(voitures_communes, base_epci) {
 # payload t/b/c × longueur/densité — agreger_reseaux_territoires l'itère) ;
 # MODES_RESEAUX_OSM déclare les modes que le raw OSM alimente (t/c), le b venant
 # du jeu Geovelo.
-# `track` (chemins agricoles/forestiers) et `path` (sentiers partagés) sont
-# EXCLUS : ce ne sont ni des infrastructures routières, ni cyclables dédiées,
-# ni piétonnes urbaines — documenté Méthodes. Le mode est un fait de TAG, la
-# mesure est une longueur : EPSG:2154 projeté AVANT st_length/st_area (la
-# consigne du contrat — ne jamais mesurer en WGS84).
+# `path` (sentiers partagés) est inclus dans le réseau piéton ; `track` (chemins
+# agricoles/forestiers) reste exclu, car il ne constitue pas par défaut une
+# infrastructure piétonne urbaine. Le mode est un fait de TAG, la mesure est une
+# longueur : EPSG:2154 projeté AVANT st_length/st_area (la consigne du contrat —
+# ne jamais mesurer en WGS84).
 MODES_RESEAUX_MOBILITE <- list(
   c = c("motorway", "motorway_link", "trunk", "trunk_link", "primary",
         "primary_link", "secondary", "secondary_link", "tertiary",
         "tertiary_link", "unclassified", "residential", "service",
         "living_street"),
   b = c("cycleway"),
-  t = c("footway", "pedestrian", "steps")
+  t = c("footway", "pedestrian", "steps", "path")
 )
 
 # MODES_RESEAUX_OSM -----------------------------------------------------------
@@ -149,6 +149,20 @@ MODES_RESEAUX_MOBILITE <- list(
 # le pbf (le fragment osm_reseaux ne sert plus qu'aux modes t/c et au
 # dénominateur routier de la figure « L'offre cyclable »).
 MODES_RESEAUX_OSM <- c("t", "c")
+
+RESTRICTIONS_RESEAU_PIETON <- list(
+  foot = c("no", "private"),
+  access = c("no", "private", "customers", "restricted")
+)
+
+est_restriction_reseau_pieton <- function(lignes) {
+  foot <- if ("foot" %in% names(lignes))
+    tolower(as.character(lignes$foot)) else rep(NA_character_, nrow(lignes))
+  access <- if ("access" %in% names(lignes))
+    tolower(as.character(lignes$access)) else rep(NA_character_, nrow(lignes))
+  foot %in% RESTRICTIONS_RESEAU_PIETON$foot |
+    access %in% RESTRICTIONS_RESEAU_PIETON$access
+}
 
 # calculer_reseaux_communes ----------------------------------------------------
 # Les longueurs et densités réseau t/c COMMUNALES, depuis les lignes OSM et les
@@ -210,6 +224,11 @@ calculer_reseaux_communes <- function(lignes, limites) {
 
   longueurs <- lapply(MODES_RESEAUX_OSM, function(mode) {
     lignes_mode <- lignes[lignes$highway %in% MODES_RESEAUX_MOBILITE[[mode]], ]
+    if (mode == "t") {
+      lignes_mode <- lignes_mode[
+        !est_restriction_reseau_pieton(lignes_mode), , drop = FALSE
+      ]
+    }
     if (nrow(lignes_mode) == 0) {
       tibble::tibble(osm_id = character(),
                      !!paste0("longueur_m_", mode) := numeric())

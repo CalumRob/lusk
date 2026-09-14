@@ -97,9 +97,56 @@ describe('validerThemeMetadata — accepte la forme du contrat', () => {
     const validee = validerThemeMetadata(meta, 'theme_mobilite.json')
     expect(validee.story_keys).toEqual(['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'])
   })
+
+  it('accepte la méthodologie structurée portée par une source', () => {
+    const meta = copieBrute('demographie')
+    const source = meta.source_records?.serie_historique
+    if (!source) throw new Error('La fixture doit porter la source série historique')
+    meta.source_records = {
+      serie_historique: {
+        ...source,
+        methodology: {
+          title: 'Méthode canonique',
+          summary: 'Une méthode portée par la source.',
+          factors: [{ key: 'surface', label: 'Surface', value: 25, unit: 'm²/place' }],
+          fallbackFactors: [{ key: 'surface', label: 'Surface par défaut', value: 20, unit: 'm²/place' }],
+          notes: ['La note est portée par le payload.'],
+        },
+      },
+    }
+
+    const validee = validerThemeMetadata(meta, 'theme_demographie.json')
+    expect(validee.source_records?.serie_historique.methodology?.factors[0]).toEqual({
+      key: 'surface',
+      label: 'Surface',
+      value: 25,
+      unit: 'm²/place',
+    })
+  })
 })
 
 describe('validerThemeMetadata — rejette la dérive, fort', () => {
+  it('rejette une méthodologie dont un facteur est invalide', () => {
+    const meta = copieBrute('demographie')
+    const record = meta.source_records?.serie_historique
+    if (!record) throw new Error('La fixture doit porter la source série historique')
+    ;(record as unknown as Record<string, unknown>).methodology = {
+      title: 'Méthode canonique',
+      summary: 'Une méthode portée par la source.',
+      factors: [{ key: 'surface', label: 'Surface', value: '25', unit: 'm²/place' }],
+      notes: ['La note est portée par le payload.'],
+    }
+
+    let erreur: unknown
+    try {
+      validerThemeMetadata(meta, 'theme_demographie.json')
+    } catch (e) {
+      erreur = e
+    }
+    expect(erreur).toBeInstanceOf(PayloadError)
+    expect((erreur as PayloadError).message).toMatch(/methodology|méthodologie/i)
+  })
+
   it('rejette un thème absent', () => {
     const erreur = attendErreur('demographie', (meta) => {
       delete (meta as unknown as Record<string, unknown>).theme

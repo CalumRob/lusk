@@ -9,6 +9,7 @@ import { usePayload } from '@/payload/usePayload'
 
 const { payload, erreur, chargement, recharger } = usePayload()
 const sources = computed(() => payload.value ? sourceRecords(payload.value).filter((source) => source.consumers.length > 0) : [])
+const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 5 }).format(value)
 </script>
 
 <template>
@@ -35,6 +36,33 @@ const sources = computed(() => payload.value ? sourceRecords(payload.value).filt
           <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a>
         </header>
         <p v-if="source.caveat" class="source-record__caveat">{{ source.caveat }}</p>
+        <section v-if="source.methodology" class="source-record__methodology" :aria-label="source.methodology.title">
+          <h3>{{ source.methodology.title }}</h3>
+          <p>{{ source.methodology.summary }}</p>
+          <h4>Facteurs utilisés</h4>
+          <table>
+            <thead><tr><th scope="col">Paramètre</th><th scope="col">Valeur</th></tr></thead>
+            <tbody>
+              <tr v-for="factor in source.methodology.factors" :key="factor.key">
+                <th scope="row">{{ factor.label }}</th>
+                <td>{{ formaterFacteur(factor.value) }} {{ factor.unit }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <template v-if="source.methodology.fallbackFactors?.length">
+            <h4>Valeurs de repli</h4>
+            <table>
+              <thead><tr><th scope="col">Paramètre</th><th scope="col">Valeur</th></tr></thead>
+              <tbody>
+                <tr v-for="factor in source.methodology.fallbackFactors" :key="factor.key">
+                  <th scope="row">{{ factor.label }}</th>
+                  <td>{{ formaterFacteur(factor.value) }} {{ factor.unit }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+          <ul><li v-for="note in source.methodology.notes" :key="note">{{ note }}</li></ul>
+        </section>
         <p v-if="source.replie" class="source-record__summary">
           {{ source.vintage ?? '—' }} · {{ source.freshness ?? '—' }} · {{ source.licence ?? '—' }}
         </p>
@@ -78,6 +106,12 @@ const sources = computed(() => payload.value ? sourceRecords(payload.value).filt
 .source-record__eyebrow { margin: 0 0 var(--space-1); color: var(--text-tertiary); font: var(--text-overline); }
 .source-record__publisher, .source-record__caveat, .source-record__clock { color: var(--text-secondary); }
 .source-record__vintages, .source-record__consumers { display: grid; gap: var(--space-2); margin: 0; padding-left: var(--space-5); }
+.source-record__methodology p { max-width: 70ch; color: var(--text-secondary); }
+.source-record__methodology table { width: 100%; border-collapse: collapse; text-align: left; }
+.source-record__methodology th, .source-record__methodology td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-default); }
+.source-record__methodology th { font-weight: 650; }
+.source-record__methodology td { color: var(--text-secondary); }
+.source-record__methodology ul { display: grid; gap: var(--space-2); margin: var(--space-4) 0 0; padding-left: var(--space-5); color: var(--text-secondary); }
 .source-record__vintages li { display: flex; flex-wrap: wrap; gap: var(--space-3); color: var(--text-secondary); }
 .source-record__vintages li strong { min-width: 18rem; color: var(--text-primary); }
 .source-record a { color: var(--accent-primary); font-weight: 600; }

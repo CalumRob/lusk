@@ -726,6 +726,7 @@ export interface SourceDatasetRecord {
   vintages: SourceVintageRecord[]
   clocks: SourceClock[]
   caveat: string | null
+  methodology?: SourceRecord['methodology']
   consumers: SourceConsumerRecord[]
   replie: boolean
   themes: Theme[]
@@ -789,6 +790,7 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
         vintages: authoredVintages ?? [],
         clocks: metadata?.clocks ?? clocksPourThemes(editorial.themes),
         caveat: metadata?.caveat ?? editorial.caveat ?? null,
+        methodology: metadata?.methodology,
         consumers: [],
         replie: true,
         themes: [...editorial.themes],
@@ -828,6 +830,7 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       vintages: metadata.vintages ?? [],
       clocks: metadata.clocks ?? [],
       caveat: metadata.caveat ?? null,
+      methodology: metadata.methodology,
       consumers: [],
       replie: true,
       themes: [],
@@ -941,6 +944,8 @@ export interface LigneJeuMethodes {
   licence: string | null
   dateReference: string | null
   datePublication: string | null
+  /** Structured methodology facts, when the source publishes an estimator. */
+  methodology?: SourceRecord['methodology']
   /** Les lignes vintage — rendues seulement quand le jeu n'est pas replié. */
   vintages: LigneVintageMethodes[]
 }
@@ -1003,9 +1008,10 @@ export function sourcesMethodes(payload: Payload): MethodesSources {
       replie: record.replie,
       version: record.replie ? record.vintage : null,
       licence: record.replie ? (record.vintages[0]?.licence ?? record.licence) : null,
-      dateReference: record.replie ? record.dateReference : null,
-      datePublication: record.replie ? record.datePublication : null,
-      vintages: record.vintages.map((vintage) => ({
+       dateReference: record.replie ? record.dateReference : null,
+       datePublication: record.replie ? record.datePublication : null,
+       methodology: record.methodology,
+       vintages: record.vintages.map((vintage) => ({
         id: vintage.id,
         libelle: vintage.label,
         version: vintage.version,

@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
 
 import SourcesView from '../views/SourcesView.vue'
-import { chargerAvec, histoiresHabitatFixture, indicateursHabitatFixture } from '../payload/fixtures'
+import { chargerAvec, histoiresHabitatFixture, histoiresMobiliteFixture, indicateursHabitatFixture, indicateursMobiliteFixture, metadonneesThemesFixtures } from '../payload/fixtures'
 import type { ChargerFichier } from '../payload/usePayload'
 import type { Payload } from '../payload/types'
 import { apercuAvecNAFixture, histoiresDemographieFixture, indicateursDemographieFixture, territoiresFixture, vintagesFixture } from '../payload/fixtures'
@@ -51,5 +51,37 @@ describe('SourcesView — route dataset-centric', () => {
     expect(dvf.exists()).toBe(true)
     expect(dvf.findAll('.source-record__vintages li')).toHaveLength(0)
     expect(dvf.text()).toContain('2021–2025')
+  })
+
+  it('rend la méthodologie portée par la fiche source', async () => {
+    const mobiliteMetadata = structuredClone(metadonneesThemesFixtures.mobilite)
+    mobiliteMetadata.source_records = {
+      ...(mobiliteMetadata.source_records ?? {}),
+      osm_reseaux: {
+        dataset: 'OpenStreetMap',
+        publisher: 'OpenStreetMap',
+        url: 'https://www.openstreetmap.org',
+        licence: 'ODbL',
+        vintage: '2026-08',
+        freshness: 'snapshot',
+        methodology: {
+          title: 'Estimation des places',
+          summary: 'Une méthode portée par la source.',
+          factors: [{ key: 'surface', label: 'Parking de surface', value: 26.70208, unit: 'm²/place' }],
+          notes: ['Les places sont estimées.'],
+        },
+      },
+    }
+    const wrapper = await monter(chargerAvec({
+      ...payload,
+      indicateurs: [...payload.indicateurs, ...indicateursMobiliteFixture],
+      histoires: [...payload.histoires, ...histoiresMobiliteFixture],
+      themeMetadata: { mobilite: mobiliteMetadata },
+    }))
+
+    const method = wrapper.find('.source-record__methodology')
+    expect(method.exists()).toBe(true)
+    expect(method.text()).toContain('Estimation des places')
+    expect(method.text()).toContain('26,70208 m²/place')
   })
 })

@@ -188,7 +188,8 @@ MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
   paste0(
     "Les réseaux du bloc Mobilité : longueurs et densités par mode t/b/c ",
     "(à pied / vélo / voiture), lues sur la couche `lines` de l'extrait ",
-    "Geofabrik Bretagne (highway=*), projetée en EPSG:2154 AVANT toute mesure. ",
+    "Geofabrik Bretagne (le réseau piéton inclut `path`; `track` reste hors ",
+    "périmètre par défaut; highway=*), projetée en EPSG:2154 AVANT toute mesure. ",
     "Le VINTAGE est le timestamp d'EXTRACTION — jamais « aujourd'hui » : ",
     "l'extrait du 5 août 2026 contient les données OSM jusqu'au ",
     "2026-08-05T20:21:23Z (vérifié sur la page Geofabrik). ODbL 1.0 ",

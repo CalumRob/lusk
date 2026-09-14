@@ -1080,9 +1080,9 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
                  "Mobilité e2e — les routes de la région")
   verifier_egale(round(lire_rt("53", "c_densite"), 4), 3.6935,
                  "Mobilité e2e — la densité routière de la région")
-  verifier_egale(round(lire_rt("53", "t_longueur"), 3), 6742.766,
+  verifier_egale(round(lire_rt("53", "t_longueur"), 3), 26752.999,
                  "Mobilité e2e — les trottoirs de la région")
-  verifier_egale(round(lire_rt("53", "t_densite"), 4), 0.2457,
+  verifier_egale(round(lire_rt("53", "t_densite"), 4), 0.9747,
                  "Mobilité e2e — la densité de trottoirs de la région")
   verifier_egale(round(lire_rt("53", "b_longueur"), 3), 4940.309,
                  "Mobilité e2e — le réseau cyclable de la région (mode b)")
