@@ -47,6 +47,8 @@ const payloadMobilite: Payload = {
 const ORDRE_METADONNEES = [
   'voitures_menage',
   'reseaux',
+  'reseaux_par_habitant',
+  'surface_reseaux_routiers',
   'offre_tc',
   'bornes_recharge',
   'places_stationnement_velo_1000',
@@ -88,13 +90,19 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
         territoire,
       ).map((g) => g.key)
       expect(cles[0]).toBe('voitures_menage')
-      expect(cles.slice(1, 4)).toEqual(['reseaux', 'offre_tc', 'bornes_recharge'])
-      expect(cles.slice(4, 7)).toEqual([
+      expect(cles.slice(1, 6)).toEqual([
+        'reseaux',
+        'reseaux_par_habitant',
+        'surface_reseaux_routiers',
+        'offre_tc',
+        'bornes_recharge',
+      ])
+      expect(cles.slice(6, 9)).toEqual([
         'places_stationnement_velo_1000',
         'offre_cyclable',
         'iso_alimentation',
       ])
-      expect(cles.slice(7)).toEqual(ORDRE_METADONNEES.slice(7))
+      expect(cles.slice(9)).toEqual(ORDRE_METADONNEES.slice(9))
     }
   })
 
@@ -111,7 +119,7 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
     expect(grille.map((l) => formaterValeur(l))).toEqual(['100', '100', '64', '100', '100'])
   })
 
-  it('keeps the multi-detail keys as one key (voitures_menage ×3, reseaux ×6, offre_cyclable ×5)', () => {
+  it('keeps the multi-detail keys as one key (voitures_menage ×3, reseaux ×3, offre_cyclable ×5)', () => {
     const groupes = indicateursGroupeesPourTerritoire(payloadMobilite, 'mobilite', '22001')
 
     const voitures = groupes.find((g) => g.key === 'voitures_menage')
@@ -122,11 +130,8 @@ describe('indicateursPourTerritoire — the Mobilité block in the metadata orde
     ])
     const reseaux = groupes.find((g) => g.key === 'reseaux')
     expect(reseaux?.lignes.map((l) => l.detail)).toEqual([
-      'b_densite',
       'b_longueur',
-      'c_densite',
       'c_longueur',
-      't_densite',
       't_longueur',
     ])
     const cyclable = groupes.find((g) => g.key === 'offre_cyclable')

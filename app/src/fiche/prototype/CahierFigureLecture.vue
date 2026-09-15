@@ -22,7 +22,8 @@ withDefaults(
 .cahier-figure-lecture {
   margin-top: 12px;
   color: var(--cahier-default);
-  font-size: 13px;
+  font-size: var(--type-figure-lecture-size);
+  letter-spacing: normal;
 }
 
 .cahier-figure-lecture summary {

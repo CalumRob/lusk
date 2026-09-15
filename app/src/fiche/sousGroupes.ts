@@ -429,7 +429,7 @@ function distributionPourLecture(histoire: HistoireMobilite): DistributionMobili
 function modesDepuisMetadata(metadata: ThemeMetadata | undefined): { t: string; b: string } {
   const details = metadata?.detail_labels.reseaux
   const mode = (libelle: string | undefined) => libelle?.replace(/^[^—]+—\s*/, '') ?? ''
-  return { t: mode(details?.t_densite), b: mode(details?.b_densite) }
+  return { t: mode(details?.t_longueur), b: mode(details?.b_longueur) }
 }
 
 /** The five payload-owned LQ rows become a compact reading figure. */

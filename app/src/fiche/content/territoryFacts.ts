@@ -83,6 +83,14 @@ export const MOBILITE_MODE_LABELS: Readonly<Record<MobiliteAccessMode, string>> 
   walkTransit: 'À pied + TC',
 }
 
+/** Network labels are narrower than access labels: the OSM t network is
+ * pedestrian and the b network is cycling; neither carries transit data. */
+export const MOBILITE_RESEAU_MODE_LABELS: Readonly<Record<MobiliteAccessMode, string>> = {
+  car: 'Réseau automobile',
+  bike: 'Réseau cyclable',
+  walkTransit: 'Réseau piéton',
+}
+
 export const MOBILITE_INACCESSIBLE_LABEL = 'Inaccessible'
 
 export interface MobiliteAccessModes {

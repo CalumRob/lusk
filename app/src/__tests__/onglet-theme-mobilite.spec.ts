@@ -58,6 +58,8 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       'offre_cyclable',
       'voitures_menage',
       'reseaux',
+      'reseaux_par_habitant',
+      'surface_reseaux_routiers',
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',
@@ -128,7 +130,7 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     }
   })
 
-  it('renders the multi-detail figures with their own detail labels (voitures ×3, reseaux ×6)', async () => {
+  it('renders the multi-detail figures with their own detail labels (voitures ×3, reseaux ×3)', async () => {
     const wrapper = await monter('22001')
 
     const voitures = wrapper.find('.figure-indicateur[data-clef="voitures_menage"]')
@@ -137,10 +139,10 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(voitures.text()).toContain('Ménages avec 2 voitures ou plus')
     const reseaux = wrapper.find('.figure-indicateur[data-clef="reseaux"]')
     expect(reseaux.text()).toContain('Longueur — à pied ou en transports en commun')
-    expect(reseaux.text()).toContain('Densité — à vélo')
+    expect(reseaux.text()).toContain('Longueur — à vélo')
     expect(reseaux.text()).toContain('Longueur — en voiture')
-    // pas de barre segmentée sur des unités incommensurables (km + km/km²)
-    expect(reseaux.find('.barre-segmentee').exists()).toBe(false)
+    // pas de barre segmentée : les modes restent trois lectures séparées.
+    expect(reseaux.find('.barre-segmentee').exists()).toBe(true)
   })
 
   it('stamps the block with the snapshot estampille — distinct from the weekly chips', async () => {

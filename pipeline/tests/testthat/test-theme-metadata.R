@@ -1035,7 +1035,7 @@ test_that("publier_theme_metadata : les règles structurales des distributions s
 
 # La parité listes ↔ faits publiés (issue #439) : les pages de famille
 # « list » déclarent des catégories EXACTEMENT égales aux détails publiés de
-# la clé. Le miroir TypeScript vit dans verifierPariteListes (validate.ts,
+# leur clé. Le miroir TypeScript vit dans verifierPariteListes (validate.ts,
 # appelée au chargement) ; côté pipeline, les règles STRUCTURELLES (chaque
 # catégorie possède son libellé canonical, l'axe comparison.details couvre les
 # catégories quand la facette est déclarée) vivent dans valider_theme_metadata
@@ -1063,9 +1063,9 @@ test_that("verifier_parite_listes : une catégorie morte ou un détail publié a
 test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et les DEUX listes publiées sont déclarées (#439, #462)", {
   # Le payload COMMITTÉ est l'artefact que l'app fetch — le miroir exact de
   # verifierPariteListes au chargement de l'app. L'énumération est le devoir :
-  # reseaux (Mobilité) puis subventions_par_domaine (#462) sont LES DEUX pages
-  # de famille « list » publiées à travers les SIX thèmes — jamais une famille
-  # orpheline, jamais une liste non déclarée.
+  # les deux pages reseaux (Mobilité), puis subventions_par_domaine (#462), sont
+  # les pages de famille « list » publiées à travers les SIX thèmes — jamais une
+  # famille orpheline, jamais une liste non déclarée.
   racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
   expect_true(dir.exists(racine_public), info = "public/data absent - la racine du dépôt est introuvable")
 
@@ -1078,10 +1078,15 @@ test_that("verifier_parite_listes : le payload COMMITTÉ est en parité et les D
     if (!length(pour_theme)) next
     faits <- jsonlite::fromJSON(file.path(racine_public, paste0("indicateurs_", theme, ".json")))
     verifier_parite_listes(meta, faits)
-    pages_listes[[paste(theme, pour_theme, sep = ":")]] <- pour_theme
+    for (page in pour_theme) {
+      pages_listes[[paste(theme, page, sep = ":")]] <- page
+    }
   }
-  expect_length(pages_listes, 2L)
-  expect_identical(names(pages_listes), c("mobilite:reseaux", "programmes:subventions_par_domaine"))
+  expect_length(pages_listes, 3L)
+  expect_identical(names(pages_listes), c(
+    "mobilite:reseaux", "mobilite:reseaux_par_habitant",
+    "programmes:subventions_par_domaine"
+  ))
 })
 
 # La Page d'indicateur « profil/liste » de subventions_par_domaine (#462) :

@@ -23,18 +23,24 @@ function anchorFor(key: string): string {
 }
 
 /**
- * Resolve the Cahier page sequence from published subgroup order. The sequence
- * is deliberately kept outside ThemeContent: it is a layout concern, not a
+ * Resolve the Cahier page sequence for the rendered units. The sequence is
+ * deliberately kept outside ThemeContent: it is a layout concern, not a
  * semantic claim. A missing metadata sequence still gets a usable one-page
- * presentation for the prototype.
+ * presentation for the prototype. The default keeps the original isolated
+ * first-unit presentation; callers rendering the whole Cahier opt in.
  */
 export function cahierPaginationFor(
   payload: Payload,
   content: ThemeContent,
+  renderAllUnits = false,
 ): CahierPagination {
   const metadata = payload.themeMetadata ?? {}
   const currentTheme = content.theme
-  const currentUnits = content.units
+  const currentUnits = renderAllUnits
+    ? [...content.units]
+    : content.units[0]
+      ? [content.units[0]]
+      : []
   const currentSubgroups = metadata[currentTheme]?.subgroups ?? []
   const firstUnit = currentUnits[0]
   const currentIndex = firstUnit

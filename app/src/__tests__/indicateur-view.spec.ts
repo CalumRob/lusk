@@ -170,14 +170,14 @@ describe('IndicateurView — trajectoires (#438)', () => {
 // et une catégorie demandée inconnue est surfacée honnêtement — JAMAIS
 // réécrite en silence vers la première catégorie (le défaut du PR supplanté).
 describe('IndicateurView — profils/listes (#439)', () => {
-  const CATEGORIES = ['t_longueur', 't_densite', 'b_longueur', 'b_densite', 'c_longueur', 'c_densite'] as const
+  const CATEGORIES = ['t_longueur', 'b_longueur', 'c_longueur'] as const
   function metadataListe(): typeof metadonneesThemesFixtures.mobilite {
     const metadata = structuredClone(metadonneesThemesFixtures.mobilite)
     metadata.indicator_pages = { reseaux: {
       indicator: 'reseaux', detail: null, label: 'Réseaux à pied / vélo / voiture',
       definition: 'Le profil complet du réseau par mode.', unit: 'km',
-      calculation: 'Longueurs et densités publiées par le pipeline.', direction: 'high',
-      caveats: 'Les catégories portent leurs unités propres.',
+       calculation: 'Longueurs publiées par le pipeline.', direction: 'high',
+       caveats: 'Les catégories portent la même unité.',
       levels: ['commune', 'epci', 'departement'], sources: ['amenagements_cyclables'],
       family: 'list',
       list: { categories: [...CATEGORIES] },
@@ -198,12 +198,12 @@ describe('IndicateurView — profils/listes (#439)', () => {
   it('rend le profil complet dans l’ordre déclaré, nomme la catégorie comparée et porte l’unité PAR catégorie', async () => {
     const { wrapper, router } = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), faitsReseaux(), 'mobilite')
     expect(wrapper.find('[data-renderer="list"]').exists()).toBe(true)
-    // Le profil complet : six catégories déclarées, dans L'ORDRE DU CANON.
+    // Le profil complet : trois catégories déclarées, dans L'ORDRE DU CANON.
     const lignes = wrapper.findAll('[data-ligne-profil]')
     expect(lignes.map((ligne) => ligne.attributes('data-ligne-profil'))).toEqual([...CATEGORIES])
-    // L'unité est PAR catégorie (km pour les longueurs, km/km² pour les densités).
+    // L'unité est portée par chaque longueur.
     expect(lignes[0].text()).toContain(' km')
-    expect(lignes[1].text()).toContain('km/km²')
+    expect(lignes[1].text()).toContain(' km')
     expect(wrapper.text()).toContain('Longueur — à vélo')
     // La catégorie comparée est explicite et sélectionnable — copie française.
     const selectCategorie = wrapper.find('select[aria-label="Catégorie comparée"]')
@@ -212,7 +212,7 @@ describe('IndicateurView — profils/listes (#439)', () => {
     expect(router.currentRoute.value.query.detail).toBe('b_longueur')
     // Le nom du territoire porté par le modèle nourrit l'aria-label du bloc
     // (le même motif que signature.nom chez les distributions).
-    expect(wrapper.find('.profil-lignes').attributes('aria-label')).toBe('Profil de Commune A1 sur 6 catégories déclarées')
+    expect(wrapper.find('.profil-lignes').attributes('aria-label')).toBe('Profil de Commune A1 sur 3 catégories déclarées')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
@@ -243,12 +243,12 @@ describe('IndicateurView — profils/listes (#439)', () => {
     // Un territoire du périmètre dont une catégorie manque : les lignes
     // DISPONIBLES restent rendues — le profil ne disparaît pas — et
     // l'incomplétude est dite à côté, en nommant la catégorie manquante.
-    const ampute = faitsReseaux().filter((fait) => !(fait.territoire === '22001' && fait.detail === 'c_densite'))
+    const ampute = faitsReseaux().filter((fait) => !(fait.territoire === '22001' && fait.detail === 'c_longueur'))
     const incomplet = await monter('/indicateurs/mobilite/reseaux?territoire=22001', [], metadataListe(), ampute, 'mobilite')
-    expect(incomplet.wrapper.findAll('[data-ligne-profil]')).toHaveLength(5)
+    expect(incomplet.wrapper.findAll('[data-ligne-profil]')).toHaveLength(2)
     expect(incomplet.wrapper.find('[data-ligne-profil="b_longueur"]').exists()).toBe(true)
-    expect(incomplet.wrapper.find('[data-ligne-profil="c_densite"]').exists()).toBe(false)
-    expect(incomplet.wrapper.text()).toContain('Profil incomplet — sans valeur publiée à ce niveau : Densité — en voiture.')
+    expect(incomplet.wrapper.find('[data-ligne-profil="c_longueur"]').exists()).toBe(false)
+    expect(incomplet.wrapper.text()).toContain('Profil incomplet — sans valeur publiée à ce niveau : Longueur — en voiture.')
     expect(incomplet.wrapper.text()).not.toContain('absent')
     // Un EPCI sélectionné dans une comparaison de communes : ABSENT à ce niveau.
     const absent = await monter('/indicateurs/mobilite/reseaux?territoire=200000001', [], metadataListe(), faitsReseaux(), 'mobilite')

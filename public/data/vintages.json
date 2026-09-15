@@ -1,45 +1,5 @@
 [
   {
-    "id": "sirene_snapshot",
-    "source": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
-    "version": "2026-04",
-    "licence": "lov2",
-    "date_reference": "2026-03-31",
-    "date_publication": "2026-05-01"
-  },
-  {
-    "id": "flores_a38",
-    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A38)",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-12-31",
-    "date_publication": "2026-03-31"
-  },
-  {
-    "id": "flores_a88",
-    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
-    "version": "2024",
-    "licence": "lov2",
-    "date_reference": "2024-12-31",
-    "date_publication": "2026-03-31"
-  },
-  {
-    "id": "rp_emploi",
-    "source": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-06-30"
-  },
-  {
-    "id": "rp_chomage",
-    "source": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-07-15"
-  },
-  {
     "id": "mobilite_snapshot",
     "source": "Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
     "version": "2026-02",
@@ -82,10 +42,10 @@
   {
     "id": "korrigo",
     "source": "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
-    "version": "2026-02",
+    "version": "2026-08",
     "licence": "odbl",
-    "date_reference": "2026-02-03",
-    "date_publication": "2026-02-03"
+    "date_reference": "2026-08-25",
+    "date_publication": "2026-08-25"
   },
   {
     "id": "batiments_residentiels",
@@ -126,6 +86,86 @@
     "licence": "lov2",
     "date_reference": "2025-01-01",
     "date_publication": "2026-05-06"
+  },
+  {
+    "id": "sncf_voyageurs",
+    "source": "SNCF Voyageurs — export GTFS national « Réseau SNCF TGV, Intercités et TER » (l'autorité ferroviaire seule du raccordement : TER + Intercités + TGV)",
+    "version": "2026-08",
+    "licence": "odbl",
+    "date_reference": "2026-08-24",
+    "date_publication": "2026-08-25"
+  },
+  {
+    "id": "dila_bdl",
+    "source": "DILA — « Base de données locales » de Service-public.gouv.fr (Annuaire de l'administration, v4) : l'annuaire des guichets publics locaux, dont l'entrée « Mairie » de chaque commune (géocodage lat/lon)",
+    "version": "2026-08",
+    "licence": "lov2",
+    "date_reference": "2026-08-25",
+    "date_publication": "2026-08-25"
+  },
+  {
+    "id": "matrice_temps_mairies",
+    "source": "Lusk — matrice temps mairie à mairie figée du raccordement (routage r5r sur SNCF Voyageurs national 2026-08-24 + KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, meilleur départ p01 — recherche raccordement, issue #485)",
+    "version": "2026-09-16",
+    "licence": "odbl",
+    "date_reference": "2026-08-25",
+    "date_publication": "2026-08-26"
+  },
+  {
+    "id": "population_raccordement",
+    "source": "INSEE — Recensement de la population 2023 : la population totale des 1 202 communes bretonnes COG 2025 (le dénominateur W = 3 449 370), transcription épinglée du run de recherche vérifié (calcul_raccordement.R, issue #486)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-08-26"
+  },
+  {
+    "id": "ocsge_reseaux_routiers",
+    "source": "IGN — OCS GE v2.0 (Nouvelle Génération) — occupation du sol et usage des réseaux routiers en Bretagne",
+    "version": "2023–2025",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-07-03"
+  },
+  {
+    "id": "sirene_snapshot",
+    "source": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+    "version": "2026-04",
+    "licence": "lov2",
+    "date_reference": "2026-03-31",
+    "date_publication": "2026-05-01"
+  },
+  {
+    "id": "flores_a38",
+    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A38)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-03-31"
+  },
+  {
+    "id": "flores_a88",
+    "source": "INSEE — Flores : nombre d'établissements et effectifs salariés par secteur d'activité (A88)",
+    "version": "2024",
+    "licence": "lov2",
+    "date_reference": "2024-12-31",
+    "date_publication": "2026-03-31"
+  },
+  {
+    "id": "rp_emploi",
+    "source": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-06-30"
+  },
+  {
+    "id": "rp_chomage",
+    "source": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
+    "version": "2023",
+    "licence": "lov2",
+    "date_reference": "2023-01-01",
+    "date_publication": "2026-07-15"
   },
   {
     "id": "epci",
@@ -502,21 +542,5 @@
     "licence": "lov2",
     "date_reference": "2026-08-05",
     "date_publication": "2026-08-05"
-  },
-  {
-    "id": "matrice_temps_mairies",
-    "source": "Lusk — matrice temps mairie à mairie figée du raccordement (routage r5r sur SNCF Voyageurs national 2026-08-24 + KorrigoBret v80335, mercredi réel de période scolaire 2026-09-16, meilleur départ p01 — recherche raccordement, issue #485)",
-    "version": "2026-09-16",
-    "licence": "odbl",
-    "date_reference": "2026-08-25",
-    "date_publication": "2026-08-26"
-  },
-  {
-    "id": "population_raccordement",
-    "source": "INSEE — Recensement de la population 2023 : la population totale des 1 202 communes bretonnes COG 2025 (le dénominateur W = 3 449 370), transcription épinglée du run de recherche vérifié (calcul_raccordement.R, issue #486)",
-    "version": "2023",
-    "licence": "lov2",
-    "date_reference": "2023-01-01",
-    "date_publication": "2026-08-26"
   }
 ]

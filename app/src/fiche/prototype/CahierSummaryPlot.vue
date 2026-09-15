@@ -17,7 +17,7 @@ import { MOBILITE_INACCESSIBLE_LABEL, MOBILITE_MODE_LABELS } from '@/fiche/conte
 import CahierFigureAxes from './CahierFigureAxes.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
-type SummaryPlotMetric = 'equipment' | 'types'
+type SummaryPlotMetric = 'equipment' | 'types' | 'network'
 type SummaryPlotGroupKey = 'territory' | 'reference'
 type SummaryPlotMode = MobiliteAccessMode | 'inaccessible'
 
@@ -36,6 +36,7 @@ const props = defineProps<{
   typeCount: number | null
   inaccessibleTypes?: ContentModeFacts['car']
   showGroupLabels: boolean
+  modeLabels?: Readonly<Record<MobiliteAccessMode, string>>
 }>()
 
 const SUMMARY_MODES: readonly SummaryPlotMode[] = ['walkTransit', 'bike', 'car', 'inaccessible']
@@ -53,6 +54,7 @@ const MODE_TONES: Readonly<Record<SummaryPlotMode, CahierTooltipRow['tone']>> = 
 }
 const selectedGroup = ref<SummaryPlotGroupKey | null>(null)
 const inaccessiblePatternId = `summary-inaccessible-${props.metric}`
+const modeLabels = computed(() => props.modeLabels ?? MOBILITE_MODE_LABELS)
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
@@ -143,7 +145,7 @@ function groupAriaLabel(group: SummaryPlotGroup): string {
   const values = SUMMARY_MODES
     .map((mode) => {
       const value = valueFor(group, mode)
-      const label = mode === 'inaccessible' ? MOBILITE_INACCESSIBLE_LABEL : MOBILITE_MODE_LABELS[mode]
+      const label = mode === 'inaccessible' ? MOBILITE_INACCESSIBLE_LABEL : modeLabels.value[mode]
       return value === null ? null : `${label} ${formatNumber(value)}`
     })
     .filter((value): value is string => value !== null)
@@ -156,7 +158,7 @@ function tooltipRows(group: SummaryPlotGroup): readonly CahierTooltipRow[] {
     return value === null
       ? []
       : [{
-          label: mode === 'inaccessible' ? MOBILITE_INACCESSIBLE_LABEL : MOBILITE_MODE_LABELS[mode],
+          label: mode === 'inaccessible' ? MOBILITE_INACCESSIBLE_LABEL : modeLabels.value[mode],
           value: formatNumber(value),
           tone: MODE_TONES[mode],
           icon: MODE_ICONS[mode],

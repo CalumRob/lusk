@@ -808,6 +808,11 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
       tibble::tibble(code = "22001", key = "reseaux",
                      detail = "c_longueur", value = 2.0)
     },
+    agreger_reseaux_par_habitant_territoires = function(reseaux_communes, population, base_epci) {
+      pousser("reseaux_par_habitant_territoires")
+      tibble::tibble(code = "22001", key = "reseaux_par_habitant",
+                     detail = "c_km_1000", value = 2.0)
+    },
     calculer_surface_reseaux_routiers_communes = function(ocsge, limites) {
       pousser("surface_reseaux_routiers_communes")
       tibble::tibble(commune = "22001", aire_m2 = 4e6,
@@ -861,11 +866,13 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                   "div_loss_communes", "div_loss_territoires", "saillance",
                   "densite", "nuage", "territoires", "profils_matrice",
                   "profils_public", "acces_rangs", "rangs",
-                  "voitures_communes", "voitures_territoires",
-                  "reseaux_communes", "reseaux_velo_communes",
-                  "reseaux_territoires", "surface_reseaux_routiers_communes",
+                   "voitures_communes", "voitures_territoires",
+                   "reseaux_communes", "reseaux_velo_communes",
+                   "reseaux_territoires", "velo_communes",
+                   "reseaux_par_habitant_territoires",
+                   "surface_reseaux_routiers_communes",
                   "surface_reseaux_routiers_territoires",
-                 "offre_tc_communes", "bornes_communes", "velo_communes",
+                  "offre_tc_communes", "bornes_communes",
                  "offre_cyclable_communes", "offre_territoires"))
 
   # les tables analytiques exposées : le poids + les artefacts flagship +
@@ -876,8 +883,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                         "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
                        "nuage_territoires", "isolation_rangs", "acces_rangs",
-                       "voitures_communes", "voitures_territoires",
-                       "reseaux_communes", "reseaux_territoires",
+                        "voitures_communes", "voitures_territoires",
+                        "reseaux_communes", "reseaux_territoires",
+                        "reseaux_par_habitant_territoires",
                        "surface_reseaux_routiers_communes",
                        "surface_reseaux_routiers_territoires",
                       "offre_tc_communes", "bornes_communes",
@@ -895,8 +903,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_equal(res$densite_territoires$dens_1, 0.01)
   expect_equal(res$nuage_territoires$nuage_median, 12)
   expect_equal(res$isolation_rangs$rang_epci, 0)
-  expect_equal(res$voitures_territoires$value, 0.1)
-  expect_equal(res$reseaux_territoires$value, 2.0)
+   expect_equal(res$voitures_territoires$value, 0.1)
+   expect_equal(res$reseaux_territoires$value, 2.0)
+   expect_equal(res$reseaux_par_habitant_territoires$value, 2.0)
   expect_equal(res$surface_reseaux_routiers_territoires$value, 0.1)
   expect_equal(res$offre_tc_communes$part_proche, 0.9)
   expect_equal(res$bornes_communes$nb_bornes, 3L)
@@ -915,7 +924,8 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_true(file.exists(file.path(sortie, "voitures_communes.rds")))
   expect_true(file.exists(file.path(sortie, "voitures_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "reseaux_communes.rds")))
-  expect_true(file.exists(file.path(sortie, "reseaux_territoires.rds")))
+   expect_true(file.exists(file.path(sortie, "reseaux_territoires.rds")))
+   expect_true(file.exists(file.path(sortie, "reseaux_par_habitant_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "surface_reseaux_routiers_communes.rds")))
   expect_true(file.exists(file.path(sortie, "surface_reseaux_routiers_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "offre_tc_communes.rds")))
@@ -1714,6 +1724,36 @@ test_that("agreger_reseaux_territoires : longueurs sommées depuis les parties",
   expect_true(!is.unsorted(ag$code))
 })
 
+test_that("agreger_reseaux_par_habitant_territoires : longueurs rapportées à la population", {
+  res <- fusionner_reseaux_velo_communes(
+    calculer_reseaux_communes(fixture_lignes_mini(), fixture_limites_mini()),
+    calculer_reseaux_velo_communes(fixture_amenagements_velo_mini(),
+                                   fixture_limites_mini())
+  )
+  population <- tibble::tibble(
+    commune = c("22001", "22002", "29001"),
+    population = c(100, 200, 50)
+  )
+
+  ag <- agreger_reseaux_par_habitant_territoires(
+    res, population, base_epci_mini_analytique()
+  )
+
+  expect_equal(nrow(ag), 8 * 3)
+  expect_named(ag, c("code", "key", "detail", "value"))
+  expect_true(all(ag$key == "reseaux_par_habitant"))
+  expect_setequal(unique(ag$detail),
+                  c("t_km_1000", "b_km_1000", "c_km_1000"))
+  lire <- function(code, detail) ag$value[ag$code == code & ag$detail == detail]
+
+  # EPCI 200000001 (22001 + 22002) : Σ longueur ÷ Σ population × 1 000.
+  expect_equal(lire("200000001", "t_km_1000"), (2.8 + 2.0) / 300 * 1000)
+  expect_equal(lire("200000001", "b_km_1000"), (7.6 + 1.1) / 300 * 1000)
+  expect_equal(lire("200000001", "c_km_1000"), (2.0 + 3.8) / 300 * 1000)
+  # La commune conserve sa propre population au dénominateur.
+  expect_equal(lire("22001", "c_km_1000"), 2.0 / 100 * 1000)
+})
+
 test_that("calculer_reseaux_communes : la projection EPSG:2154 précède toute mesure (l'entrée WGS84 mesure juste)", {
   # les MÊMES lignes et limites en WGS84 (le crs natif de l'extrait Geofabrik) :
   # le builder projette AVANT st_length/st_area — les longueurs restent en
@@ -2459,9 +2499,10 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
   # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
-   expect_equal(nrow(ind), 42L)
+   expect_equal(nrow(ind), 43L)
    expect_setequal(ind$key, c("voitures_menage", "reseaux",
-                              "surface_reseaux_routiers",
+                               "reseaux_par_habitant",
+                               "surface_reseaux_routiers",
                              "offre_tc", "bornes_recharge",
                               "places_stationnement_velo_1000",
                               "places_stationnement_voiture_1000",
@@ -2478,7 +2519,8 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
    expect_equal(ind$source_reference[ind$key == "nb_buildings"],
                 "mobilite_snapshot")
   expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 3L)
-    expect_equal(ind$multiplicite[ind$key == "reseaux"], 3L)
+     expect_equal(ind$multiplicite[ind$key == "reseaux"], 3L)
+    expect_equal(ind$multiplicite[ind$key == "reseaux_par_habitant"], 3L)
    expect_equal(ind$multiplicite[ind$key == "surface_reseaux_routiers"], 1L)
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
@@ -2518,7 +2560,8 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   #     comme référence — la grille est la matière du snapshot).
   expect_equal(ind$source_reference[ind$key == "voitures_menage"],
                "rp_logement_princ")
-   expect_equal(ind$source_reference[ind$key == "reseaux"], "amenagements_cyclables")
+    expect_equal(ind$source_reference[ind$key == "reseaux"], "amenagements_cyclables")
+    expect_equal(ind$source_reference[ind$key == "reseaux_par_habitant"], "osm_reseaux")
    expect_equal(ind$source_reference[ind$key == "surface_reseaux_routiers"],
                 "ocsge_reseaux_routiers")
   expect_equal(ind$source_reference[ind$key == "offre_tc"], "korrigo")
@@ -2673,6 +2716,11 @@ fixture_indicateurs_mobilite <- function() {
     detail = c("t_longueur", "b_longueur", "c_longueur")
   ) %>%
     dplyr::mutate(key = "reseaux", value = 1)
+  reseaux_par_habitant_territoires <- tidyr::crossing(
+    code = codes,
+    detail = c("t_km_1000", "b_km_1000", "c_km_1000")
+  ) %>%
+    dplyr::mutate(key = "reseaux_par_habitant", value = 2)
   surface_reseaux_routiers_territoires <- tibble::tibble(
     code = codes, value = 0.1
   )
@@ -2710,6 +2758,7 @@ fixture_indicateurs_mobilite <- function() {
     isolation_rangs = isolation_rangs,
     voitures_territoires = voitures_territoires,
     reseaux_territoires = reseaux_territoires,
+    reseaux_par_habitant_territoires = reseaux_par_habitant_territoires,
     surface_reseaux_routiers_territoires = surface_reseaux_routiers_territoires,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
@@ -2734,7 +2783,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
    # raccordement (issue #486) — une ligne par (territoire × détail) ;
    # `nb_buildings` publie la taille des bâtiments par territoire.
   expect_setequal(unique(ind$key), c(
-    "voitures_menage", "reseaux", "surface_reseaux_routiers",
+     "voitures_menage", "reseaux", "reseaux_par_habitant", "surface_reseaux_routiers",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
     "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
     "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
@@ -2749,12 +2798,13 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   grille_n <- length(grille_raccordement())
    # 9 territoires × 24 lignes historiques = 216 ; + la taille : 9 ; + le raccordement :
   # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
-   expect_equal(nrow(ind), 216 + 9 + 9 * length(CLES_ACCES_MOBILITE) +
-                  9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 + 9 +
-                  9 * grille_n + grille_n)
+    expect_equal(nrow(ind), 216 + 9 + 9 * length(CLES_ACCES_MOBILITE) +
+                   9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 + 9 +
+                   9 * grille_n + grille_n + 9 * 3)
    expect_equal(sum(ind$key == "nb_buildings"), 9)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
    expect_equal(sum(ind$key == "reseaux"), 9 * 3)
+   expect_equal(sum(ind$key == "reseaux_par_habitant"), 9 * 3)
    expect_equal(sum(ind$key == "surface_reseaux_routiers"), 9)
   for (cle in c("offre_tc", "bornes_recharge",
                 "places_stationnement_velo_1000")) {

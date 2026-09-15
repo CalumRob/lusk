@@ -28,6 +28,7 @@ import type {
   ContentSection,
   ExplorationTarget,
   SummaryEvidence,
+  SingleUnitThemeContent,
   ThemeContent,
 } from '@/fiche/content/themeContent'
 import {
@@ -54,28 +55,32 @@ import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
 import CahierSummaryPlot from './CahierSummaryPlot.vue'
 import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahier.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
+import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
+import CahierSharingFigure from './CahierSharingFigure.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
-  content: ThemeContent
+  content: ThemeContent | SingleUnitThemeContent
   pagination: CahierPagination
   presentation?: 'ruled' | 'plain'
+  showAllUnits?: boolean
+  networkFigureVariant?: 'traces'
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
-const figureStackRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
-const masonryReady = ref(false)
-const masonryHeight = ref(0)
+const figureStackElements = new Map<string, HTMLElement>()
 const sectionPlacements = ref<Record<string, { column: 0 | 1; top: number }>>({})
+const masonryHeights = ref<Record<string, number>>({})
+const masonryReadies = ref<Record<string, boolean>>({})
 const sectionElements = new Map<string, HTMLElement>()
 let observer: IntersectionObserver | null = null
 let resizeObserver: ResizeObserver | null = null
 let masonryQueued = false
 const MASONRY_TWO_COLUMN_QUERY = '(min-width: 1281px)'
 
-const unit = computed(() => props.content.units[0] ?? null)
-const sections = computed(() => unit.value?.sections ?? [])
+const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
+const unit = computed(() => units.value[0] ?? null)
 const pageEntry = computed(
   () => props.pagination.entries.find((entry) => entry.key === unit.value?.key) ?? null,
 )
@@ -84,16 +89,38 @@ const sourceEntry = computed(
 )
 const FIGURE_COMPARISON_LABEL = 'Groupe comparé'
 
+function pageEntryFor(key: string) {
+  return props.pagination.entries.find((entry) => entry.key === key) ?? null
+}
+
+function pageAnchorFor(key: string): string {
+  return pageEntryFor(key)?.anchor ?? `figure-${key}`
+}
+
 function comparisonLabelForFigure(comparisonLabel: string | null): string | null {
   return comparisonLabel ? FIGURE_COMPARISON_LABEL : null
 }
 
-function setSectionElement(key: string, element: unknown): void {
+function sectionPlacementKey(unitKey: string, sectionKey: string): string {
+  return `${unitKey}:${sectionKey}`
+}
+
+function setSectionElement(unitKey: string, sectionKey: string, element: unknown): void {
+  const placementKey = sectionPlacementKey(unitKey, sectionKey)
   if (element instanceof HTMLElement) {
-    sectionElements.set(key, element)
+    sectionElements.set(placementKey, element)
     resizeObserver?.observe(element)
   } else {
-    sectionElements.delete(key)
+    sectionElements.delete(placementKey)
+  }
+}
+
+function setFigureStackElement(unitKey: string, element: unknown): void {
+  if (element instanceof HTMLElement) {
+    figureStackElements.set(unitKey, element)
+    resizeObserver?.observe(element)
+  } else {
+    figureStackElements.delete(unitKey)
   }
 }
 
@@ -103,8 +130,8 @@ function usesTwoColumns(): boolean {
     || window.matchMedia(MASONRY_TWO_COLUMN_QUERY).matches
 }
 
-function styleForSection(key: string): Record<string, string> | undefined {
-  const placement = sectionPlacements.value[key]
+function styleForSection(unitKey: string, sectionKey: string): Record<string, string> | undefined {
+  const placement = sectionPlacements.value[sectionPlacementKey(unitKey, sectionKey)]
   if (!placement) return undefined
   const twoColumns = usesTwoColumns()
   return {
@@ -117,28 +144,51 @@ function styleForSection(key: string): Record<string, string> | undefined {
   }
 }
 
+function masonryReadyFor(unitKey: string): boolean {
+  return masonryReadies.value[unitKey] ?? false
+}
+
+function masonryHeightFor(unitKey: string): number {
+  return masonryHeights.value[unitKey] ?? 0
+}
+
 function measureMasonry(): void {
-  const stack = figureStackRef.value
-  if (!stack) return
-
-  const elements = sections.value.map((section) => sectionElements.get(section.key))
-  if (elements.some((element) => !element)) return
-
   const twoColumns = usesTwoColumns()
-  const gap = Number.parseFloat(getComputedStyle(stack).getPropertyValue('--masonry-gap')) || 32
-  const layout = layoutMasonry(
-    sections.value.map((section, index) => ({
-      key: section.key,
-      height: elements[index]?.getBoundingClientRect().height ?? 0,
-    })),
-    { columns: twoColumns ? 2 : 1, gap },
-  )
+  const placements = { ...sectionPlacements.value }
+  const heights = { ...masonryHeights.value }
+  const readies = { ...masonryReadies.value }
 
-  sectionPlacements.value = Object.fromEntries(
-    layout.placements.map((placement) => [placement.key, placement]),
-  )
-  masonryHeight.value = layout.height
-  masonryReady.value = true
+  for (const currentUnit of units.value) {
+    const stack = figureStackElements.get(currentUnit.key)
+    const unitSectionKeys = currentUnit.sections.map((section) => sectionPlacementKey(currentUnit.key, section.key))
+    for (const key of unitSectionKeys) delete placements[key]
+    readies[currentUnit.key] = false
+    if (!stack) continue
+
+    const elements = currentUnit.sections.map((section) =>
+      sectionElements.get(sectionPlacementKey(currentUnit.key, section.key)),
+    )
+    if (elements.some((element) => !element)) continue
+
+    const gap = Number.parseFloat(getComputedStyle(stack).getPropertyValue('--masonry-gap')) || 32
+    const layout = layoutMasonry(
+      currentUnit.sections.map((section, index) => ({
+        key: section.key,
+        height: elements[index]?.getBoundingClientRect().height ?? 0,
+      })),
+      { columns: twoColumns ? 2 : 1, gap },
+    )
+
+    for (const placement of layout.placements) {
+      placements[sectionPlacementKey(currentUnit.key, placement.key)] = placement
+    }
+    heights[currentUnit.key] = layout.height
+    readies[currentUnit.key] = true
+  }
+
+  sectionPlacements.value = placements
+  masonryHeights.value = heights
+  masonryReadies.value = readies
 }
 
 function scheduleMasonry(): void {
@@ -415,7 +465,7 @@ function accessTooltipRows(
        tone: MODE_CLASSES[mode] as CahierTooltipRow['tone'],
        icon: modeIcon(mode),
        note: service.modes[mode].fact.comparison?.reference
-         ? `${comparisonLabelForFigure(comparisonLabel) ?? 'Groupe comparé'} : ${referenceFactText(service.modes[mode].fact)}`
+          ? `${comparisonLabelForFigure(comparisonLabel) ?? 'Groupe comparé'} : ${referenceFactText(service.modes[mode].fact)}`
          : undefined,
      }))
 }
@@ -444,9 +494,9 @@ useCahierBaselineGrid(rootRef, () => props.presentation !== 'plain')
 
 onMounted(() => {
   scheduleMasonry()
-  if (figureStackRef.value && typeof ResizeObserver !== 'undefined') {
+  if (typeof ResizeObserver !== 'undefined') {
     resizeObserver = new ResizeObserver(() => scheduleMasonry())
-    resizeObserver.observe(figureStackRef.value)
+    figureStackElements.forEach((element) => resizeObserver?.observe(element))
     sectionElements.forEach((element) => resizeObserver?.observe(element))
   }
   activeFigure.value = pageEntry.value?.anchor ?? anchorForEntry('acces-aux-services')
@@ -517,15 +567,17 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 
       <main class="cahier-pages">
         <section
-          :id="pageEntry?.anchor ?? 'figure-lecture'"
+          v-for="currentUnit in units"
+          :key="currentUnit.key"
+          :id="pageAnchorFor(currentUnit.key)"
           class="cahier-page"
-          :data-figure="pageEntry?.anchor ?? 'figure-lecture'"
-          :aria-labelledby="`${pageEntry?.anchor ?? 'figure-lecture'}-title`"
+          :data-figure="pageAnchorFor(currentUnit.key)"
+          :aria-labelledby="`${pageAnchorFor(currentUnit.key)}-title`"
         >
           <div class="page-margin" aria-label="Informations marginales">
             <div class="page-number">
               <span>page</span>
-              {{ String(pagination.currentPage).padStart(2, '0') }}<small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
+              {{ String(pageEntryFor(currentUnit.key)?.page ?? pagination.currentPage).padStart(2, '0') }}<small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
             </div>
             <div v-if="sourceLabels.length > 0" class="margin-sources">
               <span class="margin-label">Sources</span>
@@ -534,25 +586,28 @@ watch(() => props.content, scheduleMasonry, { deep: true })
           </div>
 
           <header class="page-heading">
-            <h2 class="cahier-baseline-anchor" :id="`${pageEntry?.anchor ?? 'figure-lecture'}-title`">{{ unit?.label }}</h2>
-            <CahierProse class="page-subtitle" :blocks="content.introduction" />
-            <CahierProse v-if="unit?.rundown" class="page-subtitle page-rundown" :blocks="unit.rundown" />
+            <h2
+              class="cahier-baseline-anchor"
+              :id="`${pageAnchorFor(currentUnit.key)}-title`"
+            >{{ currentUnit.label }}</h2>
+            <CahierProse class="page-subtitle" :blocks="currentUnit.introduction" />
+            <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
           </header>
 
           <div
-            ref="figureStackRef"
+            :ref="(element) => setFigureStackElement(currentUnit.key, element)"
             class="figure-stack"
-            :class="{ 'figure-stack--ready': masonryReady }"
-            :style="{ minHeight: `${masonryHeight}px` }"
+            :class="{ 'figure-stack--ready': masonryReadyFor(currentUnit.key) }"
+            :style="{ minHeight: `${masonryHeightFor(currentUnit.key)}px` }"
           >
             <section
-              v-for="(section, sectionIndex) in sections"
+              v-for="(section, sectionIndex) in currentUnit.sections"
               :key="section.key"
-              :ref="(element) => setSectionElement(section.key, element)"
+              :ref="(element) => setSectionElement(currentUnit.key, section.key, element)"
               class="concept-group"
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
-              :style="styleForSection(section.key)"
+              :style="styleForSection(currentUnit.key, section.key)"
             >
               <div class="concept-group-heading cahier-baseline-group">
                 <span>{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
@@ -597,7 +652,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                 </div>
 
                   <figure
-                   v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"
+                    v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"
                    class="evidence-side evidence-figure bivariate-evidence"
                  >
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments par nombre de types et d’équipements accessibles — {{ section.evidence.buildingDistribution!.modeLabel }}</figcaption>
@@ -609,10 +664,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                       <CahierProse :blocks="section.evidence.buildingDistributionLecture" />
                     </CahierFigureLecture>
                     <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
-                  </figure>
+                   </figure>
 
-                 <figure
-                   v-if="section.evidence?.kind === 'distribution' && section.evidence.accessRamp?.availability === 'complete'"
+                  <figure
+                    v-if="section.evidence?.kind === 'distribution' && section.evidence.accessRamp?.availability === 'complete'"
                    class="evidence-side evidence-figure access-ramp-evidence"
                  >
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Nombre de types accessibles par part cumulée des bâtiments</figcaption>
@@ -624,9 +679,78 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                       <CahierProse :blocks="section.evidence.accessRampLecture" />
                     </CahierFigureLecture>
                     <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                   </figure>
+
+                  <template v-else-if="section.evidence?.kind === 'sharing-networks'">
+                    <div
+                      v-if="props.networkFigureVariant === 'traces'"
+                      class="evidence-side sharing-networks-evidence"
+                    >
+                      <CahierRoadSurfaceFigure
+                        :evidence="section.evidence"
+                        :targets="section.explorationTargets"
+                      />
+                      <figure class="sharing-network-figure evidence-figure">
+                        <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.networkReadingsLabel }}</figcaption>
+                        <CahierSharingFigure
+                          :evidence="section.evidence"
+                          :targets="section.explorationTargets"
+                         :network-figure-variant="props.networkFigureVariant"
+                         />
+                        <CahierFigureLecture>
+                          <CahierProse :blocks="section.evidence.figureLecture" />
+                        </CahierFigureLecture>
+                         <CahierComparisonNote :label="section.evidence.comparisonLabel" />
+                      </figure>
+                    </div>
+                    <figure
+                      v-else
+                      class="evidence-side evidence-figure sharing-networks-evidence"
+                    >
+                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
+                      <CahierSharingFigure
+                        :evidence="section.evidence"
+                        :targets="section.explorationTargets"
+                        :network-figure-variant="props.networkFigureVariant"
+                      />
+                      <CahierFigureLecture>
+                        <CahierProse :blocks="section.evidence.figureLecture" />
+                      </CahierFigureLecture>
+                      <CahierComparisonNote :label="section.evidence.comparisonLabel" />
+                    </figure>
+                  </template>
+
+                   <figure
+                     v-else-if="section.evidence?.kind === 'cycling-offer'"
+                     class="evidence-side evidence-figure sharing-cycling-offer-evidence"
+                   >
+                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
+                     <CahierSharingFigure
+                       :evidence="section.evidence"
+                       :targets="section.explorationTargets"
+                     />
+                     <CahierFigureLecture>
+                       <CahierProse :blocks="section.evidence.figureLecture" />
+                     </CahierFigureLecture>
+                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
+                   </figure>
+
+                   <figure
+                     v-else-if="section.evidence?.kind === 'sharing-parking'"
+                    class="evidence-side evidence-figure sharing-parking-evidence"
+                  >
+                    <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
+                    <CahierSharingFigure
+                      :evidence="section.evidence"
+                      :targets="section.explorationTargets"
+                    />
+                    <CahierFigureLecture>
+                      <CahierProse :blocks="section.evidence.figureLecture" />
+                    </CahierFigureLecture>
+                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                   </figure>
 
-                 <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
+                  <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>
                   <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                   <template v-if="props.presentation === 'plain'">
@@ -677,11 +801,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                             >
                               <template #reference>
                                  <CahierComparisonValue
-                                  v-if="loss.fact.fact.comparison?.reference"
-                                  :fact="loss.fact.fact"
-                                    :comparison-label="comparisonLabelForFigure(section.evidence.comparisonLabel)"
-                                  :maximum-fraction-digits="0"
-                                  :to="sectionExploration(section)!"
+                                   v-if="loss.fact.fact.comparison?.reference"
+                                   :fact="loss.fact.fact"
+                                    :maximum-fraction-digits="0"
+                                    :to="sectionExploration(section)!"
                                 />
                               </template>
                             </CahierFigureScalar>
@@ -727,10 +850,9 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                              <small v-if="summaryLossForSegment(metric.values, segment) !== null">
                                −{{ formatNumber(summaryLossForSegment(metric.values, segment)!) }} vs voiture
                             </small>
-                             <CahierComparisonValue
-                               :fact="segment.fact.fact"
-                                :comparison-label="comparisonLabelForFigure(section.evidence.comparisonLabel)"
-                               :to="sectionExploration(section)"
+                              <CahierComparisonValue
+                                 :fact="segment.fact.fact"
+                                 :to="sectionExploration(section)"
                             />
                           </dd>
                         </div>
@@ -757,15 +879,15 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                      :comparison-label="section.evidence.comparisonLabel"
                      :exploration-to="sectionExploration(section)"
                    />
-                   <CahierFigureLecture>
-                     <CahierProse :blocks="section.evidence.figureLecture" />
-                   </CahierFigureLecture>
-                   <CahierComparisonNote
-                     class="bpe-comparison-note"
-                     :label="section.evidence.comparisonLabel"
-                   />
-                </figure>
-                <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
+                    <CahierFigureLecture v-if="section.evidence.figureLecture.length > 0">
+                      <CahierProse :blocks="section.evidence.figureLecture" />
+                    </CahierFigureLecture>
+                    <CahierComparisonNote
+                      class="bpe-comparison-note"
+                      :label="section.evidence.comparisonLabel"
+                    />
+                 </figure>
+                 <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
                    <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                    <div class="access-figures" aria-label="Part des bâtiments accessibles par service et par mode">
@@ -796,9 +918,8 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                       >
                         <template #reference>
                            <CahierComparisonValue
-                            :fact="service.modes.walkTransit.fact"
-                             :comparison-label="comparisonLabelForFigure(section.evidence.comparisonLabel)"
-                             :to="sectionExploration(section)"
+                              :fact="service.modes.walkTransit.fact"
+                              :to="sectionExploration(section)"
                           />
                         </template>
                       </CahierFigureScalar>
@@ -820,7 +941,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                              </div>
                            </div>
                           </div>
-                    <CahierFigureLecture>
+                     <CahierFigureLecture>
                       <CahierProse :blocks="section.evidence.figureLecture" />
                     </CahierFigureLecture>
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
@@ -996,6 +1117,8 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .figure-spread--flip .evidence-side { order: 1; }
 .argument-side, .evidence-side { min-width: 0; }
 .argument-side { --mode-scalar-width: 160px; }
+.sharing-networks-evidence { display: grid; gap: var(--space-6); }
+.sharing-network-figure { margin: 0; }
 .argument-side h4 { margin: 0; color: var(--cahier-theme-emphasis); font-family: 'Marelle', var(--font-serif); font-size: clamp(calc(1rem + 2px), calc(1.35vw + 2px), calc(1.25rem + 2px)); font-weight: 500; line-height: var(--cahier-grid-jump); }
 .argument-copy { width: 100%; margin: var(--cahier-grid-jump) 0 0; color: var(--cahier-default); font-size: 15px; text-align: justify; }
 .cahier-section-state, .evidence-placeholder { color: var(--cahier-default); font-size: 14px; line-height: 1.5; }

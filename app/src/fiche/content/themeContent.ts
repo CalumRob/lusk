@@ -1,6 +1,7 @@
 import {
   MOBILITE_INACCESSIBLE_LABEL,
   MOBILITE_MODE_LABELS,
+  MOBILITE_RESEAU_MODE_LABELS,
 } from './territoryFacts'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type {
@@ -79,7 +80,7 @@ export interface BpeProfilesEvidence {
   donutTooltipTitle: string
   /** Total canonical BPE types represented by the complete projection. */
   totalTypes: number | null
-  /** Human-readable aggregation method and scope for the compositional reference. */
+  /** Human-readable peer-group scope for the compositional reference. */
   comparisonLabel: string | null
   figureLecture: readonly TextBlock[]
 }
@@ -134,11 +135,58 @@ export interface AccessEvidence {
   figureLecture: readonly TextBlock[]
 }
 
+export interface NetworkModeEvidence {
+  mode: 'walkTransit' | 'bike' | 'car'
+  label: string
+  length: ContentFact
+}
+
+export interface CyclingOfferEvidence {
+  kind: 'cycling-offer'
+  figureTitle: string
+  cyclingReadingsLabel: string
+  label: string
+  protectedLength: ContentFact
+  protectedDensity: ContentFact
+  sharedLength: ContentFact
+  sharedDensity: ContentFact
+  totalLength: ContentFact
+  comparisonLabel: string | null
+  figureLecture: readonly TextBlock[]
+}
+
+export interface SharingNetworksEvidence {
+  kind: 'sharing-networks'
+  figureTitle: string
+  networkReadingsLabel: string
+  territoryName: string
+  roadSurface: ContentFact
+  roadSurfaceLecture: readonly TextBlock[]
+  networks: readonly NetworkModeEvidence[]
+  comparisonLabel: string | null
+  figureLecture: readonly TextBlock[]
+}
+
+export interface SharingParkingEvidence {
+  kind: 'sharing-parking'
+  figureTitle: string
+  parkingReadingsLabel: string
+  bikeSpaces: ContentFact
+  carSpaces: ContentFact
+  bikePerCar: ContentFact
+  comparisonLabel: string | null
+  ratioNote: string | null
+  figureLecture: readonly TextBlock[]
+}
+
 export type ContentEvidence =
   | DistributionEvidence
   | BpeProfilesEvidence
   | SummaryEvidence
   | AccessEvidence
+  | SharingNetworksEvidence
+  | CyclingOfferEvidence
+  | SharingParkingEvidence
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -170,17 +218,36 @@ export interface ServicesEssentielsSection
   label: 'Services essentiels'
 }
 
+export interface ReseauxSection
+  extends ContentSectionBase<'reseaux', SharingNetworksEvidence> {
+  label: 'Réseaux'
+}
+
+export interface OffreCyclableSection
+  extends ContentSectionBase<'offre-cyclable', CyclingOfferEvidence> {
+  label: 'Offre cyclable'
+}
+
+export interface StationnementSection
+  extends ContentSectionBase<'stationnement', SharingParkingEvidence> {
+  label: 'Stationnement'
+}
+
 export type MobiliteContentSection =
   | ResumeSection
   | ProfilsAccesParModeSection
   | ServicesEssentielsSection
   | DistributionAccesParBatimentSection
+  | ReseauxSection
+  | OffreCyclableSection
+  | StationnementSection
 
 export type ContentSection = MobiliteContentSection
 
-export interface MobiliteContentUnit {
+export interface AccesAuxServicesContentUnit {
   key: 'acces-aux-services'
   label: 'Accès aux services'
+  introduction: readonly TextBlock[]
   rundown: readonly TextBlock[]
   sections: readonly [
     ResumeSection,
@@ -190,6 +257,15 @@ export interface MobiliteContentUnit {
   ]
 }
 
+export interface PartageEspacePublicContentUnit {
+  key: 'partage-de-lespace-public'
+  label: 'Partage de l’espace public'
+  introduction: readonly TextBlock[]
+  rundown: readonly TextBlock[]
+  sections: readonly [ReseauxSection, OffreCyclableSection, StationnementSection]
+}
+
+export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit
 export type ContentUnit = MobiliteContentUnit
 
 export interface ThemeContent {
@@ -197,8 +273,13 @@ export interface ThemeContent {
   label: 'Mobilité'
   territory: TerritoryIdentity
   introduction: readonly TextBlock[]
-  units: readonly [MobiliteContentUnit]
+  units: readonly [AccesAuxServicesContentUnit, PartageEspacePublicContentUnit]
   sourceRegister: readonly ContentSource[]
+}
+
+/** Content shape consumed by one isolated Cahier unit (for prototype variants). */
+export type SingleUnitThemeContent = Omit<ThemeContent, 'units'> & {
+  units: readonly [ContentUnit]
 }
 
 const SERVICE_GRAMMAR: readonly {
@@ -239,6 +320,24 @@ const CONTENT_LABELS: Readonly<Record<string, string>> = {
   share_bank_t: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.walkTransit}`,
   share_bank_b: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.bike}`,
   share_bank_c: `Part des bâtiments avec accès à la banque — ${MOBILITE_MODE_LABELS.car}`,
+  reseaux: 'Réseaux piéton, cyclable et routier',
+  reseaux_par_habitant: 'Longueur du réseau par habitant',
+  offre_cyclable: 'L’offre cyclable',
+  places_stationnement_velo_1000: 'Places de stationnement vélo pour 1 000 hab.',
+  places_stationnement_voiture_1000: 'Places de stationnement voiture pour 1 000 hab.',
+  stationnement_velo_par_voiture: 'Places de stationnement vélo pour 1 place voiture',
+  surface_reseaux_routiers: 'Emprise routière',
+}
+
+const CONTENT_DETAIL_LABELS: Readonly<Record<string, string>> = {
+  'reseaux_par_habitant:t_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.walkTransit}`,
+  'reseaux_par_habitant:b_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.bike}`,
+  'reseaux_par_habitant:c_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.car}`,
+  'offre_cyclable:protege_longueur': 'Longueur protégée',
+  'offre_cyclable:protege_km_1000': 'Protégé — km / 1 000 hab.',
+  'offre_cyclable:partage_longueur': 'Longueur partagée',
+  'offre_cyclable:partage_km_1000': 'Partagé — km / 1 000 hab.',
+  'offre_cyclable:total_longueur': 'Longueur totale',
 }
 
 const ESSENTIAL_INDICATOR_KEYS = [
@@ -257,6 +356,20 @@ const ESSENTIAL_INDICATOR_KEYS = [
   'share_bank_t',
   'share_bank_b',
   'share_bank_c',
+] as const
+
+const SHARING_NETWORK_INDICATOR_KEYS = ['reseaux_par_habitant'] as const
+const SHARING_CYCLING_OFFER_INDICATOR_KEYS = ['offre_cyclable'] as const
+const SHARING_PARKING_INDICATOR_KEYS = [
+  'places_stationnement_velo_1000',
+  'places_stationnement_voiture_1000',
+  'stationnement_velo_par_voiture',
+] as const
+
+const NETWORK_MODES = [
+  { mode: 'walkTransit' as const, label: MOBILITE_RESEAU_MODE_LABELS.walkTransit, length: 't_km_1000' },
+  { mode: 'bike' as const, label: MOBILITE_RESEAU_MODE_LABELS.bike, length: 'b_km_1000' },
+  { mode: 'car' as const, label: MOBILITE_RESEAU_MODE_LABELS.car, length: 'c_km_1000' },
 ] as const
 
 const MOBILITE_ACCESS_LEGEND: readonly FigureLegendEntry[] = [
@@ -313,10 +426,10 @@ function inaccessibleFact(
   )
 }
 
-function absentFact(key: string, unit: string): NumericFact {
+function absentFact(key: string, unit: string, detail: string | null = null): NumericFact {
   return {
     key,
-    detail: null,
+    detail,
     label: null,
     value: null,
     unit,
@@ -338,6 +451,30 @@ function contentIndicator(fact: NumericFact): ContentIndicator | null {
 
 function indicatorFor(facts: TerritoryFacts, key: string): NumericFact | null {
   return facts.mobility.indicators.find((fact) => fact.key === key) ?? null
+}
+
+function detailFactFor(
+  facts: TerritoryFacts,
+  key: string,
+  detail: string,
+  unit: string,
+): NumericFact {
+  return facts.mobility.indicators.find(
+    (fact) => fact.key === key && fact.detail === detail,
+  ) ?? absentFact(key, unit, detail)
+}
+
+function detailLabelFor(key: string, detail: string): string {
+  return CONTENT_DETAIL_LABELS[`${key}:${detail}`] ?? detail
+}
+
+function contentDetailFact(
+  facts: TerritoryFacts,
+  key: string,
+  detail: string,
+  unit: string,
+): ContentFact {
+  return contentFact(detailFactFor(facts, key, detail, unit), detailLabelFor(key, detail))
 }
 
 function indicatorsFor(facts: TerritoryFacts, keys: readonly string[]): ContentIndicator[] {
@@ -408,6 +545,24 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
         add(service.carGap)
         add(service.bikeGain)
       }
+    }
+    if (section.evidence?.kind === 'sharing-networks') {
+      for (const network of section.evidence.networks) {
+        add(network.length)
+      }
+      add(section.evidence.roadSurface)
+    }
+    if (section.evidence?.kind === 'cycling-offer') {
+      add(section.evidence.protectedLength)
+      add(section.evidence.protectedDensity)
+      add(section.evidence.sharedLength)
+      add(section.evidence.sharedDensity)
+      add(section.evidence.totalLength)
+    }
+    if (section.evidence?.kind === 'sharing-parking') {
+      add(section.evidence.bikeSpaces)
+      add(section.evidence.carSpaces)
+      add(section.evidence.bikePerCar)
     }
   }
   return [...sources.values()]
@@ -522,6 +677,12 @@ function introductionFor(facts: TerritoryFacts): readonly TextBlock[] {
   return blocks
 }
 
+function sharingIntroduction(): readonly TextBlock[] {
+  return [[
+    text('Cette page met en regard les réseaux qui organisent les déplacements et les places qui leur sont réservées dans l’espace public. Elle distingue les aménagements cyclables, les réseaux par mode et les estimations de stationnement.'),
+  ]]
+}
+
 interface TerritoryLeadParts {
   lead: string
   name: string
@@ -571,7 +732,7 @@ function profilesFigureLecture(
     .filter((profile) => profile.comparison?.reference !== null)
     .sort((a, b) => b.count - a.count)[0]
   return [[
-    text('La figure classe chaque type d’équipement selon le premier mode avec lequel au moins 25 % des bâtiments peuvent l’atteindre en vingt minutes.'),
+    text('Chaque colonne indique le nombre de types d’équipements BPE classés dans un profil d’accès. Les quatre profils sont exclusifs : chaque type n’est compté qu’une seule fois.'),
   ], ...(example?.comparison?.reference ? [[
     text(`Exemple : ${formatNumber(example.count)} types d’équipements sont classés « ${example.label} » dans ${territory.name}, contre ${formatNumber(example.comparison.reference.value)} en moyenne dans le groupe comparé.`),
   ]] : [])]
@@ -581,7 +742,7 @@ function lectureProfils(): Lecture {
   return {
     marelle: 'Service minimum ?',
     prose: [[
-      text('La figure regroupe les types d’équipements BPE selon le premier mode qui permet à au moins un quart des bâtiments de les atteindre.'),
+      text('Un profil d’accès regroupe les types d’équipements BPE selon le premier mode qui permet à au moins un quart des bâtiments de les atteindre.'),
     ]],
   }
 }
@@ -886,6 +1047,231 @@ function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
   }
 }
 
+function comparisonLabelForFacts(
+  values: readonly ContentFact[],
+  territory: TerritoryIdentity,
+): string | null {
+  const comparison = values.find((value) => value.fact.comparison)?.fact.comparison ?? null
+  return comparisonLabel(comparison, territory)
+}
+
+function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
+  const networks = NETWORK_MODES.map(({ mode, label, length }) => ({
+    mode,
+    label,
+    length: contentDetailFact(facts, 'reseaux_par_habitant', length, 'km / 1 000 hab.'),
+  }))
+  const roadSurface = contentFact(
+    indicatorFor(facts, 'surface_reseaux_routiers') ?? absentFact('surface_reseaux_routiers', '%'),
+    CONTENT_LABELS.surface_reseaux_routiers,
+  )
+  const networkFacts = networks.map((network) => network.length)
+  const allFacts = [...networkFacts, roadSurface]
+  const indicators = [
+    ...indicatorsFor(facts, SHARING_NETWORK_INDICATOR_KEYS),
+    ...indicatorsFor(facts, ['surface_reseaux_routiers']),
+  ]
+  const hasAny = allFacts.some((value) => hasValue(value.fact))
+  const availability: FactAvailability = !hasAny
+    ? 'absent'
+    : allFacts.every((value) => complete(value.fact)) && indicators.length === SHARING_NETWORK_INDICATOR_KEYS.length + 1
+      ? 'complete'
+      : 'incomplete'
+  const evidence: SharingNetworksEvidence | null = hasAny
+      ? {
+        kind: 'sharing-networks',
+        territoryName: facts.territory.name,
+        networks,
+        roadSurface,
+        roadSurfaceLecture: [[
+          text("L'emprise routière décrit la part de la surface totale du territoire qui est dédiée aux Réseaux routiers (code d'usage 4.1.1)."),
+        ]],
+        figureTitle: 'Réseaux',
+        networkReadingsLabel: 'Longueur du réseau par habitant',
+        comparisonLabel: comparisonLabelForFacts(allFacts, facts.territory),
+        figureLecture: [[
+          text('Chaque repère indique la longueur du réseau rapportée à 1 000 habitants, séparément pour les trois modes.'),
+        ]],
+      }
+    : null
+  return {
+    key: 'reseaux',
+    label: 'Réseaux',
+    availability,
+    indicators,
+    evidence,
+    provenance: sourceIdsFor(allFacts),
+    lecture: availability === 'complete' ? { marelle: 'Trois réseaux, trois usages', prose: [] } : null,
+    explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
+  }
+}
+
+function sharingCyclingOfferSection(facts: TerritoryFacts): OffreCyclableSection {
+  const cyclingOffer: CyclingOfferEvidence = {
+    kind: 'cycling-offer',
+    figureTitle: 'Offre cyclable',
+    cyclingReadingsLabel: 'Répartition de l’offre cyclable',
+    label: 'Offre cyclable',
+    protectedLength: contentDetailFact(facts, 'offre_cyclable', 'protege_longueur', 'km'),
+    protectedDensity: contentDetailFact(facts, 'offre_cyclable', 'protege_km_1000', 'km / 1 000 hab'),
+    sharedLength: contentDetailFact(facts, 'offre_cyclable', 'partage_longueur', 'km'),
+    sharedDensity: contentDetailFact(facts, 'offre_cyclable', 'partage_km_1000', 'km / 1 000 hab'),
+    totalLength: contentDetailFact(facts, 'offre_cyclable', 'total_longueur', 'km'),
+    comparisonLabel: null,
+    figureLecture: [[
+      text('La barre montre comment la longueur cyclable se répartit entre aménagements protégés et partagés. Les valeurs en kilomètres par 1 000 habitants donnent une seconde lecture, rapportée à la population.'),
+    ]],
+  }
+  const allFacts = [
+    cyclingOffer.protectedLength,
+    cyclingOffer.protectedDensity,
+    cyclingOffer.sharedLength,
+    cyclingOffer.sharedDensity,
+    cyclingOffer.totalLength,
+  ]
+  cyclingOffer.comparisonLabel = comparisonLabelForFacts(allFacts, facts.territory)
+  const indicators = indicatorsFor(facts, SHARING_CYCLING_OFFER_INDICATOR_KEYS)
+  const hasAny = allFacts.some((value) => hasValue(value.fact))
+  const availability: FactAvailability = !hasAny
+    ? 'absent'
+    : allFacts.every((value) => complete(value.fact)) && indicators.length === 1
+      ? 'complete'
+      : 'incomplete'
+  return {
+    key: 'offre-cyclable',
+    label: 'Offre cyclable',
+    availability,
+    indicators,
+    evidence: hasAny ? cyclingOffer : null,
+    provenance: sourceIdsFor(allFacts),
+    lecture: availability === 'complete' ? { marelle: 'Une piste ne suffit pas', prose: [] } : null,
+    explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
+  }
+}
+
+function sharingParkingSection(facts: TerritoryFacts): StationnementSection {
+  const bikeSpaces = contentFact(
+    indicatorFor(facts, 'places_stationnement_velo_1000') ?? absentFact('places_stationnement_velo_1000', 'places / 1 000 hab'),
+    'Places vélo / 1 000 hab.',
+  )
+  const carSpaces = contentFact(
+    indicatorFor(facts, 'places_stationnement_voiture_1000') ?? absentFact('places_stationnement_voiture_1000', 'places / 1 000 hab'),
+    'Places voiture / 1 000 hab.',
+  )
+  const bikePerCar = contentFact(
+    indicatorFor(facts, 'stationnement_velo_par_voiture') ?? absentFact('stationnement_velo_par_voiture', 'places vélo / place voiture'),
+    'Places vélo / places voiture',
+  )
+  const allFacts = [bikeSpaces, carSpaces, bikePerCar]
+  const indicators = indicatorsFor(facts, SHARING_PARKING_INDICATOR_KEYS)
+  const hasAny = allFacts.some((value) => hasValue(value.fact))
+  const availability: FactAvailability = !hasAny
+    ? 'absent'
+    : allFacts.every((value) => complete(value.fact)) && indicators.length === SHARING_PARKING_INDICATOR_KEYS.length
+      ? 'complete'
+      : 'incomplete'
+  const evidence: SharingParkingEvidence | null = hasAny
+    ? {
+        kind: 'sharing-parking',
+        figureTitle: 'Stationnement vélo et voiture',
+        parkingReadingsLabel: 'Stationnement par mode',
+        bikeSpaces,
+        carSpaces,
+         bikePerCar,
+         comparisonLabel: comparisonLabelForFacts(allFacts, facts.territory),
+         ratioNote: parkingRatioNote(bikeSpaces, carSpaces, bikePerCar),
+         figureLecture: parkingFigureLecture(bikeSpaces, carSpaces, bikePerCar),
+      }
+    : null
+  return {
+    key: 'stationnement',
+    label: 'Stationnement',
+    availability,
+    indicators,
+    evidence,
+    provenance: sourceIdsFor(allFacts),
+    lecture: availability === 'complete' ? { marelle: 'Quelle place pour chaque mode ?', prose: [] } : null,
+    explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
+  }
+}
+
+function parkingRatioNote(
+  bikeSpaces: ContentFact,
+  carSpaces: ContentFact,
+  bikePerCar: ContentFact,
+): string | null {
+  if (bikePerCar.fact.value !== null) return null
+  if (carSpaces.fact.value === 0) {
+    return 'Rapport non calculé : aucune place de stationnement voiture estimée ne fournit un dénominateur positif.'
+  }
+  if (bikeSpaces.fact.value !== null || carSpaces.fact.value !== null) {
+    return 'Rapport indisponible : les deux mesures de stationnement sont nécessaires pour le calculer.'
+  }
+  return null
+}
+
+function parkingFigureLecture(
+  bikeSpaces: ContentFact,
+  carSpaces: ContentFact,
+  bikePerCar: ContentFact,
+): readonly TextBlock[] {
+  const blocks: TextBlock[] = [[
+    text('Les deux barres se lisent dans la même unité : des places pour 1 000 habitants. Le rapport « places vélo / places voiture » est une lecture séparée, calculée seulement quand le dénominateur voiture est positif.'),
+  ]]
+  const ratioNote = parkingRatioNote(bikeSpaces, carSpaces, bikePerCar)
+  if (ratioNote) {
+    blocks.push([text(ratioNote)])
+  }
+  return blocks
+}
+
+function sideOfReference(fact: NumericFact): -1 | 0 | 1 | null {
+  const reference = fact.comparison?.reference?.value
+  const value = narrativeValue(fact)
+  if (reference === undefined || value === null) return null
+  return value === reference ? 0 : value > reference ? 1 : -1
+}
+
+function sharingRundown(facts: TerritoryFacts): readonly TextBlock[] {
+  const network = sharingNetworksSection(facts)
+  const cyclingOffer = sharingCyclingOfferSection(facts)
+  const parking = sharingParkingSection(facts)
+  if (!network.evidence || !cyclingOffer.evidence || !parking.evidence) {
+    return [[text('Les données disponibles ne permettent pas encore de dégager une lecture commune des réseaux et du stationnement.')]]
+  }
+
+  const offer = cyclingOffer.evidence
+  const bikeNetwork = network.evidence.networks.find((mode) => mode.mode === 'bike')
+  const total = narrativeValue(offer.totalLength.fact)
+  const protectedLength = narrativeValue(offer.protectedLength.fact)
+  const sharedLength = narrativeValue(offer.sharedLength.fact)
+  const bikeSpaces = narrativeValue(parking.evidence.bikeSpaces.fact)
+  const carSpaces = narrativeValue(parking.evidence.carSpaces.fact)
+  const bikePerCar = narrativeValue(parking.evidence.bikePerCar.fact)
+  const parts: TextSegment[] = [text(`${territoryLead(facts.territory)}, `)]
+  if (total !== null && protectedLength !== null && sharedLength !== null) {
+     parts.push(
+       text(`le réseau cyclable totalise ${formatNumber(total)} km, dont ${formatNumber(protectedLength)} km protégés et ${formatNumber(sharedLength)} km partagés. `),
+     )
+  } else {
+    parts.push(text('le réseau cyclable et son offre d’aménagement restent partiellement documentés. '))
+  }
+  if (bikeSpaces !== null && carSpaces !== null && bikePerCar !== null) {
+    parts.push(text(`Le stationnement compte ${formatNumber(bikeSpaces)} places vélo pour 1 000 habitants contre ${formatNumber(carSpaces)} places voiture, soit ${formatNumber(bikePerCar)} place vélo pour une place voiture. `))
+  } else {
+    parts.push(text('Le stationnement ne dispose pas encore de ses trois mesures comparables. '))
+  }
+
+  const networkSide = sideOfReference(bikeNetwork?.length.fact ?? absentFact('b_km_1000', 'km / 1 000 hab.'))
+  const parkingSide = sideOfReference(parking.evidence.bikeSpaces.fact)
+  if (networkSide !== null && parkingSide !== null && networkSide !== 0 && networkSide === parkingSide) {
+    parts.push(text('Le réseau cyclable et le stationnement vélo se situent du même côté de leur groupe comparé.'))
+  } else if (networkSide !== null && parkingSide !== null && networkSide !== 0 && parkingSide !== 0) {
+    parts.push(text('Le réseau cyclable et le stationnement vélo ne se situent pas du même côté de leur groupe comparé : c’est le point de tension de la lecture.'))
+  }
+  return [parts]
+}
+
 function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
   const profiles = facts.mobility.bpeAccess.profiles
   const comparisonLabelForFigure = comparisonLabel(
@@ -901,8 +1287,8 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
         : 'absent'
   const evidence: BpeProfilesEvidence | null =
     profiles.length > 0
-      ? {
-          kind: 'bpe-profiles',
+        ? {
+           kind: 'bpe-profiles',
           profiles,
           territoryName: facts.territory.name,
           donutTooltipTitle: '% des bâtiments ayant accès',
@@ -911,10 +1297,10 @@ function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
               ? profiles.reduce((total, profile) => total + profile.count, 0)
               : null,
           comparisonLabel: comparisonLabelForFigure,
-          figureLecture: profilesFigureLecture(
-            availability === 'complete' ? profiles : [],
-            facts.territory,
-          ),
+           figureLecture: profilesFigureLecture(
+             availability === 'complete' ? profiles : [],
+             facts.territory,
+           ),
         }
       : null
   return {
@@ -1236,26 +1622,38 @@ function mobiliteRundown(facts: TerritoryFacts): readonly TextBlock[] {
 }
 
 export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent {
-  const sections = [
+  const accessSections = [
     summarySection(facts),
     profilesSection(facts),
     essentialsSection(facts),
     distributionSection(facts),
   ] as const
+  const sharingSections = [
+    sharingNetworksSection(facts),
+    sharingCyclingOfferSection(facts),
+    sharingParkingSection(facts),
+  ] as const
+  const accessUnit: AccesAuxServicesContentUnit = {
+    key: 'acces-aux-services',
+    label: 'Accès aux services',
+    introduction: introductionFor(facts),
+    rundown: mobiliteRundown(facts),
+    sections: accessSections,
+  }
+  const sharingUnit: PartageEspacePublicContentUnit = {
+    key: 'partage-de-lespace-public',
+    label: 'Partage de l’espace public',
+    introduction: sharingIntroduction(),
+    rundown: sharingRundown(facts),
+    sections: sharingSections,
+  }
 
   return {
     theme: 'mobilite',
     label: 'Mobilité',
     territory: facts.territory,
-    introduction: introductionFor(facts),
-    units: [
-      {
-        key: 'acces-aux-services',
-        label: 'Accès aux services',
-        rundown: mobiliteRundown(facts),
-        sections,
-      },
-    ],
-    sourceRegister: registerFor(sections),
+    introduction: accessUnit.introduction,
+    units: [accessUnit, sharingUnit],
+    sourceRegister: registerFor([...accessSections, ...sharingSections]),
   }
 }

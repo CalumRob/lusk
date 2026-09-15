@@ -388,7 +388,6 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
           <template #reference>
             <CahierComparisonValue
               :fact="profileFact(profile)"
-              :comparison-label="comparisonLabel ? 'Groupe comparé' : null"
               :to="explorationTo"
             />
           </template>

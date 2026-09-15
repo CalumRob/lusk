@@ -18,14 +18,14 @@ import type { Indicateur, ListPageMetadata, Payload, ThemeMetadata } from '../pa
 
 // La page de liste minimale du contrat — la même forme que le descripteur
 // épinglé de Mobilité (types complets, jamais un littéral partiel).
-const CATEGORIES = ['t_longueur', 't_densite', 'b_longueur', 'b_densite', 'c_longueur', 'c_densite']
+const CATEGORIES = ['t_longueur', 'b_longueur', 'c_longueur']
 const pageListe: ListPageMetadata = {
   indicator: 'reseaux',
   detail: null,
   label: 'Réseaux à pied / vélo / voiture',
-  definition: 'Les longueurs et densités de réseau par mode de déplacement.',
+  definition: 'Les longueurs de réseau par mode de déplacement.',
   unit: 'km',
-  calculation: 'Longueurs et densités publiées par le pipeline.',
+  calculation: 'Longueurs publiées par le pipeline.',
   direction: 'high',
   caveats: 'La couverture du réseau dépend de la source publiée.',
   levels: ['commune', 'epci', 'departement'],
@@ -35,7 +35,7 @@ const pageListe: ListPageMetadata = {
 }
 
 // Les faits publiés viennent du fixture Mobilité typé : ses lignes reseaux
-// portent exactement les six catégories déclarées.
+// portent exactement les trois catégories déclarées.
 function payloadAvec(categories: string[]): Payload {
   return {
     territoires: [],
@@ -63,12 +63,12 @@ describe('verifierPariteListes — la garde listes ↔ payload (#439)', () => {
   })
 
   it('rejette un détail publié absent des catégories déclarées — jamais un profil amputé en silence', () => {
-    const amputee = payloadAvec(CATEGORIES.filter((detail) => detail !== 'c_densite'))
+    const amputee = payloadAvec(CATEGORIES.filter((detail) => detail !== 'c_longueur'))
     expect(() => verifierPariteListes(amputee)).toThrow(PayloadError)
     try {
       verifierPariteListes(amputee)
     } catch (e) {
-      expect((e as PayloadError).message).toMatch(/détail « c_densite » de « reseaux » publié absent des catégories déclarées/)
+      expect((e as PayloadError).message).toMatch(/détail « c_longueur » de « reseaux » publié absent des catégories déclarées/)
     }
   })
 })
@@ -77,16 +77,16 @@ describe('verifierPariteListes — la garde listes ↔ payload (#439)', () => {
 // « verifier_parite_listes : le payload COMMITTÉ est en parité… »
 // (test-theme-metadata.R) : les artefacts que l'app fetch réellement, lus
 // depuis public/data et le canon épinglé par le motif établi
-// (theme-metadata-parity.spec.ts). L'énumération y est le devoir : reseaux
-// (Mobilité) puis subventions_par_domaine (#462) sont LES DEUX pages de
-// famille « list » publiées à travers les six thèmes — jamais une famille
+// (theme-metadata-parity.spec.ts). L'énumération y est le devoir : les deux
+// pages reseaux (Mobilité), puis subventions_par_domaine (#462), sont les pages
+// de famille « list » publiées à travers les six thèmes — jamais une famille
 // orpheline, jamais une liste non déclarée.
 describe('verifierPariteListes — le payload committé (#439)', () => {
   const themes = ['demographie', 'habitat', 'economie', 'mobilite', 'milieux', 'programmes'] as const
   const canonicalDir = join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata')
   const publicDir = join(process.cwd(), '..', 'public', 'data')
 
-  it('est en parité et les DEUX listes publiées sont déclarées à travers les six thèmes (#462)', () => {
+  it('est en parité et les listes publiées sont déclarées à travers les six thèmes (#462)', () => {
     const pagesListes: string[] = []
     for (const theme of themes) {
       const metadata = JSON.parse(readFileSync(join(canonicalDir, `theme_${theme}.json`), 'utf8')) as ThemeMetadata
@@ -96,6 +96,9 @@ describe('verifierPariteListes — le payload committé (#439)', () => {
       verifierPariteListes({ territoires: [], indicateurs: faits, histoires: [], apercu: null, runReport: null, vintages: null, programmes: null, themeMetadata: { [theme]: metadata } })
       pagesListes.push(`${theme}:${cles.join(',')}`)
     }
-    expect(pagesListes).toEqual(['mobilite:reseaux', 'programmes:subventions_par_domaine'])
+    expect(pagesListes).toEqual([
+      'mobilite:reseaux,reseaux_par_habitant',
+      'programmes:subventions_par_domaine',
+    ])
   })
 })

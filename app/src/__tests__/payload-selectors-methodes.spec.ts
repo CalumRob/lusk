@@ -93,7 +93,7 @@ describe('sourcesMethodes — la granularité jeu de données (ADR-0022)', () =>
     // osm_reseaux porte le stationnement ; BPE ajoute un seul jeu ; #485
     // ajoute le rail SNCF national et la DILA BDL ; #487 ajoute la matrice
     // publiée du raccordement.
-    expect(jeux.length).toBe(28)
+    expect(jeux.length).toBe(29)
   })
 
   it('porte les faits éditoriaux du jeu sur l\u2019en-tête (nom, éditeur, URL, thèmes)', () => {
@@ -169,6 +169,7 @@ describe('sourcesMethodes — le repli honnête (ADR-0022)', () => {
     const ocsge = jeux.find((j) => j.id === 'ocsge_artificialisation')
     expect(ocsge).toBeDefined()
     expect(jeux.filter((j) => j.nom.startsWith('IGN — OCS GE')).map((j) => j.id)).toEqual([
+      'ocsge_reseaux_routiers',
       'ocsge_artificialisation',
     ])
     expect(ocsge?.replie).toBe(false)
@@ -243,7 +244,7 @@ describe('sourcesMethodes — vintages absents (404)', () => {
     // les aires OSM partagent l'identité osm_reseaux ; seul BPE ajoute un jeu ;
     // #485 ajoute le rail SNCF national et la DILA BDL ; #487 ajoute la
     // matrice publiée du raccordement.
-    expect(jeux.length).toBe(28)
+    expect(jeux.length).toBe(29)
     for (const jeu of jeux) {
       expect(jeu.replie).toBe(true)
       expect(jeu.vintages[0].version).toBeNull()

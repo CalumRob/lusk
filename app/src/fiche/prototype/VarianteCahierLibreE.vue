@@ -13,6 +13,8 @@ defineProps<{
   <VarianteCahierLibre
     :content="content"
     :pagination="pagination"
+    show-all-units
     presentation="plain"
+    network-figure-variant="traces"
   />
 </template>

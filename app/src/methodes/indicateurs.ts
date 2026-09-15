@@ -555,12 +555,32 @@ export const THEMES_METHODES: Record<ThemeConstruit, ThemeMethodes> = {
       reseaux: {
         label: 'Réseaux à pied, à vélo et en voiture',
         definition:
-          'La longueur (en kilomètres) et la densité (en kilomètres par kilomètre carré) des réseaux routier, cyclable et piéton du territoire, relevés dans la cartographie participative OpenStreetMap. Trois modes sont distingués — à pied, à vélo, en voiture — chacun avec sa longueur et sa densité. Le classement lit le détail vélo.',
+          'La longueur des réseaux routier, cyclable et piéton du territoire, relevée dans la cartographie participative OpenStreetMap. Trois modes sont distingués — à pied, à vélo, en voiture — chacun avec sa longueur. Le classement lit le détail vélo.',
         unite: 'km',
         source:
           'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
         sourceId: 'osm_reseaux',
         direction: 'plus-est-mieux',
+      },
+      reseaux_par_habitant: {
+        label: 'Longueur du réseau par habitant',
+        definition:
+          'La longueur des réseaux à pied, à vélo et en voiture rapportée à 1 000 habitants. Les longueurs sont calculées depuis les réseaux OSM et Geovelo, puis rapportées à la population du territoire.',
+        unite: 'km / 1 000 hab.',
+         source:
+           'OpenStreetMap \u2014 r\u00e9seaux routier/cyclable/pi\u00e9ton (extrait Geofabrik Bretagne) \u2014 \u00a9 OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)',
+        sourceId: 'osm_reseaux',
+        direction: 'plus-est-mieux',
+      },
+      surface_reseaux_routiers: {
+        label: 'Part du territoire consacré aux réseaux routiers',
+        definition:
+          'La part de la surface du territoire couverte par les polygones OCS-GE classés US4.1.1, quelle que soit leur valeur d’artificialisation. L’indicateur décrit l’emprise d’un usage routier, sans distinguer les modes de déplacement ni prétendre mesurer la longueur du réseau.',
+        unite: '%',
+        source:
+          'IGN — OCS GE v2.0 (Nouvelle Génération) — occupation du sol et usage des réseaux routiers en Bretagne',
+        sourceId: 'ocsge_reseaux_routiers',
+        direction: 'moins-est-mieux',
       },
       offre_tc: {
         label: 'Offre de transports en commun',

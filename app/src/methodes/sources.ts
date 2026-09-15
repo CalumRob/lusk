@@ -38,7 +38,7 @@ export interface SourceEditoriale {
   editeur: string
   /** L'URL publique du jeu de données — null seulement si introuvable (jamais inventée). */
   url: string | null
-  /** Les thèmes dont la source alimente les indicateurs (demographie / habitat / economie). */
+  /** Les thèmes dont la source alimente les indicateurs. */
   themes: Theme[]
   /** L'id du jeu de données auquel la ligne appartient (ADR-0022) — les
    *  familles générées partagent la clé ; absente, la ligne est son propre jeu. */
@@ -309,6 +309,14 @@ export const SOURCES_METHODES: Record<string, SourceEditoriale> = {
     editeur: 'OpenStreetMap',
     url: 'https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf',
     themes: ['mobilite'],
+  },
+  ocsge_reseaux_routiers: {
+    nom: 'IGN — OCS GE v2.0 (Nouvelle Génération) — occupation du sol et usage des réseaux routiers en Bretagne',
+    libelle: 'Millésimes 2023–2025 · Bretagne',
+    editeur: 'IGN',
+    url: 'https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION',
+    themes: ['mobilite'],
+    dataset: 'ocsge_reseaux_routiers',
   },
   // Le jeu Geovelo « Aménagements cyclables France Métropolitaine » (issue
   // #222, ADR-0016) : la source du mode `b` de `reseaux` ET du numérateur de

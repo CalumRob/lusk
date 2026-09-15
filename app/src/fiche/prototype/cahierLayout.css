@@ -27,8 +27,9 @@
 .cahier-section-exploration .passarelle-exploration {
   margin-top: 0;
   color: var(--red);
-  font-size: 14px;
+  font-size: var(--type-figure-lecture-size);
   font-weight: 700;
+  letter-spacing: normal;
   line-height: var(--cahier-grid-jump);
 }
 
@@ -39,6 +40,7 @@
   font-size: 14px;
   font-weight: 700;
   line-height: 1.25;
+  letter-spacing: normal;
   text-align: center;
 }
 

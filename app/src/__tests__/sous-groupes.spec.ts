@@ -106,6 +106,8 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
     expect(sousGroupes[0].figures.map((f) => f.key)).toEqual([
       'voitures_menage',
       'reseaux',
+      'reseaux_par_habitant',
+      'surface_reseaux_routiers',
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',

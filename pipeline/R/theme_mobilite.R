@@ -34,8 +34,8 @@
 #     sources_offre_mobilite.R), tous persistés sous data/processed/mobilite/ ;
 #   - le SEAM de publication : publier_mobilite — le payload contractuel
 #     (territoires / indicateurs / histoires / apercu) publié par la
-#     machinerie partagée publish. Le chaînon publie les ONZE clés du thème
-#     (voitures_menage + reseaux + offre_tc + bornes_recharge +
+#     machinerie partagée publish. Le chaînon publie les clés du thème
+#     (voitures_menage + reseaux + reseaux_par_habitant + offre_tc + bornes_recharge +
 #     places_stationnement_velo_1000 + offre_cyclable — la figure « L'offre
 #     cyclable » du sous-bloc, issue #231 — + les 5 parts d'isolation de la
 #     grille, assemblées au ticket #141 avec leurs rangs et l'estampille
@@ -421,6 +421,18 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   )
   reseaux_territoires <- agreger_reseaux_territoires(reseaux_communes,
                                                       base_epci)
+  # Le dénominateur population est le même millésime que les autres mesures
+  # par habitant de Mobilité (hub stationnement vélo), mais le ratio réseau est
+  # publié sous sa propre clé : le profil absolu reste intact.
+  stationnement_velo_communes <- calculer_stationnement_velo_communes(
+    donnees$stationnement_velo
+  )
+  reseaux_par_habitant_territoires <-
+    agreger_reseaux_par_habitant_territoires(
+      reseaux_communes,
+      stationnement_velo_communes[c("commune", "population")],
+      base_epci
+    )
   surface_reseaux_routiers_communes <-
     calculer_surface_reseaux_routiers_communes(
       donnees$ocsge_reseaux_routiers,
@@ -449,9 +461,6 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   )
   bornes_communes <- calculer_bornes_communes(donnees$bornes_recharges,
                                               base_epci)
-  stationnement_velo_communes <- calculer_stationnement_velo_communes(
-    donnees$stationnement_velo
-  )
   offre_cyclable_communes <- calculer_offre_cyclable_communes(
     donnees$amenagements_cyclables,
     stationnement_velo_communes[c("commune", "population")]
@@ -502,6 +511,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "reseaux_communes.rds"))
   readr::write_rds(reseaux_territoires,
                    file.path(sortie, "reseaux_territoires.rds"))
+  readr::write_rds(reseaux_par_habitant_territoires,
+                   file.path(sortie, "reseaux_par_habitant_territoires.rds"))
   readr::write_rds(surface_reseaux_routiers_communes,
                    file.path(sortie, "surface_reseaux_routiers_communes.rds"))
   readr::write_rds(surface_reseaux_routiers_territoires,
@@ -550,6 +561,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     voitures_territoires = voitures_territoires,
     reseaux_communes = reseaux_communes,
     reseaux_territoires = reseaux_territoires,
+    reseaux_par_habitant_territoires = reseaux_par_habitant_territoires,
     surface_reseaux_routiers_communes = surface_reseaux_routiers_communes,
     surface_reseaux_routiers_territoires = surface_reseaux_routiers_territoires,
     offre_tc_communes = offre_tc_communes,
@@ -636,7 +648,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     NA pour la référence : elle ne vit que sur la région (nombre de lignes
 #     variable par territoire).
 INDICATEURS_MOBILITE <- tibble::tibble(
-  key = c("voitures_menage", "reseaux", "surface_reseaux_routiers",
+  key = c("voitures_menage", "reseaux", "reseaux_par_habitant", "surface_reseaux_routiers",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
            "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
            "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
@@ -647,9 +659,10 @@ INDICATEURS_MOBILITE <- tibble::tibble(
             "raccordement_tc", "raccordement_courbe", "raccordement_reference",
             "nb_buildings"),
   libelle = c(
-    "Voitures par ménage",
-    "Réseaux à pied / vélo / voiture",
-    "Part du territoire consacré aux réseaux routiers",
+     "Voitures par ménage",
+     "Réseaux à pied / vélo / voiture",
+     "Longueur du réseau par habitant",
+     "Part du territoire consacré aux réseaux routiers",
     "Part des bâtiments près d’un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
@@ -691,9 +704,10 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "Bâtiments résidentiels analysés"
   ),
   sources = list(
-    "rp_logement_princ",
-    c("amenagements_cyclables", "osm_reseaux", "communes_limites"),
-    "ocsge_reseaux_routiers",
+     "rp_logement_princ",
+     c("amenagements_cyclables", "osm_reseaux", "communes_limites"),
+     c("amenagements_cyclables", "osm_reseaux", "stationnement-velo"),
+     "ocsge_reseaux_routiers",
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
     "stationnement-velo",
@@ -712,8 +726,9 @@ INDICATEURS_MOBILITE <- tibble::tibble(
       "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies",
       "mobilite_snapshot"
   ),
-    source_reference = c("rp_logement_princ", "amenagements_cyclables",
-                         "ocsge_reseaux_routiers",
+  source_reference = c("rp_logement_princ", "amenagements_cyclables",
+                       "osm_reseaux",
+                          "ocsge_reseaux_routiers",
                         "korrigo", "bornes-recharges", "stationnement-velo",
                         "osm_reseaux", "bpe_b316", "osm_reseaux",
                           "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
@@ -722,7 +737,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                          rep("mobilite_snapshot", 15),
                          "matrice_temps_mairies", "matrice_temps_mairies",
                          "matrice_temps_mairies", "mobilite_snapshot"),
-  multiplicite = c(3L, 3L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
+  multiplicite = c(3L, 3L, 3L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
                    rep(1L, 6), rep(1L, 5),
                      rep(1L, 15),
                     1L,
@@ -946,6 +961,11 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     analytiques$reseaux_territoires, "reseaux",
     c(t_longueur = "km", b_longueur = "km", c_longueur = "km")
   )
+  reseaux_par_habitant <- aligner_detail(
+    analytiques$reseaux_par_habitant_territoires, "reseaux_par_habitant",
+    c(t_km_1000 = "km / 1 000 hab.", b_km_1000 = "km / 1 000 hab.",
+      c_km_1000 = "km / 1 000 hab.")
+  )
   # la figure « L'offre cyclable » (issue #231) : les cinq mesures de la clé
   # multi-mesures — les longueurs protégé/partagé/total et les km/1 000 hab —
   # alignées sur le squelette (le détail NA des clés scalaires du sous-bloc ne
@@ -978,6 +998,9 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   )
   rangs_reseaux <- construire_rangs_detail(
     analytiques$reseaux_territoires, territoires
+  )
+  rangs_reseaux_par_habitant <- construire_rangs_detail(
+    analytiques$reseaux_par_habitant_territoires, territoires
   )
   rangs_offre_cyclable <- construire_rangs_detail(
     analytiques$offre_territoires %>%
@@ -1043,6 +1066,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     rangs_isolation,
     rangs_voitures,
     rangs_reseaux,
+    rangs_reseaux_par_habitant,
     rangs_offre_cyclable
     ,rangs_tot_loss
   )
@@ -1062,6 +1086,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     dplyr::bind_rows(isolation),
     voitures,
     reseaux,
+    reseaux_par_habitant,
     offre_cyclable,
     tables$raccordement_tc,
     raccordement_courbe,
@@ -1428,8 +1453,8 @@ validations_mobilite <- list(
 
 # construire_payload_mobilite --------------------------------------------------
 # L'assembleur du payload du thème : les quatre tables du contrat (la forme
-# d'compute_payload, compute.R) — indicateurs (les quatorze clés — les onze
-# historiques + le raccordement #486 — avec rangs + estampilles T7, les 5
+# d'compute_payload, compute.R) — indicateurs (les clés historiques + le
+# raccordement #486 — avec rangs + estampilles T7, les 5
 # parts d'isolation portant l'estampille snapshot),
 # histoires (les deux story keys), territoires (référence partagée), la
 # projection BPE bornée et apercu (vide — gating). Validé par la validation
@@ -1549,6 +1574,7 @@ DIRECTIONS_MOBILITE <- list(
   nb_buildings = "high",
   voitures_menage = "high",
   reseaux = "high",
+  reseaux_par_habitant = "high",
   surface_reseaux_routiers = "low",
   offre_tc = "high",
   bornes_recharge = "high",

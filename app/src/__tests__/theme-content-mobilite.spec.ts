@@ -117,7 +117,7 @@ describe('Mobilité page rundown', () => {
       'La figure compare, pour chaque mode, le nombre moyen d’équipements accessibles par bâtiment et le nombre moyen de types différents. Les pertes sont calculées par rapport à la voiture. Exemple : à pied ou en transports en commun, un bâtiment accède en moyenne à 30 types d’équipements de moins qu’en voiture, contre 20 dans le groupe comparé.',
     )
     expect(blocksText(content.units[0].sections[1].evidence!.figureLecture)).toBe(
-      'La figure classe chaque type d’équipement selon le premier mode avec lequel au moins 25 % des bâtiments peuvent l’atteindre en vingt minutes. Exemple : 2 types d’équipements sont classés « Inaccessible ou presque en 20 minutes » dans Commune A, contre 3 en moyenne dans le groupe comparé.',
+      'Chaque colonne indique le nombre de types d’équipements BPE classés dans un profil d’accès. Les quatre profils sont exclusifs : chaque type n’est compté qu’une seule fois. Exemple : 2 types d’équipements sont classés « Inaccessible ou presque en 20 minutes » dans Commune A, contre 3 en moyenne dans le groupe comparé.',
     )
     expect(blocksText(content.units[0].sections[2].evidence!.figureLecture)).toBe(
       'Chaque anneau indique la part des bâtiments qui peuvent atteindre un regroupement de services en vingt minutes, pour chaque mode. Exemple : à pied ou en transports en commun, 60 % des bâtiments accèdent au regroupement « Administration », contre 45 % dans le groupe comparé.',
@@ -483,7 +483,115 @@ const completeFacts: TerritoryFacts = {
   },
 }
 
+function sharingIndicator(
+  key: string,
+  detail: string | null,
+  value: number | null,
+  unit: string,
+): NumericFact {
+  return { ...fact(key, value, unit, comparison(0.5, 'plus-est-mieux')), detail }
+}
+
 describe('resolveMobiliteThemeContent', () => {
+  it('resolves the public-space sharing unit into ordered network, cycling-offer, and parking sections', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.indicators = [
+      ...facts.mobility.indicators,
+      sharingIndicator('reseaux_par_habitant', 't_km_1000', 12, 'km / 1 000 hab.'),
+      sharingIndicator('reseaux_par_habitant', 'b_km_1000', 8, 'km / 1 000 hab.'),
+      sharingIndicator('reseaux_par_habitant', 'c_km_1000', 80, 'km / 1 000 hab.'),
+      sharingIndicator('surface_reseaux_routiers', null, 0.12, '%'),
+      sharingIndicator('offre_cyclable', 'protege_longueur', 5, 'km'),
+      sharingIndicator('offre_cyclable', 'protege_km_1000', 0.4, 'km / 1 000 hab'),
+      sharingIndicator('offre_cyclable', 'partage_longueur', 7, 'km'),
+      sharingIndicator('offre_cyclable', 'partage_km_1000', 0.6, 'km / 1 000 hab'),
+      sharingIndicator('offre_cyclable', 'total_longueur', 12, 'km'),
+      sharingIndicator('places_stationnement_velo_1000', null, 5, 'places / 1 000 hab'),
+      sharingIndicator('places_stationnement_voiture_1000', null, 25, 'places / 1 000 hab'),
+      sharingIndicator('stationnement_velo_par_voiture', null, 0.2, 'places vélo / place voiture'),
+    ]
+
+    const content = resolveMobiliteThemeContent(facts)
+    const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')
+
+    expect(content.units.map((unit) => unit.key)).toEqual([
+      'acces-aux-services',
+      'partage-de-lespace-public',
+    ])
+    expect(sharing).toBeDefined()
+    expect(sharing?.label).toBe('Partage de l’espace public')
+    expect(sharing?.sections.map((section) => [section.key, section.label])).toEqual([
+      ['reseaux', 'Réseaux'],
+      ['offre-cyclable', 'Offre cyclable'],
+      ['stationnement', 'Stationnement'],
+    ])
+    expect(sharing?.sections[0]?.indicators.map((indicator) => indicator.fact.key)).toEqual([
+      'reseaux_par_habitant',
+      'surface_reseaux_routiers',
+    ])
+    expect(sharing?.sections[0]?.evidence).toMatchObject({
+      territoryName: 'Commune A',
+      roadSurface: { label: 'Emprise routière' },
+      roadSurfaceLecture: [[
+        { kind: 'text', value: "L'emprise routière décrit la part de la surface totale du territoire qui est dédiée aux Réseaux routiers (code d'usage 4.1.1)." },
+      ]],
+      networks: [
+        { label: 'Réseau piéton' },
+        { label: 'Réseau cyclable' },
+        { label: 'Réseau automobile' },
+      ],
+    })
+    expect(sharing?.sections[1]?.indicators.map((indicator) => indicator.fact.key)).toEqual([
+      'offre_cyclable',
+    ])
+    expect(sharing?.sections[2]?.indicators.map((indicator) => indicator.fact.key)).toEqual([
+      'places_stationnement_velo_1000',
+      'places_stationnement_voiture_1000',
+      'stationnement_velo_par_voiture',
+    ])
+    expect(JSON.stringify(sharing)).not.toContain('TC')
+  })
+
+  it('keeps the parking section incomplete when only the published bike parking fact exists', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.indicators = [
+      ...facts.mobility.indicators,
+      sharingIndicator('places_stationnement_velo_1000', null, 0, 'places / 1 000 hab'),
+    ]
+    const content = resolveMobiliteThemeContent(facts)
+    const parking = content.units[1]!.sections[2]!
+
+    expect(parking.availability).toBe('incomplete')
+    expect(parking.evidence).toMatchObject({
+      kind: 'sharing-parking',
+      bikeSpaces: { fact: { key: 'places_stationnement_velo_1000', value: 0 } },
+      carSpaces: { fact: { key: 'places_stationnement_voiture_1000', availability: 'absent' } },
+      bikePerCar: { fact: { key: 'stationnement_velo_par_voiture', availability: 'absent' } },
+    })
+    expect(parking.lecture).toBeNull()
+  })
+
+  it('explains an unavailable parking ratio when the car denominator is zero', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.indicators = [
+      ...facts.mobility.indicators,
+      sharingIndicator('places_stationnement_velo_1000', null, 5, 'places / 1 000 hab'),
+      sharingIndicator('places_stationnement_voiture_1000', null, 0, 'places / 1 000 hab'),
+      sharingIndicator('stationnement_velo_par_voiture', null, null, 'places vélo / place voiture'),
+    ]
+
+    const parking = resolveMobiliteThemeContent(facts).units[1]!.sections[2]!
+
+    expect(parking.evidence?.figureLecture.flat().flat()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'text',
+          value: expect.stringContaining('aucune place de stationnement voiture'),
+        }),
+      ]),
+    )
+  })
+
   it('resolves one ordered unit with the four semantic sections and their evidence', () => {
     const content = resolveMobiliteThemeContent(completeFacts)
     const unit = content.units[0]!
@@ -572,7 +680,7 @@ describe('resolveMobiliteThemeContent', () => {
     })
     expect(profiles.lecture?.marelle).toBe('Service minimum ?')
     expect(lectureText(profiles.lecture)).toBe(
-      'La figure regroupe les types d’équipements BPE selon le premier mode qui permet à au moins un quart des bâtiments de les atteindre.',
+      'Un profil d’accès regroupe les types d’équipements BPE selon le premier mode qui permet à au moins un quart des bâtiments de les atteindre.',
     )
 
     expect(distribution.availability).toBe('complete')

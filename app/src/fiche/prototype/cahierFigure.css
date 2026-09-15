@@ -78,6 +78,7 @@
   list-style: none;
   color: var(--cahier-default, #62706c);
   font: var(--type-figure-legend, 500 0.8125rem/1.35 var(--font-sans, sans-serif));
+  letter-spacing: normal;
 }
 
 .cahier-figure-legend-item {
@@ -209,6 +210,7 @@
   color: var(--ink, #232a2a);
   font: var(--type-figure-value, 600 1rem/1.1 var(--font-sans, sans-serif));
   font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
 }
 
 .cahier-figure-scalar--colored .cahier-figure-scalar-value {
@@ -251,12 +253,14 @@
   max-width: 22ch;
   color: var(--cahier-default, #62706c);
   font: var(--type-figure-mode, 500 0.75rem/1.25 var(--font-sans, sans-serif));
+  letter-spacing: normal;
   overflow-wrap: anywhere;
 }
 
 .cahier-figure-scalar-reference {
   color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
   font: var(--type-figure-label, 400 0.6875rem/1.2 var(--font-sans, sans-serif));
+  letter-spacing: normal;
 }
 
 .cahier-figure-tooltip {

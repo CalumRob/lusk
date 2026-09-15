@@ -156,7 +156,7 @@ const classesFond = computed(() =>
 
 /**
  * [PROTOTYPE #499 — JETABLE] La variante de lecture demandée par
- * ?variant=A|B|C|D — null hors développement ou sans paramètre valide. Le
+ * ?variant=A|B|C|D|E — null hors développement ou sans paramètre valide. Le
  * chargement et l'état restent CI-DESSUS : la variante reçoit le payload
  * déjà réglé et ne fetch jamais. L'onglet « Programmes et subventions »
  * garde SA présentation propre (BlocProgrammes) dans toutes les variantes —
@@ -164,9 +164,9 @@ const classesFond = computed(() =>
  */
 const variante = computed(() => varianteDeUrl(route.query.variant))
 const prototypeActif = import.meta.env.DEV
-/** [PROTOTYPE #531] D owns the editorial fiche surface for Mobilité only. */
+/** [PROTOTYPE #531/#552] Cahier variants own the editorial Mobilité surface. */
 const prototypeCahierMobilite = computed(
-  () => prototypeActif && (variante.value?.clef === 'D' || variante.value?.clef === 'E') && selection.value === 'mobilite',
+  () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
 )
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
@@ -183,7 +183,7 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
 })
 const paginationCahier = computed(() =>
   payload.value && contenuMobilite.value
-    ? cahierPaginationFor(payload.value, contenuMobilite.value)
+    ? cahierPaginationFor(payload.value, contenuMobilite.value, variante.value?.clef === 'E')
     : null,
 )
 function choisirOnglet(slug: SlugOnglet): void {

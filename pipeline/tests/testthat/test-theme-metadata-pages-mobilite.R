@@ -30,6 +30,7 @@ test_that("l'énumération des pages Mobilité est connue — les pages multi-me
   expect_setequal(
     cles,
     c(PAGES_SCALAIRES_MOBILITE, "voitures_menage", "offre_cyclable", "reseaux",
+      "reseaux_par_habitant",
       "raccordement_courbe")
   )
   scalaires <- cles[vapply(meta$indicator_pages, function(p)

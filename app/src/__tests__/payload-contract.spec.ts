@@ -433,9 +433,10 @@ describe('payload contract — the committed payload parses and renders', () => 
     // 2026-08-09 (l'amendement #243, ADR-0017 : le produit millésimé
     // « surfaces artificialisées », 2 millésimes × 4 départements — le DIFF
     // est sorti du manifeste) + les TROIS patchs correctifs M2 du run
-    // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
-    // l'amendement, appliquée dans #243)
-    expect(payload.vintages).toHaveLength(65)
+     // 2026-08-10 (ocsge_patch_correctif_{22,29,56} — la décision de
+     // l'amendement, appliquée dans #243) + les deux artefacts figés du
+     // raccordement transport (#486 : matrice de temps et population).
+     expect(payload.vintages).toHaveLength(68)
     const consoenaf = payload.vintages?.find((v) => v.id === 'consoenaf')
     expect(consoenaf).toMatchObject({
       source:

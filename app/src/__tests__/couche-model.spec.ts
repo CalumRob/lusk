@@ -186,7 +186,9 @@ describe('couchesDuTheme — Mobilité (fixture)', () => {
     )
     expect(apresStory).toEqual([
       'groupe:deux_plus|sans_voiture|une_voiture',
-      'groupe:b_densite|b_longueur|c_densite|c_longueur|t_densite|t_longueur',
+      'groupe:b_longueur|c_longueur|t_longueur',
+      'groupe:t_km_1000|b_km_1000|c_km_1000',
+      'surface_reseaux_routiers',
       'offre_tc',
       'bornes_recharge',
       'places_stationnement_velo_1000',

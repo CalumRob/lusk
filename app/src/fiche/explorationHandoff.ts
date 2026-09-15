@@ -119,6 +119,12 @@ const PAGE_KEY_FOR_TARGET: Readonly<Record<string, string>> = {
   share_bank_t: 'iso_banque',
   tot_loss_t: 'tot_loss_t',
   tot_loss_b: 'tot_loss_b',
+  reseaux: 'reseaux',
+  reseaux_par_habitant: 'reseaux',
+  offre_cyclable: 'offre_cyclable',
+  places_stationnement_velo_1000: 'places_stationnement_velo_1000',
+  places_stationnement_voiture_1000: 'places_stationnement_voiture_1000',
+  stationnement_velo_par_voiture: 'stationnement_velo_par_voiture',
 }
 
 const ACCESS_PAGE_KEY_FOR_SERVICE: Readonly<Record<string, string>> = {
@@ -152,6 +158,9 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string>> = 
   'profils-acces-par-mode': 'avg_tot_t',
   'services-essentiels': 'iso_administration',
   'distribution-acces-par-batiment': 'tot_loss_t',
+  reseaux: 'reseaux',
+  'offre-cyclable': 'offre_cyclable',
+  stationnement: 'places_stationnement_velo_1000',
 }
 
 export function routePourSectionExploration(

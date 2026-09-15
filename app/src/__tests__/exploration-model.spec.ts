@@ -211,7 +211,7 @@ describe('modèle trajectoire de Page d’indicateur (#438)', () => {
 //  - 'complet' : les lignes portent les valeurs publiées du territoire,
 //    dans l'ordre DÉCLARÉ des catégories (les métadonnées possèdent l'ordre).
 describe('modèle profil de Page d’indicateur (#439)', () => {
-  const CATEGORIES = ['t_longueur', 't_densite', 'b_longueur', 'b_densite', 'c_longueur', 'c_densite'] as const
+  const CATEGORIES = ['t_longueur', 'b_longueur', 'c_longueur'] as const
   const pageProfil = structuredClone(metadonneesThemesFixtures.mobilite) as typeof metadonneesThemesFixtures.mobilite
   pageProfil.indicator_pages = { reseaux: {
     ...structuredClone(metadonneesThemesFixtures.demographie.indicator_pages!.densite),
@@ -223,7 +223,7 @@ describe('modèle profil de Page d’indicateur (#439)', () => {
   } }
   const facet = normalizeComparisonFacet(pageProfil.indicator_pages!.reseaux, {}, 'mobilite')
   const labels = metadonneesThemesFixtures.mobilite.detail_labels.reseaux
-  const faitReseaux = (id: string, detail: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ ...facts(id, value ?? 0, type), theme: 'mobilite', key: 'reseaux', detail, value, unit: detail.endsWith('_longueur') ? 'km' : 'km/km²' })
+  const faitReseaux = (id: string, detail: string, value: number | null, type: Indicateur['type'] = 'commune'): Indicateur => ({ ...facts(id, value ?? 0, type), theme: 'mobilite', key: 'reseaux', detail, value, unit: 'km' })
   const faitsComplets = CATEGORIES.flatMap((detail) => [faitReseaux('a', detail, 1.5), faitReseaux('b', detail, 2.5)])
 
   it('rend le profil complet dans l’ordre déclaré — libellés canonical et unité PAR catégorie', () => {
@@ -233,17 +233,17 @@ describe('modèle profil de Page d’indicateur (#439)', () => {
     expect(modele.lignes.map((ligne) => ligne.detail)).toEqual([...CATEGORIES])
     expect(modele.lignes.map((ligne) => ligne.label)).toEqual(CATEGORIES.map((detail) => labels[detail]))
     expect(modele.lignes[0]).toMatchObject({ valeur: 1.5, unite: 'km' })
-    expect(modele.lignes[1]).toMatchObject({ valeur: 1.5, unite: 'km/km²' })
+    expect(modele.lignes[1]).toMatchObject({ valeur: 1.5, unite: 'km' })
   })
 
   it('déclare un profil incomplet quand une catégorie déclarée manque au territoire du périmètre', () => {
-    const sansBDensite = faitsComplets.filter((fait) => !(fait.territoire === 'a' && fait.detail === 'b_densite'))
-    const modele = modeleProfil(sansBDensite, facet, pageProfil.indicator_pages!.reseaux, territoires, labels, { niveau: 'commune', territoire: 'a' })
+    const sansBLongueur = faitsComplets.filter((fait) => !(fait.territoire === 'a' && fait.detail === 'b_longueur'))
+    const modele = modeleProfil(sansBLongueur, facet, pageProfil.indicator_pages!.reseaux, territoires, labels, { niveau: 'commune', territoire: 'a' })
     expect(modele.etat).toBe('incomplet')
     expect(modele.message).toMatch(/Alpha : profil incomplet à ce niveau\./)
-    expect(modele.lignes.find((ligne) => ligne.detail === 'b_densite')!.valeur).toBeNull()
+    expect(modele.lignes.find((ligne) => ligne.detail === 'b_longueur')!.valeur).toBeNull()
     // les catégories présentes restent rendues — le profil reste visible entier
-    expect(modele.lignes.find((ligne) => ligne.detail === 'b_longueur')!.valeur).toBe(1.5)
+    expect(modele.lignes.find((ligne) => ligne.detail === 't_longueur')!.valeur).toBe(1.5)
   })
 
   it('distingue honnêtement « absent à ce niveau » et le silence sans territoire sélectionné', () => {

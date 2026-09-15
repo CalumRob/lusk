@@ -421,7 +421,8 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
     // plus places_stationnement_voiture_1000 (moins = mieux verrouillée par le
     // sourçage #369, CONTEXT.md 2026-08-12), distribution_dpe (le classement
     // lit la part F/G, la même valeur que part_passoires) et tot_loss_t/b (la
-    // perte totale d'accès — moins d'accès perdus, c'est mieux)
+    // perte totale d'accès — moins d'accès perdus, c'est mieux) et la part de
+    // surface routière OCS-GE (moins d'emprise = mieux)
     expect(clefsMoins.sort()).toEqual(
       [
         'economie.chomage',
@@ -440,6 +441,7 @@ describe('registre Méthodes — le sens des classements (ADR-0015, #367)', () =
         'mobilite.iso_ecole',
         'mobilite.iso_sante',
         'mobilite.places_stationnement_voiture_1000',
+        'mobilite.surface_reseaux_routiers',
         'mobilite.tot_loss_b',
         'mobilite.tot_loss_t',
       ].sort(),

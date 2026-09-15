@@ -60,7 +60,7 @@
       "key": "partage-de-lespace-public",
       "label": "Le partage de l’espace public",
       "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
-      "indicators": ["reseaux", "surface_reseaux_routiers", "places_stationnement_velo_1000", "places_stationnement_voiture_1000", "stationnement_velo_par_voiture", "offre_cyclable"],
+      "indicators": ["reseaux", "reseaux_par_habitant", "surface_reseaux_routiers", "places_stationnement_velo_1000", "places_stationnement_voiture_1000", "stationnement_velo_par_voiture", "offre_cyclable"],
       "figure": { "family": "composition", "indicator": "offre_cyclable" }
     },
     {
@@ -81,6 +81,7 @@
   "indicator_keys": [
     "voitures_menage",
     "reseaux",
+    "reseaux_par_habitant",
     "surface_reseaux_routiers",
     "offre_tc",
     "bornes_recharge",
@@ -125,7 +126,8 @@
   "story_keys": ["vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"],
   "sources": {
     "voitures_menage": "rp_logement_princ",
-    "reseaux": "amenagements_cyclables",
+     "reseaux": "amenagements_cyclables",
+     "reseaux_par_habitant": "osm_reseaux",
     "surface_reseaux_routiers": "ocsge_reseaux_routiers",
     "offre_tc": "korrigo",
     "bornes_recharge": "bornes-recharges",
@@ -196,7 +198,8 @@
       "avg_div_t": "Nombre moyen de types d’équipements accessibles — à pied ou en transports en commun",
       "nb_buildings": "Bâtiments résidentiels analysés",
      "voitures_menage": "Voitures par ménage",
-    "reseaux": "Réseaux à pied / vélo / voiture",
+     "reseaux": "Réseaux à pied / vélo / voiture",
+     "reseaux_par_habitant": "Longueur du réseau par habitant",
     "surface_reseaux_routiers": "Part du territoire consacré aux réseaux routiers",
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
     "bornes_recharge": "Bornes de recharge pour véhicules électriques",
@@ -216,6 +219,11 @@
       "t_longueur": "Longueur — à pied ou en transports en commun",
       "b_longueur": "Longueur — à vélo",
       "c_longueur": "Longueur — en voiture"
+    },
+    "reseaux_par_habitant": {
+      "t_km_1000": "Longueur — à pied",
+      "b_km_1000": "Longueur — à vélo",
+      "c_km_1000": "Longueur — en voiture"
     },
     "voitures_menage": {
       "sans_voiture": "Ménages sans voiture",
@@ -278,7 +286,8 @@
   "indicator_pages": {
     "voitures_menage": { "indicator": "voitures_menage", "label": "Voitures par ménage", "definition": "Répartition des ménages selon le nombre de voitures possédées.", "unit": "%", "calculation": "Parts publiées par le pipeline.", "direction": "high", "caveats": "Les catégories décrivent les ménages recensés.", "levels": ["commune", "epci", "departement"], "sources": ["rp_logement_princ"], "family": "composition", "composition": { "parts": ["sans_voiture", "une_voiture", "deux_plus"] }, "comparison": { "details": ["sans_voiture", "une_voiture", "deux_plus"], "detail": "sans_voiture", "unit": "%", "labels": { "sans_voiture": "Ménages sans voiture", "une_voiture": "Ménages avec 1 voiture", "deux_plus": "Ménages avec 2 voitures ou plus" } } },
     "offre_cyclable": { "indicator": "offre_cyclable", "label": "L’offre cyclable", "definition": "Répartition de l’offre cyclable entre aménagements protégés et partagés.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "La longueur dépend de la couverture du réseau publié.", "levels": ["commune", "epci", "departement"], "sources": ["osm_reseaux"], "family": "composition", "composition": { "parts": ["protege_longueur", "partage_longueur"] }, "comparison": { "details": ["protege_longueur", "partage_longueur", "total_longueur"], "detail": "total_longueur", "unit": "km", "labels": { "protege_longueur": "Longueur protégée", "partage_longueur": "Longueur partagée", "total_longueur": "Longueur totale" } } },
-     "reseaux": { "indicator": "reseaux", "label": "Réseaux à pied / vélo / voiture", "definition": "Le profil complet du réseau de la commune : la longueur du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "Les catégories portent la même unité (km) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.", "levels": ["commune", "epci", "departement"], "sources": ["amenagements_cyclables"], "family": "list", "list": { "categories": ["t_longueur", "b_longueur", "c_longueur"] }, "comparison": { "details": ["t_longueur", "b_longueur", "c_longueur"], "detail": "b_longueur", "unit": "km", "labels": { "t_longueur": "Longueur — à pied ou en transports en commun", "b_longueur": "Longueur — à vélo", "c_longueur": "Longueur — en voiture" } } },
+      "reseaux": { "indicator": "reseaux", "label": "Réseaux à pied / vélo / voiture", "definition": "Le profil complet du réseau de la commune : la longueur du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "Les catégories portent la même unité (km) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.", "levels": ["commune", "epci", "departement"], "sources": ["amenagements_cyclables"], "family": "list", "list": { "categories": ["t_longueur", "b_longueur", "c_longueur"] }, "comparison": { "details": ["t_longueur", "b_longueur", "c_longueur"], "detail": "b_longueur", "unit": "km", "labels": { "t_longueur": "Longueur — à pied ou en transports en commun", "b_longueur": "Longueur — à vélo", "c_longueur": "Longueur — en voiture" } } },
+      "reseaux_par_habitant": { "indicator": "reseaux_par_habitant", "label": "Longueur du réseau par habitant", "definition": "La longueur des réseaux à pied, à vélo et en voiture rapportée à 1 000 habitants.", "unit": "km / 1 000 hab.", "calculation": "Somme des longueurs de réseau par mode divisée par la population du territoire, pour 1 000 habitants.", "direction": "high", "caveats": "La mesure décrit une longueur cartographiée rapportée à la population ; elle ne mesure ni l’accessibilité ni l’usage.", "levels": ["commune", "epci", "departement"], "sources": ["osm_reseaux", "stationnement-velo"], "family": "list", "list": { "categories": ["t_km_1000", "b_km_1000", "c_km_1000"] }, "comparison": { "details": ["t_km_1000", "b_km_1000", "c_km_1000"], "detail": "b_km_1000", "unit": "km / 1 000 hab.", "labels": { "t_km_1000": "Longueur — à pied", "b_km_1000": "Longueur — à vélo", "c_km_1000": "Longueur — en voiture" } } },
      "surface_reseaux_routiers": { "indicator": "surface_reseaux_routiers", "label": "Part du territoire consacré aux réseaux routiers", "definition": "Part de la surface communale couverte par les polygones OCS-GE classés US4.1.1, quelle que soit leur valeur d’artificialisation.", "unit": "%", "calculation": "Somme des aires OCS-GE US4.1.1 intersectées avec le territoire, divisée par sa surface totale ; les agrégats sont recalculés à partir des surfaces, jamais moyennés.", "direction": "low", "caveats": "US4.1.1 décrit un usage routier mais ne distingue pas les modes. L’attribut artificialisé/non artificialisé ne filtre pas cet indicateur et les surfaces non cartographiées restent invisibles.", "levels": ["commune", "epci", "departement"], "sources": ["ocsge_reseaux_routiers"], "family": "scalar" },
     "offre_tc": { "indicator": "offre_tc", "label": "Part des bâtiments près d’un arrêt (à 500 m)", "definition": "Part des bâtiments du territoire situés à moins de 500 mètres d’un arrêt de transports en commun.", "unit": "%", "calculation": "Part des bâtiments à moins de 500 mètres d’un arrêt référencé dans les réseaux de transports publics bretons, publiée par le pipeline.", "direction": "high", "caveats": "Seuls comptent les arrêts référencés par la base Korrigo : un réseau absent de la base reste invisible.", "levels": ["commune", "epci", "departement"], "sources": ["korrigo"], "family": "scalar" },
     "bornes_recharge": { "indicator": "bornes_recharge", "label": "Bornes de recharge pour véhicules électriques", "definition": "Nombre de bornes de recharge pour véhicules électriques recensées sur le territoire.", "unit": "bornes", "calculation": "Dénombrement des bornes du fichier national consolidé IRVE rattachées au territoire, publié par le pipeline.", "direction": "high", "caveats": "Un dénombrement brut avantage les territoires peuplés : la mise en perspective avec les stations-service se lit sur sa page propre. Une borne non déclarée au fichier reste invisible.", "levels": ["commune", "epci", "departement"], "sources": ["bornes-recharges"], "family": "scalar" },

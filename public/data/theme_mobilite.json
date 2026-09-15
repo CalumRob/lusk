@@ -90,6 +90,8 @@
       "framing": "La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.",
       "indicators": [
         "reseaux",
+        "reseaux_par_habitant",
+        "surface_reseaux_routiers",
         "places_stationnement_velo_1000",
         "places_stationnement_voiture_1000",
         "stationnement_velo_par_voiture",
@@ -133,6 +135,8 @@
   "indicator_keys": [
     "voitures_menage",
     "reseaux",
+    "reseaux_par_habitant",
+    "surface_reseaux_routiers",
     "offre_tc",
     "bornes_recharge",
     "places_stationnement_velo_1000",
@@ -180,6 +184,8 @@
   "sources": {
     "voitures_menage": "rp_logement_princ",
     "reseaux": "amenagements_cyclables",
+    "reseaux_par_habitant": "osm_reseaux",
+    "surface_reseaux_routiers": "ocsge_reseaux_routiers",
     "offre_tc": "korrigo",
     "bornes_recharge": "bornes-recharges",
     "places_stationnement_velo_1000": "stationnement-velo",
@@ -250,6 +256,8 @@
     "nb_buildings": "Bâtiments résidentiels analysés",
     "voitures_menage": "Voitures par ménage",
     "reseaux": "Réseaux à pied / vélo / voiture",
+    "reseaux_par_habitant": "Longueur du réseau par habitant",
+    "surface_reseaux_routiers": "Part du territoire consacré aux réseaux routiers",
     "offre_tc": "Part des bâtiments près d’un arrêt (à 500 m)",
     "bornes_recharge": "Bornes de recharge pour véhicules électriques",
     "places_stationnement_velo_1000": "Places de stationnement vélo pour 1 000 hab.",
@@ -266,11 +274,13 @@
   "detail_labels": {
     "reseaux": {
       "t_longueur": "Longueur — à pied ou en transports en commun",
-      "t_densite": "Densité — à pied ou en transports en commun",
       "b_longueur": "Longueur — à vélo",
-      "b_densite": "Densité — à vélo",
-      "c_longueur": "Longueur — en voiture",
-      "c_densite": "Densité — en voiture"
+      "c_longueur": "Longueur — en voiture"
+    },
+    "reseaux_par_habitant": {
+      "t_km_1000": "Longueur — à pied",
+      "b_km_1000": "Longueur — à vélo",
+      "c_km_1000": "Longueur — en voiture"
     },
     "voitures_menage": {
       "sans_voiture": "Ménages sans voiture",
@@ -411,11 +421,11 @@
     "reseaux": {
       "indicator": "reseaux",
       "label": "Réseaux à pied / vélo / voiture",
-      "definition": "Le profil complet du réseau de la commune : la longueur et la densité du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.",
+      "definition": "Le profil complet du réseau de la commune : la longueur du réseau pour chacun des trois modes — à pied ou en transports en commun, à vélo, en voiture.",
       "unit": "km",
-      "calculation": "Longueurs et densités publiées par le pipeline.",
+      "calculation": "Longueurs publiées par le pipeline.",
       "direction": "high",
-      "caveats": "Les catégories portent leurs unités propres (km ou km/km²) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.",
+      "caveats": "Les catégories portent la même unité (km) et ne se somment pas ; la comparaison entre territoires porte sur la catégorie choisie.",
       "levels": [
         "commune",
         "epci",
@@ -428,33 +438,82 @@
       "list": {
         "categories": [
           "t_longueur",
-          "t_densite",
           "b_longueur",
-          "b_densite",
-          "c_longueur",
-          "c_densite"
+          "c_longueur"
         ]
       },
       "comparison": {
         "details": [
           "t_longueur",
-          "t_densite",
           "b_longueur",
-          "b_densite",
-          "c_longueur",
-          "c_densite"
+          "c_longueur"
         ],
         "detail": "b_longueur",
         "unit": "km",
         "labels": {
           "t_longueur": "Longueur — à pied ou en transports en commun",
-          "t_densite": "Densité — à pied ou en transports en commun",
           "b_longueur": "Longueur — à vélo",
-          "b_densite": "Densité — à vélo",
-          "c_longueur": "Longueur — en voiture",
-          "c_densite": "Densité — en voiture"
+          "c_longueur": "Longueur — en voiture"
         }
       }
+    },
+    "reseaux_par_habitant": {
+      "indicator": "reseaux_par_habitant",
+      "label": "Longueur du réseau par habitant",
+      "definition": "La longueur des réseaux à pied, à vélo et en voiture rapportée à 1 000 habitants.",
+      "unit": "km / 1 000 hab.",
+      "calculation": "Somme des longueurs de réseau par mode divisée par la population du territoire, pour 1 000 habitants.",
+      "direction": "high",
+      "caveats": "La mesure décrit une longueur cartographiée rapportée à la population ; elle ne mesure ni l’accessibilité ni l’usage.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "osm_reseaux",
+        "stationnement-velo"
+      ],
+      "family": "list",
+      "list": {
+        "categories": [
+          "t_km_1000",
+          "b_km_1000",
+          "c_km_1000"
+        ]
+      },
+      "comparison": {
+        "details": [
+          "t_km_1000",
+          "b_km_1000",
+          "c_km_1000"
+        ],
+        "detail": "b_km_1000",
+        "unit": "km / 1 000 hab.",
+        "labels": {
+          "t_km_1000": "Longueur — à pied",
+          "b_km_1000": "Longueur — à vélo",
+          "c_km_1000": "Longueur — en voiture"
+        }
+      }
+    },
+    "surface_reseaux_routiers": {
+      "indicator": "surface_reseaux_routiers",
+      "label": "Part du territoire consacré aux réseaux routiers",
+      "definition": "Part de la surface communale couverte par les polygones OCS-GE classés US4.1.1, quelle que soit leur valeur d’artificialisation.",
+      "unit": "%",
+      "calculation": "Somme des aires OCS-GE US4.1.1 intersectées avec le territoire, divisée par sa surface totale ; les agrégats sont recalculés à partir des surfaces, jamais moyennés.",
+      "direction": "low",
+      "caveats": "US4.1.1 décrit un usage routier mais ne distingue pas les modes. L’attribut artificialisé/non artificialisé ne filtre pas cet indicateur et les surfaces non cartographiées restent invisibles.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "ocsge_reseaux_routiers"
+      ],
+      "family": "scalar"
     },
     "offre_tc": {
       "indicator": "offre_tc",
@@ -1129,6 +1188,25 @@
           "Les parkings parents amenity=parking sont dédupliqués ; les amenity=parking_space enfants et les capacités déclarées ne sont pas ajoutés comme des places observées."
         ]
       }
+    },
+    "ocsge_reseaux_routiers": {
+      "dataset": "ocsge_reseaux_routiers",
+      "publisher": "IGN",
+      "url": "https://data.geopf.fr/telechargement/resource/OCSGE-ARTIFICIALISATION",
+      "licence": "Licence Ouverte 2.0",
+      "vintage": "2023–2025",
+      "freshness": "3 juillet 2026",
+      "vintages": [
+        {
+          "id": "ocsge_reseaux_routiers",
+          "label": "Millésimes 2023–2025 · Bretagne",
+          "version": "2023–2025",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2023-01-01",
+          "datePublication": "2026-07-03"
+        }
+      ],
+      "caveat": "Les quatre archives départementales les plus récentes disponibles alimentent une clé unique. Les polygones US4.1.1 sont comptés quelle que soit leur valeur artificialisé/non artificialisé ; l’OCS-GE ne distingue pas les modes de déplacement."
     },
     "mobilite_snapshot": {
       "dataset": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",

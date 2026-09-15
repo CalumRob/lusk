@@ -3,6 +3,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
+import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
@@ -828,5 +829,108 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.find('.summary-evidence').exists()).toBe(false)
     expect(wrapper.find('.access-figures').exists()).toBe(false)
     expect(wrapper.findAll('a[target="_blank"]')).toHaveLength(0)
+  })
+})
+
+describe('Variante E — partage de l’espace public', () => {
+  it('renders the public-space unit with its three sections and local reading helpers', async () => {
+    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ matches: true, media: '(min-width: 1281px)', onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() })),
+    })
+
+    try {
+    const facts = structuredClone(factsForTarget())
+    const bikeParking = facts.mobility.indicators.find((fact) => fact.key === 'places_stationnement_velo_1000')
+    if (!bikeParking) throw new Error('Expected bike parking facts')
+    facts.mobility.indicators = [
+      ...facts.mobility.indicators,
+      {
+        ...bikeParking,
+        key: 'places_stationnement_voiture_1000',
+        value: 25,
+        unit: 'places / 1 000 hab',
+      },
+      {
+        ...bikeParking,
+        key: 'stationnement_velo_par_voiture',
+        value: 0.2,
+        unit: 'places vélo / place voiture',
+      },
+    ]
+    const content = resolveMobiliteThemeContent(facts)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibreE, {
+      props: { content, pagination: cahierPaginationFor(payload, content, true) },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    expect(wrapper.find('.cahier').classes()).toContain('cahier--sans-grille')
+    expect(wrapper.findAll('.cahier-page h2').map((heading) => heading.text())).toEqual([
+      'Accès aux services',
+      'Partage de l’espace public',
+    ])
+    expect(wrapper.findAll('.cahier-page .page-number').map((number) => number.text())).toEqual([
+      'page 01/02',
+      'page 02/02',
+    ])
+    expect(wrapper.findAll('.figure-stack--ready')).toHaveLength(2)
+    for (const page of wrapper.findAll('.cahier-page')) {
+      const groups = page.findAll('.concept-group')
+      expect(groups[0]?.attributes('style')).toContain('--masonry-width: calc(50% - var(--masonry-half-gap));')
+      expect(groups[1]?.attributes('style')).toContain('--masonry-left: calc(50% + var(--masonry-half-gap));')
+    }
+    expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(2)
+    expect(wrapper.findAll('.page-rundown')[1]!.text()).toContain('réseau cyclable')
+    expect(wrapper.findAll('.concept-group-narrative').map((heading) => heading.text())).toEqual([
+      'Ce que l’on perd sans voiture',
+      'Service minimum ?',
+      'Tous les services ne se valent pas...',
+      '... Tous les bâtiments non plus',
+      'Trois réseaux, trois usages',
+      'Une piste ne suffit pas',
+      'Quelle place pour chaque mode ?',
+    ])
+    expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(true)
+    expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(true)
+    expect(wrapper.find('.sharing-parking-evidence').exists()).toBe(true)
+    expect(wrapper.find('.road-surface-figure').exists()).toBe(true)
+    expect(wrapper.find('.road-surface-figure .cahier-figure-title').text()).toBe('Emprise routière')
+    expect(wrapper.find('.road-surface-figure .cahier-figure-lecture').exists()).toBe(true)
+    expect(wrapper.find('.road-surface-scalar .cahier-figure-scalar-label').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Part du territoire couverte par des polygones d’usage routier de tout type.')
+    expect(wrapper.text()).toContain('médiane des')
+    expect(wrapper.text()).toContain('Emprise routière')
+    expect(wrapper.find('.sharing-network-figure .cahier-figure-title').text()).toBe('Longueur du réseau par habitant')
+    expect(wrapper.find('.sharing-network-figure .cahier-figure-lecture').exists()).toBe(true)
+    expect(wrapper.findAll('.sharing-network-figure .cahier-figure-legend-label').map((label) => label.text())).toEqual([
+      'Réseau piéton',
+      'Réseau cyclable',
+      'Réseau automobile',
+    ])
+    expect(wrapper.find('.network-figure-heading').exists()).toBe(false)
+    expect(wrapper.find('.network-figure-traces').exists()).toBe(false)
+    expect(wrapper.find('.sharing-network-figure .summary-plot').exists()).toBe(true)
+    expect(wrapper.find('.network-bar-plot').exists()).toBe(false)
+    expect(wrapper.find('.network-dot-plot').exists()).toBe(false)
+    expect(wrapper.findAll('.sharing-network-figure .summary-plot-group-label')).toHaveLength(2)
+    expect(wrapper.findAll('.sharing-network-figure .summary-plot-bar')).toHaveLength(6)
+    expect(wrapper.findAll('.sharing-network-figure .summary-plot-bar[data-series="territory"]')).toHaveLength(3)
+    expect(wrapper.findAll('.sharing-network-figure .summary-plot-bar[data-series="reference"]')).toHaveLength(3)
+    expect(wrapper.find('.network-figure-table').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Trois longueurs, un horizon')
+    expect(wrapper.text()).not.toContain('Le point d’arrivée varie avec la longueur du réseau.')
+    expect(wrapper.findAll('.sharing-cycling-reading')).toHaveLength(5)
+    expect(wrapper.findAll('.sharing-parking-reading')).toHaveLength(3)
+    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(8)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(7)
+    expect(wrapper.text()).toContain('Groupe comparé')
+    } finally {
+      if (originalMatchMedia) Object.defineProperty(window, 'matchMedia', originalMatchMedia)
+      else delete (window as { matchMedia?: typeof window.matchMedia }).matchMedia
+    }
   })
 })

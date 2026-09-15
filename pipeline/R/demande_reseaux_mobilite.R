@@ -650,3 +650,82 @@ agreger_reseaux_territoires <- function(reseaux_communes, base_epci) {
   })) %>%
     dplyr::arrange(code, detail)
 }
+
+# agreger_reseaux_par_habitant_territoires --------------------------------------
+# Les mêmes longueurs réseau, rapportées à la population : Σ longueur (km) ÷
+# Σ population × 1 000. Cette mesure est une clé DISTINCTE de `reseaux` : le
+# profil réseau conserve les longueurs absolues, tandis que cette clé sert à la
+# lecture « Longueur du réseau par habitant ». Les taux agrégés sont recomposés
+# depuis les longueurs et les populations, jamais comme une moyenne de taux
+# communaux. Une commune sans longueur dans la table porte zéro, mais une
+# population absente ou non positive est une corruption du dénominateur.
+agreger_reseaux_par_habitant_territoires <- function(reseaux_communes,
+                                                      population,
+                                                      base_epci) {
+  requises_reseaux <- c("commune", "longueur_t", "longueur_b", "longueur_c")
+  manquantes_reseaux <- setdiff(requises_reseaux, names(reseaux_communes))
+  if (length(manquantes_reseaux) > 0) {
+    stop("Réseaux par habitant corrompu — la table réseau ne porte pas les ",
+         "colonnes requises : ", paste(manquantes_reseaux, collapse = ", "),
+         ".", call. = FALSE)
+  }
+  if (!all(c("commune", "population") %in% names(population))) {
+    stop("Réseaux par habitant corrompu — la table de population doit porter ",
+         "commune et population.", call. = FALSE)
+  }
+  if (anyDuplicated(population$commune)) {
+    stop("Réseaux par habitant corrompu — des communes en double dans la table ",
+         "de population.", call. = FALSE)
+  }
+  if (any(is.na(population$population) | !is.finite(population$population) |
+         population$population <= 0)) {
+    stop("Réseaux par habitant corrompu — une population communale non positive.",
+         call. = FALSE)
+  }
+
+  ref <- base_epci[c("CODGEO", "EPCI", "DEP")]
+  ctx <- population %>%
+    dplyr::select(commune, population) %>%
+    dplyr::left_join(reseaux_communes, by = "commune") %>%
+    dplyr::mutate(
+      longueur_t = dplyr::coalesce(.data$longueur_t, 0),
+      longueur_b = dplyr::coalesce(.data$longueur_b, 0),
+      longueur_c = dplyr::coalesce(.data$longueur_c, 0)
+    ) %>%
+    dplyr::left_join(ref, by = c("commune" = "CODGEO"))
+
+  agreger_taux <- function(mode) {
+    colonne <- paste0("longueur_", mode)
+    dplyr::bind_rows(
+      ctx %>% dplyr::transmute(
+        code = commune,
+        valeur = .data[[colonne]] / population * 1000
+      ),
+      ctx %>% dplyr::filter(!is.na(EPCI)) %>%
+        dplyr::group_by(code = EPCI) %>%
+        dplyr::summarise(
+          valeur = sum(.data[[colonne]]) / sum(population) * 1000,
+          .groups = "drop"
+        ),
+      ctx %>% dplyr::group_by(code = DEP) %>%
+        dplyr::summarise(
+          valeur = sum(.data[[colonne]]) / sum(population) * 1000,
+          .groups = "drop"
+        ),
+      ctx %>% dplyr::summarise(
+        code = "53",
+        valeur = sum(.data[[colonne]]) / sum(population) * 1000,
+        .groups = "drop"
+      )
+    ) %>%
+      dplyr::transmute(
+        code,
+        key = "reseaux_par_habitant",
+        detail = paste0(mode, "_km_1000"),
+        value = valeur
+      )
+  }
+
+  dplyr::bind_rows(lapply(names(MODES_RESEAUX_MOBILITE), agreger_taux)) %>%
+    dplyr::arrange(code, detail)
+}

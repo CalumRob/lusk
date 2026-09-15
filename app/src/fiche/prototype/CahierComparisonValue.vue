@@ -7,7 +7,6 @@ import CahierRank from './CahierRank.vue'
 const props = withDefaults(
   defineProps<{
     fact: NumericFact
-    comparisonLabel: string | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
   }>(),
@@ -33,7 +32,7 @@ function comparisonText(fact: NumericFact): string | null {
     class="cahier-comparison-value cahier-figure-comparison"
   >
     <span v-if="comparisonText(fact)" class="cahier-comparison-value__reference">
-      {{ comparisonLabel ?? 'Groupe comparé' }} :
+      Groupe comparé :
       <strong class="region-emphasis">{{ comparisonText(fact) }}</strong>
     </span>
     <span v-if="fact.comparison" class="cahier-comparison-value__rank">
@@ -58,6 +57,7 @@ function comparisonText(fact: NumericFact): string | null {
   margin: 0;
   color: var(--cahier-default);
   font: var(--type-figure-comparison);
+  letter-spacing: normal;
   text-align: center;
 }
 

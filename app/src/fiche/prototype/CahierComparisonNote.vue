@@ -17,6 +17,7 @@ defineProps<{
   color: var(--cahier-default);
   font: var(--type-figure-comparison);
   line-height: 1.3;
+  letter-spacing: normal;
   text-align: center;
   overflow-wrap: anywhere;
 }
