@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "benchmark:payload": "vitest run --config scripts/vitest.benchmark.config.ts",
     "preview": "vite preview",
     "test": "vitest run"
   },
