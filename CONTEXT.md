@@ -32,6 +32,10 @@ _Avoid_: FicheContent, Cahier content, view model
 The semantic content for one territory within one **Thème** — the ordered ContentUnits and their resolved ContentSections that a surface may present. It is resolved independently, so one theme never requires another theme's payload at runtime. It is a content-grammar result, not a payload hierarchy or a user-facing page type.
 _Avoid_: page de thème (confusable with the **Page d'indicateur**), payload theme, view model
 
+**Modèle de lecture**:
+A static, generated browser projection shaped for one product reading surface rather than for an internal pipeline table. Lusk publishes one complete model per **Territoire**, carrying everything needed to resolve its themes' `ThemeContent`, and one complete model per **Indicateur**, carrying everything needed by its Page d'indicateur across published levels and details. Both derive from the canonical Parquet outputs and may deliberately duplicate facts; they never duplicate fact ownership or business logic. A territory model is fetched and validated as one atomic unit, so its content does not grow as auxiliary tables arrive (ADR-0031).
+_Avoid_: payload global, table de pipeline, cache applicatif, base de données navigateur, view model
+
 **ContentUnit**:
 A coherent semantic subject within ThemeContent, such as « Accès aux services » in Mobilité. It groups related indicators and ContentSections, but is not a page, spread, or other presentation container; its order and interpretation belong to typed theme grammar rather than the published payload contract.
 _Avoid_: page, bloc de mise en page, subgroup (the legacy payload assembly term)
