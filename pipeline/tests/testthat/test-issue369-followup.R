@@ -413,6 +413,37 @@ test_that("line normalization promotes parking lane tags from GDAL other_tags", 
   expect_equal(normalized$tracktype, "grade5")
 })
 
+test_that("line normalization promotes all tags used by the network contracts", {
+  lines <- sf::st_sf(
+    highway = "primary",
+    other_tags = paste(
+      '"foot"=>"yes"',
+      '"access"=>"destination"',
+      '"vehicle"=>"no"',
+      '"motor_vehicle"=>"private"',
+      '"motorcar"=>"no"',
+      '"busway"=>"lane"',
+      '"service"=>"parking_aisle"',
+      '"maxspeed"=>"30"',
+      '"sidewalk"=>"both"',
+      sep = ","
+    ),
+    geometry = sf::st_sfc(sf::st_linestring(rbind(c(1, 80), c(11, 80))), crs = 2154)
+  )
+
+  normalized <- normaliser_lignes_osm(lines)
+
+  expect_equal(normalized$foot, "yes")
+  expect_equal(normalized$access, "destination")
+  expect_equal(normalized$vehicle, "no")
+  expect_equal(normalized$motor_vehicle, "private")
+  expect_equal(normalized$motorcar, "no")
+  expect_equal(normalized$busway, "lane")
+  expect_equal(normalized$service, "parking_aisle")
+  expect_equal(normalized$maxspeed, "30")
+  expect_equal(normalized$sidewalk, "both")
+})
+
 test_that("vectorized parking side counts match the scalar contract", {
   lines <- data.frame(
     `parking:lane:left` = c("parallel", "no", NA),

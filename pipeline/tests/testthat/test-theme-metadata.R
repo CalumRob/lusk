@@ -1043,7 +1043,7 @@ test_that("publier_theme_metadata : les règles structurales des distributions s
 # s'exécute sur le payload COMMITTÉ — le contrat de payload committé, comme
 # les trajectoires #438 et les distributions #440.
 
-faits_listes_mobilite <- function(details = c("t_longueur", "t_densite", "b_longueur", "b_densite", "c_longueur", "c_densite")) {
+faits_listes_mobilite <- function(details = c("t_longueur", "b_longueur", "c_longueur")) {
   tibble::tibble(theme = "mobilite", key = "reseaux", detail = details)
 }
 
@@ -1056,7 +1056,7 @@ test_that("verifier_parite_listes : une catégorie morte ou un détail publié a
 
   meta <- lire_theme_metadata("mobilite")
   expect_error(
-    verifier_parite_listes(meta, faits_listes_mobilite(c("t_longueur", "t_densite", "b_longueur", "b_densite", "c_longueur", "c_densite", "Z2"))),
+    verifier_parite_listes(meta, faits_listes_mobilite(c("t_longueur", "b_longueur", "c_longueur", "Z2"))),
     "absent des catégories")
 })
 
@@ -1171,7 +1171,7 @@ test_that("valider_theme_metadata : une liste sans libellé canonical ou hors ax
   # une catégorie déclarée absente de l'axe comparison.details
   meta$indicator_pages$reseaux$comparison$details <-
     as.list(head(unlist(meta$indicator_pages$reseaux$list$categories,
-                        use.names = FALSE), 5L))
+                        use.names = FALSE), 2L))
   expect_error(valider_theme_metadata(meta), "couvertes")
 })
 

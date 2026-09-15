@@ -186,10 +186,15 @@ MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
   "https://download.geofabrik.de/europe/france/bretagne-latest.osm.pbf",
   "bretagne-latest.osm.pbf", "2026-08", "2026-08-05", "2026-08-06", "odbl",
   paste0(
-    "Les réseaux du bloc Mobilité : longueurs et densités par mode t/b/c ",
+     "Les réseaux du bloc Mobilité : longueurs par mode t/b/c ",
     "(à pied / vélo / voiture), lues sur la couche `lines` de l'extrait ",
-    "Geofabrik Bretagne (le réseau piéton inclut `path`; `track` reste hors ",
-    "périmètre par défaut; highway=*), projetée en EPSG:2154 AVANT toute mesure. ",
+    "Geofabrik Bretagne. Le réseau piéton est le réseau vraisemblablement ",
+    "marchable : voies piétonnes, rues résidentielles, voiries ordinaires avec ",
+    "preuve `sidewalk`/`foot` ou `maxspeed` numérique ≤ 30 km/h ; autoroutes, ",
+    "voies rapides, chemins `track` et accès refusés restent hors périmètre. ",
+    "Le réseau voiture exclut les accès non publics, parkings/voies privées et ",
+    "voies entièrement réservées aux bus, mais conserve les voies avec couloir ",
+    "bus. Chaque way compte une fois, projetée en EPSG:2154 AVANT toute mesure. ",
     "Le VINTAGE est le timestamp d'EXTRACTION — jamais « aujourd'hui » : ",
     "l'extrait du 5 août 2026 contient les données OSM jusqu'au ",
     "2026-08-05T20:21:23Z (vérifié sur la page Geofabrik). ODbL 1.0 ",
@@ -199,6 +204,56 @@ MANIFEST_MOBILITE_OSM_RESEAUX <- tibble::tribble(
   ),
   "manuel", "fichier"
 )
+
+# MANIFEST_MOBILITE_OCSGE_RESEAUX -----------------------------------------------
+# Les quatre états OCS-GE courants qui alimentent la clé séparée
+# `surface_reseaux_routiers` (#552) : un état par département breton, au
+# millésime le plus récent porté par le pipeline. Le calcul lit les couples
+# `code_us`/`aire` de la couche officielle et ignore volontairement l'attribut
+# `artif`, qui répond à la mesure réglementaire de l'artificialisation et non à
+# l'occupation du territoire par un réseau routier. Les lignes sont des sources
+# techniques de téléchargement ; la clé publie le vintage composite
+# `ocsge_reseaux_routiers` (vintages_mobilite.R).
+ligne_ocsge_reseaux <- function(departement, nom_departement, millesime,
+                                date_publication) {
+  base <- paste0(
+    "OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0", departement, "_",
+    millesime, "-01-01"
+  )
+  tibble::tibble(
+    id = paste0("ocsge_reseaux_", departement, "_", millesime),
+    source = paste0(
+      "IGN — OCS GE v2.0 (Nouvelle Génération) — ", nom_departement,
+      " (", departement, "), millésime ", millesime
+    ),
+    url = paste0(
+      "https://data.geopf.fr/telechargement/download/",
+      "OCSGE-ARTIFICIALISATION/", base, "/", base, ".7z"
+    ),
+    fichier = paste0(base, ".7z"),
+    vintage = as.character(millesime),
+    date_reference = paste0(millesime, "-01-01"),
+    date_publication = date_publication,
+    licence = "lov2",
+    note = paste0(
+      "Source OCS-GE v2.0 utilisée pour la clé `surface_reseaux_routiers` :",
+      " la surface `aire` des polygones dont `code_us` vaut `US4.1.1` est",
+      " comptée quelle que soit la valeur de `artif`. L'attribut `artif`",
+      " mesure l'artificialisation réglementaire ; il ne filtre pas l'usage",
+      " routier. EPSG:2154, Licence Ouverte 2.0."
+    ),
+    mode = "cron",
+    type = "fichier"
+  )
+}
+
+MANIFEST_MOBILITE_OCSGE_RESEAUX <- dplyr::bind_rows(
+  ligne_ocsge_reseaux("22", "Côtes-d'Armor", 2025, "2026-07-03"),
+  ligne_ocsge_reseaux("29", "Finistère", 2024, "2026-06-12"),
+  ligne_ocsge_reseaux("35", "Ille-et-Vilaine", 2023, "2026-03-04"),
+  ligne_ocsge_reseaux("56", "Morbihan", 2024, "2026-06-10")
+)
+IDS_OCSGE_RESEAUX <- MANIFEST_MOBILITE_OCSGE_RESEAUX$id
 
 # MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES --------------------------------------
 # Le fragment AMENAGEMENTS CYCLABLES (issue #222, ticket #228) : la source du
@@ -722,6 +777,7 @@ MANIFEST_MOBILITE <- dplyr::bind_rows(
   MANIFEST_MOBILITE_SNAPSHOT,
   MANIFEST_MOBILITE_RP_LOGEMENT,
   MANIFEST_MOBILITE_OSM_RESEAUX,
+  MANIFEST_MOBILITE_OCSGE_RESEAUX,
   MANIFEST_MOBILITE_AMENAGEMENTS_CYCLABLES,
   MANIFEST_MOBILITE_COMMUNES_LIMITES,
   MANIFEST_MOBILITE_KORRIGO,
@@ -1282,10 +1338,37 @@ verifier_contrat_mobilite_accessibilite_batiments <- function(manifest) {
   invisible(TRUE)
 }
 
+# verifier_contrat_mobilite_ocsge_reseaux ----------------------------------------
+# Le contrat des quatre états OCS-GE utilisés par la clé séparée : les ids,
+# archives, licence, mode et type sont épinglés ; chaque millésime du fichier
+# est contrôlé à la lecture par construire_donnees_ocsge_reseaux_routiers.
+verifier_contrat_mobilite_ocsge_reseaux <- function(manifest) {
+  lignes <- manifest[manifest$id %in% IDS_OCSGE_RESEAUX, , drop = FALSE]
+  if (nrow(lignes) != length(IDS_OCSGE_RESEAUX) ||
+      !setequal(lignes$id, IDS_OCSGE_RESEAUX)) {
+    stop("Contrat Mobilité OCS-GE violé — les quatre états routiers attendus ",
+         "sont absents ou dupliqués.", call. = FALSE)
+  }
+  if (any(lignes$licence != "lov2") || any(lignes$mode != "cron") ||
+      any(lignes$type != "fichier")) {
+    stop("Contrat Mobilité OCS-GE violé — licence lov2, mode cron et type ",
+         "fichier attendus.", call. = FALSE)
+  }
+  if (any(!grepl(
+    "^OCS-GE_2-0_ARTIFICIALISATION_GPKG_LAMB93_D0[0-9]{2}_[0-9]{4}-01-01[.]7z$",
+    lignes$fichier
+  ))) {
+    stop("Contrat Mobilité OCS-GE violé — archive d'état inattendue.",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 # verifier_contrat_manifest_mobilite --------------------------------------------
 # Le contrat du MANIFESTE CONCATÉNÉ du thème (issues #139 + #140 + #222 + #485,
-# la même idée que les contrats de manifeste des fragments) : QUATORZE lignes,
-# quatorze ids uniques et exacts (le snapshot porté + les quatre sources de
+# la même idée que les contrats de manifeste des fragments) : DIX-HUIT lignes,
+# dix-huit ids uniques et exacts (le snapshot porté + les quatre sources de
+# l'état OCS-GE routier + les quatre sources de
 # l'étage demande/réseaux + les quatre sources du sous-bloc + l'export
 # accessibilité + la BPE B316 et la
 # table de passage COG partagée + les deux sources du raccordement), chaque
@@ -1302,10 +1385,11 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   if (!inherits(manifest, "tbl_df")) {
     manquer("forme", "le manifeste doit être un tibble")
   }
-  if (nrow(manifest) != 14L) {
-    manquer("forme", paste0("le manifeste concaténé porte QUATORZE sources (le ",
+  if (nrow(manifest) != 18L) {
+    manquer("forme", paste0("le manifeste concaténé porte DIX-HUIT sources (le ",
                             "snapshot + les quatre de l'étage demande/réseaux ",
-                             "(#139) + les quatre du sous-bloc (#140) + l'export ",
+                             "(#139) + les quatre états OCS-GE routiers (#552) + ",
+                             "les quatre du sous-bloc (#140) + l'export ",
                              "accessibilité (#550) + la ",
                             "BPE B316 et la table de passage COG partagée + ",
                             "les deux sources du raccordement (#485 : le rail ",
@@ -1314,7 +1398,8 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   }
   if (anyDuplicated(manifest$id)) manquer("id", "id dupliqué")
   attendus <- c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
-                "amenagements_cyclables", "communes_limites", "korrigo",
+                IDS_OCSGE_RESEAUX, "amenagements_cyclables", "communes_limites",
+                "korrigo",
                  "batiments_residentiels", "accessibilite_batiments",
                  "bornes-recharges",
                 "stationnement-velo", "bpe_b316", "cog_passage",
@@ -1327,6 +1412,7 @@ verifier_contrat_manifest_mobilite <- function(manifest) {
   verifier_contrat_mobilite_snapshot(
     manifest[manifest$id == "mobilite_snapshot", ])
   verifier_contrat_mobilite_demande_reseaux(manifest)
+  verifier_contrat_mobilite_ocsge_reseaux(manifest)
   verifier_contrat_mobilite_korrigo(
     manifest[manifest$id == "korrigo", ])
   verifier_contrat_mobilite_batiments(

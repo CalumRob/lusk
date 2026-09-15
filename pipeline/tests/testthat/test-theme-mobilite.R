@@ -10,7 +10,7 @@
 # (les 5 parts d'isolation, div_loss et la Story arrivent au ticket #138) et ne
 # PUBLIE rien par lui-même : il lie les pièces existantes.
 
-test_that("MANIFEST_MOBILITE : les quatorze sources du thème, les 11 colonnes standard", {
+test_that("MANIFEST_MOBILITE : les dix-huit sources du thème, les 11 colonnes standard", {
   m <- MANIFEST_MOBILITE
 
   # le manifeste est un tibble de QUATORZE lignes : le snapshot porté + les
@@ -28,10 +28,11 @@ test_that("MANIFEST_MOBILITE : les quatorze sources du thème, les 11 colonnes s
   # fragment korrigo) et la couche bâtiments porte elle-même code_commune_insee
   # (plus de jointure spatiale aux polygones communaux).
   expect_s3_class(m, "tbl_df")
-  expect_equal(nrow(m), 14L)
+  expect_equal(nrow(m), 18L)
   expect_equal(nrow(m), length(unique(m$id)))
   expect_setequal(m$id,
                   c("mobilite_snapshot", "rp_logement_princ", "osm_reseaux",
+                    IDS_OCSGE_RESEAUX,
                     "amenagements_cyclables", "communes_limites", "korrigo",
                     "batiments_residentiels", "accessibilite_batiments",
                     "bornes-recharges",
@@ -120,14 +121,14 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   expect_error(verifier_descripteur_mobilite(sans_directions), "directions")
 })
 
-test_that("vintages_mobilite : quinze sources publiques (le manifeste sans le doublon d'entrée bâtiment + les deux faits construits du raccordement)", {
+test_that("vintages_mobilite : seize sources publiques (les sources techniques OCS-GE regroupées + les deux faits construits)", {
   v <- vintages_mobilite()
 
   # L'export d'équipements reste une entrée opérationnelle du manifeste, mais
   # ses projections citent mobilite_snapshot : il ne devient pas une seconde
   # source dans la table publique. Les treize autres sources manifestées + les
   # DEUX faits construits du raccordement (#486) restent présents.
-  expect_equal(nrow(v), 15L)
+  expect_equal(nrow(v), 16L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
@@ -137,7 +138,8 @@ test_that("vintages_mobilite : quinze sources publiques (le manifeste sans le do
                    "bornes-recharges",
                    "stationnement-velo", "bpe_b316", "cog_passage",
                    "sncf_voyageurs", "dila_bdl",
-                   "matrice_temps_mairies", "population_raccordement"))
+                   "matrice_temps_mairies", "population_raccordement",
+                   "ocsge_reseaux_routiers"))
 
   # le raccordement : l'horloge du FIGÉ — la production de la matrice
   # (le run vérifié du 25 août) comme référence, la migration comme
@@ -398,6 +400,13 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
     geometry = sf::st_sfc(sf::st_linestring(rbind(c(-1.5, 48.5), c(-1.49, 48.5)))),
     crs = 4326
   )
+  table_ocsge <- sf::st_sf(
+    code_us = "US4.1.1", aire_m2 = 400, millesime = 2025L,
+    departement = "22",
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(0, 0), c(20, 0), c(20, 20), c(0, 20), c(0, 0)
+    ))), crs = 2154)
+  )
   appels <- new.env()
 
   local_mocked_bindings(
@@ -426,7 +435,11 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
       appels$osm <- chemin
       sf::st_sf(osm_id = 1L, highway = "residential",
                 geometry = sf::st_sfc(sf::st_linestring(
-                  rbind(c(0, 0), c(1, 0)))), crs = 2154)
+                   rbind(c(0, 0), c(1, 0)))), crs = 2154)
+    },
+    construire_donnees_ocsge_reseaux_routiers = function(cache, manifest) {
+      appels$ocsge <- list(cache = cache, manifest = manifest)
+      table_ocsge
     },
     construire_mappe_cog_bretagne = function(chemin_zip) {
       appels$cog <- chemin_zip
@@ -461,7 +474,8 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
   # contrat
   expect_named(donnees,
                 c("mobilite_snapshot", "voitures_communes",
-                  "communes_limites", "lignes_osm", "parkings_osm",
+                  "communes_limites", "lignes_osm", "ocsge_reseaux_routiers",
+                  "parkings_osm",
                   "stations_service", "amenagements_cyclables", "couverture",
                   "korrigo", "batiments_residentiels",
                  "bornes_recharges", "stationnement_velo"))
@@ -476,7 +490,9 @@ test_that("construire_donnees_mobilite : assemble la table normalisée du snapsh
   expect_equal(appels$limites,
                file.path("cache-test", "communes_limites.geojson"))
   expect_equal(appels$osm,
-               file.path("cache-test", "bretagne-latest.osm.pbf"))
+                file.path("cache-test", "bretagne-latest.osm.pbf"))
+  expect_equal(appels$ocsge$cache, "cache-test")
+  expect_identical(appels$ocsge$manifest, MANIFEST_MOBILITE)
   expect_true(appels$normalise)
   # le mode `b` : l'orchestrateur Geovelo lit le parquet du cache (par SON id),
   # persiste le dernier bon à côté du snapshot porté et reçoit le vintage du
@@ -670,6 +686,12 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
     lignes_osm = sf::st_sf(osm_id = 1L, highway = "residential",
                            geometry = sf::st_sfc(sf::st_linestring(
                              rbind(c(0, 0), c(1, 0)))), crs = 2154),
+    ocsge_reseaux_routiers = sf::st_sf(
+      code_us = "US4.1.1", aire_m2 = 400, departement = "22",
+      geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+        c(0, 0), c(20, 0), c(20, 20), c(0, 20), c(0, 0)
+      ))), crs = 2154)
+    ),
     amenagements_cyclables = sf::st_sf(
       id_local = "g1", code_com_d = "22001", code_com_g = "22001",
       ame_d = "PISTE CYCLABLE", ame_g = "AUCUN",
@@ -774,19 +796,27 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
     },
     calculer_reseaux_communes = function(lignes, limites) {
       pousser("reseaux_communes")
-      tibble::tibble(commune = "22001", aire_m2 = 4e6,
-                     longueur_t = 0.8, longueur_c = 2.0,
-                     densite_t = 0.2, densite_c = 0.5)
+      tibble::tibble(commune = "22001",
+                     longueur_t = 0.8, longueur_c = 2.0)
     },
     calculer_reseaux_velo_communes = function(amenagements, limites) {
       pousser("reseaux_velo_communes")
-      tibble::tibble(commune = "22001", aire_m2 = 4e6,
-                     longueur_b = 1.0, densite_b = 0.25)
+      tibble::tibble(commune = "22001", longueur_b = 1.0)
     },
     agreger_reseaux_territoires = function(reseaux_communes, base_epci) {
       pousser("reseaux_territoires")
       tibble::tibble(code = "22001", key = "reseaux",
                      detail = "c_longueur", value = 2.0)
+    },
+    calculer_surface_reseaux_routiers_communes = function(ocsge, limites) {
+      pousser("surface_reseaux_routiers_communes")
+      tibble::tibble(commune = "22001", aire_m2 = 4e6,
+                     surface_routiere_m2 = 4e5,
+                     part_surface_routiere = 0.1)
+    },
+    agreger_surface_reseaux_routiers_territoires = function(communes, base_epci) {
+      pousser("surface_reseaux_routiers_territoires")
+      tibble::tibble(code = "22001", value = 0.1)
     },
     # le sous-bloc « L'offre de mobilité alternative » (issue #140)
     calculer_part_proches_arret_communes = function(stops, batiments) {
@@ -831,9 +861,10 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                   "div_loss_communes", "div_loss_territoires", "saillance",
                   "densite", "nuage", "territoires", "profils_matrice",
                   "profils_public", "acces_rangs", "rangs",
-                 "voitures_communes", "voitures_territoires",
-                 "reseaux_communes", "reseaux_velo_communes",
-                 "reseaux_territoires",
+                  "voitures_communes", "voitures_territoires",
+                  "reseaux_communes", "reseaux_velo_communes",
+                  "reseaux_territoires", "surface_reseaux_routiers_communes",
+                  "surface_reseaux_routiers_territoires",
                  "offre_tc_communes", "bornes_communes", "velo_communes",
                  "offre_cyclable_communes", "offre_territoires"))
 
@@ -845,8 +876,10 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                         "isolation_territoires", "div_loss_territoires",
                       "saillance_territoires", "densite_territoires",
                        "nuage_territoires", "isolation_rangs", "acces_rangs",
-                      "voitures_communes", "voitures_territoires",
-                      "reseaux_communes", "reseaux_territoires",
+                       "voitures_communes", "voitures_territoires",
+                       "reseaux_communes", "reseaux_territoires",
+                       "surface_reseaux_routiers_communes",
+                       "surface_reseaux_routiers_territoires",
                       "offre_tc_communes", "bornes_communes",
                       "stationnement_velo_communes",
                          "offre_cyclable_communes", "offre_territoires",
@@ -864,6 +897,7 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_equal(res$isolation_rangs$rang_epci, 0)
   expect_equal(res$voitures_territoires$value, 0.1)
   expect_equal(res$reseaux_territoires$value, 2.0)
+  expect_equal(res$surface_reseaux_routiers_territoires$value, 0.1)
   expect_equal(res$offre_tc_communes$part_proche, 0.9)
   expect_equal(res$bornes_communes$nb_bornes, 3L)
   expect_equal(res$stationnement_velo_communes$places_1000, 30)
@@ -882,6 +916,8 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_true(file.exists(file.path(sortie, "voitures_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "reseaux_communes.rds")))
   expect_true(file.exists(file.path(sortie, "reseaux_territoires.rds")))
+  expect_true(file.exists(file.path(sortie, "surface_reseaux_routiers_communes.rds")))
+  expect_true(file.exists(file.path(sortie, "surface_reseaux_routiers_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "offre_tc_communes.rds")))
   expect_true(file.exists(file.path(sortie, "bornes_communes.rds")))
   expect_true(file.exists(file.path(sortie, "stationnement_velo_communes.rds")))
@@ -1483,6 +1519,59 @@ fixture_lignes_mini <- function() {
   )
 }
 
+fixture_lignes_reseaux_canon <- function() {
+  highways <- c(
+    "footway", "residential", "primary", "trunk", "residential", "primary",
+    "residential", "service", "service", "residential", "primary", "service",
+    "primary", "service", "busway", "residential", "residential", "primary"
+  )
+  n <- length(highways)
+  sf::st_sf(
+    osm_id = as.character(seq_len(n)),
+    highway = highways,
+    foot = c(
+      rep(NA_character_, 6), "no", rep(NA_character_, 10), NA_character_
+    ),
+    access = c(
+      rep(NA_character_, 9), "private", "no", "destination", rep(NA_character_, 4),
+      "customers", "destination"
+    ),
+    vehicle = rep(NA_character_, n),
+    motor_vehicle = c(
+      rep(NA_character_, 15), "permit", NA_character_, NA_character_
+    ),
+    motorcar = rep(NA_character_, n),
+    busway = c(
+      rep(NA_character_, 12), "lane", "designated", rep(NA_character_, 4)
+    ),
+    service = c(
+      rep(NA_character_, 7), "parking_aisle", "driveway", rep(NA_character_, 9)
+    ),
+    maxspeed = c(
+      NA_character_, "30", "30", "30", "50", "50", "30", "20", NA_character_,
+      rep(NA_character_, 8), "30"
+    ),
+    sidewalk = c(
+      rep(NA_character_, 5), "both", rep(NA_character_, 12)
+    ),
+    geometry = sf::st_sfc(
+      lapply(seq_len(n), function(i) {
+        sf::st_linestring(rbind(c(i * 100, 0), c(i * 100, 100)))
+      }),
+      crs = 2154
+    )
+  )
+}
+
+fixture_limites_reseaux_canon <- function() {
+  sf::st_sf(
+    code_insee = "22001",
+    geometry = sf::st_sfc(sf::st_polygon(list(rbind(
+      c(-100, -100), c(2000, -100), c(2000, 200), c(-100, 200), c(-100, -100)
+    ))), crs = 2154)
+  )
+}
+
 # fixture_amenagements_velo_mini -------------------------------------------------
 # La table Geovelo NORMALISÉE MINUSCULE du motif 3 communes (le même motif que
 # fixture_limites_mini : trois polygones de 2 km × 2 km = 4 km² en EPSG:2154) :
@@ -1523,38 +1612,34 @@ fixture_amenagements_velo_mini <- function() {
   )
 }
 
-test_that("calculer_reseaux_communes : longueurs et densités par mode, EPSG:2154 projeté avant la mesure", {
+test_that("calculer_reseaux_communes : longueurs par mode, EPSG:2154 projeté avant la mesure", {
   res <- calculer_reseaux_communes(fixture_lignes_mini(), fixture_limites_mini())
 
-  # une ligne par commune, la forme : identité + surface + longueurs (km) +
-  # densités (km/km²). Depuis l'issue #230 (ADR-0016), le mode `b` n'est PLUS
+  # une ligne par commune, la forme : identité + surface + longueurs (km).
+  # Depuis l'issue #230 (ADR-0016), le mode `b` n'est PLUS
   # lu sur le raw OSM (highway=cycleway — la ligne L2 du fixture est ignorée) :
   # il vient du jeu Geovelo (calculer_reseaux_velo_communes, fusionné par le
   # seam) — la table t/c ne porte que t et c.
   expect_equal(nrow(res), 3)
-  expect_named(res, c("commune", "aire_m2", "longueur_t", "longueur_c",
-                      "densite_t", "densite_c"))
+  expect_named(res, c("commune", "aire_m2", "longueur_t", "longueur_c"))
   lire <- function(commune) res[res$commune == commune, ]
 
-  # 22001 : c = L1 (2 000 m), t = L3 (800 m) ; L2 (cycleway) est IGNORÉE — le
-  # mode b ne se lit plus sur OSM ; surface 4 km²
+  # 22001 : c = L1 (2 000 m), t = L1 + L3 (2 800 m) ; L2 (cycleway) est
+  # IGNORÉE — le mode b ne se lit plus sur OSM ; surface 4 km²
   expect_equal(lire("22001")$aire_m2, 4e6)
   expect_equal(lire("22001")$longueur_c, 2.0)
-  expect_equal(lire("22001")$longueur_t, 0.8)
-  expect_equal(lire("22001")$densite_c, 0.5)
-  expect_equal(lire("22001")$densite_t, 0.2)
-  # 22002 : c = L4 + L7 (2 000 + 1 800 m) ; t nul
+  expect_equal(lire("22001")$longueur_t, 2.8)
+  # 22002 : c = L4 + L7 (2 000 + 1 800 m) ; t = L4 (2 000 m)
   expect_equal(lire("22002")$longueur_c, 3.8)
-  expect_equal(lire("22002")$longueur_t, 0)
-  expect_equal(lire("22002")$densite_c, 0.95)
+  expect_equal(lire("22002")$longueur_t, 2.0)
   # 29001 : path est inclus dans le réseau piéton ; track reste exclu (un fait,
   # jamais une ligne manquante), surface portée
   expect_equal(lire("29001")$longueur_c, 0)
   expect_equal(lire("29001")$longueur_t, 1.0)
   expect_equal(lire("29001")$aire_m2, 4e6)
-  # la longueur totale de la région est conservée : 2 + 3.8 km de c, 0.8 + 1 km de t
+  # la longueur totale de la région est conservée : 2 + 3.8 km de c, 2.8 + 2 + 1 km de t
   expect_equal(sum(res$longueur_c), 5.8)
-  expect_equal(sum(res$longueur_t), 1.8)
+  expect_equal(sum(res$longueur_t), 5.8)
   # déterministe : trié par commune
   expect_true(!is.unsorted(res$commune))
 })
@@ -1570,8 +1655,26 @@ test_that("calculer_reseaux_communes : les dénégations explicites retirent un 
   expect_equal(res$longueur_t[res$commune == "29001"], 0)
 })
 
-test_that("agreger_reseaux_territoires : longueurs sommées, densités recalculées depuis les parties (Σ L ÷ Σ surface)", {
-  # la table communale COMPLÈTE du contrat (les huit colonnes), telle que le
+test_that("calculer_reseaux_communes : canonical walking and car contracts", {
+  lignes <- fixture_lignes_reseaux_canon()
+  limites <- fixture_limites_reseaux_canon()
+  res <- calculer_reseaux_communes(lignes, limites)
+
+  # t: footway, residential ways, low-speed ordinary roads, explicit sidewalk,
+  # and a destination-speed road; motorway/trunk classes, denied access,
+  # parking/driveway services, and a customer-only road do not add walking.
+  expect_equal(res$longueur_t[res$commune == "22001"], 0.7)
+  # c: every eligible OSM way contributes once.  The one-way residential way
+  # is 100 m, not 200 m; the separately mapped trunk remains infrastructure.
+  expect_equal(res$longueur_c[res$commune == "22001"], 0.9)
+
+  one_way <- lignes[2, , drop = FALSE]
+  one_way_result <- calculer_reseaux_communes(one_way, limites)
+  expect_equal(one_way_result$longueur_c[one_way_result$commune == "22001"], 0.1)
+})
+
+test_that("agreger_reseaux_territoires : longueurs sommées depuis les parties", {
+  # la table communale du contrat (les quatre colonnes), telle que le
   # seam la construit depuis l'issue #230 : t/c du OSM, b du jeu Geovelo
   res <- fusionner_reseaux_velo_communes(
     calculer_reseaux_communes(fixture_lignes_mini(), fixture_limites_mini()),
@@ -1583,44 +1686,30 @@ test_that("agreger_reseaux_territoires : longueurs sommées, densités recalcul�
   # les niveaux présents × 6 mesures = 48 lignes (3 communes du fixture + 2
   # EPCIs + 2 départements + la région ; 29002 — hors extract — n'a pas de
   # ligne ici ; l'alignement sur la référence se fait à l'assemblage)
-  expect_equal(nrow(ag), 8 * 6)
+  expect_equal(nrow(ag), 8 * 3)
   expect_named(ag, c("code", "key", "detail", "value"))
   expect_true(all(ag$key == "reseaux"))
   expect_setequal(unique(ag$detail),
-                  c("t_longueur", "t_densite", "b_longueur", "b_densite",
-                    "c_longueur", "c_densite"))
+                  c("t_longueur", "b_longueur", "c_longueur"))
   lire <- function(code, detail) ag$value[ag$code == code & ag$detail == detail]
 
-  # EPCI 200000001 (22001 + 22002) : longueur c = 2 + 3.8 = 5.8 km ; densité c =
-  # 5 800 m ÷ 8 km² = 0.725 — la somme des longueurs sur la somme des surfaces,
-  # jamais la moyenne des densités (0.5 + 0.95)/2 = 0.725 — attention : la
-  # moyenne pondérée par la surface donne le même nombre ici (surfaces égales) ;
+  # EPCI 200000001 (22001 + 22002) : c = 2 + 3.8 = 5.8 km et
   # b = 7.6 (22001) + 1.1 (22002) = 8.7 km (le Geovelo, ADR-0016)
   expect_equal(lire("200000001", "c_longueur"), 5.8)
-  expect_equal(lire("200000001", "c_densite"), 5.8 / 8)
   expect_equal(lire("200000001", "b_longueur"), 7.6 + 1.1)
-  expect_equal(lire("200000001", "b_densite"), 8.7 / 8)
-  expect_equal(lire("200000001", "t_longueur"), 0.8)
-  expect_equal(lire("200000001", "t_densite"), 0.8 / 8)
+  expect_equal(lire("200000001", "t_longueur"), 2.8 + 2.0)
   # EPCI 200000002 : n'agrège que 29001 (b 1.0 — le Geovelo —, t 1.0 — le
   # path —, zéro route ; 29002 absente)
   expect_equal(lire("200000002", "b_longueur"), 1.0)
-  expect_equal(lire("200000002", "b_densite"), 1.0 / 4)
   expect_equal(lire("200000002", "t_longueur"), 1.0)
-  expect_equal(lire("200000002", "t_densite"), 1.0 / 4)
   expect_equal(lire("200000002", "c_longueur"), 0)
-  expect_equal(lire("200000002", "c_densite"), 0)
-  # département 22 = EPCI 200000001 ; région : Σ L ÷ Σ surface sur 12 km²
+  # département 22 = EPCI 200000001 ; région : somme des longueurs
   expect_equal(lire("22", "c_longueur"), 5.8)
   expect_equal(lire("53", "c_longueur"), 5.8)
-  expect_equal(lire("53", "c_densite"), 5.8 / 12)
   expect_equal(lire("53", "b_longueur"), 9.7)
-  expect_equal(lire("53", "b_densite"), 9.7 / 12)
-  expect_equal(lire("53", "t_densite"), 1.8 / 12)
   # la commune garde SES valeurs telles quelles
   expect_equal(lire("22001", "c_longueur"), 2.0)
   expect_equal(lire("22001", "b_longueur"), 7.6)
-  expect_equal(lire("22001", "t_densite"), 0.2)
   # déterministe : trié par code puis détail
   expect_true(!is.unsorted(ag$code))
 })
@@ -1634,11 +1723,11 @@ test_that("calculer_reseaux_communes : la projection EPSG:2154 précède toute m
 
   res <- calculer_reseaux_communes(lignes, limites)
   lire <- function(commune) res[res$commune == commune, ]
-  # les longueurs en km restent exactes (L1 2 km, L3 0.8 km — le plan Lambert
+  # les longueurs en km restent exactes (L1 2 km + L3 0.8 km — le plan Lambert
   # ne déforme pas ces distances à l'échelle du fixture ; L2 cycleway est
   # ignorée depuis l'issue #230 — le b ne se lit plus sur OSM)
   expect_equal(lire("22001")$longueur_c, 2.0)
-  expect_equal(round(lire("22001")$longueur_t, 3), 0.8)
+  expect_equal(round(lire("22001")$longueur_t, 3), 2.8)
   expect_equal(lire("22002")$longueur_c, 3.8)
 })
 
@@ -1659,31 +1748,25 @@ test_that("calculer_reseaux_communes : la projection EPSG:2154 précède toute m
 #     départage. Chaque segment aboutit dans EXACTEMENT une commune — le total
 #     de la région est la somme des communes, zéro double-compte.
 # La sortie alimente agreger_reseaux_territoires par le seam (fusionner_ avec
-# la table t/c) — la forme (commune, aire_m2, longueur_b en km, densite_b en
-# km/km²) est celle des colonnes b du contrat.
+# la table t/c) — la forme (commune, longueur_b en km) est celle du contrat.
 
-test_that("calculer_reseaux_velo_communes : longueurs par direction et densités, l'attribution par le côté porteur", {
+test_that("calculer_reseaux_velo_communes : longueurs par direction, l'attribution par le côté porteur", {
   res <- calculer_reseaux_velo_communes(fixture_amenagements_velo_mini(),
                                         fixture_limites_mini())
 
-  # une ligne par commune, la forme du contrat (les colonnes b de la table
-  # communale : commune, aire_m2, longueur_b en km, densite_b en km/km²)
+  # une ligne par commune, la forme du contrat : commune, longueur_b en km
   expect_equal(nrow(res), 3)
-  expect_named(res, c("commune", "aire_m2", "longueur_b", "densite_b"))
+  expect_named(res, c("commune", "longueur_b"))
   lire <- function(commune) res[res$commune == commune, ]
 
   # 22001 : S1 bidirectionnel (2 km × 2 = 4 km) + S2 unidirectionnel (1 km) +
   # S3 (frontière, le d porte : 1,2 km) + S5 (frontière, les deux portent → d
   # départage : 0,4 km) + S7 (AUTRE, sens NA : 1 km) = 7,6 km ; surface 4 km²
-  expect_equal(lire("22001")$aire_m2, 4e6)
   expect_equal(lire("22001")$longueur_b, 7.6)
-  expect_equal(lire("22001")$densite_b, 7.6 / 4)
   # 22002 : S4 (frontière, le g porte : 1,1 km)
   expect_equal(lire("22002")$longueur_b, 1.1)
-  expect_equal(lire("22002")$densite_b, 1.1 / 4)
   # 29001 : S6 (voie verte, sens NA : 1 km)
   expect_equal(lire("29001")$longueur_b, 1.0)
-  expect_equal(lire("29001")$densite_b, 0.25)
   # la longueur totale de la région = la somme des contributions (ZÉRO
   # double-compte — chaque segment aboutit dans exactement une commune)
   expect_equal(sum(res$longueur_b), 7.6 + 1.1 + 1.0)
@@ -1795,7 +1878,7 @@ test_that("calculer_reseaux_velo_communes : un input corrompu s'arrête bruyamme
 
 # fusionner_reseaux_velo_communes -----------------------------------------------
 # Le seam du mode `b` : la table t/c (OSM) et la table b (Geovelo) sont
-# FUSIONNÉES par commune en la table communale complète du contrat (les huit
+# FUSIONNÉES par commune en la table communale du contrat (les quatre
 # colonnes que agreger_reseaux_territoires consomme — la forme reste, la source
 # du b change). Une commune sans aménagement Geovelo porte b = 0 (zéro réseau —
 # un fait, jamais une ligne manquante) ; une commune présente dans le b mais
@@ -1805,30 +1888,25 @@ test_that("fusionner_reseaux_velo_communes : la table b s'intègre à la table t
   tc <- tibble::tibble(
     commune = c("22001", "22002", "29001"),
     aire_m2 = c(4e6, 4e6, 4e6),
-    longueur_t = c(0.8, 0, 0), longueur_c = c(2.0, 3.8, 0),
-    densite_t = c(0.2, 0, 0), densite_c = c(0.5, 0.95, 0)
+    longueur_t = c(0.8, 0, 0), longueur_c = c(2.0, 3.8, 0)
   )
   velo <- tibble::tibble(
     commune = c("22001", "22002"),
     aire_m2 = c(4e6, 4e6),
-    longueur_b = c(7.6, 1.1), densite_b = c(1.9, 0.275)
+    longueur_b = c(7.6, 1.1)
   )
 
   res <- fusionner_reseaux_velo_communes(tc, velo)
 
-  # la forme complète du contrat : les huit colonnes que agreger_reseaux_
-  # territoires lit — t/c du OSM, b du Geovelo
-  expect_named(res, c("commune", "aire_m2", "longueur_t", "longueur_b",
-                      "longueur_c", "densite_t", "densite_b", "densite_c"))
+  # la forme du contrat : t/c du OSM, b du Geovelo
+  expect_named(res, c("commune", "longueur_t", "longueur_b", "longueur_c"))
   expect_equal(nrow(res), 3)
   lire <- function(commune) res[res$commune == commune, ]
   expect_equal(lire("22001")$longueur_b, 7.6)
-  expect_equal(lire("22001")$densite_b, 1.9)
   expect_equal(lire("22001")$longueur_t, 0.8)
   # 29001 : SANS aménagement Geovelo → b = 0 (un fait, jamais une ligne
   # manquante — l'invariant du zéro réseau)
   expect_equal(lire("29001")$longueur_b, 0)
-  expect_equal(lire("29001")$densite_b, 0)
   # déterministe : trié par commune
   expect_true(!is.unsorted(res$commune))
 })
@@ -1939,12 +2017,12 @@ test_that("verifier_contrat_manifest_mobilite : le manifeste concaténé passe s
   # le manifeste réel passe sa propre validation de contrat
   expect_true(verifier_contrat_manifest_mobilite(MANIFEST_MOBILITE))
 
-   # un manifeste amputé d'une source échoue bruyamment (les QUATORZE sources du
+   # un manifeste amputé d'une source échoue bruyamment (les DIX-HUIT sources du
   # thème — le snapshot + les quatre de l'étage demande/réseaux (#139) + les
   # quatre du sous-bloc (#140) + la table de passage COG partagée (#222/#227)
   # + les deux sources du raccordement (#485))
   defectueux <- MANIFEST_MOBILITE[MANIFEST_MOBILITE$id != "batiments_residentiels", ]
-    expect_error(verifier_contrat_manifest_mobilite(defectueux), "QUATORZE")
+    expect_error(verifier_contrat_manifest_mobilite(defectueux), "DIX-HUIT")
 
   # un id dupliqué échoue
   defectueux <- MANIFEST_MOBILITE
@@ -2376,13 +2454,14 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   # + les QUATRE clés du sous-bloc « L'offre de mobilité alternative »
   # (issue #140 : offre_tc, bornes_recharge, places_stationnement_velo_1000 ;
   # issue #231 : offre_cyclable × 5) + les CINQ parts d'isolation de la grille
-  # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 6 /
+  # (issue #141) — une ligne par clé, la multiplicité de chacune (1 / 3 / 3 /
   # 1 / 1 / 1 / 5 et les cinq 1 des parts d'isolation)
   # + les TROIS clés du raccordement (issue #486 : le scalaire, sa courbe,
   # la référence médiane — multiplicités 1 / 11 / NA, la référence ne vit
   # que sur la région)
-   expect_equal(nrow(ind), 41L)
-  expect_setequal(ind$key, c("voitures_menage", "reseaux",
+   expect_equal(nrow(ind), 42L)
+   expect_setequal(ind$key, c("voitures_menage", "reseaux",
+                              "surface_reseaux_routiers",
                              "offre_tc", "bornes_recharge",
                               "places_stationnement_velo_1000",
                               "places_stationnement_voiture_1000",
@@ -2399,7 +2478,8 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
    expect_equal(ind$source_reference[ind$key == "nb_buildings"],
                 "mobilite_snapshot")
   expect_equal(ind$multiplicite[ind$key == "voitures_menage"], 3L)
-  expect_equal(ind$multiplicite[ind$key == "reseaux"], 6L)
+    expect_equal(ind$multiplicite[ind$key == "reseaux"], 3L)
+   expect_equal(ind$multiplicite[ind$key == "surface_reseaux_routiers"], 1L)
   expect_equal(ind$multiplicite[ind$key == "offre_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "bornes_recharge"], 1L)
   expect_equal(ind$multiplicite[ind$key == "places_stationnement_velo_1000"], 1L)
@@ -2438,7 +2518,9 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   #     comme référence — la grille est la matière du snapshot).
   expect_equal(ind$source_reference[ind$key == "voitures_menage"],
                "rp_logement_princ")
-  expect_equal(ind$source_reference[ind$key == "reseaux"], "amenagements_cyclables")
+   expect_equal(ind$source_reference[ind$key == "reseaux"], "amenagements_cyclables")
+   expect_equal(ind$source_reference[ind$key == "surface_reseaux_routiers"],
+                "ocsge_reseaux_routiers")
   expect_equal(ind$source_reference[ind$key == "offre_tc"], "korrigo")
   expect_equal(ind$source_reference[ind$key == "bornes_recharge"],
                "bornes-recharges")
@@ -2588,10 +2670,12 @@ fixture_indicateurs_mobilite <- function() {
     )
   reseaux_territoires <- tidyr::crossing(
     code = codes,
-    detail = c("t_longueur", "t_densite", "b_longueur", "b_densite",
-               "c_longueur", "c_densite")
+    detail = c("t_longueur", "b_longueur", "c_longueur")
   ) %>%
     dplyr::mutate(key = "reseaux", value = 1)
+  surface_reseaux_routiers_territoires <- tibble::tibble(
+    code = codes, value = 0.1
+  )
   # le sous-bloc depuis l'issue #231 : la forme longue (code, key, detail,
   # value) du contrat — les trois clés scalaires portent le détail NA, la
   # clé offre_cyclable ses cinq mesures
@@ -2626,6 +2710,7 @@ fixture_indicateurs_mobilite <- function() {
     isolation_rangs = isolation_rangs,
     voitures_territoires = voitures_territoires,
     reseaux_territoires = reseaux_territoires,
+    surface_reseaux_routiers_territoires = surface_reseaux_routiers_territoires,
     offre_territoires = offre_territoires,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
@@ -2649,7 +2734,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
    # raccordement (issue #486) — une ligne par (territoire × détail) ;
    # `nb_buildings` publie la taille des bâtiments par territoire.
   expect_setequal(unique(ind$key), c(
-    "voitures_menage", "reseaux",
+    "voitures_menage", "reseaux", "surface_reseaux_routiers",
     "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
     "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
     "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
@@ -2662,14 +2747,15 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
      "nb_buildings"
   ))
   grille_n <- length(grille_raccordement())
-   # 9 territoires × 27 lignes historiques = 243 ; + la taille : 9 ; + le raccordement :
+   # 9 territoires × 24 lignes historiques = 216 ; + la taille : 9 ; + le raccordement :
   # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
-   expect_equal(nrow(ind), 243 + 9 + 9 * length(CLES_ACCES_MOBILITE) +
-                  9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 +
+   expect_equal(nrow(ind), 216 + 9 + 9 * length(CLES_ACCES_MOBILITE) +
+                  9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 + 9 +
                   9 * grille_n + grille_n)
    expect_equal(sum(ind$key == "nb_buildings"), 9)
   expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
-  expect_equal(sum(ind$key == "reseaux"), 9 * 6)
+   expect_equal(sum(ind$key == "reseaux"), 9 * 3)
+   expect_equal(sum(ind$key == "surface_reseaux_routiers"), 9)
   for (cle in c("offre_tc", "bornes_recharge",
                 "places_stationnement_velo_1000")) {
     expect_equal(sum(ind$key == cle), 9, info = cle)
@@ -2912,6 +2998,19 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
     validations = validations_mobilite,
     apercu = APERCU_MOBILITE
   ))
+
+  # une part de surface routière hors [0, 1] est une corruption — la valeur
+  # dérive d'une aire intersectée et ne peut jamais dépasser l'aire du territoire
+  payload$indicateurs$value[
+    payload$indicateurs$key == "surface_reseaux_routiers" &
+      payload$indicateurs$territoire == "22001"] <- 1.5
+  expect_error(validate_payload(
+    payload,
+    indicateurs = INDICATEURS_MOBILITE,
+    vintages = vintages_mobilite(),
+    validations = validations_mobilite,
+    apercu = APERCU_MOBILITE
+  ), "surface routière")
 
   # une part d'isolation hors [0, 1] (une corruption — jamais une part de
   # bâtiments > 100 %) fait échouer la validation bruyamment

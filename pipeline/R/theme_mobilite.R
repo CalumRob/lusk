@@ -94,6 +94,10 @@ construire_donnees_mobilite <- function(cache = "data/raw",
   limites <- lire_communes_limites(
     file.path(cache, fichier_source("communes_limites"))
   )
+  ocsge_reseaux_routiers <- construire_donnees_ocsge_reseaux_routiers(
+    cache = cache,
+    manifest = MANIFEST_MOBILITE
+  )
   lignes <- lire_lignes_osm(
     file.path(cache, fichier_source("osm_reseaux"))
   )
@@ -127,6 +131,7 @@ construire_donnees_mobilite <- function(cache = "data/raw",
     voitures_communes = voitures,
     communes_limites = limites,
     lignes_osm = lignes,
+    ocsge_reseaux_routiers = ocsge_reseaux_routiers,
     parkings_osm = sources$parkings_osm,
     stations_service = sources$stations_service,
     amenagements_cyclables = amenagements$table,
@@ -164,6 +169,19 @@ VINTAGES_RACCORDEMENT <- tibble::tribble(
   "2023", "lov2", "2023-01-01", "2026-08-26"
 )
 
+# VINTAGES_MOBILITE_OCSGE_RESEAUX -----------------------------------------------
+# Les quatre états départementaux sont des entrées techniques du manifeste
+# (pour le téléchargement) mais forment une seule source éditoriale pour la
+# clé `surface_reseaux_routiers`. La version porte explicitement la fenêtre
+# couverte : les millésimes les plus récents disponibles pour les quatre
+# départements bretons.
+VINTAGES_MOBILITE_OCSGE_RESEAUX <- tibble::tribble(
+  ~id, ~source, ~version, ~licence, ~date_reference, ~date_publication,
+  "ocsge_reseaux_routiers",
+  "IGN — OCS GE v2.0 (Nouvelle Génération) — occupation du sol et usage des réseaux routiers en Bretagne",
+  "2023–2025", "lov2", "2023-01-01", "2026-07-03"
+)
+
 # vintages_mobilite ------------------------------------------------------------
 # Le builder de vintages du thème : la projection générique depuis le
 # manifeste — une source, SA référence (l'instantané de l'analyse) et SA
@@ -173,14 +191,17 @@ VINTAGES_RACCORDEMENT <- tibble::tribble(
 # source dans vintages.json. Depuis l'issue #486, les DEUX faits construits du
 # raccordement voyagent à leurs côtés.
 vintages_mobilite <- function() {
+  ids_techniques <- c(DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
+                      IDS_OCSGE_RESEAUX)
   dplyr::bind_rows(
     vintages_depuis_manifest(
       MANIFEST_MOBILITE[
-        MANIFEST_MOBILITE$id != DISTRIBUTION_ACCES_BATIMENTS_MANIFEST_ID,
+        !MANIFEST_MOBILITE$id %in% ids_techniques,
         , drop = FALSE
       ]
     ),
-    VINTAGES_RACCORDEMENT
+    VINTAGES_RACCORDEMENT,
+    VINTAGES_MOBILITE_OCSGE_RESEAUX
   )
 }
 
@@ -399,7 +420,17 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                                    donnees$communes_limites)
   )
   reseaux_territoires <- agreger_reseaux_territoires(reseaux_communes,
-                                                     base_epci)
+                                                      base_epci)
+  surface_reseaux_routiers_communes <-
+    calculer_surface_reseaux_routiers_communes(
+      donnees$ocsge_reseaux_routiers,
+      donnees$communes_limites
+    )
+  surface_reseaux_routiers_territoires <-
+    agreger_surface_reseaux_routiers_territoires(
+      surface_reseaux_routiers_communes,
+      base_epci
+    )
 
   # le sous-bloc « L'offre de mobilité alternative » (issue #140) + la figure
   # « L'offre cyclable » (issue #231, la binaison provisoire d'ADR-0016) :
@@ -471,6 +502,10 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
                    file.path(sortie, "reseaux_communes.rds"))
   readr::write_rds(reseaux_territoires,
                    file.path(sortie, "reseaux_territoires.rds"))
+  readr::write_rds(surface_reseaux_routiers_communes,
+                   file.path(sortie, "surface_reseaux_routiers_communes.rds"))
+  readr::write_rds(surface_reseaux_routiers_territoires,
+                   file.path(sortie, "surface_reseaux_routiers_territoires.rds"))
   readr::write_rds(offre_tc_communes,
                    file.path(sortie, "offre_tc_communes.rds"))
   readr::write_rds(bornes_communes,
@@ -515,6 +550,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     voitures_territoires = voitures_territoires,
     reseaux_communes = reseaux_communes,
     reseaux_territoires = reseaux_territoires,
+    surface_reseaux_routiers_communes = surface_reseaux_routiers_communes,
+    surface_reseaux_routiers_territoires = surface_reseaux_routiers_territoires,
     offre_tc_communes = offre_tc_communes,
     bornes_communes = bornes_communes,
     stationnement_velo_communes = stationnement_velo_communes,
@@ -546,16 +583,14 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     ADR-0015). Source de référence : le cube RP exploitation principale
 #     (rp_logement_princ — le code de table épinglé LOG T12) ;
 #   - « reseaux » (l'étage réseaux, #139, mode `b` alimenté par le jeu Geovelo
-#     depuis #222/#228) : les longueurs et densités des réseaux t/b/c (à pied /
-#     vélo / voiture), une ligne par (territoire × mesure) — la multiplicité 6
-#     (longueur + densité × trois modes), les longueurs SOMMÉES et les densités
-#     Σ L ÷ Σ surface depuis les parties communales. Source de référence : le
+#     depuis #222/#228) : les longueurs des réseaux t/b/c (à pied / vélo /
+#     voiture), une ligne par (territoire × mesure) — la multiplicité 3, les
+#     longueurs SOMMÉES depuis les parties communales. Source de référence : le
 #     jeu Geovelo « Aménagements cyclables » (amenagements_cyclables — le mode
 #     `b` est la composante SIGNATURE de l'indicateur, sa fraîcheur mensuelle
 #     est ce que l'indicateur promet ; règle « Reference source » de
 #     CONTEXT.md) ; l'extrait OSM (osm_reseaux, les modes t/c) et les limites
-#     communales (communes_limites, la surface du dénominateur) restent des
-#     sources de l'indicateur.
+#     communales (communes_limites) restent des sources de l'indicateur.
 #   - « offre_tc » (le sous-bloc, #140) : la VRAIE part des bâtiments près
 #     d'un arrêt — la fraction des BÂTIMENTS de la commune à moins de 500 m
 #     d'un arrêt GTFS (la correction de la méthode), une ligne par territoire,
@@ -601,7 +636,7 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     NA pour la référence : elle ne vit que sur la région (nombre de lignes
 #     variable par territoire).
 INDICATEURS_MOBILITE <- tibble::tibble(
-  key = c("voitures_menage", "reseaux",
+  key = c("voitures_menage", "reseaux", "surface_reseaux_routiers",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
            "places_stationnement_voiture_1000", "bornes_ev_par_station_service",
            "stationnement_velo_par_voiture", "tot_loss_t", "tot_loss_b",
@@ -614,6 +649,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
   libelle = c(
     "Voitures par ménage",
     "Réseaux à pied / vélo / voiture",
+    "Part du territoire consacré aux réseaux routiers",
     "Part des bâtiments près d’un arrêt (à 500 m)",
     "Bornes de recharge pour véhicules électriques",
     "Places de stationnement vélo pour 1 000 hab.",
@@ -657,6 +693,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
   sources = list(
     "rp_logement_princ",
     c("amenagements_cyclables", "osm_reseaux", "communes_limites"),
+    "ocsge_reseaux_routiers",
     c("korrigo", "batiments_residentiels"),
     "bornes-recharges",
     "stationnement-velo",
@@ -675,7 +712,8 @@ INDICATEURS_MOBILITE <- tibble::tibble(
       "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies",
       "mobilite_snapshot"
   ),
-   source_reference = c("rp_logement_princ", "amenagements_cyclables",
+    source_reference = c("rp_logement_princ", "amenagements_cyclables",
+                         "ocsge_reseaux_routiers",
                         "korrigo", "bornes-recharges", "stationnement-velo",
                         "osm_reseaux", "bpe_b316", "osm_reseaux",
                           "mobilite_snapshot", "mobilite_snapshot", "osm_reseaux",
@@ -684,7 +722,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                          rep("mobilite_snapshot", 15),
                          "matrice_temps_mairies", "matrice_temps_mairies",
                          "matrice_temps_mairies", "mobilite_snapshot"),
-   multiplicite = c(3L, 6L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
+  multiplicite = c(3L, 3L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
                    rep(1L, 6), rep(1L, 5),
                      rep(1L, 15),
                     1L,
@@ -804,9 +842,12 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
        analytiques$offre_territoires %>% dplyr::filter(key == "bornes_ev_par_station_service") %>%
          dplyr::select(dplyr::any_of(c("code", "value", "rider"))),
        "bornes_ev_par_station_service", "bornes / station")
-     ,stationnement_velo_par_voiture = aligner(
-       sous_bloc("stationnement_velo_par_voiture"),
-       "stationnement_velo_par_voiture", "places vélo / place voiture")
+    ,stationnement_velo_par_voiture = aligner(
+        sous_bloc("stationnement_velo_par_voiture"),
+        "stationnement_velo_par_voiture", "places vélo / place voiture")
+    ,surface_reseaux_routiers = aligner(
+      analytiques$surface_reseaux_routiers_territoires,
+      "surface_reseaux_routiers", "%")
   )
 
   moyennes <- lapply(CLES_MOYENNES_ACCES_MOBILITE, function(key) {
@@ -903,8 +944,7 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   )
   reseaux <- aligner_detail(
     analytiques$reseaux_territoires, "reseaux",
-    c(t_longueur = "km", b_longueur = "km", c_longueur = "km",
-      t_densite = "km/km²", b_densite = "km/km²", c_densite = "km/km²")
+    c(t_longueur = "km", b_longueur = "km", c_longueur = "km")
   )
   # la figure « L'offre cyclable » (issue #231) : les cinq mesures de la clé
   # multi-mesures — les longueurs protégé/partagé/total et les km/1 000 hab —
@@ -1015,7 +1055,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tables$places_stationnement_voiture_1000,
     tables$bornes_ev_par_station_service,
      tables$stationnement_velo_par_voiture,
-     dplyr::bind_rows(moyennes),
+     tables$surface_reseaux_routiers,
+      dplyr::bind_rows(moyennes),
      tot_loss,
     dplyr::bind_rows(acces),
     dplyr::bind_rows(isolation),
@@ -1226,12 +1267,23 @@ validations_mobilite <- list(
     }
     invisible(payload)
   },
-  # les réseaux sont des longueurs et densités non négatives (une mesure
-  # négative est une corruption — jamais une longueur publiée négative)
+  # les réseaux sont des longueurs non négatives (une mesure négative est une
+  # corruption — jamais une longueur publiée négative)
   function(payload) {
     reseaux <- payload$indicateurs$value[payload$indicateurs$key == "reseaux"]
     if (any(!is.na(reseaux) & reseaux < 0)) {
-      stop("Payload invalide : une longueur ou densité de réseau négative.",
+      stop("Payload invalide : une longueur de réseau négative.",
+           call. = FALSE)
+    }
+    invisible(payload)
+  },
+  # la part de territoire occupée par les réseaux routiers est une fraction
+  # bornée — l'aire OCS-GE ne peut ni être négative ni dépasser le territoire
+  function(payload) {
+    surface <- payload$indicateurs$value[
+      payload$indicateurs$key == "surface_reseaux_routiers"]
+    if (any(!is.na(surface) & (surface < 0 | surface > 1))) {
+      stop("Payload invalide : une part de surface routière sort de [0, 1].",
            call. = FALSE)
     }
     invisible(payload)
@@ -1497,6 +1549,7 @@ DIRECTIONS_MOBILITE <- list(
   nb_buildings = "high",
   voitures_menage = "high",
   reseaux = "high",
+  surface_reseaux_routiers = "low",
   offre_tc = "high",
   bornes_recharge = "high",
   places_stationnement_velo_1000 = "high",

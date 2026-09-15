@@ -2,7 +2,7 @@
 # L'étage demande/réseaux du thème Mobilité (issue #139) : les builders PURS de
 # la demande (voitures par ménage — RP exploitation principale, le code de
 # table épinglé LOG T12 « Équipement automobile des ménages » du dossier
-# complet) et des réseaux (longueur / densité par mode t/b/c — OSM via
+# complet) et des réseaux (longueur par mode t/b/c — OSM via
 # Geofabrik + osmextract). Le seam construire_analytiques_mobilite
 # (theme_mobilite.R) les enchaîne et persiste les artefacts sous
 # data/processed/mobilite/.
@@ -10,7 +10,7 @@
 # Le vocabulaire (CONTEXT.md, mobilite.md §Demand/network tier) : « Voitures
 # par ménage » (la demande — ce qu'on possède, le pendant du « ce qu'on peut
 # atteindre à pied ou en transports » du flagship), « Réseaux t/b/c » (les
-# longueurs et densités des réseaux routier / cyclable / piéton). Les trois
+# longueurs des réseaux routier / cyclable / piéton). Les trois
 # modes du système de design : t = à pied (réseau piéton), b = vélo (réseau
 # cyclable), c = voiture (réseau routier).
 
@@ -125,22 +125,31 @@ agreger_voitures_territoires <- function(voitures_communes, base_epci) {
 #     cyclables » (ADR-0016, issues #222/#230) — le pbf ne porte plus l'extraction
 #     maison du mode b (highway=cycleway), remplacée par le comptage par
 #     direction de calculer_reseaux_velo_communes.
-# MODES_RESEAUX_MOBILITE reste le CONTRAT des trois modes (les 6 détails du
-# payload t/b/c × longueur/densité — agreger_reseaux_territoires l'itère) ;
+# MODES_RESEAUX_MOBILITE reste le CONTRAT des trois modes (les 3 détails de
+# longueur du payload — agreger_reseaux_territoires l'itère) ;
 # MODES_RESEAUX_OSM déclare les modes que le raw OSM alimente (t/c), le b venant
 # du jeu Geovelo.
 # `path` (sentiers partagés) est inclus dans le réseau piéton ; `track` (chemins
 # agricoles/forestiers) reste exclu, car il ne constitue pas par défaut une
-# infrastructure piétonne urbaine. Le mode est un fait de TAG, la mesure est une
-# longueur : EPSG:2154 projeté AVANT st_length/st_area (la consigne du contrat —
-# ne jamais mesurer en WGS84).
+# infrastructure piétonne urbaine. Le réseau piéton est une approximation du
+# réseau vraisemblablement marchable : les rues résidentielles et les voies
+# ordinaires à vitesse maximale faible peuvent compléter les tags de trottoir.
+# Les autoroutes et voies rapides restent exclues dans tous les cas. Le mode est
+# un fait de TAG, la mesure est une longueur : EPSG:2154 projeté AVANT
+# st_length/st_area (la consigne du contrat — ne jamais mesurer en WGS84).
+RESEAU_PIETON_DEDIES <- c("footway", "pedestrian", "steps", "path",
+                          "living_street", "residential")
+RESEAU_PIETON_VOIRIES <- c("primary", "primary_link", "secondary",
+                           "secondary_link", "tertiary", "tertiary_link",
+                           "unclassified", "residential", "service")
+RESEAU_PIETON_MAXSPEED_KMH <- 30L
 MODES_RESEAUX_MOBILITE <- list(
   c = c("motorway", "motorway_link", "trunk", "trunk_link", "primary",
         "primary_link", "secondary", "secondary_link", "tertiary",
         "tertiary_link", "unclassified", "residential", "service",
         "living_street"),
   b = c("cycleway"),
-  t = c("footway", "pedestrian", "steps", "path")
+  t = c(RESEAU_PIETON_DEDIES, RESEAU_PIETON_VOIRIES)
 )
 
 # MODES_RESEAUX_OSM -----------------------------------------------------------
@@ -155,17 +164,79 @@ RESTRICTIONS_RESEAU_PIETON <- list(
   access = c("no", "private", "customers", "restricted")
 )
 
+RESTRICTIONS_RESEAU_VOITURE <- list(
+  access = c("no", "private", "customers", "restricted", "permit",
+             "emergency", "psv"),
+  vehicle = c("no", "private", "customers", "restricted", "permit",
+              "emergency", "service"),
+  motor_vehicle = c("no", "private", "customers", "restricted", "permit",
+                    "emergency", "agricultural", "delivery", "forestry"),
+  motorcar = c("no", "private", "customers", "restricted", "permit",
+               "emergency")
+)
+EXCLUSIONS_SERVICE_RESEAU_VOITURE <- c(
+  "parking_aisle", "driveway", "drive-through", "emergency_access",
+  "bus", "voie_de_bus"
+)
+EXCLUSIONS_BUS_RESEAU_VOITURE <- c("designated", "track")
+
+valeur_tag_reseau <- function(lignes, cle) {
+  if (!cle %in% names(lignes)) return(rep(NA_character_, nrow(lignes)))
+  valeurs <- tolower(trimws(as.character(lignes[[cle]])))
+  valeurs[is.na(lignes[[cle]])] <- NA_character_
+  valeurs
+}
+
 est_restriction_reseau_pieton <- function(lignes) {
-  foot <- if ("foot" %in% names(lignes))
-    tolower(as.character(lignes$foot)) else rep(NA_character_, nrow(lignes))
-  access <- if ("access" %in% names(lignes))
-    tolower(as.character(lignes$access)) else rep(NA_character_, nrow(lignes))
+  foot <- valeur_tag_reseau(lignes, "foot")
+  access <- valeur_tag_reseau(lignes, "access")
   foot %in% RESTRICTIONS_RESEAU_PIETON$foot |
     access %in% RESTRICTIONS_RESEAU_PIETON$access
 }
 
+est_restriction_reseau_voiture <- function(lignes) {
+  restriction <- rep(FALSE, nrow(lignes))
+  for (cle in names(RESTRICTIONS_RESEAU_VOITURE)) {
+    restriction <- restriction |
+      valeur_tag_reseau(lignes, cle) %in% RESTRICTIONS_RESEAU_VOITURE[[cle]]
+  }
+  restriction
+}
+
+est_reseau_routier_voiture <- function(lignes) {
+  highway <- valeur_tag_reseau(lignes, "highway")
+  service <- valeur_tag_reseau(lignes, "service")
+  busway <- valeur_tag_reseau(lignes, "busway")
+  highway %in% MODES_RESEAUX_MOBILITE$c &
+    !est_restriction_reseau_voiture(lignes) &
+    !(service %in% EXCLUSIONS_SERVICE_RESEAU_VOITURE) &
+    !(busway %in% EXCLUSIONS_BUS_RESEAU_VOITURE)
+}
+
+est_reseau_pieton <- function(lignes) {
+  highway <- valeur_tag_reseau(lignes, "highway")
+  sidewalk <- valeur_tag_reseau(lignes, "sidewalk")
+  sidewalk_left <- valeur_tag_reseau(lignes, "sidewalk:left")
+  sidewalk_right <- valeur_tag_reseau(lignes, "sidewalk:right")
+  foot <- valeur_tag_reseau(lignes, "foot")
+  maxspeed <- suppressWarnings(as.numeric(valeur_tag_reseau(lignes, "maxspeed")))
+
+  evidence <- sidewalk %in% c("both", "left", "right", "separate", "yes", "sep") |
+    sidewalk_left %in% c("both", "left", "right", "separate", "yes", "sep") |
+    sidewalk_right %in% c("both", "left", "right", "separate", "yes", "sep") |
+    foot %in% c("yes", "designated", "permissive")
+  speed_fallback <- highway %in% RESEAU_PIETON_VOIRIES &
+    !is.na(maxspeed) & maxspeed <= RESEAU_PIETON_MAXSPEED_KMH &
+    est_reseau_routier_voiture(lignes)
+
+  !est_restriction_reseau_pieton(lignes) &
+    (highway %in% RESEAU_PIETON_DEDIES |
+       (highway %in% RESEAU_PIETON_VOIRIES & evidence) |
+       speed_fallback)
+}
+
 # calculer_reseaux_communes ----------------------------------------------------
-# Les longueurs et densités réseau t/c COMMUNALES, depuis les lignes OSM et les
+# Les longueurs réseau t/c COMMUNALES, depuis les lignes OSM et les
 # limites communales :
 #   1. les deux entrées sont PROJETÉES en EPSG:2154 (Lambert-93) AVANT toute
 #      mesure — la consigne du contrat (st_length/st_area ne mesurent jamais
@@ -175,16 +246,14 @@ est_restriction_reseau_pieton <- function(lignes) {
 #      communes, jamais comptée deux fois ; la longueur totale de la région est
 #      conservée, seule la répartition communale est approximée — documenté
 #      Méthodes) ;
-#   3. par commune × mode : la SOMME des longueurs (km) et la DENSITÉ =
-#      longueur ÷ surface (km/km², la surface du polygone communal projeté,
-#      portée en m² dans la table).
+#   3. par commune × mode : la SOMME des longueurs (km).
 # Le mode `b` (vélo) ne s'y trouve PLUS depuis l'issue #230 (ADR-0016) : il est
 # alimenté par le jeu Geovelo « Aménagements cyclables » (calculer_reseaux_
 # velo_communes) — le pbf reste la source des modes t/c seulement. MODES_
 # RESEAUX_OSM déclare les modes lus sur highway (t/c) ; MODES_RESEAUX_MOBILITE
-# garde les trois modes (le contrat des 6 détails du payload, agreger_).
-# Retour : une table par commune (commune, aire_m2, longueur_t/c en km,
-# densite_t/c en km/km²), triée par commune — déterministe. Une commune sans
+# garde les trois modes (le contrat des 3 détails du payload, agreger_).
+# Retour : une table par commune (commune, longueur_t/c en km), triée par
+# commune — déterministe. Une commune sans
 # ligne attribuée porte 0 (zéro réseau — un fait), jamais une ligne manquante.
 # Le seam fusionne ensuite la table b (Geovelo) via fusionner_reseaux_velo_
 # communes — la forme complète du contrat est reconstituée AVANT
@@ -224,11 +293,10 @@ calculer_reseaux_communes <- function(lignes, limites) {
 
   longueurs <- lapply(MODES_RESEAUX_OSM, function(mode) {
     lignes_mode <- lignes[lignes$highway %in% MODES_RESEAUX_MOBILITE[[mode]], ]
-    if (mode == "t") {
-      lignes_mode <- lignes_mode[
-        !est_restriction_reseau_pieton(lignes_mode), , drop = FALSE
-      ]
-    }
+    if (mode == "t")
+      lignes_mode <- lignes_mode[est_reseau_pieton(lignes_mode), , drop = FALSE]
+    if (mode == "c")
+      lignes_mode <- lignes_mode[est_reseau_routier_voiture(lignes_mode), , drop = FALSE]
     if (nrow(lignes_mode) == 0) {
       tibble::tibble(osm_id = character(),
                      !!paste0("longueur_m_", mode) := numeric())
@@ -255,15 +323,11 @@ calculer_reseaux_communes <- function(lignes, limites) {
       longueur_c = sum(longueur_m_c, na.rm = TRUE) / 1000,
       .groups = "drop"
     ) %>%
-    dplyr::mutate(
-      densite_t = longueur_t / (aire_m2 / 1e6),
-      densite_c = longueur_c / (aire_m2 / 1e6)
-    ) %>%
     dplyr::arrange(commune)
 }
 
 # calculer_reseaux_velo_communes ------------------------------------------------
-# Les longueurs et densités réseau `b` (vélo) COMMUNALES depuis la table Geovelo
+# Les longueurs réseau `b` (vélo) COMMUNALES depuis la table Geovelo
 # NORMALISÉE (la forme de normaliser_amenagements_cyclables — issue #230,
 # ADR-0016) et les limites communales. DEUX règles d'ADR-0016 :
 #   1. le comptage PAR DIRECTION : un segment contribue sa longueur une fois par
@@ -278,8 +342,8 @@ calculer_reseaux_communes <- function(lignes, limites) {
 #      dans EXACTEMENT une commune — les totaux région/EPCI/département restent
 #      la somme des parties communales, zéro double-compte.
 # La projection EPSG:2154 précède toute mesure (la consigne du contrat). Retour :
-# une table par commune (commune, aire_m2, longueur_b en km, densite_b en
-# km/km²), triée par commune — déterministe. Une commune sans aménagement
+# une table par commune (commune, longueur_b en km), triée par commune —
+# déterministe. Une commune sans aménagement
 # attribué ne figure pas ici (le zéro est porté par la fusion t/c dans le seam).
 calculer_reseaux_velo_communes <- function(amenagements, limites) {
   if (!inherits(amenagements, "sf") || !inherits(limites, "sf")) {
@@ -349,31 +413,27 @@ calculer_reseaux_velo_communes <- function(amenagements, limites) {
   par_commune %>%
     dplyr::transmute(
       commune = commune,
-      aire_m2 = aire_m2,
-      longueur_b = longueur_m / 1000,
-      densite_b = (longueur_m / 1000) / (aire_m2 / 1e6)
+      longueur_b = longueur_m / 1000
     ) %>%
     dplyr::arrange(commune)
 }
 
 # fusionner_reseaux_velo_communes ------------------------------------------------
 # Le seam du mode `b` (issue #230) : la table t/c (OSM) et la table b (Geovelo)
-# sont FUSIONNÉES par commune en LA table communale du contrat — les huit
+# sont FUSIONNÉES par commune en LA table communale du contrat — les quatre
 # colonnes que agreger_reseaux_territoires consomme (la forme reste, la source
-# du b change, ADR-0016). Les deux entrées dérivent la surface du MÊME
-# référentiel (limites) — la surface est coalescée. Une commune présente dans
+# du b change, ADR-0016). Une commune présente dans
 # une seule des deux tables porte 0 sur l'autre famille (zéro réseau — un fait,
-# jamais une ligne manquante). Retour : commune × aire_m2 × les six mesures,
-# triée par commune — déterministe.
+# jamais une ligne manquante). Retour : commune × les trois mesures, triée par
+# commune — déterministe.
 fusionner_reseaux_velo_communes <- function(reseaux_communes, velo_communes) {
-  requises <- c("commune", "aire_m2", "longueur_t", "longueur_c",
-                "densite_t", "densite_c")
+  requises <- c("commune", "longueur_t", "longueur_c")
   manquantes <- setdiff(requises, names(reseaux_communes))
   if (length(manquantes) > 0) {
     stop("Réseaux corrompu — la table t/c ne porte pas les colonnes requises : ",
          paste(manquantes, collapse = ", "), ".", call. = FALSE)
   }
-  manquantes_b <- setdiff(c("commune", "longueur_b", "densite_b"),
+  manquantes_b <- setdiff(c("commune", "longueur_b"),
                           names(velo_communes))
   if (length(manquantes_b) > 0) {
     stop("Réseaux vélo corrompu — la table b ne porte pas les colonnes ",
@@ -382,16 +442,11 @@ fusionner_reseaux_velo_communes <- function(reseaux_communes, velo_communes) {
 
   dplyr::full_join(reseaux_communes, velo_communes, by = "commune") %>%
     dplyr::mutate(
-      aire_m2 = dplyr::coalesce(.data$aire_m2.x, .data$aire_m2.y),
       longueur_b = dplyr::coalesce(.data$longueur_b, 0),
-      densite_b = dplyr::coalesce(.data$densite_b, 0),
       longueur_t = dplyr::coalesce(.data$longueur_t, 0),
-      longueur_c = dplyr::coalesce(.data$longueur_c, 0),
-      densite_t = dplyr::coalesce(.data$densite_t, 0),
-      densite_c = dplyr::coalesce(.data$densite_c, 0)
+      longueur_c = dplyr::coalesce(.data$longueur_c, 0)
     ) %>%
-    dplyr::select(commune, aire_m2, longueur_t, longueur_b, longueur_c,
-                  densite_t, densite_b, densite_c) %>%
+    dplyr::select(commune, longueur_t, longueur_b, longueur_c) %>%
     dplyr::arrange(commune)
 }
 
@@ -557,12 +612,9 @@ calculer_offre_cyclable_communes <- function(amenagements, population) {
 }
 
 # agreger_reseaux_territoires --------------------------------------------------
-# Les longueurs et densités réseau aux QUATRE niveaux de territoire, RECALCULÉS
+# Les longueurs réseau aux QUATRE niveaux de territoire, RECALCULÉS
 # depuis les parties communales (la règle d'agrégation partagée) :
-#   - longueur : la SOMME des longueurs communales (une longueur est un total) ;
-#   - densité  : Σ longueur ÷ Σ surface — la moyenne pondérée des densités
-#     communales par la surface (les deux lectures du même fait, jamais deux
-#     moyennes).
+#   - longueur : la SOMME des longueurs communales (une longueur est un total).
 # Les communes sans EPCI (les îles) n'agrègent à aucun niveau EPCI. Une commune
 # absente n'a pas de ligne ici. Sortie longue (code × key × detail × value),
 # triée par code puis détail — déterministe.
@@ -590,40 +642,11 @@ agreger_reseaux_territoires <- function(reseaux_communes, base_epci) {
       dplyr::select(code, longueur = valeur)
   }
 
-  agreger_densite <- function(mode) {
-    colonne_longueur <- paste0("longueur_", mode)
-    dplyr::bind_rows(
-      ctx %>%
-        dplyr::select(commune, densite = dplyr::all_of(paste0("densite_", mode))) %>%
-        dplyr::rename(code = commune),
-      ctx %>%
-        dplyr::filter(!is.na(EPCI)) %>%
-        dplyr::group_by(code = EPCI) %>%
-        dplyr::summarise(densite = sum(.data[[colonne_longueur]]) / (sum(aire_m2) / 1e6),
-                         .groups = "drop"),
-      ctx %>%
-        dplyr::group_by(code = DEP) %>%
-        dplyr::summarise(densite = sum(.data[[colonne_longueur]]) / (sum(aire_m2) / 1e6),
-                         .groups = "drop"),
-      ctx %>%
-        dplyr::summarise(code = "53",
-                         densite = sum(.data[[colonne_longueur]]) / (sum(aire_m2) / 1e6),
-                         .groups = "drop")
-    ) %>%
-      dplyr::select(code, densite)
-  }
-
   dplyr::bind_rows(lapply(names(MODES_RESEAUX_MOBILITE), function(mode) {
     l <- agreger_longueur(mode)
-    dens <- agreger_densite(mode)
-    dplyr::bind_rows(
-      l %>%
-        dplyr::transmute(code, key = "reseaux",
-                         detail = paste0(mode, "_longueur"), value = longueur),
-      dens %>%
-        dplyr::transmute(code, key = "reseaux",
-                         detail = paste0(mode, "_densite"), value = densite)
-    )
+    l %>%
+      dplyr::transmute(code, key = "reseaux",
+                       detail = paste0(mode, "_longueur"), value = longueur)
   })) %>%
     dplyr::arrange(code, detail)
 }

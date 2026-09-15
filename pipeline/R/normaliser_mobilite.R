@@ -257,9 +257,11 @@ normaliser_lignes_osm <- function(x) {
     x[[cle]] <- ifelse(!is.na(existant) & nzchar(existant), existant, extrait)
   }
   # Network-scope tags are also stored in GDAL's other_tags column. Promote
-  # them so downstream mode filters can exclude explicit access denials without
-  # making the calculator parse provider-specific serialization.
-  for (cle in c("foot", "access", "tracktype")) {
+  # every tag consumed by the t/c contracts so downstream mode filters never
+  # parse provider-specific serialization.
+  for (cle in c("foot", "access", "vehicle", "motor_vehicle", "motorcar",
+                "busway", "service", "maxspeed", "sidewalk",
+                "sidewalk:left", "sidewalk:right", "tracktype")) {
     extrait <- extraire_tag_osm(other_tags, cle)
     existant <- if (cle %in% names(x)) as.character(x[[cle]]) else rep(NA_character_, nrow(x))
     x[[cle]] <- ifelse(!is.na(existant) & nzchar(existant), existant, extrait)

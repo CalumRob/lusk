@@ -1,7 +1,7 @@
 # test-theme-metadata-pages-mobilite ---------------------------------------------
 # Les Pages d'indicateur scalaires de la Mobilité (issue #461) : les VINGT
 # indicateurs publiés du thème portent chacun leur page scalaire complète —
-# offre_tc, bornes_recharge, places_stationnement_velo_1000,
+# surface_reseaux_routiers, offre_tc, bornes_recharge, places_stationnement_velo_1000,
 # places_stationnement_voiture_1000, bornes_ev_par_station_service,
 # stationnement_velo_par_voiture, tot_loss_t, tot_loss_b et les cinq sœurs
 # iso_* et les six moyennes d'accès du résumé — par des descripteurs épinglés
@@ -13,7 +13,7 @@
 # scalaire qui gonfle ou fond en silence.
 
 PAGES_SCALAIRES_MOBILITE <- c(
-  "offre_tc", "bornes_recharge",
+  "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
   "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
   "tot_loss_t", "tot_loss_b",

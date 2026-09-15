@@ -1069,31 +1069,24 @@ verifier_mobilite_e2e_reel <- function(donnees, base_epci, raccordement) {
   rt <- analytiques$reseaux_territoires
   verifier_egale(nrow(analytiques$reseaux_communes), 1202L,
                  "Mobilité e2e — les réseaux par commune")
-  verifier_egale(nrow(rt), 7608L, "Mobilité e2e — les réseaux par territoire")
+   verifier_egale(nrow(rt), 3804L, "Mobilité e2e — les réseaux par territoire")
   lire_rt <- function(code, detail) rt$value[rt$code == code & rt$detail == detail]
-  # Verrous de VALEUR des couches dérivées de l'extrait OSM `latest` (les
-  # modes t/c) : relatifs à l'ÉPOQUE du cache (issue #380) — re-baselinés sur
-  # le cache restauré à la précision naturelle (densités au 4ᵉ décimale,
-  # longueurs au 3ᵉ — le 6ᵉ chahute entre extraits re-téléchargés) ; les
-  # modes b (Geovelo épinglé) restent FORTS
-  verifier_egale(round(lire_rt("53", "c_longueur"), 3), 101373.625,
-                 "Mobilité e2e — les routes de la région")
-  verifier_egale(round(lire_rt("53", "c_densite"), 4), 3.6935,
-                 "Mobilité e2e — la densité routière de la région")
-  verifier_egale(round(lire_rt("53", "t_longueur"), 3), 26752.999,
-                 "Mobilité e2e — les trottoirs de la région")
-  verifier_egale(round(lire_rt("53", "t_densite"), 4), 0.9747,
-                 "Mobilité e2e — la densité de trottoirs de la région")
+    # Verrous de VALEUR des couches dérivées de l'extrait OSM `latest` (les
+    # modes t/c) : relatifs à l'ÉPOQUE du cache (issue #380) et au contrat
+    # canonique des réseaux vraisemblablement accessibles (ADR-0029) —
+    # re-baselinés à la précision naturelle (longueurs au 3ᵉ — le 6ᵉ chahute
+    # entre extraits re-téléchargés) ; les modes b (Geovelo épinglé) restent
+    # FORTS
+   verifier_egale(round(lire_rt("53", "c_longueur"), 3), 93688.551,
+                  "Mobilité e2e — les routes de la région")
+   verifier_egale(round(lire_rt("53", "t_longueur"), 3), 46240.240,
+                  "Mobilité e2e — les trottoirs de la région")
   verifier_egale(round(lire_rt("53", "b_longueur"), 3), 4940.309,
                  "Mobilité e2e — le réseau cyclable de la région (mode b)")
-  verifier_egale(round(lire_rt("35238", "c_densite"), 4), 18.1578,
-                 "Mobilité e2e — la densité routière de Rennes")
-  verifier_egale(round(lire_rt("242900314", "c_densite"), 4), 8.9465,
-                 "Mobilité e2e — la densité routière de Brest Métropole")
   verifier_egale(lire_rt("29083", "b_longueur"), 0,
                  "Mobilité e2e — l'île de Sein sans réseau cyclable")
-  verifier_vrai(all(!is.na(rt$value) & rt$value >= 0),
-                "Mobilité e2e", "une longueur ou densité de réseau négative")
+   verifier_vrai(all(!is.na(rt$value) & rt$value >= 0),
+                 "Mobilité e2e", "une longueur de réseau négative")
 
   # le sous-bloc « L'offre de mobilité alternative » (issue #140) : les
   # sources normalisées du BRUT et les artefacts du chaînon aux comptes

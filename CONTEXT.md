@@ -131,7 +131,7 @@ A territory's own within-territory distribution on a distribution page: the clos
 _Avoid_: modalités (the replaced generic wording — « détails déclarés »), profil, étiquette par étiquette (the DPE-specific phrase — « détail par détail » is the grammar's wording)
 
 **Profil**:
-The complete category profile of a territory on a **list**-family **Page d'indicateur** (#439): the closed declared category list from the published descriptor (reseaux — longueur et densité per mode), rendered for the selected territory in DECLARED order, each category with its canonical label and its OWN published unit (a list carries heterogeneous units — km and km/km² — categories never sum to a whole). Four honest states like the distribution signature (#440): no selection affirms nothing, a territory outside the level is « absent », missing categories are « incomplet », otherwise « complet ». One declared category doubles as the comparison facet (« Catégorie comparée ») driving median, extremes, table ordering and Carte through the shared wave-0 seams (direction-aware ex-aequo ranks included); the full profile stays visible above — never reduced to an unexplained score. This Repères sense is distinct from the fiche-side Avoid reading of « profil »: a Fiche d'identité has no profile.
+The complete category profile of a territory on a **list**-family **Page d'indicateur** (#439): the closed declared category list from the published descriptor (reseaux — one length per mode), rendered for the selected territory in DECLARED order, each category with its canonical label and its OWN published unit (km; categories never sum to a whole). Four honest states like the distribution signature (#440): no selection affirms nothing, a territory outside the level is « absent », missing categories are « incomplet », otherwise « complet ». One declared category doubles as the comparison facet (« Catégorie comparée ») driving median, extremes, table ordering and Carte through the shared wave-0 seams (direction-aware ex-aequo ranks included); the full profile stays visible above — never reduced to an unexplained score. This Repères sense is distinct from the fiche-side Avoid reading of « profil »: a Fiche d'identité has no profile.
 _Avoid_: vue de synthèse (that is the Facette résumée's role, not the profile's), score composite (the rejected reduction of the profile to one number), ordre dérivé des faits (category order is metadata-owned, never fact-derived)
 
 **Relation**:
@@ -199,17 +199,62 @@ _Avoid_: benchmark (too vague), comparaison implicite, contexte régional (a sco
 The Mobilité block's supply-side sub-block (named 2026-08-06): the infrastructure-offer indicators grouped under one label — **Offre TC** (part des bâtiments près d'un arrêt, Korrigo), **Bornes de recharge** (IRVE — la **comparaison bornes vs stations-service** (EV contre fuel) se construit dans #369, triage 2026-08-12 : numérateur les bornes IRVE (stations, jamais les points de charge), dénominateur les stations-service **BPE B316** — la source officielle (définition INSEE : stations ayant vendu ≥ 500 000 L l'année précédente, petites stations sur volontariat ; dénombrements FACILITIES par commune, l'INSEE recommandant la présence/absence aux niveaux fins) ; ratio publié seulement là où fuel > 0 — bornes = 0 → 0 classé (les égalités partagent le rang, ADR-0015), fuel = 0 → NA avec le texte « Aucune station-service sur le territoire » / « Aucune borne ni station-service » ; BPE B326 (bornes EV depuis 2024) reste la référence officielle de croisement des bornes IRVE), **Stationnement vélo** (places / 1 000 hab, hub Ecolab pris tel quel), **Stationnement voiture** (les PLACES ESTIMÉES depuis la surface des parkings OSM `amenity=parking` — ways fermés + relations, jamais les nodes sans déduplication, jamais `capacity` (porté par seulement 15,7 % des surfaces) — divisée par les facteurs documentés : **25 m²/place** en parc de surface (le module 2,5×5 m = 12,5 m², dégagement inclus), **~11,5 m²/place** en voirie (module parallèle 5×2,3 m, NF P91-100, Héran & Ravalet 2008) — `places_stationnement_voiture_1000` (places/1 000 hab, #369, triage 2026-08-12), direction **moins = mieux** : la part de l'espace public que prend la voiture. Le stationnement de rue MAPPÉ est déjà largement dans les polygones (5 508 aires fermées `parking=street_side` des 38 376 objets — la couche lines n'en porte que 10) ; l'incrément linéaire tagué sur les highways (`parking:lane:*` ou l'ancien schéma, × 2,3 m par côté tagué) s'ajoute à la surface — mais seulement 0,40 % de la longueur routière est taguée : le stationnement de rue NON tagué (la majorité dans les communes denses) reste non mesurable, le biais anti-communes-denses est documenté, pas éliminé ; docs/research/stationnement-voiture-osm.md + stationnement-rue-osm.md), and, since 2026-08-08 (issue #222), **L'offre cyclable** — the Geovelo « Aménagements cyclables » network figure: a headline reading **bike infrastructure as a share of car infrastructure** (« X % de l'infrastructure routière », the bike total ÷ the full `c` network, motorways included) plus **protégé vs partagé bars** (km / 1 000 hab) — the composition of the bike offer, split between space separated from motor traffic (pistes, voies vertes, CVCB…) and shared space (bandes, vélos rues, couloirs bus+vélo…). Never suppressed for small n; a territory with no aménagements shows the 0 as a fact. "What the territory offers," the counterpart to the flagship's "what residents can reach." A label, not a merge — each figure keeps its own vintage stamp and rank-in-context. **Le ratio stationnement vélo÷voiture (HIGH) se construit en deux formes concurrentes** (#369, décision 2026-08-12), la forme retenue étant celle qui lit le mieux sur le réel : (a) **m² vélo ÷ m² voiture** — la surface vélo = places × **2,0 m²/place** (le facteur documenté : arrêté du 30/06/2022 → 1,5 m²/place hors dégagement, MRAe 2024 → 2,0 m² dégagement inclus ; uniforme sur les quatre types d'accroche — les guides dimensionnent l'emplacement par l'enveloppe du vélo, jamais par le type d'accroche, qui est un axe de qualité ; docs/research/stationnement-velo-surface.md) ; (b) **places vélo brutes ÷ m² voiture**. Les deux candidates partagent la direction HIGH ; le carré vélo÷voiture de surface tombe dans la bande lisible (quelques % à ~10 %).
 _Avoid_: Équipements (the dropped BPE 229-types indicator — see that entry), infrastructure (too generic)
 
+**Surface d’emprise routière OCS-GE**:
+The share of a territory's area covered by OCS-GE polygons classified **US4.1.1**, the road-use class. It is a separate Mobilité indicator from the OSM-derived `reseaux` lengths: it measures polygonal land occupation, not network length, and OCS-GE does not assign a transport mode. The `artif` status is deliberately ignored — it answers the separate regulatory artificialisation question — so `artif` and `non artif` US4.1.1 polygons both count. Commune values use area-weighted intersections with current Admin Express boundaries; EPCI and department values recompute `Σ surface_routiere_m2 / Σ aire_m2`, never averages of commune shares.
+_Avoid_: surface artificialisée (this indicator is not the Milieux stock), longueur du réseau (OSM `reseaux`), mode routier (US4.1.1 does not distinguish car, bicycle, or pedestrian use)
+
+**Figure « Réseaux » de la Variante E**:
+The OCS-GE road footprint is its own scalar figure, labelled « Emprise
+routière », with a Lecture that names the polygonal road-use observation. The
+three OSM/Geovelo network lengths sit in a separate figure as parallel route
+traces. The two figures do not share a scale: polygonal land occupation and
+network length are different observations. Peer references use the canonical
+visible label « Groupe comparé »; the peer-group scope remains supporting data.
+_Avoid_: a single combined bar or scale for the footprint and the three
+network lengths, a visual claim that OCS-GE assigns the footprint to a mode, or
+visible « moyenne/médiane des… » comparison labels in a figure.
+
+**Longueur du réseau par habitant**:
+The OSM/Geovelo network length for each mobility mode, reported as kilometres
+per 1 000 inhabitants. This normalizes the mapped network against the resident
+population so territories of different size can be read on a common basis. It
+is a supply-side territorial ratio, not a measure of accessibility, use, or
+travel distance. The figure's public title is « Longueur du réseau par
+habitant » and its values use the unit « km / 1 000 hab. ».
+
 **Réseau piéton (t)**:
-The OSM-derived walking network used by the Mobilité network profile. It includes
-shared paths (`highway=path`) alongside footways, pedestrian ways, and steps.
-Explicit `foot=no|private` and denying `access` values are excluded.
-Agricultural and forestry tracks (`highway=track`) are not part of the default
-network: their tag describes the way's setting, not public pedestrian access.
-Track inclusion remains a sensitivity question, with explicit pedestrian-access
-and surface-quality variants documented separately before any future scope
-change.
+The OSM-derived **likely walkable public network** used by the Mobilité network
+profile. It is a proxy for corridors a person could plausibly use, not a census
+of dedicated pedestrian infrastructure. It includes dedicated footways,
+pedestrian ways, steps, paths, living streets, unrestricted residential ways,
+and ordinary roads carrying positive `sidewalk=*` or `foot=yes|designated|permissive`
+evidence, plus ordinary public roads whose numeric `maxspeed` is at most
+30 km/h. The speed signal is only a fallback for missing pedestrian tags; it
+does not claim that a pavement is geometrically present. Motorways, motorway
+links, trunks, trunk links, tracks, and access-restricted ways are always
+excluded, regardless of speed. Explicit `foot=no|private` and denying `access`
+values are excluded. The same filter is the contract for the visual map and
+`t_longueur`; its public label and indicator documentation must say **likely
+walkable network** rather than pedestrian infrastructure.
 _Avoid_: réseau cyclable (the `b` Geovelo profile), itinéraire piéton (a route,
-not the measured network), track as an automatic synonym for walkable
+not the measured network), infrastructure piétonne (too narrow for this proxy),
+track as an automatic synonym for walkable
+
+**Réseau routier car (c)**:
+The OSM-derived **likely drivable public network** used by the Mobilité network
+profile. Every mapped OSM way contributes its geometry once; `oneway` never
+multiplies its length, while separately mapped carriageways both count because
+the indicator measures network infrastructure rather than a collapsed corridor.
+The contract excludes hard vehicle-access denials (`access`, `vehicle`,
+`motor_vehicle`, or `motorcar` marked `no`, `private`, `customers`, or
+`restricted`), parking aisles, and fully bus-only ways. It retains roads with a
+bus lane when cars remain permitted on another lane, and retains destination
+access because it is public access for a declared destination. Permit-only and
+emergency-only ways are excluded as non-general public access. The same
+semantic filter is the contract for the visual map and `c_longueur`.
+_Avoid_: réseau routable (implies turn-by-turn routing), voirie brute (includes
+ways not generally available to cars), longueur d'itinéraire (not a route
+distance)
 
 **Stationnement voiture — contrat #553**:
 The Mobility supply estimate combines two non-overlapping mapped sources: parent

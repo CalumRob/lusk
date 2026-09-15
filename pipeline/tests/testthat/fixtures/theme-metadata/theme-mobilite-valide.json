@@ -115,11 +115,8 @@
   "detail_labels": {
     "reseaux": {
       "t_longueur": "Longueur — à pied ou en transports en commun",
-      "t_densite": "Densité — à pied ou en transports en commun",
       "b_longueur": "Longueur — à vélo",
-      "b_densite": "Densité — à vélo",
-      "c_longueur": "Longueur — en voiture",
-      "c_densite": "Densité — en voiture"
+      "c_longueur": "Longueur — en voiture"
     },
     "voitures_menage": {
       "sans_voiture": "Ménages sans voiture",
