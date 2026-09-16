@@ -315,6 +315,34 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
         })
       )
     ))
+
+    # Les Pages d'indicateur optent explicitement dans leur métadonnée pour la
+    # projection de lecture. Le target reste unique par thème pour que l'ajout
+    # d'une page ne nécessite aucune nouvelle liste câblée dans l'orchestrateur.
+    if (any(vapply(
+      theme$metadata()$indicator_pages,
+      function(page) isTRUE(page$read_model),
+      logical(1)
+    ))) {
+      modeles <- as.name(paste0("modeles_lecture_", nom))
+      grappe <- c(grappe, list(
+        tar_target_raw(
+          as.character(modeles),
+          bquote({
+            .(as.name(paste0("payload_", nom)))
+            .(metadata)
+            .(vintages)
+            publier_modeles_lecture(
+              .(as.name(paste0("payload_", nom))),
+              .(metadata),
+              .(vintages),
+              sortie = .(sortie)
+            )
+          }),
+          format = "file"
+        )
+      ))
+    }
   }
 
   # LE RACCORDEMENT (issue #486) : le trait `raccordement` du descripteur

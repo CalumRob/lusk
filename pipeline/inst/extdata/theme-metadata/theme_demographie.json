@@ -91,7 +91,8 @@
     "direction": "high",
     "caveats": "La superficie est celle du territoire.",
     "levels": ["commune", "epci", "departement"],
-    "sources": ["serie_historique"]
+    "sources": ["serie_historique"],
+    "read_model": true
   }, "structure_age": {
     "indicator": "structure_age",
     "label": "Structure par âge",

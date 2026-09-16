@@ -50,6 +50,10 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
                     "payload_milieux") %in% noms))
   expect_false(any(c("payload_economie", "payload_mobilite") %in% noms))
 
+  # La première Page d'indicateur optée par sa métadonnée reçoit sa projection
+  # de lecture sans introduire de liste parallèle dans le graphe.
+  expect_true("modeles_lecture_demographie" %in% noms)
+
   # les artefacts partagés du run
   expect_true("fusion_vintages" %in% noms)
   expect_true("geometrie" %in% noms)

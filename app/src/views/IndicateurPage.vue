@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { usePayload } from '@/payload/usePayload'
+import { PAYLOAD_CHARGER_KEY, usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
+import { chargerModeleIndicateur, INDICATOR_READ_MODEL_CHARGER_KEY, payloadDepuisModeleIndicateur } from '@/payload/indicatorReadModel'
+import type { IndicatorReadModel } from '@/payload/indicatorReadModel'
 import { modeleComposition, modeleExploration, modeleEnsembleComparaison, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
 import MapExplorer from '@/components/carte/MapExplorer.vue'
@@ -20,6 +22,7 @@ import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
 import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl } from '@/indicateurs/etatUrl'
+import { PayloadError } from '@/payload/validate'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -43,7 +46,53 @@ const theme = computed(() => String(route.params.theme)); const indicator = comp
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
 const attendre: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
-const { payload, erreur, chargement } = usePayload({ attendre })
+const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
+const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
+const utiliseModeleIndicateur =
+  theme.value === 'demographie' &&
+  indicator.value === 'densite' &&
+  (modeleChargerInjecte !== null || payloadChargerInjecte === null)
+const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
+  attendre: utiliseModeleIndicateur ? ['territoires'] : attendre,
+  demarrer: utiliseModeleIndicateur ? ['territoires'] : undefined,
+})
+const modeleIndicateur = ref<IndicatorReadModel | null>(null)
+const erreurModeleIndicateur = ref<PayloadError | null>(null)
+const chargementModeleIndicateur = ref(utiliseModeleIndicateur)
+let modeleIndicateurDemarre = false
+const chargerModele = modeleChargerInjecte ?? chargerModeleIndicateur
+watch(
+  () => payloadLegacy.value.territoires.length,
+  (nombreTerritoires) => {
+    if (!utiliseModeleIndicateur || nombreTerritoires === 0 || modeleIndicateurDemarre) return
+    modeleIndicateurDemarre = true
+    chargerModele(selectedTheme, indicator.value, payloadLegacy.value.territoires).then(
+      (modele) => {
+        modeleIndicateur.value = modele
+        chargementModeleIndicateur.value = false
+      },
+      (cause: unknown) => {
+        erreurModeleIndicateur.value =
+          cause instanceof PayloadError
+            ? cause
+            : new PayloadError('fetch', `indicators/${selectedTheme}/${indicator.value}.json`, 'Impossible de charger le modèle.')
+        chargementModeleIndicateur.value = false
+      },
+    )
+  },
+  { immediate: true },
+)
+const payload = computed(() =>
+  modeleIndicateur.value
+    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
+    : payloadLegacy.value,
+)
+const erreur = computed(() => (utiliseModeleIndicateur ? erreurModeleIndicateur.value : erreurLegacy.value))
+const chargement = computed(() =>
+  utiliseModeleIndicateur
+    ? chargementLegacy.value || chargementModeleIndicateur.value
+    : chargementLegacy.value,
+)
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])
 const page = computed(() => metadata.value?.indicator_pages?.[indicator.value])

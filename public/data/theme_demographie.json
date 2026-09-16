@@ -158,7 +158,8 @@
       ],
       "sources": [
         "serie_historique"
-      ]
+      ],
+      "read_model": true
     },
     "structure_age": {
       "indicator": "structure_age",

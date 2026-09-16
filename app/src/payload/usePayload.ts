@@ -6,11 +6,12 @@
  * arrière-plan »), the payload loads as a STORE of per-file promises feeding
  * one reactive `Payload` object that GROWS as files land. Every file is still
  * fetched eagerly and in parallel on first load (one fetch per session — the
- * payload is static, memory-cached); the wait-set is a pure rendering gate,
- * never a fetch trigger.
+ * payload is static, memory-cached); the wait-set is the rendering gate and
+ * its files are the default fetch request for production consumers.
  *
- * `usePayload({ attendre: [...] })` returns the same `{ payload, erreur,
- * chargement, recharger }` shape, but:
+ * `usePayload({ attendre: [...] })` starts and waits for that set, while the
+ * no-argument form retains the complete legacy set. It returns the same
+ * `{ payload, erreur, chargement, recharger }` shape, but:
  * - `payload` is always the live growing object — initialized to valid
  *   empty/null sections, populated section by section as each file's promise
  *   resolves (the `Payload` type itself is unchanged).
@@ -18,7 +19,7 @@
  *   (resolved or failed); anything already loaded is readable while it is
  *   still true.
  * - `erreur` is the wait-set's failure if any (kind preserved), else null.
- * - No-arg `usePayload()` = wait for the FULL set = the previous
+ * - No-arg `usePayload()` = start and wait for the FULL set = the previous
  *   all-or-nothing behavior (backward compatible).
  *
  * Failure semantics (option C): a wait-set file failing → the typed
@@ -70,6 +71,8 @@ export interface EtatPayload {
 export interface OptionsUsePayload {
   /** The wait-set — the files this consumer BLOCKS on. Default = the full set. */
   attendre?: Fichier[]
+  /** Files to start for this store. Defaults to `attendre`, or the full set for injected legacy stores. */
+  demarrer?: Fichier[]
 }
 
 /** The honest empty payload — every section valid against the `Payload` type. */
@@ -119,6 +122,7 @@ interface EntreeFichier {
 interface Magasin {
   payload: Ref<Payload>
   etats: Map<Fichier, EntreeFichier>
+  demarrer: (fichiers?: readonly Fichier[]) => void
   recharger: () => void
 }
 
@@ -305,25 +309,11 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     )
   }
 
-  /** The eager parallel kick — all files, one fetch per session. */
-  function demarrer(): void {
+  /** Start the requested files; legacy callers retain the complete default. */
+  function demarrer(fichiers: readonly Fichier[] = TOUS_LES_FICHIERS): void {
     // La table de référence d'abord (l'ordre du loader) ; les fichiers sans
     // référence partent en parallèle avec elle.
-    lancer('territoires')
-    lancer('run-report')
-    lancer('vintages')
-    // Les fichiers liés chaînent sur territoires (leur promesse attend sa
-    // résolution) ; histoires_<theme> chaîne sur sa paire indicateurs.
-    lancer('apercu')
-    lancer('programmes')
-    lancer('profils_acces_bpe')
-    lancer('distribution_acces_batiments')
-    lancer('rampe_acces_batiments')
-    for (const theme of THEMES_CANONIQUES) {
-      lancer(`indicateurs_${theme}`)
-      lancer(`histoires_${theme}`)
-      lancer(`theme_${theme}`)
-    }
+    for (const fichier of fichiers) lancer(fichier)
   }
 
   /** Refetch ONLY the failed files — never the full set. */
@@ -340,17 +330,24 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
     }
   }
 
-  demarrer()
-
-  return { payload, etats, recharger }
+  return { payload, etats, demarrer, recharger }
 }
 
 /** The one shared store for the production app — one fetch per session. */
 let magasinPartage: Magasin | null = null
 
-export function usePayload({ attendre }: OptionsUsePayload = {}): EtatPayload {
+export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUsePayload = {}): EtatPayload {
   const chargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
-  const magasin = chargerInjecte ? creerMagasin(chargerInjecte) : (magasinPartage ??= creerMagasin(null))
+  const magasin = chargerInjecte
+    ? creerMagasin(chargerInjecte)
+    : (magasinPartage ??= creerMagasin(null))
+  // Production consumers request their wait-set only. Test injectors retain
+  // the historical full-store default unless a test explicitly exercises the
+  // demand-driven `demarrer` seam.
+  const fichiersParDefaut = chargerInjecte
+    ? TOUS_LES_FICHIERS
+    : (attendre ?? TOUS_LES_FICHIERS)
+  magasin.demarrer(fichiersADemarrer ?? fichiersParDefaut)
 
   const attendreEffectif: readonly Fichier[] = attendre ?? TOUS_LES_FICHIERS
 
