@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "generate:territory-model": "node scripts/publish-territory-model.mjs",
+    "validate:territory-model": "node scripts/validate-territory-model.mjs",
     "benchmark:payload": "vitest run --config scripts/vitest.benchmark.config.ts",
     "preview": "vite preview",
     "test": "vitest run"

@@ -15,6 +15,10 @@ import {
 } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { PAYLOAD_CHARGER_KEY } from '@/payload/usePayload'
+import {
+  TERRITORY_READ_MODEL_CHARGER_KEY,
+  validerModeleTerritoire,
+} from '@/payload/territoryReadModel'
 import { routes } from '@/router'
 
 const payload: Payload = {
@@ -28,8 +32,26 @@ const payload: Payload = {
   themeMetadata: { mobilite: structuredClone(metadonneesThemesFixtures.mobilite) },
 }
 
+const readModel = validerModeleTerritoire({
+  schema_version: '1',
+  snapshot_id: '2026-09-15',
+  territory: territoiresFixture[0],
+  territoires: territoiresFixture,
+  themes: {
+    mobilite: {
+      theme: 'mobilite',
+      indicateurs: indicateursMobiliteFixture,
+      histoires: histoiresMobiliteFixture,
+      theme_metadata: metadonneesThemesFixtures.mobilite,
+      profils_acces_bpe: null,
+      distribution_acces_batiments: null,
+      rampe_acces_batiments: null,
+    },
+  },
+}, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
+
 describe('Variant D — shell performance seam', () => {
-  it('resolves content from the raw payload after the Mobilité wait-set settles', async () => {
+  it('resolves content from the atomic territory model after it settles', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/territoire/commune/22001?theme=mobilite&variant=D')
     await router.isReady()
@@ -38,7 +60,10 @@ describe('Variant D — shell performance seam', () => {
     const wrapper = mount(TerritoireView, {
       global: {
         plugins: [router],
-        provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payload) },
+        provide: {
+          [PAYLOAD_CHARGER_KEY]: chargerAvec(payload),
+          [TERRITORY_READ_MODEL_CHARGER_KEY]: async () => readModel,
+        },
       },
     })
 
@@ -61,7 +86,10 @@ describe('Variant D — shell performance seam', () => {
     const wrapper = mount(App, {
       global: {
         plugins: [router],
-        provide: { [PAYLOAD_CHARGER_KEY]: chargerAvec(payload) },
+        provide: {
+          [PAYLOAD_CHARGER_KEY]: chargerAvec(payload),
+          [TERRITORY_READ_MODEL_CHARGER_KEY]: async () => readModel,
+        },
       },
     })
 

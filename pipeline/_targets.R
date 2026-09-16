@@ -850,7 +850,8 @@ verifications_programmes <- function(cache = CACHE_RUN, mode = MODE_RUN) {
 # trait que les verrous VERIFICATIONS_PROGRAMMES : un run restreint ne force
 # rien de tout cela. La chaîne est LEAF : rien des CINQ thèmes n'en dépend —
 # la publication programmes ne peut pas invalider le payload des cinq thèmes.
-programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN) {
+programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN,
+                                   payload_reference = as.name("publie_demographie")) {
   theme <- theme_programmes()
   construire <- symbole_ns(theme$construire_donnees)
   vintages_fn <- symbole_ns(theme$vintages)
@@ -906,6 +907,15 @@ programmes_publication <- function(cache = CACHE_RUN, sortie = SORTIE_RUN) {
                                vintages = vintages_table_programmes,
                                theme_attendu = theme_programmes()$theme,
                                directions_module = theme_programmes()$directions)
+      })
+    ),
+    tar_target_raw(
+      "projection_programmes",
+      bquote({
+        metadata_programmes
+        construire_payload_territoire_programmes(
+          publie_programmes, .(payload_reference)$territoires
+        )
       })
     )
   )
@@ -975,6 +985,78 @@ for (t in THEMES_RUN) {
   precedent <- as.name(paste0("publie_", t$theme))
 }
 
+# Les modèles de lecture par territoire sont construits APRÈS les publications
+# des thèmes : `publie_<thème>` retourne le payload produit par le seam partagé
+# ou spécialisé, donc aucun thème ne perd son payload uniquement parce qu'il
+# n'expose pas de target `payload_<thème>`. Une seule cible agrège les thèmes
+# actifs et écrit chaque adresse de territoire, ce qui évite les courses entre
+# cinq écrivains qui se remplaceraient mutuellement.
+targets_modeles_territoire <- list()
+if (!nzchar(selection) && length(THEMES_RUN) > 0L &&
+    all(vapply(THEMES_RUN, function(t) "metadata" %in% names(t), logical(1)))) {
+  noms_themes <- vapply(THEMES_RUN, function(t) t$theme, character(1))
+  directions_modeles <- stats::setNames(
+    lapply(THEMES_RUN, function(t) t$directions),
+    noms_themes
+  )
+  payload_symbols <- lapply(noms_themes, function(nom) {
+    as.name(paste0("publie_", nom))
+  })
+  metadata_symbols <- lapply(noms_themes, function(nom) {
+    as.name(paste0("metadata_", nom))
+  })
+  vintage_symbols <- lapply(noms_themes, function(nom) {
+    as.name(paste0("vintages_table_", nom))
+  })
+  ordre <- c("programmes", "mobilite", "demographie", "habitat", "economie", "milieux")
+  index <- match(ordre[-1L], noms_themes)
+  noms_themes <- ordre
+  directions_modeles <- c(
+    list(programmes = theme_programmes()$directions),
+    directions_modeles[index]
+  )
+  payload_symbols <- c(list(as.name("projection_programmes")),
+                       payload_symbols[index])
+  metadata_symbols <- c(list(as.name("metadata_programmes")),
+                         metadata_symbols[index])
+  vintage_symbols <- c(list(as.name("vintages_table_programmes")),
+                        vintage_symbols[index])
+  payloads_expr <- as.call(c(
+    list(as.name("list")),
+    payload_symbols
+  ))
+  metadatas_expr <- as.call(c(
+    list(as.name("list")),
+    metadata_symbols
+  ))
+  vintages_expr <- as.call(c(
+    list(as.name("list")),
+    vintage_symbols
+  ))
+  snapshot_expr <- if (!nzchar(selection)) {
+    bquote(identifiant_snapshot(vintages[["programmes"]]))
+  } else {
+    bquote(identifiant_snapshot(vintages[[length(vintages)]]))
+  }
+  targets_modeles_territoire <- list(tar_target_raw(
+    "modeles_territoire",
+    bquote({
+      payloads <- stats::setNames(.(payloads_expr), .(noms_themes))
+      metadatas <- stats::setNames(.(metadatas_expr), .(noms_themes))
+      vintages <- stats::setNames(.(vintages_expr), .(noms_themes))
+      publier_modeles_territoire_complet(
+        payloads, metadatas, vintages,
+        sortie = .(SORTIE_RUN),
+        # run_pipeline() est l'oracle séquentiel : sur le run complet,
+        # Programmes est publié en dernier et porte l'horloge finale.
+        snapshot_id = .(snapshot_expr),
+        directions = .(directions_modeles)
+      )
+    }),
+    format = "file"
+  ))
+}
+
 rapports <- list()
 precedent <- NULL
 for (t in THEMES_RUN) {
@@ -1018,7 +1100,11 @@ if (!nzchar(selection)) {
   # (le cron) publie programmes.json + les parquets par table — le même rang
   # que le SIXIÈME appel run_pipeline(theme = theme_programmes()) de l'oracle
   # (test-targets-byte-identical). LEAF : rien des CINQ thèmes n'en dépend.
-  publication_programmes <- programmes_publication()
+  publication_programmes <- programmes_publication(
+    payload_reference = as.name(paste0(
+      "publie_", THEMES_RUN[[length(THEMES_RUN)]]$theme
+    ))
+  )
   if (any(vapply(VERIFICATIONS_PROGRAMMES,
                  function(v) "epci" %in% unlist(v$args), logical(1)))) {
     besoin_epci <- TRUE
@@ -1042,6 +1128,7 @@ list(
   fichier_epci_geo_api_cible,
   grappes,
   publies,
+  targets_modeles_territoire,
   fusion_themes(themes_fusion),
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),

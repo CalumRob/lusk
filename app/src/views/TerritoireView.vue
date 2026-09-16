@@ -4,12 +4,12 @@
  *
  * Since #408 the shell's payload-driven tab bar opens on « Programmes et
  * subventions » — the SIXTH theme, first and selected by default — then the
- * other themes present in the payload; there is NO Aperçu tab anymore (the
+ * all five other canonical themes; there is NO Aperçu tab anymore (the
  * #400 verdict: its identity anchors disappear completely, the fiche goes
  * from its identity/title controls straight into the first theme block). The
  * ?theme= URL state selects a tab; absent or invalid falls back to the
- * programmes default. Each theme block renders from ITS OWN hermetic pair;
- * the page bg wears the selected theme's -wash. The breadcrumb + H1 with the
+ * programmes default. One atomic territory model resolves every theme block;
+ * tab changes never fetch. The page bg wears the selected theme's -wash. The breadcrumb + H1 with the
  * territory's real name (trouverTerritoire), the type chip and the context
  * switcher form the fiche header.
  *
@@ -39,11 +39,11 @@ import type { ThemeContent } from '@/fiche/content/themeContent'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
-import type { Fichier } from '@/payload/loader'
-import { themesPresent, trouverTerritoire } from '@/payload/selectors'
+import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Payload, Theme } from '@/payload/types'
-import { usePayload } from '@/payload/usePayload'
+import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
+import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,40 +53,19 @@ const router = useRouter()
  *  défaut — il remplace l'Aperçu retiré. */
 const THEME_DEFAUT: Theme = 'programmes'
 
-/**
- * Le wait-set de la fiche, dérivé de l'URL au montage (PRD #296 — la table par
- * route, ticket #302) : ?theme=X → territoires + run-report + la paire du
- * thème demandé (indicateurs_X + histoires_X — les thèmes hermétiques,
- * ADR-0020) + la métadonnée du thème (theme_X — le bloc est piloté par le
- * contrat theme_<theme>.json depuis #314, un thème présent la REQUIERT,
- * #313) ; sans ?theme → le set du thème DÉFAUT (#408 : Programmes et
- * subventions — sa paire hermétique, jamais l'ancien set apercu+programmes+
- * vintages de l'Aperçu retiré). Le magasin récupère TOUS les fichiers en
- * parallèle dès le premier chargement — ce tableau n'est que la porte de
- * rendu du premier affichage, jamais un déclencheur de fetch. Un thème non
- * canonique ne peut jamais rendre (themesPresent n'en sait rien) : il retombe
- * sur le set du défaut, et la normalisation d'URL nettoiera le paramètre.
- */
-function attendreDeUrl(theme: unknown): Fichier[] {
-  const demande =
-    typeof theme === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(theme)
-      ? (theme as Theme)
-      : THEME_DEFAUT
-  return [
-    'territoires',
-    'run-report',
-    `indicateurs_${demande}`,
-    `histoires_${demande}`,
-    `theme_${demande}`,
-  ]
-}
-
-const { payload, erreur, chargement, recharger } = usePayload({
-  attendre: attendreDeUrl(route.query.theme),
-})
+const typeRoute = computed(() => String(route.params.type))
+const idRoute = computed(() => String(route.params.id))
+const modeleTerritoire = useTerritoryReadModel(typeRoute, idRoute, computed(() => true))
+const payloadModele = computed(() =>
+  modeleTerritoire.model.value ? payloadDepuisModeleTerritoire(modeleTerritoire.model.value) : null,
+)
+const payloadPourRendu = computed<Payload | null>(() => payloadModele.value)
+const erreurFiche = modeleTerritoire.erreur
+const chargementFiche = modeleTerritoire.chargement
+const rechargerFiche = modeleTerritoire.recharger
 
 const territoire = computed(() =>
-  payload.value ? trouverTerritoire(payload.value, String(route.params.id)) : null,
+  payloadPourRendu.value ? trouverTerritoire(payloadPourRendu.value, idRoute.value) : null,
 )
 
 const typeValide = computed(
@@ -94,15 +73,12 @@ const typeValide = computed(
 )
 
 /**
- * L'identité de la fiche (fil d'ariane, H1, puce-type, contexte) est lisible
- * dès que la table de référence s'est réglée — avant le wait-set (AC #302) :
- * le header vit de territoires seul. L'échec du wait-set compte comme
- * « prêt » pour laisser la place à l'état d'erreur typé, jamais un squelette
- * éternel (territoires se règle toujours avant ses dépendants, l'ordre du
- * loader).
+ * L'identité et le contenu franchissent ensemble la frontière atomique du
+ * modèle de territoire. Une erreur compte comme « prête » afin de remplacer
+ * le squelette par l'état d'erreur typé.
  */
 const identitePret = computed(
-  () => (payload.value?.territoires.length ?? 0) > 0 || erreur.value !== null,
+  () => (payloadPourRendu.value?.territoires.length ?? 0) > 0 || erreurFiche.value !== null,
 )
 
 const nomTerritoire = computed(() => territoire.value?.nom ?? '')
@@ -111,42 +87,33 @@ const listeLien = computed(() =>
   territoire.value ? LIENS_LISTES[territoire.value.type] ?? null : null,
 )
 
-const themes = computed(() => (payload.value ? themesPresent(payload.value) : []))
-
 /**
- * Les onglets de la fiche : « Programmes et subventions » PREMIER (#408),
- * puis les autres thèmes présents dans l'ordre canonique.
+ * The territory endpoint is an all-theme contract. Tabs are therefore stable
+ * and selectable immediately; the selected panel waits for the one atomic
+ * response instead of appearing theme by theme.
  */
-const ongletsFiche = computed<Theme[]>(() => {
-  if (!themes.value.includes(THEME_DEFAUT)) return themes.value
-  return [THEME_DEFAUT, ...themes.value.filter((t) => t !== THEME_DEFAUT)]
-})
+const ongletsFiche: readonly Theme[] = [
+  THEME_DEFAUT,
+  ...THEMES_CANONIQUES.filter((theme) => theme !== THEME_DEFAUT),
+]
 
 const selection = computed<Theme | null>(() => {
   const demande = route.query.theme
-  if (
-    payload.value &&
-    typeof demande === 'string' &&
-    (themes.value as string[]).includes(demande)
-  ) {
+  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
     return demande as Theme
   }
-  // Le défaut (#408) : « Programmes et subventions » — tant qu'il est publié.
-  // Un payload restreint sans lui retombe sur le premier thème présent (jamais
-  // un bloc fantôme) ; aucun thème du tout → pas de panneau.
-  if (themes.value.includes(THEME_DEFAUT)) return THEME_DEFAUT
-  return themes.value[0] ?? null
+  return THEME_DEFAUT
 })
 
 const echelons = computed(() =>
-  payload.value ? echelleContexte(payload.value, String(route.params.id)) : [],
+  payloadPourRendu.value ? echelleContexte(payloadPourRendu.value, idRoute.value) : [],
 )
 
 /** The active theme's block needs the payload — narrowed together (both are
  *  non-null exactly when a published theme is selected). */
 const ongletTheme = computed<{ theme: Theme; payload: Payload } | null>(() =>
-  selection.value !== null && payload.value
-    ? { theme: selection.value, payload: payload.value }
+  selection.value !== null && payloadPourRendu.value
+    ? { theme: selection.value, payload: payloadPourRendu.value }
     : null,
 )
 
@@ -171,19 +138,21 @@ const prototypeCahierMobilite = computed(
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !prototypeCahierMobilite.value ||
-    chargement.value ||
-    !payload.value ||
+    chargementFiche.value ||
+    !payloadPourRendu.value ||
     !typeValide.value
   ) return null
   const facts = territoryFactsFor(
-    toRaw(payload.value),
-    String(route.params.id),
+    toRaw(payloadPourRendu.value),
+    idRoute.value,
+    modeleTerritoire.model.value?.themes.mobilite?.comparisons.epci ??
+      modeleTerritoire.model.value?.themes.mobilite?.comparisons.bretagne,
   )
   return facts ? resolveMobiliteThemeContent(facts) : null
 })
 const paginationCahier = computed(() =>
-  payload.value && contenuMobilite.value
-    ? cahierPaginationFor(payload.value, contenuMobilite.value, variante.value?.clef === 'E')
+  payloadPourRendu.value && contenuMobilite.value
+    ? cahierPaginationFor(payloadPourRendu.value, contenuMobilite.value, variante.value?.clef === 'E')
     : null,
 )
 function choisirOnglet(slug: SlugOnglet): void {
@@ -196,26 +165,23 @@ function choisirOnglet(slug: SlugOnglet): void {
 }
 
 watch(
-  () => [route.query.theme, payload.value, chargement.value, erreur.value] as const,
-  ([theme, pl, busy, enErreur]) => {
-    // Le payload grandit : la normalisation attend que le wait-set soit réglé
-    // (dérivé de l'URL — le thème demandé compris) et que la fiche ne soit pas
-    // en erreur — un échec du wait-set ne prouve pas l'absence du thème, il
-    // ne faut pas réécrire l'URL avant que Retry ait pu refaire ses preuves.
-    if (!pl || busy || enErreur) return
-    if (typeof theme === 'string' && !(themesPresent(pl) as string[]).includes(theme)) {
+  () => route.query.theme,
+  (theme) => {
+    if (theme !== undefined &&
+        (typeof theme !== 'string' || !(THEMES_CANONIQUES as readonly string[]).includes(theme))) {
       router.replace({ query: {} })
     }
   },
   { immediate: true },
 )
+
 </script>
 
 <template>
   <section
     class="fiche"
     :class="[classesFond, { 'fiche--prototype': prototypeActif, 'fiche--prototype-d': prototypeCahierMobilite }]"
-    :aria-busy="chargement ? 'true' : 'false'"
+    :aria-busy="chargementFiche ? 'true' : 'false'"
   >
     <div class="fiche-en-tete-surface">
       <div class="fiche-en-tete">
@@ -230,10 +196,10 @@ watch(
         <div class="squelette squelette--ligne" />
       </div>
 
-      <div v-else-if="erreur" class="etat-erreur">
+      <div v-else-if="erreurFiche" class="etat-erreur">
         <AppIcon :icone="AlertCircle" :taille="28" class="etat-icone" />
         <p class="etat-texte">Impossible de charger les données de la fiche.</p>
-        <button type="button" class="bouton-reessayer" @click="recharger">Réessayer</button>
+        <button type="button" class="bouton-reessayer" @click="rechargerFiche">Réessayer</button>
       </div>
 
       <div v-else-if="!typeValide" class="etat-vide">
@@ -266,7 +232,6 @@ watch(
       </template>
       </div>
       <ThemeTabs
-        v-if="typeValide"
         :themes="ongletsFiche"
         :selected="selection"
         masquer-onglet-initial
@@ -274,14 +239,12 @@ watch(
       />
     </div>
 
-    <template v-if="typeValide && !erreur">
+    <template v-if="typeValide && !erreurFiche">
       <div class="fiche-corps">
-        <!-- Le contenu attend SON wait-set (la porte de rendu, PRD #296) : le
-             header vit de la référence seule (AC #302), mais la vue ne prétend
-             jamais avoir ses données avant qu'elles ne soient réglées — le
-             squelette honnête du corps pendant que le wait-set pend. -->
+        <!-- Le contenu attend l'unique modèle atomique de la fiche : aucun
+             panneau ne prétend avoir ses données pendant que la réponse pend. -->
         <div
-          v-if="chargement"
+          v-if="chargementFiche"
           class="fiche-chargement-contenu"
           role="status"
           aria-label="Chargement du contenu de la fiche"
@@ -318,9 +281,9 @@ watch(
                  pliée) lit SA paire hermétique ; les autres thèmes passent
                  par la boucle partagée des sous-groupes. -->
             <BlocProgrammes
-              v-else-if="selection === 'programmes' && payload"
-              :payload="payload"
-              :territoire="String(route.params.id)"
+              v-else-if="selection === 'programmes' && payloadPourRendu"
+              :payload="payloadPourRendu"
+              :territoire="idRoute"
             />
             <!-- [PROTOTYPE #499] la variante remplace OngletTheme sur les
                  cinq thèmes éditoriaux — même props, zéro fetch propre. -->
@@ -329,13 +292,13 @@ watch(
               v-else-if="ongletTheme && variante && variante.clef !== 'D'"
               :theme="ongletTheme.theme"
               :payload="ongletTheme.payload"
-              :territoire="String(route.params.id)"
+              :territoire="idRoute"
             />
             <OngletTheme
               v-else-if="ongletTheme"
               :theme="ongletTheme.theme"
               :payload="ongletTheme.payload"
-              :territoire="String(route.params.id)"
+              :territoire="idRoute"
             />
           </div>
         </template>

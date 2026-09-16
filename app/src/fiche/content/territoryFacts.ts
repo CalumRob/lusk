@@ -10,6 +10,7 @@ import type {
   Territoire,
   TerritoireType,
 } from '@/payload/types'
+import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 
 /** The availability of a normalized fact, independent of how a surface lays it out. */
 export type FactAvailability = 'complete' | 'incomplete' | 'absent'
@@ -32,7 +33,9 @@ export type ComparisonScopeKind =
 /** The one peer universe used for both a fact's rank and its reference value. */
 export interface ComparisonScope {
   kind: ComparisonScopeKind
-  territoryIds: readonly string[]
+  territoryIds?: readonly string[]
+  mode?: 'densite' | 'epci' | 'bretagne'
+  label?: string
 }
 
 export interface ComparisonRank {
@@ -512,13 +515,51 @@ function directionForIndicator(key: string): DirectionRang | null {
   return THEMES_METHODES.mobilite.indicateurs[key]?.direction ?? null
 }
 
+function comparisonFromPrecomputed(
+  precomputed: TerritoryComparisonContext | undefined,
+  key: string,
+  detail: string | null = null,
+  sex: string | null = null,
+  dimension: string | null = null,
+): FactComparison | null {
+  if (!precomputed) return null
+  const fact = precomputed.facts.find((candidate) =>
+    candidate.key === key &&
+    candidate.detail === detail &&
+    candidate.sex === sex &&
+    candidate.dimension === dimension,
+  )
+  return fact
+    ? {
+        direction: fact.direction,
+        scope: {
+          mode: precomputed.mode,
+          kind: precomputed.scope.kind,
+          label: precomputed.scope.label,
+        },
+        rank: fact.rank,
+        reference: fact.reference,
+      }
+    : null
+}
+
 function indicatorComparison(
   payload: Payload,
   scope: ComparisonScope | null,
   row: Indicateur,
   direction: DirectionRang,
   statistic: ComparisonStatistic = 'median',
+  precomputed?: TerritoryComparisonContext,
 ): FactComparison | null {
+  if (precomputed) {
+    return comparisonFromPrecomputed(
+      precomputed,
+      row.key,
+      row.detail,
+      row.sex ?? null,
+      row.dimension ?? null,
+    )
+  }
   const observations = payload.indicateurs
     .filter(
       (candidate) =>
@@ -527,7 +568,7 @@ function indicatorComparison(
         candidate.detail === row.detail &&
         (candidate.sex ?? null) === (row.sex ?? null) &&
         (candidate.dimension ?? null) === (row.dimension ?? null) &&
-        scope !== null && scope.territoryIds.includes(candidate.territoire),
+        scope !== null && (scope.territoryIds ?? []).includes(candidate.territoire),
     )
     .flatMap((candidate) =>
       candidate.value === null
@@ -561,7 +602,7 @@ function storyComparison(
       (candidate): candidate is HistoireMobilite =>
         candidate.theme === 'mobilite' &&
         scope !== null &&
-        scope.territoryIds.includes(candidate.territoire),
+        (scope.territoryIds ?? []).includes(candidate.territoire),
     )
     .flatMap((candidate) => {
       const candidateValue = STORY_METRICS[key].read(candidate)
@@ -575,6 +616,7 @@ function indicatorsOf(
   payload: Payload,
   target: Territoire,
   scope: ComparisonScope | null,
+  precomputed?: TerritoryComparisonContext,
 ): readonly NumericFact[] {
   return payload.indicateurs
     .filter((row) => row.theme === 'mobilite' && row.territoire === target.territoire)
@@ -590,7 +632,7 @@ function indicatorsOf(
         present: true,
         provenance: provenanceFromRow(row, sourceId),
         comparison: direction
-          ? indicatorComparison(payload, scope, row, direction, statisticForIndicator(row.key))
+          ? indicatorComparison(payload, scope, row, direction, statisticForIndicator(row.key), precomputed)
           : null,
         reason: row.rider ?? null,
       })
@@ -621,6 +663,7 @@ function accessOf(
   payload: Payload,
   target: Territoire,
   scope: ComparisonScope | null,
+  precomputed?: TerritoryComparisonContext,
 ): MobiliteAccessFacts {
   const buildingCountFor = (territoire: string): Indicateur | null =>
     payload.indicateurs.find(
@@ -652,7 +695,7 @@ function accessOf(
     row: Indicateur | null,
   ): FactComparison | null => {
     if (!scope) return null
-    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux') : null
+    return row ? indicatorComparison(payload, scope, row, 'plus-est-mieux', 'median', precomputed) : null
   }
 
   const summaryRowForTerritory = (territoire: string, key: string): Indicateur | null =>
@@ -681,7 +724,7 @@ function accessOf(
         unit,
         row !== null,
         row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : null,
-        row && direction ? indicatorComparison(payload, scope, row, direction, 'mean') : null,
+        row && direction ? indicatorComparison(payload, scope, row, direction, 'mean', precomputed) : null,
       )
     }
     return {
@@ -712,7 +755,7 @@ function accessOf(
       const current = values[mode]
       const value = car.value === null || current.value === null ? null : Math.max(0, car.value - current.value)
        const peerObservations = scope
-        ? scope.territoryIds.flatMap((territoire) => {
+        ? (scope.territoryIds ?? []).flatMap((territoire) => {
             const peerCar = summaryRowForTerritory(territoire, sourceKeys.car)?.value
             const peerCurrent = summaryRowForTerritory(territoire, sourceKeys[mode])?.value
             const peerWeight = buildingCountValueOf(payload, territoire)
@@ -727,14 +770,21 @@ function accessOf(
         unit,
         present: car.availability !== 'absent' && current.availability !== 'absent',
         provenance: current.provenance ?? car.provenance,
-        comparison: comparisonOf({
-          scope,
-          direction: 'moins-est-mieux',
-          value,
-          values: peerObservations.map(({ value: peerValue }) => peerValue),
-          weights: peerObservations.map(({ weight }) => weight),
-          statistic: 'mean',
-        }),
+        comparison: precomputed
+          ? comparisonFromPrecomputed(
+              precomputed,
+              kind === 'total'
+                ? `avg_loss_tot_${mode === 'bike' ? 'b' : 't'}`
+                : `avg_loss_div_${mode === 'bike' ? 'b' : 't'}`,
+            )
+          : comparisonOf({
+              scope,
+              direction: 'moins-est-mieux',
+              value,
+              values: peerObservations.map(({ value: peerValue }) => peerValue),
+              weights: peerObservations.map(({ weight }) => weight),
+              statistic: 'mean',
+            }),
       })
     }
     return { walkTransit: lossFact('walkTransit'), bike: lossFact('bike') }
@@ -796,7 +846,7 @@ function accessOf(
         ? null
         : minuend.value - subtrahend.value
     const peerValues = scope
-      ? scope.territoryIds.flatMap((territoire) => {
+      ? (scope.territoryIds ?? []).flatMap((territoire) => {
           const peerMinuend = rowForTerritory(territoire, service, minuendMode)?.value
           const peerSubtrahend = rowForTerritory(territoire, service, subtrahendMode)?.value
           return peerMinuend === null || peerMinuend === undefined ||
@@ -805,12 +855,9 @@ function accessOf(
             : [peerMinuend - peerSubtrahend]
         })
       : []
-    const comparison = comparisonOf({
-      scope,
-      direction,
-      value,
-      values: peerValues,
-    })
+    const comparison = precomputed
+      ? comparisonFromPrecomputed(precomputed, `access.${service}.${key}`)
+      : comparisonOf({ scope, direction, value, values: peerValues })
     return factOf({
       key: `access.${service}.${key}`,
       value,
@@ -876,7 +923,11 @@ function accessOf(
   }
 }
 
-function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFacts {
+function bpeAccessOf(
+  payload: Payload,
+  target: Territoire,
+  precomputed?: TerritoryComparisonContext,
+): MobiliteBpeAccessFacts {
   const allRows = payload.profilsAccesBpe ?? []
   const rowsForTerritory = (territoire: string) =>
     allRows.filter((row) => row.territoire === territoire)
@@ -894,7 +945,7 @@ function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFac
     availability: 'complete',
     profiles: PROFILS_ACCES_BPE.map((profile) => {
       const row = rows.find((candidate) => candidate.profil === profile)
-      const peerValues = scope?.territoryIds.flatMap((territoire) => {
+      const peerValues = scope?.territoryIds?.flatMap((territoire) => {
         const peerRows = rowsForTerritory(territoire)
         if (peerRows.length === 0) return []
         return [peerRows.find((candidate) => candidate.profil === profile)?.nombre_typequ ?? 0]
@@ -904,6 +955,17 @@ function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFac
       // total, while four independent medians do not.
       const reference = mean(peerValues)
       const direction = directions[profile]
+      const published = comparisonFromPrecomputed(precomputed, 'bpe_profile', profile)
+      const publishedReference: BpeAccessProfileReference | null =
+        published?.reference?.kind === 'mean'
+          ? { kind: 'mean', value: published.reference.value }
+          : null
+      const publishedMean: BpeAccessProfileComparison | null = published
+        ? {
+            ...published,
+            reference: publishedReference,
+          }
+        : null
       return {
         profile,
         label: row?.profil_libelle ?? LIBELLES_PROFILS_ACCES_BPE[profile],
@@ -917,8 +979,9 @@ function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFac
               walkTransit: row.exemplar_t,
             }
           : null,
-        comparison:
-          scope && reference !== null
+        comparison: precomputed
+          ? publishedMean
+          : scope && reference !== null
             ? {
                 scope,
                 direction,
@@ -934,6 +997,7 @@ function bpeAccessOf(payload: Payload, target: Territoire): MobiliteBpeAccessFac
 function buildingDistributionOf(
   payload: Payload,
   target: Territoire,
+  precomputed?: TerritoryComparisonContext,
 ): MobiliteBuildingDistribution | null {
   const rows = (payload.distributionAccesBatiments ?? []).filter(
     (row) => row.territoire === target.territoire,
@@ -961,18 +1025,28 @@ function buildingDistributionOf(
     }))
     .filter((bin, index, bins) => bins.findIndex((candidate) => candidate.key === bin.key) === index)
     .sort((left, right) => left.min - right.min)
+  const publishedComparison = precomputed?.buildingDistribution ?? null
   const cells = rows
     .filter(
       (row) => row.breadth_bucket !== null && row.depth_bucket !== null && row.building_count !== null && row.share !== null,
     )
-    .map((row) => ({
-      breadthBucket: row.breadth_bucket!,
-      depthBucket: row.depth_bucket!,
-      buildingCount: row.building_count!,
-      share: row.share!,
-      comparisonBuildingCount: row.comparison_building_count,
-      comparisonShare: row.comparison_share,
-    }))
+    .map((row) => {
+      const comparisonCell = publishedComparison?.cells.find((cell) =>
+        cell.breadthBucket === row.breadth_bucket && cell.depthBucket === row.depth_bucket,
+      )
+      return {
+        breadthBucket: row.breadth_bucket!,
+        depthBucket: row.depth_bucket!,
+        buildingCount: row.building_count!,
+        share: row.share!,
+        comparisonBuildingCount: precomputed
+          ? comparisonCell?.buildingCount ?? null
+          : row.comparison_building_count,
+        comparisonShare: precomputed
+          ? comparisonCell?.share ?? null
+          : row.comparison_share,
+      }
+    })
 
   return {
     availability: first.availability,
@@ -984,7 +1058,9 @@ function buildingDistributionOf(
     depthBins,
     cells,
     totalBuildings: first.total_buildings,
-    comparisonTotalBuildings: first.comparison_total_buildings,
+    comparisonTotalBuildings: precomputed
+      ? publishedComparison?.totalBuildings ?? null
+      : first.comparison_total_buildings,
     provenance: {
       sourceId: first.source_id,
       source: first.source,
@@ -992,11 +1068,17 @@ function buildingDistributionOf(
       referenceDate: first.date_reference,
       publicationDate: first.date_publication,
     },
-    comparisonLabel: first.comparison_label,
+    comparisonLabel: precomputed
+      ? publishedComparison?.label ?? null
+      : first.comparison_label,
   }
 }
 
-function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp | null {
+function accessRampOf(
+  payload: Payload,
+  target: Territoire,
+  precomputed?: TerritoryComparisonContext,
+): MobiliteAccessRamp | null {
   const rows = (payload.rampeAccesBatiments ?? []).filter(
     (row) => row.territoire === target.territoire,
   )
@@ -1008,6 +1090,7 @@ function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp 
     b: 'bike',
     t: 'walkTransit',
   }
+  const publishedComparison = precomputed?.accessRamp ?? null
   const curves = Object.fromEntries(
     (Object.keys(modeNames) as RampeAccesBatimentsRow['mode'][]).map((mode) => {
       const modeRows = rows
@@ -1021,7 +1104,11 @@ function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp 
           quantile: row.quantile!,
           quantileLabel: row.quantile_label!,
           accessibleTypes: row.accessible_types!,
-          comparisonAccessibleTypes: row.comparison_accessible_types,
+          comparisonAccessibleTypes: precomputed
+            ? publishedComparison?.points.find((point) =>
+                point.mode === mode && point.quantile === row.quantile,
+              )?.accessibleTypes ?? null
+            : row.comparison_accessible_types,
         })),
       }]
     }),
@@ -1033,7 +1120,9 @@ function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp 
     yAxisLabel: first.y_axis_label,
     curves,
     totalBuildings: first.total_buildings,
-    comparisonTotalBuildings: first.comparison_total_buildings,
+    comparisonTotalBuildings: precomputed
+      ? publishedComparison?.totalBuildings ?? null
+      : first.comparison_total_buildings,
     provenance: {
       sourceId: first.source_id,
       source: first.source,
@@ -1041,7 +1130,7 @@ function accessRampOf(payload: Payload, target: Territoire): MobiliteAccessRamp 
       referenceDate: first.date_reference,
       publicationDate: first.date_publication,
     },
-    comparisonLabel: first.comparison_label,
+    comparisonLabel: precomputed ? publishedComparison?.label ?? null : first.comparison_label,
   }
 }
 
@@ -1049,6 +1138,7 @@ function lossesOf(
   payload: Payload,
   target: Territoire,
   scope: ComparisonScope | null,
+  precomputed?: TerritoryComparisonContext,
 ): MobiliteLossFacts {
   const histoire = payload.histoires.find(
     (candidate): candidate is HistoireMobilite =>
@@ -1073,7 +1163,9 @@ function lossesOf(
           }
         : null,
       comparison: histoire
-        ? storyComparison(payload, scope, key, value, direction)
+        ? precomputed
+          ? comparisonFromPrecomputed(precomputed, metric.key)
+          : storyComparison(payload, scope, key, value, direction)
         : null,
     })
   }
@@ -1088,6 +1180,7 @@ function lossesOf(
 export function territoryFactsFor(
   payload: Payload,
   territoire: string,
+  precomputed?: TerritoryComparisonContext,
 ): TerritoryFacts | null {
   const target = payload.territoires.find((candidate) => candidate.territoire === territoire)
   if (!target) return null
@@ -1102,12 +1195,12 @@ export function territoryFactsFor(
     territory: identityOf(target, epciName),
     theme: 'mobilite',
     mobility: {
-      indicators: indicatorsOf(payload, target, scope),
-      access: accessOf(payload, target, scope),
-      bpeAccess: bpeAccessOf(payload, target),
-      losses: lossesOf(payload, target, scope),
-      buildingDistribution: buildingDistributionOf(payload, target),
-      accessRamp: accessRampOf(payload, target),
+      indicators: indicatorsOf(payload, target, scope, precomputed),
+      access: accessOf(payload, target, scope, precomputed),
+      bpeAccess: bpeAccessOf(payload, target, precomputed),
+      losses: lossesOf(payload, target, scope, precomputed),
+      buildingDistribution: buildingDistributionOf(payload, target, precomputed),
+      accessRamp: accessRampOf(payload, target, precomputed),
     },
   }
 }

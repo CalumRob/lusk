@@ -7,7 +7,6 @@ import DepartementsView from '../views/DepartementsView.vue'
 import EpcisView from '../views/EpcisView.vue'
 import TerritoireView from '../views/TerritoireView.vue'
 import IndicateursView from '../views/IndicateursView.vue'
-import IndicateurView from '../views/IndicateurView.vue'
 import SourcesView from '../views/SourcesView.vue'
 
 /**
@@ -17,10 +16,12 @@ import SourcesView from '../views/SourcesView.vue'
  * SPA fallback serves dist/ at the site root (nginx try_files / Vercel
  * rewrites).
  *
- * La carte est chargée paresseusement : maplibre-gl (~230 ko gzip) ne pèse
- * que sur /carte, jamais dans le bundle initial (issue #39).
+ * La carte et les pages d'indicateur sont chargées paresseusement :
+ * maplibre-gl (~230 ko gzip) ne pèse que sur /carte ou une Page d'indicateur
+ * qui ouvre sa vue Carte, jamais sur une fiche de territoire.
  */
 const CarteView = () => import('../views/CarteView.vue')
+const IndicateurView = () => import('../views/IndicateurView.vue')
 export const routes = [
   {
     path: '/',

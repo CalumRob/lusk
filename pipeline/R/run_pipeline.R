@@ -115,7 +115,8 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # direction déclarée par chaque page d'indicateur est croisée contre celle
   # qui classe les rangs publiés, la contradiction échoue à l'écriture.
   if ("metadata" %in% names(theme)) {
-    publier_theme_metadata(theme$metadata(), sortie,
+    metadata <- theme$metadata()
+    publier_theme_metadata(metadata, sortie,
                            vintages = vintages,
                            theme_attendu = theme$theme,
                            directions_module = theme$directions)
@@ -149,7 +150,6 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   jsonlite::write_json(vintages, file.path(sortie, "vintages.json"),
                        dataframe = "rows", na = "null",
                        digits = 17, pretty = TRUE)
-
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème
   # le porte.

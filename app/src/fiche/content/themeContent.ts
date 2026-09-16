@@ -624,6 +624,7 @@ function comparisonScopeLabel(
   territory: TerritoryIdentity,
 ): string | null {
   if (!comparison?.reference) return null
+  if (comparison.scope.label) return comparison.scope.label
   switch (comparison.scope.kind) {
     case 'communes-epci':
       return territory.epciName

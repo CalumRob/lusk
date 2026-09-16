@@ -94,6 +94,26 @@ test_that("construire_indicateurs_programmes : les deux clés numériques porten
   expect_true(all(is.na(as.matrix(ind[, colonnes_rang]))))
 })
 
+test_that("construire_payload_territoire_programmes adapte le payload partagé au contrat atomique", {
+  territoires <- tibble::tibble(
+    territoire = c("22001", "200000001"),
+    type = c("commune", "epci"),
+    nom = c("Commune A", "EPCI A")
+  )
+
+  payload <- construire_payload_territoire_programmes(
+    list(membres = membres_faits(), subventions = subventions_faits()),
+    territoires
+  )
+
+  expect_identical(payload$territoires, territoires)
+  expect_true(nrow(payload$indicateurs) > 0L)
+  expect_true(all(payload$indicateurs$theme == "programmes"))
+  expect_s3_class(payload$histoires, "data.frame")
+  expect_equal(nrow(payload$histoires), 0L)
+  expect_true(all(c("territoire", "type", "theme") %in% names(payload$histoires)))
+})
+
 test_that("construire_indicateurs_programmes : le total poolé incohérent échoue fort", {
   subventions <- subventions_faits()
   # une ligne de domaine modifiée sans retoucher le total poolé — impossible

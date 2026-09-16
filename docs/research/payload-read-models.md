@@ -124,3 +124,25 @@ smallest end-to-end proof of the post-Parquet projector, nested static paths,
 local validator, demand-driven route loader, fallback migration, and deploy
 behavior without first porting every browser-side comparison calculation into
 the pipeline.
+
+## Territory-model release rehearsal
+
+The compact territory slice was materialized from the complete canonical JSON
+snapshot on 2026-09-16. The first full rehearsal completed in 560.43 s; the
+final contract was then regenerated successfully as 1,268 six-theme artifacts:
+
+| Measure | Raw bytes | gzip bytes |
+|---|---:|---:|
+| Complete 1,268-file set | 284,994,943 | 33,470,165 |
+| Largest artifact (`commune/35238.json`) | 245,112 | 27,277 |
+| Representative commune (`commune/22001.json`) | 224,079 | 26,006 |
+
+The representative compact artifact is roughly 0.2% of the 127 MB raw legacy
+Mobilité dependency set and arrives with all six themes as one validated unit.
+Validation compared its resolved Mobilité `ThemeContent` with the legacy
+projection for a commune with an EPCI, a commune without one, an EPCI, a
+département, and the Région; all five retained observable semantic parity.
+
+The numbers measure local materialization, byte size, validation, and semantic
+resolution. They are not a WAN latency claim: production transfer timing still
+depends on the host, cache state, and client connection.

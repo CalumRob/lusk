@@ -22,6 +22,9 @@
 # artifact — committed and served by the static host (ADR-0004). The
 # pipeline's raw and produced data (pipeline/data/) stays gitignored.
 !/public/
+# Territory read models are release artifacts alongside the canonical payload.
+# Vite may project them in memory during development, but published models must
+# remain visible to the pipeline's `git add public/data` release step.
 
 # ADRs — the decisions the code cites — are versioned, like their
 # siblings (docs/adr/0001..0003); the rest of docs/ stays local

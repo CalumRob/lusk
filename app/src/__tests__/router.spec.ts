@@ -44,6 +44,16 @@ describe('router — route table', () => {
     expect(carte?.name).toBe('carte')
   })
 
+  it('does not eagerly load indicator-page dependencies on a territory navigation', () => {
+    const territoire = routes.find((r) => r.path === '/territoire/:type/:id')
+    const indicateur = routes.find((r) => r.path === '/indicateurs/:theme/:indicator')
+
+    // The territory shell must not import the indicator page transitively:
+    // that page owns the MapExplorer/MapLibre dependency for its Carte view.
+    expect(typeof territoire?.component).toBe('object')
+    expect(typeof indicateur?.component).toBe('function')
+  })
+
   it('gives each route a stable name', () => {
     const names = routes.map((r) => r.name)
     for (const name of names) expect(name).toBeTruthy()

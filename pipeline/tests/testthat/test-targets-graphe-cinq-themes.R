@@ -54,6 +54,13 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # de lecture sans introduire de liste parallèle dans le graphe.
   expect_true("modeles_lecture_demographie" %in% noms)
 
+  # Une cible unique agrège les payloads retournés par les cinq publications
+  # et l'adaptateur du sixième thème Programmes dans les artefacts atomiques
+  # par territoire — y compris Économie/Mobilité, qui n'ont pas de target
+  # payload_<thème>.
+  expect_true("projection_programmes" %in% noms)
+  expect_true("modeles_territoire" %in% noms)
+
   # les artefacts partagés du run
   expect_true("fusion_vintages" %in% noms)
   expect_true("geometrie" %in% noms)
@@ -78,6 +85,17 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   expect_true(grepl("publish(", commande("publie_habitat"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_milieux"), fixed = TRUE))
   expect_false(grepl("publier_", commande("publie_demographie"), fixed = TRUE))
+
+  expect_true(grepl("publier_modeles_territoire_complet",
+                    commande("modeles_territoire"), fixed = TRUE))
+  expect_true(grepl("projection_programmes",
+                    commande("modeles_territoire"), fixed = TRUE))
+  expect_true(grepl("metadata_programmes",
+                    commande("modeles_territoire"), fixed = TRUE))
+  expect_true(grepl("vintages_table_programmes",
+                    commande("modeles_territoire"), fixed = TRUE))
+  expect_true(grepl('vintages[["programmes"]]',
+                    commande("modeles_territoire"), fixed = TRUE))
 
   # vintages : le cache atteint le builder qui le DÉCLARE (Habitat lit la date
   # de pull des DPE sur le mtime du cache — issue #19) — dispatch sur la
