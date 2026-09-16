@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { indicateursDemographieFixture, metadonneesThemesFixtures, territoiresFixture } from '../payload/fixtures'
-import { payloadDepuisModeleIndicateur, validerModeleIndicateur } from '../payload/indicatorReadModel'
+import {
+  chargerModeleIndicateur,
+  payloadDepuisModeleIndicateur,
+  validerModeleIndicateur,
+} from '../payload/indicatorReadModel'
 
 describe("le modèle de lecture d'une Page d'indicateur", () => {
   it('valide une projection densité autonome à partir de son contrat public', () => {
@@ -44,5 +48,35 @@ describe("le modèle de lecture d'une Page d'indicateur", () => {
     expect(modele.sourceRecords.serie_historique?.dataset).toBeTruthy()
     const payload = payloadDepuisModeleIndicateur(modele, territoiresFixture)
     expect(payload.themeMetadata?.demographie?.source_records).toEqual(modele.sourceRecords)
+  })
+
+  it("demande l'artefact sous l'adresse publiée", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        schema_version: '1',
+        snapshot_id: '2025-01-01',
+        theme: 'demographie',
+        indicator: 'densite',
+        theme_label: 'Démographie',
+        page: metadonneesThemesFixtures.demographie.indicator_pages!.densite,
+        detail_labels: {},
+        source_records: metadonneesThemesFixtures.demographie.source_records,
+        facts: indicateursDemographieFixture.filter(
+          (fact) => fact.key === 'densite' && fact.type !== 'region',
+        ),
+      }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      await chargerModeleIndicateur('demographie', 'densite', territoiresFixture)
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/data/modeles-lecture/indicateurs/demographie/densite.json',
+      )
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

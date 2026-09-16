@@ -155,7 +155,7 @@ export const chargerModeleIndicateur: ChargerModeleIndicateur = async (
   indicator,
   territories,
 ) => {
-  const file = `indicators/${theme}/${indicator}.json`
+  const file = `indicateurs/${theme}/${indicator}.json`
   const url = `/data/modeles-lecture/${file}`
   let response: Response
   try {
