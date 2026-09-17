@@ -150,3 +150,32 @@ département, and the Région; all five retained observable semantic parity.
 The numbers measure local materialization, byte size, validation, and semantic
 resolution. They are not a WAN latency claim: production transfer timing still
 depends on the host, cache state, and client connection.
+
+## Indicator-model release rehearsal
+
+The first manifest-driven indicator slice was built and served from the physical
+Vite `dist/` output on 2026-09-17. `vercel.json` excludes `/data/` from the SPA
+rewrite, and a local `vite preview` returned HTTP 200 with JSON content for all
+three representative addresses:
+
+- `/data/modeles-lecture/manifest.json`
+- `/data/modeles-lecture/indicateurs/demographie/densite.json`
+- `/data/modeles-lecture/territoires/commune/22001.json`
+
+Representative built-file measurements, captured with Node's `zlib` (gzip level
+9) and `JSON.parse`, are:
+
+| Artifact | Raw bytes | gzip bytes | Local JSON parse |
+|---|---:|---:|---:|
+| `modeles-lecture/manifest.json` | 90 | 96 | 0.03 ms |
+| `modeles-lecture/indicateurs/demographie/densite.json` | 744,210 | 25,252 | 3.03 ms |
+| `modeles-lecture/territoires/commune/22001.json` | 224,079 | 26,006 | 1.24 ms |
+| Legacy `indicateurs_demographie.json` | 11,880,832 | 344,916 | 34.69 ms |
+
+These are local file and parser measurements, not browser-network cold-load
+claims. The indicator route now has a bounded static artifact and avoids the
+11.9 MB legacy theme file in the tested manifest-listed path. The paths are
+currently stable rather than content-addressed; no custom `Cache-Control` rule
+is declared in `vercel.json` yet. The manifest therefore remains the
+invalidation boundary to make explicit before the migration is declared
+complete.
