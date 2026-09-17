@@ -213,6 +213,10 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   vintages <- as.name(paste0("vintages_table_", nom))
   payload <- as.name(paste0("payload_", nom))
   metadata <- as.name(paste0("metadata_", nom))
+  # Every theme exposes the same publication target to downstream projections.
+  # `publie_<theme>` normalizes both the custom `publier` seam and the shared
+  # `publish()` seam to the payload returned by publication.
+  modele_source <- as.name(paste0("publie_", nom))
 
   # vintages : le builder du thème prend le cache seulement s'il le déclare —
   # le dispatch sur la signature, à l'identique de run_pipeline (Démographie
@@ -329,11 +333,11 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
         tar_target_raw(
           as.character(modeles),
           bquote({
-            .(as.name(paste0("payload_", nom)))
+            .(modele_source)
             .(metadata)
             .(vintages)
             publier_modeles_lecture(
-              .(as.name(paste0("payload_", nom))),
+              .(modele_source),
               .(metadata),
               .(vintages),
               sortie = .(sortie)

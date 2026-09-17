@@ -84,7 +84,9 @@ test_that("un modèle d'indicateur se publie sous son adresse de lecture", {
     )
   )
   expect_true(file.exists(chemin))
-  relu <- jsonlite::fromJSON(chemin, simplifyDataFrame = FALSE)
+  relu <- jsonlite::fromJSON(
+    chemin, simplifyDataFrame = FALSE, simplifyVector = FALSE
+  )
   expect_identical(relu$schema_version, "1")
   expect_identical(relu$facts[[1]]$territoire, "1000")
   expect_null(relu$facts[[1]]$detail)
@@ -134,8 +136,11 @@ test_that("le manifeste des modèles de lecture est dérivé des pages optées",
     normalizePath(chemin, winslash = "/"),
     normalizePath(file.path(sortie, "modeles-lecture", "manifest.json"), winslash = "/")
   )
-  relu <- jsonlite::fromJSON(chemin, simplifyDataFrame = FALSE)
-  expect_identical(relu$routes$demographie, "densite")
+  relu <- jsonlite::fromJSON(
+    chemin, simplifyDataFrame = FALSE, simplifyVector = FALSE
+  )
+  expect_true(is.list(relu$routes$demographie))
+  expect_identical(unlist(relu$routes$demographie, use.names = FALSE), "densite")
   expect_true("economie" %in% names(relu$routes))
   expect_length(relu$routes$economie, 0L)
 })

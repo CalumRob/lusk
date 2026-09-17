@@ -53,6 +53,7 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # La première Page d'indicateur optée par sa métadonnée reçoit sa projection
   # de lecture sans introduire de liste parallèle dans le graphe.
   expect_true("modeles_lecture_demographie" %in% noms)
+  expect_true("modeles_lecture_mobilite" %in% noms)
   expect_true("manifeste_modeles_lecture" %in% noms)
 
   # Une cible unique agrège les payloads retournés par les cinq publications
@@ -82,6 +83,10 @@ test_that("les seams se dispatchent sur les traits du descripteur, jamais sur le
   # is.function(theme$publier), jamais un nom de thème
   expect_true(grepl("publier_economie", commande("publie_economie"), fixed = TRUE))
   expect_true(grepl("publier_mobilite", commande("publie_mobilite"), fixed = TRUE))
+  expect_true(grepl("publie_demographie", commande("modeles_lecture_demographie"), fixed = TRUE))
+  expect_false(grepl("payload_demographie", commande("modeles_lecture_demographie"), fixed = TRUE))
+  expect_true(grepl("publie_mobilite", commande("modeles_lecture_mobilite"), fixed = TRUE))
+  expect_false(grepl("payload_mobilite", commande("modeles_lecture_mobilite"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_demographie"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_habitat"), fixed = TRUE))
   expect_true(grepl("publish(", commande("publie_milieux"), fixed = TRUE))

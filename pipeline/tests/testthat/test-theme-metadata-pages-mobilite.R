@@ -43,6 +43,17 @@ test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses vingt
   expect_no_error(valider_theme_metadata(meta))
 })
 
+test_that("le ratio bornes par station-service opte pour son modèle de lecture avec ses deux sources", {
+  meta <- lire_theme_metadata("mobilite")
+  page <- meta$indicator_pages$bornes_ev_par_station_service
+
+  expect_true(isTRUE(page$read_model))
+  expect_identical(
+    unlist(page$sources, use.names = FALSE),
+    c("bpe_b316", "bornes-recharges")
+  )
+})
+
 test_that("la trajectoire raccordement déclare exactement la grille publiée et ses repères humains", {
   meta <- lire_theme_metadata("mobilite")
   page <- meta$indicator_pages$raccordement_courbe
@@ -120,4 +131,26 @@ test_that("parité pages scalaires ↔ faits committés : niveaux publiés, unit
     # ADR-0015 — une seule source pour la désirabilité)
     expect_identical(page$direction, DIRECTIONS_MOBILITE[[cle]], info = cle)
   }
+})
+
+test_that("la page Mobilité optée a son manifeste et son artefact de lecture committés", {
+  manifeste_path <- file.path(racine_public, "modeles-lecture", "manifest.json")
+  modele_path <- file.path(
+    racine_public, "modeles-lecture", "indicateurs", "mobilite",
+    "bornes_ev_par_station_service.json"
+  )
+  expect_true(file.exists(manifeste_path))
+  expect_true(file.exists(modele_path))
+
+  manifeste <- jsonlite::fromJSON(manifeste_path, simplifyVector = FALSE)
+  expect_true(
+    "bornes_ev_par_station_service" %in% unlist(manifeste$routes$mobilite,
+                                                   use.names = FALSE)
+  )
+
+  modele <- jsonlite::fromJSON(modele_path, simplifyVector = FALSE)
+  expect_identical(modele$theme, "mobilite")
+  expect_identical(modele$indicator, "bornes_ev_par_station_service")
+  expect_setequal(names(modele$source_records), c("bpe_b316", "bornes-recharges"))
+  expect_gt(length(modele$facts), 0L)
 })

@@ -1,8 +1,11 @@
 {
   "schema_version": "1",
   "routes": {
-    "demographie": [
-      "densite"
-    ]
+    "programmes": [],
+    "demographie": ["densite"],
+    "habitat": [],
+    "economie": [],
+    "mobilite": ["bornes_ev_par_station_service"],
+    "milieux": []
   }
 }

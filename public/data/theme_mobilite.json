@@ -604,7 +604,8 @@
         "bpe_b316",
         "bornes-recharges"
       ],
-      "family": "scalar"
+      "family": "scalar",
+      "read_model": true
     },
     "stationnement_velo_par_voiture": {
       "indicator": "stationnement_velo_par_voiture",

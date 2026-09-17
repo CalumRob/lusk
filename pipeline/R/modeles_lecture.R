@@ -139,10 +139,15 @@ publier_manifeste_modeles_lecture <- function(metadatas,
   chemin <- file.path(repertoire, "manifest.json")
   temporaire <- tempfile(".manifest-", tmpdir = repertoire, fileext = ".json")
   on.exit(if (file.exists(temporaire)) unlink(temporaire), add = TRUE)
+  manifeste <- construire_manifeste_modeles_lecture(metadatas)
+  # Keep the contract's route arrays intact when a theme opts in with one
+  # page. `auto_unbox = TRUE` would serialize a singleton character vector as
+  # a string, which the app validator deliberately rejects.
+  manifeste$schema_version <- jsonlite::unbox(manifeste$schema_version)
   jsonlite::write_json(
-    construire_manifeste_modeles_lecture(metadatas),
+    manifeste,
     temporaire,
-    dataframe = "rows", na = "null", pretty = TRUE, auto_unbox = TRUE
+    dataframe = "rows", na = "null", pretty = TRUE, auto_unbox = FALSE
   )
   if (file.exists(chemin)) unlink(chemin)
   if (!file.rename(temporaire, chemin)) {
