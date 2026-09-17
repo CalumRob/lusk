@@ -1276,6 +1276,8 @@ export function chargerAvec(payload: Payload): (fichier: Fichier) => Promise<unk
     switch (fichier) {
       case 'territoires':
         return payload.territoires
+      case 'territoires-metadata':
+        return payload.territoryMetadata ?? null
       case 'run-report':
         return payload.runReport
       case 'vintages':

@@ -83,7 +83,8 @@ test_that("le seam publier_programmes est appelé PAR SYMBOLE, la forme d'appel 
                     commande("publie_programmes"), fixed = TRUE))
   expect_true(grepl("vintages = vintages_table_programmes",
                     commande("publie_programmes"), fixed = TRUE))
-  expect_true(grepl("sortie =", commande("publie_programmes"), fixed = TRUE))
+   expect_true(grepl("sortie =", commande("publie_programmes"), fixed = TRUE))
+   expect_false(grepl("classes_densite", commande("publie_programmes"), fixed = TRUE))
 
   # la dépendance sur l'extraction du référentiel partagé : le seam lit le
   # fichier PAR CHEMIN (cache/extracted/EPCI_au_01-01-2025.xlsx) — la cible

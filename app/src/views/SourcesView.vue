@@ -64,7 +64,7 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
           <ul><li v-for="note in source.methodology.notes" :key="note">{{ note }}</li></ul>
         </section>
         <p v-if="source.replie" class="source-record__summary">
-          {{ source.vintage ?? '—' }} · {{ source.freshness ?? '—' }} · {{ source.licence ?? '—' }}
+          {{ source.vintage ?? '—' }} · {{ source.freshness ?? '—' }} · {{ source.licence ?? '—' }}<span v-if="source.sha256"> · SHA-256 : {{ source.sha256 }}</span>
         </p>
         <section v-if="source.clocks.length" class="source-record__clocks" aria-label="Horloges de mise à jour">
           <h3>Horloges de mise à jour</h3>
@@ -83,8 +83,10 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
         <h3>Consommateurs publiés</h3>
         <ul v-if="source.consumers.length" class="source-record__consumers">
           <li v-for="consumer in source.consumers" :key="`${consumer.theme}-${consumer.key}`">
-            <RouterLink :to="{ name: 'indicateur', params: { theme: consumer.theme, indicator: consumer.key } }">{{ consumer.label }}</RouterLink>
-            <span> · {{ consumer.theme }}</span>
+            <span v-if="consumer.kind === 'territory-reference'">{{ consumer.label }}</span>
+            <RouterLink v-else :to="{ name: 'indicateur', params: { theme: consumer.theme, indicator: consumer.key } }">{{ consumer.label }}</RouterLink>
+            <span v-if="consumer.kind === 'territory-reference'"> · Référentiel territorial</span>
+            <span v-else> · {{ consumer.theme }}</span>
             <small v-if="consumer.caveat"> — {{ consumer.caveat }}</small>
           </li>
         </ul>

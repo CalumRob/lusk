@@ -41,13 +41,40 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # run. En mode cron, un échec s'arrête ici en portant les statuts sur
   # l'erreur (issue #8) : on écrit le rapport AVANT de re-signaler — un échec
   # sans trace est un échec perdu.
+  manifest_telechargement <- dplyr::bind_rows(
+    MANIFEST_CLASSES_DENSITE,
+    theme$manifest
+  )
   statuts <- tryCatch(
-    download_sources(theme$manifest, cache = cache, mode = mode),
+    download_sources(manifest_telechargement, cache = cache, mode = mode),
     erreur_telechargement = function(e) {
       ecrire_rapport_run(e$statuts, mode, sortie)
       stop(e)
     }
   )
+
+  chemin_classes_densite <- file.path(
+    cache, MANIFEST_CLASSES_DENSITE$fichier[[1L]]
+  )
+  # Les seams de tests historiques remplacent download_sources sans écrire le
+  # cache brut. On n'exige le fichier que lorsque le téléchargeur a réellement
+  # déclaré cette source : un run de production ne peut ainsi pas publier une
+  # référence communale partielle, sans casser les seams historiques bornés.
+  source_classes_densite <- is.data.frame(statuts) &&
+    "id" %in% names(statuts) &&
+    any(statuts$id %in% MANIFEST_CLASSES_DENSITE$id[[1L]])
+  if (source_classes_densite && !file.exists(chemin_classes_densite)) {
+    stop(
+      "Grille de densité communale absente après téléchargement : ",
+      chemin_classes_densite,
+      call. = FALSE
+    )
+  }
+  classes_densite <- if (file.exists(chemin_classes_densite)) {
+    lire_classes_densite(chemin_classes_densite)
+  } else {
+    NULL
+  }
 
   brut <- theme$construire_donnees(cache = cache)
 
@@ -88,6 +115,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
         !is.null(noms_epci_geo_api)) {
       args_publier$noms_epci_geo_api <- noms_epci_geo_api
     }
+    if ("classes_densite" %in% names(formals(theme$publier))) {
+      args_publier$classes_densite <- classes_densite
+    }
     payload <- do.call(theme$publier, args_publier)
   } else {
     # Le mapping est une épingle du package : le payload publié porte le nom
@@ -98,6 +128,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     if ("noms_epci_geo_api" %in% names(formals(compute_payload)) &&
         !is.null(noms_epci_geo_api)) {
       args_compute$noms_epci_geo_api <- noms_epci_geo_api
+    }
+    if ("classes_densite" %in% names(formals(compute_payload))) {
+      args_compute$classes_densite <- classes_densite
     }
     payload <- do.call(compute_payload, args_compute)
     publish(payload, sortie)

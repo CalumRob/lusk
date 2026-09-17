@@ -355,11 +355,15 @@ validations_economie <- list(
 # (vide — gating). Validé par la validation GÉNÉRIQUE avec les tables
 # déclaratives du thème — un payload invalide s'arrête là.
 construire_payload_economie <- function(analytiques, base_epci, vintages,
-                                        noms_epci_geo_api = NULL) {
+                                        noms_epci_geo_api = NULL,
+                                        classes_densite = NULL) {
   territoires <- construire_territoires_economie(base_epci, analytiques)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
                                                 noms_epci_geo_api)
+  }
+  if (!is.null(classes_densite)) {
+    territoires <- publier_classes_densite(territoires, classes_densite)
   }
 
   payload <- list(
@@ -394,8 +398,9 @@ construire_payload_economie <- function(analytiques, base_epci, vintages,
 publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
                              sortie = "public/data",
                              sortie_analytiques = file.path(dirname(cache),
-                                                            "processed", "economie"),
-                             noms_epci_geo_api = NULL) {
+                                                             "processed", "economie"),
+                             noms_epci_geo_api = NULL,
+                             classes_densite = NULL) {
   if (is.null(vintages)) vintages <- vintages_economie()
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
@@ -406,7 +411,8 @@ publier_economie <- function(donnees, cache = "data/raw", vintages = NULL,
     analytiques,
     base_epci,
     vintages,
-    noms_epci_geo_api = noms_epci_geo_api
+    noms_epci_geo_api = noms_epci_geo_api,
+    classes_densite = classes_densite
   )
   publish(payload, sortie)
   payload

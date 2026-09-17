@@ -1,0 +1,63 @@
+{
+  "schema_version": "1",
+  "source_records": {
+    "classe_densite_communale": {
+      "dataset": "Grille de densité 2025 — maille communale",
+      "publisher": "INSEE",
+      "url": "https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx",
+      "licence": "Licence Ouverte 2.0",
+      "sha256": "8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978",
+      "vintage": "Classification 2025 · géographie communale au 01/01/2026 · RP 2021",
+      "freshness": "Publication INSEE du 15 mai 2026",
+      "vintages": [
+        {
+          "id": "classe_densite_communale",
+          "label": "Grille de densité communale 2025",
+          "version": "Classification 2025 · géographie communale au 01/01/2026 · RP 2021",
+          "licence": "Licence Ouverte 2.0",
+          "dateReference": "2021-01-01",
+          "datePublication": "2026-05-15"
+        }
+      ],
+      "caveat": "La classe de densité communale est une classification officielle fondée sur le nombre et la concentration spatiale des habitants."
+    }
+  },
+  "territory_reference_label": "Référentiel territorial — classes de densité communale",
+  "density_classes": {
+    "1": {
+      "code": "1",
+      "libelle_insee": "Grands centres urbains",
+      "libelle_public": "grands centres urbains bretons"
+    },
+    "2": {
+      "code": "2",
+      "libelle_insee": "Centres urbains intermédiaires",
+      "libelle_public": "centres urbains intermédiaires bretons"
+    },
+    "3": {
+      "code": "3",
+      "libelle_insee": "Petites villes",
+      "libelle_public": "petites villes bretonnes"
+    },
+    "4": {
+      "code": "4",
+      "libelle_insee": "Ceintures urbaines",
+      "libelle_public": "ceintures urbaines bretonnes"
+    },
+    "5": {
+      "code": "5",
+      "libelle_insee": "Bourgs ruraux",
+      "libelle_public": "bourgs ruraux bretons"
+    },
+    "6": {
+      "code": "6",
+      "libelle_insee": "Rural à habitat dispersé",
+      "libelle_public": "communes rurales à habitat dispersé en Bretagne"
+    },
+    "7": {
+      "code": "7",
+      "libelle_insee": "Rural à habitat très dispersé",
+      "libelle_public": "communes rurales à habitat très dispersé en Bretagne"
+    }
+  }
+}

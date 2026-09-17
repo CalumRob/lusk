@@ -97,6 +97,32 @@ fichier_epci_geo_api_cible <- tar_target_raw(
 )
 fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
 
+# La grille INSEE de densité communale est une entrée PARTAGÉE du référentiel
+# territorial, indépendante des thèmes. Une cible dédiée la télécharge et la
+# lit une seule fois ; chaque publication dépend ensuite de cette table afin
+# qu'un run limité à un thème ne puisse publier une référence sans classe.
+sources_classes_densite_cible <- tar_target_raw(
+  "sources_classes_densite",
+  bquote(download_sources(.(MANIFEST_CLASSES_DENSITE),
+                          cache = .(CACHE_RUN), mode = .(MODE_RUN)))
+)
+fichier_classes_densite_cible <- tar_target_raw(
+  "fichier_classes_densite",
+  bquote({
+    sources_classes_densite
+    file.path(.(CACHE_RUN), CLASSES_DENSITE_FICHIER)
+  }),
+  format = "file"
+)
+classes_densite_cible <- tar_target_raw(
+  "classes_densite",
+  bquote({
+    fichier_classes_densite
+    lire_classes_densite(fichier_classes_densite)
+  })
+)
+classes_densite_sym <- as.name("classes_densite")
+
 # attributs_nuls -----------------------------------------------------------------
 # Le corps d'une fonction chargée par parse() porte des attributs de source
 # (srcref, srcfile, wholeSrcref — en surface ET sur les éléments imbriqués)
@@ -201,6 +227,7 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
                          cache = CACHE_RUN, sortie = SORTIE_RUN) {
   nom <- theme$theme
   fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
+  classes_densite_sym <- as.name("classes_densite")
   theme_c <- as.name(paste0("theme_", nom))   # le constructeur du descripteur
   theme_descripteur <- bquote(.(theme_c)())
   construire <- symbole_ns(theme$construire_donnees)
@@ -269,8 +296,10 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
         as.character(payload),
         bquote({
           .(fichier_epci_geo_api_sym)
+          .(classes_densite_sym)
           compute_payload(.(brut), theme = .(theme_descripteur),
                           vintages = .(vintages),
+                          classes_densite = .(classes_densite_sym),
                           noms_epci_geo_api = lire_noms_epci_geo_api(
                             .(fichier_epci_geo_api_sym)))
         })
@@ -437,9 +466,25 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
                          precedent = NULL) {
   nom <- theme$theme
   fichier_epci_geo_api_sym <- as.name("fichier_epci_geo_api")
+  classes_densite_sym <- as.name("classes_densite")
   if (is.function(theme$publier)) {
     publier_fn <- symbole_ns(theme$publier)
-    if ("noms_epci_geo_api" %in% names(formals(theme$publier))) {
+    accepte_noms_epci <- "noms_epci_geo_api" %in% names(formals(theme$publier))
+    accepte_classes_densite <- "classes_densite" %in% names(formals(theme$publier))
+    if (accepte_noms_epci && accepte_classes_densite) {
+      command <- bquote(
+        {
+          .(fichier_epci_geo_api_sym)
+          .(classes_densite_sym)
+          .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
+                        vintages = .(as.name(paste0("vintages_table_", nom))),
+                        sortie = .(sortie),
+                        classes_densite = .(classes_densite_sym),
+                        noms_epci_geo_api = lire_noms_epci_geo_api(
+                          .(fichier_epci_geo_api_sym)))
+        }
+      )
+    } else if (accepte_noms_epci) {
       command <- bquote(
         {
           .(fichier_epci_geo_api_sym)
@@ -448,6 +493,16 @@ publie_theme <- function(theme, cache = CACHE_RUN, sortie = SORTIE_RUN,
                         sortie = .(sortie),
                         noms_epci_geo_api = lire_noms_epci_geo_api(
                           .(fichier_epci_geo_api_sym)))
+        }
+      )
+    } else if (accepte_classes_densite) {
+      command <- bquote(
+        {
+          .(classes_densite_sym)
+          .(publier_fn)(.(as.name(paste0("brut_", nom))), cache = .(cache),
+                        vintages = .(as.name(paste0("vintages_table_", nom))),
+                        sortie = .(sortie),
+                        classes_densite = .(classes_densite_sym))
         }
       )
     } else {
@@ -1158,6 +1213,9 @@ themes_fusion <- if (!nzchar(selection)) {
 
 list(
   fichier_epci_geo_api_cible,
+  sources_classes_densite_cible,
+  fichier_classes_densite_cible,
+  classes_densite_cible,
   grappes,
   publies,
   targets_modeles_territoire,

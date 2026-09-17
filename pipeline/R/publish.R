@@ -122,6 +122,24 @@ publish <- function(payload, cible = "public/data", backend = "static") {
         "rampe_acces_batiments.json"
       )
     }
+    # Référentiel territorial partagé : la classe de densité est une propriété
+    # de la dimension des territoires, pas un indicateur de thème. Elle voyage
+    # avec les lignes de territoires et sa provenance vit dans un petit sidecar
+    # afin que Sources puisse l'exposer sans l'attacher à « densité de
+    # population ».
+    champs_densite <- c(
+      "classe_densite_code",
+      "classe_densite_libelle_insee",
+      "classe_densite_libelle_public"
+    )
+    if (all(champs_densite %in% names(payload$territoires))) {
+      jsonlite::write_json(
+        metadata_classes_densite(),
+        file.path(cible, "territoires-metadata.json"),
+        dataframe = "rows", na = "null", digits = 17, pretty = TRUE,
+        auto_unbox = TRUE
+      )
+    }
   }
 
   invisible(payload)

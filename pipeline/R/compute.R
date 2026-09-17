@@ -391,7 +391,7 @@ assemble_apercu <- function(territoires, apercu) {
 # switcher (commune -> EPCI -> département -> région) qu'ADR-0007 branche sur
 # l'onglet Aperçu.
 reference_territoires <- function(territoires) {
-  territoires %>%
+  reference <- territoires %>%
     dplyr::transmute(
       territoire = code,
       type = type,
@@ -399,6 +399,15 @@ reference_territoires <- function(territoires) {
       departement = departement,
       epci = epci
     )
+  champs_densite <- c(
+    "classe_densite_code",
+    "classe_densite_libelle_insee",
+    "classe_densite_libelle_public"
+  )
+  if (all(champs_densite %in% names(territoires))) {
+    reference[champs_densite] <- territoires[champs_densite]
+  }
+  reference
 }
 
 # verifier_horloges_vintage ----------------------------------------------------
@@ -709,11 +718,15 @@ validate_payload <- function(payload,
 # table -> payload.
 compute_payload <- function(data, theme = theme_demographie(),
                             vintages = NULL,
-                            noms_epci_geo_api = NULL) {
+                            noms_epci_geo_api = NULL,
+                            classes_densite = NULL) {
   territoires <- theme$construire_territoires(data)
   if (!is.null(noms_epci_geo_api)) {
     territoires <- appliquer_noms_epci_geo_api(territoires,
                                                 noms_epci_geo_api)
+  }
+  if (!is.null(classes_densite)) {
+    territoires <- publier_classes_densite(territoires, classes_densite)
   }
   indicateurs <- theme$construire_indicateurs(territoires)
   rangs <- compute_ranks(territoires, indicateurs, scalaires = theme$scalaires,

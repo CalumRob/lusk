@@ -57,6 +57,10 @@ export interface Territoire {
   nom: string
   departement: string | null
   epci: string | null
+  /** Pipeline-owned INSEE communal density classification, when published. */
+  classe_densite_code?: string | null
+  classe_densite_libelle_insee?: string | null
+  classe_densite_libelle_public?: string | null
 }
 
 /**
@@ -541,6 +545,8 @@ export interface Vintage {
 /** The assembled payload — everything the app renders, parsed and validated. */
 export interface Payload {
   territoires: Territoire[]
+  /** Shared territorial-reference metadata; absent in legacy payloads. */
+  territoryMetadata?: TerritoryMetadata | null
   indicateurs: Indicateur[]
   histoires: Histoire[]
   /**
@@ -833,6 +839,7 @@ export interface SourceRecord {
   licence: string
   vintage: string
   freshness: string
+  sha256?: string
   /** Full freshness rows; the scalar fields remain a compatibility summary. */
   vintages?: SourceVintageRecord[]
   /** Named clocks are structured facts, never prose concatenated by a view. */
@@ -840,6 +847,19 @@ export interface SourceRecord {
   caveat?: string
   /** Structured methodology facts owned by the source record. */
   methodology?: SourceMethodology
+}
+
+export interface DensityClassMetadata {
+  code: string
+  libelle_insee: string
+  libelle_public: string
+}
+
+export interface TerritoryMetadata {
+  schema_version: '1'
+  source_records: Record<string, SourceRecord>
+  territory_reference_label: string
+  density_classes: Record<string, DensityClassMetadata>
 }
 
 /** A numeric parameter exposed by a source's methodology contract. */

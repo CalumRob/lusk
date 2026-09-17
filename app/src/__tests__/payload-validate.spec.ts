@@ -19,10 +19,62 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PayloadError, parsePayload } from '../payload/validate'
+import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, verifierClassesDensite } from '../payload/validate'
 import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
+
+describe('contrat des classes de densité communale', () => {
+  const classes = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index + 1), {
+    code: String(index + 1),
+    libelle_insee: `Libellé INSEE ${index + 1}`,
+    libelle_public: `Libellé public ${index + 1}`,
+  }]))
+  const metadata = {
+    schema_version: '1',
+    territory_reference_label: 'Référentiel territorial — classes de densité communale',
+    density_classes: classes,
+    source_records: {
+      classe_densite_communale: {
+        dataset: 'Grille de densité 2025 — maille communale',
+        publisher: 'INSEE',
+        url: 'https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx',
+        licence: 'Licence Ouverte 2.0',
+        sha256: '8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978',
+        vintage: 'Classification 2025 · géographie communale au 01/01/2026 · RP 2021',
+        freshness: 'Publication INSEE du 15 mai 2026',
+      },
+    },
+  }
+
+  it('valide les sept classes via le registre publié, sans mapping app-side', () => {
+    const territoires = validerTerritoires([
+      { territoire: '22001', type: 'commune', nom: 'A', departement: '22', epci: null, classe_densite_code: classes['1'].code, classe_densite_libelle_insee: classes['1'].libelle_insee, classe_densite_libelle_public: classes['1'].libelle_public },
+      { territoire: '200000001', type: 'epci', nom: 'EPCI', departement: '22', epci: null, classe_densite_code: null, classe_densite_libelle_insee: null, classe_densite_libelle_public: null },
+    ], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(metadata, 'territoires-metadata.json')
+    expect(parsed.density_classes).toHaveProperty('7')
+    verifierClassesDensite(territoires, parsed)
+  })
+
+  it('refuse une commune avec une classe non publiée par le registre', () => {
+    const territoires = validerTerritoires([
+      { territoire: '22001', type: 'commune', nom: 'A', departement: '22', epci: null, classe_densite_code: '8', classe_densite_libelle_insee: 'Classe inconnue', classe_densite_libelle_public: 'Classe inconnue' },
+    ], 'territoires.json')
+    const parsed = validerTerritoiresMetadata(metadata, 'territoires-metadata.json')
+    expect(() => verifierClassesDensite(territoires, parsed)).toThrow('classe de densité inconnue')
+  })
+
+  it('refuse un registre de sept entrées qui ne correspond pas aux codes 1 à 7', () => {
+    const classesDecalees = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index + 8), {
+      code: String(index + 8),
+      libelle_insee: `Libellé INSEE ${index + 8}`,
+      libelle_public: `Libellé public ${index + 8}`,
+    }]))
+    expect(() => validerTerritoiresMetadata({ ...metadata, density_classes: classesDecalees }, 'territoires-metadata.json'))
+      .toThrow('codes 1 à 7')
+  })
+})
 
 function distributionAbsenteFixture(overrides: Record<string, unknown> = {}) {
   return {

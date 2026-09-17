@@ -79,6 +79,39 @@ describe('le store progressif — la gating par wait-set', () => {
     expect(wrapper.vm.etat.payload.value?.indicateurs).toHaveLength(lignes.length)
   })
 
+  it('valide les classes contre le registre avant de libérer le wait-set territorial', async () => {
+    const territoiresDenses = [{
+      territoire: '22001',
+      type: 'commune',
+      nom: 'Commune A',
+      departement: '22',
+      epci: null,
+      classe_densite_code: '1',
+      classe_densite_libelle_insee: 'Libellé incorrect',
+      classe_densite_libelle_public: 'Libellé incorrect',
+    }]
+    const metadata = {
+      schema_version: '1',
+      territory_reference_label: 'Référentiel territorial',
+      source_records: {},
+      density_classes: {
+        '1': { code: '1', libelle_insee: 'Grands centres urbains', libelle_public: 'grands centres urbains bretons' },
+      },
+    }
+    const wrapper = await monter(
+      async (fichier) => {
+        if (fichier === 'territoires') return territoiresDenses
+        if (fichier === 'territoires-metadata') return metadata
+        return chargerAvec(payload)(fichier)
+      },
+      ['territoires'],
+    )
+
+    expect(wrapper.vm.etat.chargement.value).toBe(false)
+    expect(wrapper.vm.etat.erreur.value).toMatchObject({ kind: 'validation' })
+    expect(wrapper.vm.etat.erreur.value?.message).toContain('libellé INSEE incohérent')
+  })
+
   it('no-arg = le full set : chargement false une fois tout réglé, payload complet', async () => {
     const wrapper = await monter(chargerAvec(payload))
     const { payload: p, erreur, chargement } = wrapper.vm.etat

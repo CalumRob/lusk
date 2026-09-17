@@ -53,6 +53,24 @@ verifier_fichier <- function(chemin) {
   TRUE
 }
 
+# verifier_empreinte_fichier ---------------------------------------------------
+# Les sources qui portent une colonne `sha256` épinglent les octets attendus,
+# pas seulement un nom de fichier ou une extension. Les manifestes historiques
+# n'ont pas cette colonne et conservent leur garde d'intégrité structurelle.
+verifier_empreinte_fichier <- function(chemin, sha256 = NULL) {
+  if (is.null(sha256) || length(sha256) == 0L || is.na(sha256) || !nzchar(sha256)) {
+    return(TRUE)
+  }
+  if (!grepl("^[0-9a-f]{64}$", sha256)) return(FALSE)
+  con <- file(chemin, "rb")
+  on.exit(close(con), add = TRUE)
+  identical(paste(openssl::sha256(con)), sha256)
+}
+
+verifier_source <- function(chemin, sha256 = NULL) {
+  verifier_fichier(chemin) && verifier_empreinte_fichier(chemin, sha256)
+}
+
 # TELECHARGEMENT_TIMEOUT ------------------------------------------------------
 # Le timeout de téléchargement en secondes (issue #105). Sur R 4.4.1 (version
 # épinglée), utils::download.file n'a PAS d'argument `timeout` — le seul levier
@@ -183,6 +201,11 @@ download_sources <- function(manifest, cache = "data/raw",
   } else {
     rep("fichier", nrow(manifest))
   }
+  sha256_source <- if ("sha256" %in% names(manifest)) {
+    manifest$sha256
+  } else {
+    rep(NA_character_, nrow(manifest))
+  }
 
   statuts <- tibble::tibble(
     id = character(0), mode = character(0), status = character(0)
@@ -209,7 +232,7 @@ download_sources <- function(manifest, cache = "data/raw",
       stop(erreur_manifeste(manifest$id[i]))
     }
 
-    if (file.exists(cible) && verifier_fichier(cible)) {
+    if (file.exists(cible) && verifier_source(cible, sha256_source[i])) {
       statuts <- tibble::add_row(
         statuts, id = manifest$id[i], mode = mode_source[i], status = "frais"
       )
@@ -223,7 +246,7 @@ download_sources <- function(manifest, cache = "data/raw",
         tirer_source(type_source[i], manifest, i, cible)
         TRUE
       }, error = function(e) FALSE)
-      if (reussi && verifier_fichier(cible)) {
+      if (reussi && verifier_source(cible, sha256_source[i])) {
         ok <- TRUE
         break
       }

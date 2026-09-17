@@ -50,6 +50,7 @@ import type {
   Territoire,
   Theme,
   ThemeMetadata,
+  TerritoryMetadata,
   Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
@@ -64,12 +65,14 @@ import {
   validerRampeAccesBatiments,
   validerRapportRun,
   validerTerritoires,
+  validerTerritoiresMetadata,
   validerThemeMetadata,
   validerVintages,
   verifierPariteLibelles,
   verifierPariteTrajectoires,
   verifierPariteDistributions,
   verifierPariteListes,
+  verifierClassesDensite,
 } from './validate'
 
 /** The minimal Response surface the loader needs (fetch() satisfies it). */
@@ -95,6 +98,7 @@ export interface ChargerOptions {
  */
 export type Fichier =
   | 'territoires'
+  | 'territoires-metadata'
   | 'run-report'
   | 'vintages'
   | 'apercu'
@@ -112,6 +116,7 @@ const FICHIERS_MANDATOIRES: ReadonlySet<Fichier> = new Set<Fichier>(['territoire
 /** Les fichiers qui se valident SANS la table de référence (les territoires validés). */
 const FICHIERS_SANS_REFERENCE: ReadonlySet<Fichier> = new Set<Fichier>([
   'territoires',
+  'territoires-metadata',
   'run-report',
   'vintages',
   ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier),
@@ -156,6 +161,7 @@ type ValiderFichier = (brut: unknown, fichier: string, territoires: Territoire[]
 
 const VALIDER_PAR_FICHIER = new Map<Fichier, ValiderFichier>([
   ['territoires', (brut, fichier) => validerTerritoires(brut, fichier)],
+  ['territoires-metadata', (brut, fichier) => validerTerritoiresMetadata(brut, fichier)],
   ['run-report', (brut, fichier) => validerRapportRun(brut, fichier)],
   ['vintages', (brut, fichier) => validerVintages(brut, fichier)],
   ['apercu', (brut, fichier, territoires) => validerApercu(brut, fichier, territoires)],
@@ -202,6 +208,7 @@ function exigerReference(nom: Fichier, territoires: Territoire[] | undefined): a
  * territoires)) — the ordering constraint of the loader, kept.
  */
 export async function chargerFichier(nom: 'territoires', options?: ChargerOptions): Promise<Territoire[]>
+export async function chargerFichier(nom: 'territoires-metadata', options?: ChargerOptions): Promise<TerritoryMetadata | null>
 export async function chargerFichier(nom: 'run-report', options?: ChargerOptions): Promise<RunReport | null>
 export async function chargerFichier(nom: 'vintages', options?: ChargerOptions): Promise<Vintage[] | null>
 export async function chargerFichier(
@@ -265,6 +272,8 @@ export async function chargerFichier(
 
 export async function chargerPayload(options: ChargerOptions = {}): Promise<Payload> {
   const territoires = await chargerFichier('territoires', options)
+  const territoryMetadata = await chargerFichier('territoires-metadata', options)
+  verifierClassesDensite(territoires, territoryMetadata, 'territoires.json')
   const profilsAccesBpe = await chargerFichier('profils_acces_bpe', territoires, options)
   const distributionAccesBatiments = await chargerFichier(
     'distribution_acces_batiments',
@@ -326,6 +335,7 @@ export async function chargerPayload(options: ChargerOptions = {}): Promise<Payl
   // rendu (la fiche et la carte ne retombent jamais sur la clé brute).
   const payload = {
     territoires,
+    territoryMetadata,
     indicateurs,
     histoires,
     apercu,

@@ -53,6 +53,7 @@ import type {
   TrajectoryMetadata,
   Vintage,
   Sexe,
+  TerritoryMetadata,
 } from './types'
 import {
   CLES_HISTOIRES_PAR_THEME,
@@ -320,6 +321,13 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
   exiger(Array.isArray(brut), fichier, 0, 'la table de référence doit être un tableau')
   const lignes = brut as unknown[]
   const vus = new Set<string>()
+  const porteClasseDensite = lignes.some(
+    (ligne) => estObjet(ligne) && (
+      ligne['classe_densite_code'] !== undefined ||
+      ligne['classe_densite_libelle_insee'] !== undefined ||
+      ligne['classe_densite_libelle_public'] !== undefined
+    ),
+  )
 
   const territoires = lignes.map((ligne, i) => {
     const ligneIndexee = i + 1
@@ -353,7 +361,31 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
       exiger(epci === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un EPCI`)
     }
 
-    return { territoire, type, nom, departement, epci }
+    if (!porteClasseDensite) return { territoire, type, nom, departement, epci }
+
+    const classeCode = ligne['classe_densite_code']
+    const classeInsee = ligne['classe_densite_libelle_insee']
+    const classePublic = ligne['classe_densite_libelle_public']
+    if (type === 'commune') {
+      exiger(estChaineNonVide(classeCode), fichier, ligneIndexee, '« classe_densite_code » doit être renseigné pour une commune')
+      exiger(estChaineNonVide(classeInsee), fichier, ligneIndexee, '« classe_densite_libelle_insee » doit être renseigné pour une commune')
+      exiger(estChaineNonVide(classePublic), fichier, ligneIndexee, '« classe_densite_libelle_public » doit être renseigné pour une commune')
+    } else {
+      exiger(classeCode === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte une classe de densité`)
+      exiger(classeInsee === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un libellé INSEE de densité`)
+      exiger(classePublic === null, fichier, ligneIndexee, `« ${territoire} » (${type}) porte un libellé public de densité`)
+    }
+
+    return {
+      territoire,
+      type,
+      nom,
+      departement,
+      epci,
+      classe_densite_code: classeCode as string | null | undefined,
+      classe_densite_libelle_insee: classeInsee as string | null | undefined,
+      classe_densite_libelle_public: classePublic as string | null | undefined,
+    }
   })
 
   // Intégrité référentielle de l'échelle (compute.R 5bis) : chaque EPCI porté
@@ -369,6 +401,78 @@ export function validerTerritoires(brut: unknown, fichier: string): Territoire[]
   }
 
   return territoires
+}
+
+/** Validate the shared territorial-reference registry and its provenance. */
+export function validerTerritoiresMetadata(brut: unknown, fichier: string): TerritoryMetadata {
+  exiger(estObjet(brut), fichier, 0, 'les métadonnées territoriales doivent être un objet')
+  const meta = brut as LigneBrute
+  exiger(meta['schema_version'] === '1', fichier, 0, '« schema_version » inconnue')
+  exiger(estChaineNonVide(meta['territory_reference_label']), fichier, 0, '« territory_reference_label » doit être renseigné')
+  exiger(estObjet(meta['density_classes']), fichier, 0, '« density_classes » doit être un objet')
+  const classes = meta['density_classes'] as LigneBrute
+  const entries = Object.entries(classes)
+  exiger(entries.length === 7, fichier, 0, '« density_classes » doit publier exactement sept classes')
+  exiger(
+    entries.every(([key]) => /^[1-7]$/.test(key)) &&
+      entries.every(([key, value]) => estObjet(value) && (value as LigneBrute)['code'] === key),
+    fichier,
+    0,
+    '« density_classes » doit contenir exactement les codes 1 à 7',
+  )
+  const labelsPublics = new Set<string>()
+  for (const [key, value] of entries) {
+    exiger(estObjet(value), fichier, 0, `« density_classes.${key} » doit être un objet`)
+    const classe = value as LigneBrute
+    exiger(classe['code'] === key, fichier, 0, `« density_classes.${key}.code » doit égaler sa clé`)
+    exiger(estChaineNonVide(classe['libelle_insee']), fichier, 0, `« density_classes.${key}.libelle_insee » doit être renseigné`)
+    exiger(estChaineNonVide(classe['libelle_public']), fichier, 0, `« density_classes.${key}.libelle_public » doit être renseigné`)
+    exiger(!labelsPublics.has(classe['libelle_public'] as string), fichier, 0, 'les libellés publics de densité ne doivent pas être en double')
+    labelsPublics.add(classe['libelle_public'] as string)
+  }
+
+  exiger(estObjet(meta['source_records']), fichier, 0, '« source_records » doit être un objet')
+  const sourceRecords = meta['source_records'] as LigneBrute
+  for (const [id, value] of Object.entries(sourceRecords)) {
+    exiger(estObjet(value), fichier, 0, `« source_records.${id} » doit être un objet`)
+    const source = value as LigneBrute
+    for (const champ of ['dataset', 'publisher', 'url', 'licence', 'vintage', 'freshness']) {
+      exiger(estChaineNonVide(source[champ]), fichier, 0, `« source_records.${id}.${champ} » doit être renseigné`)
+    }
+    if (id === 'classe_densite_communale') {
+      exiger(estChaine(source['sha256']) && /^[0-9a-f]{64}$/.test(source['sha256'] as string), fichier, 0, '« source_records.classe_densite_communale.sha256 » doit être une empreinte SHA-256')
+    }
+  }
+  exiger(Object.keys(sourceRecords).includes('classe_densite_communale'), fichier, 0, 'la source classe_densite_communale doit être déclarée')
+
+  return {
+    schema_version: '1',
+    source_records: sourceRecords as TerritoryMetadata['source_records'],
+    territory_reference_label: meta['territory_reference_label'] as string,
+    density_classes: classes as TerritoryMetadata['density_classes'],
+  }
+}
+
+/** Cross-check published commune labels against the pipeline-owned registry. */
+export function verifierClassesDensite(
+  territoires: Territoire[],
+  metadata: TerritoryMetadata | null | undefined,
+  fichier = 'territoires.json',
+): void {
+  const communes = territoires.filter((territoire) => territoire.type === 'commune')
+  const publie = communes.some((territoire) => territoire.classe_densite_code !== undefined)
+  if (!publie) return
+  exiger(metadata !== null && metadata !== undefined, fichier, 0, 'les métadonnées territoriales sont requises lorsque les classes de densité sont publiées')
+  for (const territoire of communes) {
+    const code = territoire.classe_densite_code
+    const classe = code === null || code === undefined ? undefined : metadata.density_classes[code]
+    exiger(classe !== undefined, fichier, 0, `classe de densité inconnue « ${String(code)} » pour « ${territoire.territoire} »`)
+    exiger(territoire.classe_densite_libelle_insee === classe.libelle_insee, fichier, 0, `libellé INSEE incohérent pour « ${territoire.territoire} »`)
+    exiger(territoire.classe_densite_libelle_public === classe.libelle_public, fichier, 0, `libellé public incohérent pour « ${territoire.territoire} »`)
+  }
+  for (const territoire of territoires.filter((territoire) => territoire.type !== 'commune')) {
+    exiger(territoire.classe_densite_code === null, fichier, 0, `un territoire ${territoire.type} porte une classe de densité`)
+  }
 }
 
 /** Un tableau de chaînes non vides, sans doublon — la forme des registres du contrat. */
@@ -2197,8 +2301,9 @@ function validerSubventionsProgrammes(
  * Assemble + validate a complete payload from the raw documents (the JSON
  * projections as fetched). The loader merges per-theme facts files before
  * calling this; per-file error attribution lives in the loader.
- */export function parsePayload(documents: {
+  */export function parsePayload(documents: {
   territoires: unknown
+  territoiresMetadata?: unknown
   indicateurs: unknown
   histoires: unknown
   apercu: unknown
@@ -2210,6 +2315,10 @@ function validerSubventionsProgrammes(
   rampeAccesBatiments?: unknown
 }): Payload {
   const territoires = validerTerritoires(documents.territoires, 'territoires.json')
+  const territoryMetadata = documents.territoiresMetadata === undefined || documents.territoiresMetadata === null
+    ? null
+    : validerTerritoiresMetadata(documents.territoiresMetadata, 'territoires-metadata.json')
+  verifierClassesDensite(territoires, territoryMetadata)
   const indicateurs = validerIndicateurs(documents.indicateurs, 'indicateurs', territoires)
   const histoires = validerHistoires(documents.histoires, 'histoires', territoires)
   const apercu = validerApercu(documents.apercu, 'apercu.json', territoires)
@@ -2234,6 +2343,7 @@ function validerSubventionsProgrammes(
 
   return {
     territoires,
+    territoryMetadata,
     indicateurs,
     histoires,
     apercu,

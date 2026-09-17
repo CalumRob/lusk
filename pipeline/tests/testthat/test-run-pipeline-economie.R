@@ -332,7 +332,9 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
   # fichiers parquet + JSON sont RÉELS : ce qui est testé est ce qui part.
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) tibble::tibble(
-      id = manifest$id, mode = manifest$mode, status = "frais"
+      id = manifest$id[manifest$id != MANIFEST_CLASSES_DENSITE$id[[1L]]],
+      mode = manifest$mode[manifest$id != MANIFEST_CLASSES_DENSITE$id[[1L]]],
+      status = "frais"
     ),
     construire_donnees_brut = function(cache) load_fixture(),
     construire_donnees_economie = function(cache) list(

@@ -709,8 +709,9 @@ export interface SourceConsumerRecord {
    *  les Pages d'indicateur de Programmes et subventions déclarent leurs
    *  sources par le MÊME contrat, la jointure ne les exclut plus ; le
    *  registre éditorial Méthodes (THEMES_METHODES) reste le sien). */
-  theme: Theme
+  theme: Theme | null
   caveat: string | null
+  kind?: 'indicator' | 'territory-reference'
 }
 
 export interface SourceDatasetRecord {
@@ -721,6 +722,7 @@ export interface SourceDatasetRecord {
   licence: string | null
   vintage: string | null
   freshness: string | null
+  sha256: string | null
   dateReference: string | null
   datePublication: string | null
   vintages: SourceVintageRecord[]
@@ -761,6 +763,9 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       metadataRecords.set(id, { ...record, id })
     }
   }
+  for (const [id, record] of Object.entries(payload.territoryMetadata?.source_records ?? {})) {
+    metadataRecords.set(id, { ...record, id })
+  }
   const vintages = new Map((payload.vintages ?? []).map((v) => [v.id, v]))
   const records = new Map<string, SourceDatasetRecord>()
   const metadataPourJeu = (id: string, datasetId: string): SourceRecord | undefined =>
@@ -785,6 +790,7 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
         licence: metadata?.licence ?? null,
         vintage: metadata?.vintage ?? null,
         freshness: metadata?.freshness ?? null,
+        sha256: metadata?.sha256 ?? null,
         dateReference: null,
         datePublication: null,
         vintages: authoredVintages ?? [],
@@ -825,6 +831,7 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       licence: metadata.licence,
       vintage: metadata.vintage,
       freshness: metadata.freshness,
+      sha256: metadata.sha256 ?? null,
       dateReference: null,
       datePublication: null,
       vintages: metadata.vintages ?? [],
@@ -835,6 +842,19 @@ export function sourceRecords(payload: Payload, options: { includeUnpublished?: 
       replie: true,
       themes: [],
     })
+  }
+
+  for (const id of Object.keys(payload.territoryMetadata?.source_records ?? {})) {
+    const record = records.get(id)
+    if (!record) continue
+    record.consumers.push({
+      key: 'territory-reference',
+      label: payload.territoryMetadata?.territory_reference_label ?? record.dataset,
+      theme: null,
+      caveat: null,
+      kind: 'territory-reference',
+    })
+    record.replie = false
   }
 
   const metadataConsumers: Array<{ theme: Theme; key: string; primary: string; secondary: string[] }> = []

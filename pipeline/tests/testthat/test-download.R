@@ -150,6 +150,40 @@ test_that("download_sources : un fichier corrompu est re-téléchargé (point 3)
   expect_true(verifier_fichier(cible))  # le corrompu a été remplacé
 })
 
+test_that("download_sources vérifie l'empreinte épinglée des sources", {
+  cache <- tempfile("cache-")
+  dir.create(cache)
+  on.exit(unlink(cache, recursive = TRUE))
+
+  contenu <- charToRaw("contenu autoritaire\n")
+  chemin_reference <- tempfile("reference-")
+  writeBin(contenu, chemin_reference)
+  on.exit(unlink(chemin_reference), add = TRUE)
+  con <- file(chemin_reference, "rb")
+  empreinte <- paste(openssl::sha256(con))
+  close(con)
+
+  cible <- file.path(cache, "source.txt")
+  writeLines("substitut", cible)
+  manifeste <- tibble::tibble(
+    id = "source_epinglee",
+    source = "Source test",
+    url = "https://example.invalid/source.txt",
+    fichier = "source.txt",
+    mode = "cron",
+    type = "fichier",
+    sha256 = empreinte
+  )
+  local_mocked_bindings(
+    telecharger_fichier = function(url, cible) writeBin(contenu, cible),
+    .package = "lusk"
+  )
+
+  statuts <- download_sources(manifeste, cache)
+  expect_equal(statuts$status, "frais")
+  expect_identical(readBin(cible, "raw", n = file.size(cible)), contenu)
+})
+
 test_that("download_sources : un échec réseau est retenté, puis échoue fort", {
   cache <- tempfile("cache-")
   dir.create(cache)

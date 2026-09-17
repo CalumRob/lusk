@@ -69,4 +69,48 @@ describe('sourceRecords — autorité dataset-centric publiée', () => {
     })
     expect(records.find((record) => record.id === 'menages')?.consumers.map((consumer) => consumer.key)).toEqual(['densite', 'taille_menages'])
   })
+
+  it('expose le référentiel territorial comme consommateur non-indicateur', () => {
+    const territoryMetadata = {
+      schema_version: '1',
+      territory_reference_label: 'Référentiel territorial — classes de densité communale',
+      source_records: {
+        classe_densite_communale: {
+          dataset: 'Grille de densité 2025 — maille communale',
+          publisher: 'INSEE',
+          url: 'https://www.insee.fr/fr/statistiques/fichier/8571524/fichier_diffusion_2026.xlsx',
+          licence: 'Licence Ouverte 2.0',
+          sha256: '8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978',
+          vintage: 'Classification 2025 · géographie communale au 01/01/2026 · RP 2021',
+          freshness: 'Publication INSEE du 15 mai 2026',
+          vintages: [{
+            id: 'classe_densite_communale',
+            label: 'Grille de densité communale 2025',
+            version: 'Classification 2025 · géographie communale au 01/01/2026 · RP 2021',
+            licence: 'Licence Ouverte 2.0',
+            dateReference: '2021-01-01',
+            datePublication: '2026-05-15',
+          }],
+        },
+      },
+      density_classes: Object.fromEntries(Array.from({ length: 7 }, (_, index) => [String(index + 1), {
+        code: String(index + 1),
+        libelle_insee: `Classe INSEE ${index + 1}`,
+        libelle_public: `Classe publique ${index + 1}`,
+      }])),
+    } as unknown as Payload['territoryMetadata']
+
+    const record = sourceRecords({ ...payload, territoryMetadata }).find(
+      (source) => source.id === 'classe_densite_communale',
+    )!
+    expect(record.dataset).toContain('Grille de densité 2025')
+    expect(record.sha256).toBe('8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978')
+    expect(record.vintages[0]).toMatchObject({ datePublication: '2026-05-15' })
+    expect(record.consumers).toEqual([
+      expect.objectContaining({
+        kind: 'territory-reference',
+        label: 'Référentiel territorial — classes de densité communale',
+      }),
+    ])
+  })
 })

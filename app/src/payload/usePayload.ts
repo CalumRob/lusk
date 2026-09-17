@@ -51,10 +51,11 @@ import type {
   Territoire,
   Theme,
   ThemeMetadata,
+  TerritoryMetadata,
   Vintage,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
-import { PayloadError } from './validate'
+import { PayloadError, verifierClassesDensite } from './validate'
 
 /** The per-file payload charger — injectable so component tests stub the fetch seam. */
 export type ChargerFichier = (fichier: Fichier) => Promise<unknown>
@@ -85,6 +86,7 @@ function lireFichiers(option: FichiersOption | undefined, defaut: readonly Fichi
 function payloadVide(): Payload {
   return {
     territoires: [],
+    territoryMetadata: null,
     indicateurs: [],
     histoires: [],
     apercu: null,
@@ -99,11 +101,12 @@ function payloadVide(): Payload {
 }
 
 /** The files that validate WITHOUT the reference table — fired immediately. */
-const SANS_REFERENCE = new Set<Fichier>(['territoires', 'run-report', 'vintages'])
+const SANS_REFERENCE = new Set<Fichier>(['territoires', 'territoires-metadata', 'run-report', 'vintages'])
 
 /** The full file set — no-arg `usePayload()` waits for exactly this. */
 const TOUS_LES_FICHIERS: Fichier[] = [
   'territoires',
+  'territoires-metadata',
   'run-report',
   'vintages',
   'apercu',
@@ -153,6 +156,9 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
       case 'territoires':
         p.territoires = valeur as Territoire[]
         break
+      case 'territoires-metadata':
+        p.territoryMetadata = valeur as TerritoryMetadata | null
+        break
       case 'run-report':
         p.runReport = valeur as RunReport | null
         break
@@ -188,6 +194,29 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
           p.themeMetadata ??= {}
           p.themeMetadata[themeDe(nom)] = valeur as ThemeMetadata
         }
+    }
+  }
+
+  /** Cross-file validation runs when both territorial files have settled. */
+  function verifierReferenceDensite(): void {
+    const reference = etats.get('territoires')
+    const metadata = etats.get('territoires-metadata')
+    if (!reference || reference.etat !== 'succes' || !metadata || metadata.etat !== 'succes') return
+    try {
+      verifierClassesDensite(
+        reference.valeur as Territoire[],
+        metadata.valeur as TerritoryMetadata | null,
+      )
+    } catch (cause) {
+      const validation = cause instanceof PayloadError
+        ? cause
+        : new PayloadError('validation', 'territoires-metadata.json', 'Le registre des classes de densité est incohérent.')
+      for (const entree of [reference, metadata]) {
+        entree.etat = 'echec'
+        entree.erreur = validation
+      }
+      // A broken shared registry is domain drift, not an honest optional absence.
+      console.error(validation)
     }
   }
 
@@ -299,6 +328,7 @@ function creerMagasin(chargerInjecte: ChargerFichier | null): Magasin {
         entree.etat = 'succes'
         entree.valeur = valeur
         peupler(nom, valeur)
+        if (nom === 'territoires' || nom === 'territoires-metadata') verifierReferenceDensite()
       },
       (cause: unknown) => {
         entree.etat = 'echec'
@@ -354,7 +384,17 @@ export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUse
     ? TOUS_LES_FICHIERS
     : lireFichiers(attendre, TOUS_LES_FICHIERS)
   const attendreEffectif = computed(() => lireFichiers(attendre, TOUS_LES_FICHIERS))
-  const demarrerEffectif = computed(() => lireFichiers(fichiersADemarrer, fichiersParDefaut))
+  const demarrerEffectif = computed(() => {
+    const fichiers = [...lireFichiers(fichiersADemarrer, fichiersParDefaut)]
+    // Un wait-set territorial standard démarre aussi le registre partagé en
+    // arrière-plan pour pouvoir contrôler les classes publiées. Un appelant
+    // qui fournit explicitement `demarrer` demande une couture plus étroite
+    // (par exemple le modèle de lecture d'un indicateur) et garde ce choix.
+    if (fichiersADemarrer === undefined && fichiers.includes('territoires') && !fichiers.includes('territoires-metadata')) {
+      fichiers.push('territoires-metadata')
+    }
+    return fichiers
+  })
   watch(demarrerEffectif, (fichiers) => magasin.demarrer(fichiers), { immediate: true })
 
   /** true until every wait-set file has settled (resolved or failed). */

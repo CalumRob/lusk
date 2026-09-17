@@ -463,7 +463,11 @@ export function validerModeleTerritoire(
     raw.territory.type !== territory.type ||
     raw.territory.nom !== territory.nom ||
     raw.territory.departement !== territory.departement ||
-    raw.territory.epci !== territory.epci
+    raw.territory.epci !== territory.epci ||
+    (('classe_densite_code' in raw.territory || territory.classe_densite_code !== undefined) &&
+      (raw.territory.classe_densite_code !== territory.classe_densite_code ||
+        raw.territory.classe_densite_libelle_insee !== territory.classe_densite_libelle_insee ||
+        raw.territory.classe_densite_libelle_public !== territory.classe_densite_libelle_public))
   ) {
     fail(file, `« territory » ne correspond pas à sa ligne de référence « ${territoryCode} »`)
   }

@@ -40,6 +40,7 @@ function chargerPayloadCommite(): Promise<Payload> {
   const fichiers: Record<string, unknown> = {}
   for (const nom of [
     'territoires.json',
+    'territoires-metadata.json',
     'apercu.json',
     'indicateurs_mobilite.json',
     'histoires_mobilite.json',
