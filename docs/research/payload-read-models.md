@@ -175,7 +175,8 @@ Representative built-file measurements, captured with Node's `zlib` (gzip level
 These are local file and parser measurements, not browser-network cold-load
 claims. The indicator route now has a bounded static artifact and avoids the
 11.9 MB legacy theme file in the tested manifest-listed path. The paths are
-currently stable rather than content-addressed; no custom `Cache-Control` rule
-is declared in `vercel.json` yet. The manifest therefore remains the
-invalidation boundary to make explicit before the migration is declared
-complete.
+currently stable rather than content-addressed. `vercel.json` therefore applies
+`public, max-age=0, must-revalidate` to `/data/modeles-lecture/*`: clients and
+intermediaries may retain the response, but a new deployment must revalidate it
+rather than treating the stable URL as immutable. The manifest remains the
+invalidation boundary for deciding which indicator artifact to request.
