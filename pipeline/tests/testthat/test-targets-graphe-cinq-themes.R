@@ -53,6 +53,7 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
   # La première Page d'indicateur optée par sa métadonnée reçoit sa projection
   # de lecture sans introduire de liste parallèle dans le graphe.
   expect_true("modeles_lecture_demographie" %in% noms)
+  expect_true("manifeste_modeles_lecture" %in% noms)
 
   # Une cible unique agrège les payloads retournés par les cinq publications
   # et l'adaptateur du sixième thème Programmes dans les artefacts atomiques

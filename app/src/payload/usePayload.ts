@@ -33,7 +33,7 @@
  * isolate the fetch seam — an injected charger is never shared between tests.
  */
 
-import { computed, inject, reactive, ref } from 'vue'
+import { computed, inject, isRef, reactive, ref, watch } from 'vue'
 import type { InjectionKey, Ref } from 'vue'
 
 import { chargerFichier } from './loader'
@@ -70,9 +70,15 @@ export interface EtatPayload {
 
 export interface OptionsUsePayload {
   /** The wait-set — the files this consumer BLOCKS on. Default = the full set. */
-  attendre?: Fichier[]
+  attendre?: Fichier[] | Ref<Fichier[]>
   /** Files to start for this store. Defaults to `attendre`, or the full set for injected legacy stores. */
-  demarrer?: Fichier[]
+  demarrer?: Fichier[] | Ref<Fichier[]>
+}
+
+type FichiersOption = Fichier[] | Ref<Fichier[]>
+
+function lireFichiers(option: FichiersOption | undefined, defaut: readonly Fichier[]): readonly Fichier[] {
+  return option === undefined ? defaut : isRef(option) ? option.value : option
 }
 
 /** The honest empty payload — every section valid against the `Payload` type. */
@@ -344,16 +350,16 @@ export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUse
   // Production consumers request their wait-set only. Test injectors retain
   // the historical full-store default unless a test explicitly exercises the
   // demand-driven `demarrer` seam.
-  const fichiersParDefaut = chargerInjecte
+  const fichiersParDefaut: readonly Fichier[] = chargerInjecte
     ? TOUS_LES_FICHIERS
-    : (attendre ?? TOUS_LES_FICHIERS)
-  magasin.demarrer(fichiersADemarrer ?? fichiersParDefaut)
-
-  const attendreEffectif: readonly Fichier[] = attendre ?? TOUS_LES_FICHIERS
+    : lireFichiers(attendre, TOUS_LES_FICHIERS)
+  const attendreEffectif = computed(() => lireFichiers(attendre, TOUS_LES_FICHIERS))
+  const demarrerEffectif = computed(() => lireFichiers(fichiersADemarrer, fichiersParDefaut))
+  watch(demarrerEffectif, (fichiers) => magasin.demarrer(fichiers), { immediate: true })
 
   /** true until every wait-set file has settled (resolved or failed). */
   const chargement = computed(() =>
-    attendreEffectif.some((nom) => {
+    attendreEffectif.value.some((nom) => {
       const entree = magasin.etats.get(nom)
       return !entree || entree.etat === 'en-cours'
     }),
@@ -361,7 +367,7 @@ export function usePayload({ attendre, demarrer: fichiersADemarrer }: OptionsUse
 
   /** The wait-set's failure if any — else null (background failures never surface). */
   const erreur = computed(() => {
-    for (const nom of attendreEffectif) {
+    for (const nom of attendreEffectif.value) {
       const entree = magasin.etats.get(nom)
       if (entree && entree.etat === 'echec' && entree.erreur) return entree.erreur
     }

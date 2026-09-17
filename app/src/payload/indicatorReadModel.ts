@@ -24,11 +24,22 @@ export interface IndicatorReadModel {
   facts: Indicateur[]
 }
 
+/** The generated route index that decides which indicator pages have a model. */
+export interface IndicatorReadModelManifest {
+  schemaVersion: '1'
+  routes: Partial<Record<Theme, string[]>>
+}
+
 export type ChargerModeleIndicateur = (
   theme: Theme,
   indicator: string,
   territories: Territoire[],
 ) => Promise<IndicatorReadModel>
+
+export type ChargerManifesteModelesLecture = () => Promise<IndicatorReadModelManifest>
+
+export const INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY: InjectionKey<ChargerManifesteModelesLecture> =
+  Symbol('indicator-read-model-manifest-charger')
 
 export const INDICATOR_READ_MODEL_CHARGER_KEY: InjectionKey<ChargerModeleIndicateur> =
   Symbol('indicator-read-model-charger')
@@ -57,10 +68,62 @@ function stringArray(value: unknown, file: string, field: string): string[] {
   return value as string[]
 }
 
+/** Validate the generated index before it can influence route loading. */
+export function validerManifesteModelesLecture(
+  raw: unknown,
+  file: string,
+): IndicatorReadModelManifest {
+  if (!isObject(raw)) fail(file, 'le manifeste doit être un objet')
+  if (raw.schema_version !== '1') fail(file, '« schema_version » inconnue')
+  if (!isObject(raw.routes)) fail(file, '« routes » doit être un objet')
+
+  const routes: Partial<Record<Theme, string[]>> = {}
+  for (const [theme, rawIndicators] of Object.entries(raw.routes)) {
+    if (!THEMES_CANONIQUES.includes(theme as Theme)) fail(file, `thème inconnu « ${theme} »`)
+    const indicators = stringArray(rawIndicators, file, `routes.${theme}`)
+    if (new Set(indicators).size !== indicators.length) {
+      fail(file, `« routes.${theme} » ne doit pas contenir de doublon`)
+    }
+    if (indicators.some((indicator) => !/^[a-z0-9_-]+$/.test(indicator))) {
+      fail(file, `« routes.${theme} » contient un indicateur impropre à une adresse`)
+    }
+    routes[theme as Theme] = indicators
+  }
+
+  return { schemaVersion: '1', routes }
+}
+
+/** Load the generated route index before deciding which page payload to open. */
+export const chargerManifesteModelesLecture: ChargerManifesteModelesLecture = async () => {
+  const file = 'modeles-lecture/manifest.json'
+  const url = `/data/${file}`
+  let response: Response
+  try {
+    response = await fetch(url)
+  } catch (cause) {
+    throw new PayloadError(
+      'fetch',
+      file,
+      `Impossible de charger ${url} : ${cause instanceof Error ? cause.message : String(cause)}`,
+    )
+  }
+  if (!response.ok) throw new PayloadError('fetch', file, `Réponse HTTP ${response.status} pour ${url}`)
+  let raw: unknown
+  try {
+    raw = await response.json()
+  } catch {
+    throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
+  }
+  return validerManifesteModelesLecture(raw, file)
+}
+
 function validatePage(raw: unknown, file: string, indicator: string): IndicatorPageMetadata {
   if (!isObject(raw)) fail(file, '« page » doit être un objet')
   const pageIndicator = nonEmptyString(raw.indicator, file, 'page.indicator')
   if (pageIndicator !== indicator) fail(file, '« page.indicator » ne correspond pas à « indicator »')
+  if (raw.read_model !== undefined && typeof raw.read_model !== 'boolean') {
+    fail(file, '« page.read_model » doit être booléen')
+  }
   const direction = raw.direction
   if (direction !== 'high' && direction !== 'low') {
     fail(file, '« page.direction » doit être high ou low')
@@ -78,6 +141,7 @@ function validatePage(raw: unknown, file: string, indicator: string): IndicatorP
     ...raw,
     family,
     indicator: pageIndicator,
+    ...(raw.read_model === undefined ? {} : { read_model: raw.read_model }),
     label: nonEmptyString(raw.label, file, 'page.label'),
     definition: nonEmptyString(raw.definition, file, 'page.definition'),
     unit: nonEmptyString(raw.unit, file, 'page.unit'),
@@ -112,6 +176,7 @@ export function validerModeleIndicateur(
   raw: unknown,
   file: string,
   territories: Territoire[],
+  expectedRoute?: { theme: Theme; indicator: string },
 ): IndicatorReadModel {
   if (!isObject(raw)) fail(file, "le modèle d'indicateur doit être un objet")
   if (raw.schema_version !== '1') fail(file, '« schema_version » inconnue')
@@ -119,6 +184,12 @@ export function validerModeleIndicateur(
   const theme = nonEmptyString(raw.theme, file, 'theme')
   if (!THEMES_CANONIQUES.includes(theme as Theme)) fail(file, `thème inconnu « ${theme} »`)
   const indicator = nonEmptyString(raw.indicator, file, 'indicator')
+  if (expectedRoute && theme !== expectedRoute.theme) {
+    fail(file, `« theme » ne correspond pas à la route « ${expectedRoute.theme} »`)
+  }
+  if (expectedRoute && indicator !== expectedRoute.indicator) {
+    fail(file, `« indicator » ne correspond pas à la route « ${expectedRoute.indicator} »`)
+  }
   const page = validatePage(raw.page, file, indicator)
   if (!isObject(raw.detail_labels)) fail(file, '« detail_labels » doit être un objet')
   const detailLabels = Object.fromEntries(
@@ -176,7 +247,7 @@ export const chargerModeleIndicateur: ChargerModeleIndicateur = async (
   } catch {
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
-  return validerModeleIndicateur(raw, file, territories)
+  return validerModeleIndicateur(raw, file, territories, { theme, indicator })
 }
 
 /** Adapt one indicator model to the legacy page selectors during migration. */

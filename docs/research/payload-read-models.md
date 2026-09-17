@@ -90,7 +90,10 @@ semantic facts from global peer populations.
 - Indicator models retain the peer rows needed for URL-selected interactive
   scopes. Their dependency closure comes from page metadata rather than names.
 - Small shared indexes remain for territory search, the indicator catalogue,
-  sources, freshness, and shared map geometry.
+  sources, freshness, and shared map geometry. The indicator read-model route
+  index is generated as `modeles-lecture/manifest.json` from the same
+  `indicator_pages.read_model` declarations; the renderer does not carry a
+  second list of migrated indicator names.
 - No runtime API, database, browser SQL engine, or browser Parquet dependency is
   introduced.
 
@@ -111,8 +114,9 @@ Start with the scalar `demographie/densite` Page d'indicateur:
 1. Materialize its artifact from canonical Parquet using its pinned page
    descriptor.
 2. Validate the local artifact contract in the browser.
-3. Route only `/indicateurs/demographie/densite` through the new loader, keeping
-   the existing path as fallback for unmigrated indicators.
+3. Route only manifest-listed pages (currently
+    `/indicateurs/demographie/densite`) through the new loader, keeping the
+    existing path as fallback for unmigrated indicators.
 4. Assert that this route never requests `indicateurs_demographie.json` or
    unrelated payload files.
 5. Follow with a descriptor that has a companion dependency, then materialize

@@ -94,6 +94,64 @@ identifiant_snapshot <- function(vintages) {
   format(max(dates), "%Y-%m-%d")
 }
 
+# construire_manifeste_modeles_lecture -----------------------------------------
+# Le manifeste est un petit index de chargement, dérivé du même registre que les
+# artefacts. Il ne devient jamais une seconde liste de pages câblée dans l'app.
+construire_manifeste_modeles_lecture <- function(metadatas) {
+  if (!is.list(metadatas) || is.null(names(metadatas))) {
+    stop("Manifeste des modèles : les métadonnées doivent être une liste nommée.",
+         call. = FALSE)
+  }
+
+  routes <- list()
+  for (metadata in metadatas) {
+    if (!is.list(metadata) || is.null(metadata$theme) ||
+        !is.character(metadata$theme) || length(metadata$theme) != 1L ||
+        is.na(metadata$theme) || !nzchar(metadata$theme)) {
+      stop("Manifeste des modèles : une métadonnée porte un thème invalide.",
+           call. = FALSE)
+    }
+    pages <- metadata$indicator_pages
+    if (is.null(pages)) next
+    if (!is.list(pages) || is.null(names(pages))) {
+      stop("Manifeste des modèles : les pages du thème doivent être une liste nommée.",
+           call. = FALSE)
+    }
+    optes <- names(pages)[vapply(
+      pages,
+      function(page) is.list(page) && isTRUE(page$read_model),
+      logical(1L)
+    )]
+    # Keep every metadata theme as an object member, even when no page has
+    # opted in yet. An entirely empty R list serialises as JSON `[]`, while
+    # this shape keeps the manifest contract's `routes` value an object.
+    routes[[metadata$theme]] <- optes
+  }
+
+  list(schema_version = "1", routes = routes)
+}
+
+# publier_manifeste_modeles_lecture ---------------------------------------------
+publier_manifeste_modeles_lecture <- function(metadatas,
+                                              sortie = "public/data") {
+  repertoire <- file.path(sortie, "modeles-lecture")
+  if (!dir.exists(repertoire)) dir.create(repertoire, recursive = TRUE)
+  chemin <- file.path(repertoire, "manifest.json")
+  temporaire <- tempfile(".manifest-", tmpdir = repertoire, fileext = ".json")
+  on.exit(if (file.exists(temporaire)) unlink(temporaire), add = TRUE)
+  jsonlite::write_json(
+    construire_manifeste_modeles_lecture(metadatas),
+    temporaire,
+    dataframe = "rows", na = "null", pretty = TRUE, auto_unbox = TRUE
+  )
+  if (file.exists(chemin)) unlink(chemin)
+  if (!file.rename(temporaire, chemin)) {
+    stop("Manifeste des modèles : impossible de publier `", chemin, "`.",
+         call. = FALSE)
+  }
+  chemin
+}
+
 # publier_modele_indicateur ----------------------------------------------------
 # Écrit d'abord un voisin temporaire, puis le renomme : un serveur statique ne
 # voit jamais un artefact tronqué pendant sa régénération.

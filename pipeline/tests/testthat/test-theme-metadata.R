@@ -221,6 +221,19 @@ test_that("valider_theme_metadata : les pages scalaires rejettent les cinq déri
   }
 })
 
+test_that("valider_theme_metadata : read_model est un opt-in booléen conservé", {
+  meta <- lire_metadata("theme-demographie-valide.json")
+  meta$indicator_pages$densite$read_model <- TRUE
+  validee <- valider_theme_metadata(meta)
+  expect_true(isTRUE(validee$indicator_pages$densite$read_model))
+
+  for (value in list("oui", 1, NA, c(TRUE, FALSE))) {
+    meta <- lire_metadata("theme-demographie-valide.json")
+    meta$indicator_pages$densite$read_model <- value
+    expect_error(valider_theme_metadata(meta), "read_model")
+  }
+})
+
 # Les libellés payload-owned (issue #318) — les trois cartes de vocabulaire
 # que le thème déclare : indicator_labels (EXACTEMENT indicator_keys),
 # detail_labels (clés ⊆ indicator_keys, chaque valeur une carte détail →

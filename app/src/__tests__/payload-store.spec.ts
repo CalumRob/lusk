@@ -1,4 +1,4 @@
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -118,6 +118,47 @@ describe('le store progressif — la gating par wait-set', () => {
     resoudreHabitat(null)
     await flushPromises()
     expect(p.value?.indicateurs).toEqual(indicateursDemographieFixture)
+  })
+
+  it('étend dynamiquement le wait-set et démarre les fichiers découverts ensuite', async () => {
+    const demandes: Fichier[] = []
+    const Dynamique = defineComponent({
+      setup() {
+        const attendre = ref<Fichier[]>(['territoires'])
+        const demarrer = ref<Fichier[]>(['territoires'])
+        const etat = usePayload({ attendre, demarrer })
+        const chargerTheme = () => {
+          attendre.value = ['territoires', 'indicateurs_demographie', 'theme_demographie']
+          demarrer.value = ['territoires', 'indicateurs_demographie', 'theme_demographie']
+        }
+        return { etat, chargerTheme }
+      },
+      render: () => h('div'),
+    })
+    const wrapper = mount(Dynamique, {
+      global: {
+        provide: {
+          [PAYLOAD_CHARGER_KEY]: async (fichier: Fichier) => {
+            demandes.push(fichier)
+            return chargerAvec(payload)(fichier)
+          },
+        },
+      },
+    })
+    montee = wrapper
+    await flushPromises()
+
+    expect(demandes).toEqual(['territoires'])
+    expect(wrapper.vm.etat.chargement.value).toBe(false)
+
+    wrapper.vm.chargerTheme()
+    await flushPromises()
+
+    expect(demandes).toEqual(['territoires', 'indicateurs_demographie', 'theme_demographie'])
+    expect(wrapper.vm.etat.chargement.value).toBe(false)
+    expect(wrapper.vm.etat.payload.value.themeMetadata?.demographie).toEqual(
+      metadonneesThemesFixtures.demographie,
+    )
   })
 
   it('une section est lisible AVANT que le wait-set ne soit réglé (le payload grandit)', async () => {

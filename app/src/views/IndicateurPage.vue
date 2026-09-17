@@ -3,7 +3,7 @@ import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAYLOAD_CHARGER_KEY, usePayload } from '@/payload/usePayload'
 import type { Fichier } from '@/payload/loader'
-import { chargerModeleIndicateur, INDICATOR_READ_MODEL_CHARGER_KEY, payloadDepuisModeleIndicateur } from '@/payload/indicatorReadModel'
+import { chargerManifesteModelesLecture, chargerModeleIndicateur, INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, INDICATOR_READ_MODEL_CHARGER_KEY, payloadDepuisModeleIndicateur } from '@/payload/indicatorReadModel'
 import type { IndicatorReadModel } from '@/payload/indicatorReadModel'
 import { modeleComposition, modeleExploration, modeleEnsembleComparaison, modeleProfil, modeleRelation, modeleSignature, modeleTrajectoire, payloadPourCarte } from '@/indicateurs/explorationModel'
 import type { OrdreExploration, TriExploration } from '@/indicateurs/explorationModel'
@@ -45,27 +45,54 @@ const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
-const attendre: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
+const attendreLegacy: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
 const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
+const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, null)
 const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
-const utiliseModeleIndicateur =
-  theme.value === 'demographie' &&
-  indicator.value === 'densite' &&
-  (modeleChargerInjecte !== null || payloadChargerInjecte === null)
+// Production resolves this from the generated manifest. Tests that inject only
+// the legacy file seam keep the historical page contract without network work.
+const utiliseManifeste = themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
+const attendrePage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
+const demarrerPage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
-  attendre: utiliseModeleIndicateur ? ['territoires'] : attendre,
-  demarrer: utiliseModeleIndicateur ? ['territoires'] : undefined,
+  attendre: attendrePage,
+  demarrer: demarrerPage,
 })
+const erreurManifesteModeles = ref<PayloadError | null>(null)
+const chargementManifesteModeles = ref(utiliseManifeste)
+const routeModeleIndicateur = ref(false)
+const chargerManifeste = manifesteChargerInjecte ?? chargerManifesteModelesLecture
+if (utiliseManifeste) {
+  chargerManifeste().then(
+    (manifeste) => {
+      routeModeleIndicateur.value = manifeste.routes[selectedTheme]?.includes(indicator.value) ?? false
+      if (!routeModeleIndicateur.value) {
+        attendrePage.value = attendreLegacy
+        demarrerPage.value = attendreLegacy
+      }
+      chargementManifesteModeles.value = false
+    },
+    (cause: unknown) => {
+      erreurManifesteModeles.value =
+        cause instanceof PayloadError
+          ? cause
+          : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
+      chargementManifesteModeles.value = false
+    },
+  )
+}
+const utiliseModeleIndicateur = computed(() => utiliseManifeste && routeModeleIndicateur.value)
 const modeleIndicateur = ref<IndicatorReadModel | null>(null)
 const erreurModeleIndicateur = ref<PayloadError | null>(null)
-const chargementModeleIndicateur = ref(utiliseModeleIndicateur)
+const chargementModeleIndicateur = ref(false)
 let modeleIndicateurDemarre = false
 const chargerModele = modeleChargerInjecte ?? chargerModeleIndicateur
 watch(
-  () => payloadLegacy.value.territoires.length,
-  (nombreTerritoires) => {
-    if (!utiliseModeleIndicateur || nombreTerritoires === 0 || modeleIndicateurDemarre) return
+  () => [payloadLegacy.value.territoires.length, utiliseModeleIndicateur.value] as const,
+  ([nombreTerritoires, doitChargerModele]) => {
+    if (!doitChargerModele || nombreTerritoires === 0 || modeleIndicateurDemarre) return
     modeleIndicateurDemarre = true
+    chargementModeleIndicateur.value = true
     chargerModele(selectedTheme, indicator.value, payloadLegacy.value.territoires).then(
       (modele) => {
         modeleIndicateur.value = modele
@@ -75,7 +102,7 @@ watch(
         erreurModeleIndicateur.value =
           cause instanceof PayloadError
             ? cause
-            : new PayloadError('fetch', `indicators/${selectedTheme}/${indicator.value}.json`, 'Impossible de charger le modèle.')
+            : new PayloadError('fetch', `modeles-lecture/indicateurs/${selectedTheme}/${indicator.value}.json`, 'Impossible de charger le modèle.')
         chargementModeleIndicateur.value = false
       },
     )
@@ -87,11 +114,15 @@ const payload = computed(() =>
     ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
     : payloadLegacy.value,
 )
-const erreur = computed(() => (utiliseModeleIndicateur ? erreurModeleIndicateur.value : erreurLegacy.value))
+const erreur = computed(() => {
+  if (erreurManifesteModeles.value) return erreurManifesteModeles.value
+  return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
+})
 const chargement = computed(() =>
-  utiliseModeleIndicateur
+  chargementManifesteModeles.value ||
+  (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
-    : chargementLegacy.value,
+    : chargementLegacy.value),
 )
 const geometrie = useGeometrie()
 const metadata = computed(() => payload.value.themeMetadata?.[theme.value as keyof typeof payload.value.themeMetadata])

@@ -1057,6 +1057,34 @@ if (!nzchar(selection) && length(THEMES_RUN) > 0L &&
   ))
 }
 
+# L'index de chargement des Pages d'indicateur est une petite projection du
+# même registre `indicator_pages.read_model`. Il est publié par une cible
+# unique : l'app ne maintient aucune liste parallèle de routes optées.
+target_manifeste_modeles_lecture <- list()
+if (length(THEMES_RUN) > 0L && all(vapply(
+  THEMES_RUN,
+  function(t) "metadata" %in% names(t),
+  logical(1L)
+))) {
+  noms_manifeste <- vapply(THEMES_RUN, function(t) t$theme, character(1L))
+  metadata_manifeste <- lapply(noms_manifeste, function(nom) {
+    as.name(paste0("metadata_", nom))
+  })
+  if (!nzchar(selection)) {
+    noms_manifeste <- c("programmes", noms_manifeste)
+    metadata_manifeste <- c(list(as.name("metadata_programmes")), metadata_manifeste)
+  }
+  metadatas_manifest_expr <- as.call(c(list(as.name("list")), metadata_manifeste))
+  target_manifeste_modeles_lecture <- list(tar_target_raw(
+    "manifeste_modeles_lecture",
+    bquote({
+      metadatas <- stats::setNames(.(metadatas_manifest_expr), .(noms_manifeste))
+      publier_manifeste_modeles_lecture(metadatas, sortie = .(SORTIE_RUN))
+    }),
+    format = "file"
+  ))
+}
+
 rapports <- list()
 precedent <- NULL
 for (t in THEMES_RUN) {
@@ -1129,6 +1157,7 @@ list(
   grappes,
   publies,
   targets_modeles_territoire,
+  target_manifeste_modeles_lecture,
   fusion_themes(themes_fusion),
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),

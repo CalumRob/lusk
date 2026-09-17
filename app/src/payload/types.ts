@@ -881,6 +881,8 @@ export interface SourceClock {
  * optional alias). */
 export interface IndicatorPageMetadataBase {
   indicator: string
+  /** Whether the pipeline publishes an independent route-scoped read model. */
+  read_model?: boolean
   detail?: string | null
   label: string
   definition: string

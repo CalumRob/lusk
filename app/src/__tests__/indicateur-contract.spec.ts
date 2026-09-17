@@ -13,6 +13,22 @@ describe('contrat des pages d’indicateur', () => {
     expect(metadata.indicator_pages!.densite.direction).toBe('high')
   })
 
+  it('keeps the read-model opt-in in the validated page contract', () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    ;(metadata.indicator_pages!.densite as any).read_model = true
+
+    const validee = validerThemeMetadata(metadata, 'theme_demographie.json')
+
+    expect((validee.indicator_pages!.densite as any).read_model).toBe(true)
+  })
+
+  it.each([null, 'oui', 1, []])('rejette un read_model non booléen (%j)', (value) => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    ;(metadata.indicator_pages!.densite as any).read_model = value
+
+    expect(() => validerThemeMetadata(metadata, 'theme_demographie.json')).toThrow()
+  })
+
   it.each([
     ['direction typée', (meta: any) => { meta.indicator_pages.densite.direction = 'Descriptif' }],    ['niveau dupliqué', (meta: any) => { meta.indicator_pages.densite.levels = ['commune', 'commune'] }],
     ['source inconnue', (meta: any) => { meta.indicator_pages.densite.sources = ['missing'] }],

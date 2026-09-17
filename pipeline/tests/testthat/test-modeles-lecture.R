@@ -99,6 +99,47 @@ test_that("l'identifiant de snapshot vient des vintages", {
   )
 })
 
+test_that("le manifeste des modèles de lecture est dérivé des pages optées", {
+  metadatas <- list(
+    demographie = list(
+      theme = "demographie",
+      indicator_pages = list(
+        densite = list(read_model = TRUE),
+        evolution_1968 = list(read_model = FALSE),
+        taille_menages = list()
+      )
+    ),
+    habitat = list(
+      theme = "habitat",
+      indicator_pages = list(part_passoires = list(read_model = TRUE))
+    ),
+    economie = list(
+      theme = "economie",
+      indicator_pages = list(emplois = list(read_model = FALSE))
+    )
+  )
+
+  manifeste <- construire_manifeste_modeles_lecture(metadatas)
+
+  expect_identical(manifeste$schema_version, "1")
+  expect_identical(manifeste$routes$demographie, "densite")
+  expect_identical(manifeste$routes$habitat, "part_passoires")
+  expect_identical(manifeste$routes$economie, character())
+
+  sortie <- tempfile("modeles-lecture-manifeste-")
+  on.exit(unlink(sortie, recursive = TRUE))
+  chemin <- publier_manifeste_modeles_lecture(metadatas, sortie = sortie)
+
+  expect_identical(
+    normalizePath(chemin, winslash = "/"),
+    normalizePath(file.path(sortie, "modeles-lecture", "manifest.json"), winslash = "/")
+  )
+  relu <- jsonlite::fromJSON(chemin, simplifyDataFrame = FALSE)
+  expect_identical(relu$routes$demographie, "densite")
+  expect_true("economie" %in% names(relu$routes))
+  expect_length(relu$routes$economie, 0L)
+})
+
 test_that("le registre de métadonnée pilote les modèles publiés", {
   metadata <- list(
     theme = "demographie",
