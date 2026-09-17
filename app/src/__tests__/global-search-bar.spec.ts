@@ -408,6 +408,7 @@ describe('GlobalSearchBar — la recherche groupée Territoires + Indicateurs (#
 
     await input.trigger('keydown', { key: 'Enter' })
     await flushPromises()
+    await router.isReady()
 
     expect(router.currentRoute.value.path).toBe('/indicateurs/demographie/densite')
     const selectIndicateur = wrapper.emitted('select-indicateur')
@@ -423,6 +424,7 @@ describe('GlobalSearchBar — la recherche groupée Territoires + Indicateurs (#
     const options = wrapper.findAll('[role="option"]')
     await options[options.length - 1]!.trigger('click')
     await flushPromises()
+    await router.isReady()
 
     expect(router.currentRoute.value.path).toBe('/indicateurs/habitat/prix_m2')
     expect(wrapper.emitted('select-indicateur')?.[0][0]).toMatchObject({ theme: 'habitat' })
