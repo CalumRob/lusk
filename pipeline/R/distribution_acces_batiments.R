@@ -355,42 +355,69 @@ construire_contextes_acces_batiments <- function(
     rampe,
     base_epci,
     classes_densite = NULL) {
-  requis_base <- c("CODGEO", "EPCI", "DEP")
+  requis_base <- c("CODGEO", "EPCI", "LIBEPCI", "DEP")
   manquantes <- setdiff(requis_base, names(base_epci))
   if (length(manquantes) > 0L) {
     stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel : ",
          paste(manquantes, collapse = ", "), ".", call. = FALSE)
   }
+  requis_densite <- c("CODGEO", "DENS7", "LIBDENS7")
+  if (!is.data.frame(classes_densite)) {
+    stop("Comparaisons bâtiments — le référentiel de densité est requis.",
+         call. = FALSE)
+  }
+  manquantes_densite <- setdiff(requis_densite, names(classes_densite))
+  if (length(manquantes_densite) > 0L) {
+    stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel de densité : ",
+         paste(manquantes_densite, collapse = ", "), ".", call. = FALSE)
+  }
+  if (anyDuplicated(classes_densite$CODGEO)) {
+    doublons <- unique(classes_densite$CODGEO[duplicated(classes_densite$CODGEO)])
+    stop("Comparaisons bâtiments — jointure communale ambiguë dans le référentiel de densité pour ",
+         paste(doublons, collapse = ", "), ".", call. = FALSE)
+  }
   base <- base_epci %>%
     dplyr::transmute(
       commune = as.character(CODGEO),
       epci = as.character(EPCI),
+      nom_epci = as.character(LIBEPCI),
       departement = as.character(DEP)
     ) %>%
     dplyr::filter(departement %in% DEPT_BRETAGNE)
+  sans_nom_epci <- base$commune[
+    !is.na(base$epci) & nzchar(base$epci) &
+      (is.na(base$nom_epci) | !nzchar(base$nom_epci))
+  ]
+  if (length(sans_nom_epci) > 0L) {
+    stop("Comparaisons bâtiments — EPCI sans libellé pour la/les commune(s) : ",
+         paste(sans_nom_epci, collapse = ", "), ".", call. = FALSE)
+  }
 
-  if (is.data.frame(classes_densite) &&
-      all(c("CODGEO", "DENS7", "LIBDENS7") %in% names(classes_densite))) {
-    base <- base %>%
-      dplyr::left_join(
-        classes_densite %>%
-          dplyr::transmute(
-            commune = as.character(CODGEO),
-            classe_densite_code = as.character(DENS7),
-            classe_densite_libelle_insee = as.character(LIBDENS7)
-          ),
-        by = "commune"
-      ) %>%
-      dplyr::left_join(
-        registre_classes_densite() %>%
-          dplyr::rename(
-            classe_densite_libelle_insee = classe_densite_libelle_insee
-          ),
-        by = c("classe_densite_code", "classe_densite_libelle_insee")
-      )
-  } else {
-    base$classe_densite_code <- NA_character_
-    base$classe_densite_libelle_public <- NA_character_
+  base <- base %>%
+    dplyr::left_join(
+      classes_densite %>%
+        dplyr::transmute(
+          commune = as.character(CODGEO),
+          classe_densite_code = as.character(DENS7),
+          classe_densite_libelle_insee = as.character(LIBDENS7)
+        ),
+      by = "commune"
+    ) %>%
+    dplyr::left_join(
+      registre_classes_densite() %>%
+        dplyr::rename(
+          classe_densite_libelle_insee = classe_densite_libelle_insee
+        ),
+      by = c("classe_densite_code", "classe_densite_libelle_insee")
+    )
+  sans_classe <- base$commune[
+    is.na(base$classe_densite_code) |
+      is.na(base$classe_densite_libelle_insee) |
+      is.na(base$classe_densite_libelle_public)
+  ]
+  if (length(sans_classe) > 0L) {
+    stop("Comparaisons bâtiments — commune(s) sans classe de densité valide : ",
+         paste(sans_classe, collapse = ", "), ".", call. = FALSE)
   }
 
   communes <- base %>% dplyr::filter(!is.na(commune) & nzchar(commune))
@@ -413,7 +440,8 @@ construire_contextes_acces_batiments <- function(
       dplyr::filter(!is.na(epci) & nzchar(epci)) %>%
       dplyr::transmute(
         territoire = commune, type = "commune", comparison_mode = "epci",
-        scope_kind = "communes-epci", scope_label = "communes de l'EPCI",
+        scope_kind = "communes-epci",
+        scope_label = paste("communes de", nom_epci),
         member_type = "commune-epci", member_code = epci,
         member_selector = "commune-epci"
       ),

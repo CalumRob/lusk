@@ -466,6 +466,36 @@ construire_modele_territoire <- function(payload, metadata, territoire,
       label <- context$label
       codes_pairs <- context$members
 
+    verifier_projection <- function(table, nom) {
+      if (is.null(table)) return(NULL)
+      if (!is.data.frame(table)) {
+        stop("Modèle de territoire : `", nom,
+             "` doit être une table.", call. = FALSE)
+      }
+      requis <- c("territoire", "comparison_mode", "scope_kind", "scope_label")
+      manquants <- setdiff(requis, names(table))
+      if (length(manquants) > 0L) {
+        stop("Modèle de territoire : la projection bâtiment `", nom,
+             "` ne porte pas ses métadonnées de contexte : ",
+             paste(manquants, collapse = ", "), ".", call. = FALSE)
+      }
+      lignes <- table[
+        as.character(table$territoire) == territoire &
+          as.character(table$comparison_mode) == mode,
+        , drop = FALSE
+      ]
+      incoherentes <- is.na(lignes$scope_kind) |
+        is.na(lignes$scope_label) |
+        as.character(lignes$scope_kind) != kind |
+        as.character(lignes$scope_label) != label
+      if (any(incoherentes)) {
+        stop("Modèle de territoire : la projection bâtiment `", nom,
+             "` porte un périmètre incohérent avec le contexte `", mode,
+             "`.", call. = FALSE)
+      }
+      lignes
+    }
+
     valeur_identite <- function(table, nom) {
       if (!nom %in% names(table)) return(rep(NA_character_, nrow(table)))
       as.character(table[[nom]])
@@ -709,10 +739,12 @@ construire_modele_territoire <- function(payload, metadata, territoire,
     )
     distribution_cible <- payload$distribution_acces_batiments
     projection_distribution <- NULL
-    distribution_contextes <- payload$distribution_acces_batiments_comparaisons
+    distribution_contextes <- verifier_projection(
+      payload$distribution_acces_batiments_comparaisons,
+      "distribution_acces_batiments_comparaisons"
+    )
     if (is.data.frame(distribution_contextes)) {
-      if (nrow(distribution_contextes) > 0L &&
-          all(c("territoire", "comparison_mode") %in% names(distribution_contextes))) {
+      if (nrow(distribution_contextes) > 0L) {
         distribution_cible <- distribution_contextes[
           as.character(distribution_contextes$territoire) == territoire &
             as.character(distribution_contextes$comparison_mode) == mode,
@@ -769,10 +801,12 @@ construire_modele_territoire <- function(payload, metadata, territoire,
     }
     rampe_cible <- payload$rampe_acces_batiments
     projection_rampe <- NULL
-    rampe_contextes <- payload$rampe_acces_batiments_comparaisons
+    rampe_contextes <- verifier_projection(
+      payload$rampe_acces_batiments_comparaisons,
+      "rampe_acces_batiments_comparaisons"
+    )
     if (is.data.frame(rampe_contextes)) {
-      if (nrow(rampe_contextes) > 0L &&
-          all(c("territoire", "comparison_mode") %in% names(rampe_contextes))) {
+      if (nrow(rampe_contextes) > 0L) {
         rampe_cible <- rampe_contextes[
           as.character(rampe_contextes$territoire) == territoire &
             as.character(rampe_contextes$comparison_mode) == mode,

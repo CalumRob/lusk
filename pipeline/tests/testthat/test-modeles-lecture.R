@@ -439,6 +439,20 @@ test_that("un modèle communal publie les contextes densité, EPCI et Bretagne",
       dplyr::select(rank_position, rank_size),
     tibble::tibble(rank_position = 3, rank_size = 5L)
   )
+
+  incoherent <- payload
+  incoherent$distribution_acces_batiments_comparaisons$scope_label <-
+    "communes bretonnes"
+  expect_error(
+    construire_modele_territoire(
+      payload = incoherent,
+      metadata = list(theme = "mobilite", label = "Mobilité"),
+      territoire = "22001",
+      snapshot_id = "2026-09-15",
+      directions = list(nb_buildings = "high")
+    ),
+    "projection bâtiment.*périmètre"
+  )
 })
 
 test_that("le modèle de territoire remplace atomiquement son adresse sans fusionner un ancien snapshot", {

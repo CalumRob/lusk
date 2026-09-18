@@ -228,6 +228,7 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   base <- tibble::tibble(
     CODGEO = c("22001", "22002", "22003", "22004", "29011"),
     EPCI = c("200000001", "200000001", NA_character_, "200000002", "290000001"),
+    LIBEPCI = c("EPCI X", "EPCI X", NA_character_, "EPCI Y", "EPCI Z"),
     DEP = c("22", "22", "22", "22", "29")
   )
   classes <- tibble::tibble(
@@ -267,6 +268,7 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
       projections$distribution$comparison_mode == "epci", , drop = FALSE
   ]
   expect_equal(sum(epci_distribution$comparison_building_count), 3L)
+  expect_equal(unique(epci_distribution$scope_label), "communes de EPCI X")
 
   density_ramp <- projections$rampe[
     projections$rampe$territoire == "22001" &
@@ -281,4 +283,52 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
     projections$distribution$territoire == "22003" &
       projections$distribution$comparison_mode == "epci"
   ))
+  bretagne_distribution <- projections$distribution[
+    projections$distribution$territoire == "22001" &
+      projections$distribution$comparison_mode == "bretagne", , drop = FALSE
+  ]
+  expect_equal(sum(bretagne_distribution$comparison_building_count), 5L)
+  expect_equal(unique(bretagne_distribution$comparison_total_buildings), 5L)
+  expect_false(any(
+    projections$distribution$territoire == "29011" &
+      projections$distribution$comparison_mode == "densite"
+  ))
+  expect_false(any(
+    projections$rampe$territoire == "29011" &
+      projections$rampe$comparison_mode == "densite"
+  ))
+})
+
+test_that("les projections refusent un référentiel de densité incomplet ou ambigu", {
+  base <- tibble::tibble(
+    CODGEO = c("22001", "22002"),
+    EPCI = c("200000001", "200000001"),
+    LIBEPCI = c("EPCI X", "EPCI X"),
+    DEP = c("22", "22")
+  )
+  classes <- tibble::tibble(
+    CODGEO = c("22001", "22002"),
+    DENS7 = c("1", "1"),
+    LIBDENS7 = c("Grands centres urbains", "Grands centres urbains")
+  )
+  batiments <- tibble::tibble(
+    commune = c("22001", "22002"), breadth = c(1L, 2L), depth = c(1L, 2L)
+  )
+
+  expect_error(
+    construire_contextes_acces_batiments(batiments, NULL, base),
+    "référentiel de densité"
+  )
+
+  expect_error(
+    construire_contextes_acces_batiments(batiments, NULL, base, classes[-1, ]),
+    "sans classe de densité"
+  )
+
+  expect_error(
+    construire_contextes_acces_batiments(
+      batiments, NULL, base, dplyr::bind_rows(classes, classes[1, ])
+    ),
+    "jointure communale ambiguë"
+  )
 })
