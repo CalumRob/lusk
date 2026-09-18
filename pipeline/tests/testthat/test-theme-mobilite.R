@@ -895,7 +895,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                           "matrice_profils_acces_bpe",
                           "profils_acces_bpe",
                           "distribution_acces_batiments",
-                          "rampe_acces_batiments"))
+                          "rampe_acces_batiments",
+                          "distribution_acces_batiments_comparaisons",
+                          "rampe_acces_batiments_comparaisons"))
   expect_equal(res$nb_buildings_territoires$value, 100)
   expect_equal(res$isolation_territoires$value, 0.1)
   expect_equal(res$div_loss_territoires$delta, 1)

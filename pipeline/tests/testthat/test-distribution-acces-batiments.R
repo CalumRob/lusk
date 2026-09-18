@@ -223,3 +223,62 @@ test_that("les valeurs d'accessibilité manquantes ou non entières échouent", 
     "entière"
   )
 })
+
+test_that("les projections bâtiment publient les contextes applicables sans fallback EPCI", {
+  base <- tibble::tibble(
+    CODGEO = c("22001", "22002", "22003", "22004", "29011"),
+    EPCI = c("200000001", "200000001", NA_character_, "200000002", "290000001"),
+    DEP = c("22", "22", "22", "22", "29")
+  )
+  classes <- tibble::tibble(
+    CODGEO = c("22001", "22002", "22003", "22004", "29011"),
+    DENS7 = c("1", "1", "1", "1", "2"),
+    LIBDENS7 = c(
+      "Grands centres urbains", "Grands centres urbains",
+      "Grands centres urbains", "Grands centres urbains",
+      "Centres urbains intermédiaires"
+    )
+  )
+  batiments <- tibble::tibble(
+    commune = c("22001", "22001", "22002", "22004", "29011"),
+    breadth = c(1L, 2L, 3L, 4L, 4L),
+    depth = c(1L, 2L, 3L, 4L, 4L)
+  )
+  rampe <- tibble::tibble(
+    commune = c("22001", "22001", "22002", "22004", "29011"),
+    breadth_c = c(1, 2, 3, 4, 4),
+    breadth_b = c(2, 3, 4, 5, 5),
+    breadth_t = c(3, 4, 5, 6, 6)
+  )
+
+  projections <- construire_contextes_acces_batiments(
+    batiments, rampe, base, classes
+  )
+  density_distribution <- projections$distribution[
+    projections$distribution$territoire == "22001" &
+      projections$distribution$comparison_mode == "densite", , drop = FALSE
+  ]
+  expect_equal(nrow(density_distribution), 5L * 6L)
+  expect_equal(sum(density_distribution$comparison_building_count), 4L)
+  expect_equal(unique(density_distribution$comparison_total_buildings), 4L)
+  expect_equal(unique(density_distribution$scope_kind), "communes-densite")
+  epci_distribution <- projections$distribution[
+    projections$distribution$territoire == "22001" &
+      projections$distribution$comparison_mode == "epci", , drop = FALSE
+  ]
+  expect_equal(sum(epci_distribution$comparison_building_count), 3L)
+
+  density_ramp <- projections$rampe[
+    projections$rampe$territoire == "22001" &
+      projections$rampe$comparison_mode == "densite" &
+      projections$rampe$mode == "t" &
+      projections$rampe$quantile == 0.5, , drop = FALSE
+  ]
+  expect_equal(density_ramp$comparison_total_buildings, 4L)
+  expect_equal(density_ramp$comparison_accessible_types, 4)
+
+  expect_false(any(
+    projections$distribution$territoire == "22003" &
+      projections$distribution$comparison_mode == "epci"
+  ))
+})

@@ -626,6 +626,8 @@ function comparisonScopeLabel(
   if (!comparison?.reference) return null
   if (comparison.scope.label) return comparison.scope.label
   switch (comparison.scope.kind) {
+    case 'communes-densite':
+      return 'communes de même classe de densité'
     case 'communes-epci':
       return territory.epciName
         ? `communes de ${territory.epciName}`

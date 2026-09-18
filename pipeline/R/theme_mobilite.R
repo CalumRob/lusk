@@ -327,7 +327,8 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
 # que le ticket payload (#141) assemble. La garde de forme s'étend aux familles
 # analytiques : un input corrompu s'arrête ICI, avant la moindre écriture.
 construire_analytiques_mobilite <- function(donnees, base_epci,
-                                            sortie = "data/processed/mobilite") {
+                                            sortie = "data/processed/mobilite",
+                                            classes_densite = NULL) {
   snapshot <- donnees$mobilite_snapshot
   manquantes <- setdiff(COLONNES_ANALYTIQUES_MOBILITE, names(snapshot))
   if (length(manquantes) > 0) {
@@ -398,6 +399,19 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     )
   } else {
     NULL
+  }
+  contextes_acces_batiments <- if (
+    "accessibilite_batiments" %in% names(donnees) ||
+      "rampe_acces_batiments" %in% names(donnees)
+  ) {
+    construire_contextes_acces_batiments(
+      donnees$accessibilite_batiments,
+      donnees$rampe_acces_batiments,
+      base_epci,
+      classes_densite = classes_densite
+    )
+  } else {
+    list(distribution = NULL, rampe = NULL)
   }
   acces_rangs <- construire_rangs_acces(acces_territoires, territoires)
   isolation_rangs <- construire_rangs_isolation(isolation_territoires,
@@ -545,6 +559,18 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
       file.path(sortie, "rampe_acces_batiments.rds")
     )
   }
+  if (!is.null(contextes_acces_batiments$distribution)) {
+    readr::write_rds(
+      contextes_acces_batiments$distribution,
+      file.path(sortie, "distribution_acces_batiments_comparaisons.rds")
+    )
+  }
+  if (!is.null(contextes_acces_batiments$rampe)) {
+    readr::write_rds(
+      contextes_acces_batiments$rampe,
+      file.path(sortie, "rampe_acces_batiments_comparaisons.rds")
+    )
+  }
 
   list(
     mobilite_communes = mobilite_communes,
@@ -572,9 +598,13 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
     matrice_profils_acces_bpe = matrice_profils_acces_bpe,
-     profils_acces_bpe = profils_acces_bpe,
-     distribution_acces_batiments = distribution_acces_batiments,
-     rampe_acces_batiments = rampe_acces_batiments
+      profils_acces_bpe = profils_acces_bpe,
+      distribution_acces_batiments = distribution_acces_batiments,
+      rampe_acces_batiments = rampe_acces_batiments,
+      distribution_acces_batiments_comparaisons =
+        contextes_acces_batiments$distribution,
+      rampe_acces_batiments_comparaisons =
+        contextes_acces_batiments$rampe
   )
 }
 
@@ -1483,6 +1513,10 @@ construire_payload_mobilite <- function(analytiques, base_epci, vintages,
     profils_acces_bpe = analytiques$profils_acces_bpe,
     distribution_acces_batiments = analytiques$distribution_acces_batiments,
     rampe_acces_batiments = analytiques$rampe_acces_batiments,
+    distribution_acces_batiments_comparaisons =
+      analytiques$distribution_acces_batiments_comparaisons,
+    rampe_acces_batiments_comparaisons =
+      analytiques$rampe_acces_batiments_comparaisons,
     apercu = assemble_apercu(territoires, construire_apercu_mobilite(territoires))
   )
 
@@ -1517,7 +1551,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
 
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
   analytiques <- construire_analytiques_mobilite(donnees, base_epci,
-                                                 sortie = sortie_analytiques)
+                                                  sortie = sortie_analytiques,
+                                                  classes_densite = classes_densite)
   analytiques$raccordement <- lire_raccordement(
     if (is.null(raccordement)) sortie_analytiques else raccordement)
   payload <- construire_payload_mobilite(

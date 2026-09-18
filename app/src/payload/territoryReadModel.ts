@@ -54,7 +54,12 @@ export interface TerritoryComparisonFact {
 export interface TerritoryComparisonContext {
   mode: TerritoryComparisonMode
   scope: {
-    kind: 'communes-epci' | 'communes-bretagne' | 'epcis-bretagne' | 'departements-bretagne'
+    kind:
+      | 'communes-densite'
+      | 'communes-epci'
+      | 'communes-bretagne'
+      | 'epcis-bretagne'
+      | 'departements-bretagne'
     label: string
   }
   facts: TerritoryComparisonFact[]
@@ -211,28 +216,33 @@ function validateTheme(
         fail(file, `mode de comparaison inconnu « ${rawMode} »`)
       }
       const mode = rawMode as TerritoryComparisonMode
-      if (mode === 'densite') {
-        fail(file, 'le mode de comparaison « densite » appartient à #556 et n’est pas publié par ce contrat')
-      }
       if (!isObject(rawContext) || !isObject(rawContext.scope)) {
         fail(file, `« themes.${theme}.comparaisons.${mode} » doit porter un scope`)
       }
-      const kinds = ['communes-epci', 'communes-bretagne', 'epcis-bretagne', 'departements-bretagne'] as const
+      const kinds = [
+        'communes-densite',
+        'communes-epci',
+        'communes-bretagne',
+        'epcis-bretagne',
+        'departements-bretagne',
+      ] as const
       if (!kinds.includes(rawContext.scope.kind as (typeof kinds)[number])) {
         fail(file, `« themes.${theme}.comparaisons.${mode}.scope.kind » est inconnu`)
       }
-      const expectedScope = mode === 'epci'
-        ? territory.type === 'commune' && territory.epci
-          ? 'communes-epci'
+      const expectedScope = mode === 'densite'
+        ? territory.type === 'commune'
+          ? 'communes-densite'
           : null
-        : mode === 'bretagne'
-          ? ({
+        : mode === 'epci'
+          ? territory.type === 'commune' && territory.epci
+            ? 'communes-epci'
+            : null
+          : ({
               commune: 'communes-bretagne',
               epci: 'epcis-bretagne',
               departement: 'departements-bretagne',
               region: null,
             } as const)[territory.type]
-          : rawContext.scope.kind
       if (expectedScope === null || rawContext.scope.kind !== expectedScope) {
         fail(file, `scope incompatible pour le mode « ${mode} » et le territoire ${territory.type}`)
       }

@@ -264,12 +264,29 @@ describe('le modèle de lecture d’un territoire', () => {
       },
     }), 'territoires/commune/22001.json')).toThrow(/direction.*incohérente/)
 
-    expect(() => validerModeleTerritoire(envelope({
+    const densityModel = validerModeleTerritoire(envelope({
       densite: {
-        scope: { kind: 'communes-bretagne', label: 'communes de même densité' },
+        scope: { kind: 'communes-densite', label: 'grands centres urbains bretons' },
         faits: [fact],
       },
-    }), 'territoires/commune/22001.json')).toThrow(/#556/)
+    }), 'territoires/commune/22001.json')
+    expect(densityModel.themes.mobilite?.comparisons.densite?.scope).toEqual({
+      kind: 'communes-densite',
+      label: 'grands centres urbains bretons',
+    })
+    const densityFacts = territoryFactsFor(
+      payloadDepuisModeleTerritoire(densityModel),
+      target.territoire,
+      densityModel.themes.mobilite?.comparisons.densite,
+    )
+    expect(densityFacts?.mobility.indicators.find((candidate) => candidate.key === fact.key)?.comparison)
+      .toMatchObject({
+        scope: {
+          mode: 'densite',
+          kind: 'communes-densite',
+          label: 'grands centres urbains bretons',
+        },
+      })
   })
 
   it('refuse une projection de distribution comparée incomplète', () => {

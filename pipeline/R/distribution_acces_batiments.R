@@ -344,6 +344,362 @@ contexte_comparaison_acces_batiments <- function(base_epci) {
     dplyr::arrange(type, territoire)
 }
 
+# construire_contextes_acces_batiments ----------------------------------------
+# Les tables historiques portent une seule comparaison canonique par territoire.
+# Les modèles de lecture ont besoin des trois mondes applicables à une commune,
+# mais la rampe ne peut pas être recomposée à partir de quantiles déjà agrégés.
+# Cette projection conserve donc la matière bâtiment jusqu'à l'agrégation de
+# chaque contexte, puis publie une petite table dédiée au modèle de lecture.
+construire_contextes_acces_batiments <- function(
+    batiments,
+    rampe,
+    base_epci,
+    classes_densite = NULL) {
+  requis_base <- c("CODGEO", "EPCI", "DEP")
+  manquantes <- setdiff(requis_base, names(base_epci))
+  if (length(manquantes) > 0L) {
+    stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel : ",
+         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+  }
+  base <- base_epci %>%
+    dplyr::transmute(
+      commune = as.character(CODGEO),
+      epci = as.character(EPCI),
+      departement = as.character(DEP)
+    ) %>%
+    dplyr::filter(departement %in% DEPT_BRETAGNE)
+
+  if (is.data.frame(classes_densite) &&
+      all(c("CODGEO", "DENS7", "LIBDENS7") %in% names(classes_densite))) {
+    base <- base %>%
+      dplyr::left_join(
+        classes_densite %>%
+          dplyr::transmute(
+            commune = as.character(CODGEO),
+            classe_densite_code = as.character(DENS7),
+            classe_densite_libelle_insee = as.character(LIBDENS7)
+          ),
+        by = "commune"
+      ) %>%
+      dplyr::left_join(
+        registre_classes_densite() %>%
+          dplyr::rename(
+            classe_densite_libelle_insee = classe_densite_libelle_insee
+          ),
+        by = c("classe_densite_code", "classe_densite_libelle_insee")
+      )
+  } else {
+    base$classe_densite_code <- NA_character_
+    base$classe_densite_libelle_public <- NA_character_
+  }
+
+  communes <- base %>% dplyr::filter(!is.na(commune) & nzchar(commune))
+  epcis <- communes %>%
+    dplyr::filter(!is.na(epci) & nzchar(epci)) %>%
+    dplyr::distinct(epci)
+  departements <- communes %>% dplyr::distinct(departement)
+
+  contextes <- dplyr::bind_rows(
+    communes %>%
+      dplyr::filter(!is.na(classe_densite_code) & nzchar(classe_densite_code)) %>%
+      dplyr::transmute(
+        territoire = commune, type = "commune", comparison_mode = "densite",
+        scope_kind = "communes-densite",
+        scope_label = classe_densite_libelle_public,
+        member_type = "commune-densite", member_code = classe_densite_code,
+        member_selector = "classe_densite"
+      ),
+    communes %>%
+      dplyr::filter(!is.na(epci) & nzchar(epci)) %>%
+      dplyr::transmute(
+        territoire = commune, type = "commune", comparison_mode = "epci",
+        scope_kind = "communes-epci", scope_label = "communes de l'EPCI",
+        member_type = "commune-epci", member_code = epci,
+        member_selector = "commune-epci"
+      ),
+    communes %>%
+      dplyr::transmute(
+        territoire = commune, type = "commune", comparison_mode = "bretagne",
+        scope_kind = "communes-bretagne", scope_label = "communes bretonnes",
+        member_type = "region-communes", member_code = "53",
+        member_selector = "commune"
+      ),
+    epcis %>%
+      dplyr::transmute(
+        territoire = epci, type = "epci", comparison_mode = "bretagne",
+        scope_kind = "epcis-bretagne", scope_label = "EPCI bretons",
+        member_type = "region-epcis", member_code = "53",
+        member_selector = "epci"
+      ),
+    departements %>%
+      dplyr::transmute(
+        territoire = departement, type = "departement", comparison_mode = "bretagne",
+        scope_kind = "departements-bretagne", scope_label = "départements bretons",
+        member_type = "region-departements", member_code = "53",
+        member_selector = "departement"
+      )
+  ) %>%
+    dplyr::distinct()
+
+  context_members <- dplyr::bind_rows(
+    contextes %>%
+      dplyr::filter(member_selector == "classe_densite") %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label,
+        member_type, member_code
+      ) %>%
+      dplyr::left_join(
+        communes %>% dplyr::transmute(
+          member_type = "commune-densite", member_code = classe_densite_code,
+          actual_member_code = commune
+        ),
+        by = c("member_type", "member_code"),
+        relationship = "many-to-many"
+      ),
+    contextes %>%
+      dplyr::filter(member_selector == "commune-epci") %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label,
+        member_type, member_code
+      ) %>%
+      dplyr::left_join(
+        communes %>% dplyr::transmute(
+          member_type = "commune-epci", member_code = epci,
+          actual_member_code = commune
+        ),
+        by = c("member_type", "member_code"),
+        relationship = "many-to-many"
+      ),
+    contextes %>%
+      dplyr::filter(member_selector == "commune") %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label
+      ) %>%
+      dplyr::mutate(
+        member_type = "commune", member_code = NA_character_
+      ) %>%
+      dplyr::left_join(
+        communes %>% dplyr::transmute(
+          member_type = "commune", actual_member_code = commune
+        ),
+        by = "member_type",
+        relationship = "many-to-many"
+      ),
+    contextes %>%
+      dplyr::filter(member_selector == "epci") %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label
+      ) %>%
+      dplyr::mutate(
+        member_type = "epci", member_code = NA_character_
+      ) %>%
+      dplyr::left_join(
+        epcis %>% dplyr::transmute(
+          member_type = "epci", actual_member_code = epci
+        ),
+        by = "member_type",
+        relationship = "many-to-many"
+      ),
+    contextes %>%
+      dplyr::filter(member_selector == "departement") %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label
+      ) %>%
+      dplyr::mutate(
+        member_type = "departement", member_code = NA_character_
+      ) %>%
+      dplyr::left_join(
+        departements %>% dplyr::transmute(
+          member_type = "departement", actual_member_code = departement
+        ),
+        by = "member_type",
+        relationship = "many-to-many"
+      )
+  ) %>%
+    dplyr::filter(!is.na(actual_member_code)) %>%
+    dplyr::distinct()
+
+  mapped_distribution <- if (is.data.frame(batiments) && nrow(batiments) > 0L) {
+    batiments %>%
+      dplyr::transmute(
+        commune = as.character(commune),
+        breadth = as.integer(breadth), depth = as.integer(depth)
+      ) %>%
+      dplyr::left_join(base, by = "commune") %>%
+      dplyr::mutate(
+        breadth_bucket = classer_distribution_batiments(
+          breadth, DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS, "breadth"
+        ),
+        depth_bucket = classer_distribution_batiments(
+          depth, DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS, "depth"
+        )
+      )
+  } else {
+    tibble::tibble()
+  }
+  mapped_rampe <- if (is.data.frame(rampe) && nrow(rampe) > 0L) {
+    rampe %>%
+      dplyr::transmute(
+        commune = as.character(commune),
+        c = as.numeric(breadth_c), b = as.numeric(breadth_b),
+        t = as.numeric(breadth_t)
+      ) %>%
+      dplyr::left_join(base, by = "commune")
+  } else {
+    tibble::tibble()
+  }
+
+  members_for <- function(mapped, level) {
+    if (!is.data.frame(mapped) || nrow(mapped) == 0L) return(tibble::tibble())
+    if (level == "commune") {
+      dplyr::bind_rows(
+        mapped %>% dplyr::transmute(
+          member_type = "commune-densite", actual_member_code = commune,
+          dplyr::across(-commune)
+        ),
+        mapped %>% dplyr::filter(!is.na(epci) & nzchar(epci)) %>%
+          dplyr::transmute(
+            member_type = "commune-epci", actual_member_code = commune,
+            dplyr::across(-commune)
+          ),
+        mapped %>% dplyr::transmute(
+          member_type = "commune", actual_member_code = commune,
+          dplyr::across(-commune)
+        )
+      )
+    } else if (level == "epci") {
+      mapped %>%
+        dplyr::filter(!is.na(epci) & nzchar(epci)) %>%
+        dplyr::transmute(member_type = "epci", actual_member_code = epci, dplyr::across(-commune))
+    } else {
+      mapped %>%
+        dplyr::transmute(member_type = "departement", actual_member_code = departement, dplyr::across(-commune))
+    }
+  }
+
+  expand_members <- function(mapped, level) {
+    membres <- members_for(mapped, level)
+    if (nrow(membres) == 0L) return(tibble::tibble())
+    member_types <- switch(
+      level,
+      commune = c("commune-densite", "commune-epci", "commune"),
+      epci = "epci",
+      departement = "departement"
+    )
+    joined <- context_members %>%
+      dplyr::filter(.data$member_type %in% member_types) %>%
+      dplyr::inner_join(
+        membres,
+        by = c("member_type", "actual_member_code"),
+        relationship = "many-to-many"
+      )
+    joined
+  }
+
+  distribution <- if (nrow(mapped_distribution) > 0L) {
+    distribution_values <- dplyr::bind_rows(
+      expand_members(mapped_distribution, "commune"),
+      expand_members(mapped_distribution, "epci"),
+      expand_members(mapped_distribution, "departement")
+    )
+    utilisables <- distribution_values %>%
+      dplyr::group_by(
+        .data$territoire, .data$comparison_mode, .data$scope_kind,
+        .data$scope_label
+      ) %>%
+      dplyr::summarise(
+        member_count = dplyr::n_distinct(.data$actual_member_code),
+        .groups = "drop"
+      ) %>%
+      dplyr::filter(.data$member_count >= 2L)
+    valeurs_utilisables <- distribution_values %>%
+      dplyr::semi_join(
+        utilisables,
+        by = c("territoire", "comparison_mode", "scope_kind", "scope_label")
+      )
+    cles <- c(
+      "territoire", "type", "comparison_mode", "scope_kind", "scope_label"
+    )
+    totaux <- valeurs_utilisables %>%
+      dplyr::group_by(dplyr::across(dplyr::all_of(cles))) %>%
+      dplyr::summarise(
+        comparison_total_buildings = dplyr::n(),
+        .groups = "drop"
+      )
+    comptes <- valeurs_utilisables %>%
+      dplyr::group_by(
+        .data$territoire, .data$type, .data$comparison_mode,
+        .data$scope_kind, .data$scope_label,
+        .data$breadth_bucket, .data$depth_bucket
+      ) %>%
+      dplyr::summarise(
+        comparison_building_count = dplyr::n(),
+        .groups = "drop"
+      )
+    tidyr::crossing(
+      totaux,
+      tidyr::crossing(
+        breadth_bucket = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
+        depth_bucket = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key
+      )
+    ) %>%
+      dplyr::left_join(
+        comptes,
+        by = c(cles, "breadth_bucket", "depth_bucket")
+      ) %>%
+      dplyr::mutate(
+        comparison_building_count = as.integer(
+          dplyr::coalesce(.data$comparison_building_count, 0L)
+        ),
+        comparison_share = .data$comparison_building_count /
+          .data$comparison_total_buildings
+      )
+  } else {
+    tibble::tibble()
+  }
+
+  rampe <- if (nrow(mapped_rampe) > 0L) {
+    rampe_values <- dplyr::bind_rows(
+      expand_members(mapped_rampe, "commune"),
+      expand_members(mapped_rampe, "epci"),
+      expand_members(mapped_rampe, "departement")
+    ) %>%
+      tidyr::pivot_longer(
+        cols = c("c", "b", "t"),
+        names_to = "mode", values_to = "accessible_types"
+      ) %>%
+      dplyr::filter(!is.na(.data$accessible_types))
+    rampe_values %>%
+      dplyr::group_by(
+        .data$territoire, .data$type, .data$comparison_mode,
+        .data$scope_kind, .data$scope_label, .data$mode
+      ) %>%
+      dplyr::group_modify(~ {
+        if (dplyr::n_distinct(.x$actual_member_code) < 2L) {
+          return(tibble::tibble())
+        }
+        tibble::tibble(
+          comparison_total_buildings = nrow(.x),
+          quantile = RAMPE_ACCES_BATIMENTS_QUANTILES,
+          comparison_accessible_types = as.numeric(stats::quantile(
+            .x$accessible_types,
+            probs = RAMPE_ACCES_BATIMENTS_QUANTILES,
+            names = FALSE, type = 1
+          ))
+        )
+      }) %>%
+      dplyr::ungroup() %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label, mode,
+        quantile, comparison_total_buildings, comparison_accessible_types
+      )
+  } else {
+    tibble::tibble()
+  }
+
+  list(distribution = distribution, rampe = rampe)
+}
+
 membres_comparaison_acces_batiments <- function(mapped, scopes) {
   scope_rows <- scopes %>%
     dplyr::filter(!is.na(scope_key)) %>%

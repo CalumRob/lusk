@@ -263,7 +263,10 @@ test_that("un modèle de territoire rassemble le contexte et les preuves Mobilit
     modele$themes$mobilite$histoires$territoire,
     "22001"
   )
-  expect_identical(names(modele$themes$mobilite$comparaisons), "epci")
+  expect_identical(
+    names(modele$themes$mobilite$comparaisons),
+    c("epci", "bretagne")
+  )
   expect_identical(
     modele$themes$mobilite$comparaisons$epci$scope,
     list(
@@ -287,6 +290,154 @@ test_that("un modèle de territoire rassemble le contexte et les preuves Mobilit
       reference_kind = "median",
       reference_value = 150
     )
+  )
+})
+
+test_that("un modèle communal publie les contextes densité, EPCI et Bretagne", {
+  territoires <- tibble::tribble(
+    ~territoire, ~type, ~nom, ~departement, ~epci,
+    ~classe_densite_code, ~classe_densite_libelle_insee,
+    ~classe_densite_libelle_public,
+    "22001", "commune", "Commune A", "22", "200000001", "1",
+    "Grands centres urbains", "grands centres urbains bretons",
+    "22002", "commune", "Commune B", "22", "200000001", "1",
+    "Grands centres urbains", "grands centres urbains bretons",
+    "22003", "commune", "Commune sans EPCI", "22", NA_character_, "2",
+    "Centres urbains intermédiaires", "centres urbains intermédiaires bretons",
+    "22004", "commune", "Commune d'un autre EPCI", "22", "200000002", "1",
+    "Grands centres urbains", "grands centres urbains bretons",
+    "200000001", "epci", "EPCI X", "22", NA_character_, NA_character_,
+    NA_character_, NA_character_,
+    "22", "departement", "Département 22", "22", NA_character_, NA_character_,
+    NA_character_, NA_character_,
+    "53", "region", "Bretagne", NA_character_, NA_character_, NA_character_,
+    NA_character_, NA_character_,
+    "29001", "commune", "Commune C", "29", "200000002", "3",
+    "Petites villes", "petites villes bretonnes"
+  )
+  indicateurs <- tibble::tibble(
+    territoire = c("22001", "22002", "22003", "22004", "29001", "53"),
+    type = c("commune", "commune", "commune", "commune", "commune", "region"),
+    theme = "mobilite",
+    key = "nb_buildings",
+    detail = NA_character_,
+    value = c(100, 200, 300, 600, 400, 1000),
+    unit = "bâtiments"
+  )
+  histoires <- tibble::tibble(
+    territoire = "53",
+    type = "region",
+    theme = "mobilite",
+    story_key = "vingt-minutes-sans-voiture",
+    groupe = "acces-aux-services"
+  )
+  payload <- list(
+    territoires = territoires,
+    indicateurs = indicateurs,
+    histoires = histoires,
+    profils_acces_bpe = NULL,
+    distribution_acces_batiments = NULL,
+    rampe_acces_batiments = NULL,
+    distribution_acces_batiments_comparaisons = tibble::tibble(
+      territoire = "22001",
+      type = "commune",
+      comparison_mode = "densite",
+      scope_kind = "communes-densite",
+      scope_label = "grands centres urbains bretons",
+      breadth_bucket = "1-9",
+      depth_bucket = "1-9",
+      comparison_total_buildings = 5L,
+      comparison_building_count = 5L,
+      comparison_share = 1
+    ),
+    rampe_acces_batiments_comparaisons = tibble::tibble(
+      territoire = "22001",
+      type = "commune",
+      comparison_mode = "densite",
+      scope_kind = "communes-densite",
+      scope_label = "grands centres urbains bretons",
+      mode = "t",
+      quantile = 0.5,
+      comparison_total_buildings = 5L,
+      comparison_accessible_types = 3
+    )
+  )
+
+  commune <- construire_modele_territoire(
+    payload = payload,
+    metadata = list(theme = "mobilite", label = "Mobilité"),
+    territoire = "22001",
+    snapshot_id = "2026-09-15",
+    directions = list(nb_buildings = "high")
+  )
+  contextes <- commune$themes$mobilite$comparaisons
+
+  expect_named(contextes, c("densite", "epci", "bretagne"))
+  expect_identical(
+    contextes$densite$scope,
+    list(kind = "communes-densite", label = "grands centres urbains bretons")
+  )
+  expect_identical(
+    contextes$densite$faits |>
+      dplyr::filter(.data$key == "nb_buildings") |>
+      dplyr::select(rank_position, rank_size, reference_value),
+    tibble::tibble(rank_position = 3, rank_size = 3L, reference_value = 200)
+  )
+  expect_identical(
+    contextes$densite$distribution_batiments,
+    list(
+      label = "grands centres urbains bretons",
+      total_buildings = 5L,
+      cells = tibble::tibble(
+        breadth_bucket = "1-9",
+        depth_bucket = "1-9",
+        building_count = 5L,
+        share = 1
+      )
+    )
+  )
+  expect_identical(
+    contextes$densite$rampe_acces,
+    list(
+      label = "grands centres urbains bretons",
+      total_buildings = 5L,
+      points = tibble::tibble(
+        mode = "t",
+        quantile = 0.5,
+        accessible_types = 3
+      )
+    )
+  )
+  expect_identical(
+    contextes$epci$faits |>
+      dplyr::filter(.data$key == "nb_buildings") |>
+      dplyr::select(rank_position, rank_size, reference_value),
+    tibble::tibble(rank_position = 2, rank_size = 2L, reference_value = 150)
+  )
+  expect_identical(
+    contextes$bretagne$faits |>
+      dplyr::filter(.data$key == "nb_buildings") |>
+      dplyr::select(rank_position, rank_size, reference_value),
+    tibble::tibble(rank_position = 5, rank_size = 5L, reference_value = 300)
+  )
+
+  sans_epci <- construire_modele_territoire(
+    payload = payload,
+    metadata = list(theme = "mobilite", label = "Mobilité"),
+    territoire = "22003",
+    snapshot_id = "2026-09-15",
+    directions = list(nb_buildings = "high")
+  )
+  contextes_sans_epci <- sans_epci$themes$mobilite$comparaisons
+
+  expect_named(contextes_sans_epci, c("densite", "bretagne"))
+  expect_true(is.na(contextes_sans_epci$densite$faits$rank_position[[1L]]))
+  expect_true(is.na(contextes_sans_epci$densite$faits$reference_value[[1L]]))
+  expect_identical(
+    contextes_sans_epci$bretagne$faits |>
+      dplyr::filter(.data$key == "nb_buildings") |>
+      dplyr::select(rank_position, rank_size),
+    tibble::tibble(rank_position = 3, rank_size = 5L)
   )
 })
 

@@ -83,6 +83,20 @@ publish <- function(payload, cible = "public/data", backend = "static") {
       file.path(cible, "rampe_acces_batiments.parquet")
     )
   }
+  if ("distribution_acces_batiments_comparaisons" %in% names(payload) &&
+      !is.null(payload$distribution_acces_batiments_comparaisons)) {
+    nanoparquet::write_parquet(
+      payload$distribution_acces_batiments_comparaisons,
+      file.path(cible, "distribution_acces_batiments_comparaisons.parquet")
+    )
+  }
+  if ("rampe_acces_batiments_comparaisons" %in% names(payload) &&
+      !is.null(payload$rampe_acces_batiments_comparaisons)) {
+    nanoparquet::write_parquet(
+      payload$rampe_acces_batiments_comparaisons,
+      file.path(cible, "rampe_acces_batiments_comparaisons.parquet")
+    )
+  }
 
   if (backend == "static") {
     # Les projections JSON : générées depuis les MÊMES tables en mémoire que
@@ -120,6 +134,20 @@ publish <- function(payload, cible = "public/data", backend = "static") {
       ecrire_projection(
         payload$rampe_acces_batiments,
         "rampe_acces_batiments.json"
+      )
+    }
+    if ("distribution_acces_batiments_comparaisons" %in% names(payload) &&
+        !is.null(payload$distribution_acces_batiments_comparaisons)) {
+      ecrire_projection(
+        payload$distribution_acces_batiments_comparaisons,
+        "distribution_acces_batiments_comparaisons.json"
+      )
+    }
+    if ("rampe_acces_batiments_comparaisons" %in% names(payload) &&
+        !is.null(payload$rampe_acces_batiments_comparaisons)) {
+      ecrire_projection(
+        payload$rampe_acces_batiments_comparaisons,
+        "rampe_acces_batiments_comparaisons.json"
       )
     }
     # Référentiel territorial partagé : la classe de densité est une propriété

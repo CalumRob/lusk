@@ -231,6 +231,101 @@ publier_modeles_lecture <- function(payload, metadata, vintages,
   }, character(1))
 }
 
+# resoudre_contextes_comparaison -----------------------------------------------
+# Une commune peut porter trois mondes de comparaison : sa classe de densité,
+# son EPCI lorsqu'elle en a un, et l'ensemble des communes bretonnes. Les
+# niveaux supérieurs gardent leur monde régional existant. Cette fonction est
+# l'unique résolution de l'appartenance et des libellés ; les projections ne
+# reconstruisent jamais ces décisions séparément.
+resoudre_contextes_comparaison <- function(reference, cible, type) {
+  colonne_presente <- function(nom) nom %in% names(reference)
+  valeur_cible <- function(nom) {
+    if (!colonne_presente(nom)) return(NA_character_)
+    as.character(cible[[nom]][[1L]])
+  }
+  est_plein <- function(valeur) {
+    !is.na(valeur) && nzchar(valeur)
+  }
+  codes <- function(membres) {
+    unique(as.character(reference$territoire[membres]))
+  }
+
+  contextes <- list()
+  if (type == "commune" &&
+      all(c(
+        "classe_densite_code", "classe_densite_libelle_public"
+      ) %in% names(reference))) {
+    code <- valeur_cible("classe_densite_code")
+    label <- valeur_cible("classe_densite_libelle_public")
+    if (est_plein(code) && est_plein(label)) {
+      contextes$densite <- list(
+        mode = "densite",
+        kind = "communes-densite",
+        label = label,
+        members = codes(
+          reference$type == "commune" &
+            as.character(reference$classe_densite_code) == code
+        )
+      )
+    }
+  }
+
+  epci <- valeur_cible("epci")
+  if (type == "commune" && est_plein(epci)) {
+    nom_epci <- reference$nom[
+      reference$type == "epci" &
+        as.character(reference$territoire) == epci
+    ]
+    label <- if (length(nom_epci) == 1L) {
+      paste("communes de", nom_epci[[1L]])
+    } else {
+      "communes de l'EPCI"
+    }
+    contextes$epci <- list(
+      mode = "epci",
+      kind = "communes-epci",
+      label = label,
+      members = codes(
+        reference$type == "commune" &
+          !is.na(reference$epci) &
+          as.character(reference$epci) == epci
+      )
+    )
+  }
+
+  if (type != "region") {
+    type_regional <- switch(
+      type,
+      commune = "commune",
+      epci = "epci",
+      departement = "departement",
+      character(0)
+    )
+    label_regional <- switch(
+      type,
+      commune = "communes bretonnes",
+      epci = "EPCI bretons",
+      departement = "départements bretons",
+      character(0)
+    )
+    if (length(type_regional) == 1L) {
+      contextes$bretagne <- list(
+        mode = "bretagne",
+        kind = switch(
+          type,
+          commune = "communes-bretagne",
+          epci = "epcis-bretagne",
+          departement = "departements-bretagne"
+        ),
+        label = label_regional,
+        members = codes(reference$type == type_regional)
+      )
+    }
+  }
+
+  contextes
+}
+
 # construire_modele_territoire -------------------------------------------------
 # Une fiche ne doit pas reconstruire son contexte depuis la référence mondiale
 # ni attendre plusieurs tables indépendantes. Cette projection garde la cible,
@@ -262,6 +357,7 @@ construire_modele_territoire <- function(payload, metadata, territoire,
   if (!is.list(metadata) || is.null(metadata$theme) || is.null(metadata$label)) {
     stop("Modèle de territoire : métadonnée de thème incomplète.", call. = FALSE)
   }
+  theme <- as.character(metadata$theme)
 
   reference <- payload$territoires
   cible <- reference[as.character(reference$territoire) == territoire, , drop = FALSE]
@@ -299,9 +395,18 @@ construire_modele_territoire <- function(payload, metadata, territoire,
     membres <- rep(FALSE, nrow(reference))
   }
 
+  contextes <- if (theme == "mobilite") {
+    resoudre_contextes_comparaison(reference, cible, type)
+  } else {
+    list()
+  }
+  codes_comparaison <- unique(unlist(
+    lapply(contextes, function(context) context$members),
+    use.names = FALSE
+  ))
   codes_contexte <- unique(c(
     territoire,
-    as.character(reference$territoire[membres]),
+    codes_comparaison,
     parent_codes,
     region_codes
   ))
@@ -346,7 +451,6 @@ construire_modele_territoire <- function(payload, metadata, territoire,
     stop("Modèle de territoire : le payload doit porter indicateurs et histoires.",
          call. = FALSE)
   }
-  theme <- as.character(metadata$theme)
   indicateurs <- indicateurs[indicateurs$theme == theme, , drop = FALSE]
   histoires <- histoires[histoires$theme == theme, , drop = FALSE]
 
@@ -356,30 +460,11 @@ construire_modele_territoire <- function(payload, metadata, territoire,
   # côte sans remplacer l'enveloppe ni son adresse.
   contexte_comparaison <- NULL
   if (theme == "mobilite" && type != "region") {
-    epci_cible <- cible$epci[[1L]]
-    mode <- if (type == "commune" && !is.na(epci_cible) &&
-                nzchar(as.character(epci_cible))) "epci" else "bretagne"
-    kind <- if (type == "commune") {
-      if (mode == "epci") "communes-epci" else "communes-bretagne"
-    } else if (type == "epci") {
-      "epcis-bretagne"
-    } else {
-      "departements-bretagne"
-    }
-    label <- if (kind == "communes-epci") {
-      nom_epci <- reference$nom[
-        reference$type == "epci" &
-          as.character(reference$territoire) == as.character(epci_cible)
-      ]
-      if (length(nom_epci) == 1L) paste("communes de", nom_epci[[1L]]) else
-        "communes de l'EPCI"
-    } else if (kind == "communes-bretagne") {
-      "communes bretonnes"
-    } else if (kind == "epcis-bretagne") {
-      "EPCI bretons"
-    } else {
-      "départements bretons"
-    }
+    construire_contexte <- function(context) {
+      mode <- context$mode
+      kind <- context$kind
+      label <- context$label
+      codes_pairs <- context$members
 
     valeur_identite <- function(table, nom) {
       if (!nom %in% names(table)) return(rep(NA_character_, nrow(table)))
@@ -406,26 +491,26 @@ construire_modele_territoire <- function(payload, metadata, territoire,
       if (is.null(direction)) return(NULL)
       pairs <- indicateurs_par_signature[[signature_fait(ligne)[[1L]]]]
       pairs <- pairs[
-        as.character(pairs$territoire) %in%
-          as.character(reference$territoire[membres]),
+        as.character(pairs$territoire) %in% codes_pairs,
         , drop = FALSE
       ]
       valeurs <- pairs$value[!is.na(pairs$value)]
       cible_valeur <- ligne$value[[1L]]
-      position <- if (is.na(cible_valeur) || length(valeurs) == 0L) {
+      assez_de_pairs <- !is.na(cible_valeur) && length(valeurs) >= 2L
+      position <- if (!assez_de_pairs) {
         NA_real_
       } else if (direction == "low") {
         1 + sum(valeurs < cible_valeur)
       } else {
         1 + sum(valeurs > cible_valeur)
       }
-      taille <- if (is.na(cible_valeur) || length(valeurs) == 0L) {
+      taille <- if (!assez_de_pairs) {
         NA_real_
       } else {
         length(valeurs)
       }
       statistique <- if (startsWith(cle, "avg_")) "mean" else "median"
-      reference_valeur <- if (length(valeurs) == 0L) {
+      reference_valeur <- if (length(valeurs) < 2L) {
         NA_real_
       } else if (statistique == "median") {
         stats::median(valeurs)
@@ -456,7 +541,7 @@ construire_modele_territoire <- function(payload, metadata, territoire,
           "plus-est-mieux",
         rank_position = position,
         rank_size = taille,
-        reference_kind = statistique,
+         reference_kind = if (is.na(reference_valeur)) NA_character_ else statistique,
         reference_value = reference_valeur
       )
     })
@@ -470,19 +555,20 @@ construire_modele_territoire <- function(payload, metadata, territoire,
       valeurs_utiles <- valeurs[utilisables]
       if (length(valeurs_utiles) == 0L) return(NULL)
       poids_utiles <- if (is.null(poids)) NULL else poids[utilisables]
-      position <- if (!rang || is.na(valeur_cible) || length(valeurs_utiles) == 0L) {
+      assez_de_pairs <- !is.na(valeur_cible) && length(valeurs_utiles) >= 2L
+      position <- if (!rang || !assez_de_pairs) {
         NA_real_
       } else if (direction == "low") {
         1 + sum(valeurs_utiles < valeur_cible)
       } else {
         1 + sum(valeurs_utiles > valeur_cible)
       }
-      taille <- if (!rang || is.na(valeur_cible) || length(valeurs_utiles) == 0L) {
+      taille <- if (!rang || !assez_de_pairs) {
         NA_integer_
       } else {
         length(valeurs_utiles)
       }
-      reference_valeur <- if (length(valeurs_utiles) == 0L) {
+      reference_valeur <- if (length(valeurs_utiles) < 2L) {
         NA_real_
       } else if (statistique == "median") {
         stats::median(valeurs_utiles)
@@ -504,11 +590,10 @@ construire_modele_territoire <- function(payload, metadata, territoire,
           "plus-est-mieux",
         rank_position = position,
         rank_size = taille,
-        reference_kind = statistique,
+         reference_kind = if (is.na(reference_valeur)) NA_character_ else statistique,
         reference_value = reference_valeur
       )
     }
-    codes_pairs <- as.character(reference$territoire[membres])
     lignes_scalaires <- indicateurs[
       is.na(valeur_identite(indicateurs, "detail")), , drop = FALSE
     ]
@@ -624,7 +709,42 @@ construire_modele_territoire <- function(payload, metadata, territoire,
     )
     distribution_cible <- payload$distribution_acces_batiments
     projection_distribution <- NULL
-    if (is.data.frame(distribution_cible) && nrow(distribution_cible) > 0L) {
+    distribution_contextes <- payload$distribution_acces_batiments_comparaisons
+    if (is.data.frame(distribution_contextes)) {
+      if (nrow(distribution_contextes) > 0L &&
+          all(c("territoire", "comparison_mode") %in% names(distribution_contextes))) {
+        distribution_cible <- distribution_contextes[
+          as.character(distribution_contextes$territoire) == territoire &
+            as.character(distribution_contextes$comparison_mode) == mode,
+          , drop = FALSE
+        ]
+        if (nrow(distribution_cible) > 0L &&
+            all(c(
+              "comparison_total_buildings", "breadth_bucket", "depth_bucket",
+              "comparison_building_count", "comparison_share"
+            ) %in% names(distribution_cible))) {
+          total <- unique(distribution_cible$comparison_total_buildings)
+          cellules <- distribution_cible[
+            !is.na(distribution_cible$breadth_bucket) &
+              !is.na(distribution_cible$depth_bucket),
+            c("breadth_bucket", "depth_bucket", "comparison_building_count",
+              "comparison_share"),
+            drop = FALSE
+          ]
+          names(cellules) <- c(
+            "breadth_bucket", "depth_bucket", "building_count", "share"
+          )
+          if (length(total) == 1L && !is.na(total[[1L]]) && total[[1L]] >= 1L &&
+              nrow(cellules) > 0L) {
+            projection_distribution <- list(
+              label = label,
+              total_buildings = total[[1L]],
+              cells = cellules
+            )
+          }
+        }
+      }
+    } else if (is.data.frame(distribution_cible) && nrow(distribution_cible) > 0L) {
       distribution_cible <- distribution_cible[
         as.character(distribution_cible$territoire) == territoire, , drop = FALSE
       ]
@@ -649,7 +769,38 @@ construire_modele_territoire <- function(payload, metadata, territoire,
     }
     rampe_cible <- payload$rampe_acces_batiments
     projection_rampe <- NULL
-    if (is.data.frame(rampe_cible) && nrow(rampe_cible) > 0L) {
+    rampe_contextes <- payload$rampe_acces_batiments_comparaisons
+    if (is.data.frame(rampe_contextes)) {
+      if (nrow(rampe_contextes) > 0L &&
+          all(c("territoire", "comparison_mode") %in% names(rampe_contextes))) {
+        rampe_cible <- rampe_contextes[
+          as.character(rampe_contextes$territoire) == territoire &
+            as.character(rampe_contextes$comparison_mode) == mode,
+          , drop = FALSE
+        ]
+        if (nrow(rampe_cible) > 0L &&
+            all(c(
+              "comparison_total_buildings", "mode", "quantile",
+              "comparison_accessible_types"
+            ) %in% names(rampe_cible))) {
+          total <- unique(rampe_cible$comparison_total_buildings)
+          points <- rampe_cible[
+            !is.na(rampe_cible$quantile),
+            c("mode", "quantile", "comparison_accessible_types"),
+            drop = FALSE
+          ]
+          names(points) <- c("mode", "quantile", "accessible_types")
+          if (length(total) == 1L && !is.na(total[[1L]]) && total[[1L]] >= 1L &&
+              nrow(points) > 0L) {
+            projection_rampe <- list(
+              label = label,
+              total_buildings = total[[1L]],
+              points = points
+            )
+          }
+        }
+      }
+    } else if (is.data.frame(rampe_cible) && nrow(rampe_cible) > 0L) {
       rampe_cible <- rampe_cible[
         as.character(rampe_cible$territoire) == territoire, , drop = FALSE
       ]
@@ -667,14 +818,16 @@ construire_modele_territoire <- function(payload, metadata, territoire,
         )
       }
     }
-    contexte_comparaison <- stats::setNames(
-      list(list(
+      list(
         scope = list(kind = kind, label = label),
         faits = faits,
         distribution_batiments = projection_distribution,
         rampe_acces = projection_rampe
-      )),
-      mode
+      )
+    }
+    contexte_comparaison <- stats::setNames(
+      lapply(contextes, construire_contexte),
+      names(contextes)
     )
   }
 
@@ -909,7 +1062,9 @@ construire_modeles_territoire <- function(payloads, metadatas, vintages,
   # d'avoir construit les 1 268 modèles en mémoire.
   champs_indexables <- c(
     "indicateurs", "histoires", "profils_acces_bpe",
-    "distribution_acces_batiments", "rampe_acces_batiments"
+    "distribution_acces_batiments", "rampe_acces_batiments",
+    "distribution_acces_batiments_comparaisons",
+    "rampe_acces_batiments_comparaisons"
   )
   indexer <- function(table) {
     if (!is.data.frame(table) || !"territoire" %in% names(table)) return(NULL)
@@ -936,28 +1091,15 @@ construire_modeles_territoire <- function(payloads, metadatas, vintages,
       as.character(reference_complete$territoire) == code, , drop = FALSE
     ]
     type <- as.character(cible$type[[1L]])
-    pairs <- if (type == "commune") {
-      epci <- cible$epci[[1L]]
-      if (!is.na(epci) && nzchar(as.character(epci))) {
-        as.character(reference_complete$territoire[
-          reference_complete$type == "commune" &
-            !is.na(reference_complete$epci) &
-            as.character(reference_complete$epci) == as.character(epci)
-        ])
-      } else {
-        as.character(reference_complete$territoire[
-          reference_complete$type == "commune"
-        ])
-      }
-    } else if (type == "epci") {
-      as.character(reference_complete$territoire[reference_complete$type == "epci"])
-    } else if (type == "departement") {
-      as.character(reference_complete$territoire[
-        reference_complete$type == "departement"
-      ])
+    contextes <- if ("mobilite" %in% names(payloads)) {
+      resoudre_contextes_comparaison(reference_complete, cible, type)
     } else {
-      character(0)
+      list()
     }
+    pairs <- unique(unlist(
+      lapply(contextes, function(context) context$members),
+      use.names = FALSE
+    ))
     unique(c(code, pairs, region_codes))
   }
   modeles <- lapply(codes, function(code) {
@@ -980,11 +1122,21 @@ construire_modeles_territoire <- function(payloads, metadatas, vintages,
       local$distribution_acces_batiments <- sous_table(
         payload$distribution_acces_batiments,
         index$distribution_acces_batiments,
-        code
+        codes_faits
       )
       local$rampe_acces_batiments <- sous_table(
         payload$rampe_acces_batiments, index$rampe_acces_batiments,
-        code
+        codes_faits
+      )
+      local$distribution_acces_batiments_comparaisons <- sous_table(
+        payload$distribution_acces_batiments_comparaisons,
+        index$distribution_acces_batiments_comparaisons,
+        codes_faits
+      )
+      local$rampe_acces_batiments_comparaisons <- sous_table(
+        payload$rampe_acces_batiments_comparaisons,
+        index$rampe_acces_batiments_comparaisons,
+        codes_faits
       )
       local
     }, payloads, indexes, names(payloads))
@@ -1034,8 +1186,10 @@ construire_payload_territoire_programmes <- function(programmes, territoires) {
       stringsAsFactors = FALSE
     ),
     profils_acces_bpe = NULL,
-    distribution_acces_batiments = NULL,
-    rampe_acces_batiments = NULL
+      distribution_acces_batiments = NULL,
+      rampe_acces_batiments = NULL,
+      distribution_acces_batiments_comparaisons = NULL,
+      rampe_acces_batiments_comparaisons = NULL
   )
 }
 
@@ -1143,6 +1297,14 @@ publier_modeles_territoire_depuis_json <- function(input, sortie = input,
       ) else NULL,
       rampe_acces_batiments = if (theme == "mobilite") lire_table(
         file.path(input, "rampe_acces_batiments.json")
+      ) else NULL,
+      distribution_acces_batiments_comparaisons = if (theme == "mobilite") lire_table(
+        file.path(input, "distribution_acces_batiments_comparaisons.json"),
+        obligatoire = FALSE
+      ) else NULL,
+      rampe_acces_batiments_comparaisons = if (theme == "mobilite") lire_table(
+        file.path(input, "rampe_acces_batiments_comparaisons.json"),
+        obligatoire = FALSE
       ) else NULL
     )
     metadatas[[theme]] <- jsonlite::fromJSON(
