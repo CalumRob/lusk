@@ -1,2 +1,4 @@
 ^renv$
 ^renv\.lock$
+^scripts$
+^slow-tests$

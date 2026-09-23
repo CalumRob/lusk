@@ -69,16 +69,29 @@ lockfile are currently installed. Use renv::restore()...". **This is a trap.**
 **NEVER run `renv::restore()`, `renv::install()`, `source('renv/activate.R')`, or any `renv::` function from a worktree.** It re-triggers bootstrap/restore against the shared cache, wipes/truncates the worktree library mid-copy, breaks the environment, and can disturb the main checkout's working renv. If a command seems to need renv, STOP and report to the orchestrator instead.
 
 The environment is already live: R's startup `.Rprofile` auto-activates renv, and the packages
-resolve from the populated worktree library + the user library. Run tests exactly like this from
-`pipeline/` (never activate renv yourself):
+resolve from the populated worktree library + the user library. Run R commands from `pipeline/`
+(never activate renv yourself). Keep three verification loops distinct:
 
 ```
+# During iteration: filter to the affected test files (the value is a regex).
+Rscript -e "testthat::test_local(filter = 'distribution-acces-batiments|modeles-lecture', stop_on_failure = TRUE)"
+
+# Before handoff: the complete default fixture suite.
 Rscript -e "testthat::test_local(stop_on_failure = TRUE)"
+
+# Slow parity audit: run for targets/orchestration changes or before a release.
+Rscript scripts/verify-targets-byte-identical.R
 ```
 
-(La vérification « données réelles » ne passe plus par une variable d'environnement :
-elle vit dans le graphe targets, pilotée par ses entrées — `pipeline/_targets.R`,
-verrous `verif_*`, issue #342.)
+The byte-identical parity audit lives under `pipeline/slow-tests/`, outside the default
+testthat suite. It cold-builds each theme and the full graph against `run_pipeline()` and can take
+many minutes with the real cache; it intentionally clears the local `_targets/` store between
+comparisons. Without `data/raw`, the explicit command skips its two parity tests. Use an isolated
+worktree with its own data copy for a real-data run; never link the main checkout's data.
+
+This audit is separate from the real-data verification locks: those remain input-driven `verif_*`
+targets in `_targets.R` and need no environment-variable opt-in (issue #342). Do not reintroduce
+`LUSK_RUN_REAL` for those checks.
 
 **If the worktree library is genuinely empty** (fresh worktree), populate it by copying the main
 checkout's populated library into the worktree's hashed library — never by restoring:

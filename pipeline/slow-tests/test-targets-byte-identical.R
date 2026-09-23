@@ -1,4 +1,10 @@
 # test-targets-byte-identical ----------------------------------------------------
+# Audit lent, explicite (#565) : ce fichier est hors de tests/testthat/ pour
+# que testthat::test_local() ne lance pas les reconstructions froides dès que
+# le cache réel existe. Depuis pipeline/, l'invocation dédiée est :
+#   Rscript scripts/verify-targets-byte-identical.R
+# Le contrat reste identique : les deux tests ci-dessous comparent toujours
+# les cinq thèmes et le graphe complet à run_pipeline().
 # Seam 1 (#340, épique #329) : le CONTRAT du payload — le plus haut seam
 # existant. Un run du graphe targets sur store FROID doit produire un payload
 # byte-identique à run_pipeline() sur le même cache : l'oracle
@@ -19,9 +25,9 @@
 # dépôt. Le store _targets/ (gitignoré) est supprimé au départ : la porte est
 # un run de zéro, comme sur un runner froid.
 #
-# Données réelles : le test saute proprement quand le cache (pipeline/data/raw)
-# est absent — le même motif que les blocs « données réelles » existants — la
-# CI froide le saute, les runs locaux prouvent la propriété.
+# Sans data/raw, l'invocation dédiée saute proprement. Cette porte de parité
+# est distincte des verrous verif_* du graphe, qui restent pilotés par leurs
+# entrées et ne dépendent d'aucun opt-in.
 
 # la géométrie porte le timeStamp du serveur WFS (data.geopf.fr horodate
 # chaque réponse GetFeature) — un artefact de SOURCE, pas de donnée : deux
