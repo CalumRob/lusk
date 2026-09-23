@@ -289,7 +289,9 @@ territoires_distribution_acces_batiments <- function(base_epci) {
     dplyr::select(territoire, type)
 }
 
-contexte_comparaison_acces_batiments <- function(base_epci) {
+contexte_comparaison_acces_batiments <- function(
+    base_epci,
+    territoires_reference = NULL) {
   requis <- c("CODGEO", "EPCI", "DEP")
   manquantes <- setdiff(requis, names(base_epci))
   if (length(manquantes) > 0) {
@@ -304,7 +306,7 @@ contexte_comparaison_acces_batiments <- function(base_epci) {
     ) %>%
     dplyr::filter(departement %in% DEPT_BRETAGNE)
 
-  dplyr::bind_rows(
+  scopes <- dplyr::bind_rows(
     base %>% dplyr::distinct(territoire = commune) %>%
       dplyr::left_join(
         base %>% dplyr::distinct(territoire = commune, epci),
@@ -342,6 +344,46 @@ contexte_comparaison_acces_batiments <- function(base_epci) {
     dplyr::select(territoire, type, scope_key, comparison_label) %>%
     dplyr::distinct() %>%
     dplyr::arrange(type, territoire)
+
+  if (!is.null(territoires_reference)) {
+    requis_reference <- c("territoire", "type", "nom", "epci")
+    manquantes_reference <- setdiff(requis_reference, names(territoires_reference))
+    if (!is.data.frame(territoires_reference) || length(manquantes_reference) > 0L) {
+      stop("Distribution bâtiments — le référentiel territorial publié est incomplet",
+           if (length(manquantes_reference) > 0L) paste0(
+             " : ", paste(manquantes_reference, collapse = ", ")
+           ), ".", call. = FALSE)
+    }
+    reference <- territoires_reference %>%
+      dplyr::mutate(
+        territoire = as.character(.data$territoire),
+        type = as.character(.data$type),
+        nom = as.character(.data$nom),
+        epci = as.character(.data$epci)
+      )
+    noms_epci <- reference %>%
+      dplyr::filter(.data$type == "epci") %>%
+      dplyr::transmute(epci = .data$territoire, nom_epci = .data$nom)
+    labels <- reference %>%
+      dplyr::filter(.data$type != "region") %>%
+      dplyr::left_join(noms_epci, by = "epci") %>%
+      dplyr::transmute(
+        territoire = .data$territoire,
+        type = .data$type,
+        comparison_label = dplyr::case_when(
+          .data$type == "commune" & !is.na(.data$nom_epci) &
+            nzchar(.data$nom_epci) ~ paste("communes de", .data$nom_epci),
+          .data$type == "commune" ~ "communes bretonnes",
+          .data$type == "epci" ~ "EPCI bretons",
+          .data$type == "departement" ~ "départements bretons",
+          TRUE ~ NA_character_
+        )
+      )
+    scopes <- scopes %>%
+      dplyr::select(-comparison_label) %>%
+      dplyr::left_join(labels, by = c("territoire", "type"))
+  }
+  scopes
 }
 
 # construire_contextes_acces_batiments ----------------------------------------
@@ -354,70 +396,126 @@ construire_contextes_acces_batiments <- function(
     batiments,
     rampe,
     base_epci,
-    classes_densite = NULL) {
-  requis_base <- c("CODGEO", "EPCI", "LIBEPCI", "DEP")
-  manquantes <- setdiff(requis_base, names(base_epci))
-  if (length(manquantes) > 0L) {
-    stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel : ",
-         paste(manquantes, collapse = ", "), ".", call. = FALSE)
+    classes_densite = NULL,
+    territoires_reference = NULL) {
+  if (!is.null(territoires_reference)) {
+    requis_reference <- c("territoire", "type", "nom", "departement", "epci")
+    manquantes <- setdiff(requis_reference, names(territoires_reference))
+    if (!is.data.frame(territoires_reference) || length(manquantes) > 0L) {
+      stop("Comparaisons bâtiments — le référentiel territorial publié est incomplet",
+           if (length(manquantes) > 0L) paste0(" : ", paste(manquantes, collapse = ", ")),
+           ".", call. = FALSE)
+    }
+    champs_densite <- c(
+      "classe_densite_code", "classe_densite_libelle_insee",
+      "classe_densite_libelle_public"
+    )
+    presence_densite <- champs_densite %in% names(territoires_reference)
+    if (any(presence_densite) && !all(presence_densite)) {
+      stop("Comparaisons bâtiments — le référentiel territorial publié porte une densité partielle.",
+           call. = FALSE)
+    }
+    reference_porte_densite <- all(presence_densite)
+    reference <- territoires_reference
+    if (!reference_porte_densite) {
+      reference[c(
+        "classe_densite_code", "classe_densite_libelle_insee",
+        "classe_densite_libelle_public"
+      )] <- NA_character_
+    }
+    reference <- reference %>%
+      dplyr::mutate(
+        territoire = as.character(.data$territoire),
+        type = as.character(.data$type),
+        nom = as.character(.data$nom),
+        departement = as.character(.data$departement),
+        epci = as.character(.data$epci),
+        classe_densite_code = as.character(.data$classe_densite_code),
+        classe_densite_libelle_insee = as.character(.data$classe_densite_libelle_insee),
+        classe_densite_libelle_public = as.character(.data$classe_densite_libelle_public)
+      )
+    communes <- reference %>% dplyr::filter(.data$type == "commune")
+    noms_epci <- reference %>%
+      dplyr::filter(.data$type == "epci") %>%
+      dplyr::transmute(epci = .data$territoire, nom_epci = .data$nom)
+    base <- communes %>%
+      dplyr::transmute(
+        commune = .data$territoire,
+        epci = .data$epci,
+        departement = .data$departement,
+        classe_densite_code = .data$classe_densite_code,
+        classe_densite_libelle_insee = .data$classe_densite_libelle_insee,
+        classe_densite_libelle_public = .data$classe_densite_libelle_public
+      ) %>%
+      dplyr::left_join(noms_epci, by = "epci") %>%
+      dplyr::filter(.data$departement %in% DEPT_BRETAGNE)
+  } else {
+    requis_base <- c("CODGEO", "EPCI", "LIBEPCI", "DEP")
+    manquantes <- setdiff(requis_base, names(base_epci))
+    if (length(manquantes) > 0L) {
+      stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel : ",
+           paste(manquantes, collapse = ", "), ".", call. = FALSE)
+    }
+    requis_densite <- c("CODGEO", "DENS7", "LIBDENS7")
+    if (!is.data.frame(classes_densite)) {
+      stop("Comparaisons bâtiments — le référentiel de densité est requis.",
+           call. = FALSE)
+    }
+    manquantes_densite <- setdiff(requis_densite, names(classes_densite))
+    if (length(manquantes_densite) > 0L) {
+      stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel de densité : ",
+           paste(manquantes_densite, collapse = ", "), ".", call. = FALSE)
+    }
+    if (anyDuplicated(classes_densite$CODGEO)) {
+      doublons <- unique(classes_densite$CODGEO[duplicated(classes_densite$CODGEO)])
+      stop("Comparaisons bâtiments — jointure communale ambiguë dans le référentiel de densité pour ",
+           paste(doublons, collapse = ", "), ".", call. = FALSE)
+    }
+    base <- base_epci %>%
+      dplyr::transmute(
+        commune = as.character(CODGEO),
+        epci = as.character(EPCI),
+        nom_epci = as.character(LIBEPCI),
+        departement = as.character(DEP)
+      ) %>%
+      dplyr::filter(departement %in% DEPT_BRETAGNE) %>%
+      dplyr::left_join(
+        classes_densite %>%
+          dplyr::transmute(
+            commune = as.character(CODGEO),
+            classe_densite_code = as.character(DENS7),
+            classe_densite_libelle_insee = as.character(LIBDENS7)
+          ),
+        by = "commune"
+      ) %>%
+      dplyr::left_join(
+        registre_classes_densite() %>%
+          dplyr::rename(
+            classe_densite_libelle_insee = classe_densite_libelle_insee
+          ),
+        by = c("classe_densite_code", "classe_densite_libelle_insee")
+      )
+    communes <- base
   }
-  requis_densite <- c("CODGEO", "DENS7", "LIBDENS7")
-  if (!is.data.frame(classes_densite)) {
-    stop("Comparaisons bâtiments — le référentiel de densité est requis.",
-         call. = FALSE)
-  }
-  manquantes_densite <- setdiff(requis_densite, names(classes_densite))
-  if (length(manquantes_densite) > 0L) {
-    stop("Comparaisons bâtiments — colonne(s) manquante(s) dans le référentiel de densité : ",
-         paste(manquantes_densite, collapse = ", "), ".", call. = FALSE)
-  }
-  if (anyDuplicated(classes_densite$CODGEO)) {
-    doublons <- unique(classes_densite$CODGEO[duplicated(classes_densite$CODGEO)])
-    stop("Comparaisons bâtiments — jointure communale ambiguë dans le référentiel de densité pour ",
-         paste(doublons, collapse = ", "), ".", call. = FALSE)
-  }
-  base <- base_epci %>%
-    dplyr::transmute(
-      commune = as.character(CODGEO),
-      epci = as.character(EPCI),
-      nom_epci = as.character(LIBEPCI),
-      departement = as.character(DEP)
-    ) %>%
-    dplyr::filter(departement %in% DEPT_BRETAGNE)
+
   sans_nom_epci <- base$commune[
     !is.na(base$epci) & nzchar(base$epci) &
       (is.na(base$nom_epci) | !nzchar(base$nom_epci))
   ]
   if (length(sans_nom_epci) > 0L) {
-    stop("Comparaisons bâtiments — EPCI sans libellé pour la/les commune(s) : ",
+    stop("Comparaisons bâtiments — EPCI sans libellé public pour la/les commune(s) : ",
          paste(sans_nom_epci, collapse = ", "), ".", call. = FALSE)
   }
-
-  base <- base %>%
-    dplyr::left_join(
-      classes_densite %>%
-        dplyr::transmute(
-          commune = as.character(CODGEO),
-          classe_densite_code = as.character(DENS7),
-          classe_densite_libelle_insee = as.character(LIBDENS7)
-        ),
-      by = "commune"
-    ) %>%
-    dplyr::left_join(
-      registre_classes_densite() %>%
-        dplyr::rename(
-          classe_densite_libelle_insee = classe_densite_libelle_insee
-        ),
-      by = c("classe_densite_code", "classe_densite_libelle_insee")
-    )
-  sans_classe <- base$commune[
-    is.na(base$classe_densite_code) |
-      is.na(base$classe_densite_libelle_insee) |
-      is.na(base$classe_densite_libelle_public)
-  ]
-  if (length(sans_classe) > 0L) {
-    stop("Comparaisons bâtiments — commune(s) sans classe de densité valide : ",
-         paste(sans_classe, collapse = ", "), ".", call. = FALSE)
+  if (is.null(territoires_reference) || reference_porte_densite) {
+    sans_classe <- base$commune[
+      is.na(base$classe_densite_code) |
+        is.na(base$classe_densite_libelle_insee) |
+        is.na(base$classe_densite_libelle_public)
+    ]
+    if (length(sans_classe) > 0L) {
+      stop("Comparaisons bâtiments — commune(s) sans classe de densité valide : ",
+           paste(sans_classe, collapse = ", "), ".", call. = FALSE)
+    }
   }
 
   communes <- base %>% dplyr::filter(!is.na(commune) & nzchar(commune))
@@ -426,7 +524,27 @@ construire_contextes_acces_batiments <- function(
     dplyr::distinct(epci)
   departements <- communes %>% dplyr::distinct(departement)
 
-  contextes <- dplyr::bind_rows(
+  contextes <- if (!is.null(territoires_reference)) {
+    dplyr::bind_rows(lapply(seq_len(nrow(reference)), function(i) {
+      cible <- reference[i, , drop = FALSE]
+      resolus <- resoudre_contextes_comparaison(
+        reference, cible, as.character(cible$type[[1L]])
+      )
+      if (length(resolus) == 0L) return(tibble::tibble())
+      dplyr::bind_rows(lapply(resolus, function(contexte) {
+        tibble::tibble(
+          territoire = as.character(cible$territoire[[1L]]),
+          type = as.character(cible$type[[1L]]),
+          comparison_mode = contexte$mode,
+          scope_kind = contexte$kind,
+          scope_label = contexte$label,
+          member_type = contexte$member_type,
+          member_code = contexte$member_code,
+          member_selector = contexte$member_selector
+        )
+      }))
+    }))
+  } else dplyr::bind_rows(
     communes %>%
       dplyr::filter(!is.na(classe_densite_code) & nzchar(classe_densite_code)) %>%
       dplyr::transmute(
@@ -624,66 +742,89 @@ construire_contextes_acces_batiments <- function(
     joined
   }
 
+  empty_distribution <- tibble::tibble(
+    territoire = character(), type = character(),
+    comparison_mode = character(), scope_kind = character(),
+    scope_label = character(), breadth_bucket = character(),
+    depth_bucket = character(), comparison_total_buildings = integer(),
+    comparison_building_count = integer(), comparison_share = numeric()
+  )
+  empty_rampe <- tibble::tibble(
+    territoire = character(), type = character(),
+    comparison_mode = character(), scope_kind = character(),
+    scope_label = character(), mode = character(), quantile = numeric(),
+    comparison_total_buildings = integer(),
+    comparison_accessible_types = numeric()
+  )
+
   distribution <- if (nrow(mapped_distribution) > 0L) {
     distribution_values <- dplyr::bind_rows(
       expand_members(mapped_distribution, "commune"),
       expand_members(mapped_distribution, "epci"),
       expand_members(mapped_distribution, "departement")
     )
-    utilisables <- distribution_values %>%
-      dplyr::group_by(
-        .data$territoire, .data$comparison_mode, .data$scope_kind,
-        .data$scope_label
-      ) %>%
-      dplyr::summarise(
-        member_count = dplyr::n_distinct(.data$actual_member_code),
-        .groups = "drop"
-      ) %>%
-      dplyr::filter(.data$member_count >= 2L)
-    valeurs_utilisables <- distribution_values %>%
-      dplyr::semi_join(
-        utilisables,
-        by = c("territoire", "comparison_mode", "scope_kind", "scope_label")
-      )
-    cles <- c(
-      "territoire", "type", "comparison_mode", "scope_kind", "scope_label"
-    )
-    totaux <- valeurs_utilisables %>%
-      dplyr::group_by(dplyr::across(dplyr::all_of(cles))) %>%
-      dplyr::summarise(
-        comparison_total_buildings = dplyr::n(),
-        .groups = "drop"
-      )
-    comptes <- valeurs_utilisables %>%
-      dplyr::group_by(
-        .data$territoire, .data$type, .data$comparison_mode,
-        .data$scope_kind, .data$scope_label,
-        .data$breadth_bucket, .data$depth_bucket
-      ) %>%
-      dplyr::summarise(
-        comparison_building_count = dplyr::n(),
-        .groups = "drop"
-      )
-    tidyr::crossing(
-      totaux,
-      tidyr::crossing(
-        breadth_bucket = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
-        depth_bucket = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key
-      )
-    ) %>%
-      dplyr::left_join(
-        comptes,
-        by = c(cles, "breadth_bucket", "depth_bucket")
-      ) %>%
-      dplyr::mutate(
-        comparison_building_count = as.integer(
-          dplyr::coalesce(.data$comparison_building_count, 0L)
-        ),
-        comparison_share = .data$comparison_building_count /
-          .data$comparison_total_buildings
-      )
+    if (nrow(distribution_values) == 0L) {
+      empty_distribution
+    } else {
+      utilisables <- distribution_values %>%
+        dplyr::group_by(
+          .data$territoire, .data$comparison_mode, .data$scope_kind,
+          .data$scope_label
+        ) %>%
+        dplyr::summarise(
+          member_count = dplyr::n_distinct(.data$actual_member_code),
+          .groups = "drop"
+        ) %>%
+        dplyr::filter(.data$member_count >= 2L)
+      if (nrow(utilisables) == 0L) {
+        empty_distribution
+      } else {
+        valeurs_utilisables <- distribution_values %>%
+          dplyr::semi_join(
+            utilisables,
+            by = c("territoire", "comparison_mode", "scope_kind", "scope_label")
+          )
+        cles <- c(
+          "territoire", "type", "comparison_mode", "scope_kind", "scope_label"
+        )
+        totaux <- valeurs_utilisables %>%
+          dplyr::group_by(dplyr::across(dplyr::all_of(cles))) %>%
+          dplyr::summarise(
+            comparison_total_buildings = dplyr::n(),
+            .groups = "drop"
+          )
+        comptes <- valeurs_utilisables %>%
+          dplyr::group_by(
+            .data$territoire, .data$type, .data$comparison_mode,
+            .data$scope_kind, .data$scope_label,
+            .data$breadth_bucket, .data$depth_bucket
+          ) %>%
+          dplyr::summarise(
+            comparison_building_count = dplyr::n(),
+            .groups = "drop"
+          )
+        tidyr::crossing(
+          totaux,
+          tidyr::crossing(
+            breadth_bucket = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
+            depth_bucket = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key
+          )
+        ) %>%
+          dplyr::left_join(
+            comptes,
+            by = c(cles, "breadth_bucket", "depth_bucket")
+          ) %>%
+          dplyr::mutate(
+            comparison_building_count = as.integer(
+              dplyr::coalesce(.data$comparison_building_count, 0L)
+            ),
+            comparison_share = .data$comparison_building_count /
+              .data$comparison_total_buildings
+          )
+      }
+    }
   } else {
-    tibble::tibble()
+    empty_distribution
   }
 
   rampe <- if (nrow(mapped_rampe) > 0L) {
@@ -697,7 +838,7 @@ construire_contextes_acces_batiments <- function(
         names_to = "mode", values_to = "accessible_types"
       ) %>%
       dplyr::filter(!is.na(.data$accessible_types))
-    rampe_values %>%
+    rampe_result <- rampe_values %>%
       dplyr::group_by(
         .data$territoire, .data$type, .data$comparison_mode,
         .data$scope_kind, .data$scope_label, .data$mode
@@ -716,13 +857,18 @@ construire_contextes_acces_batiments <- function(
           ))
         )
       }) %>%
-      dplyr::ungroup() %>%
-      dplyr::select(
-        territoire, type, comparison_mode, scope_kind, scope_label, mode,
-        quantile, comparison_total_buildings, comparison_accessible_types
-      )
+      dplyr::ungroup()
+    if (nrow(rampe_result) == 0L) {
+      empty_rampe
+    } else {
+      rampe_result %>%
+        dplyr::select(
+          territoire, type, comparison_mode, scope_kind, scope_label, mode,
+          quantile, comparison_total_buildings, comparison_accessible_types
+        )
+    }
   } else {
-    tibble::tibble()
+    empty_rampe
   }
 
   list(distribution = distribution, rampe = rampe)
@@ -774,7 +920,8 @@ membres_comparaison_rampe_acces_batiments <- function(mapped, scopes) {
 agreger_distribution_acces_batiments <- function(
     batiments,
     base_epci,
-    registre = lire_correspondances_typequ()) {
+    registre = lire_correspondances_typequ(),
+    territoires_reference = NULL) {
   verifier_contrat_bpe_typequ(registre)
   requis <- c("commune", "breadth", "depth")
   manquantes <- setdiff(requis, names(batiments))
@@ -829,7 +976,10 @@ agreger_distribution_acces_batiments <- function(
     )
   )
 
-  scopes <- contexte_comparaison_acces_batiments(base_epci)
+  scopes <- contexte_comparaison_acces_batiments(
+    base_epci,
+    territoires_reference = territoires_reference
+  )
   groupes <- membres %>%
     dplyr::count(territoire, type, name = "total_buildings") %>%
     dplyr::left_join(
@@ -970,7 +1120,8 @@ agreger_distribution_acces_batiments <- function(
 # P50 d'une courbe ne prétend donc pas désigner le même bâtiment qu'une autre.
 agreger_rampe_acces_batiments <- function(
     batiments,
-    base_epci) {
+    base_epci,
+    territoires_reference = NULL) {
   requis <- c("commune", "breadth_c", "breadth_b", "breadth_t")
   manquantes <- setdiff(requis, names(batiments))
   if (length(manquantes) > 0) {
@@ -1025,7 +1176,10 @@ agreger_rampe_acces_batiments <- function(
       values_to = "accessible_types"
     )
 
-  scopes <- contexte_comparaison_acces_batiments(base_epci)
+  scopes <- contexte_comparaison_acces_batiments(
+    base_epci,
+    territoires_reference = territoires_reference
+  )
 
   courbes <- membres %>%
     dplyr::group_by(territoire, type, mode) %>%

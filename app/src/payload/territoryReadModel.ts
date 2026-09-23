@@ -125,6 +125,30 @@ function nonEmptyString(value: unknown, file: string, field: string): string {
   return value
 }
 
+function expectedComparisonScopeLabel(
+  kind: TerritoryComparisonContext['scope']['kind'],
+  territory: Territoire,
+  territories: Territoire[],
+): string | null {
+  switch (kind) {
+    case 'communes-densite': {
+      const label = territory.classe_densite_libelle_public
+      return label ?? null
+    }
+    case 'communes-epci': {
+      if (!territory.epci) return null
+      const epci = territories.find((candidate) => candidate.territoire === territory.epci)
+      return epci ? `communes de ${epci.nom}` : null
+    }
+    case 'communes-bretagne':
+      return 'communes bretonnes'
+    case 'epcis-bretagne':
+      return 'EPCI bretons'
+    case 'departements-bretagne':
+      return 'départements bretons'
+  }
+}
+
 function componentForPath(value: unknown, file: string, field: string): string {
   const component = nonEmptyString(value, file, field)
   if (!/^[a-z0-9_-]+$/.test(component)) {
@@ -229,6 +253,7 @@ function validateTheme(
       if (!kinds.includes(rawContext.scope.kind as (typeof kinds)[number])) {
         fail(file, `« themes.${theme}.comparaisons.${mode}.scope.kind » est inconnu`)
       }
+      const scopeKind = rawContext.scope.kind as TerritoryComparisonContext['scope']['kind']
       const expectedScope = mode === 'densite'
         ? territory.type === 'commune'
           ? 'communes-densite'
@@ -243,10 +268,14 @@ function validateTheme(
               departement: 'departements-bretagne',
               region: null,
             } as const)[territory.type]
-      if (expectedScope === null || rawContext.scope.kind !== expectedScope) {
+      if (expectedScope === null || scopeKind !== expectedScope) {
         fail(file, `scope incompatible pour le mode « ${mode} » et le territoire ${territory.type}`)
       }
       const label = nonEmptyString(rawContext.scope.label, file, `themes.${theme}.comparaisons.${mode}.scope.label`)
+      const expectedLabel = expectedComparisonScopeLabel(scopeKind, territory, territories)
+      if (expectedLabel !== null && label !== expectedLabel) {
+        fail(file, `libellé de périmètre incohérent pour le mode « ${mode} »`)
+      }
       if (!Array.isArray(rawContext.faits)) {
         fail(file, `« themes.${theme}.comparaisons.${mode}.faits » doit être un tableau`)
       }
@@ -361,8 +390,16 @@ function validateTheme(
               if (count !== totalBuildings || Math.abs(share - 1) > 1e-12) {
                 fail(file, `distribution comparée « ${mode} » incohérente avec son total`)
               }
+              const publishedLabel = nonEmptyString(
+                rawDistribution.label,
+                file,
+                `comparaisons.${mode}.distribution_batiments.label`,
+              )
+              if (publishedLabel !== label) {
+                fail(file, `libellé de distribution comparée incohérent avec le périmètre « ${mode} »`)
+              }
               return {
-                label: nonEmptyString(rawDistribution.label, file, 'distribution_batiments.label'),
+                label: publishedLabel,
                 totalBuildings: totalBuildings as number,
                 cells,
               }
@@ -422,8 +459,16 @@ function validateTheme(
                   fail(file, `rampe comparée « ${mode} » non monotone pour le mode « ${curveMode} »`)
                 }
               }
+              const publishedLabel = nonEmptyString(
+                rawRamp.label,
+                file,
+                `comparaisons.${mode}.rampe_acces.label`,
+              )
+              if (publishedLabel !== label) {
+                fail(file, `libellé de rampe comparée incohérent avec le périmètre « ${mode} »`)
+              }
               return {
-                label: nonEmptyString(rawRamp.label, file, 'rampe_acces.label'),
+                label: publishedLabel,
                 totalBuildings: totalBuildings as number,
                 points,
               }

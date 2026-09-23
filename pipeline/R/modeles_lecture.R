@@ -231,99 +231,130 @@ publier_modeles_lecture <- function(payload, metadata, vintages,
   }, character(1))
 }
 
-# resoudre_contextes_comparaison -----------------------------------------------
-# Une commune peut porter trois mondes de comparaison : sa classe de densité,
-# son EPCI lorsqu'elle en a un, et l'ensemble des communes bretonnes. Les
-# niveaux supérieurs gardent leur monde régional existant. Cette fonction est
-# l'unique résolution de l'appartenance et des libellés ; les projections ne
-# reconstruisent jamais ces décisions séparément.
-resoudre_contextes_comparaison <- function(reference, cible, type) {
-  colonne_presente <- function(nom) nom %in% names(reference)
-  valeur_cible <- function(nom) {
-    if (!colonne_presente(nom)) return(NA_character_)
-    as.character(cible[[nom]][[1L]])
-  }
-  est_plein <- function(valeur) {
-    !is.na(valeur) && nzchar(valeur)
-  }
-  codes <- function(membres) {
-    unique(as.character(reference$territoire[membres]))
+# verifier_integrite_projections_acces_batiments -------------------------------
+# Les projections de comparaison sont des tables contractuelles complètes, pas
+# des fragments que chaque fiche peut filtrer avant de les comprendre. Vérifier
+# leurs clés et leur identité de contexte avant la projection par territoire
+# rend les lignes inconnues, les modes invalides et les doublons bruyants.
+verifier_integrite_projections_acces_batiments <- function(payload) {
+  reference <- payload$territoires
+  if (!is.data.frame(reference) ||
+      !all(c("territoire", "type") %in% names(reference))) {
+    stop("Modèle de territoire : référence territoriale invalide pour les projections bâtiment.",
+         call. = FALSE)
   }
 
-  contextes <- list()
-  if (type == "commune" &&
-      all(c(
-        "classe_densite_code", "classe_densite_libelle_public"
-      ) %in% names(reference))) {
-    code <- valeur_cible("classe_densite_code")
-    label <- valeur_cible("classe_densite_libelle_public")
-    if (est_plein(code) && est_plein(label)) {
-      contextes$densite <- list(
-        mode = "densite",
-        kind = "communes-densite",
-        label = label,
-        members = codes(
-          reference$type == "commune" &
-            as.character(reference$classe_densite_code) == code
-        )
+  contextes_attendus <- dplyr::bind_rows(lapply(seq_len(nrow(reference)), function(i) {
+    cible <- reference[i, , drop = FALSE]
+    contextes <- resoudre_contextes_comparaison(
+      reference, cible, as.character(cible$type[[1L]])
+    )
+    if (length(contextes) == 0L) return(tibble::tibble())
+    dplyr::bind_rows(lapply(contextes, function(contexte) {
+      tibble::tibble(
+        territoire = as.character(cible$territoire[[1L]]),
+        type = as.character(cible$type[[1L]]),
+        comparison_mode = contexte$mode,
+        scope_kind = contexte$kind,
+        scope_label = contexte$label
       )
-    }
-  }
+    }))
+  }))
 
-  epci <- valeur_cible("epci")
-  if (type == "commune" && est_plein(epci)) {
-    nom_epci <- reference$nom[
-      reference$type == "epci" &
-        as.character(reference$territoire) == epci
-    ]
-    label <- if (length(nom_epci) == 1L) {
-      paste("communes de", nom_epci[[1L]])
+  verifier_table <- function(table, nom, niveau) {
+    if (is.null(table)) return(invisible(NULL))
+    if (!is.data.frame(table)) {
+      stop("Modèle de territoire : la projection bâtiment `", nom,
+           "` doit être une table.", call. = FALSE)
+    }
+    requis <- c("territoire", "type", "comparison_mode", "scope_kind", "scope_label")
+    manquants <- setdiff(requis, names(table))
+    if (length(manquants) > 0L) {
+      stop("Modèle de territoire : la projection bâtiment `", nom,
+           "` ne porte pas ses métadonnées de contexte : ",
+           paste(manquants, collapse = ", "), ".", call. = FALSE)
+    }
+    codes <- as.character(table$territoire)
+    codes_reference <- as.character(reference$territoire)
+    if (any(is.na(codes) | !nzchar(codes) | !codes %in% codes_reference)) {
+      ligne <- which(is.na(codes) | !nzchar(codes) | !codes %in% codes_reference)[[1L]]
+      stop("Modèle de territoire : territoire inconnu dans la projection bâtiment `",
+           nom, "` à la ligne ", ligne, ".", call. = FALSE)
+    }
+    modes <- as.character(table$comparison_mode)
+    modes_connus <- c("densite", "epci", "bretagne")
+    if (any(is.na(modes) | !modes %in% modes_connus)) {
+      ligne <- which(is.na(modes) | !modes %in% modes_connus)[[1L]]
+      stop("Modèle de territoire : mode de comparaison inconnu dans la projection bâtiment `",
+           nom, "` à la ligne ", ligne, ".", call. = FALSE)
+    }
+
+    cles <- paste(codes, modes, sep = "\r")
+    cles_attendues <- paste(
+      contextes_attendus$territoire,
+      contextes_attendus$comparison_mode,
+      sep = "\r"
+    )
+    index <- match(cles, cles_attendues)
+    if (anyNA(index)) {
+      ligne <- which(is.na(index))[[1L]]
+      stop("Modèle de territoire : mode de comparaison `",
+           modes[[ligne]], "` indisponible pour le territoire `",
+           codes[[ligne]], "` dans `", nom, "`.", call. = FALSE)
+    }
+    attendu <- contextes_attendus[index, , drop = FALSE]
+    incoherentes <- is.na(table$type) |
+      as.character(table$type) != as.character(attendu$type) |
+      is.na(table$scope_kind) |
+      as.character(table$scope_kind) != as.character(attendu$scope_kind) |
+      is.na(table$scope_label) |
+      as.character(table$scope_label) != as.character(attendu$scope_label)
+    if (any(incoherentes)) {
+      ligne <- which(incoherentes)[[1L]]
+      stop("Modèle de territoire : la projection bâtiment `", nom,
+           "` porte un périmètre ou une identité incohérente pour `",
+           codes[[ligne]], "`.", call. = FALSE)
+    }
+
+    if (niveau == "distribution") {
+      requis_cellules <- c("breadth_bucket", "depth_bucket")
+      manquantes_cellules <- setdiff(requis_cellules, names(table))
+      if (length(manquantes_cellules) > 0L) {
+        stop("Modèle de territoire : la projection bâtiment `", nom,
+             "` ne porte pas ses cellules.", call. = FALSE)
+      }
+      signature <- paste(
+        codes, modes, as.character(table$breadth_bucket),
+        as.character(table$depth_bucket), sep = "\r"
+      )
     } else {
-      "communes de l'EPCI"
-    }
-    contextes$epci <- list(
-      mode = "epci",
-      kind = "communes-epci",
-      label = label,
-      members = codes(
-        reference$type == "commune" &
-          !is.na(reference$epci) &
-          as.character(reference$epci) == epci
-      )
-    )
-  }
-
-  if (type != "region") {
-    type_regional <- switch(
-      type,
-      commune = "commune",
-      epci = "epci",
-      departement = "departement",
-      character(0)
-    )
-    label_regional <- switch(
-      type,
-      commune = "communes bretonnes",
-      epci = "EPCI bretons",
-      departement = "départements bretons",
-      character(0)
-    )
-    if (length(type_regional) == 1L) {
-      contextes$bretagne <- list(
-        mode = "bretagne",
-        kind = switch(
-          type,
-          commune = "communes-bretagne",
-          epci = "epcis-bretagne",
-          departement = "departements-bretagne"
-        ),
-        label = label_regional,
-        members = codes(reference$type == type_regional)
+      requis_points <- c("mode", "quantile")
+      manquantes_points <- setdiff(requis_points, names(table))
+      if (length(manquantes_points) > 0L) {
+        stop("Modèle de territoire : la projection bâtiment `", nom,
+             "` ne porte pas ses points de rampe.", call. = FALSE)
+      }
+      signature <- paste(
+        codes, modes, as.character(table$mode),
+        as.character(table$quantile), sep = "\r"
       )
     }
+    if (anyDuplicated(signature)) {
+      stop("Modèle de territoire : projection bâtiment `", nom,
+           "` contient une ligne en double.", call. = FALSE)
+    }
+    invisible(NULL)
   }
 
-  contextes
+  verifier_table(
+    payload$distribution_acces_batiments_comparaisons,
+    "distribution_acces_batiments_comparaisons", "distribution"
+  )
+  verifier_table(
+    payload$rampe_acces_batiments_comparaisons,
+    "rampe_acces_batiments_comparaisons", "rampe"
+  )
+  invisible(payload)
 }
 
 # construire_modele_territoire -------------------------------------------------
@@ -333,7 +364,8 @@ resoudre_contextes_comparaison <- function(reference, cible, type) {
 # les résultats compacts de son contexte de comparaison. Les lignes des pairs
 # restent dans les tables canoniques et ne franchissent pas la sérialisation.
 construire_modele_territoire <- function(payload, metadata, territoire,
-                                          snapshot_id, directions = list()) {
+                                          snapshot_id, directions = list(),
+                                          projections_validees = FALSE) {
   if (!is.list(payload) || !is.data.frame(payload$territoires)) {
     stop("Modèle de territoire : le payload doit porter sa référence de territoires.",
          call. = FALSE)
@@ -369,6 +401,9 @@ construire_modele_territoire <- function(payload, metadata, territoire,
   if (!type %in% c("commune", "epci", "departement", "region")) {
     stop("Modèle de territoire : type de territoire inconnu `", type, "`.",
          call. = FALSE)
+  }
+  if (theme == "mobilite" && !isTRUE(projections_validees)) {
+    verifier_integrite_projections_acces_batiments(payload)
   }
 
   region_codes <- as.character(reference$territoire[reference$type == "region"])
@@ -1073,6 +1108,9 @@ construire_modeles_territoire <- function(payloads, metadatas, vintages,
     stop("Modèles de territoire : premier payload sans référence de territoires.",
          call. = FALSE)
   }
+  if ("mobilite" %in% names(payloads)) {
+    verifier_integrite_projections_acces_batiments(payloads$mobilite)
+  }
   codes_disponibles <- as.character(premiere$territoires$territoire)
   codes <- if (is.null(territoires)) {
     codes_disponibles
@@ -1178,7 +1216,8 @@ construire_modeles_territoire <- function(payloads, metadatas, vintages,
       function(payload, metadata, registre_directions) {
         construire_modele_territoire(
           payload, metadata, code, snapshot_id,
-          directions = registre_directions
+          directions = registre_directions,
+          projections_validees = TRUE
         )
       },
       payloads_locaux,

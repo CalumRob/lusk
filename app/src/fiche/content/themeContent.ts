@@ -816,13 +816,15 @@ function accessRampFigureLecture(ramp: MobiliteAccessRamp | null): readonly Text
 
 function buildingComparisonPopulationLabel(
   rawLabel: string | null,
-  territory: TerritoryIdentity,
 ): string | null {
   if (!rawLabel) return null
-  if (territory.type === 'commune' && territory.epciName) {
-    return `bâtiments de ${territory.epciName}`
+  if (rawLabel === 'communes bretonnes') {
+    return 'bâtiments de Bretagne'
   }
-  return 'bâtiments de Bretagne'
+  if (rawLabel.startsWith('communes de ')) {
+    return `bâtiments de ${rawLabel.slice('communes de '.length)}`
+  }
+  return rawLabel
 }
 
 function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
@@ -835,7 +837,7 @@ function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimen
         kind: 'distribution',
         buildingDistribution,
         accessRamp,
-        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, facts.territory),
+        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel),
         buildingDistributionLecture: buildingDistributionFigureLecture(buildingDistribution, facts.territory),
         accessRampLecture: accessRampFigureLecture(accessRamp),
       }

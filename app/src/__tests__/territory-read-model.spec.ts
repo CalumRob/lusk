@@ -301,6 +301,46 @@ describe('le modèle de lecture d’un territoire', () => {
     )).toThrow(/distribution comparée.*incomplète/)
   })
 
+  it('refuse une preuve comparée dont le libellé diverge de son périmètre', () => {
+    const brut = structuredClone(modelePublie22001)
+    type ContexteBrut = {
+      scope: { label: string }
+      distribution_batiments?: { label: string } | null
+      rampe_acces?: { label: string } | null
+    }
+    const comparaisons = brut.themes.mobilite.comparaisons as Record<string, ContexteBrut | null>
+    for (const contexte of Object.keys(comparaisons).map((mode) => comparaisons[mode])) {
+      if (!contexte) continue
+      if (contexte.distribution_batiments) {
+        contexte.distribution_batiments.label = contexte.scope.label
+      }
+      if (contexte.rampe_acces) {
+        contexte.rampe_acces.label = contexte.scope.label
+      }
+    }
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.label =
+      'communes de mauvais périmètre'
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/libellé de distribution comparée incohérent/)
+  })
+
+  it('refuse un périmètre comparé dont le libellé diverge du référentiel territorial', () => {
+    const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.scope.label = 'communes de mauvais EPCI'
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.label =
+      'communes de mauvais EPCI'
+    brut.themes.mobilite.comparaisons.epci.rampe_acces.label =
+      'communes de mauvais EPCI'
+
+    expect(() => validerModeleTerritoire(
+      brut,
+      'territoires/commune/22001.json',
+    )).toThrow(/libellé de périmètre incohérent/)
+  })
+
   it('refuse une distribution comparée qui ne recompose pas son total', () => {
     const brut = structuredClone(modelePublie22001)
     brut.themes.mobilite.comparaisons.epci.distribution_batiments.cells[0].building_count += 1
@@ -313,6 +353,10 @@ describe('le modèle de lecture d’un territoire', () => {
 
   it('refuse une projection de rampe comparée incomplète', () => {
     const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments.label =
+      brut.themes.mobilite.comparaisons.epci.scope.label
+    brut.themes.mobilite.comparaisons.epci.rampe_acces.label =
+      brut.themes.mobilite.comparaisons.epci.scope.label
     const points = brut.themes.mobilite.comparaisons.epci.rampe_acces.points
     expect(points.length).toBeGreaterThan(1)
     points.pop()

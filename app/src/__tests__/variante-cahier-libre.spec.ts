@@ -690,7 +690,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
   it('shows the standard comparison helper for the building-distribution subgroup', async () => {
     const facts = structuredClone(factsForTarget())
     if (!facts.mobility.accessRamp) throw new Error('Expected access-ramp facts')
-    facts.mobility.accessRamp.comparisonLabel = 'communes de l’EPCI'
+    facts.mobility.accessRamp.comparisonLabel = 'communes de EPCI X'
     facts.mobility.buildingDistribution = {
       availability: 'complete',
       mode: 't',
@@ -709,7 +709,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
       }],
       totalBuildings: 100,
       provenance: facts.mobility.accessRamp.provenance,
-      comparisonLabel: 'communes de l’EPCI',
+      comparisonLabel: 'communes de EPCI X',
       comparisonTotalBuildings: 100,
     }
 

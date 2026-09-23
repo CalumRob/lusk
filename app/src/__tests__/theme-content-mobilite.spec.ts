@@ -403,7 +403,7 @@ const buildingDistribution: MobiliteBuildingDistribution = {
   ),
   totalBuildings: 100,
   provenance,
-  comparisonLabel: 'communes de l’EPCI',
+  comparisonLabel: 'communes de EPCI X',
   comparisonTotalBuildings: 100,
 }
 
@@ -430,7 +430,7 @@ const accessRamp: MobiliteAccessRamp = {
   },
   totalBuildings: 100,
   provenance,
-  comparisonLabel: 'communes de l’EPCI',
+  comparisonLabel: 'communes de EPCI X',
   comparisonTotalBuildings: 100,
 }
 
@@ -758,6 +758,20 @@ describe('resolveMobiliteThemeContent', () => {
     )
     expect(JSON.stringify(content)).not.toContain('story_key')
     expect(JSON.stringify(content)).not.toContain('salience')
+  })
+
+  it('uses the published comparison scope label instead of the territory EPCI name', () => {
+    const facts = structuredClone(completeFacts)
+    facts.territory.epciName = 'INSEE EPCI X'
+    facts.mobility.buildingDistribution!.comparisonLabel = 'communes de CA EPCI X'
+    facts.mobility.accessRamp = structuredClone(accessRamp)
+    facts.mobility.accessRamp.comparisonLabel = 'communes de CA EPCI X'
+
+    const distribution = resolveMobiliteThemeContent(facts).units[0]!.sections[3]!
+
+    expect(distribution.evidence?.kind === 'distribution'
+      ? distribution.evidence.comparisonPopulationLabel
+      : null).toBe('bâtiments de CA EPCI X')
   })
 
   it('removes stale coverage rules and defensive caveats from every figure reading', () => {

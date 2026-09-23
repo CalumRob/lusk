@@ -328,7 +328,8 @@ COLONNES_ANALYTIQUES_MOBILITE <- c(
 # analytiques : un input corrompu s'arrête ICI, avant la moindre écriture.
 construire_analytiques_mobilite <- function(donnees, base_epci,
                                             sortie = "data/processed/mobilite",
-                                            classes_densite = NULL) {
+                                            classes_densite = NULL,
+                                            noms_epci_geo_api = NULL) {
   snapshot <- donnees$mobilite_snapshot
   manquantes <- setdiff(COLONNES_ANALYTIQUES_MOBILITE, names(snapshot))
   if (length(manquantes) > 0) {
@@ -363,9 +364,17 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   densite_territoires <- construire_signature_densite(snapshot, base_epci)
   nuage_territoires <- construire_nuage_territoires(div_loss_territoires,
                                                     base_epci)
-  territoires <- construire_territoires_mobilite(
-    base_epci, list(mobilite_communes = mobilite_communes)
-  )
+  territoires <- if (is.null(noms_epci_geo_api) && is.null(classes_densite)) {
+    construire_territoires_mobilite(
+      base_epci, list(mobilite_communes = mobilite_communes)
+    )
+  } else {
+    construire_territoires_mobilite(
+      base_epci, list(mobilite_communes = mobilite_communes),
+      noms_epci_geo_api = noms_epci_geo_api,
+      classes_densite = classes_densite
+    )
+  }
   moyennes_acces_territoires <- construire_moyennes_acces_territoires(
     snapshot, base_epci
   )
@@ -384,7 +393,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   ) {
     agreger_distribution_acces_batiments(
       donnees$accessibilite_batiments,
-      base_epci
+      base_epci,
+      territoires_reference = reference_territoires(territoires)
     )
   } else {
     NULL
@@ -395,7 +405,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
   ) {
     agreger_rampe_acces_batiments(
       donnees$rampe_acces_batiments,
-      base_epci
+      base_epci,
+      territoires_reference = reference_territoires(territoires)
     )
   } else {
     NULL
@@ -408,7 +419,8 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
       donnees$accessibilite_batiments,
       donnees$rampe_acces_batiments,
       base_epci,
-      classes_densite = classes_densite
+      classes_densite = classes_densite,
+      territoires_reference = reference_territoires(territoires)
     )
   } else {
     list(distribution = NULL, rampe = NULL)
@@ -792,7 +804,9 @@ APERCU_MOBILITE <- tibble::tibble(
 # base des EPCI (lire_epci), la règle de pluralité départementale — avec le
 # POIDS du thème : le nombre de bâtiments analysés par commune (nb_buildings du
 # snapshot porté — la mesure signature de l'analyse d'accessibilité).
-construire_territoires_mobilite <- function(base_epci, analytiques) {
+construire_territoires_mobilite <- function(base_epci, analytiques,
+                                            noms_epci_geo_api = NULL,
+                                            classes_densite = NULL) {
   poids <- analytiques$mobilite_communes %>%
     dplyr::select(commune, nb_buildings)
   communes <- base_epci %>%
@@ -802,7 +816,15 @@ construire_territoires_mobilite <- function(base_epci, analytiques) {
     ) %>%
     dplyr::left_join(poids, by = c("code" = "commune")) %>%
     dplyr::mutate(nb_buildings = dplyr::coalesce(nb_buildings, 0))
-  squelette_territoires(communes, poids = "nb_buildings")
+  territoires <- squelette_territoires(
+    communes,
+    poids = "nb_buildings",
+    noms_epci_geo_api = noms_epci_geo_api
+  )
+  if (!is.null(classes_densite)) {
+    territoires <- publier_classes_densite(territoires, classes_densite)
+  }
+  territoires
 }
 
 # construire_indicateurs_mobilite ----------------------------------------------
@@ -1493,14 +1515,12 @@ validations_mobilite <- list(
 construire_payload_mobilite <- function(analytiques, base_epci, vintages,
                                          noms_epci_geo_api = NULL,
                                          classes_densite = NULL) {
-  territoires <- construire_territoires_mobilite(base_epci, analytiques)
-  if (!is.null(noms_epci_geo_api)) {
-    territoires <- appliquer_noms_epci_geo_api(territoires,
-                                                noms_epci_geo_api)
-  }
-  if (!is.null(classes_densite)) {
-    territoires <- publier_classes_densite(territoires, classes_densite)
-  }
+  territoires <- construire_territoires_mobilite(
+    base_epci,
+    analytiques,
+    noms_epci_geo_api = noms_epci_geo_api,
+    classes_densite = classes_densite
+  )
 
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(analytiques, territoires, vintages),
@@ -1552,7 +1572,8 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
   base_epci <- lire_epci(file.path(cache, "extracted", "EPCI_au_01-01-2025.xlsx"))
   analytiques <- construire_analytiques_mobilite(donnees, base_epci,
                                                   sortie = sortie_analytiques,
-                                                  classes_densite = classes_densite)
+                                                  classes_densite = classes_densite,
+                                                  noms_epci_geo_api = noms_epci_geo_api)
   analytiques$raccordement <- lire_raccordement(
     if (is.null(raccordement)) sortie_analytiques else raccordement)
   payload <- construire_payload_mobilite(

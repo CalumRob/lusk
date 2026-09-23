@@ -453,6 +453,37 @@ test_that("un modèle communal publie les contextes densité, EPCI et Bretagne",
     ),
     "projection bâtiment.*périmètre"
   )
+
+  mode_inconnu <- payload
+  mode_inconnu$distribution_acces_batiments_comparaisons$comparison_mode <-
+    "contexte-inconnu"
+  expect_error(
+    construire_modele_territoire(
+      payload = mode_inconnu,
+      metadata = list(theme = "mobilite", label = "Mobilité"),
+      territoire = "22001",
+      snapshot_id = "2026-09-15",
+      directions = list(nb_buildings = "high")
+    ),
+    "mode de comparaison inconnu"
+  )
+
+  projection_dupliquee <- payload
+  projection_dupliquee$distribution_acces_batiments_comparaisons <-
+    dplyr::bind_rows(
+      projection_dupliquee$distribution_acces_batiments_comparaisons,
+      projection_dupliquee$distribution_acces_batiments_comparaisons
+    )
+  expect_error(
+    construire_modele_territoire(
+      payload = projection_dupliquee,
+      metadata = list(theme = "mobilite", label = "Mobilité"),
+      territoire = "22001",
+      snapshot_id = "2026-09-15",
+      directions = list(nb_buildings = "high")
+    ),
+    "projection bâtiment.*double"
+  )
 })
 
 test_that("le modèle de territoire remplace atomiquement son adresse sans fusionner un ancien snapshot", {
