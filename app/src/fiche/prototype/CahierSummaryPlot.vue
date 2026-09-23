@@ -15,6 +15,7 @@ import type { ContentModeFacts } from '@/fiche/content/themeContent'
 import type { MobiliteAccessMode } from '@/fiche/content/territoryFacts'
 import { MOBILITE_INACCESSIBLE_LABEL, MOBILITE_MODE_LABELS } from '@/fiche/content/territoryFacts'
 import CahierFigureAxes from './CahierFigureAxes.vue'
+import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
 type SummaryPlotMetric = 'equipment' | 'types' | 'network'
@@ -212,6 +213,7 @@ const selectedGroupData = computed(() => groups.value.find((group) => group.key 
           :geometry="plotLayout.geometry"
           :x-ticks="xTicks"
           :y-ticks="[]"
+          :show-labels="false"
         />
         <g
           v-for="group in groups"
@@ -242,7 +244,12 @@ const selectedGroupData = computed(() => groups.value.find((group) => group.key 
             />
           </template>
         </g>
-      </svg>
+        </svg>
+        <CahierFigureAxisLabels
+          :geometry="plotLayout.geometry"
+          :x-ticks="xTicks"
+          :y-ticks="[]"
+        />
       <div v-if="props.showGroupLabels" class="summary-plot-group-labels" aria-hidden="true">
         <span
           v-for="group in groups"
@@ -283,6 +290,11 @@ const selectedGroupData = computed(() => groups.value.find((group) => group.key 
 .summary-plot-area {
   position: relative;
   width: 100%;
+  margin-bottom: 1.35rem;
+}
+
+.summary-plot-area .cahier-figure-axis-title--x {
+  bottom: -1.35rem;
 }
 
 .summary-plot-group-labels {

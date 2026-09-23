@@ -12,6 +12,7 @@ import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint } from '@/fiche/content/territoryFacts'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
@@ -27,6 +28,7 @@ const HEIGHT = 300
 const MARGIN = { top: 22, right: 68, bottom: 62, left: 64 }
 const PLOT_WIDTH = WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom
+const FIGURE_GEOMETRY = { width: WIDTH, height: HEIGHT, margin: MARGIN } as const
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
@@ -58,6 +60,18 @@ function pathFor(points: MobiliteAccessRamp['curves'][MobiliteAccessMode]['point
 
 const xLabels = computed(() => curves.value[0]?.points ?? [])
 const yLabels = computed(() => [0, maximum.value])
+
+const xAxisTicks = computed(() => xLabels.value.map((point) => ({
+  key: point.quantile,
+  position: xFor(point.quantile),
+  label: point.quantileLabel,
+})))
+
+const yAxisTicks = computed(() => yLabels.value.map((value) => ({
+  key: value,
+  position: yFor(value),
+  label: formatNumber(value),
+})))
 
 const comparisonCurves = computed(() => curves.value.map((curve) => ({
   ...curve,
@@ -202,6 +216,7 @@ const accessibleLabel = computed(() =>
 <template>
   <CahierFigureFrame
     class="access-ramp-cahier"
+    size="compact"
     :style="CAHIER_FIGURE_STYLE"
     :x-title="ramp.xAxisLabel"
     :y-title="ramp.yAxisLabel"
@@ -246,22 +261,6 @@ const accessibleLabel = computed(() =>
               :y1="MARGIN.top"
               :y2="MARGIN.top + PLOT_HEIGHT"
             />
-          </g>
-          <g class="access-ramp-labels" aria-hidden="true">
-            <text
-              v-for="point in xLabels"
-              :key="`label-x-${point.quantile}`"
-              :x="xFor(point.quantile)"
-              :y="MARGIN.top + PLOT_HEIGHT + 20"
-              text-anchor="middle"
-            >{{ point.quantileLabel }}</text>
-            <text
-              v-for="value in yLabels"
-              :key="`label-y-${value}`"
-              :x="MARGIN.left - 10"
-              :y="yFor(value) + 4"
-              text-anchor="end"
-            >{{ formatNumber(value) }}</text>
           </g>
           <path
             v-for="curve in comparisonCurves"
@@ -316,6 +315,12 @@ const accessibleLabel = computed(() =>
             />
           </g>
         </svg>
+        <CahierFigureAxisLabels
+          :geometry="FIGURE_GEOMETRY"
+          :x-ticks="xAxisTicks"
+          :y-ticks="yAxisTicks"
+          :x-label-offset="8"
+        />
         <div class="access-ramp-cut-hitboxes" aria-label="Détails par part cumulée de bâtiments">
           <button
             v-for="(point, index) in xLabels"

@@ -4,10 +4,16 @@
  * interaction so a visual correction has one seam.
  */
 .cahier-figure-frame {
+  --cahier-figure-width-compact: 560px;
+  --cahier-figure-width-standard: 760px;
+  --cahier-figure-width-wide: 100%;
+  --cahier-figure-max-width: var(--cahier-figure-width-standard);
+  --cahier-figure-tick-label-size: 0.5625rem;
   --cahier-figure-surface: var(--paper, #f1f2ec);
   --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, #57726f) 19%, transparent);
   --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
-  width: 100%;
+  width: min(100%, var(--cahier-figure-max-width));
+  margin-inline: auto;
   min-width: 0;
   position: relative;
   color: var(--cahier-default, var(--muted, #62706c));
@@ -15,6 +21,10 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--type-figure-label-tracking, 0.08em);
 }
+
+.cahier-figure-frame--compact { --cahier-figure-max-width: var(--cahier-figure-width-compact); }
+.cahier-figure-frame--standard { --cahier-figure-max-width: var(--cahier-figure-width-standard); }
+.cahier-figure-frame--wide { --cahier-figure-max-width: var(--cahier-figure-width-wide); }
 
 .cahier-figure-frame__plot {
   position: relative;
@@ -54,6 +64,23 @@
   text-align: center;
   pointer-events: none;
 }
+
+.cahier-figure-axis-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cahier-figure-axis-labels .cahier-figure-tick-label {
+  position: absolute;
+  display: block;
+  width: max-content;
+  font-size: var(--cahier-figure-tick-label-size, 0.5625rem);
+  line-height: 1.2;
+}
+
+.cahier-figure-tick-label--x { transform: translateX(-50%); }
+.cahier-figure-tick-label--y { transform: translate(-100%, -50%); }
 
 .cahier-figure-axis-title--x {
   bottom: 0;

@@ -27,6 +27,7 @@ import {
 } from '@/fiche/cahierFigureGrammaire'
 import type { ProfilAccesBpe } from '@/payload/types'
 import CahierFigureAxes from './CahierFigureAxes.vue'
+import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierDonut, { type CahierDonutRing } from './CahierDonut.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegendMark from './CahierFigureLegendMark.vue'
@@ -295,6 +296,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 <template>
   <CahierFigureFrame
     class="bpe-profile-visual"
+    size="standard"
     y-title="Types d’équipements"
   >
     <template #plot>
@@ -306,7 +308,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
           role="img"
           :aria-label="accessibleLabel()"
         >
-          <CahierFigureAxes :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" />
+          <CahierFigureAxes :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" :show-labels="false" />
 
           <g v-for="(profile, index) in profiles" :key="profile.profile">
           <g
@@ -344,6 +346,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
           </g>
           </g>
         </svg>
+        <CahierFigureAxisLabels :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" />
       </div>
     </template>
 

@@ -9,6 +9,7 @@ const props = defineProps<{
   xTicks: readonly CahierFigureAxisTick[]
   yTicks: readonly CahierFigureAxisTick[]
   geometry?: CahierFigureGeometry
+  showLabels?: boolean
 }>()
 
 const { width, height, margin } = props.geometry ?? CAHIER_FIGURE_GEOMETRY
@@ -25,7 +26,7 @@ const axisStyle = { '--cahier-figure-axis-width': `${CAHIER_FIGURE_AXIS.width}` 
     <g v-for="tick in xTicks" :key="`x-${tick.key}`">
       <line class="cahier-figure-tick" :x1="tick.position" :x2="tick.position" :y1="axeBas" :y2="axeBas + CAHIER_FIGURE_AXIS.tickLength" />
       <text
-        v-if="tick.label !== null"
+        v-if="props.showLabels !== false && tick.label !== null"
         class="cahier-figure-tick-label"
         :x="tick.position"
         :y="axeBas + CAHIER_FIGURE_AXIS.xLabelOffset"
@@ -36,7 +37,7 @@ const axisStyle = { '--cahier-figure-axis-width': `${CAHIER_FIGURE_AXIS.width}` 
     <g v-for="tick in yTicks" :key="`y-${tick.key}`">
       <line class="cahier-figure-tick" :x1="margin.left - CAHIER_FIGURE_AXIS.tickLength" :x2="margin.left" :y1="tick.position" :y2="tick.position" />
       <text
-        v-if="tick.label !== null"
+        v-if="props.showLabels !== false && tick.label !== null"
         class="cahier-figure-tick-label"
         :x="margin.left - CAHIER_FIGURE_AXIS.yLabelOffset"
         :y="tick.position + CAHIER_FIGURE_AXIS.yLabelBaseline"

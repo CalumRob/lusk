@@ -6,6 +6,7 @@ import { CAHIER_FIGURE_STYLE } from '../cahierFigureGrammaire'
 const props = defineProps<{
   xTitle?: string
   yTitle?: string
+  size?: 'compact' | 'standard' | 'wide'
 }>()
 
 const rootElement = ref<HTMLElement | null>(null)
@@ -14,7 +15,12 @@ defineExpose({ rootElement })
 </script>
 
 <template>
-  <div ref="rootElement" class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
+  <div
+    ref="rootElement"
+    class="cahier-figure-frame"
+    :class="props.size ? `cahier-figure-frame--${props.size}` : 'cahier-figure-frame--standard'"
+    :style="CAHIER_FIGURE_STYLE"
+  >
     <div v-if="$slots.plot" class="cahier-figure-frame__plot">
       <slot name="plot" />
       <span v-if="props.xTitle" class="cahier-figure-axis-title cahier-figure-axis-title--x type-figure-label">

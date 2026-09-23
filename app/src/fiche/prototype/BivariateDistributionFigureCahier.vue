@@ -11,6 +11,7 @@ import { computed, ref } from 'vue'
 import type { MobiliteBuildingDistribution } from '@/fiche/content/territoryFacts'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
@@ -24,6 +25,7 @@ const HEIGHT = 404
 const MARGIN = { top: 22, right: 20, bottom: 58, left: 118 }
 const PLOT_WIDTH = WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom
+const FIGURE_GEOMETRY = { width: WIDTH, height: HEIGHT, margin: MARGIN } as const
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
@@ -105,6 +107,18 @@ const yLabels = computed(() => props.distribution.depthBins.map((bin, index) => 
   y: MARGIN.top + (props.distribution.depthBins.length - 1 - index + 0.5) * cellHeight.value,
 })))
 
+const xAxisTicks = computed(() => xLabels.value.map((label) => ({
+  key: label.key,
+  position: label.x,
+  label: label.label,
+})))
+
+const yAxisTicks = computed(() => yLabels.value.map((label) => ({
+  key: label.key,
+  position: label.y,
+  label: label.label,
+})))
+
 const accessibleLabel = computed(() => {
   const strongest = [...props.distribution.cells].sort((left, right) => right.share - left.share)[0]
   const lead = strongest
@@ -173,6 +187,7 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 <template>
   <CahierFigureFrame
     class="bivariate-distribution-cahier"
+    size="compact"
     :style="CAHIER_FIGURE_STYLE"
     :x-title="distribution.breadthAxisLabel"
     :y-title="distribution.depthAxisLabel"
@@ -220,20 +235,6 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
           </g>
           <g class="bivariate-grid-labels" aria-hidden="true">
             <text
-              v-for="label in xLabels"
-              :key="`x-${label.key}`"
-              :x="label.x"
-              :y="MARGIN.top + PLOT_HEIGHT + 20"
-              text-anchor="middle"
-            >{{ label.label }}</text>
-            <text
-              v-for="label in yLabels"
-              :key="`y-${label.key}`"
-              :x="MARGIN.left - 12"
-              :y="label.y + 4"
-              text-anchor="end"
-            >{{ label.label }}</text>
-            <text
               v-for="cell in territoryCells"
               :key="`share-territory-${cell.key}`"
               class="bivariate-grid-share bivariate-grid-share--territory"
@@ -251,6 +252,12 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
             >{{ cell.comparisonShareLabel }}</text>
           </g>
         </svg>
+        <CahierFigureAxisLabels
+          :geometry="FIGURE_GEOMETRY"
+          :x-ticks="xAxisTicks"
+          :y-ticks="yAxisTicks"
+          :x-label-offset="8"
+        />
         <div class="bivariate-cell-hitboxes" aria-label="Détails des cellules">
           <button
             v-for="cell in interactiveCells"
