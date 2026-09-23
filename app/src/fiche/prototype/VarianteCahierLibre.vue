@@ -18,7 +18,7 @@ import {
   Utensils,
   WalletCards,
 } from 'lucide-vue-next'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
@@ -41,7 +41,6 @@ import {
 import type { MobiliteAccessMode, MobiliteService, NumericFact } from '@/fiche/content/territoryFacts'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
-import { layoutMasonry } from '@/fiche/masonryLayout'
 import type { CahierPagination } from './cahierPagination'
 import CahierProse from './CahierProse.vue'
 import CahierDonut, { type CahierDonutRing } from './CahierDonut.vue'
@@ -69,15 +68,7 @@ const props = defineProps<{
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
-const figureStackElements = new Map<string, HTMLElement>()
-const sectionPlacements = ref<Record<string, { column: 0 | 1; top: number }>>({})
-const masonryHeights = ref<Record<string, number>>({})
-const masonryReadies = ref<Record<string, boolean>>({})
-const sectionElements = new Map<string, HTMLElement>()
 let observer: IntersectionObserver | null = null
-let resizeObserver: ResizeObserver | null = null
-let masonryQueued = false
-const MASONRY_TWO_COLUMN_QUERY = '(min-width: 1281px)'
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
@@ -99,105 +90,6 @@ function pageAnchorFor(key: string): string {
 
 function comparisonLabelForFigure(comparisonLabel: string | null): string | null {
   return comparisonLabel ? FIGURE_COMPARISON_LABEL : null
-}
-
-function sectionPlacementKey(unitKey: string, sectionKey: string): string {
-  return `${unitKey}:${sectionKey}`
-}
-
-function setSectionElement(unitKey: string, sectionKey: string, element: unknown): void {
-  const placementKey = sectionPlacementKey(unitKey, sectionKey)
-  if (element instanceof HTMLElement) {
-    sectionElements.set(placementKey, element)
-    resizeObserver?.observe(element)
-  } else {
-    sectionElements.delete(placementKey)
-  }
-}
-
-function setFigureStackElement(unitKey: string, element: unknown): void {
-  if (element instanceof HTMLElement) {
-    figureStackElements.set(unitKey, element)
-    resizeObserver?.observe(element)
-  } else {
-    figureStackElements.delete(unitKey)
-  }
-}
-
-function usesTwoColumns(): boolean {
-  return typeof window === 'undefined'
-    || typeof window.matchMedia !== 'function'
-    || window.matchMedia(MASONRY_TWO_COLUMN_QUERY).matches
-}
-
-function styleForSection(unitKey: string, sectionKey: string): Record<string, string> | undefined {
-  const placement = sectionPlacements.value[sectionPlacementKey(unitKey, sectionKey)]
-  if (!placement) return undefined
-  const twoColumns = usesTwoColumns()
-  return {
-    '--masonry-top': `${placement.top}px`,
-    '--masonry-left':
-      twoColumns && placement.column === 1
-        ? 'calc(50% + var(--masonry-half-gap))'
-        : '0px',
-    '--masonry-width': twoColumns ? 'calc(50% - var(--masonry-half-gap))' : '100%',
-  }
-}
-
-function masonryReadyFor(unitKey: string): boolean {
-  return masonryReadies.value[unitKey] ?? false
-}
-
-function masonryHeightFor(unitKey: string): number {
-  return masonryHeights.value[unitKey] ?? 0
-}
-
-function measureMasonry(): void {
-  const twoColumns = usesTwoColumns()
-  const placements = { ...sectionPlacements.value }
-  const heights = { ...masonryHeights.value }
-  const readies = { ...masonryReadies.value }
-
-  for (const currentUnit of units.value) {
-    const stack = figureStackElements.get(currentUnit.key)
-    const unitSectionKeys = currentUnit.sections.map((section) => sectionPlacementKey(currentUnit.key, section.key))
-    for (const key of unitSectionKeys) delete placements[key]
-    readies[currentUnit.key] = false
-    if (!stack) continue
-
-    const elements = currentUnit.sections.map((section) =>
-      sectionElements.get(sectionPlacementKey(currentUnit.key, section.key)),
-    )
-    if (elements.some((element) => !element)) continue
-
-    const gap = Number.parseFloat(getComputedStyle(stack).getPropertyValue('--masonry-gap')) || 32
-    const layout = layoutMasonry(
-      currentUnit.sections.map((section, index) => ({
-        key: section.key,
-        height: elements[index]?.getBoundingClientRect().height ?? 0,
-      })),
-      { columns: twoColumns ? 2 : 1, gap },
-    )
-
-    for (const placement of layout.placements) {
-      placements[sectionPlacementKey(currentUnit.key, placement.key)] = placement
-    }
-    heights[currentUnit.key] = layout.height
-    readies[currentUnit.key] = true
-  }
-
-  sectionPlacements.value = placements
-  masonryHeights.value = heights
-  masonryReadies.value = readies
-}
-
-function scheduleMasonry(): void {
-  if (masonryQueued) return
-  masonryQueued = true
-  void nextTick(() => {
-    masonryQueued = false
-    measureMasonry()
-  })
 }
 
 const SERVICE_ICONS: Readonly<Record<MobiliteService, Component>> = {
@@ -493,12 +385,6 @@ const sourceLabels = computed(() => props.content.sourceRegister.map(sourceLabel
 useCahierBaselineGrid(rootRef, () => props.presentation !== 'plain')
 
 onMounted(() => {
-  scheduleMasonry()
-  if (typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => scheduleMasonry())
-    figureStackElements.forEach((element) => resizeObserver?.observe(element))
-    sectionElements.forEach((element) => resizeObserver?.observe(element))
-  }
   activeFigure.value = pageEntry.value?.anchor ?? anchorForEntry('acces-aux-services')
   if (!rootRef.value || !('IntersectionObserver' in window)) return
   const figures = [...rootRef.value.querySelectorAll<HTMLElement>('[data-figure]')]
@@ -517,10 +403,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   observer?.disconnect()
-  resizeObserver?.disconnect()
 })
-
-watch(() => props.content, scheduleMasonry, { deep: true })
 </script>
 
 <template>
@@ -594,20 +477,13 @@ watch(() => props.content, scheduleMasonry, { deep: true })
             <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
           </header>
 
-          <div
-            :ref="(element) => setFigureStackElement(currentUnit.key, element)"
-            class="figure-stack"
-            :class="{ 'figure-stack--ready': masonryReadyFor(currentUnit.key) }"
-            :style="{ minHeight: `${masonryHeightFor(currentUnit.key)}px` }"
-          >
+          <div class="figure-stack">
             <section
               v-for="(section, sectionIndex) in currentUnit.sections"
               :key="section.key"
-              :ref="(element) => setSectionElement(currentUnit.key, section.key, element)"
               class="concept-group"
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
-              :style="styleForSection(currentUnit.key, section.key)"
             >
               <div class="concept-group-heading cahier-baseline-group">
                 <span>{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
@@ -627,7 +503,10 @@ watch(() => props.content, scheduleMasonry, { deep: true })
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >
-                <div class="argument-side">
+                <div
+                  v-if="props.presentation !== 'plain' || section.lecture?.prose.length || (!section.lecture && section.availability !== 'complete')"
+                  class="argument-side"
+                >
                   <template v-if="section.lecture">
                     <h4
                       v-if="props.presentation !== 'plain'"
@@ -1081,13 +960,8 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .page-heading h2 { max-width: none; margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: clamp(1.65rem, 2.8vw, 2.4rem); font-weight: 400; letter-spacing: -.035em; line-height: 1; text-align: center; }
 .page-subtitle { max-width: none; margin: 14px 0 0; color: var(--cahier-default); font-size: 15px; text-align: justify; }
 .figure-stack {
-  --masonry-gap: var(--space-8);
-  --masonry-half-gap: calc(var(--masonry-gap) / 2);
-  position: relative;
+  position: static;
   min-width: 0;
-}
-.cahier--sans-grille .figure-stack {
-  --masonry-gap: var(--space-4);
 }
 .concept-group {
   container: subgroup / inline-size;
@@ -1098,13 +972,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
   border: 1px solid color-mix(in srgb, var(--cahier-theme) 24%, var(--paper));
   background: transparent;
 }
-.figure-stack:not(.figure-stack--ready) .concept-group { width: 100%; }
-.figure-stack--ready .concept-group {
-  position: absolute;
-  top: var(--masonry-top);
-  left: var(--masonry-left);
-  width: var(--masonry-width);
-}
+.concept-group { width: 100%; }
 .concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
 .cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-2); }
 .concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
@@ -1205,8 +1073,7 @@ watch(() => props.content, scheduleMasonry, { deep: true })
 .cahier--sans-grille .cahier-section-footer { padding-top: var(--space-3); border-top: 1px solid var(--fine-rule); }
 .cahier--sans-grille .cahier-section-exploration--unit-footer { margin-top: 0; padding-top: 0; border-top: 0; }
 
-/* A subgroup occupies one independent masonry rail. Its existing figure spread
-   remains intact, but collapses only when the rail cannot physically hold both
+/* A subgroup's figure spread collapses when the content rail cannot hold both
    sides without overflow. */
 @container subgroup (max-width: 760px) {
   .figure-spread { grid-template-columns: 1fr; column-gap: 0; row-gap: var(--cahier-spread-gap, 24px); }

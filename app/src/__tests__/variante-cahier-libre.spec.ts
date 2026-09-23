@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
@@ -376,57 +376,20 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     }
   })
 
-  it('keeps two masonry rails on desktop when the inner content rail is narrower than the breakpoint', async () => {
-    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
-    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia')
-    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-      configurable: true,
-      get() {
-        return this.classList.contains('figure-stack') ? 688 : 0
-      },
-    })
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      value: vi.fn(() => ({ matches: true, media: '(min-width: 1281px)', onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() })),
-    })
+  it('renders Variant E subgroups vertically at full width and in content order', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const wrapper = await render(content, 'plain')
+    const groups = wrapper.findAll('.concept-group')
 
-    try {
-      const wrapper = await render(resolveMobiliteThemeContent(factsForTarget()))
-      const groups = wrapper.findAll('.concept-group')
-
-      expect(wrapper.find('.figure-stack').classes()).toContain('figure-stack--ready')
-      expect(groups[0]?.attributes('style')).toContain('--masonry-width: calc(50% - var(--masonry-half-gap));')
-      expect(groups[1]?.attributes('style')).toContain('--masonry-left: calc(50% + var(--masonry-half-gap));')
-    } finally {
-      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth)
-      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth
-      if (originalMatchMedia) Object.defineProperty(window, 'matchMedia', originalMatchMedia)
-      else delete (window as { matchMedia?: typeof window.matchMedia }).matchMedia
-    }
-  })
-
-  it('offers a plain Variant E treatment and falls to one rail at the 150% zoom breakpoint', async () => {
-    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia')
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      value: vi.fn(() => ({ matches: false, media: '(min-width: 1281px)', onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(), })),
-    })
-
-    try {
-      const wrapper = await render(resolveMobiliteThemeContent(factsForTarget()), 'plain')
-      const groups = wrapper.findAll('.concept-group')
-
-      expect(wrapper.find('.cahier').classes()).toContain('cahier--sans-grille')
-      expect(groups.every((group) => group.attributes('style')?.includes('--masonry-width: 100%;'))).toBe(true)
-      expect(groups.every((group) => group.attributes('style')?.includes('--masonry-left: 0px;'))).toBe(true)
-      expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(4)
-      const unitExplorations = wrapper.findAll('.cahier-section-exploration--unit-footer')
-      expect(unitExplorations.every((link) => link.element.parentElement?.classList.contains('cahier-section-footer'))).toBe(true)
-      expect(unitExplorations.every((link) => link.find('a').attributes('href')?.startsWith('/indicateurs/mobilite/'))).toBe(true)
-    } finally {
-      if (originalMatchMedia) Object.defineProperty(window, 'matchMedia', originalMatchMedia)
-      else delete (window as { matchMedia?: typeof window.matchMedia }).matchMedia
-    }
+    expect(wrapper.find('.cahier').classes()).toContain('cahier--sans-grille')
+    expect(groups.map((group) => group.attributes('data-section'))).toEqual(
+      content.units[0]?.sections.map((section) => section.key),
+    )
+    expect(groups.every((group) => !group.attributes('style'))).toBe(true)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(4)
+    const unitExplorations = wrapper.findAll('.cahier-section-exploration--unit-footer')
+    expect(unitExplorations.every((link) => link.element.parentElement?.classList.contains('cahier-section-footer'))).toBe(true)
+    expect(unitExplorations.every((link) => link.find('a').attributes('href')?.startsWith('/indicateurs/mobilite/'))).toBe(true)
   })
 
   it('renders the summary as two horizontal grouped plots', async () => {
@@ -834,13 +797,6 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
 
 describe('Variante E — partage de l’espace public', () => {
   it('renders the public-space unit with its three sections and local reading helpers', async () => {
-    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia')
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      value: vi.fn(() => ({ matches: true, media: '(min-width: 1281px)', onchange: null, addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn() })),
-    })
-
-    try {
     const facts = structuredClone(factsForTarget())
     const bikeParking = facts.mobility.indicators.find((fact) => fact.key === 'places_stationnement_velo_1000')
     if (!bikeParking) throw new Error('Expected bike parking facts')
@@ -877,11 +833,9 @@ describe('Variante E — partage de l’espace public', () => {
       'page 01/02',
       'page 02/02',
     ])
-    expect(wrapper.findAll('.figure-stack--ready')).toHaveLength(2)
     for (const page of wrapper.findAll('.cahier-page')) {
       const groups = page.findAll('.concept-group')
-      expect(groups[0]?.attributes('style')).toContain('--masonry-width: calc(50% - var(--masonry-half-gap));')
-      expect(groups[1]?.attributes('style')).toContain('--masonry-left: calc(50% + var(--masonry-half-gap));')
+      expect(groups.every((group) => !group.attributes('style'))).toBe(true)
     }
     expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(2)
     expect(wrapper.findAll('.page-rundown')[1]!.text()).toContain('réseau cyclable')
@@ -928,9 +882,5 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(8)
     expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(7)
     expect(wrapper.text()).toContain('Groupe comparé')
-    } finally {
-      if (originalMatchMedia) Object.defineProperty(window, 'matchMedia', originalMatchMedia)
-      else delete (window as { matchMedia?: typeof window.matchMedia }).matchMedia
-    }
   })
 })
