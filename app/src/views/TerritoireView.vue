@@ -33,6 +33,10 @@ import {
   varianteDeUrl,
 } from '@/fiche/prototype/variantes'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
+import {
+  PARAM_COMPARAISON,
+  resoudreContexteComparaison,
+} from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type { ThemeContent } from '@/fiche/content/themeContent'
@@ -71,6 +75,20 @@ const territoire = computed(() =>
 const typeValide = computed(
   () => territoire.value !== null && String(route.params.type) === territoire.value.type,
 )
+
+/**
+ * A comparison query carries a mode, not a peer list. The loaded territory
+ * model resolves that mode against the destination commune's own published
+ * projections, so navigation never reuses the previous commune's cohort.
+ */
+const resolutionComparaison = computed(() => {
+  if (!modeleTerritoire.model.value || !territoire.value) return null
+  return resoudreContexteComparaison({
+    territoire: territoire.value,
+    demande: route.query[PARAM_COMPARAISON],
+    contextes: modeleTerritoire.model.value.themes.mobilite?.comparisons ?? {},
+  })
+})
 
 /**
  * L'identité et le contenu franchissent ensemble la frontière atomique du
@@ -145,8 +163,7 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
   const facts = territoryFactsFor(
     toRaw(payloadPourRendu.value),
     idRoute.value,
-    modeleTerritoire.model.value?.themes.mobilite?.comparisons.epci ??
-      modeleTerritoire.model.value?.themes.mobilite?.comparisons.bretagne,
+    resolutionComparaison.value?.contexte ?? undefined,
   )
   return facts ? resolveMobiliteThemeContent(facts) : null
 })
@@ -169,8 +186,21 @@ watch(
   (theme) => {
     if (theme !== undefined &&
         (typeof theme !== 'string' || !(THEMES_CANONIQUES as readonly string[]).includes(theme))) {
-      router.replace({ query: {} })
+      const query = { ...route.query }
+      delete query.theme
+      router.replace({ query })
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  resolutionComparaison,
+  (resolution) => {
+    if (!resolution?.canonicaliser) return
+    const query = { ...route.query }
+    delete query[PARAM_COMPARAISON]
+    router.replace({ query })
   },
   { immediate: true },
 )

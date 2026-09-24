@@ -80,29 +80,30 @@ function totalLossRows(): Indicateur[] {
 }
 
 function averageRows(): Indicateur[] {
-  return [
+  const values: readonly [string, number, string][] = [
     ['avg_tot_car', 1_467.78, 'équipements / bâtiment'],
     ['avg_tot_b', 578.55, 'équipements / bâtiment'],
     ['avg_tot_t', 256.89, 'équipements / bâtiment'],
     ['avg_div_car', 48.63, 'types d’équipement / bâtiment'],
     ['avg_div_b', 37.23, 'types d’équipement / bâtiment'],
     ['avg_div_t', 30.1, 'types d’équipement / bâtiment'],
-  ].map(([key, value, unit]) => ({
-    territoire: '22001',
-    type: 'commune' as const,
-    theme: 'mobilite' as const,
-    key: key as string,
-    detail: null,
-    value: value as number,
-    unit: unit as string,
-    rang_epci: 1,
-    rang_epci_n: 2,
-    rang_dep: null,
-    rang_dep_n: null,
-    rang_reg: null,
-    rang_reg_n: null,
-    ...vintage,
-  }))
+  ]
+  return ['22001', '22002'].flatMap((territoire) => values.map(([key, value, unit]) => ({
+      territoire,
+      type: 'commune' as const,
+      theme: 'mobilite' as const,
+      key,
+      detail: null,
+      value,
+      unit,
+      rang_epci: territoire === '22001' ? 1 : 2,
+      rang_epci_n: 2,
+      rang_dep: null,
+      rang_dep_n: null,
+      rang_reg: null,
+      rang_reg_n: null,
+      ...vintage,
+    })))
 }
 
 const rampRows: RampeAccesBatimentsRow[] = [
@@ -139,8 +140,12 @@ const payload: Payload = {
     ...indicateursMobiliteFixture,
     ...totalLossRows(),
     ...averageRows(),
+    ...indicateursMobiliteFixture
+      .filter((row) => row.territoire === '22001' && row.key.startsWith('share_'))
+      .map((row) => ({ ...row, territoire: '22002' })),
     ...[
       ['22001', 65_078],
+      ['22002', 65_078],
       ['53', 1_223_578],
     ].map(([territoire, value]) => ({
       territoire: territoire as string,

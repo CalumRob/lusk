@@ -493,6 +493,23 @@ function sharingIndicator(
 }
 
 describe('resolveMobiliteThemeContent', () => {
+  it('names an unavailable comparison without inventing a reference value', () => {
+    const facts = structuredClone(completeFacts)
+    const comparison = facts.mobility.access.summary.averageLosses.diversity.walkTransit.comparison
+    expect(comparison).not.toBeNull()
+    if (comparison) {
+      comparison.rank = null
+      comparison.reference = null
+    }
+
+    const summary = resolveMobiliteThemeContent(facts).units[0]?.sections[0]
+    expect(summary?.evidence?.kind).toBe('summary')
+    if (summary?.evidence?.kind === 'summary') {
+      expect(summary.evidence.comparisonLabel)
+        .toBe('Comparaison indisponible — moyenne des communes de EPCI X')
+    }
+  })
+
   it('resolves the public-space sharing unit into ordered network, cycling-offer, and parking sections', () => {
     const facts = structuredClone(completeFacts)
     facts.mobility.indicators = [

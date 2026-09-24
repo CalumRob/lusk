@@ -292,7 +292,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(facts?.mobility.bpeAccess?.profiles[0]).toMatchObject({
       count: 0,
       exemplar: null,
-       comparison: { reference: { kind: 'mean', value: 0 } },
+      comparison: { rank: null, reference: null },
     })
     expect(facts?.mobility.bpeAccess?.profiles[1]).toMatchObject({
       count: 3,
@@ -304,17 +304,17 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
         bike: 0.4,
         walkTransit: 0.1,
       },
-       comparison: { reference: { kind: 'mean', value: 3 } },
+      comparison: { rank: null, reference: null },
     })
     expect(facts?.mobility.bpeAccess?.profiles[2]).toMatchObject({
       count: 0,
       exemplar: null,
-       comparison: { reference: { kind: 'mean', value: 0 } },
+      comparison: { rank: null, reference: null },
     })
     expect(facts?.mobility.bpeAccess?.profiles[3]).toMatchObject({
       count: 0,
       exemplar: null,
-       comparison: { reference: { kind: 'mean', value: 0 } },
+      comparison: { rank: null, reference: null },
     })
   })
 
@@ -477,7 +477,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(facts?.mobility.access.byService.administration.walkTransit).toMatchObject({
       value: null,
       availability: 'incomplete',
-      comparison: null,
+      comparison: { rank: null, reference: null },
     })
     expect(facts?.mobility.access.byService.alimentation.car.availability).toBe('absent')
 
@@ -608,7 +608,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     expect(parityPayload.indicateurs).toEqual(before)
   })
 
-  it('does not rank a missing target value, while retaining the available reference', () => {
+  it('does not rank a missing target value when fewer than two peers are usable', () => {
     const missingPayload: Payload = {
       ...payload,
       indicateurs: [row('22001', null), row('22002', 0.4)],
@@ -621,12 +621,12 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       availability: 'incomplete',
       comparison: {
         rank: null,
-        reference: { kind: 'median', value: 0.4 },
+        reference: null,
       },
     })
   })
 
-  it('excludes a missing peer from both the rank denominator and the reference', () => {
+  it('does not self-rank when a missing peer leaves only the focal commune usable', () => {
     const missingPeerPayload: Payload = {
       ...payload,
       indicateurs: [row('22001', 0.2), row('22002', null)],
@@ -635,8 +635,8 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
     const indicator = territoryFactsFor(missingPeerPayload, '22001')?.mobility.indicators[0]
 
     expect(indicator?.comparison).toMatchObject({
-      rank: { position: 1, size: 1 },
-      reference: { kind: 'median', value: 0.2 },
+      rank: null,
+      reference: null,
     })
   })
 

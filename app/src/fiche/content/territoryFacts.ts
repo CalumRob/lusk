@@ -478,7 +478,19 @@ function comparisonOf(options: {
   statistic?: ComparisonStatistic
   weights?: readonly (number | null)[]
 }): FactComparison | null {
-  if (!options.scope || options.values.length === 0) return null
+  if (!options.scope) return null
+
+  // A comparison group containing fewer than two usable communes cannot
+  // support a truthful peer reference or rank. Keep the scope so content can
+  // name the unavailable comparison instead of silently dropping it.
+  if (options.values.length < 2) {
+    return {
+      direction: options.direction,
+      scope: options.scope,
+      rank: null,
+      reference: null,
+    }
+  }
 
   const statistic = options.statistic ?? 'median'
   const referenceValue = statistic === 'mean'
@@ -954,7 +966,7 @@ function bpeAccessOf(
       // A profile is a composition: each peer contributes the same closed
       // universe of service types. The mean therefore preserves the 53-type
       // total, while four independent medians do not.
-      const reference = mean(peerValues)
+      const reference = peerValues.length < 2 ? null : mean(peerValues)
       const direction = directions[profile]
       const published = comparisonFromPrecomputed(precomputed, 'bpe_profile', profile)
       const publishedReference: BpeAccessProfileReference | null =
@@ -982,12 +994,12 @@ function bpeAccessOf(
           : null,
         comparison: precomputed
           ? publishedMean
-          : scope && reference !== null
+          : scope
             ? {
                 scope,
                 direction,
-                rank: rankOf(row?.nombre_typequ ?? 0, peerValues, direction),
-                reference: { kind: 'mean', value: reference },
+                rank: peerValues.length < 2 ? null : rankOf(row?.nombre_typequ ?? 0, peerValues, direction),
+                reference: reference === null ? null : { kind: 'mean', value: reference },
               }
             : null,
       }

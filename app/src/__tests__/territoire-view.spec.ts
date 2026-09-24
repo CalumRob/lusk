@@ -1,8 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
+import { varianteDeUrl } from '../fiche/prototype/variantes'
 import {
   histoiresDemographieFixture,
   histoiresHabitatFixture,
@@ -27,6 +31,43 @@ const indicateurs: Indicateur[] = [
   ...indicateursHabitatFixture,
 ]
 const histoires: Histoire[] = [...histoiresDemographieFixture, ...histoiresHabitatFixture]
+
+const modelePublie22001 = JSON.parse(readFileSync(
+  resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'),
+  'utf8',
+)) as Record<string, any>
+
+function modeleAvecContextesComparaison() {
+  const model = structuredClone(modelePublie22001)
+  const mobilite = model.themes.mobilite
+  const contexteAvecPerimetre = (source: any, scope: any) => {
+    const contexte = structuredClone(source)
+    contexte.scope = scope
+    if (contexte.distribution_batiments) contexte.distribution_batiments.label = scope.label
+    if (contexte.rampe_acces) contexte.rampe_acces.label = scope.label
+    return contexte
+  }
+  const epci = contexteAvecPerimetre(mobilite.comparaisons.epci, {
+    kind: 'communes-epci',
+    label: 'communes de CC Loudéac Communauté - Bretagne Centre',
+  })
+  mobilite.comparaisons = {
+    densite: contexteAvecPerimetre(epci, {
+      kind: 'communes-densite',
+      label: 'grands centres urbains bretons',
+    }),
+    epci,
+    bretagne: contexteAvecPerimetre(epci, {
+      kind: 'communes-bretagne',
+      label: 'communes bretonnes',
+    }),
+  }
+  return validerModeleTerritoire(
+    model,
+    'territoires/commune/22001.json',
+    { type: 'commune', territoire: '22001' },
+  )
+}
 
 function modelFor(territoire: string) {
   const target = territoiresFixture.find((candidate) => candidate.territoire === territoire)!
@@ -150,6 +191,33 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper, router } = await monter('/territoire/commune/29002?theme=bidule')
     expect(router.currentRoute.value.query.theme).toBeUndefined()
     expect(wrapper.findAll('[role="tab"]')[0]!.attributes('aria-selected')).toBe('true')
+  })
+
+  it('canonicalise un mode de comparaison inconnu sans perdre le thème ni la variante', async () => {
+    const { router } = await monter(
+      '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E',
+    )
+    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', variant: 'E' })
+  })
+
+  it.each([
+    ['densite', 'grands centres urbains bretons'],
+    ['epci', 'communes de CC Loudéac Communauté - Bretagne Centre'],
+    ['bretagne', 'communes bretonnes'],
+  ] as const)('applique le contexte %s à la fiche rendue', async (mode, label) => {
+    const varianteE = varianteDeUrl('E')
+    expect(varianteE?.clef).toBe('E')
+    await (varianteE?.composant as any).__asyncLoader?.()
+    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    const { router, wrapper } = await monter(
+      `/territoire/commune/22001?theme=mobilite&variant=E&comparaison=${mode}`,
+      charger,
+    )
+
+    expect(router.currentRoute.value.query.comparaison).toBe(mode)
+    await flushPromises()
+    expect(wrapper.find('.cahier-comparison-note').text()).toContain(label)
+    wrapper.unmount()
   })
 
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {

@@ -623,7 +623,7 @@ function comparisonScopeLabel(
   comparison: ComparisonContext | null,
   territory: TerritoryIdentity,
 ): string | null {
-  if (!comparison?.reference) return null
+  if (!comparison) return null
   if (comparison.scope.label) return comparison.scope.label
   switch (comparison.scope.kind) {
     case 'communes-densite':
@@ -648,7 +648,16 @@ function comparisonLabel(
     comparison?.reference?.kind === 'mean' ? 'moyenne' : 'médiane',
 ): string | null {
   const scopeLabel = comparisonScopeLabel(comparison, territory)
-  return scopeLabel ? `${statistic} des ${scopeLabel}` : null
+  if (!scopeLabel) return null
+  return comparison?.reference
+    ? `${statistic} des ${scopeLabel}`
+    : `Comparaison indisponible — ${statistic} des ${scopeLabel}`
+}
+
+function statisticForFact(fact: NumericFact): 'moyenne' | 'médiane' {
+  return fact.key.startsWith('avg_') || fact.comparison?.reference?.kind === 'mean'
+    ? 'moyenne'
+    : 'médiane'
 }
 
 function formatMillions(value: number): string {
@@ -927,6 +936,7 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
     losses.total.walkTransit,
     losses.total.bike,
   ]
+  const comparisonFact = summaryFacts.find((fact) => fact.fact.comparison)
   const completeSummary = summaryFacts.every((value) => complete(value.fact))
   const hasAny = summaryFacts.some((value) => hasValue(value.fact))
   const indicators = [
@@ -952,8 +962,9 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
           averageLosses,
           typeCount,
           comparisonLabel: comparisonLabel(
-            summaryFacts.find((fact) => fact.fact.comparison)?.fact.comparison ?? null,
+            comparisonFact?.fact.comparison ?? null,
             facts.territory,
+            comparisonFact ? statisticForFact(comparisonFact.fact) : undefined,
           ),
           figureLecture: summaryFigureLecture(summary),
           losses,
