@@ -20,8 +20,9 @@
  */
 import type * as echarts from 'echarts/core'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
+import { queryTerritoireAvecComparaison } from '@/fiche/comparisonContext'
 import { formaterTaux } from '@/payload/selectors'
 import type { PointNuage } from '@/payload/selectors'
 
@@ -33,6 +34,7 @@ const props = defineProps<{
   nuage: PointNuage[]
 }>()
 
+const route = useRoute()
 const router = useRouter()
 const conteneur = ref<HTMLDivElement | null>(null)
 let instance: ReturnType<typeof echarts.init> | null = null
@@ -207,7 +209,11 @@ function gererClic(params: unknown): void {
   const territoire = p.data?.territoire
   const type = p.data?.type
   if (!territoire || !type || type === 'region') return
-  router.push({ name: 'territoire', params: { type, id: territoire }, query: { theme: 'demographie' } })
+  router.push({
+    name: 'territoire',
+    params: { type, id: territoire },
+    query: queryTerritoireAvecComparaison(route.query, 'demographie'),
+  })
 }
 
 onMounted(async () => {
