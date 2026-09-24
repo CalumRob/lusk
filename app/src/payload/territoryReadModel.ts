@@ -40,6 +40,10 @@ export interface TerritoryThemeReadModel {
 
 export type TerritoryComparisonMode = 'densite' | 'epci' | 'bretagne'
 
+// Older published models duplicated this generic label into building evidence;
+// `scope.label` is the verified, territory-specific source of truth.
+const LEGACY_EPCI_COMPARISON_LABEL = "communes de l'EPCI"
+
 export interface TerritoryComparisonFact {
   key: string
   detail: string | null
@@ -147,6 +151,24 @@ function expectedComparisonScopeLabel(
     case 'departements-bretagne':
       return 'départements bretons'
   }
+}
+
+function comparisonEvidenceLabel(
+  raw: unknown,
+  file: string,
+  field: string,
+  evidence: 'distribution' | 'rampe',
+  mode: TerritoryComparisonMode,
+  scopeLabel: string,
+): string {
+  const publishedLabel = nonEmptyString(raw, file, field)
+  const isLegacyGenericLabel =
+    mode === 'epci' && publishedLabel === LEGACY_EPCI_COMPARISON_LABEL
+  if (publishedLabel !== scopeLabel && !isLegacyGenericLabel) {
+    const nom = evidence === 'distribution' ? 'distribution comparée' : 'rampe comparée'
+    fail(file, `libellé de ${nom} incohérent avec le périmètre « ${mode} »`)
+  }
+  return scopeLabel
 }
 
 function componentForPath(value: unknown, file: string, field: string): string {
@@ -390,16 +412,16 @@ function validateTheme(
               if (count !== totalBuildings || Math.abs(share - 1) > 1e-12) {
                 fail(file, `distribution comparée « ${mode} » incohérente avec son total`)
               }
-              const publishedLabel = nonEmptyString(
+              const comparisonLabel = comparisonEvidenceLabel(
                 rawDistribution.label,
                 file,
                 `comparaisons.${mode}.distribution_batiments.label`,
+                'distribution',
+                mode,
+                label,
               )
-              if (publishedLabel !== label) {
-                fail(file, `libellé de distribution comparée incohérent avec le périmètre « ${mode} »`)
-              }
               return {
-                label: publishedLabel,
+                label: comparisonLabel,
                 totalBuildings: totalBuildings as number,
                 cells,
               }
@@ -459,16 +481,16 @@ function validateTheme(
                   fail(file, `rampe comparée « ${mode} » non monotone pour le mode « ${curveMode} »`)
                 }
               }
-              const publishedLabel = nonEmptyString(
+              const comparisonLabel = comparisonEvidenceLabel(
                 rawRamp.label,
                 file,
                 `comparaisons.${mode}.rampe_acces.label`,
+                'rampe',
+                mode,
+                label,
               )
-              if (publishedLabel !== label) {
-                fail(file, `libellé de rampe comparée incohérent avec le périmètre « ${mode} »`)
-              }
               return {
-                label: publishedLabel,
+                label: comparisonLabel,
                 totalBuildings: totalBuildings as number,
                 points,
               }

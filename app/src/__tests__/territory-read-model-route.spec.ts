@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,6 +40,43 @@ const rawModel = {
 beforeEach(() => localStorage.clear())
 
 describe('fiche — chargement par modèle de lecture de territoire', () => {
+  it('renders Rennes from the published commune read model', async () => {
+    const publishedModel = JSON.parse(readFileSync(
+      resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/35238.json'),
+      'utf8',
+    ))
+    const validatedModel = validerModeleTerritoire(
+      publishedModel,
+      'territoires/commune/35238.json',
+      { type: 'commune', territoire: '35238' },
+      { requireAllThemes: true },
+    )
+    expect(validatedModel.themes.mobilite?.comparisons.epci?.buildingDistribution?.label)
+      .toBe('communes de Rennes Métropole')
+    expect(validatedModel.themes.mobilite?.comparisons.epci?.accessRamp?.label)
+      .toBe('communes de Rennes Métropole')
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => publishedModel,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push('/territoire/commune/35238?theme=mobilite&variant=D&plate=C&map=rennes')
+      await router.isReady()
+      const wrapper = mount(TerritoireView, { global: { plugins: [router] } })
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledWith('/data/modeles-lecture/territoires/commune/35238.json')
+      expect(wrapper.text()).not.toContain('Impossible de charger les données de la fiche.')
+      expect(wrapper.find('h1').text()).toBe('Rennes')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('affiche les six onglets immédiatement et garde un seul chargement atomique', async () => {
     let resolveModel!: (value: ReturnType<typeof validerModeleTerritoire>) => void
     const pendingModel = new Promise<ReturnType<typeof validerModeleTerritoire>>((resolve) => {
