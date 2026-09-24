@@ -5,6 +5,9 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "outputDirectory": "app/dist",
+  "git": {
+    "deploymentEnabled": false
+  },
   "rewrites": [
     {
       "source": "/((?!data/).*)",
