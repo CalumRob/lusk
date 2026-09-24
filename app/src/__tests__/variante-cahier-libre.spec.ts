@@ -32,6 +32,7 @@ const vintage = {
   vintage_date_reference: '2026-02-28',
   vintage_date_publication: '2026-08-06',
 }
+
 const varianteCahierLibreStyles = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
   'utf-8',
@@ -139,11 +140,11 @@ const payload: Payload = {
   territoires: territoiresFixture,
   indicateurs: [
     ...indicateursMobiliteFixture,
-    ...totalLossRows(),
-    ...averageRows(),
     ...indicateursMobiliteFixture
       .filter((row) => row.territoire === '22001' && row.key.startsWith('share_'))
       .map((row) => ({ ...row, territoire: '22002' })),
+    ...totalLossRows(),
+    ...averageRows(),
     ...[
       ['22001', 65_078],
       ['22002', 65_078],
