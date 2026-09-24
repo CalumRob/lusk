@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
@@ -28,6 +30,16 @@ const vintage = {
   vintage_version: '2026-02',
   vintage_date_reference: '2026-02-28',
   vintage_date_publication: '2026-08-06',
+}
+const varianteCahierLibreStyles = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
+  'utf-8',
+).match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
+
+function regleCss(css: string, selector: string): string {
+  const match = css.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\}`))
+  if (!match) throw new Error(`CSS rule not found: ${selector}`)
+  return match[1]
 }
 
 function totalLossRows(): Indicateur[] {
@@ -796,6 +808,48 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
 })
 
 describe('Variante E — partage de l’espace public', () => {
+  it('starts at the persistent AppHeader edge and aligns Sommaire page targets there', () => {
+    expect(regleCss(varianteCahierLibreStyles, '\\.cahier')).toContain(
+      '--cahier-sticky-top: var(--header-height);',
+    )
+    const anchorRules = [...varianteCahierLibreStyles.matchAll(
+      /\.cahier--sans-grille \.cahier-page,\s*\.cahier--sans-grille \.sources-page\s*\{([^}]*)\}/g,
+    )]
+    expect(anchorRules.some((rule) => rule[1]?.includes('scroll-margin-top: var(--cahier-sticky-top);'))).toBe(true)
+    expect(regleCss(varianteCahierLibreStyles, '\\.page-layout--sticky \\.page-heading')).toContain(
+      'top: var(--cahier-sticky-top);',
+    )
+    expect(regleCss(varianteCahierLibreStyles, '\\.page-layout--sticky > \\.page-margin')).toContain(
+      'top: var(--cahier-sticky-top);',
+    )
+  })
+
+  it('keeps the sticky page title separate from the right-margin metadata', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibreE, {
+      props: { content, pagination: cahierPaginationFor(payload, content, true) },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    const pages = wrapper.findAll('.cahier-page')
+    expect(pages).toHaveLength(content.units.length)
+    for (const page of pages) {
+      const layout = page.find('.page-layout--sticky')
+      expect(layout.exists()).toBe(true)
+
+      const main = layout.find('.page-main')
+      const title = main.find('.page-heading h2')
+      const margin = layout.find('aside.page-margin')
+      expect(page.attributes('aria-labelledby')).toBe(title.attributes('id'))
+      expect(page.findAll('.page-heading .page-subtitle')).toHaveLength(0)
+      expect(margin.find('.page-number').text()).toContain('page')
+      expect(margin.findAll('.margin-sources a').length).toBeGreaterThan(0)
+    }
+  })
+
   it('renders the public-space unit with its three sections and local reading helpers', async () => {
     const facts = structuredClone(factsForTarget())
     const bikeParking = facts.mobility.indicators.find((fact) => fact.key === 'places_stationnement_velo_1000')

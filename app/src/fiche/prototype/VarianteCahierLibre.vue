@@ -457,28 +457,25 @@ onBeforeUnmount(() => {
           :data-figure="pageAnchorFor(currentUnit.key)"
           :aria-labelledby="`${pageAnchorFor(currentUnit.key)}-title`"
         >
-          <div class="page-margin" aria-label="Informations marginales">
-            <div class="page-number">
-              <span>page</span>
-              {{ String(pageEntryFor(currentUnit.key)?.page ?? pagination.currentPage).padStart(2, '0') }}<small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
-            </div>
-            <div v-if="sourceLabels.length > 0" class="margin-sources">
-              <span class="margin-label">Sources</span>
-              <RouterLink v-for="source in sourceLabels" :key="source" to="/sources">{{ source }}</RouterLink>
-            </div>
-          </div>
+          <div
+            class="page-layout"
+            :class="{ 'page-layout--sticky': props.presentation === 'plain' }"
+          >
+            <div class="page-main">
+              <header class="page-heading">
+                <h2
+                  class="cahier-baseline-anchor"
+                  :id="`${pageAnchorFor(currentUnit.key)}-title`"
+                >{{ currentUnit.label }}</h2>
+              </header>
 
-          <header class="page-heading">
-            <h2
-              class="cahier-baseline-anchor"
-              :id="`${pageAnchorFor(currentUnit.key)}-title`"
-            >{{ currentUnit.label }}</h2>
-            <CahierProse class="page-subtitle" :blocks="currentUnit.introduction" />
-            <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
-          </header>
+              <div class="page-copy">
+                <CahierProse class="page-subtitle" :blocks="currentUnit.introduction" />
+                <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
+              </div>
 
-          <div class="figure-stack">
-            <section
+              <div class="figure-stack">
+                <section
               v-for="(section, sectionIndex) in currentUnit.sections"
               :key="section.key"
               class="concept-group"
@@ -847,7 +844,20 @@ onBeforeUnmount(() => {
                   />
                 </div>
               </div>
-            </section>
+                </section>
+              </div>
+            </div>
+
+            <aside class="page-margin" aria-label="Informations marginales">
+              <div class="page-number">
+                <span>page</span>
+                {{ String(pageEntryFor(currentUnit.key)?.page ?? pagination.currentPage).padStart(2, '0') }}<small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
+              </div>
+              <div v-if="sourceLabels.length > 0" class="margin-sources">
+                <span class="margin-label">Sources</span>
+                <RouterLink v-for="source in sourceLabels" :key="source" to="/sources">{{ source }}</RouterLink>
+              </div>
+            </aside>
           </div>
         </section>
 
@@ -885,6 +895,9 @@ onBeforeUnmount(() => {
 }
 
 .cahier {
+  --z-page-header: calc(var(--z-sticky) - 1);
+  /* ThemeTabs is bounded to .fiche-en-tete-surface; only AppHeader stays pinned over the reading surface. */
+  --cahier-sticky-top: var(--header-height);
   --paper: #f1f2ec;
   --paper-deep: #dfe5df;
   --ink: #232a2a;
@@ -948,15 +961,26 @@ onBeforeUnmount(() => {
 .mobile-index { display: none; }
 .cahier-pages { display: grid; gap: 96px; min-width: 0; }
 .cahier-page, .sources-page { container: cahier-page / inline-size; position: relative; min-width: 0; --page-left-inset: var(--cahier-page-left-inset, 148px); --page-right-inset: var(--cahier-page-right-inset, 64px); padding: 48px var(--page-right-inset) 56px var(--page-left-inset); border: 1px solid rgb(35 42 42 / 15%); box-shadow: 0 14px 30px rgb(67 57 42 / 11%); scroll-margin-top: 28px; }
+.cahier--sans-grille .cahier-page,
+.cahier--sans-grille .sources-page { scroll-margin-top: var(--cahier-sticky-top); }
 .page-margin { position: absolute; top: 48px; left: 18px; display: grid; width: 72px; gap: 30px; align-content: start; text-align: center; }
 .cahier--sans-grille .page-margin { right: 18px; left: auto; }
+@media (min-width: 761px) {
+  .cahier--sans-grille .cahier-page { padding-top: 0; }
+  .page-layout--sticky { display: grid; grid-template-columns: minmax(0, 1fr) var(--page-right-inset); margin-right: calc(0px - var(--page-right-inset)); }
+  .page-layout--sticky .page-heading { position: sticky; top: var(--cahier-sticky-top); z-index: var(--z-page-header); padding-top: var(--space-12); background-color: var(--paper); }
+  .page-layout--sticky > .page-margin { position: sticky; top: var(--cahier-sticky-top); grid-column: 2; grid-row: 1; align-self: start; width: 72px; margin-right: 18px; margin-left: auto; padding-top: var(--space-12); right: auto; left: auto; }
+}
 .page-number { display: grid; gap: 3px; color: var(--red); font-family: var(--font-serif); font-size: 29px; line-height: .9; }
 .page-number span, .page-number small { color: var(--muted); font-family: var(--font-sans); font-size: 9px; }
 .page-number span { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .margin-sources { display: grid; gap: 10px; justify-items: center; overflow-wrap: anywhere; }
 .margin-sources a { color: var(--cahier-theme-strong); font-size: 10px; line-height: 1.1; text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
-.page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
-.cahier--sans-grille .page-heading { padding-right: 0; padding-left: 0; }
+.page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); }
+.page-copy { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
+.page-layout--sticky .page-main { min-width: 0; }
+.page-layout--sticky .page-heading { padding-right: 0; padding-left: 0; padding-bottom: var(--space-2); border-bottom: 1px solid var(--red-soft); }
+.page-layout--sticky .page-copy { padding-right: 0; padding-left: 0; }
 .page-heading h2 { max-width: none; margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: clamp(1.65rem, 2.8vw, 2.4rem); font-weight: 400; letter-spacing: -.035em; line-height: 1; text-align: center; }
 .page-subtitle { max-width: none; margin: 14px 0 0; color: var(--cahier-default); font-size: 15px; text-align: justify; }
 .figure-stack {
