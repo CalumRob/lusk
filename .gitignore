@@ -15,6 +15,10 @@
 !/pipeline/
 !/.github/
 
+# Local cartographic prototype exports — keep available for development, but
+# do not include them in the repository until their publication contract lands.
+/pipeline/maps/
+
 # Windows/agent safety scripts (worktree/data guards) — versioned
 !/scripts/
 
