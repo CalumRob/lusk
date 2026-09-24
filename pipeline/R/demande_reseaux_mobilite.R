@@ -122,9 +122,9 @@ agreger_voitures_territoires <- function(voitures_communes, base_epci) {
 #   - c (voiture — le réseau routier) et t (à pied — le réseau piéton) : lus sur
 #     highway=* de l'extrait OSM (le pbf Geofabrik, voir normaliser_mobilite.R) ;
 #   - b (vélo — le réseau cyclable) : alimenté par le jeu Geovelo « Aménagements
-#     cyclables » (ADR-0016, issues #222/#230) — le pbf ne porte plus l'extraction
-#     maison du mode b (highway=cycleway), remplacée par le comptage par
-#     direction de calculer_reseaux_velo_communes.
+#     cyclables » (ADR-0032, issues #222/#230) — le pbf ne porte plus l'extraction
+#     maison du mode b (highway=cycleway), remplacée par le comptage de géométrie
+#     unique de calculer_reseaux_velo_communes.
 # MODES_RESEAUX_MOBILITE reste le CONTRAT des trois modes (les 3 détails de
 # longueur du payload — agreger_reseaux_territoires l'itère) ;
 # MODES_RESEAUX_OSM déclare les modes que le raw OSM alimente (t/c), le b venant
@@ -154,7 +154,7 @@ MODES_RESEAUX_MOBILITE <- list(
 
 # MODES_RESEAUX_OSM -----------------------------------------------------------
 # Les modes LUS par le raw OSM : t/c — le mode `b` (vélo) est alimenté par le
-# jeu Geovelo depuis l'issue #230 (ADR-0016), plus d'extraction maison du b sur
+# jeu Geovelo depuis l'issue #230 (ADR-0016, convention de mesure ADR-0032), plus d'extraction maison du b sur
 # le pbf (le fragment osm_reseaux ne sert plus qu'aux modes t/c et au
 # dénominateur routier de la figure « L'offre cyclable »).
 MODES_RESEAUX_OSM <- c("t", "c")
@@ -329,12 +329,9 @@ calculer_reseaux_communes <- function(lignes, limites) {
 # calculer_reseaux_velo_communes ------------------------------------------------
 # Les longueurs réseau `b` (vélo) COMMUNALES depuis la table Geovelo
 # NORMALISÉE (la forme de normaliser_amenagements_cyclables — issue #230,
-# ADR-0016) et les limites communales. DEUX règles d'ADR-0016 :
-#   1. le comptage PAR DIRECTION : un segment contribue sa longueur une fois par
-#      direction qu'il sert — une piste bidirectionnelle (sens BIDIRECTIONNEL
-#      sur l'un des deux côtés) compte 2×, une unidirectionnelle (ou sens non
-#      renseigné — la quasi-totalité du fichier) 1×. Vérifié sur le fichier
-#      réel : 155 lignes bretonnes BIDIRECTIONNEL sur 27 797 = +0,5 % ;
+# ADR-0032) et les limites communales. DEUX règles :
+#   1. le comptage en GÉOMÉTRIE UNIQUE : un segment contribue sa longueur une
+#      seule fois, quel que soit le nombre de directions qu'il sert ;
 #   2. l'attribution par le CÔTÉ PORTEUR : pour un segment de frontière (les
 #      deux codes communaux diffèrent), la longueur va à la commune dont le
 #      côté porte l'aménagement (ame ≠ AUCUN) ; les DEUX côtés porteurs → le
@@ -350,8 +347,7 @@ calculer_reseaux_velo_communes <- function(amenagements, limites) {
     stop("Réseaux vélo corrompu — les aménagements Geovelo et les limites ",
          "communales doivent être des objets sf.", call. = FALSE)
   }
-  requises <- c("ame_d", "ame_g", "code_com_d", "code_com_g",
-                "sens_d", "sens_g")
+  requises <- c("ame_d", "ame_g", "code_com_d", "code_com_g")
   manquantes <- setdiff(requises, names(amenagements))
   if (length(manquantes) > 0) {
     stop("Réseaux vélo corrompu — colonne(s) requise(s) manquante(s) : ",
@@ -384,12 +380,6 @@ calculer_reseaux_velo_communes <- function(amenagements, limites) {
   seg <- sf::st_transform(amenagements, 2154)
   seg$longueur_m <- as.numeric(sf::st_length(sf::st_geometry(seg)))
 
-  # le comptage par direction (ADR-0016) : 2× si l'un des deux côtés est
-  # BIDIRECTIONNEL, 1× sinon (un sens non renseigné n'est jamais bidirectionnel)
-  bidir <- (seg$sens_d == "BIDIRECTIONNEL") | (seg$sens_g == "BIDIRECTIONNEL")
-  bidir[is.na(bidir)] <- FALSE
-  seg$multiplicateur <- ifelse(bidir, 2, 1)
-
   # l'attribution par le côté porteur (ADR-0016) : le côté qui porte
   # l'aménagement gagne ; les deux côtés porteurs → le `d` départage
   seg$commune <- ifelse(
@@ -400,7 +390,7 @@ calculer_reseaux_velo_communes <- function(amenagements, limites) {
 
   par_commune <- sf::st_drop_geometry(seg) %>%
     dplyr::group_by(commune) %>%
-    dplyr::summarise(longueur_m = sum(longueur_m * multiplicateur),
+    dplyr::summarise(longueur_m = sum(longueur_m),
                      .groups = "drop") %>%
     dplyr::left_join(limites[c("code_insee", "aire_m2")],
                      by = c("commune" = "code_insee"))
@@ -422,7 +412,7 @@ calculer_reseaux_velo_communes <- function(amenagements, limites) {
 # Le seam du mode `b` (issue #230) : la table t/c (OSM) et la table b (Geovelo)
 # sont FUSIONNÉES par commune en LA table communale du contrat — les quatre
 # colonnes que agreger_reseaux_territoires consomme (la forme reste, la source
-# du b change, ADR-0016). Une commune présente dans
+# du b change, ADR-0032). Une commune présente dans
 # une seule des deux tables porte 0 sur l'autre famille (zéro réseau — un fait,
 # jamais une ligne manquante). Retour : commune × les trois mesures, triée par
 # commune — déterministe.
@@ -451,7 +441,7 @@ fusionner_reseaux_velo_communes <- function(reseaux_communes, velo_communes) {
 }
 
 # OFFRE_CYCLABLE_PROTEGE / OFFRE_CYCLABLE_PARTAGE ---------------------------------
-# La binaison PROVISOIRE de la figure « L'offre cyclable » (ADR-0016, issue
+# La binaison PROVISOIRE de la figure « L'offre cyclable » (issue
 # #231) : chaque valeur RÉELLE de l'enum ame_d/ame_g du jeu Geovelo (schéma
 # national v0.3.5 — vérifiée sur le fichier réel du 2026-08-08, 27 797 lignes
 # bretonnes) tombe dans une des deux familles :
@@ -488,7 +478,8 @@ OFFRE_CYCLABLE_PARTAGE <- c(
 # protégé / partagé, les km / 1 000 hab (la population communale) et le
 # numérateur du ratio « X % de l'infrastructure routière » — le total cyclable
 # en GÉOMÉTRIE UNIQUE. Le même jeu Geovelo que calculer_reseaux_velo_communes
-# (le mode `b`), avec DEUX décisions d'ADR-0016 et UNE exception de convention :
+# (le mode `b`), avec les règles conservées d'ADR-0016 et la convention de mesure
+# d'ADR-0032 :
 #   1. l'attribution par le CÔTÉ PORTEUR (la règle d'ADR-0016, identique au
 #      mode `b`) : pour un segment de frontière, la longueur va à la commune
 #      dont le côté porte l'aménagement (ame ≠ AUCUN) ; les DEUX côtés porteurs
@@ -496,11 +487,10 @@ OFFRE_CYCLABLE_PARTAGE <- c(
 #      les totaux région/EPCI/département restent la somme des parties
 #      communales, zéro double-compte ;
 #   2. la LONGUEUR en GÉOMÉTRIE UNIQUE (chaque segment compté UNE fois, quel
-#      que soit le sens — jamais le multiplicateur par direction du mode `b`) :
-#      le contre-pied ASSUMÉ d'ADR-0016. La figure compare le vélo au réseau
+#      que soit le sens). La figure compare le vélo au réseau
 #      `c` (le pbf OSM mesure chaque way une fois — géométrie unique) : le
-#      « X % » n'est honnête que si les deux conventions coïncident (décision
-#      2026-08-08, conséquences d'ADR-0016). Le numérateur = protégé + partagé,
+#      « X % » n'est honnête que si les deux conventions coïncident (ADR-0032).
+#      Le numérateur = protégé + partagé,
 #      exactement — une somme, jamais une seconde mesure.
 # La binaison provisoire (OFFRE_CYCLABLE_PROTEGE/PARTAGE) répartit chaque
 # segment : une valeur d'enum hors binaison est une corruption (le contrat du

@@ -8,6 +8,7 @@ withDefaults(
   defineProps<{
     title: string
     rows: readonly CahierTooltipRow[]
+    unit?: string
     anchor?: CahierFigureTooltipAnchor
     popover?: boolean
     compact?: boolean
@@ -33,6 +34,7 @@ withDefaults(
     role="tooltip"
   >
     <strong>{{ title }}</strong>
+    <small v-if="unit" class="cahier-figure-tooltip-unit">{{ unit }}</small>
     <dl>
       <div
         v-for="row in rows"

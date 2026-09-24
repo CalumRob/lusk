@@ -107,6 +107,14 @@ function copierPayloadEnBuild(): Plugin {
 
 export default defineConfig({
   plugins: [vue(), servirPayloadEnDev(), copierPayloadEnBuild()],
+  // [PROTOTYPE CARTOGRAPHIE — JETABLE] Variant E reads the existing QGIS
+  // exports from pipeline/maps through Vite's /@fs seam; keep the allowance
+  // bounded to this repository and remove it with the map-layout prototype.
+  server: {
+    fs: {
+      allow: [path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..')],
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

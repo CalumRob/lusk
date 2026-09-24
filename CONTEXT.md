@@ -16,6 +16,10 @@ _Avoid_: nom public, nom court
 The exact label used to identify a territory on Lusk's surfaces. For an EPCI, it follows the Geo API label verbatim, including its administrative type abbreviation such as « CA » or « CC »; it is never shortened or reformulated in the app.
 _Avoid_: nom de référence, nom court, label fabriqué
 
+**Partie bretonne d'un EPCI**:
+The Lusk perimeter for any EPCI whose member communes cross the Bretagne boundary: facts, aggregates, ranks, comparisons, and other territory readings use only its member communes in the four Breton départements (22 · 29 · 35 · 56). The EPCI remains in the published EPCI universe and in EPCI-to-EPCI comparisons, but it is not presented as a complete administrative EPCI. Wherever its public name is displayed, it carries an asterisk — for example, « CA Redon Agglomération* » — with the explanation « * Seules les communes bretonnes sont prises en compte. » The flag is derived from administrative membership, never hardcoded to one EPCI.
+_Avoid_: EPCI breton (suggests the whole EPCI lies in Bretagne), EPCI complet, partie française (does not identify Lusk's product perimeter)
+
 **Fiche d'identité**:
 Legacy product vocabulary for the current site: the territory's existing page with six theme tabs. The prototype replacement no longer treats this as the canonical product concept; new work uses **TerritoryFacts** and **TerritoryContent** until a new user-facing name is chosen.
 _Avoid_: Page d'indicateurs, profil, dashboard
@@ -217,18 +221,25 @@ routière », with a Lecture that names the polygonal road-use observation. The
 three OSM/Geovelo network lengths sit in a separate figure as parallel route
 traces. The two figures do not share a scale: polygonal land occupation and
 network length are different observations. Peer references use the canonical
-visible label « Groupe comparé »; the peer-group scope remains supporting data.
+visible label « Groupe comparé »; the note beneath each figure names the actual
+reference statistic and selected peer scope.
 _Avoid_: a single combined bar or scale for the footprint and the three
 network lengths, a visual claim that OCS-GE assigns the footprint to a mode, or
-visible « moyenne/médiane des… » comparison labels in a figure.
+an unnamed or generic comparison note that hides either the metric or the
+selected scope.
 
 **Longueur du réseau par habitant**:
 The OSM/Geovelo network length for each mobility mode, reported as kilometres
 per 1 000 inhabitants. This normalizes the mapped network against the resident
 population so territories of different size can be read on a common basis. It
 is a supply-side territorial ratio, not a measure of accessibility, use, or
-travel distance. The figure's public title is « Longueur du réseau par
+travel distance. In « Partage de l’espace public », every mapped physical
+geometry contributes its length once regardless of travel direction; for vélo,
+protected plus shared length equals the displayed total and the geometry shown
+on the map (ADR-0032). The figure's public title is « Longueur du réseau par
 habitant » and its values use the unit « km / 1 000 hab. ».
+_Avoid_: kilomètres-direction (a distinct service-capacity measure), distance
+parcourue, longueur d’itinéraire
 
 **Réseau piéton (t)**:
 The OSM-derived **likely walkable public network** used by the Mobilité network
@@ -247,6 +258,14 @@ walkable network** rather than pedestrian infrastructure.
 _Avoid_: réseau cyclable (the `b` Geovelo profile), itinéraire piéton (a route,
 not the measured network), infrastructure piétonne (too narrow for this proxy),
 track as an automatic synonym for walkable
+
+**Réseau cyclable (b)**:
+The Geovelo-derived physical cycling network used by « Partage de l’espace
+public ». Every source segment contributes its geometric length once, including
+when it serves both directions. Protected and shared are exhaustive map and
+length categories whose sum is the vélo total (ADR-0032).
+_Avoid_: kilomètres-direction, doubler une piste bidirectionnelle, réseau vélo
+OSM brut
 
 **Réseau routier car (c)**:
 The OSM-derived **likely drivable public network** used by the Mobilité network

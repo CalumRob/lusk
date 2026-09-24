@@ -14,6 +14,7 @@ defineProps<{
     :content="content"
     :pagination="pagination"
     show-all-units
+    show-map-prototype
     presentation="plain"
     network-figure-variant="traces"
   />

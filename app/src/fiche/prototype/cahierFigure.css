@@ -333,6 +333,12 @@
   font-size: 10px;
 }
 
+.cahier-figure-tooltip-unit {
+  color: var(--cahier-default, #62706c);
+  font-size: 10px;
+  letter-spacing: normal;
+}
+
 .cahier-figure-tooltip--anchored {
   display: flex;
   align-items: center;

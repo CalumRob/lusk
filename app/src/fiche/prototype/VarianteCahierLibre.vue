@@ -26,9 +26,11 @@ import type {
   AccessEvidence,
   ContentFact,
   ContentSection,
+  CyclingOfferEvidence,
   ExplorationTarget,
   SummaryEvidence,
   SingleUnitThemeContent,
+  SharingNetworksEvidence,
   ThemeContent,
 } from '@/fiche/content/themeContent'
 import {
@@ -56,6 +58,7 @@ import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahi
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
+import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
@@ -64,6 +67,7 @@ const props = defineProps<{
   presentation?: 'ruled' | 'plain'
   showAllUnits?: boolean
   networkFigureVariant?: 'traces'
+  showMapPrototype?: boolean
 }>()
 
 const rootRef = ref<HTMLElement | null>(null)
@@ -72,6 +76,45 @@ let observer: IntersectionObserver | null = null
 
 const units = computed(() => props.showAllUnits ? props.content.units : props.content.units.slice(0, 1))
 const unit = computed(() => units.value[0] ?? null)
+
+function isMapPrototypeSection(unitKey: string, sectionKey: string): boolean {
+  return props.showMapPrototype === true
+    && unitKey === 'partage-de-lespace-public'
+    && sectionKey === 'reseaux'
+}
+
+function mapEvidenceFor(currentUnit: (typeof units.value)[number]): SharingNetworksEvidence | null {
+  const section = currentUnit.sections.find((candidate) => candidate.key === 'reseaux')
+  return section?.evidence?.kind === 'sharing-networks' ? section.evidence : null
+}
+
+function mapExplorationFor(currentUnit: (typeof units.value)[number]) {
+  const section = currentUnit.sections.find((candidate) => candidate.key === 'reseaux')
+  return section ? sectionExploration(section) : null
+}
+
+function mapCyclingEvidenceFor(currentUnit: (typeof units.value)[number]): CyclingOfferEvidence | null {
+  const section = currentUnit.sections.find((candidate) => candidate.key === 'offre-cyclable')
+  return section?.evidence?.kind === 'cycling-offer' ? section.evidence : null
+}
+
+function mapSourcesFor(currentUnit: (typeof units.value)[number]): readonly string[] {
+  const sectionKeys = new Set(['reseaux', 'offre-cyclable'])
+  const sourceIds = new Set(
+    currentUnit.sections
+      .filter((section) => sectionKeys.has(section.key))
+      .flatMap((section) => section.provenance),
+  )
+  return props.content.sourceRegister
+    .filter((source) => sourceIds.has(source.id))
+    .map(sourceLabel)
+}
+
+function mapTaglineFor(currentUnit: (typeof units.value)[number]): string | null {
+  const section = currentUnit.sections.find((candidate) => candidate.key === 'reseaux')
+  return section?.lecture?.marelle ?? null
+}
+
 const pageEntry = computed(
   () => props.pagination.entries.find((entry) => entry.key === unit.value?.key) ?? null,
 )
@@ -482,7 +525,7 @@ onBeforeUnmount(() => {
               :data-section="section.key"
               :class="`cahier-section--${section.availability}`"
             >
-              <div class="concept-group-heading cahier-baseline-group">
+              <div v-if="!isMapPrototypeSection(currentUnit.key, section.key)" class="concept-group-heading cahier-baseline-group">
                 <span>{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
                 <div
                   v-if="props.presentation === 'plain' && section.lecture"
@@ -494,9 +537,31 @@ onBeforeUnmount(() => {
                 <h3 v-else>{{ section.label }}</h3>
               </div>
 
-              <section
-                class="figure-spread"
-                :class="{ 'figure-spread--flip': sectionIndex % 2 === 1 }"
+              <div
+                v-if="isMapPrototypeSection(currentUnit.key, section.key)"
+                class="map-figure-spread"
+                :id="`section-${section.key}`"
+                :data-figure="`section-${section.key}`"
+              >
+                <CartographicBreakoutPrototype
+                  :evidence="mapEvidenceFor(currentUnit)"
+                  :cycling-evidence="mapCyclingEvidenceFor(currentUnit)"
+                  :section-number="String(sectionIndex + 1).padStart(2, '0')"
+                  :sources="mapSourcesFor(currentUnit)"
+                  :tagline="mapTaglineFor(currentUnit)"
+                  :exploration-to="mapExplorationFor(currentUnit)"
+                />
+              </div>
+
+                <section
+                  v-else
+                  class="figure-spread"
+                  :class="{
+                    'figure-spread--flip': sectionIndex % 2 === 1,
+                    'figure-spread--paired': section.evidence?.kind === 'distribution'
+                      && section.evidence.buildingDistribution?.availability === 'complete'
+                      && section.evidence.accessRamp?.availability === 'complete',
+                  }"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >
@@ -557,7 +622,7 @@ onBeforeUnmount(() => {
                     <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
                    </figure>
 
-                  <template v-else-if="section.evidence?.kind === 'sharing-networks'">
+                  <template v-else-if="section.evidence?.kind === 'sharing-networks' && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public')">
                     <div
                       v-if="props.networkFigureVariant === 'traces'"
                       class="evidence-side sharing-networks-evidence"
@@ -828,11 +893,11 @@ onBeforeUnmount(() => {
                 </div>
               </section>
               <div
-                v-if="props.presentation === 'plain' && sectionExploration(section)"
+                v-if="props.presentation === 'plain' && sectionExploration(section) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                 class="cahier-section-footer"
               >
                 <div
-                  v-if="props.presentation === 'plain' && sectionExploration(section)"
+                  v-if="props.presentation === 'plain' && sectionExploration(section) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                   class="cahier-section-exploration cahier-section-exploration--unit-footer"
                   aria-label="Explorer les indicateurs de cette section"
                 >
@@ -997,6 +1062,11 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 .concept-group { width: 100%; }
+.map-figure-spread {
+  width: 100%;
+  min-width: 0;
+}
+.map-figure-spread .map-breakout { margin-top: 0; }
 .concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
 .cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-2); }
 .concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
@@ -1005,6 +1075,12 @@ onBeforeUnmount(() => {
 .concept-group-heading h3 { margin: 0; color: var(--ink); font-family: var(--font-serif); font-size: calc(1.2rem + 2px); font-weight: 500; line-height: 1; }
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
+.cahier--sans-grille .figure-spread { grid-template-columns: 1fr; column-gap: 0; }
+.cahier--sans-grille .figure-spread--paired {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(24px, 4vw, 56px);
+}
+.cahier--sans-grille .figure-spread--paired .evidence-figure { width: min(100%, 560px); margin-inline: auto; }
 .figure-spread--flip .argument-side { order: 2; }
 .figure-spread--flip .evidence-side { order: 1; }
 .argument-side, .evidence-side { min-width: 0; }
@@ -1023,9 +1099,11 @@ onBeforeUnmount(() => {
 .cahier--sans-grille .summary-metrics--paired {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 10%;
+  width: min(100%, var(--cahier-figure-width-standard, 760px));
+  margin-inline: auto;
 }
 .cahier--sans-grille .summary-bar-metrics {
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
 }
 .cahier--sans-grille .summary-metric-title {
@@ -1077,6 +1155,7 @@ onBeforeUnmount(() => {
 .regional-reading { font: var(--type-figure-mode); font-size: 11px; line-height: 1.25; }
 
 .access-figure-collection { margin: 0; padding: 12px 0 0; }
+.cahier--sans-grille .access-figure-collection { width: min(100%, var(--cahier-figure-width-standard, 760px)); margin-inline: auto; }
 .access-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 18px; align-items: start; }
 .access-figure { position: relative; display: grid; min-width: 0; gap: 8px; justify-items: center; margin: 0; }
 .access-service-label { min-height: 1.4em; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.4; text-align: center; }
@@ -1112,6 +1191,7 @@ onBeforeUnmount(() => {
 @container cahier-page (max-width: 620px) {
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cahier--sans-grille .summary-metrics--paired { grid-template-columns: 1fr; gap: var(--space-6); }
+  .cahier--sans-grille .figure-spread--paired { grid-template-columns: 1fr; row-gap: var(--cahier-spread-gap, 24px); }
 }
 @container cahier-page (max-width: 480px) {
   .summary-value { grid-template-columns: 1fr; gap: 5px; }

@@ -158,6 +158,7 @@ export interface CyclingOfferEvidence {
 export interface SharingNetworksEvidence {
   kind: 'sharing-networks'
   figureTitle: string
+  frameTitle: string
   networkReadingsLabel: string
   territoryName: string
   roadSurface: ContentFact
@@ -1102,7 +1103,8 @@ function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
         roadSurfaceLecture: [[
           text("L'emprise routière décrit la part de la surface totale du territoire qui est dédiée aux Réseaux routiers (code d'usage 4.1.1)."),
         ]],
-        figureTitle: 'Réseaux',
+        figureTitle: 'Cartes des réseaux de mobilité, par mode',
+        frameTitle: 'Réseaux',
         networkReadingsLabel: 'Longueur du réseau par habitant',
         comparisonLabel: comparisonLabelForFacts(allFacts, facts.territory),
         figureLecture: [[
@@ -1117,7 +1119,7 @@ function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
     indicators,
     evidence,
     provenance: sourceIdsFor(allFacts),
-    lecture: availability === 'complete' ? { marelle: 'Trois réseaux, trois usages', prose: [] } : null,
+    lecture: availability === 'complete' ? { marelle: 'Trois réseaux, trois empreintes', prose: [] } : null,
     explorationTargets: targetsFor(allFacts.map((value) => value.fact), facts.territory),
   }
 }

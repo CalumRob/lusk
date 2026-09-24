@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
+import CartographicBreakoutPrototype from '@/fiche/prototype/CartographicBreakoutPrototype.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
@@ -903,43 +904,124 @@ describe('Variante E — partage de l’espace public', () => {
       'Service minimum ?',
       'Tous les services ne se valent pas...',
       '... Tous les bâtiments non plus',
-      'Trois réseaux, trois usages',
       'Une piste ne suffit pas',
       'Quelle place pour chaque mode ?',
     ])
-    expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(true)
+    expect(wrapper.find('.map-breakout').exists()).toBe(true)
+    expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(false)
     expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(true)
     expect(wrapper.find('.sharing-parking-evidence').exists()).toBe(true)
-    expect(wrapper.find('.road-surface-figure').exists()).toBe(true)
-    expect(wrapper.find('.road-surface-figure .cahier-figure-title').text()).toBe('Emprise routière')
-    expect(wrapper.find('.road-surface-figure .cahier-figure-lecture').exists()).toBe(true)
-    expect(wrapper.find('.road-surface-scalar .cahier-figure-scalar-label').exists()).toBe(false)
+    expect(wrapper.find('.road-surface-figure').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Part du territoire couverte par des polygones d’usage routier de tout type.')
     expect(wrapper.text()).toContain('médiane des')
-    expect(wrapper.text()).toContain('Emprise routière')
-    expect(wrapper.find('.sharing-network-figure .cahier-figure-title').text()).toBe('Longueur du réseau par habitant')
-    expect(wrapper.find('.sharing-network-figure .cahier-figure-lecture').exists()).toBe(true)
-    expect(wrapper.findAll('.sharing-network-figure .cahier-figure-legend-label').map((label) => label.text())).toEqual([
-      'Réseau piéton',
-      'Réseau cyclable',
-      'Réseau automobile',
-    ])
-    expect(wrapper.find('.network-figure-heading').exists()).toBe(false)
-    expect(wrapper.find('.network-figure-traces').exists()).toBe(false)
-    expect(wrapper.find('.sharing-network-figure .summary-plot').exists()).toBe(true)
-    expect(wrapper.find('.network-bar-plot').exists()).toBe(false)
-    expect(wrapper.find('.network-dot-plot').exists()).toBe(false)
-    expect(wrapper.findAll('.sharing-network-figure .summary-plot-group-label')).toHaveLength(2)
-    expect(wrapper.findAll('.sharing-network-figure .summary-plot-bar')).toHaveLength(6)
-    expect(wrapper.findAll('.sharing-network-figure .summary-plot-bar[data-series="territory"]')).toHaveLength(3)
-    expect(wrapper.findAll('.sharing-network-figure .summary-plot-bar[data-series="reference"]')).toHaveLength(3)
-    expect(wrapper.find('.network-figure-table').exists()).toBe(false)
+    expect(wrapper.find('.sharing-network-figure').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Trois longueurs, un horizon')
     expect(wrapper.text()).not.toContain('Le point d’arrivée varie avec la longueur du réseau.')
     expect(wrapper.findAll('.sharing-cycling-reading')).toHaveLength(5)
     expect(wrapper.findAll('.sharing-parking-reading')).toHaveLength(3)
-    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(8)
-    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(7)
+    expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(7)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(6)
     expect(wrapper.text()).toContain('Groupe comparé')
+  })
+
+  it('renders the settled circular map plate contract', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const sharing = content.units
+      .find((unit) => unit.key === 'partage-de-lespace-public')
+      ?.sections.find((section) => section.key === 'reseaux')
+    const cycling = content.units
+      .find((unit) => unit.key === 'partage-de-lespace-public')
+      ?.sections.find((section) => section.key === 'offre-cyclable')
+    if (!sharing?.evidence || sharing.evidence.kind !== 'sharing-networks') {
+      throw new Error('Expected complete sharing-network evidence')
+    }
+    if (!cycling?.evidence || cycling.evidence.kind !== 'cycling-offer') {
+      throw new Error('Expected complete cycling-offer evidence')
+    }
+
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push({ path: '/', query: { plate: 'C', map: 'redon' } })
+    await router.isReady()
+    const wrapper = mount(CartographicBreakoutPrototype, {
+      props: { evidence: sharing.evidence, cyclingEvidence: cycling.evidence },
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.map-breakout--c').exists()).toBe(true)
+    expect(wrapper.find('.plate').attributes('aria-label')).toContain('CA Redon Agglomération*')
+    expect(wrapper.find('.map-breakout .plate > .cahier-figure-title').text()).toBe('Cartes des réseaux de mobilité, par mode')
+    expect(wrapper.find('.plate-apparatus-heading h3').text()).toBe('Réseaux')
+    expect(wrapper.find('.map-breakout-tagline').text()).toBe('Trois réseaux, trois empreintes')
+    expect(wrapper.findAll('.map-panel').map((panel) => panel.classes()[1])).toEqual([
+      'map-panel--car',
+      'map-panel--walk',
+      'map-panel--bike',
+    ])
+    expect(wrapper.findAll('.map-panel-label').map((label) => label.text())).toEqual([
+      'Réseau automobile',
+      'Réseau piéton',
+      'Réseau cyclable',
+    ])
+    expect(wrapper.findAll('.cahier-network-bar-row')).toHaveLength(4)
+    expect(wrapper.findAll('.cycling-evidence-segment')).toHaveLength(0)
+    expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__fill').exists()).toBe(true)
+    expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__segments').text()).toContain('Protégé')
+    expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__segments').text()).toContain('Partagé')
+    expect(wrapper.find('.border-legend').exists()).toBe(true)
+    expect(wrapper.find('.border-legend').text()).toContain('CA Redon Agglomération')
+    expect(wrapper.find('.border-legend').text()).toContain('Bretagne')
+    expect(wrapper.find('.plate-subfigure--road').exists()).toBe(true)
+    expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-row').exists()).toBe(true)
+    expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-chart__unit').text()).toBe('%')
+    expect(wrapper.findAll('.map-panel h4')).toHaveLength(0)
+    expect(wrapper.find('.cahier-figure-lecture').exists()).toBe(true)
+    expect(wrapper.find('.cahier-network-bar-chart__reference-key').text()).toContain('Groupe comparé')
+    expect(wrapper.findAll('.cahier-network-bar-chart__reference-key')).toHaveLength(1)
+    await wrapper.find('.cahier-network-bar-row--bike').trigger('mouseenter')
+    expect(wrapper.find('.plate-network-tooltip').exists()).toBe(true)
+    expect(wrapper.find('.cahier-network-bar-row--car').classes()).toContain('cahier-network-bar-row--dimmed')
+    await wrapper.find('.map-panel--bike').trigger('mouseenter')
+    expect(wrapper.find('.map-panel--car').classes()).toContain('map-panel--dimmed')
+    expect(wrapper.findAll('.map-gallery-source img')).toHaveLength(3)
+    await wrapper.find('.map-viewport').trigger('click')
+    await flushPromises()
+    const viewer = document.querySelector('.lusk-map-gallery')
+    expect(viewer).not.toBeNull()
+    expect(viewer?.querySelector('.viewer-navbar')).not.toBeNull()
+    expect(viewer?.querySelector('.viewer-list')).not.toBeNull()
+    expect(viewer?.querySelector('.viewer-navigation')).not.toBeNull()
+    expect(viewer?.querySelector('.viewer-button')).not.toBeNull()
+  })
+
+  it('uses the cartographic plate in place of the old Réseaux subgroup', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibre, {
+      props: {
+        content,
+        pagination: paginationFor(content),
+        showAllUnits: true,
+        showMapPrototype: true,
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    expect(wrapper.find('.map-breakout').exists()).toBe(true)
+    const mapGroup = wrapper.find('.concept-group[data-section="reseaux"]')
+    expect(mapGroup.exists()).toBe(true)
+    expect(mapGroup.attributes('style')).toBeUndefined()
+    expect(mapGroup.find('.map-figure-spread').exists()).toBe(true)
+    expect(mapGroup.find('.map-breakout').exists()).toBe(true)
+    expect(mapGroup.find('.map-breakout .map-section-number').text()).toBe('01')
+    expect(mapGroup.find('.map-breakout .plate > .cahier-figure-title').text()).toBe('Cartes des réseaux de mobilité, par mode')
+    expect(mapGroup.find('.plate-apparatus-heading h3').text()).toBe('Réseaux')
+    expect(mapGroup.find('.plate-exploration').exists()).toBe(true)
+    expect(mapGroup.find('.cahier-figure-lecture .plate-sources').exists()).toBe(true)
+    expect(mapGroup.find('.cahier-figure-lecture .plate-sources').element.closest('details')).not.toBeNull()
+    expect(wrapper.find('.sharing-networks-evidence').exists()).toBe(false)
+    expect(wrapper.find('.sharing-cycling-offer-evidence').exists()).toBe(true)
   })
 })

@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0032
+---
+
 # La règle de longueur du réseau cyclable (mode b de `reseaux` et « L'offre cyclable »)
 
 Issue #222 remplace le raw-OSM du mode `b` (vélo) de l'indicateur `reseaux` par le jeu Geovelo « Aménagements cyclables France Métropolitaine » (snapshots mensuels, schéma national v0.3.5, ODbL — la même famille de licence qu'ADR-0001). Le jeu compte chaque direction indépendamment dans ses propres statistiques (une piste bidirectionnelle de 2 km = 4 km chez Geovelo), et le fichier porte deux codes communaux par ligne (`code_com_d/g`, un par côté de la route). Lusk doit définir **sa** règle de longueur — identique sur toute la série de snapshots (l'exigence d'honnêteté de la perspective historique) — et sa règle d'attribution communale. Le raw-OSM actuel mesure chaque way une fois (`st_length`) et attribue chaque ligne à la commune de son centroïde (jamais comptée deux fois) — un invariant que la nouvelle règle doit préserver.
