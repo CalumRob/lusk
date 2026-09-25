@@ -67,6 +67,8 @@ export interface NumericFact {
   availability: FactAvailability
   provenance: FactProvenance | null
   comparison: FactComparison | null
+  /** Published aggregation semantics, including when the reference is unavailable. */
+  comparisonBasis: 'territory-median' | 'territory-mean' | 'building-weighted-mean' | 'pooled-building-mean'
   reason: string | null
 }
 
@@ -357,6 +359,7 @@ function factOf(options: {
   present: boolean
   provenance?: FactProvenance | null
   comparison?: FactComparison | null
+  comparisonBasis?: NumericFact['comparisonBasis']
   reason?: string | null
 }): NumericFact {
   return {
@@ -368,6 +371,7 @@ function factOf(options: {
     availability: availabilityOf(options.value, options.present),
     provenance: options.present ? options.provenance ?? null : null,
     comparison: options.comparison ?? null,
+    comparisonBasis: options.comparisonBasis ?? 'territory-median',
     reason: options.reason ?? null,
   }
 }
@@ -647,6 +651,8 @@ function indicatorsOf(
         comparison: direction
           ? indicatorComparison(payload, scope, row, direction, statisticForIndicator(row.key), precomputed)
           : null,
+        comparisonBasis: statisticForIndicator(row.key) === 'mean'
+          ? 'building-weighted-mean' : 'territory-median',
         reason: row.rider ?? null,
       })
     })
@@ -660,6 +666,7 @@ function accessFact(
   present: boolean,
   provenance: FactProvenance | null,
   comparison: FactComparison | null,
+  comparisonBasis: NumericFact['comparisonBasis'] = 'territory-median',
 ): NumericFact {
   return factOf({
     key,
@@ -669,6 +676,7 @@ function accessFact(
     present,
     provenance,
     comparison,
+    comparisonBasis,
   })
 }
 
@@ -738,6 +746,7 @@ function accessOf(
         row !== null,
         row ? provenanceFromRow(row, sourceIdForIndicator(payload, row.key)) : null,
         row && direction ? indicatorComparison(payload, scope, row, direction, 'mean', precomputed) : null,
+        'pooled-building-mean',
       )
     }
     return {
@@ -798,6 +807,7 @@ function accessOf(
               weights: peerObservations.map(({ weight }) => weight),
               statistic: 'mean',
             }),
+        comparisonBasis: 'building-weighted-mean',
       })
     }
     return { walkTransit: lossFact('walkTransit'), bike: lossFact('bike') }
@@ -1082,7 +1092,7 @@ function buildingDistributionOf(
       publicationDate: first.date_publication,
     },
     comparisonLabel: precomputed
-      ? publishedComparison?.label ?? null
+      ? publishedComparison?.label ?? precomputed.scope.label
       : first.comparison_label,
   }
 }
@@ -1143,7 +1153,7 @@ function accessRampOf(
       referenceDate: first.date_reference,
       publicationDate: first.date_publication,
     },
-    comparisonLabel: precomputed ? publishedComparison?.label ?? null : first.comparison_label,
+    comparisonLabel: precomputed ? publishedComparison?.label ?? precomputed.scope.label : first.comparison_label,
   }
 }
 

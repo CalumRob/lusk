@@ -1,6 +1,9 @@
 import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
 import type { Territoire } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
+import type { InjectionKey } from 'vue'
+import type { Ref } from 'vue'
+import { buildingScopeLabel, COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
 
 export const PARAM_COMPARAISON = 'comparaison'
 
@@ -13,6 +16,55 @@ export interface ResolutionContexteComparaison {
 }
 
 const MODES: readonly TerritoryComparisonMode[] = ['densite', 'epci', 'bretagne']
+
+export interface OptionContexteComparaison {
+  mode: TerritoryComparisonMode
+  label: string
+  description: string | null
+}
+
+export type PrésentationPortéeComparaison = 'territoires' | 'bâtiments'
+
+export function libelleComparaisonBâtiments(
+  rawLabel: string | null,
+): string | null {
+  if (!rawLabel) return null
+  return buildingScopeLabel(rawLabel)
+}
+
+export const OPTIONS_COMPARAISON_KEY: InjectionKey<Readonly<Ref<readonly OptionContexteComparaison[]>>> =
+  Symbol('options-contexte-comparaison')
+
+/**
+ * Expose the published comparison projections that a commune can select.
+ * Availability belongs to the territory/read-model seam, not to the selector.
+ */
+export function optionsContexteComparaison(options: {
+  territoire: Territoire | null
+  contextes: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>>
+}): readonly OptionContexteComparaison[] {
+  const territoire = options.territoire
+  if (!territoire || territoire.type !== 'commune') return []
+
+  return MODES.flatMap((mode) => {
+    const contexte = options.contextes[mode]
+    if (!contexte || (mode === 'epci' && territoire.epci === null)) return []
+    return [{
+      mode,
+      label: contexte.scope.label,
+      description: COMPARISON_MODE_DESCRIPTIONS[mode] ?? null,
+    }]
+  })
+}
+
+/** Preserve the evidence's population grammar while reusing the canonical scope. */
+export function libelleOptionComparaison(
+  option: OptionContexteComparaison,
+  présentation: PrésentationPortéeComparaison = 'territoires',
+): string {
+  if (présentation !== 'bâtiments') return option.label
+  return libelleComparaisonBâtiments(option.label) ?? option.label
+}
 
 /** Keep the selected comparison mode when a graph opens another territory. */
 export function queryTerritoireAvecComparaison(query: LocationQuery, theme: string): LocationQuery {
@@ -34,7 +86,20 @@ export function resoudreContexteComparaison(options: {
   contextes: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>>
 }): ResolutionContexteComparaison {
   const { territoire, demande, contextes } = options
-  if (!territoire || territoire.type !== 'commune') {
+  if (!territoire) {
+    return { mode: null, contexte: null, canonicaliser: demande !== undefined }
+  }
+  if (territoire.type === 'epci' || territoire.type === 'departement') {
+    // These levels keep one fixed Bretagne comparison universe. They do not
+    // accept a communal URL mode, but their read models still publish the
+    // precomputed context needed to render comparison references.
+    return {
+      mode: null,
+      contexte: contextes.bretagne ?? null,
+      canonicaliser: demande !== undefined,
+    }
+  }
+  if (territoire.type === 'region') {
     return { mode: null, contexte: null, canonicaliser: demande !== undefined }
   }
 

@@ -35,6 +35,7 @@ import {
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   PARAM_COMPARAISON,
+  optionsContexteComparaison,
   resoudreContexteComparaison,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
@@ -89,6 +90,11 @@ const resolutionComparaison = computed(() => {
     contextes: modeleTerritoire.model.value.themes.mobilite?.comparisons ?? {},
   })
 })
+
+const optionsComparaison = computed(() => optionsContexteComparaison({
+  territoire: territoire.value,
+  contextes: modeleTerritoire.model.value?.themes.mobilite?.comparisons ?? {},
+}))
 
 /**
  * L'identité et le contenu franchissent ensemble la frontière atomique du
@@ -305,6 +311,7 @@ watch(
               v-if="prototypeCahierMobilite && contenuMobilite && paginationCahier && variante"
               :content="contenuMobilite"
               :pagination="paginationCahier"
+              :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
             />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation

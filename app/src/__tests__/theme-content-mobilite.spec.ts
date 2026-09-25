@@ -14,7 +14,7 @@ import type {
   TerritoryFacts,
 } from '@/fiche/content/territoryFacts'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import type { Lecture } from '@/fiche/content/themeContent'
+import type { Lecture, MobiliteContentSection } from '@/fiche/content/themeContent'
 
 const provenance: FactProvenance = {
   sourceId: 'mobilite_snapshot',
@@ -56,6 +56,8 @@ function fact(
     availability: value === null ? 'incomplete' : 'complete',
     provenance,
     comparison: factComparison,
+    comparisonBasis: factComparison?.reference?.kind === 'mean'
+      ? 'building-weighted-mean' : 'territory-median',
     reason: null,
   }
 }
@@ -506,8 +508,45 @@ describe('resolveMobiliteThemeContent', () => {
     expect(summary?.evidence?.kind).toBe('summary')
     if (summary?.evidence?.kind === 'summary') {
       expect(summary.evidence.comparisonLabel)
-        .toBe('Comparaison indisponible — moyenne des communes de EPCI X')
+        .toBe('Comparaison indisponible — moyenne des bâtiments des communes de EPCI X')
     }
+  })
+
+  it('uses the fact aggregation contract rather than the indicator key for comparison wording', () => {
+    const facts = structuredClone(completeFacts)
+    const loss = facts.mobility.access.summary.averageLosses.diversity.walkTransit
+    loss.key = 'renamed_metric'
+    loss.comparisonBasis = 'territory-mean'
+    const summary = resolveMobiliteThemeContent(facts).units[0]?.sections[0]
+    expect(summary?.evidence?.kind === 'summary' && summary.evidence.comparisonLabel)
+      .toBe('moyenne des communes de EPCI X')
+
+    loss.comparisonBasis = 'pooled-building-mean'
+    const pooled = resolveMobiliteThemeContent(facts).units[0]?.sections[0]
+    expect(pooled?.evidence?.kind === 'summary' && pooled.evidence.comparisonLabel)
+      .toBe('moyenne des bâtiments des communes de EPCI X')
+  })
+
+  it('keeps an unavailable BPE comparison label available to the selector', () => {
+    const facts = structuredClone(completeFacts)
+    const profile = facts.mobility.bpeAccess.profiles[0]
+    expect(profile?.comparison).not.toBeNull()
+    if (profile?.comparison) {
+      profile.comparison.rank = null
+      profile.comparison.reference = null
+    }
+
+    const content = resolveMobiliteThemeContent(facts)
+    const section = content.units
+      .flatMap((unit) => [...unit.sections] as MobiliteContentSection[])
+      .find((candidate): candidate is Extract<
+        MobiliteContentSection,
+        { key: 'profils-acces-par-mode' }
+      > => candidate.key === 'profils-acces-par-mode')
+    expect(section?.evidence?.kind).toBe('bpe-profiles')
+    if (!section || section.evidence?.kind !== 'bpe-profiles') throw new Error('Expected BPE profile evidence')
+    expect(section.evidence.comparisonLabel)
+      .toBe('Comparaison indisponible — moyenne des communes de EPCI X')
   })
 
   it('resolves the public-space sharing unit into ordered network, cycling-offer, and parking sections', () => {
@@ -710,7 +749,7 @@ describe('resolveMobiliteThemeContent', () => {
         breadthAxisLabel: 'types d’équipements accessibles',
         depthAxisLabel: 'équipements accessibles',
       },
-      comparisonPopulationLabel: 'bâtiments de EPCI X',
+      comparisonPopulationLabel: 'bâtiments des communes de EPCI X',
       buildingDistributionLecture: expect.any(Array),
       accessRampLecture: expect.any(Array),
     })
@@ -788,7 +827,7 @@ describe('resolveMobiliteThemeContent', () => {
 
     expect(distribution.evidence?.kind === 'distribution'
       ? distribution.evidence.comparisonPopulationLabel
-      : null).toBe('bâtiments de CA EPCI X')
+      : null).toBe('bâtiments des communes de CA EPCI X')
   })
 
   it('removes stale coverage rules and defensive caveats from every figure reading', () => {

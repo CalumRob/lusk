@@ -375,7 +375,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(wrapper.findAll('.cahier-comparison-value')).toHaveLength(15)
     expect(wrapper.findAll('.cahier-comparison-value').every((note) => !note.text().includes('Médiane'))).toBe(true)
     expect(wrapper.findAll('.cahier-comparison-note')).toHaveLength(4)
-    expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
+    expect(wrapper.find('.cahier-comparison-note').text()).toContain('Groupe comparé : moyenne des bâtiments des communes de EPCI X')
     expect(wrapper.find('.bpe-comparison-note').text()).toContain('Groupe comparé : moyenne des communes de EPCI X')
     expect(wrapper.find('.cahier-comparison-value').text()).toContain('Groupe comparé')
     expect(wrapper.text()).toContain('À pied + TC')
@@ -734,7 +734,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
 
     const wrapper = await render(resolveMobiliteThemeContent(facts))
 
-    expect(wrapper.find('.access-ramp-evidence .cahier-comparison-note').text()).toBe('Groupe comparé : bâtiments de EPCI X')
+    expect(wrapper.find('.access-ramp-evidence .cahier-comparison-note').text()).toBe('Groupe comparé : bâtiments des communes de EPCI X')
     expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('Chaque case regroupe les bâtiments')
     expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('Exemple :')
     expect(wrapper.find('.bivariate-evidence .cahier-figure-lecture').text()).toContain('contre')

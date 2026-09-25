@@ -316,6 +316,14 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   ]
   expect_equal(sum(epci_distribution$comparison_building_count), 3L)
   expect_equal(unique(epci_distribution$scope_label), "communes de CA EPCI X")
+  # The same cohort is materialized once but published on every member's fiche.
+  epci_neighbor <- projections$distribution[
+    projections$distribution$territoire == "22002" &
+      projections$distribution$comparison_mode == "epci", , drop = FALSE
+  ]
+  expect_equal(epci_neighbor$comparison_building_count,
+               epci_distribution$comparison_building_count)
+  expect_equal(epci_neighbor$scope_label, epci_distribution$scope_label)
 
   density_ramp <- projections$rampe[
     projections$rampe$territoire == "22001" &
@@ -325,6 +333,14 @@ test_that("les projections bâtiment publient les contextes applicables sans fal
   ]
   expect_equal(density_ramp$comparison_total_buildings, 4L)
   expect_equal(density_ramp$comparison_accessible_types, 4)
+  density_neighbor <- projections$rampe[
+    projections$rampe$territoire == "22002" &
+      projections$rampe$comparison_mode == "densite" &
+      projections$rampe$mode == "t" &
+      projections$rampe$quantile == 0.5, , drop = FALSE
+  ]
+  expect_equal(density_neighbor$comparison_accessible_types,
+               density_ramp$comparison_accessible_types)
 
   expect_false(any(
     projections$distribution$territoire == "22003" &

@@ -301,6 +301,20 @@ describe('le modèle de lecture d’un territoire', () => {
     )).toThrow(/distribution comparée.*incomplète/)
   })
 
+  it('keeps the selected scope on a building figure without a published comparison', () => {
+    const brut = structuredClone(modelePublie22001)
+    brut.themes.mobilite.comparaisons.epci.distribution_batiments = null
+    brut.themes.mobilite.comparaisons.epci.rampe_acces = null
+    const model = validerModeleTerritoire(brut, 'territoires/commune/22001.json')
+    const facts = territoryFactsFor(
+      payloadDepuisModeleTerritoire(model), '22001', model.themes.mobilite?.comparisons.epci,
+    )
+    expect(facts?.mobility.buildingDistribution?.comparisonLabel)
+      .toBe(model.themes.mobilite?.comparisons.epci?.scope.label)
+    expect(facts?.mobility.accessRamp?.comparisonLabel)
+      .toBe(model.themes.mobilite?.comparisons.epci?.scope.label)
+  })
+
   it('refuse une preuve comparée dont le libellé diverge de son périmètre', () => {
     const brut = structuredClone(modelePublie22001)
     type ContexteBrut = {

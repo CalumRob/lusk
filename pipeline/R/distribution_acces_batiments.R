@@ -587,6 +587,13 @@ construire_contextes_acces_batiments <- function(
   ) %>%
     dplyr::distinct()
 
+  # A cohort is shared by every fiche selecting it. Aggregate its buildings
+  # once (rather than repeating the Bretagne cohort for every commune), then
+  # project the compact cells/quantiles onto each destination below.
+  contextes_destinations <- contextes
+  contextes <- contextes %>%
+    dplyr::distinct(.data$member_selector, .data$member_code, .keep_all = TRUE)
+
   context_members <- dplyr::bind_rows(
     contextes %>%
       dplyr::filter(member_selector == "classe_densite") %>%
@@ -871,7 +878,33 @@ construire_contextes_acces_batiments <- function(
     empty_rampe
   }
 
-  list(distribution = distribution, rampe = rampe)
+  attribuer_destinations <- function(table) {
+    if (nrow(table) == 0L) return(table)
+    cohortes <- contextes %>%
+      dplyr::select(territoire, comparison_mode, member_selector, member_code)
+    destinations <- contextes_destinations %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label,
+        member_selector, member_code
+      )
+    table %>%
+      dplyr::left_join(cohortes, by = c("territoire", "comparison_mode")) %>%
+      dplyr::select(-territoire, -type, -comparison_mode, -scope_kind, -scope_label) %>%
+      dplyr::inner_join(
+        destinations, by = c("member_selector", "member_code"),
+        relationship = "many-to-many"
+      ) %>%
+      dplyr::select(
+        territoire, type, comparison_mode, scope_kind, scope_label,
+        dplyr::everything(), -member_selector, -member_code
+      ) %>%
+      dplyr::arrange(.data$type, .data$territoire, .data$comparison_mode)
+  }
+
+  list(
+    distribution = attribuer_destinations(distribution),
+    rampe = attribuer_destinations(rampe)
+  )
 }
 
 membres_comparaison_acces_batiments <- function(mapped, scopes) {
