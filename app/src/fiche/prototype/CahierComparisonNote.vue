@@ -116,7 +116,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 async function choisir(mode: TerritoryComparisonMode): Promise<void> {
   ouvert.value = false
   await router.replace({
-    query: { ...route.query, [PARAM_COMPARAISON]: mode },
+    query: { ...route.query, [PARAM_COMPARAISON]: mode === 'densite' ? undefined : mode },
   })
   await nextTick()
   await nextTick()

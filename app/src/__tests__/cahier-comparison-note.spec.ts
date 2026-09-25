@@ -45,6 +45,16 @@ async function monter(props: {
 }
 
 describe('CahierComparisonNote', () => {
+  it('removes the comparison parameter when selecting the default density scope', async () => {
+    const { router, wrapper } = await monter()
+    await wrapper.get('button[aria-haspopup="listbox"]').trigger('click')
+    await wrapper.find('[role="option"][aria-selected="false"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('keeps an unavailable comparison selectable', async () => {
     const { router, wrapper } = await monter()
     const selector = wrapper.get('.cahier-comparison-note')

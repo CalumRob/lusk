@@ -289,7 +289,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await reopenedDensity!.trigger('keydown', { key: 'Enter' })
     await flushPromises()
 
-    expect(router.currentRoute.value.query.comparaison).toBe('densite')
+    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
     wrapper.unmount()
   })
 
