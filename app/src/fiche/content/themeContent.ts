@@ -19,6 +19,7 @@ import type {
   TerritoryFacts,
   TerritoryIdentity,
 } from './territoryFacts'
+import { libelleComparaisonBâtiments } from '@/fiche/comparisonContext'
 
 export interface ContentSource {
   id: string
@@ -620,6 +621,8 @@ type ComparisonContext = {
   reference: { kind: 'mean' | 'median'; value: number } | null
 }
 
+type ComparisonPopulation = 'territoires' | 'bâtiments'
+
 function comparisonScopeLabel(
   comparison: ComparisonContext | null,
   territory: TerritoryIdentity,
@@ -647,18 +650,25 @@ function comparisonLabel(
   territory: TerritoryIdentity,
   statistic: 'moyenne' | 'médiane' =
     comparison?.reference?.kind === 'mean' ? 'moyenne' : 'médiane',
+  population: ComparisonPopulation = 'territoires',
 ): string | null {
   const scopeLabel = comparisonScopeLabel(comparison, territory)
   if (!scopeLabel) return null
-  return comparison?.reference
-    ? `${statistic} des ${scopeLabel}`
-    : `Comparaison indisponible — ${statistic} des ${scopeLabel}`
+  const objectLabel = population === 'bâtiments'
+    ? `des bâtiments des ${scopeLabel}`
+    : `des ${scopeLabel}`
+  const label = `${statistic} ${objectLabel}`
+  return comparison?.reference ? label : `Comparaison indisponible — ${label}`
 }
 
 function statisticForFact(fact: NumericFact): 'moyenne' | 'médiane' {
   return fact.key.startsWith('avg_') || fact.comparison?.reference?.kind === 'mean'
     ? 'moyenne'
     : 'médiane'
+}
+
+function populationForFact(fact: NumericFact): ComparisonPopulation {
+  return fact.key.startsWith('avg_') ? 'bâtiments' : 'territoires'
 }
 
 function formatMillions(value: number): string {
@@ -827,14 +837,7 @@ function accessRampFigureLecture(ramp: MobiliteAccessRamp | null): readonly Text
 function buildingComparisonPopulationLabel(
   rawLabel: string | null,
 ): string | null {
-  if (!rawLabel) return null
-  if (rawLabel === 'communes bretonnes') {
-    return 'bâtiments de Bretagne'
-  }
-  if (rawLabel.startsWith('communes de ')) {
-    return `bâtiments de ${rawLabel.slice('communes de '.length)}`
-  }
-  return rawLabel
+  return libelleComparaisonBâtiments(rawLabel)
 }
 
 function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
@@ -966,6 +969,7 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
             comparisonFact?.fact.comparison ?? null,
             facts.territory,
             comparisonFact ? statisticForFact(comparisonFact.fact) : undefined,
+            comparisonFact ? populationForFact(comparisonFact.fact) : undefined,
           ),
           figureLecture: summaryFigureLecture(summary),
           losses,
@@ -1068,8 +1072,13 @@ function comparisonLabelForFacts(
   values: readonly ContentFact[],
   territory: TerritoryIdentity,
 ): string | null {
-  const comparison = values.find((value) => value.fact.comparison)?.fact.comparison ?? null
-  return comparisonLabel(comparison, territory)
+  const comparedFact = values.find((value) => value.fact.comparison)?.fact ?? null
+  return comparisonLabel(
+    comparedFact?.comparison ?? null,
+    territory,
+    comparedFact ? statisticForFact(comparedFact) : undefined,
+    comparedFact ? populationForFact(comparedFact) : undefined,
+  )
 }
 
 function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
@@ -1293,7 +1302,7 @@ function sharingRundown(facts: TerritoryFacts): readonly TextBlock[] {
 function profilesSection(facts: TerritoryFacts): ProfilsAccesParModeSection {
   const profiles = facts.mobility.bpeAccess.profiles
   const comparisonLabelForFigure = comparisonLabel(
-    profiles.find((profile) => profile.comparison?.reference)?.comparison ?? null,
+    profiles.find((profile) => profile.comparison)?.comparison ?? null,
     facts.territory,
     'moyenne',
   )

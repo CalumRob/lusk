@@ -20,6 +20,7 @@ import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierProse from './CahierProse.vue'
+import CahierComparisonNote from './CahierComparisonNote.vue'
 import type { CahierNetworkBarRow } from './CahierNetworkBarChart.vue'
 import CahierNetworkBarChart from './CahierNetworkBarChart.vue'
 
@@ -573,11 +574,12 @@ watch(territoryKey, () => {
             :unit="networkBarUnit"
             :rows="networkTooltipRows(activeMode ?? 'car')"
           />
-          <CahierFigureLecture v-if="hasFigureLecture">
-            <CahierProse v-if="figureLectureBlocks.length > 0" :blocks="figureLectureBlocks" />
-            <p v-if="props.sources?.length" class="plate-sources">Sources : {{ props.sources.join(' · ') }}</p>
-          </CahierFigureLecture>
-          <PassarelleExploration
+           <CahierFigureLecture v-if="hasFigureLecture">
+             <CahierProse v-if="figureLectureBlocks.length > 0" :blocks="figureLectureBlocks" />
+             <p v-if="props.sources?.length" class="plate-sources">Sources : {{ props.sources.join(' · ') }}</p>
+           </CahierFigureLecture>
+           <CahierComparisonNote :label="props.evidence?.comparisonLabel ?? null" />
+           <PassarelleExploration
             v-if="props.explorationTo"
             class="plate-exploration"
             :to="props.explorationTo"

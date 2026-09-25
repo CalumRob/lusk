@@ -18,10 +18,14 @@ import {
   Utensils,
   WalletCards,
 } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
+import {
+  OPTIONS_COMPARAISON_KEY,
+} from '@/fiche/comparisonContext'
+import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 import type {
   AccessEvidence,
   ContentFact,
@@ -68,7 +72,10 @@ const props = defineProps<{
   showAllUnits?: boolean
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
+  comparisonOptions?: readonly OptionContexteComparaison[]
 }>()
+
+provide(OPTIONS_COMPARAISON_KEY, props.comparisonOptions ?? [])
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')
@@ -604,7 +611,10 @@ onBeforeUnmount(() => {
                     <CahierFigureLecture>
                       <CahierProse :blocks="section.evidence.buildingDistributionLecture" />
                     </CahierFigureLecture>
-                    <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                     <CahierComparisonNote
+                       :label="section.evidence.comparisonPopulationLabel"
+                       scope-kind="bâtiments"
+                     />
                    </figure>
 
                   <figure
@@ -619,7 +629,10 @@ onBeforeUnmount(() => {
                     <CahierFigureLecture>
                       <CahierProse :blocks="section.evidence.accessRampLecture" />
                     </CahierFigureLecture>
-                    <CahierComparisonNote :label="section.evidence.comparisonPopulationLabel" />
+                     <CahierComparisonNote
+                       :label="section.evidence.comparisonPopulationLabel"
+                       scope-kind="bâtiments"
+                     />
                    </figure>
 
                   <template v-else-if="section.evidence?.kind === 'sharing-networks' && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public')">

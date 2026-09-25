@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  libelleOptionComparaison,
+  optionsContexteComparaison,
   queryTerritoireAvecComparaison,
   resoudreContexteComparaison,
 } from '@/fiche/comparisonContext'
@@ -108,5 +110,34 @@ describe('contexte de comparaison communal piloté par l’URL', () => {
       .toEqual({ theme: 'mobilite', comparaison: 'epci' })
     expect(queryTerritoireAvecComparaison({ variant: 'E' }, 'mobilite'))
       .toEqual({ theme: 'mobilite' })
+  })
+
+  it('publie les options disponibles dans l’ordre produit avec l’aide de la densité', () => {
+    expect(optionsContexteComparaison({
+      territoire: commune,
+      contextes,
+    })).toEqual([
+      {
+        mode: 'densite',
+        label: 'densite',
+        description: 'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
+      },
+      { mode: 'epci', label: 'epci', description: null },
+      { mode: 'bretagne', label: 'bretagne', description: null },
+    ])
+  })
+
+  it('ne publie jamais l’option EPCI pour une commune sans EPCI', () => {
+    expect(optionsContexteComparaison({
+      territoire: { ...commune, epci: null },
+      contextes,
+    }).map((option) => option.mode)).toEqual(['densite', 'bretagne'])
+  })
+
+  it('conserve la grammaire des comparaisons groupées par bâtiments', () => {
+    const option = { mode: 'epci' as const, label: 'communes de EPCI X', description: null }
+    expect(libelleOptionComparaison(option, 'bâtiments')).toBe('bâtiments des communes de EPCI X')
+    expect(libelleOptionComparaison({ ...option, label: 'communes bretonnes' }, 'bâtiments'))
+      .toBe('bâtiments des communes bretonnes')
   })
 })

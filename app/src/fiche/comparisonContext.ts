@@ -1,6 +1,7 @@
 import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
 import type { Territoire } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
+import type { InjectionKey } from 'vue'
 
 export const PARAM_COMPARAISON = 'comparaison'
 
@@ -13,6 +14,60 @@ export interface ResolutionContexteComparaison {
 }
 
 const MODES: readonly TerritoryComparisonMode[] = ['densite', 'epci', 'bretagne']
+
+export interface OptionContexteComparaison {
+  mode: TerritoryComparisonMode
+  label: string
+  description: string | null
+}
+
+export type PrésentationPortéeComparaison = 'territoires' | 'bâtiments'
+
+export function libelleComparaisonBâtiments(
+  rawLabel: string | null,
+): string | null {
+  if (!rawLabel) return null
+  if (rawLabel.startsWith('bâtiments des ')) return rawLabel
+  return `bâtiments des ${rawLabel}`
+}
+
+export const OPTIONS_COMPARAISON_KEY: InjectionKey<readonly OptionContexteComparaison[]> =
+  Symbol('options-contexte-comparaison')
+
+const DESCRIPTIONS_MODES: Readonly<Partial<Record<TerritoryComparisonMode, string>>> = {
+  densite: 'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
+}
+
+/**
+ * Expose the published comparison projections that a commune can select.
+ * Availability belongs to the territory/read-model seam, not to the selector.
+ */
+export function optionsContexteComparaison(options: {
+  territoire: Territoire | null
+  contextes: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>>
+}): readonly OptionContexteComparaison[] {
+  const territoire = options.territoire
+  if (!territoire || territoire.type !== 'commune') return []
+
+  return MODES.flatMap((mode) => {
+    const contexte = options.contextes[mode]
+    if (!contexte || (mode === 'epci' && territoire.epci === null)) return []
+    return [{
+      mode,
+      label: contexte.scope.label,
+      description: DESCRIPTIONS_MODES[mode] ?? null,
+    }]
+  })
+}
+
+/** Preserve the evidence's population grammar while reusing the canonical scope. */
+export function libelleOptionComparaison(
+  option: OptionContexteComparaison,
+  présentation: PrésentationPortéeComparaison = 'territoires',
+): string {
+  if (présentation !== 'bâtiments') return option.label
+  return libelleComparaisonBâtiments(option.label) ?? option.label
+}
 
 /** Keep the selected comparison mode when a graph opens another territory. */
 export function queryTerritoireAvecComparaison(query: LocationQuery, theme: string): LocationQuery {

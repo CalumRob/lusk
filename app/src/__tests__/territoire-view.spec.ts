@@ -220,6 +220,102 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('expose le contexte sélectionné comme une divulgation synchronisable', async () => {
+    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=densite',
+      charger,
+    )
+
+    const selector = wrapper.get('.cahier-comparison-note')
+    const trigger = selector.get('button[aria-haspopup="listbox"]')
+
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(trigger.attributes('aria-current')).toBe('true')
+    expect(trigger.text()).toContain('grands centres urbains bretons')
+    expect(selector.get('.cahier-comparison-note__scope').text()).toBe('grands centres urbains bretons')
+    expect(selector.get('.cahier-comparison-note__arrow').text()).toBe('←')
+    expect(selector.get('.cahier-comparison-note__arrow').classes()).not.toContain('is-open')
+
+    await trigger.trigger('click')
+
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(selector.get('.cahier-comparison-note__arrow').classes()).toContain('is-open')
+    const options = selector.findAll('[role="option"][aria-selected="false"]')
+    expect(options.map((option) => option.text())).toEqual([
+      'communes de CC Loudéac Communauté - Bretagne Centre',
+      'communes bretonnes',
+    ])
+    expect(options[0]!.attributes('title')).toBeUndefined()
+
+    await selector
+      .get('[role="option"][aria-selected="false"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.comparaison).toBe('epci')
+    expect(wrapper.get('.cahier-comparison-note button').text()).toContain(
+      'communes de CC Loudéac Communauté - Bretagne Centre',
+    )
+    const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
+    expect(comparisonNotes.length).toBeGreaterThan(5)
+    expect(comparisonNotes.every((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('ne branche pas le sélecteur de comparaison sur la variante D', async () => {
+    const varianteD = varianteDeUrl('D')
+    expect(varianteD?.clef).toBe('D')
+    await (varianteD?.composant as any).__asyncLoader?.()
+    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    const { wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&variant=D&comparaison=epci',
+      charger,
+    )
+
+    await flushPromises()
+    const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
+    expect(comparisonNotes.length).toBeGreaterThan(0)
+    expect(comparisonNotes.every((note) => !note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('permet de changer de contexte au clavier et expose l’aide de la densité', async () => {
+    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
+      charger,
+    )
+
+    const selector = wrapper.get('.cahier-comparison-note')
+    const trigger = selector.get('button[aria-haspopup="listbox"]')
+    await trigger.trigger('keydown', { key: 'Enter' })
+
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    const density = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === 'grands centres urbains bretons')
+    expect(density).toBeDefined()
+    expect(density!.attributes('title')).toBe(
+      'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
+    )
+    const descriptionId = density!.attributes('aria-describedby')
+    expect(descriptionId).toBeTruthy()
+    expect(selector.get(`#${descriptionId}`).text()).toContain('Classe définie par l’Insee')
+
+    await density!.trigger('focus')
+    await density!.trigger('keydown', { key: 'Escape' })
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+
+    await trigger.trigger('keydown', { key: 'Enter' })
+    const reopenedDensity = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === 'grands centres urbains bretons')
+    expect(reopenedDensity).toBeDefined()
+    await reopenedDensity!.trigger('focus')
+    await reopenedDensity!.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.comparaison).toBe('densite')
+    wrapper.unmount()
+  })
+
   it('affiche l’erreur typée et réessaie le même endpoint', async () => {
     const charger = vi
       .fn()

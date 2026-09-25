@@ -811,7 +811,11 @@ construire_modele_territoire <- function(payload, metadata, territoire,
           }
         }
       }
-    } else if (is.data.frame(distribution_cible) && nrow(distribution_cible) > 0L) {
+    } else if (
+      is.data.frame(distribution_cible) &&
+        nrow(distribution_cible) > 0L &&
+        (type != "commune" || mode == "epci")
+    ) {
       distribution_cible <- distribution_cible[
         as.character(distribution_cible$territoire) == territoire, , drop = FALSE
       ]
@@ -869,7 +873,11 @@ construire_modele_territoire <- function(payload, metadata, territoire,
           }
         }
       }
-    } else if (is.data.frame(rampe_cible) && nrow(rampe_cible) > 0L) {
+    } else if (
+      is.data.frame(rampe_cible) &&
+        nrow(rampe_cible) > 0L &&
+        (type != "commune" || mode == "epci")
+    ) {
       rampe_cible <- rampe_cible[
         as.character(rampe_cible$territoire) == territoire, , drop = FALSE
       ]
