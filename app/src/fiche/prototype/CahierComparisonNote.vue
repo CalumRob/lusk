@@ -19,6 +19,7 @@ import {
 } from '@/fiche/comparisonContext'
 import type { PrésentationPortéeComparaison } from '@/fiche/comparisonContext'
 import type { TerritoryComparisonMode } from '@/payload/territoryReadModel'
+import { buildingScopeParts } from '@/fiche/content/comparisonWording'
 
 const props = withDefaults(defineProps<{
   label: string | null
@@ -27,7 +28,7 @@ const props = withDefaults(defineProps<{
   scopeKind: 'territoires',
 })
 
-const options = inject(OPTIONS_COMPARAISON_KEY, [])
+const options = inject(OPTIONS_COMPARAISON_KEY, computed(() => []))
 const route = useRoute()
 const router = useRouter()
 const ouvert = ref(false)
@@ -37,19 +38,19 @@ const triggerRef = ref<HTMLButtonElement | null>(null)
 const optionRefs: HTMLButtonElement[] = []
 
 const optionDansLeLibelle = computed(() =>
-  options.find((option) => props.label?.endsWith(libelleOptionComparaison(option, props.scopeKind))) ?? null,
+  options.value.find((option) => props.label?.endsWith(libelleOptionComparaison(option, props.scopeKind))) ?? null,
 )
 
 const optionSelectionnee = computed(() => {
   const demande = route.query[PARAM_COMPARAISON]
   const optionDemandee = typeof demande === 'string'
-    ? options.find((option) => option.mode === demande)
+    ? options.value.find((option) => option.mode === demande)
     : null
-  return optionDansLeLibelle.value ?? optionDemandee ?? options[0] ?? null
+  return optionDansLeLibelle.value ?? optionDemandee ?? options.value[0] ?? null
 })
 
 const optionsDisponibles = computed(() =>
-  options.filter((option) => option.mode !== optionSelectionnee.value?.mode),
+  options.value.filter((option) => option.mode !== optionSelectionnee.value?.mode),
 )
 
 const libelleDecoupe = computed(() => {
@@ -59,10 +60,13 @@ const libelleDecoupe = computed(() => {
   if (!scopeLibelle || !props.label.endsWith(scopeLibelle)) {
     return { phrase: props.label, fixed: null, scope: null }
   }
+  const parts = props.scopeKind === 'bâtiments' && option
+    ? buildingScopeParts(option.label)
+    : null
   return {
     phrase: props.label.slice(0, -scopeLibelle.length).trimEnd(),
-    fixed: props.scopeKind === 'bâtiments' ? 'bâtiments des ' : null,
-    scope: option?.label ?? null,
+    fixed: parts?.fixed ?? null,
+    scope: parts?.scope ?? option?.label ?? null,
   }
 })
 

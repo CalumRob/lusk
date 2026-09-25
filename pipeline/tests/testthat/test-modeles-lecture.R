@@ -324,6 +324,11 @@ test_that("un modèle communal publie les contextes densité, EPCI et Bretagne",
     value = c(100, 200, 300, 600, 400, 1000),
     unit = "bâtiments"
   )
+  indicateurs <- dplyr::bind_rows(indicateurs, tibble::tibble(
+    territoire = c("22001", "22002", "22004"), type = "commune",
+    theme = "mobilite", key = "avg_div_t", detail = NA_character_,
+    value = c(10, 20, 40), unit = "types / bâtiment"
+  ))
   histoires <- tibble::tibble(
     territoire = "53",
     type = "region",
@@ -339,27 +344,27 @@ test_that("un modèle communal publie les contextes densité, EPCI et Bretagne",
     distribution_acces_batiments = NULL,
     rampe_acces_batiments = NULL,
     distribution_acces_batiments_comparaisons = tibble::tibble(
-      territoire = "22001",
-      type = "commune",
-      comparison_mode = "densite",
-      scope_kind = "communes-densite",
-      scope_label = "grands centres urbains bretons",
+      territoire = rep("22001", 3),
+      type = rep("commune", 3),
+      comparison_mode = c("densite", "epci", "bretagne"),
+      scope_kind = c("communes-densite", "communes-epci", "communes-bretagne"),
+      scope_label = c("grands centres urbains bretons", "communes de EPCI X", "communes bretonnes"),
       breadth_bucket = "1-9",
       depth_bucket = "1-9",
-      comparison_total_buildings = 5L,
-      comparison_building_count = 5L,
-      comparison_share = 1
+      comparison_total_buildings = c(5L, 10L, 20L),
+      comparison_building_count = c(5L, 10L, 20L),
+      comparison_share = c(1, 1, 1)
     ),
     rampe_acces_batiments_comparaisons = tibble::tibble(
-      territoire = "22001",
-      type = "commune",
-      comparison_mode = "densite",
-      scope_kind = "communes-densite",
-      scope_label = "grands centres urbains bretons",
+      territoire = rep("22001", 3),
+      type = rep("commune", 3),
+      comparison_mode = c("densite", "epci", "bretagne"),
+      scope_kind = c("communes-densite", "communes-epci", "communes-bretagne"),
+      scope_label = c("grands centres urbains bretons", "communes de EPCI X", "communes bretonnes"),
       mode = "t",
       quantile = 0.5,
-      comparison_total_buildings = 5L,
-      comparison_accessible_types = 3
+      comparison_total_buildings = c(5L, 10L, 20L),
+      comparison_accessible_types = c(3, 4, 5)
     )
   )
 
@@ -368,7 +373,7 @@ test_that("un modèle communal publie les contextes densité, EPCI et Bretagne",
     metadata = list(theme = "mobilite", label = "Mobilité"),
     territoire = "22001",
     snapshot_id = "2026-09-15",
-    directions = list(nb_buildings = "high")
+    directions = list(nb_buildings = "high", avg_div_t = "high")
   )
   contextes <- commune$themes$mobilite$comparaisons
 
@@ -408,12 +413,49 @@ test_that("un modèle communal publie les contextes densité, EPCI et Bretagne",
       )
     )
   )
+  # A legacy table may still carry a generic label; the published context owns
+  # the canonical public EPCI name and must not duplicate the generic wording.
+  legacy_payload <- payload
+  legacy_payload$distribution_acces_batiments_comparaisons <- NULL
+  legacy_payload$rampe_acces_batiments_comparaisons <- NULL
+  legacy_payload$distribution_acces_batiments <- tibble::tibble(
+    territoire = "22001", comparison_label = "communes de l'EPCI",
+    comparison_total_buildings = 5L, breadth_bucket = "1-9",
+    depth_bucket = "1-9", comparison_building_count = 5L,
+    comparison_share = 1
+  )
+  legacy_payload$rampe_acces_batiments <- tibble::tibble(
+    territoire = "22001", comparison_label = "communes de l'EPCI",
+    comparison_total_buildings = 5L, mode = "t", quantile = 0.5,
+    comparison_accessible_types = 3
+  )
+  legacy <- construire_modele_territoire(
+    legacy_payload, list(theme = "mobilite", label = "Mobilité"), "22001", "2026-09-15"
+  )$themes$mobilite$comparaisons
+  expect_identical(legacy$epci$distribution_batiments$label, "communes de EPCI X")
+  expect_identical(legacy$epci$rampe_acces$label, "communes de EPCI X")
+  expect_null(legacy$bretagne$distribution_batiments)
+  expect_null(legacy$bretagne$rampe_acces)
+  for (mode in c("densite", "epci", "bretagne")) {
+    expect_identical(contextes[[mode]]$distribution_batiments$label,
+                     contextes[[mode]]$scope$label)
+    expect_identical(contextes[[mode]]$rampe_acces$label,
+                     contextes[[mode]]$scope$label)
+  }
+  expect_identical(contextes$epci$distribution_batiments$total_buildings, 10L)
+  expect_identical(contextes$bretagne$distribution_batiments$total_buildings, 20L)
+  expect_identical(contextes$epci$rampe_acces$points$accessible_types, 4)
+  expect_identical(contextes$bretagne$rampe_acces$points$accessible_types, 5)
   expect_identical(
     contextes$epci$faits |>
       dplyr::filter(.data$key == "nb_buildings") |>
       dplyr::select(rank_position, rank_size, reference_value),
     tibble::tibble(rank_position = 2, rank_size = 2L, reference_value = 150)
   )
+  reference_ponderee <- contextes$epci$faits |>
+    dplyr::filter(.data$key == "avg_div_t")
+  expect_identical(reference_ponderee$reference_kind, "mean")
+  expect_equal(reference_ponderee$reference_value, (100 * 10 + 200 * 20) / 300)
   expect_identical(
     contextes$bretagne$faits |>
       dplyr::filter(.data$key == "nb_buildings") |>
@@ -569,6 +611,20 @@ test_that("un run multi-thèmes garde les thèmes dans le même modèle", {
       story_key = "vingt-minutes-sans-voiture"
     )
   )
+  payload_mobilite$distribution_acces_batiments_comparaisons <- tibble::tibble(
+    territoire = c("22001", "22002"), type = "commune",
+    comparison_mode = "bretagne", scope_kind = "communes-bretagne",
+    scope_label = "communes bretonnes", breadth_bucket = "1-9",
+    depth_bucket = "1-9", comparison_total_buildings = c(2L, 3L),
+    comparison_building_count = c(2L, 3L), comparison_share = 1
+  )
+  payload_mobilite$rampe_acces_batiments_comparaisons <- tibble::tibble(
+    territoire = c("22001", "22002"), type = "commune",
+    comparison_mode = "bretagne", scope_kind = "communes-bretagne",
+    scope_label = "communes bretonnes", mode = "t", quantile = 0.5,
+    comparison_total_buildings = c(2L, 3L),
+    comparison_accessible_types = c(4, 5)
+  )
   payload_demographie <- payload_mobilite
   payload_demographie$indicateurs$theme <- "demographie"
   payload_demographie$histoires$theme <- "demographie"
@@ -587,6 +643,18 @@ test_that("un run multi-thèmes garde les thèmes dans le même modèle", {
   expect_named(modeles, c("22001", "22002"))
   expect_identical(modeles$`22001`$snapshot_id, "2026-01-01")
   expect_named(modeles$`22001`$themes, c("mobilite", "demographie"))
+  expect_identical(
+    modeles$`22001`$themes$mobilite$comparaisons$bretagne$distribution_batiments$total_buildings,
+    2L
+  )
+  expect_identical(
+    modeles$`22002`$themes$mobilite$comparaisons$bretagne$distribution_batiments$total_buildings,
+    3L
+  )
+  expect_identical(
+    modeles$`22002`$themes$mobilite$comparaisons$bretagne$rampe_acces$points$accessible_types,
+    5
+  )
 
   modele_cible <- construire_modeles_territoire(
     payloads, metadatas, vintages, territoires = "22002"

@@ -39,29 +39,6 @@ const modelePublie22001 = JSON.parse(readFileSync(
 
 function modeleAvecContextesComparaison() {
   const model = structuredClone(modelePublie22001)
-  const mobilite = model.themes.mobilite
-  const contexteAvecPerimetre = (source: any, scope: any) => {
-    const contexte = structuredClone(source)
-    contexte.scope = scope
-    if (contexte.distribution_batiments) contexte.distribution_batiments.label = scope.label
-    if (contexte.rampe_acces) contexte.rampe_acces.label = scope.label
-    return contexte
-  }
-  const epci = contexteAvecPerimetre(mobilite.comparaisons.epci, {
-    kind: 'communes-epci',
-    label: 'communes de CC Loudéac Communauté - Bretagne Centre',
-  })
-  mobilite.comparaisons = {
-    densite: contexteAvecPerimetre(epci, {
-      kind: 'communes-densite',
-      label: 'grands centres urbains bretons',
-    }),
-    epci,
-    bretagne: contexteAvecPerimetre(epci, {
-      kind: 'communes-bretagne',
-      label: 'communes bretonnes',
-    }),
-  }
   return validerModeleTerritoire(
     model,
     'territoires/commune/22001.json',
@@ -200,11 +177,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', variant: 'E' })
   })
 
-  it.each([
-    ['densite', 'grands centres urbains bretons'],
-    ['epci', 'communes de CC Loudéac Communauté - Bretagne Centre'],
-    ['bretagne', 'communes bretonnes'],
-  ] as const)('applique le contexte %s à la fiche rendue', async (mode, label) => {
+  it.each(['densite', 'epci', 'bretagne'] as const)(
+    'applique le contexte %s à la fiche rendue', async (mode) => {
+    const label = modeleAvecContextesComparaison().themes.mobilite?.comparisons[mode]?.scope.label
     const varianteE = varianteDeUrl('E')
     expect(varianteE?.clef).toBe('E')
     await (varianteE?.composant as any).__asyncLoader?.()
@@ -232,8 +207,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(trigger.attributes('aria-expanded')).toBe('false')
     expect(trigger.attributes('aria-current')).toBe('true')
-    expect(trigger.text()).toContain('grands centres urbains bretons')
-    expect(selector.get('.cahier-comparison-note__scope').text()).toBe('grands centres urbains bretons')
+    const contexts = modeleAvecContextesComparaison().themes.mobilite!.comparisons
+    expect(trigger.text()).toContain(contexts.densite!.scope.label)
+    expect(selector.get('.cahier-comparison-note__scope').text()).toBe(contexts.densite!.scope.label)
     expect(selector.get('.cahier-comparison-note__arrow').text()).toBe('←')
     expect(selector.get('.cahier-comparison-note__arrow').classes()).not.toContain('is-open')
 
@@ -243,8 +219,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(selector.get('.cahier-comparison-note__arrow').classes()).toContain('is-open')
     const options = selector.findAll('[role="option"][aria-selected="false"]')
     expect(options.map((option) => option.text())).toEqual([
-      'communes de CC Loudéac Communauté - Bretagne Centre',
-      'communes bretonnes',
+      contexts.epci!.scope.label,
+      contexts.bretagne!.scope.label,
     ])
     expect(options[0]!.attributes('title')).toBeUndefined()
 
@@ -255,7 +231,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
     expect(wrapper.get('.cahier-comparison-note button').text()).toContain(
-      'communes de CC Loudéac Communauté - Bretagne Centre',
+      contexts.epci!.scope.label,
     )
     const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
     expect(comparisonNotes.length).toBeGreaterThan(5)
@@ -292,7 +268,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await trigger.trigger('keydown', { key: 'Enter' })
 
     expect(trigger.attributes('aria-expanded')).toBe('true')
-    const density = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === 'grands centres urbains bretons')
+    const densityLabel = modeleAvecContextesComparaison().themes.mobilite!.comparisons.densite!.scope.label
+    const density = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
     expect(density).toBeDefined()
     expect(density!.attributes('title')).toBe(
       'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
@@ -306,7 +283,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(trigger.attributes('aria-expanded')).toBe('false')
 
     await trigger.trigger('keydown', { key: 'Enter' })
-    const reopenedDensity = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === 'grands centres urbains bretons')
+    const reopenedDensity = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
     expect(reopenedDensity).toBeDefined()
     await reopenedDensity!.trigger('focus')
     await reopenedDensity!.trigger('keydown', { key: 'Enter' })

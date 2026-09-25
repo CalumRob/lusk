@@ -545,7 +545,36 @@ construire_modele_territoire <- function(payload, metadata, territoire,
       )
     }
     indicateurs_par_signature <- split(indicateurs, signature_fait(indicateurs),
-                                        drop = TRUE)
+                                         drop = TRUE)
+    lignes_scalaires <- indicateurs[
+      is.na(valeur_identite(indicateurs, "detail")), , drop = FALSE
+    ]
+    cles_scalaires <- paste(
+      as.character(lignes_scalaires$territoire),
+      as.character(lignes_scalaires$key),
+      sep = "\r"
+    )
+    premiere_occurrence <- !duplicated(cles_scalaires)
+    valeurs_scalaires <- list2env(
+      stats::setNames(
+        as.list(lignes_scalaires$value[premiere_occurrence]),
+        cles_scalaires[premiere_occurrence]
+      ),
+      parent = emptyenv(), hash = TRUE
+    )
+    batiments_ambigus <- unique(cles_scalaires[
+      duplicated(cles_scalaires) & lignes_scalaires$key == "nb_buildings"
+    ])
+    valeur_indicateur <- function(code, cle) {
+      identite <- paste(code, cle, sep = "\r")
+      if (cle == "nb_buildings" && identite %in% batiments_ambigus) {
+        NA_real_
+      } else if (exists(identite, envir = valeurs_scalaires, inherits = FALSE)) {
+        get(identite, envir = valeurs_scalaires, inherits = FALSE)
+      } else {
+        NA_real_
+      }
+    }
     lignes_cibles <- indicateurs[
       as.character(indicateurs$territoire) == territoire, , drop = FALSE
     ]
@@ -580,19 +609,10 @@ construire_modele_territoire <- function(payload, metadata, territoire,
       } else if (statistique == "median") {
         stats::median(valeurs)
       } else {
-        poids <- vapply(
-          as.character(pairs$territoire[!is.na(pairs$value)]),
-          function(code) {
-            lignes_poids <- indicateurs[
-              as.character(indicateurs$territoire) == code &
-                indicateurs$key == "nb_buildings" &
-                is.na(valeur_identite(indicateurs, "detail")),
-              , drop = FALSE
-            ]
-            if (nrow(lignes_poids) == 1L) lignes_poids$value[[1L]] else NA_real_
-          },
-          numeric(1)
-        )
+         poids <- vapply(
+           as.character(pairs$territoire[!is.na(pairs$value)]),
+           valeur_indicateur, numeric(1), cle = "nb_buildings"
+         )
         if (anyNA(poids) || any(poids < 0) || sum(poids) == 0) NA_real_ else
           stats::weighted.mean(valeurs, poids)
       }
@@ -658,18 +678,6 @@ construire_modele_territoire <- function(payload, metadata, territoire,
          reference_kind = if (is.na(reference_valeur)) NA_character_ else statistique,
         reference_value = reference_valeur
       )
-    }
-    lignes_scalaires <- indicateurs[
-      is.na(valeur_identite(indicateurs, "detail")), , drop = FALSE
-    ]
-    cles_scalaires <- paste(
-      as.character(lignes_scalaires$territoire),
-      as.character(lignes_scalaires$key),
-      sep = "\r"
-    )
-    valeur_indicateur <- function(code, cle) {
-      index <- match(paste(code, cle, sep = "\r"), cles_scalaires)
-      if (is.na(index)) NA_real_ else lignes_scalaires$value[[index]]
     }
     poids_batiments <- vapply(
       codes_pairs, valeur_indicateur, numeric(1), cle = "nb_buildings"
@@ -832,7 +840,7 @@ construire_modele_territoire <- function(payload, metadata, territoire,
           "breadth_bucket", "depth_bucket", "building_count", "share"
         )
         projection_distribution <- list(
-          label = distribution_cible$comparison_label[[1L]],
+          label = label,
           total_buildings = distribution_cible$comparison_total_buildings[[1L]],
           cells = cellules
         )
@@ -889,7 +897,7 @@ construire_modele_territoire <- function(payload, metadata, territoire,
         ]
         names(points) <- c("mode", "quantile", "accessible_types")
         projection_rampe <- list(
-          label = rampe_cible$comparison_label[[1L]],
+          label = label,
           total_buildings = rampe_cible$comparison_total_buildings[[1L]],
           points = points
         )
@@ -1211,12 +1219,12 @@ construire_modeles_territoire <- function(payloads, metadatas, vintages,
       local$distribution_acces_batiments_comparaisons <- sous_table(
         payload$distribution_acces_batiments_comparaisons,
         index$distribution_acces_batiments_comparaisons,
-        codes_faits
+        code
       )
       local$rampe_acces_batiments_comparaisons <- sous_table(
         payload$rampe_acces_batiments_comparaisons,
         index$rampe_acces_batiments_comparaisons,
-        codes_faits
+        code
       )
       local
     }, payloads, indexes, names(payloads))

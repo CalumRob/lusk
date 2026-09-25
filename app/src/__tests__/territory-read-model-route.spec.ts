@@ -44,6 +44,49 @@ const rawModel = {
 beforeEach(() => localStorage.clear())
 
 describe('fiche — chargement par modèle de lecture de territoire', () => {
+  it('updates comparison labels and availability after navigating between communes', async () => {
+    const varianteE = varianteDeUrl('E')
+    await (varianteE?.composant as any).__asyncLoader?.()
+    const modelFor = (id: string) => validerModeleTerritoire(
+      JSON.parse(readFileSync(resolve(process.cwd(),
+        `../public/data/modeles-lecture/territoires/commune/${id}.json`), 'utf8')),
+      `territoires/commune/${id}.json`, { type: 'commune', territoire: id },
+      { requireAllThemes: true },
+    )
+    const rennes = modelFor('35238')
+    const destination = modelFor('22001')
+    const loader = vi.fn(async (_type: string, id: string) => id === '35238' ? rennes : destination)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/territoire/commune/35238?theme=mobilite&variant=E&comparaison=epci')
+    await router.isReady()
+    const wrapper = mount(TerritoireView, {
+      global: { plugins: [router], provide: { [TERRITORY_READ_MODEL_CHARGER_KEY]: loader } },
+    })
+    await flushPromises()
+    const note = () => wrapper.findAllComponents(CahierComparisonNote)
+      .find((candidate) => candidate.find('button[aria-haspopup="listbox"]').exists())
+    expect(note()?.text()).toContain('Rennes Métropole')
+
+    await router.push('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci')
+    await flushPromises()
+    expect(note()?.text()).not.toContain('Rennes Métropole')
+    expect(note()?.text()).toContain(destination.themes.mobilite?.comparisons.epci?.scope.label)
+
+    const withoutEpci = { ...destination, territory: { ...destination.territory, epci: null },
+      territories: destination.territories.map((item) => item.territoire === '22001'
+        ? { ...item, epci: null } : item),
+      themes: { ...destination.themes, mobilite: { ...destination.themes.mobilite!,
+        comparisons: { ...destination.themes.mobilite!.comparisons, epci: undefined } } } }
+    loader.mockResolvedValue(withoutEpci as typeof destination)
+    await router.push('/territoire/commune/35238?theme=mobilite&variant=E')
+    await flushPromises()
+    await router.push('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci')
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBeUndefined()
+    expect(note()?.findAll('[role="option"]')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
   it.each([
     { type: 'epci', id: '243500139', scope: 'EPCI bretons' },
     { type: 'departement', id: '35', scope: 'départements bretons' },
@@ -113,6 +156,16 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       .toBe('communes de Rennes Métropole')
     expect(validatedModel.themes.mobilite?.comparisons.epci?.accessRamp?.label)
       .toBe('communes de Rennes Métropole')
+    const comparisons = validatedModel.themes.mobilite?.comparisons
+    for (const mode of ['densite', 'epci', 'bretagne'] as const) {
+      const context = comparisons?.[mode]
+      expect(context?.buildingDistribution?.label).toBe(context?.scope.label)
+      expect(context?.accessRamp?.label).toBe(context?.scope.label)
+      expect(context?.buildingDistribution?.totalBuildings).toBeGreaterThan(0)
+      expect(context?.accessRamp?.totalBuildings).toBeGreaterThan(0)
+    }
+    expect(comparisons?.bretagne?.buildingDistribution?.totalBuildings)
+      .toBeGreaterThan(comparisons?.epci?.buildingDistribution?.totalBuildings ?? 0)
     const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,

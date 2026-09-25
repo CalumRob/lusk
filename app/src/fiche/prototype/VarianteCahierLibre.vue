@@ -75,7 +75,7 @@ const props = defineProps<{
   comparisonOptions?: readonly OptionContexteComparaison[]
 }>()
 
-provide(OPTIONS_COMPARAISON_KEY, props.comparisonOptions ?? [])
+provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
 
 const rootRef = ref<HTMLElement | null>(null)
 const activeFigure = ref('')

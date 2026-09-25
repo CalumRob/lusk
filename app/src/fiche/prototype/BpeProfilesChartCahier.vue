@@ -117,6 +117,7 @@ function profileFact(profile: BpeAccessProfileFact): NumericFact {
     availability: 'complete',
     provenance: null,
     reason: null,
+    comparisonBasis: 'territory-mean',
     comparison: profile.comparison
       ? {
           direction: profile.comparison.direction,

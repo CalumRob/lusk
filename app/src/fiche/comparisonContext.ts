@@ -2,6 +2,8 @@ import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payl
 import type { Territoire } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
 import type { InjectionKey } from 'vue'
+import type { Ref } from 'vue'
+import { buildingScopeLabel, COMPARISON_MODE_DESCRIPTIONS } from '@/fiche/content/comparisonWording'
 
 export const PARAM_COMPARAISON = 'comparaison'
 
@@ -27,16 +29,11 @@ export function libelleComparaisonBâtiments(
   rawLabel: string | null,
 ): string | null {
   if (!rawLabel) return null
-  if (rawLabel.startsWith('bâtiments des ')) return rawLabel
-  return `bâtiments des ${rawLabel}`
+  return buildingScopeLabel(rawLabel)
 }
 
-export const OPTIONS_COMPARAISON_KEY: InjectionKey<readonly OptionContexteComparaison[]> =
+export const OPTIONS_COMPARAISON_KEY: InjectionKey<Readonly<Ref<readonly OptionContexteComparaison[]>>> =
   Symbol('options-contexte-comparaison')
-
-const DESCRIPTIONS_MODES: Readonly<Partial<Record<TerritoryComparisonMode, string>>> = {
-  densite: 'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
-}
 
 /**
  * Expose the published comparison projections that a commune can select.
@@ -55,7 +52,7 @@ export function optionsContexteComparaison(options: {
     return [{
       mode,
       label: contexte.scope.label,
-      description: DESCRIPTIONS_MODES[mode] ?? null,
+      description: COMPARISON_MODE_DESCRIPTIONS[mode] ?? null,
     }]
   })
 }

@@ -438,6 +438,7 @@ function absentFact(key: string, unit: string, detail: string | null = null): Nu
     availability: 'absent',
     provenance: null,
     comparison: null,
+    comparisonBasis: 'territory-median',
     reason: null,
   }
 }
@@ -662,13 +663,12 @@ function comparisonLabel(
 }
 
 function statisticForFact(fact: NumericFact): 'moyenne' | 'médiane' {
-  return fact.key.startsWith('avg_') || fact.comparison?.reference?.kind === 'mean'
-    ? 'moyenne'
-    : 'médiane'
+  return fact.comparisonBasis === 'territory-median' ? 'médiane' : 'moyenne'
 }
 
 function populationForFact(fact: NumericFact): ComparisonPopulation {
-  return fact.key.startsWith('avg_') ? 'bâtiments' : 'territoires'
+  return fact.comparisonBasis === 'building-weighted-mean' ||
+    fact.comparisonBasis === 'pooled-building-mean' ? 'bâtiments' : 'territoires'
 }
 
 function formatMillions(value: number): string {

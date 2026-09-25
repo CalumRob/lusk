@@ -56,6 +56,8 @@ function fact(
     availability: value === null ? 'incomplete' : 'complete',
     provenance,
     comparison: factComparison,
+    comparisonBasis: factComparison?.reference?.kind === 'mean'
+      ? 'building-weighted-mean' : 'territory-median',
     reason: null,
   }
 }
@@ -508,6 +510,21 @@ describe('resolveMobiliteThemeContent', () => {
       expect(summary.evidence.comparisonLabel)
         .toBe('Comparaison indisponible — moyenne des bâtiments des communes de EPCI X')
     }
+  })
+
+  it('uses the fact aggregation contract rather than the indicator key for comparison wording', () => {
+    const facts = structuredClone(completeFacts)
+    const loss = facts.mobility.access.summary.averageLosses.diversity.walkTransit
+    loss.key = 'renamed_metric'
+    loss.comparisonBasis = 'territory-mean'
+    const summary = resolveMobiliteThemeContent(facts).units[0]?.sections[0]
+    expect(summary?.evidence?.kind === 'summary' && summary.evidence.comparisonLabel)
+      .toBe('moyenne des communes de EPCI X')
+
+    loss.comparisonBasis = 'pooled-building-mean'
+    const pooled = resolveMobiliteThemeContent(facts).units[0]?.sections[0]
+    expect(pooled?.evidence?.kind === 'summary' && pooled.evidence.comparisonLabel)
+      .toBe('moyenne des bâtiments des communes de EPCI X')
   })
 
   it('keeps an unavailable BPE comparison label available to the selector', () => {

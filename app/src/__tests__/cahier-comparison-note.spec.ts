@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 
 import {
   OPTIONS_COMPARAISON_KEY,
@@ -37,7 +38,7 @@ async function monter(props: {
     },
     global: {
       plugins: [router],
-      provide: { [OPTIONS_COMPARAISON_KEY as symbol]: options },
+      provide: { [OPTIONS_COMPARAISON_KEY as symbol]: ref(options) },
     },
   })
   return { router, wrapper }
