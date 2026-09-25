@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '@/views/TerritoireView.vue'
 import { routes } from '@/router'
+import { varianteDeUrl } from '@/fiche/prototype/variantes'
 import {
   indicateursMobiliteFixture,
   histoiresMobiliteFixture,
@@ -15,9 +16,12 @@ import {
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '@/payload/usePayload'
 import {
   TERRITORY_READ_MODEL_CHARGER_KEY,
+  payloadDepuisModeleTerritoire,
   validerModeleTerritoire,
 } from '@/payload/territoryReadModel'
+import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { PayloadError } from '@/payload/validate'
+import CahierComparisonNote from '@/fiche/prototype/CahierComparisonNote.vue'
 
 const rawModel = {
   schema_version: '1',
@@ -40,6 +44,60 @@ const rawModel = {
 beforeEach(() => localStorage.clear())
 
 describe('fiche — chargement par modèle de lecture de territoire', () => {
+  it.each([
+    { type: 'epci', id: '243500139', scope: 'EPCI bretons' },
+    { type: 'departement', id: '35', scope: 'départements bretons' },
+  ] as const)('uses the published fixed comparison on a $type fiche', async ({ type, id, scope }) => {
+    const varianteE = varianteDeUrl('E')
+    await (varianteE?.composant as any).__asyncLoader?.()
+    const publishedModel = JSON.parse(readFileSync(
+      resolve(process.cwd(), `../public/data/modeles-lecture/territoires/${type}/${id}.json`),
+      'utf8',
+    ))
+    const validatedModel = validerModeleTerritoire(
+      publishedModel,
+      `territoires/${type}/${id}.json`,
+      { type, territoire: id },
+      { requireAllThemes: true },
+    )
+    const comparison = validatedModel.themes.mobilite?.comparisons.bretagne
+    expect(comparison?.scope.label).toBe(scope)
+    const projectedFacts = territoryFactsFor(
+      payloadDepuisModeleTerritoire(validatedModel),
+      id,
+      comparison,
+    )
+    expect(projectedFacts?.mobility.buildingDistribution?.comparisonLabel).toBe(scope)
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => publishedModel,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    try {
+      const router = createRouter({ history: createMemoryHistory(), routes })
+      await router.push(`/territoire/${type}/${id}?theme=mobilite&variant=E`)
+      await router.isReady()
+      const wrapper = mount(TerritoireView, { global: { plugins: [router] } })
+      await flushPromises()
+
+      const labels = wrapper.findAllComponents(CahierComparisonNote)
+        .map((note) => note.props('label'))
+      expect(wrapper.text()).not.toContain('Impossible de charger les données de la fiche.')
+      expect(
+        labels.some((label) =>
+          typeof label === 'string' &&
+          label.includes(scope) &&
+          !label.includes('Comparaison indisponible'),
+        ),
+        `comparaison publiée ${scope}, libellés rendus : ${JSON.stringify(labels)}`,
+      ).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('renders Rennes from the published commune read model', async () => {
     const publishedModel = JSON.parse(readFileSync(
       resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/35238.json'),

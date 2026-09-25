@@ -96,13 +96,32 @@ describe('contexte de comparaison communal piloté par l’URL', () => {
     })
   })
 
-  it('ne propage pas le mode communal aux autres niveaux', () => {
-    const epci = territoiresFixture.find((territoire) => territoire.type === 'epci')!
+  it.each([
+    {
+      territoire: territoiresFixture.find((territoire) => territoire.type === 'epci')!,
+      kind: 'epcis-bretagne' as const,
+      label: 'EPCI bretons',
+    },
+    {
+      territoire: territoiresFixture.find((territoire) => territoire.type === 'departement')!,
+      kind: 'departements-bretagne' as const,
+      label: 'départements bretons',
+    },
+  ])('uses the fixed Bretagne context for $label without a communal URL mode', ({ territoire, kind, label }) => {
+    const contexteFixe = {
+      ...contextes.bretagne,
+      scope: { kind, label },
+    }
     expect(resoudreContexteComparaison({
-      territoire: epci,
+      territoire,
+      demande: undefined,
+      contextes: { bretagne: contexteFixe },
+    })).toEqual({ mode: null, contexte: contexteFixe, canonicaliser: false })
+    expect(resoudreContexteComparaison({
+      territoire,
       demande: 'bretagne',
-      contextes: contextes,
-    })).toEqual({ mode: null, contexte: null, canonicaliser: true })
+      contextes: { bretagne: contexteFixe },
+    })).toEqual({ mode: null, contexte: contexteFixe, canonicaliser: true })
   })
 
   it('conserve le mode dans les liens vers une autre fiche communale', () => {

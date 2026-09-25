@@ -89,7 +89,20 @@ export function resoudreContexteComparaison(options: {
   contextes: Partial<Record<TerritoryComparisonMode, TerritoryComparisonContext>>
 }): ResolutionContexteComparaison {
   const { territoire, demande, contextes } = options
-  if (!territoire || territoire.type !== 'commune') {
+  if (!territoire) {
+    return { mode: null, contexte: null, canonicaliser: demande !== undefined }
+  }
+  if (territoire.type === 'epci' || territoire.type === 'departement') {
+    // These levels keep one fixed Bretagne comparison universe. They do not
+    // accept a communal URL mode, but their read models still publish the
+    // precomputed context needed to render comparison references.
+    return {
+      mode: null,
+      contexte: contextes.bretagne ?? null,
+      canonicaliser: demande !== undefined,
+    }
+  }
+  if (territoire.type === 'region') {
     return { mode: null, contexte: null, canonicaliser: demande !== undefined }
   }
 
