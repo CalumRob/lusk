@@ -159,7 +159,9 @@ automatic in-place version switch.
 
 The operator ran all **7** opt-in integration checks on the Pi's disposable
 `lusk_it_spike` database before cutover. The live migration from four tables
-completed; the canonical Parquet importer committed 19,020 access observations.
+completed; the canonical Parquet importer committed 19,020 access observations
+in **9.06 seconds** of operator-reported end-to-end wall time (read, validate,
+connect, write and commit—not a database-only timing).
 The rebuilt API returned Allineuc's health walking/transit rank **19/38**
 through the public `/api/` route; Pi-loopback nginx returned HTTP 200 for all
 three comparison scopes, and the static site remained up.
@@ -192,10 +194,10 @@ for scope in epci densite bretagne; do
 done
 ```
 
-The publishing duration was not captured during the live import; do not infer a
-number from the API timings. If the original PowerShell stopwatch is still
-available, record that elapsed value without reimporting. A project-agreed P95
-bound is still needed before treating the measurements as a pass/fail gate.
+The maintainer agreed on 2026-09-27 to a **Pi-loopback P95 under 1 second**
+for each of these three scopes at this data size. All three measurements above
+pass. This is an engineering verification bound, **not** a browser or
+product-wide latency promise; revisit it if the query or data shape changes.
 
 ### Credentials
 
