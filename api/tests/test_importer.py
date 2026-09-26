@@ -1,5 +1,8 @@
 import json
+import sys
+from contextlib import nullcontext
 from pathlib import Path
+from types import SimpleNamespace
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -50,7 +53,7 @@ def test_loader_maps_metadata_to_service_rows_and_keeps_null(tmp_path):
     assert publication.rows[0].territory_type == "commune"
 
 
-def test_digest_covers_all_parquet_and_metadata_bytes(tmp_path):
+def test_fingerprint_tracks_served_direction(tmp_path):
     root, metadata = artifacts(tmp_path)
     original = load_publication(root, metadata).publication_id
     theme = json.loads(metadata.read_text(encoding="utf-8"))
@@ -59,6 +62,49 @@ def test_digest_covers_all_parquet_and_metadata_bytes(tmp_path):
     changed = load_publication(root, metadata)
     assert changed.publication_id != original
     assert next(r for r in changed.rows if r.service == "food" and r.mode == "walk_transit").effective_direction == "low"
+
+
+def test_fingerprint_ignores_other_pipeline_datasets_and_parquet_encoding(tmp_path):
+    root, metadata = artifacts(tmp_path)
+    original = load_publication(root, metadata).publication_id
+    path = root / "indicateurs_mobilite.parquet"
+    other_indicator = {**pq.read_table(path).to_pylist()[0], "key": "iso_food", "value": 0.9}
+    pq.write_table(pa.Table.from_pylist(pq.read_table(path).to_pylist() + [other_indicator]), path,
+                   compression="zstd")
+    vintages = root / "vintages.parquet"
+    pq.write_table(pa.Table.from_pylist(pq.read_table(vintages).to_pylist() + [{
+        "id": "unrelated", "source": "Other", "version": "new",
+        "date_reference": "2026-02-01", "date_publication": "2026-03-01", "licence": "other",
+    }]), vintages)
+    assert load_publication(root, metadata).publication_id == original
+
+
+def test_fingerprint_changes_when_served_share_changes(tmp_path):
+    root, metadata = artifacts(tmp_path)
+    original = load_publication(root, metadata).publication_id
+    path = root / "indicateurs_mobilite.parquet"
+    rows = pq.read_table(path).to_pylist()
+    next(row for row in rows if row["key"] == "share_food_t")["value"] = 0.4
+    pq.write_table(pa.Table.from_pylist(rows), path)
+    assert load_publication(root, metadata).publication_id != original
+
+
+def test_fingerprint_tracks_served_source_vintage(tmp_path):
+    root, metadata = artifacts(tmp_path)
+    original = load_publication(root, metadata).publication_id
+    facts = root / "indicateurs_mobilite.parquet"
+    rows = pq.read_table(facts).to_pylist()
+    for row in rows:
+        row["vintage_version"] = "2026-02"
+    pq.write_table(pa.Table.from_pylist(rows), facts)
+    vintages = root / "vintages.parquet"
+    versions = pq.read_table(vintages).to_pylist()
+    versions[0]["version"] = "2026-02"
+    pq.write_table(pa.Table.from_pylist(versions), vintages)
+
+    updated = load_publication(root, metadata)
+    assert updated.publication_id != original
+    assert {row.source_version for row in updated.rows} == {"2026-02"}
 
 
 def test_missing_pipeline_direction_is_not_guessed(tmp_path):
@@ -147,6 +193,46 @@ def test_invalid_publication_fails_before_database_transaction(tmp_path):
 
     with pytest.raises(ImportError, match="triptych"):
         import_publication(UntouchedDatabase(), root, metadata)
+
+
+def test_cli_uses_operator_pgpass_without_prompt_or_password_argument(tmp_path, monkeypatch, capsys):
+    import psycopg
+    import api.importer as importer
+
+    passfile = tmp_path / "pgpass.conf"
+    passfile.write_text("test:5432:lusk:publisher:secret", encoding="utf-8")
+    monkeypatch.setenv("PGPASSFILE", str(passfile))
+    monkeypatch.delenv("PUBLISH_DATABASE_URL", raising=False)
+    monkeypatch.setattr(sys, "argv", ["api.importer", str(tmp_path), "--host", "test",
+                                  "--database", "lusk", "--user", "publisher"])
+    monkeypatch.setattr(importer.getpass, "getpass", lambda *_: pytest.fail("must not prompt"))
+    monkeypatch.setattr(importer, "import_publication", lambda *_: SimpleNamespace(
+        publication_id="dataset-snapshot", rows=(1, 2), changed=False))
+    options = {}
+    def connect(**kwargs):
+        options.update(kwargs)
+        return nullcontext(object())
+    monkeypatch.setattr(psycopg, "connect", connect)
+
+    importer.main()
+    assert options == {"host": "test", "dbname": "lusk", "user": "publisher",
+                       "passfile": str(passfile), "autocommit": True}
+    assert "2 access observations unchanged" in capsys.readouterr().out
+
+
+def test_cli_refuses_repository_pgpass(tmp_path, monkeypatch):
+    import api.importer as importer
+
+    inside_repo = Path(importer.__file__).resolve().parents[1] / "api" / "pgpass.conf"
+    real_is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda path: path == inside_repo or real_is_file(path))
+    monkeypatch.setenv("PGPASSFILE", str(inside_repo))
+    monkeypatch.delenv("PUBLISH_DATABASE_URL", raising=False)
+    monkeypatch.setattr(sys, "argv", ["api.importer", str(tmp_path), "--host", "test",
+                                  "--database", "lusk", "--user", "publisher"])
+    with pytest.raises(SystemExit) as error:
+        importer.main()
+    assert error.value.code == 2
 
 
 @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])

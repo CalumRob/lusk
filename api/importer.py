@@ -1,6 +1,6 @@
 """Validated, transactional importer for the published essential-service projection."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 import argparse
 import getpass
 import hashlib
@@ -38,6 +38,7 @@ class Publication:
     territories: tuple[dict, ...]
     provenance: tuple[dict, ...]
     comparison_scope: dict[str, str]
+    changed: bool | None = None  # None = validated without a database publication
 
 
 _MODES = {"t": "walk_transit", "b": "bike", "c": "car"}
@@ -185,21 +186,39 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
                 source_id, source_name, source_version, vintage.get("date_reference"),
                 vintage.get("date_publication")))
     result.sort(key=lambda r: (r.territory_id, r.service, r.mode))
-    digest_hash = hashlib.sha256()
-    for path in (root / "indicateurs_mobilite.parquet", root / "territoires.parquet", root / "vintages.parquet", metadata_file):
-        digest_hash.update(path.name.encode("utf-8") + b"\0" + path.read_bytes() + b"\0")
-    digest = digest_hash.hexdigest()[:16]
+    # A dataset fingerprint, not a hash of shared Parquet file bytes. A change
+    # in a different indicator/vintage or Parquet encoding must not refresh
+    # access facts when the validated serving projection is identical.
+    serving_territories = [{
+        "territory_id": t["territoire"], "territory_type": t["type"],
+        "name": t.get("nom", ""), "department_id": t.get("departement"),
+        "epci_id": t.get("epci"), "density_class_code": t.get("classe_densite_code"),
+        "density_class_label": t.get("classe_densite_libelle_public"),
+    } for t in territories]
+    snapshot = {
+        "territories": sorted(serving_territories, key=lambda t: t["territory_id"]),
+        "access": [asdict(row) for row in result],
+        "comparison_scope": comparison_scope,
+    }
+    fingerprint = json.dumps(snapshot, sort_keys=True, separators=(",", ":"),
+                             ensure_ascii=False, allow_nan=False, default=str)
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:16]
     publication_id = f"{max((r.source_publication_date or '' for r in result), default='undated')}-{digest}"
     return Publication(publication_id, tuple(result), tuple(territories), tuple(vintages), comparison_scope)
 
 
 def import_publication(connection, artifacts_dir: str | Path, metadata_path: str | Path | None = None) -> Publication:
-    """Validate Parquet, then atomically replace the one current serving dataset."""
+    """Validate Parquet; skip identical access data or atomically replace it."""
     publication = load_publication(artifacts_dir, metadata_path)
     with connection.transaction():
         with connection.cursor() as cur:
             # Serialize concurrent publishers, including on an initially empty database.
             cur.execute("SELECT pg_advisory_xact_lock(569, 1)")
+            cur.execute("""SELECT publication_id FROM dataset_publication
+                WHERE dataset_key = 'essential_service_access'""")
+            current = cur.fetchone()
+            if current and current[0] == publication.publication_id:
+                return replace(publication, changed=False)
             cur.execute("DELETE FROM essential_service_access")
             cur.execute("DELETE FROM territory_reference")
             cur.execute("DELETE FROM service_registry")
@@ -233,7 +252,7 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
                     imported_at = now()""",
                 (publication.publication_id, len(publication.rows),
                  publication.comparison_scope["kind"], publication.comparison_scope["label"]))
-    return publication
+    return replace(publication, changed=True)
 
 
 def main() -> None:
@@ -255,13 +274,22 @@ def main() -> None:
             parser.error("Use either PUBLISH_DATABASE_URL or --host, --database, and --user")
         if not dsn and not all((args.host, args.database, args.user)):
             parser.error("Set PUBLISH_DATABASE_URL or supply --host, --database, and --user")
+        passfile = os.environ.get("PGPASSFILE")
+        if passfile:
+            private_file = Path(passfile).expanduser().resolve()
+            if not private_file.is_file() or private_file.is_relative_to(Path(__file__).resolve().parents[1]):
+                parser.error("PGPASSFILE must be an existing file outside the repository")
         options = {"conninfo": dsn} if dsn else {
             "host": args.host, "dbname": args.database, "user": args.user,
-            "password": getpass.getpass("Publishing role password: "),
         }
+        if passfile:
+            options["passfile"] = str(private_file)
+        elif not dsn:
+            options["password"] = getpass.getpass("Publishing role password: ")
         with psycopg.connect(**options, autocommit=True) as connection:
             publication = import_publication(connection, args.artifacts_dir, args.metadata)
-    print(f"{publication.publication_id}: {len(publication.rows)} access observations validated")
+    action = "validated" if publication.changed is None else ("published" if publication.changed else "unchanged")
+    print(f"{publication.publication_id}: {len(publication.rows)} access observations {action}")
 
 
 if __name__ == "__main__":
