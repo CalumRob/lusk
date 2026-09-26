@@ -66,7 +66,10 @@ python -m api.importer --check public/data
 No PostgreSQL is needed for those checks. Before any database publication, an
 operator must review `schema.sql`, apply it to a **designated test database**,
 configure a separate publishing credential as `PUBLISH_DATABASE_URL`, and run
-`python -m api.importer public/data`. The API takes a *different, read-only*
+`python -m api.importer public/data`. For a guided, one-off import, use
+`python -m api.importer public/data --host 192.168.1.120 --database lusk
+--user lusk_publisher` instead; it prompts for the password without recording
+it in the shell. The API takes a *different, read-only*
 `DATABASE_URL`; give it SELECT on the three serving relations it reads and no
 write permissions. Credentials must never be copied to `/srv/lusk/api`.
 

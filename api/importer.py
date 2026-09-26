@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import argparse
+import getpass
 import hashlib
 import json
 import os
@@ -230,6 +231,9 @@ def main() -> None:
     parser.add_argument("artifacts_dir", type=Path, help="Directory containing published Parquet inputs")
     parser.add_argument("--check", action="store_true", help="Validate inputs without connecting to PostgreSQL")
     parser.add_argument("--metadata", type=Path, help="Pipeline theme metadata descriptor (defaults to repository path)")
+    parser.add_argument("--host", help="PostgreSQL host for an interactive publication")
+    parser.add_argument("--database", help="PostgreSQL database for an interactive publication")
+    parser.add_argument("--user", help="PostgreSQL publishing login for an interactive publication")
     args = parser.parse_args()
     if args.check:
         publication = load_publication(args.artifacts_dir, args.metadata)
@@ -237,9 +241,15 @@ def main() -> None:
         import psycopg
 
         dsn = os.environ.get("PUBLISH_DATABASE_URL")
-        if not dsn:
-            parser.error("PUBLISH_DATABASE_URL must be set to publish (not the read-only API credential)")
-        with psycopg.connect(dsn, autocommit=True) as connection:
+        if dsn and any((args.host, args.database, args.user)):
+            parser.error("Use either PUBLISH_DATABASE_URL or --host, --database, and --user")
+        if not dsn and not all((args.host, args.database, args.user)):
+            parser.error("Set PUBLISH_DATABASE_URL or supply --host, --database, and --user")
+        options = {"conninfo": dsn} if dsn else {
+            "host": args.host, "dbname": args.database, "user": args.user,
+            "password": getpass.getpass("Publishing role password: "),
+        }
+        with psycopg.connect(**options, autocommit=True) as connection:
             publication = import_publication(connection, args.artifacts_dir, args.metadata)
     print(f"{publication.publication_id}: {len(publication.rows)} access observations validated")
 
