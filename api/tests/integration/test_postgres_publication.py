@@ -267,3 +267,53 @@ def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
         assert connection.execute(
             "SELECT share FROM essential_service_access WHERE territory_id = '29001' AND service = 'school' AND mode = 'walk_transit'"
         ).fetchone()[0] == pytest.approx(0.9)
+
+
+def test_legacy_migration_is_scoped_atomic_and_republishable(db_env):
+    """Test the exact live migration against a historical-schema fixture, never public."""
+    import psycopg
+    from api import importer
+
+    schema = "it_" + uuid.uuid4().hex[:20]
+    legacy = _dsn_with_schema(db_env["publish_dsn"], schema)
+    root = Path(__file__).resolve().parent
+    api_root = root.parents[1]
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        with psycopg.connect(legacy, autocommit=True) as connection:
+            connection.execute((root / "legacy_schema.sql").read_text(encoding="utf-8"))
+            connection.execute("CREATE TABLE unrelated_data (id integer PRIMARY KEY)")
+            connection.execute("INSERT INTO unrelated_data VALUES (42)")
+            connection.execute("INSERT INTO import_publication (publication_id, status) VALUES ('old', 'validated')")
+            connection.execute("INSERT INTO territory_reference (publication_id, territory_id, territory_type, name) VALUES ('old','29001','commune','Old')")
+            connection.execute("""INSERT INTO essential_service_access
+                (publication_id, territory_id, service, mode, indicator_label, effective_direction,
+                 source_id, source_name, source_version)
+                VALUES ('old','29001','school','car','Old','high','old','Old','old')""")
+
+            migration = (api_root / "migrations" / "001_replace_versioned_access.sql").read_text(encoding="utf-8")
+            fresh = (api_root / "schema.sql").read_text(encoding="utf-8")
+            # Unrelated dependent objects must abort the complete transaction,
+            # rather than being silently dropped by CASCADE.
+            connection.execute("CREATE TABLE unrelated_dependent (publication_id text REFERENCES import_publication)")
+            with pytest.raises(psycopg.errors.DependentObjectsStillExist):
+                with connection.transaction():
+                    connection.execute(migration)
+                    connection.execute(fresh)
+            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 1
+            connection.execute("DROP TABLE unrelated_dependent")
+
+            with connection.transaction():
+                connection.execute(migration)
+                connection.execute(fresh)
+            assert connection.execute("SELECT id FROM unrelated_data").fetchone()[0] == 42
+            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 0
+            artifacts, metadata = db_env["artifacts"]
+            published = importer.import_publication(connection, artifacts, metadata)
+            assert _current(legacy) == published.publication_id
+            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(published.rows)
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')

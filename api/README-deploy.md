@@ -10,7 +10,7 @@ The examples assume:
 
 - The API source is a Python package under this repository's `api/` directory, exposes
   `api.main:app`, and implements `/api/health` and `/api/territories/...` routes.
-- The API project supplies `api/requirements.txt`; it is intentionally not created here.
+- The API project supplies `api/requirements.txt`.
 - The existing nginx container serves the SPA on host port `3535`, with document root
   `/usr/share/nginx/html/app`, a `/data/` alias, and SPA fallback `try_files $uri /index.html`.
 - PostgreSQL 18-trixie is in the separate `/srv/lusk-db` Compose project and is currently
@@ -64,12 +64,13 @@ referencing the old tables before proceeding. Plan a brief API maintenance windo
 the old API cannot read the new layout; the new API cannot read the old layout.
 
 The operator should take a `pg_dump` of `lusk` outside the agent-writable
-checkout before the change, keep the old running container/image until cutover,
-and review an **explicit transactional migration script** that removes only
+checkout before the change, keep the old image available until cutover,
+and review `migrations/001_replace_versioned_access.sql`, which removes only
 `active_publication`, `import_publication`, `publication_service_registry`,
 `publication_comparison_scope`, `essential_service_access`,
 `territory_reference` and the two legacy validation functions/trigger, then
-applies `schema.sql` and re-grants SELECT to the reader role. Avoid `CASCADE`,
+applies `schema.sql` and the explicit role grants in
+`migrations/001_grant_reader.sql`. Avoid `CASCADE`,
 which could remove unrelated dependents. Do not run this procedure just by
 copying the table list: check dependencies and the actual schema first. After
 the schema transaction commits, publish the validated Parquet dataset and
@@ -78,8 +79,37 @@ for the comparison route; `/api/health` alone is not a data-readiness check.
 If the schema change or publication fails, stop before rebuilding the API;
 restore the database dump **only with an operator-reviewed recovery plan** or
 complete the publication, never silently point the old image at the new layout.
-Detailed, tested migration commands are still needed before live cutover; this
-paragraph is a plan, not an executable migration or permission to drop tables.
+
+For this Pi's known layout, once the migration test passes and the operator has
+reviewed actual dependencies and approved downtime, the operator runs these
+commands **on the Pi** (not from an agent session). The dump file stays private,
+outside Git; verify it is nonempty before continuing. `--single-transaction`
+and `ON_ERROR_STOP` ensure a SQL error rolls the schema change back.
+
+```sh
+cd /srv/lusk-db
+umask 077
+docker compose exec -T postgres pg_dump -U postgres -d lusk -Fc > /srv/lusk-private/lusk-pre-access.dump
+test -s /srv/lusk-private/lusk-pre-access.dump || exit 1
+# Stop the API container through its own Compose project; the old image remains available.
+cd /srv/lusk/api/deploy
+docker compose -f compose.yaml stop
+cd /srv/lusk-db
+set -o pipefail
+cat /srv/lusk/api/migrations/001_replace_versioned_access.sql \
+    /srv/lusk/api/schema.sql \
+    /srv/lusk/api/migrations/001_grant_reader.sql |
+  docker compose exec -T postgres psql -U postgres -d lusk \
+    -v ON_ERROR_STOP=1 --single-transaction -f -
+```
+
+Do not run these commands yet: the branch must first land on the Pi, the
+migration test must pass there, the old schema/dependencies must be checked,
+and the operator must choose the maintenance window. The publisher then runs
+from the PC with the canonical Parquet and metadata (see `README.md`), and the
+operator rebuilds the API via its Compose project and verifies a real comparison
+response as well as `/api/health`. The dump is for deliberate recovery, not an
+automatic in-place version switch.
 
 ### Initial and repeat deployment
 
@@ -103,7 +133,9 @@ paragraph is a plan, not an executable migration or permission to drop tables.
     secrets from the env file**, then `docker compose -f compose.yaml up -d --build`. Review the
     Compose file for unexpected published ports. Check `docker compose ps` and logs. The health check
    validates `/api/health` inside the container.
-6. **Apply nginx change separately.** The operator—not the API agent—reviews and inserts the
+6. **Apply nginx change separately on a first deployment only.** The Pi's existing
+   Nginx `/api/` route does not need a second modification for a schema cutover.
+   For a new installation, the operator—not the API agent—reviews and inserts the
    contents of `nginx-api.conf` inside the existing app `server {}` block. Move the server-level
    SPA fallback into `location / { try_files $uri /index.html; }`. Preserve the existing `/data/`
    alias and SPA behavior. Validate with `nginx -t` inside the nginx deployment context,
