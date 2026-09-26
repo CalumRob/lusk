@@ -12,6 +12,7 @@
 # Directories the build will live in — un-ignored up front so
 # future code pushes without editing this file
 !/app/
+!/api/
 !/pipeline/
 !/.github/
 
@@ -33,6 +34,10 @@
 # ADRs — the decisions the code cites — are versioned, like their
 # siblings (docs/adr/0001..0003); the rest of docs/ stays local
 !/docs/
+/api/.env
+/api/__pycache__/
+/api/**/__pycache__/
+/api/.pytest_cache/
 /docs/*
 !/docs/adr/
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —

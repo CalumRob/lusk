@@ -1,5 +1,15 @@
 {
   "theme": "mobilite",
+  "comparison_scopes": {
+    "bretagne": {"kind": "communes-bretagne", "label": "communes bretonnes"}
+  },
+  "indicator_directions": {
+    "share_food_t": "high", "share_food_b": "high", "share_food_c": "high",
+    "share_health_t": "high", "share_health_b": "high", "share_health_c": "high",
+    "share_admin_t": "high", "share_admin_b": "high", "share_admin_c": "high",
+    "share_school_t": "high", "share_school_b": "high", "share_school_c": "high",
+    "share_bank_t": "high", "share_bank_b": "high", "share_bank_c": "high"
+  },
   "label": "Mobilité",
   "subgroups": [
     {
