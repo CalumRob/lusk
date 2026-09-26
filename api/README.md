@@ -1,7 +1,7 @@
 # Interactive data-serving spike (#569)
 
-This slice does not replace the static site. Its earlier API image has been
-deployed on the Pi; the current single-dataset schema is **not deployed**. It tests one bounded
+This slice does not replace the static site. The single-dataset API is deployed
+on the Pi as a bounded serving experiment. It tests one
 read contract with FastAPI + psycopg against PostgreSQL. R remains the computation
 owner; the database holds a serving projection of its published outputs. There is
 no endpoint for arbitrary SQL or user-supplied lists of peers.
@@ -58,13 +58,15 @@ follows the generic R ranking rule (1/1); some current read models suppress it.
 
 ## Local verification
 
-### Existing database migration (operator-run; not automatic)
+### Serving schema
 
-`schema.sql` is a **fresh-install schema**, not an in-place migration of the
-currently deployed versioned tables. Do not apply it to live `lusk` without the
-explicit migration and API cutover plan in [`README-deploy.md`](README-deploy.md).
-The user has authorized deleting the old serving rows after test verification;
-this does not authorize deleting unrelated data or silently rebuilding the Pi.
+`schema.sql` is a **fresh-install schema**, not an idempotent migration. The
+original Pi schema was replaced once on 2026-09-27 with the tested,
+transaction-scoped `migrations/001_replace_versioned_access.sql`; **do not run
+that migration again**. Ordinary refreshes use only the importer, which
+atomically replaces the access dataset without dropping tables. The Pi-specific
+operator notes in `README-deploy.md` are local and gitignored, consistent with
+`docs/self-hosting.md`; the reusable source and test contract remain tracked.
 
 From the repository root in a Python virtual environment:
 
@@ -84,8 +86,71 @@ it in the shell. The API takes a *different, read-only*
 `DATABASE_URL`; give it SELECT on the serving relations it reads and no
 write permissions. Credentials must never be copied to `/srv/lusk/api`.
 
-The earlier versioned-schema integration suite passed against a disposable Pi
-Postgres database; the **new single-dataset schema must be retested there**.
-Representative publication and query measurements are still needed before #569
-selects an architecture. See [`README-deploy.md`](README-deploy.md) for the
-operator-run cutover; no live Pi changes are part of this code change.
+## Operator-run deployment and checks (#571)
+
+Supported starting state: Docker Compose, a Lusk checkout at `/srv/lusk`, an
+existing static nginx service (`lusk` in `/srv/lusk/compose.yaml`), PostgreSQL
+(`postgres` in `/srv/lusk-db/compose.yaml`), and database `lusk`. The operator
+owns both Compose files and `/srv/lusk-private/`; API deployment never rewrites
+them. A blank Pi/base site/database installation is outside this slice.
+
+1. Ensure external Docker networks `lusk-edge` and `lusk-data` exist. The
+   operator declares `lusk-edge` on the existing nginx service and `lusk-data`
+   on PostgreSQL in their respective Compose files, **retaining their default
+   networks**. Validate each project with `docker compose config --quiet` and
+   deliberately recreate the affected services once. Do not rely on an
+   ephemeral `docker network connect`. The tracked `deploy/compose.yaml` joins
+   both networks without publishing an API host port.
+2. Provision separate non-superuser `lusk_reader` and `lusk_publisher` Postgres
+   logins. Set their passwords interactively in `psql` (`\password`), never in
+   command history or tracked files. Apply `schema.sql` to a **fresh, empty
+   serving schema** and `migrations/001_grant_reader.sql` in one transaction;
+   the reader gets SELECT and the publisher gets only the access-serving writes.
+   Do not use this fresh-install sequence on the already-deployed Pi.
+3. The operator places the reader `DATABASE_URL` in the mode-600
+   `/srv/lusk-private/api.env`, outside the checkout; the publisher password
+   stays on the PC and is supplied by the importer's prompt. From the PC,
+   validate and publish canonical Parquet with `python -m api.importer
+   public/data --host <pi-host> --database lusk --user lusk_publisher`.
+4. From `/srv/lusk/api/deploy`, use **`docker compose -p lusk-api -f compose.yaml
+   config --quiet`** and `docker compose -p lusk-api -f compose.yaml up -d
+   --build api`. Always pass `-p lusk-api`: the default project inferred from
+   `deploy/` is *not* the running API project. On first installation only, add
+   `deploy/nginx-api.conf` to the existing nginx server block and move its
+   server-level SPA fallback into `location /`; retain the `/data/` alias.
+5. Verify Pi-loopback and public `/api/health` **and** a known comparison, a
+   missing API route (not HTML), the static site, and no API host port in
+   `docker ps` (`8000/tcp` without `->`). Verify reader SELECT=true and
+   INSERT/schema CREATE/database CREATE=false. To rotate credentials, use
+   interactive `\password`, update the private env file for the reader, then
+   recreate only the `lusk-api` service and recheck a real comparison.
+
+The opt-in real-Postgres checks in `tests/integration/README.md` require an
+explicitly disposable `lusk_it_*` database. They cover failed refresh,
+concurrent readers, a successful replacement, historical-schema rehearsal and
+read-only/CREATE denial. **Seven passed** on the Pi's disposable database on
+2026-09-27. In live `lusk`, the canonical importer committed 19,020 access
+observations in **9.06 seconds** end-to-end (operator-reported). Allineuc's
+health walking/transit rank was **19/38** through the public API. The live
+reader's SELECT/INSERT/schema CREATE/database CREATE privileges were
+`true/false/false/false`; the API had no host-published port.
+
+For repeatable query timing, run **sequentially** from the Pi against
+`http://127.0.0.1:3535/api/territories/commune/22001/essential-services`
+with `comparison=epci`, `densite`, then `bretagne`: 20 warmed `curl` requests
+per scope, collecting `time_total`; nearest-rank P95 is the 19th sorted value.
+With 19,020 observations, observed Pi-loopback P95 was **24.4 / 100.5 / 454.5
+ms** respectively. The agreed #571 engineering bound is **P95 <1 second** for
+each of these scopes at this data size; all passed. This is not a cold-start,
+internet-latency or product-wide guarantee.
+
+```sh
+set -o pipefail
+for scope in epci densite bretagne; do
+  echo "$scope"
+  for i in $(seq 1 20); do
+    curl -fsS -o /dev/null -w '%{time_total}\n' \
+      "http://127.0.0.1:3535/api/territories/commune/22001/essential-services?comparison=$scope" || exit 1
+  done | sort -n | awk 'NR == 10 { a = $1 } NR == 11 { median = 500 * (a + $1) } NR == 19 { p95 = 1000 * $1 } END { printf "median %.1f ms, p95 %.1f ms\n", median, p95 }'
+done
+```
