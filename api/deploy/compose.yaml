@@ -1,0 +1,37 @@
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: api/deploy/Dockerfile
+    image: lusk-api:local
+    restart: unless-stopped
+    env_file:
+      - /srv/lusk-private/api.env
+    expose:
+      - "8000"
+    networks:
+      edge:
+        aliases:
+          - lusk-api
+      data: {}
+    healthcheck:
+      # The endpoint is part of the API contract; it is not published to the host.
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  edge:
+    external: true
+    name: ${LUSK_EDGE_NETWORK:-lusk-edge}
+  data:
+    external: true
+    name: ${LUSK_DATA_NETWORK:-lusk-data}
