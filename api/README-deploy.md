@@ -1,23 +1,25 @@
-# Optional Pi API deployment (example)
+# Pi API deployment and verification
 
-An earlier, versioned-schema API image is running on the Pi; this document does
-**not** imply that the new single-dataset schema or image is deployed.
-It does not change the existing static-app Compose service, nginx configuration, or PostgreSQL
-Compose project. The operator performs and reviews all Docker/Compose and privileged nginx
- changes. The operator controls privileged changes; this checkout supplies application source.
+The single-dataset API was deployed to the Pi on 2026-09-27. The static app,
+nginx and PostgreSQL are separate Compose projects. The operator performs and
+reviews all Docker/Compose and privileged changes; this checkout supplies source.
 
 The examples assume:
 
 - The API source is a Python package under this repository's `api/` directory, exposes
   `api.main:app`, and implements `/api/health` and `/api/territories/...` routes.
 - The API project supplies `api/requirements.txt`.
-- The existing nginx container serves the SPA on host port `3535`, with document root
+- The existing nginx container serves the SPA on **loopback-only** host port
+  `127.0.0.1:3535`, with document root
   `/usr/share/nginx/html/app`, a `/data/` alias, and SPA fallback `try_files $uri /index.html`.
 - PostgreSQL 18-trixie is in the separate `/srv/lusk-db` Compose project and is currently
   published as `192.168.1.120:5432:5432`, database `lusk`.
 - The two Compose networks are external shared networks named `lusk-edge` and `lusk-data` by
   default. Nginx and the API must both join `lusk-edge`; PostgreSQL and the API must both join
   `lusk-data`. Adjust the names in the examples if the operator's existing networks differ.
+- The deployed API Compose project is **`lusk-api`**. Always pass `-p lusk-api`;
+  running Compose from `api/deploy` without it silently targets an unrelated
+  default project named `deploy` and will not stop/rebuild `lusk-api-api-1`.
 
 No credentials belong in these examples or in source control. Keep database credentials in the
 operator-owned `/srv/lusk-private/api.env` file, **outside the agent-writable `/srv/lusk/api`**,
@@ -50,7 +52,7 @@ or update the snippet consistently.
 
 ## Operator deployment sequence
 
-### Migration from the deployed versioned spike
+### Historical one-time cutover from the original versioned spike (completed)
 
 `schema.sql` describes a fresh single-dataset installation. **Do not run it
 against the existing `lusk` schema**: several legacy tables have the same names
@@ -84,7 +86,7 @@ If the schema change or publication fails, stop before rebuilding the API;
 restore the database dump **only with an operator-reviewed recovery plan** or
 complete the publication, never silently point the old image at the new layout.
 
-For this Pi's known layout, once the migration test passes and the operator has
+For another Pi still on the original layout, once the migration test passes and the operator has
 reviewed actual dependencies and approved downtime, the operator runs these
 commands **on the Pi** (not from an agent session). The dump file stays private,
 outside Git; verify it is nonempty before continuing. `--single-transaction`
@@ -97,7 +99,7 @@ docker compose exec -T postgres pg_dump -U postgres -d lusk -Fc > /srv/lusk-priv
 test -s /srv/lusk-private/lusk-pre-access.dump || exit 1
 # Stop the API container through its own Compose project; the old image remains available.
 cd /srv/lusk/api/deploy
-docker compose -f compose.yaml stop
+docker compose -p lusk-api -f compose.yaml stop api
 cd /srv/lusk-db
 set -o pipefail
 cat /srv/lusk/api/migrations/001_replace_versioned_access.sql \
@@ -107,8 +109,9 @@ cat /srv/lusk/api/migrations/001_replace_versioned_access.sql \
     -v ON_ERROR_STOP=1 --single-transaction -f -
 ```
 
-Do not run these commands yet: the branch must first land on the Pi, the
-migration test must pass there, the old schema/dependencies must be checked,
+**Do not repeat the migration on the already-updated Pi**: it was run once on
+2026-09-27 and deliberately refuses the new schema. On a different installation,
+the migration test must pass, the old schema/dependencies must be checked,
 and the operator must choose the maintenance window. The publisher then runs
 from the PC with the canonical Parquet and metadata (see `README.md`), and the
 operator rebuilds the API via its Compose project and verifies a real comparison
@@ -133,9 +136,9 @@ automatic in-place version switch.
    these deployment files at `/srv/lusk/api/deploy/`. The Docker build context in the example is
    the repository root (`../..` from `deploy`), so that directory layout must be preserved.
 5. **Build and start the API.** From `/srv/lusk/api/deploy`, the operator can run
-    `docker compose -f compose.yaml config --quiet` to validate interpolation **without printing
-    secrets from the env file**, then `docker compose -f compose.yaml up -d --build`. Review the
-    Compose file for unexpected published ports. Check `docker compose ps` and logs. The health check
+     `docker compose -p lusk-api -f compose.yaml config --quiet` to validate interpolation **without printing
+     secrets from the env file**, then `docker compose -p lusk-api -f compose.yaml up -d --build api`. Review the
+     Compose file for unexpected published ports. Check `docker compose -p lusk-api -f compose.yaml ps --all` and logs. The health check
    validates `/api/health` inside the container.
 6. **Apply nginx change separately on a first deployment only.** The Pi's existing
    Nginx `/api/` route does not need a second modification for a schema cutover.
@@ -145,12 +148,65 @@ automatic in-place version switch.
    alias and SPA behavior. Validate with `nginx -t` inside the nginx deployment context,
    then reload/recreate nginx using the operator's established procedure. Do not replace the
    whole nginx configuration with this snippet.
-7. **Verify from the LAN.** Check `http://<pi-address>:3535/api/health` and a known
+7. **Verify on Pi loopback and through the public tunnel.** Check `http://127.0.0.1:3535/api/health` and a known
    `/api/territories/...` request. Confirm an unknown `/api/...` request does not return the SPA
    HTML, the static app and `/data/` still work, and the API has no host-published port. Verify
    database access over `lusk-data` and inspect logs for accidental secret exposure.
-8. **Rollback if needed.** Remove/revert only the added nginx locations and reload nginx; then
-   stop/remove the API Compose service with its own project. Do not remove shared networks or
-   alter the PostgreSQL project as part of API rollback.
+8. **Stop the API if needed.** Use `docker compose -p lusk-api -f compose.yaml stop api`.
+    Do not remove shared networks or alter the PostgreSQL project as part of API service rollback.
+
+### Observed serving verification (2026-09-27)
+
+The operator ran all **7** opt-in integration checks on the Pi's disposable
+`lusk_it_spike` database before cutover. The live migration from four tables
+completed; the canonical Parquet importer committed 19,020 access observations
+in **9.06 seconds** of operator-reported end-to-end wall time (read, validate,
+connect, write and commit—not a database-only timing).
+The rebuilt API returned Allineuc's health walking/transit rank **19/38**
+through the public `/api/` route; Pi-loopback nginx returned HTTP 200 for all
+three comparison scopes, and the static site remained up.
+`docker ps` showed `lusk-api-api-1` with `8000/tcp` only (no host-published API
+port). A successful `/api/health` alone is not a data-readiness check.
+
+Representative **warm, sequential HTTP** samples were taken from the Pi against
+loopback nginx, not from the browser or from Postgres directly: 20 requests per
+scope for commune `22001` (Allineuc), after warm-up, with 19,020 access rows.
+The measure is curl `time_total` in milliseconds, including local nginx and API.
+P95 uses the 19th ordered value of 20. These are observed values, **not** a
+cold-start or internet-latency claim:
+
+| Scope | Response bytes | Median | P95 | Max |
+| --- | ---: | ---: | ---: | ---: |
+| Own EPCI | 7,401 | 23.4 ms | 24.4 ms | 25.0 ms |
+| Density | 7,419 | 67.6 ms | 100.5 ms | 123.5 ms |
+| Bretagne | 7,418 | 410.8 ms | 454.5 ms | 474.3 ms |
+
+To repeat, run sequentially from the Pi (not in parallel):
+
+```sh
+set -o pipefail
+for scope in epci densite bretagne; do
+  echo "$scope"
+  for i in $(seq 1 20); do
+    curl -fsS -o /dev/null -w '%{time_total}\n' \
+      "http://127.0.0.1:3535/api/territories/commune/22001/essential-services?comparison=$scope" || exit 1
+  done | sort -n | awk 'NR == 10 { a = $1 } NR == 11 { median = 500 * (a + $1) } NR == 19 { p95 = 1000 * $1 } END { printf "median %.1f ms, p95 %.1f ms\n", median, p95 }'
+done
+```
+
+The maintainer agreed on 2026-09-27 to a **Pi-loopback P95 under 1 second**
+for each of these three scopes at this data size. All three measurements above
+pass. This is an engineering verification bound, **not** a browser or
+product-wide latency promise; revisit it if the query or data shape changes.
+
+### Credentials
+
+The running API only uses the read-only `lusk_reader` credential in
+`/srv/lusk-private/api.env`; the publisher uses the distinct `lusk_publisher`
+credential via an interactive PC password prompt. To rotate, the operator uses
+PostgreSQL's interactive `\password` for the corresponding role (never a
+password in command history), updates the private env file for the reader, and
+recreates **only** `lusk-api` before verifying both `/api/health` and a real
+comparison. Never put either credential in this checkout or frontend assets.
 
 Do not run the Compose setup or privileged nginx/database changes without the user's approval.

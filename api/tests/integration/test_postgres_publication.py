@@ -176,11 +176,17 @@ def test_schema_import_and_public_api(db_env, monkeypatch):
         pool.close()
 
 
-def test_reader_role_cannot_insert(db_env):
+def test_reader_role_cannot_insert_or_create(db_env):
     import psycopg
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         with psycopg.connect(db_env["read_dsn"], autocommit=True) as connection:
             connection.execute("INSERT INTO dataset_publication(dataset_key,publication_id,row_count,bretagne_kind,bretagne_label) VALUES ('forbidden','x',1,'x','x')")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with psycopg.connect(db_env["read_dsn"], autocommit=True) as connection:
+            connection.execute("CREATE TABLE forbidden_reader_write (id integer)")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with psycopg.connect(db_env["read_dsn"], autocommit=True) as connection:
+            connection.execute("CREATE SCHEMA forbidden_reader_schema")
 
 
 def test_failed_replacement_keeps_current_dataset(db_env, tmp_path):
