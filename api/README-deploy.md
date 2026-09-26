@@ -72,7 +72,11 @@ and review `migrations/001_replace_versioned_access.sql`, which removes only
 applies `schema.sql` and the explicit role grants in
 `migrations/001_grant_reader.sql`. Avoid `CASCADE`,
 which could remove unrelated dependents. Do not run this procedure just by
-copying the table list: check dependencies and the actual schema first. After
+copying the table list: check dependencies and the actual schema first. A
+read-only inspection confirmed the Pi's `lusk` database uses the original
+four-table variant (19,020 observations; the registry and regional scope tables
+were never installed). The migration accepts either the four-table or the
+later six-table variant, but rejects a partial/unknown mix. After
 the schema transaction commits, publish the validated Parquet dataset and
 rebuild the API image. Until publication completes, the new API returns 503
 for the comparison route; `/api/health` alone is not a data-readiness check.
