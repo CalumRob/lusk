@@ -71,7 +71,7 @@ def test_health_does_not_need_database():
     assert TestClient(app).get("/api/health").json() == {"status": "ok"}
 
 
-def test_regional_scope_is_read_from_active_publication_database_row():
+def test_regional_scope_is_read_from_current_dataset_database_row():
     class Result:
         def __init__(self, value):
             self.value = value
@@ -92,12 +92,10 @@ def test_regional_scope_is_read_from_active_publication_database_row():
             self.queries.append((query, params))
             if "SET TRANSACTION" in query:
                 return Result(None)
-            if "FROM active_publication" in query:
-                return Result(("publication-current",))
+            if "FROM dataset_publication" in query:
+                return Result(("publication-current", "communes-bretagne-v2", "label version active"))
             if "FROM territory_reference" in query:
                 return Result(("22001", "Exemple", "commune", "EPCI", "5", "Bourg"))
-            if "FROM publication_comparison_scope" in query:
-                return Result(("communes-bretagne-v2", "label version active"))
             if "FROM essential_service_access" in query:
                 return Result(None)
             raise AssertionError(query)
@@ -114,9 +112,9 @@ def test_regional_scope_is_read_from_active_publication_database_row():
     result = ReadRepository(connections).read("22001", "bretagne")
     assert result["scope"] == {"kind": "communes-bretagne-v2", "label": "label version active"}
     query, params = next((q, p) for q, p in connections.connection_value.queries
-                         if "FROM publication_comparison_scope" in q)
-    assert "publication_id = %s" in query
-    assert params == ("publication-current",)
+                         if "FROM dataset_publication" in q)
+    assert "dataset_key = 'essential_service_access'" in query
+    assert params is None
 
 
 def test_published_epci_rank_parity_for_allineuc():

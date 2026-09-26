@@ -1,9 +1,10 @@
 # Optional Pi API deployment (example)
 
-This is a **future, optional deployment recipe**, not evidence that the API is live on the Pi.
+An earlier, versioned-schema API image is running on the Pi; this document does
+**not** imply that the new single-dataset schema or image is deployed.
 It does not change the existing static-app Compose service, nginx configuration, or PostgreSQL
 Compose project. The operator performs and reviews all Docker/Compose and privileged nginx
-changes. The API agent writes application files only under `/srv/lusk/api`.
+ changes. The operator controls privileged changes; this checkout supplies application source.
 
 The examples assume:
 
@@ -48,6 +49,39 @@ project prefixes service names in the operator's environment, configure a networ
 or update the snippet consistently.
 
 ## Operator deployment sequence
+
+### Migration from the deployed versioned spike
+
+`schema.sql` describes a fresh single-dataset installation. **Do not run it
+against the existing `lusk` schema**: several legacy tables have the same names
+but different columns, and CREATE without migration would leave them unchanged.
+The canonical Parquet and pipeline metadata must be available to repopulate the
+serving tables. Migration discards *only* the old serving tables and their data,
+not the database or unrelated tables. First run the opt-in real-Postgres tests
+against `lusk_it_spike` with this revision, including failed and successful
+replacement. Review the live schema and grants, and identify any other objects
+referencing the old tables before proceeding. Plan a brief API maintenance window:
+the old API cannot read the new layout; the new API cannot read the old layout.
+
+The operator should take a `pg_dump` of `lusk` outside the agent-writable
+checkout before the change, keep the old running container/image until cutover,
+and review an **explicit transactional migration script** that removes only
+`active_publication`, `import_publication`, `publication_service_registry`,
+`publication_comparison_scope`, `essential_service_access`,
+`territory_reference` and the two legacy validation functions/trigger, then
+applies `schema.sql` and re-grants SELECT to the reader role. Avoid `CASCADE`,
+which could remove unrelated dependents. Do not run this procedure just by
+copying the table list: check dependencies and the actual schema first. After
+the schema transaction commits, publish the validated Parquet dataset and
+rebuild the API image. Until publication completes, the new API returns 503
+for the comparison route; `/api/health` alone is not a data-readiness check.
+If the schema change or publication fails, stop before rebuilding the API;
+restore the database dump **only with an operator-reviewed recovery plan** or
+complete the publication, never silently point the old image at the new layout.
+Detailed, tested migration commands are still needed before live cutover; this
+paragraph is a plan, not an executable migration or permission to drop tables.
+
+### Initial and repeat deployment
 
 1. **Review prerequisites.** Confirm the API implementation and `api/requirements.txt` exist,
    confirm the expected health and territory routes, and inspect the current nginx and PostgreSQL

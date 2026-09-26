@@ -68,23 +68,23 @@ class ReadRepository:
         self.connections = connections
 
     def read(self, territory_id: str, comparison: str) -> dict:
-        # A single repeatable-read transaction pins both the active version and its rows.
-        # Successive HTTP requests are free to observe different publications.
+        # A repeatable-read snapshot pins metadata and rows to one committed refresh.
         with self.connections.connection() as connection:
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 active = connection.execute(
-                    "SELECT publication_id FROM active_publication WHERE singleton = TRUE"
+                    """SELECT publication_id, bretagne_kind, bretagne_label
+                       FROM dataset_publication WHERE dataset_key = 'essential_service_access'"""
                 ).fetchone()
                 if not active:
                     raise HTTPException(503, "No access dataset has been published")
                 publication = active[0]
                 target = connection.execute(
                     """SELECT territory_id, name, territory_type, epci_id,
-                              density_class_code, density_class_label
+                               density_class_code, density_class_label
                        FROM territory_reference
-                       WHERE publication_id = %s AND territory_id = %s AND territory_type = 'commune'""",
-                    (publication, territory_id),
+                        WHERE territory_id = %s AND territory_type = 'commune'""",
+                    (territory_id,),
                 ).fetchone()
                 if target is None:
                     raise HTTPException(404, "Commune not found")
@@ -99,8 +99,8 @@ class ReadRepository:
                         raise HTTPException(422, "EPCI comparison unavailable for this commune")
                     parent = connection.execute(
                         """SELECT name FROM territory_reference
-                           WHERE publication_id = %s AND territory_id = %s AND territory_type = 'epci'""",
-                        (publication, epci),
+                           WHERE territory_id = %s AND territory_type = 'epci'""",
+                        (epci,),
                     ).fetchone()
                     if not parent:
                         raise HTTPException(503, "Published EPCI reference is incomplete")
@@ -108,14 +108,7 @@ class ReadRepository:
                     kind, label = "communes-epci", f"communes de {parent[0]}"
                 else:
                     condition, value = "territory_type", "commune"
-                    regional = connection.execute(
-                        """SELECT kind, label FROM publication_comparison_scope
-                           WHERE publication_id = %s AND scope_key = 'bretagne'""",
-                        (publication,),
-                    ).fetchone()
-                    if not regional:
-                        raise HTTPException(503, "Published regional comparison scope is unavailable")
-                    kind, label = regional
+                    kind, label = active[1:]
                 # `condition` is selected exclusively from the three literals above; all
                 # externally supplied values are parameters, never SQL identifiers.
                 rows = connection.execute(
@@ -123,11 +116,10 @@ class ReadRepository:
                                a.effective_direction, a.source_id, a.source_name, a.source_version,
                                a.reference_date, a.source_publication_date
                         FROM essential_service_access a
-                        JOIN territory_reference t ON t.publication_id = a.publication_id
-                          AND t.territory_id = a.territory_id
-                        WHERE a.publication_id = %s AND t.territory_type = 'commune'
-                          AND t.{condition} = %s""",
-                    (publication, value),
+                         JOIN territory_reference t ON t.territory_id = a.territory_id
+                         WHERE t.territory_type = 'commune'
+                           AND t.{condition} = %s""",
+                    (value,),
                 ).fetchall()
                 return {
                     "publication_id": publication,

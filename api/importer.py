@@ -194,51 +194,45 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
 
 
 def import_publication(connection, artifacts_dir: str | Path, metadata_path: str | Path | None = None) -> Publication:
-    """Validate then atomically stage a version and switch the active publication pointer.
-
-    `connection` is a psycopg-compatible connection; schema.sql must be applied separately.
-    The active pointer is updated last inside one transaction, so any error rolls back staging.
-    """
+    """Validate Parquet, then atomically replace the one current serving dataset."""
     publication = load_publication(artifacts_dir, metadata_path)
     with connection.transaction():
         with connection.cursor() as cur:
-            cur.execute("SELECT status FROM import_publication WHERE publication_id = %s FOR UPDATE", (publication.publication_id,))
-            existing = cur.fetchone()
-            if existing:
-                if existing[0] == "validated":
-                    cur.execute("""INSERT INTO active_publication (singleton, publication_id)
-                                   VALUES (TRUE, %s)
-                                   ON CONFLICT (singleton) DO UPDATE
-                                   SET publication_id = EXCLUDED.publication_id""",
-                                (publication.publication_id,))
-                    return publication
-                raise ImportError(f"Publication {publication.publication_id} already exists but is not validated")
-            cur.execute("INSERT INTO import_publication (publication_id, status) VALUES (%s, 'loading')", (publication.publication_id,))
+            # Serialize concurrent publishers, including on an initially empty database.
+            cur.execute("SELECT pg_advisory_xact_lock(569, 1)")
+            cur.execute("DELETE FROM essential_service_access")
+            cur.execute("DELETE FROM territory_reference")
+            cur.execute("DELETE FROM service_registry")
             cur.executemany("""INSERT INTO territory_reference
-                (publication_id, territory_id, territory_type, name, department_id, epci_id,
-                 density_class_code, density_class_label)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                [(publication.publication_id, str(t["territoire"]), t["type"], t.get("nom", ""),
+                (territory_id, territory_type, name, department_id, epci_id,
+                  density_class_code, density_class_label)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                [(str(t["territoire"]), t["type"], t.get("nom", ""),
                   t.get("departement"), t.get("epci"), t.get("classe_densite_code"),
                   t.get("classe_densite_libelle_public")) for t in publication.territories])
             services = sorted({row.service for row in publication.rows})
-            cur.executemany("INSERT INTO publication_service_registry (publication_id, service) VALUES (%s, %s)",
-                            [(publication.publication_id, service) for service in services])
-            cur.execute("""INSERT INTO publication_comparison_scope
-                (publication_id, scope_key, kind, label) VALUES (%s, 'bretagne', %s, %s)""",
-                (publication.publication_id, publication.comparison_scope["kind"],
-                 publication.comparison_scope["label"]))
+            cur.executemany("INSERT INTO service_registry (service) VALUES (%s)", [(service,) for service in services])
             cur.executemany("""INSERT INTO essential_service_access
-                (publication_id, territory_id, service, mode, share, indicator_label,
-                 effective_direction, source_id, source_name, source_version, reference_date,
-                 source_publication_date)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                [(publication.publication_id, r.territory_id, r.service, r.mode,
-                  r.share, r.indicator_label, r.effective_direction, r.source_id, r.source_name, r.source_version,
-                  r.reference_date, r.source_publication_date)
-                  for r in publication.rows])
-            cur.execute("UPDATE import_publication SET status='validated', row_count=%s WHERE publication_id=%s", (len(publication.rows), publication.publication_id))
-            cur.execute("INSERT INTO active_publication (singleton, publication_id) VALUES (TRUE,%s) ON CONFLICT (singleton) DO UPDATE SET publication_id=EXCLUDED.publication_id", (publication.publication_id,))
+                (territory_id, service, mode, share, indicator_label,
+                  effective_direction, source_id, source_name, source_version, reference_date,
+                  source_publication_date)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                [(r.territory_id, r.service, r.mode,
+                   r.share, r.indicator_label, r.effective_direction, r.source_id, r.source_name, r.source_version,
+                   r.reference_date, r.source_publication_date)
+                   for r in publication.rows])
+            cur.execute("SELECT assert_current_dataset_complete(%s)", (len(publication.rows),))
+            cur.execute("""INSERT INTO dataset_publication
+                (dataset_key, publication_id, row_count, bretagne_kind, bretagne_label)
+                VALUES ('essential_service_access', %s, %s, %s, %s)
+                ON CONFLICT (dataset_key) DO UPDATE SET
+                    publication_id = EXCLUDED.publication_id,
+                    row_count = EXCLUDED.row_count,
+                    bretagne_kind = EXCLUDED.bretagne_kind,
+                    bretagne_label = EXCLUDED.bretagne_label,
+                    imported_at = now()""",
+                (publication.publication_id, len(publication.rows),
+                 publication.comparison_scope["kind"], publication.comparison_scope["label"]))
     return publication
 
 
