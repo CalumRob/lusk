@@ -4,6 +4,9 @@ This is **not deployed** and does not replace the static site. It tests one boun
 read contract with FastAPI + psycopg against PostgreSQL. R remains the computation
 owner; the database holds a serving projection of its published outputs. There is
 no endpoint for arbitrary SQL or user-supplied lists of peers.
+ADR-0031 continues to govern today's static read models; #569 investigates a new
+interaction and publication need, not a silent reversal of that decision. No
+existing renderer is changed by this spike.
 
 ## Sources and grain
 
@@ -26,6 +29,8 @@ manufacture building denominators from the separately published building count.
 active pointer **in one transaction**. Invalid input never reaches the DB. The
 old version is retained for in-flight reads and deliberate cleanup; no DROP,
 TRUNCATE, migration of existing tables, or automatic removal is performed.
+Re-publishing an existing validated version reactivates it without rewriting
+facts, allowing an operator to return to a previous version.
 One API request reads one active version in a repeatable-read transaction;
 successive requests may observe different versions.
 

@@ -18,7 +18,8 @@ class ExampleRepository:
                 # Three comparable peers; a fourth peer has an unavailable walking value.
                 *[dict(territory_id=code, service="health", mode=mode, share=value,
                        indicator_label=f"Santé {mode}", direction=direction,
-                       source_id="snapshot", source_version="2026-02", reference_date="2026-02-28")
+                       source_id="snapshot", source_name="Source exemple", source_version="2026-02",
+                       reference_date="2026-02-28", source_publication_date="2026-08-06")
                   for code, values in {
                       "22001": {"walk_transit": .2, "bike": .6, "car": .8},
                       "22002": {"walk_transit": .4, "bike": .5, "car": .9},
@@ -27,7 +28,8 @@ class ExampleRepository:
                   }.items() for mode, value in values.items() for direction in ["high"]],
                 *[dict(territory_id=code, service="food", mode="car", share=value,
                        indicator_label="Alimentation voiture", direction="low",
-                       source_id="snapshot", source_version="2026-02", reference_date="2026-02-28")
+                       source_id="snapshot", source_name="Source exemple", source_version="2026-02",
+                       reference_date="2026-02-28", source_publication_date="2026-08-06")
                   for code, value in [("22001", .2), ("22002", .1), ("22003", .2), ("22004", None)]],
             ],
         }
@@ -47,6 +49,8 @@ def test_selected_scope_computes_medians_gaps_and_directional_ties():
     assert health["modes"]["walk_transit"]["median"] == .2
     assert health["modes"]["walk_transit"]["rank"] == {"position": 2, "size": 3}
     assert health["modes"]["car"]["rank"] == {"position": 4, "size": 4}
+    assert health["modes"]["car"]["source_name"] == "Source exemple"
+    assert health["modes"]["car"]["source_publication_date"] == "2026-08-06"
     # Median of individual (car - walk) gaps: [.6, .5, .75], not median(car)-median(walk).
     assert health["peer_median_car_gap"] == .6
     food = next(s for s in body["services"] if s["id"] == "food")
@@ -86,7 +90,9 @@ def test_published_epci_rank_parity_for_allineuc():
                 "rows": [dict(territory_id=r.territory_id, service=r.service, mode=r.mode,
                               share=r.share, indicator_label=r.indicator_label,
                               direction=r.effective_direction, source_id=r.source_id,
-                              source_version=r.source_version, reference_date=r.reference_date)
+                              source_name=r.source_name, source_version=r.source_version,
+                              reference_date=r.reference_date,
+                              source_publication_date=r.source_publication_date)
                          for r in publication.rows if r.territory_id in members],
             }
 

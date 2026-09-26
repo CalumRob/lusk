@@ -23,8 +23,10 @@ class ModeComparison(BaseModel):
     direction: Literal["high", "low"]
     indicator_label: str
     source_id: str
+    source_name: str
     source_version: str
     reference_date: str | None
+    source_publication_date: str | None
 
 
 class ServiceComparison(BaseModel):
@@ -111,7 +113,8 @@ class ReadRepository:
                 # externally supplied values are parameters, never SQL identifiers.
                 rows = connection.execute(
                     f"""SELECT a.territory_id, a.service, a.mode, a.share, a.indicator_label,
-                               a.effective_direction, a.source_id, a.source_version, a.reference_date
+                               a.effective_direction, a.source_id, a.source_name, a.source_version,
+                               a.reference_date, a.source_publication_date
                         FROM essential_service_access a
                         JOIN territory_reference t ON t.publication_id = a.publication_id
                           AND t.territory_id = a.territory_id
@@ -124,8 +127,8 @@ class ReadRepository:
                     "territory": {"id": code, "name": name, "type": "commune"},
                     "scope": {"kind": kind, "label": label},
                     "rows": [dict(zip(("territory_id", "service", "mode", "share",
-                                     "indicator_label", "direction", "source_id",
-                                     "source_version", "reference_date"), row)) for row in rows],
+                                     "indicator_label", "direction", "source_id", "source_name",
+                                     "source_version", "reference_date", "source_publication_date"), row)) for row in rows],
                 }
 
 
@@ -165,8 +168,11 @@ def compare(data: dict) -> ComparisonResponse:
             response_modes[mode] = ModeComparison(
                 value=value, median=median(values) if values else None, rank=rank,
                 direction=direction, indicator_label=focal["indicator_label"],
-                source_id=focal["source_id"], source_version=focal["source_version"],
+                source_id=focal["source_id"], source_name=focal["source_name"],
+                source_version=focal["source_version"],
                 reference_date=str(focal["reference_date"]) if focal["reference_date"] else None,
+                source_publication_date=(str(focal["source_publication_date"])
+                                         if focal["source_publication_date"] else None),
             )
 
         def median_difference(first: str, second: str) -> float | None:

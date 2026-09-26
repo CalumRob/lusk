@@ -196,6 +196,11 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
             existing = cur.fetchone()
             if existing:
                 if existing[0] == "validated":
+                    cur.execute("""INSERT INTO active_publication (singleton, publication_id)
+                                   VALUES (TRUE, %s)
+                                   ON CONFLICT (singleton) DO UPDATE
+                                   SET publication_id = EXCLUDED.publication_id""",
+                                (publication.publication_id,))
                     return publication
                 raise ImportError(f"Publication {publication.publication_id} already exists but is not validated")
             cur.execute("INSERT INTO import_publication (publication_id, status) VALUES (%s, 'loading')", (publication.publication_id,))
