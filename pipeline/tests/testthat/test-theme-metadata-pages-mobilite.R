@@ -24,6 +24,15 @@ PAGES_SCALAIRES_MOBILITE <- c(
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
 
+test_that("le périmètre régional publié reflète le résolveur canonique", {
+  meta <- lire_theme_metadata("mobilite")
+  reference <- data.frame(territoire = c("22001", "22003"),
+                          type = c("commune", "commune"), stringsAsFactors = FALSE)
+  resolu <- resoudre_contextes_comparaison(reference, reference[1, ], "commune")$bretagne
+  expect_identical(meta$comparison_scopes$bretagne$kind, resolu$kind)
+  expect_identical(meta$comparison_scopes$bretagne$label, resolu$label)
+})
+
 test_that("les directions d'accès servies viennent du registre R, pas d'un défaut API (#569)", {
   meta <- lire_theme_metadata("mobilite")
   expect_setequal(names(meta$indicator_directions), names(CLES_ACCES_MOBILITE))

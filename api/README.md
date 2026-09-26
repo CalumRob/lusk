@@ -55,6 +55,28 @@ follows the generic R ranking rule (1/1); some current read models suppress it.
 
 ## Local verification
 
+### Existing database migration (operator-run; not automatic)
+
+`schema.sql` is additive: it creates `publication_service_registry` and
+`publication_comparison_scope`, and replaces
+the completeness-validation functions, but `CREATE TABLE IF NOT EXISTS` does not
+alter the pre-existing tables. Before deploying this importer against a database
+that was initialized with the earlier schema, an operator must schedule and
+review applying the updated `schema.sql` explicitly. Existing validated
+publications have no expected-service registry and therefore cannot pass the
+new active-pointer guard. For each retained publication, backfill its registry
+from the authoritative source metadata used for that publication; the distinct
+services still present in its rows are not sufficient to prove completeness
+when an entire service group is missing. If that source metadata is unavailable,
+do not reactivate the legacy publication: publish a fresh complete version
+instead. No automatic table alteration, destructive migration, or live Pi
+change is performed here.
+
+Each new publication writes its regional comparison scope in the same transaction
+as its facts and service registry. A legacy publication needs an operator-reviewed
+scope backfill from its matching pipeline metadata before regional comparison;
+the API does not fall back to local files or another publication.
+
 From the repository root in a Python virtual environment:
 
 ```text

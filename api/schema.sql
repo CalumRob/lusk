@@ -23,6 +23,21 @@ CREATE TABLE IF NOT EXISTS territory_reference (
     PRIMARY KEY (publication_id, territory_id)
 );
 
+-- Dataset-published registry: validation checks every territory against every
+-- expected service, including groups with zero access rows.
+CREATE TABLE IF NOT EXISTS publication_service_registry (
+    publication_id text NOT NULL REFERENCES import_publication(publication_id),
+    service text NOT NULL,
+    PRIMARY KEY (publication_id, service)
+);
+
+CREATE TABLE IF NOT EXISTS publication_comparison_scope (
+    publication_id text PRIMARY KEY REFERENCES import_publication(publication_id),
+    scope_key text NOT NULL CHECK (scope_key = 'bretagne'),
+    kind text NOT NULL,
+    label text NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS essential_service_access (
     publication_id text NOT NULL REFERENCES import_publication(publication_id),
     territory_id text NOT NULL,
@@ -50,13 +65,19 @@ DECLARE invalid_groups bigint;
 BEGIN
     SELECT count(*) INTO invalid_groups
     FROM (
-        SELECT territory_id, service
-        FROM essential_service_access
-        WHERE publication_id = publication
-        GROUP BY territory_id, service
-        HAVING count(*) <> 3 OR count(DISTINCT mode) <> 3
+        SELECT t.territory_id, s.service
+        FROM territory_reference t
+        CROSS JOIN publication_service_registry s
+        LEFT JOIN essential_service_access a
+          ON a.publication_id = t.publication_id
+         AND a.territory_id = t.territory_id AND a.service = s.service
+        WHERE t.publication_id = publication AND s.publication_id = publication
+        GROUP BY t.territory_id, s.service
+        HAVING count(a.mode) <> 3 OR count(DISTINCT a.mode) <> 3
     ) incomplete;
-    IF invalid_groups <> 0 OR NOT EXISTS (SELECT 1 FROM essential_service_access WHERE publication_id = publication) THEN
+    IF invalid_groups <> 0
+       OR NOT EXISTS (SELECT 1 FROM territory_reference WHERE publication_id = publication)
+       OR NOT EXISTS (SELECT 1 FROM publication_service_registry WHERE publication_id = publication) THEN
         RAISE EXCEPTION 'publication % has incomplete service triptychs', publication;
     END IF;
     RETURN;

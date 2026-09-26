@@ -1,5 +1,8 @@
 {
   "theme": "mobilite",
+  "comparison_scopes": {
+    "bretagne": {"kind": "communes-bretagne", "label": "communes bretonnes"}
+  },
   "indicator_directions": {
     "share_food_t": "high", "share_food_b": "high", "share_food_c": "high",
     "share_health_t": "high", "share_health_b": "high", "share_health_c": "high",

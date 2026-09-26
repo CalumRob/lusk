@@ -37,6 +37,7 @@ class Publication:
     rows: tuple[ServiceRow, ...]
     territories: tuple[dict, ...]
     provenance: tuple[dict, ...]
+    comparison_scope: dict[str, str]
 
 
 _MODES = {"t": "walk_transit", "b": "bike", "c": "car"}
@@ -72,6 +73,14 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
     theme = _read_json(metadata_file, str(metadata_file))
     if not isinstance(theme, dict):
         raise ImportError("Unexpected metadata shape")
+    try:
+        comparison_scope = theme["comparison_scopes"]["bretagne"]
+        if (not isinstance(comparison_scope.get("kind"), str) or not comparison_scope["kind"].strip()
+                or not isinstance(comparison_scope.get("label"), str) or not comparison_scope["label"].strip()):
+            raise ValueError("invalid scope")
+        comparison_scope = {"kind": comparison_scope["kind"], "label": comparison_scope["label"]}
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ImportError("Missing or invalid published Bretagne comparison scope") from exc
 
     territory_types = {}
     for row in data:
@@ -181,7 +190,7 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
         digest_hash.update(path.name.encode("utf-8") + b"\0" + path.read_bytes() + b"\0")
     digest = digest_hash.hexdigest()[:16]
     publication_id = f"{max((r.source_publication_date or '' for r in result), default='undated')}-{digest}"
-    return Publication(publication_id, tuple(result), tuple(territories), tuple(vintages))
+    return Publication(publication_id, tuple(result), tuple(territories), tuple(vintages), comparison_scope)
 
 
 def import_publication(connection, artifacts_dir: str | Path, metadata_path: str | Path | None = None) -> Publication:
@@ -212,6 +221,13 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
                 [(publication.publication_id, str(t["territoire"]), t["type"], t.get("nom", ""),
                   t.get("departement"), t.get("epci"), t.get("classe_densite_code"),
                   t.get("classe_densite_libelle_public")) for t in publication.territories])
+            services = sorted({row.service for row in publication.rows})
+            cur.executemany("INSERT INTO publication_service_registry (publication_id, service) VALUES (%s, %s)",
+                            [(publication.publication_id, service) for service in services])
+            cur.execute("""INSERT INTO publication_comparison_scope
+                (publication_id, scope_key, kind, label) VALUES (%s, 'bretagne', %s, %s)""",
+                (publication.publication_id, publication.comparison_scope["kind"],
+                 publication.comparison_scope["label"]))
             cur.executemany("""INSERT INTO essential_service_access
                 (publication_id, territory_id, service, mode, share, indicator_label,
                  effective_direction, source_id, source_name, source_version, reference_date,

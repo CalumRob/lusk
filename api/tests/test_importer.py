@@ -17,6 +17,7 @@ def artifacts(tmp_path: Path, *, values=None):
         "sources": {key: "accessibility" for key in keys},
         "indicator_labels": {key: key for key in keys},
         "indicator_directions": {key: "high" for key in keys},
+        "comparison_scopes": {"bretagne": {"kind": "communes-bretagne", "label": "communes bretonnes"}},
     }
     metadata.write_text(json.dumps(theme), encoding="utf-8")
     territories = [{"territoire": "22001", "nom": "Exemple", "departement": "22", "epci": "200000001",
@@ -84,6 +85,56 @@ def test_loader_rejects_incomplete_triptych(tmp_path):
     pq.write_table(pq.read_table(root / "indicateurs_mobilite.parquet").slice(0, 5), root / "indicateurs_mobilite.parquet")
     with pytest.raises(ImportError, match="triptych"):
         load_publication(root, metadata)
+
+
+def test_database_guard_uses_published_service_registry_for_full_cross_product():
+    schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
+    assert "CREATE TABLE IF NOT EXISTS publication_service_registry" in schema
+    assert "CROSS JOIN publication_service_registry" in schema
+    assert "HAVING count(a.mode) <> 3" in schema
+    assert "('food'" not in schema and "('health'" not in schema
+    importer = Path(__file__).resolve().parents[1].joinpath("importer.py").read_text(encoding="utf-8")
+    assert "INSERT INTO publication_service_registry" in importer
+
+
+def test_importer_publishes_changed_comparison_label_to_versioned_table(tmp_path):
+    root, metadata = artifacts(tmp_path)
+    theme = json.loads(metadata.read_text(encoding="utf-8"))
+    theme["comparison_scopes"]["bretagne"]["label"] = "label publié pour cette version"
+    metadata.write_text(json.dumps(theme), encoding="utf-8")
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+        def execute(self, query, params=None):
+            self.calls.append((query, params))
+        def executemany(self, query, params):
+            self.calls.append((query, list(params)))
+        def fetchone(self):
+            return None
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+
+    class Connection:
+        def __init__(self):
+            self.cur = Cursor()
+        class Transaction:
+            def __enter__(self):
+                return None
+            def __exit__(self, *_):
+                return False
+        def transaction(self):
+            return self.Transaction()
+        def cursor(self):
+            return self.cur
+
+    connection = Connection()
+    publication = import_publication(connection, root, metadata)
+    registry_insert = next(params for query, params in connection.cur.calls
+                           if "INSERT INTO publication_comparison_scope" in query)
+    assert registry_insert == (publication.publication_id, "communes-bretagne", "label publié pour cette version")
 
 
 def test_invalid_publication_fails_before_database_transaction(tmp_path):

@@ -108,7 +108,14 @@ class ReadRepository:
                     kind, label = "communes-epci", f"communes de {parent[0]}"
                 else:
                     condition, value = "territory_type", "commune"
-                    kind, label = "communes-bretagne", "communes bretonnes"
+                    regional = connection.execute(
+                        """SELECT kind, label FROM publication_comparison_scope
+                           WHERE publication_id = %s AND scope_key = 'bretagne'""",
+                        (publication,),
+                    ).fetchone()
+                    if not regional:
+                        raise HTTPException(503, "Published regional comparison scope is unavailable")
+                    kind, label = regional
                 # `condition` is selected exclusively from the three literals above; all
                 # externally supplied values are parameters, never SQL identifiers.
                 rows = connection.execute(
