@@ -269,8 +269,9 @@ def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
         ).fetchone()[0] == pytest.approx(0.9)
 
 
-def test_legacy_migration_is_scoped_atomic_and_republishable(db_env):
-    """Test the exact live migration against a historical-schema fixture, never public."""
+@pytest.mark.parametrize("legacy_file", ["legacy_initial_schema.sql", "legacy_schema.sql"])
+def test_legacy_migration_is_scoped_atomic_and_republishable(db_env, legacy_file):
+    """Rehearse both known legacy layouts in disposable schemas, never public."""
     import psycopg
     from api import importer
 
@@ -282,7 +283,7 @@ def test_legacy_migration_is_scoped_atomic_and_republishable(db_env):
         connection.execute(f'CREATE SCHEMA "{schema}"')
     try:
         with psycopg.connect(legacy, autocommit=True) as connection:
-            connection.execute((root / "legacy_schema.sql").read_text(encoding="utf-8"))
+            connection.execute((root / legacy_file).read_text(encoding="utf-8"))
             connection.execute("CREATE TABLE unrelated_data (id integer PRIMARY KEY)")
             connection.execute("INSERT INTO unrelated_data VALUES (42)")
             connection.execute("INSERT INTO import_publication (publication_id, status) VALUES ('old', 'validated')")
@@ -294,6 +295,14 @@ def test_legacy_migration_is_scoped_atomic_and_republishable(db_env):
 
             migration = (api_root / "migrations" / "001_replace_versioned_access.sql").read_text(encoding="utf-8")
             fresh = (api_root / "schema.sql").read_text(encoding="utf-8")
+            if legacy_file == "legacy_initial_schema.sql":
+                connection.execute("CREATE TABLE publication_service_registry (service text)")
+                with pytest.raises(psycopg.errors.RaiseException, match="unexpected partial legacy access schema"):
+                    with connection.transaction():
+                        connection.execute(migration)
+                        connection.execute(fresh)
+                assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 1
+                connection.execute("DROP TABLE publication_service_registry")
             # Unrelated dependent objects must abort the complete transaction,
             # rather than being silently dropped by CASCADE.
             connection.execute("CREATE TABLE unrelated_dependent (publication_id text REFERENCES import_publication)")

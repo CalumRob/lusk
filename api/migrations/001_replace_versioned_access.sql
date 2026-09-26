@@ -1,4 +1,5 @@
--- DESTRUCTIVE to the SIX legacy access-serving tables only. Run with
+-- DESTRUCTIVE to the FOUR original access-serving tables, plus the TWO
+-- optional metadata tables introduced after the Pi's first deployment. Run with
 -- ON_ERROR_STOP and --single-transaction together with api/schema.sql and
 -- api/migrations/001_grant_reader.sql, after operator preflight and backup.
 -- Never use CASCADE. A dependent object must cause a safe failure.
@@ -14,12 +15,17 @@ BEGIN
         RAISE EXCEPTION 'refusing access migration in schema %', current_schema();
     END IF;
     FOREACH relation IN ARRAY ARRAY['import_publication', 'active_publication',
-        'territory_reference', 'publication_service_registry',
-        'publication_comparison_scope', 'essential_service_access'] LOOP
+        'territory_reference', 'essential_service_access'] LOOP
         IF to_regclass(format('%I.%I', current_schema(), relation)) IS NULL THEN
             RAISE EXCEPTION 'legacy relation %.% not found', current_schema(), relation;
         END IF;
     END LOOP;
+    -- Either the original Pi schema (neither table) or the later six-table
+    -- schema (both tables). A partial/unknown migration must be investigated.
+    IF (to_regclass(format('%I.publication_service_registry', current_schema())) IS NULL)
+       <> (to_regclass(format('%I.publication_comparison_scope', current_schema())) IS NULL) THEN
+        RAISE EXCEPTION 'unexpected partial legacy access schema';
+    END IF;
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema() AND table_name = 'essential_service_access'
@@ -34,8 +40,8 @@ BEGIN
 END $$;
 
 DROP TABLE essential_service_access;
-DROP TABLE publication_comparison_scope;
-DROP TABLE publication_service_registry;
+DROP TABLE IF EXISTS publication_comparison_scope;
+DROP TABLE IF EXISTS publication_service_registry;
 DROP TABLE active_publication;
 DROP TABLE territory_reference;
 DROP TABLE import_publication;
