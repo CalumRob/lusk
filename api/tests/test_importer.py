@@ -16,7 +16,7 @@ def artifacts(tmp_path: Path, *, values=None):
         "subgroups": [{"key": "access", "indicators": keys + ["iso_food"]}],
         "sources": {key: "accessibility" for key in keys},
         "indicator_labels": {key: key for key in keys},
-        "indicator_directions": {},
+        "indicator_directions": {key: "high" for key in keys},
     }
     metadata.write_text(json.dumps(theme), encoding="utf-8")
     territories = [{"territoire": "22001", "nom": "Exemple", "departement": "22", "epci": "200000001",
@@ -58,6 +58,15 @@ def test_digest_covers_all_parquet_and_metadata_bytes(tmp_path):
     changed = load_publication(root, metadata)
     assert changed.publication_id != original
     assert next(r for r in changed.rows if r.service == "food" and r.mode == "walk_transit").effective_direction == "low"
+
+
+def test_missing_pipeline_direction_is_not_guessed(tmp_path):
+    root, metadata = artifacts(tmp_path)
+    theme = json.loads(metadata.read_text(encoding="utf-8"))
+    del theme["indicator_directions"]["share_food_t"]
+    metadata.write_text(json.dumps(theme), encoding="utf-8")
+    with pytest.raises(ImportError, match="pipeline direction"):
+        load_publication(root, metadata)
 
 
 @pytest.mark.parametrize("subgroup", [{"key": " ", "indicators": []}, {"indicators": []}])

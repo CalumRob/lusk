@@ -24,6 +24,20 @@ PAGES_SCALAIRES_MOBILITE <- c(
 
 racine_public <- file.path(testthat::test_path("..", "..", ".."), "public", "data")
 
+test_that("les directions d'accès servies viennent du registre R, pas d'un défaut API (#569)", {
+  meta <- lire_theme_metadata("mobilite")
+  expect_setequal(names(meta$indicator_directions), names(CLES_ACCES_MOBILITE))
+  expect_identical(
+    unlist(meta$indicator_directions[names(CLES_ACCES_MOBILITE)], use.names = FALSE),
+    unlist(DIRECTIONS_MOBILITE[names(CLES_ACCES_MOBILITE)], use.names = FALSE)
+  )
+  meta$indicator_directions$share_health_t <- "low"
+  expect_error(
+    valider_theme_metadata(meta, directions_module = DIRECTIONS_MOBILITE),
+    "indicator_directions.share_health_t"
+  )
+})
+
 test_that("l'énumération des pages Mobilité est connue — les pages multi-mesures et les vingt scalaires (#461)", {
   meta <- lire_theme_metadata("mobilite")
   cles <- names(meta$indicator_pages)

@@ -414,6 +414,27 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     manquer("indicator_keys", "une clé d'indicateur est vide ou en double")
   }
 
+  # Le registre de direction que consomme le serveur de lecture doit rester
+  # identique à celui qui classe les rangs calculés par R. Facultatif pour les
+  # thèmes qui n'exportent pas encore de faits via l'API (#569).
+  if (!is.null(metadata$indicator_directions)) {
+    registre <- metadata$indicator_directions
+    if (!est_liste(registre) || is.null(names(registre)) ||
+        anyDuplicated(names(registre)) ||
+        any(!names(registre) %in% cles_indicateurs)) {
+      manquer("indicator_directions", "clés de direction inconnues ou répétées")
+    }
+    for (cle in names(registre)) {
+      direction <- registre[[cle]]
+      if (!est_chaine_non_vide(direction) || !direction %in% c("high", "low") ||
+          (!is.null(directions_module) &&
+           !identical(direction, direction_de(cle, directions_module)))) {
+        manquer(paste0("indicator_directions.", cle),
+                "la direction publiée contredit le registre des rangs")
+      }
+    }
+  }
+
   # 4. les story_keys — le registre des histoires du thème, avec la règle
   #    d'herméticité (ADR-0020) : un thème ne peut lier que SES histoires.
   #    Issue #408 : la liste peut être VIDE — Programmes et subventions porte

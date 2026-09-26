@@ -14,7 +14,7 @@ existing renderer is changed by this spike.
 | --- | --- |
 | `territoires.parquet` | `territory_reference`: identity, EPCI, département and density-class reference for this publication; territory type is matched against the validated indicator facts |
 | `indicateurs_mobilite.parquet` | `essential_service_access`: one territory × service × mode × publication; nullable share as a **fraction** in 0–1, despite its `%` display unit |
-| `pipeline/inst/extdata/theme-metadata/theme_mobilite.json` | Pipeline-owned descriptor of declared share keys, indicator labels and source IDs; validated Mobilité shares use the pipeline's `high` direction unless explicitly declared otherwise |
+| `pipeline/inst/extdata/theme-metadata/theme_mobilite.json` | Pipeline-owned descriptor of declared share keys, indicator labels, source IDs and effective directions; its directions are contract-tested against the R ranking registry |
 | `vintages.parquet` | Source version, name and dates attached to served observations |
 
 The importer reads **canonical Parquet**, not published JSON or route-scoped

@@ -160,9 +160,9 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
                     or raw.get("vintage_date_reference") != vintage.get("date_reference")
                     or raw.get("vintage_date_publication") != vintage.get("date_publication")):
                 raise ImportError(f"Source provenance mismatch for {key}")
-            direction = directions.get(key, "high")
+            direction = directions.get(key)
             if direction not in {"high", "low"}:
-                raise ImportError(f"Invalid effective direction for {key}")
+                raise ImportError(f"Missing or invalid pipeline direction for {key}")
             source_name, source_version = vintage.get("source"), vintage.get("version")
             if not isinstance(source_name, str) or not source_name.strip() or not isinstance(source_version, str) or not source_version.strip():
                 raise ImportError(f"Invalid source metadata for {key}")
