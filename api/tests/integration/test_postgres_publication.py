@@ -125,10 +125,12 @@ def _write_artifacts(root: Path) -> tuple[Path, Path]:
     return root, metadata
 
 
-def _active(dsn: str) -> str | None:
+def _current(dsn: str) -> str | None:
     import psycopg
     with psycopg.connect(dsn) as connection:
-        row = connection.execute("SELECT publication_id FROM active_publication WHERE singleton").fetchone()
+        row = connection.execute(
+            "SELECT publication_id FROM dataset_publication WHERE dataset_key = 'essential_service_access'"
+        ).fetchone()
         return row[0] if row else None
 
 
@@ -141,7 +143,7 @@ def test_schema_import_and_public_api(db_env, monkeypatch):
     root, metadata = db_env["artifacts"]
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
         published = importer.import_publication(connection, root, metadata)
-    assert _active(db_env["publish_dsn"]) == published.publication_id
+    assert _current(db_env["publish_dsn"]) == published.publication_id
 
     pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
                           kwargs={"autocommit": True})
@@ -158,7 +160,8 @@ def test_schema_import_and_public_api(db_env, monkeypatch):
         school = next(service for service in body["services"] if service["id"] == "school")
         assert school["modes"]["walk_transit"]["value"] == pytest.approx(0.2)
         assert school["modes"]["walk_transit"]["median"] == pytest.approx(0.35)
-        assert school["modes"]["walk_transit"]["rank"] == {"position": 1, "size": 2}
+        # Higher is better: 0.5 ranks ahead of Alpha's 0.2 in this density class.
+        assert school["modes"]["walk_transit"]["rank"] == {"position": 2, "size": 2}
         assert school["modes"]["car"]["direction"] == "low"
         assert school["modes"]["walk_transit"]["source_name"] == "Fixture source"
         assert regional_response.status_code == 200, regional_response.text
@@ -177,17 +180,17 @@ def test_reader_role_cannot_insert(db_env):
     import psycopg
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         with psycopg.connect(db_env["read_dsn"], autocommit=True) as connection:
-            connection.execute("INSERT INTO import_publication(publication_id,status) VALUES ('forbidden','validated')")
+            connection.execute("INSERT INTO dataset_publication(dataset_key,publication_id,row_count,bretagne_kind,bretagne_label) VALUES ('forbidden','x',1,'x','x')")
 
 
-def test_invalid_input_and_database_constraint_keep_active_version(db_env, tmp_path):
+def test_failed_replacement_keeps_current_dataset(db_env, tmp_path):
     import psycopg
     from api import importer
 
     root, metadata = db_env["artifacts"]
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
         first = importer.import_publication(connection, root, metadata)
-        before = _active(db_env["publish_dsn"])
+        before = _current(db_env["publish_dsn"])
 
         bad_root = tmp_path / "invalid"
         bad_root.mkdir()
@@ -197,7 +200,7 @@ def test_invalid_input_and_database_constraint_keep_active_version(db_env, tmp_p
         invalid_meta.write_text(metadata.read_text(encoding="utf-8").replace('"high"', '"sideways"'), encoding="utf-8")
         with pytest.raises(importer.ImportError):
             importer.import_publication(connection, bad_root, invalid_meta)
-        assert _active(db_env["publish_dsn"]) == before == first.publication_id
+        assert _current(db_env["publish_dsn"]) == before == first.publication_id
 
         # Force a database-side constraint failure midway through a distinct valid import.
         changed_meta = tmp_path / "changed.json"
@@ -207,14 +210,110 @@ def test_invalid_input_and_database_constraint_keep_active_version(db_env, tmp_p
         connection.execute("CREATE TRIGGER integration_constraint_probe BEFORE INSERT ON essential_service_access FOR EACH ROW EXECUTE FUNCTION reject_integration_rows()")
         with pytest.raises(psycopg.errors.CheckViolation):
             importer.import_publication(connection, root, changed_meta)
-        assert _active(db_env["publish_dsn"]) == before
+        assert _current(db_env["publish_dsn"]) == before
+        assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(first.rows)
         connection.execute("DROP TRIGGER integration_constraint_probe ON essential_service_access")
         connection.execute("DROP FUNCTION reject_integration_rows()")
 
         # A malformed row also demonstrates the serving schema's own CHECK constraint.
         with pytest.raises(psycopg.errors.CheckViolation):
             with connection.transaction():
-                connection.execute("INSERT INTO import_publication(publication_id,status) VALUES ('constraint-probe','loading')")
-                connection.execute("INSERT INTO territory_reference(publication_id,territory_id,territory_type,name) VALUES ('constraint-probe','x','commune','X')")
-                connection.execute("INSERT INTO essential_service_access(publication_id,territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version) VALUES ('constraint-probe','x','school','plane',0.1,'x','high','x','x','x')")
-        assert _active(db_env["publish_dsn"]) == before
+                connection.execute("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version) VALUES ('29001','school','plane',0.1,'x','high','x','x','x')")
+        assert _current(db_env["publish_dsn"]) == before
+
+
+def test_database_rejects_missing_service_group(db_env):
+    import psycopg
+
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
+            with connection.transaction():
+                connection.execute("DELETE FROM essential_service_access WHERE territory_id = '29003'")
+                connection.execute("SELECT assert_current_dataset_complete(%s)",
+                                   (connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0],))
+        assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = '29003'").fetchone()[0] == 3
+
+
+def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
+    import psycopg
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from api import importer
+
+    root, metadata = db_env["artifacts"]
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        original = importer.import_publication(connection, root, metadata)
+        # Even after replacement starts, a concurrent reader sees committed rows.
+        with pytest.raises(RuntimeError, match="rollback probe"):
+            with connection.transaction():
+                connection.execute("DELETE FROM essential_service_access")
+                with psycopg.connect(db_env["read_dsn"], autocommit=True) as reader:
+                    assert reader.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(original.rows)
+                    assert reader.execute("SELECT publication_id FROM dataset_publication").fetchone()[0] == original.publication_id
+                raise RuntimeError("rollback probe")
+        replacement_root = tmp_path / "changed"
+        replacement_root.mkdir()
+        for source in root.glob("*.parquet"):
+            (replacement_root / source.name).write_bytes(source.read_bytes())
+        facts_path = replacement_root / "indicateurs_mobilite.parquet"
+        facts = pq.read_table(facts_path).to_pylist()
+        next(row for row in facts if row["territoire"] == "29001" and row["key"] == "share_school_t")["value"] = 0.9
+        pq.write_table(pa.Table.from_pylist(facts), facts_path)
+        updated = importer.import_publication(connection, replacement_root, metadata)
+        assert updated.publication_id != original.publication_id
+        assert _current(db_env["publish_dsn"]) == updated.publication_id
+        assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(updated.rows)
+        assert connection.execute("SELECT count(*) FROM dataset_publication").fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT share FROM essential_service_access WHERE territory_id = '29001' AND service = 'school' AND mode = 'walk_transit'"
+        ).fetchone()[0] == pytest.approx(0.9)
+
+
+def test_legacy_migration_is_scoped_atomic_and_republishable(db_env):
+    """Test the exact live migration against a historical-schema fixture, never public."""
+    import psycopg
+    from api import importer
+
+    schema = "it_" + uuid.uuid4().hex[:20]
+    legacy = _dsn_with_schema(db_env["publish_dsn"], schema)
+    root = Path(__file__).resolve().parent
+    api_root = root.parents[1]
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        with psycopg.connect(legacy, autocommit=True) as connection:
+            connection.execute((root / "legacy_schema.sql").read_text(encoding="utf-8"))
+            connection.execute("CREATE TABLE unrelated_data (id integer PRIMARY KEY)")
+            connection.execute("INSERT INTO unrelated_data VALUES (42)")
+            connection.execute("INSERT INTO import_publication (publication_id, status) VALUES ('old', 'validated')")
+            connection.execute("INSERT INTO territory_reference (publication_id, territory_id, territory_type, name) VALUES ('old','29001','commune','Old')")
+            connection.execute("""INSERT INTO essential_service_access
+                (publication_id, territory_id, service, mode, indicator_label, effective_direction,
+                 source_id, source_name, source_version)
+                VALUES ('old','29001','school','car','Old','high','old','Old','old')""")
+
+            migration = (api_root / "migrations" / "001_replace_versioned_access.sql").read_text(encoding="utf-8")
+            fresh = (api_root / "schema.sql").read_text(encoding="utf-8")
+            # Unrelated dependent objects must abort the complete transaction,
+            # rather than being silently dropped by CASCADE.
+            connection.execute("CREATE TABLE unrelated_dependent (publication_id text REFERENCES import_publication)")
+            with pytest.raises(psycopg.errors.DependentObjectsStillExist):
+                with connection.transaction():
+                    connection.execute(migration)
+                    connection.execute(fresh)
+            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 1
+            connection.execute("DROP TABLE unrelated_dependent")
+
+            with connection.transaction():
+                connection.execute(migration)
+                connection.execute(fresh)
+            assert connection.execute("SELECT id FROM unrelated_data").fetchone()[0] == 42
+            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 0
+            artifacts, metadata = db_env["artifacts"]
+            published = importer.import_publication(connection, artifacts, metadata)
+            assert _current(legacy) == published.publication_id
+            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(published.rows)
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')

@@ -87,17 +87,16 @@ def test_loader_rejects_incomplete_triptych(tmp_path):
         load_publication(root, metadata)
 
 
-def test_database_guard_uses_published_service_registry_for_full_cross_product():
+def test_database_guard_uses_current_service_registry_for_full_cross_product():
     schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
-    assert "CREATE TABLE IF NOT EXISTS publication_service_registry" in schema
-    assert "CROSS JOIN publication_service_registry" in schema
+    assert "CROSS JOIN service_registry" in schema
     assert "HAVING count(a.mode) <> 3" in schema
     assert "('food'" not in schema and "('health'" not in schema
     importer = Path(__file__).resolve().parents[1].joinpath("importer.py").read_text(encoding="utf-8")
-    assert "INSERT INTO publication_service_registry" in importer
+    assert "INSERT INTO service_registry" in importer
 
 
-def test_importer_publishes_changed_comparison_label_to_versioned_table(tmp_path):
+def test_importer_publishes_changed_comparison_label_to_current_table(tmp_path):
     root, metadata = artifacts(tmp_path)
     theme = json.loads(metadata.read_text(encoding="utf-8"))
     theme["comparison_scopes"]["bretagne"]["label"] = "label publié pour cette version"
@@ -132,9 +131,10 @@ def test_importer_publishes_changed_comparison_label_to_versioned_table(tmp_path
 
     connection = Connection()
     publication = import_publication(connection, root, metadata)
-    registry_insert = next(params for query, params in connection.cur.calls
-                           if "INSERT INTO publication_comparison_scope" in query)
-    assert registry_insert == (publication.publication_id, "communes-bretagne", "label publié pour cette version")
+    metadata_insert = next(params for query, params in connection.cur.calls
+                           if "INSERT INTO dataset_publication" in query)
+    assert metadata_insert == (publication.publication_id, len(publication.rows),
+                               "communes-bretagne", "label publié pour cette version")
 
 
 def test_invalid_publication_fails_before_database_transaction(tmp_path):

@@ -42,5 +42,11 @@ API seam against PostgreSQL, including rank, median, scope and provenance. Any
 query timing (if added later) is strictly local to this explicitly provided test
 database and is not a Pi or deployment performance claim.
 
+The migration rehearsal uses a *second* unique test schema in the same disposable
+database. `legacy_schema.sql` is a frozen copy of the schema deployed before the
+single-dataset redesign. The test checks that an unexpected dependent object
+aborts the whole migration, an unrelated table survives, and canonical Parquet
+can repopulate the new tables. The live `lusk` schema is never involved.
+
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
