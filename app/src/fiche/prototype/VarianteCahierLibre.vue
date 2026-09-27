@@ -73,6 +73,8 @@ const props = defineProps<{
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
   comparisonOptions?: readonly OptionContexteComparaison[]
+  accessStatus?: 'loading' | 'ready' | 'error'
+  retryAccess?: () => void
 }>()
 
 provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
@@ -841,7 +843,15 @@ onBeforeUnmount(() => {
                       :label="section.evidence.comparisonLabel"
                     />
                  </figure>
-                 <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
+                  <figure v-else-if="section.evidence?.kind === 'access' && props.accessStatus && props.accessStatus !== 'ready'" class="evidence-side access-figure-collection" :aria-busy="props.accessStatus === 'loading'">
+                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
+                    <p v-if="props.accessStatus === 'loading'" role="status">Chargement des données d’accès aux services…</p>
+                    <div v-else role="alert">
+                      <p>Impossible de charger les données d’accès aux services.</p>
+                      <button type="button" @click="props.retryAccess?.()">Réessayer</button>
+                    </div>
+                  </figure>
+                  <figure v-else-if="section.evidence?.kind === 'access'" class="evidence-side access-figure-collection">
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments qui ont accès à chaque type de service</figcaption>
                    <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                    <div class="access-figures" aria-label="Part des bâtiments accessibles par service et par mode">

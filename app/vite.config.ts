@@ -114,6 +114,11 @@ export default defineConfig({
     fs: {
       allow: [path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..')],
     },
+    // Prototype API reads remain same-origin in the browser. Opt in to a public
+    // API origin for local development; no database credential enters Vite.
+    ...(process.env.LUSK_API_ORIGIN ? {
+      proxy: { '/api': { target: process.env.LUSK_API_ORIGIN, changeOrigin: true } },
+    } : {}),
   },
   resolve: {
     alias: {

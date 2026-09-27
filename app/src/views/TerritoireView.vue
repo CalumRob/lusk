@@ -18,7 +18,7 @@
  * honest empty state when the territory (or its type) is unknown.
  */
 import { AlertCircle, ChevronRight, SearchX } from 'lucide-vue-next'
-import { computed, toRaw, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -40,7 +40,9 @@ import {
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import type { ThemeContent } from '@/fiche/content/themeContent'
+import type { MobiliteAccessFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -159,6 +161,50 @@ const prototypeActif = import.meta.env.DEV
 const prototypeCahierMobilite = computed(
   () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
 )
+const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
+const accesApi = ref<MobiliteAccessFacts | null>(null)
+const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
+const relancerAccesApi = ref(0)
+let sequenceAccesApi = 0
+
+watch(
+  [prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
+    () => modeleTerritoire.model.value, relancerAccesApi],
+  (_values, _oldValues, onCleanup) => {
+    const sequence = ++sequenceAccesApi
+    accesApi.value = null
+    statutAccesApi.value = 'loading'
+    if (!prototypeAccesApi.value || !typeValide.value || !modeleTerritoire.model.value) return
+    const abort = new AbortController()
+    onCleanup(() => abort.abort())
+    const type = typeRoute.value
+    const code = idRoute.value
+    const mode = resolutionComparaison.value?.mode
+    const query = type === 'commune' && mode ? `?comparison=${encodeURIComponent(mode)}` : ''
+    void fetch(`/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(code)}/essential-services${query}`, {
+      signal: abort.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json() as Promise<unknown>
+    }).then((data) => {
+      if (sequence !== sequenceAccesApi) return
+      // Validate at the semantic boundary, before a stale static figure could render.
+      const facts = territoryFactsFor(toRaw(payloadPourRendu.value!), code, resolutionComparaison.value?.contexte ?? undefined)
+      if (!facts) throw new Error('Territoire inconnu')
+      const normalized = applyAccessApiFacts(facts, data, resolutionComparaison.value?.contexte?.scope.kind ?? null,
+        resolutionComparaison.value?.contexte?.scope.label ?? null)
+      accesApi.value = normalized.mobility.access
+      statutAccesApi.value = 'ready'
+    }).catch(() => {
+      if (sequence === sequenceAccesApi) statutAccesApi.value = 'error'
+    })
+  },
+  { immediate: true },
+)
+
+function rechargerAccesApi(): void {
+  relancerAccesApi.value += 1
+}
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !prototypeCahierMobilite.value ||
@@ -171,7 +217,11 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     idRoute.value,
     resolutionComparaison.value?.contexte ?? undefined,
   )
-  return facts ? resolveMobiliteThemeContent(facts) : null
+  if (!facts) return null
+  const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
+    ? { ...facts, mobility: { ...facts.mobility, access: accesApi.value } }
+    : facts
+  return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value
@@ -311,7 +361,9 @@ watch(
               v-if="prototypeCahierMobilite && contenuMobilite && paginationCahier && variante"
               :content="contenuMobilite"
               :pagination="paginationCahier"
-              :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
+               :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
+               :access-status="variante.clef === 'E' ? statutAccesApi : undefined"
+               :retry-access="rechargerAccesApi"
             />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation

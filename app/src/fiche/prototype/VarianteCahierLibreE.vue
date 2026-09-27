@@ -8,6 +8,8 @@ defineProps<{
   content: ThemeContent
   pagination: CahierPagination
   comparisonOptions?: readonly OptionContexteComparaison[]
+  accessStatus?: 'loading' | 'ready' | 'error'
+  retryAccess?: () => void
 }>()
 </script>
 
@@ -16,6 +18,8 @@ defineProps<{
     :content="content"
     :pagination="pagination"
     :comparison-options="comparisonOptions"
+    :access-status="accessStatus"
+    :retry-access="retryAccess"
     show-all-units
     show-map-prototype
     presentation="plain"

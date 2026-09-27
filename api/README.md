@@ -1,13 +1,13 @@
 # Interactive data-serving spike (#569)
 
-This slice does not replace the static site. The single-dataset API is deployed
-on the Pi as a bounded serving experiment. It tests one
+This slice does not replace the static site. The access-only API is deployed
+on the Pi as a bounded serving experiment. It tests one dataset's
 read contract with FastAPI + psycopg against PostgreSQL. R remains the computation
 owner; the database holds a serving projection of its published outputs. There is
 no endpoint for arbitrary SQL or user-supplied lists of peers.
-ADR-0031 continues to govern today's static read models; #569 investigates a new
-interaction and publication need, not a silent reversal of that decision. No
-existing renderer is changed by this spike.
+ADR-0031 continues to govern today's static read models during ADR-0033's
+route-by-route transition. Variant E's existing Services essentiels figure is
+the first development-only browser consumer (#581); its renderer is unchanged.
 
 ## Sources and grain
 
@@ -57,6 +57,26 @@ Ranks use published direction (`1 + strictly better peers`); ties share their
 rank, the next position skips, and the returned size counts peers with a value.
 The number of scope members is distinct from each indicator's comparable count.
 The territory's measured shares do not change when its comparison changes.
+
+The same bounded read contract has three further routes:
+`/api/territories/epci/{code}/essential-services` compares Breton EPCIs,
+`/api/territories/departement/{code}/essential-services` compares the four
+Breton départements, and `/api/territories/region/{code}/essential-services`
+returns Bretagne's own shares with `scope`, medians and ranks null (no peer
+universe). Non-commune scopes expose a kind and member count; their public
+labels continue to come from the pipeline-published territory read model in
+Variant E, not invented inside the API. Unknown territory types have no route.
+The publication is still the existing 19,020-observation access dataset; these
+reads require no new table or browser credential.
+
+Variant E alone requests these routes in development. To view it with
+`npm run dev`, set `LUSK_API_ORIGIN` to an explicit public API origin (for example
+`https://lusk.calumrobertson.fr`) before starting Vite. Vite proxies `/api`
+same-origin; the variable is a URL, not a database secret. Without a configured
+origin, requests fail visibly in that section instead of silently showing
+static access facts. The Pi API must deploy the expanded routes before the
+all-level prototype can be checked against its live database. This does not
+publish Variant E in production or change the site's current static pages.
 
 This spike does **not** implement an interactive indicator page, arbitrary
 searched-territory comparisons, legacy `iso_*` pages, or a generic site-wide

@@ -39,7 +39,7 @@ class ServiceComparison(BaseModel):
 class ComparisonResponse(BaseModel):
     publication_id: str
     territory: dict[str, str]
-    scope: dict[str, str | int]
+    scope: dict[str, str | int] | None
     services: list[ServiceComparison]
 
 
@@ -68,6 +68,12 @@ class ReadRepository:
         self.connections = connections
 
     def read(self, territory_id: str, comparison: str) -> dict:
+        return self._read("commune", territory_id, comparison)
+
+    def read_level(self, territory_type: str, territory_id: str) -> dict:
+        return self._read(territory_type, territory_id, None)
+
+    def _read(self, territory_type: str, territory_id: str, comparison: str | None) -> dict:
         # A repeatable-read snapshot pins metadata and rows to one committed refresh.
         with self.connections.connection() as connection:
             with connection.transaction():
@@ -83,13 +89,22 @@ class ReadRepository:
                     """SELECT territory_id, name, territory_type, epci_id,
                                density_class_code, density_class_label
                        FROM territory_reference
-                        WHERE territory_id = %s AND territory_type = 'commune'""",
-                    (territory_id,),
+                         WHERE territory_id = %s AND territory_type = %s""",
+                    (territory_id, territory_type),
                 ).fetchone()
                 if target is None:
-                    raise HTTPException(404, "Commune not found")
+                    raise HTTPException(404, f"{territory_type.title()} not found")
                 code, name, _, epci, density, density_label = target
-                if comparison == "densite":
+                if territory_type == "epci":
+                    condition, value = "territory_type", "epci"
+                    kind, label = "epcis-bretagne", None
+                elif territory_type == "departement":
+                    condition, value = "territory_type", "departement"
+                    kind, label = "departements-bretagne", None
+                elif territory_type == "region":
+                    condition, value = "territory_id", code
+                    kind, label = None, None
+                elif comparison == "densite":
                     if not density or not density_label:
                         raise HTTPException(422, "Density comparison unavailable for this commune")
                     condition, value = "density_class_code", density
@@ -117,14 +132,15 @@ class ReadRepository:
                                a.reference_date, a.source_publication_date
                         FROM essential_service_access a
                          JOIN territory_reference t ON t.territory_id = a.territory_id
-                         WHERE t.territory_type = 'commune'
+                          WHERE t.territory_type = %s
                            AND t.{condition} = %s""",
-                    (value,),
+                    (territory_type, value),
                 ).fetchall()
                 return {
                     "publication_id": publication,
-                    "territory": {"id": code, "name": name, "type": "commune"},
-                    "scope": {"kind": kind, "label": label},
+                    "territory": {"id": code, "name": name, "type": territory_type},
+                    "scope": {"kind": kind, **({"label": label} if label is not None else {})} if kind else None,
+                    "comparison": territory_type != "region",
                     "rows": [dict(zip(("territory_id", "service", "mode", "share",
                                      "indicator_label", "direction", "source_id", "source_name",
                                      "source_version", "reference_date", "source_publication_date"), row)) for row in rows],
@@ -138,6 +154,7 @@ def get_repository() -> ReadRepository:
 def compare(data: dict) -> ComparisonResponse:
     target = data["territory"]["id"]
     members = {row["territory_id"] for row in data["rows"]}
+    has_comparison = data.get("comparison", True)
     if target not in members:
         raise HTTPException(503, "Published comparison does not include its target")
     grouped: dict[str, dict[str, dict[str, dict]]] = {}
@@ -160,12 +177,12 @@ def compare(data: dict) -> ComparisonResponse:
                 raise HTTPException(503, "Inconsistent published comparison direction")
             values = [row["share"] for row in observations.values() if row["share"] is not None]
             value = focal["share"]
-            rank = None if value is None else Rank(
+            rank = None if value is None or not has_comparison else Rank(
                 position=1 + sum(v > value if direction == "high" else v < value for v in values),
                 size=len(values),
             )
             response_modes[mode] = ModeComparison(
-                value=value, median=median(values) if values else None, rank=rank,
+                value=value, median=median(values) if values and has_comparison else None, rank=rank,
                 direction=direction, indicator_label=focal["indicator_label"],
                 source_id=focal["source_id"], source_name=focal["source_name"],
                 source_version=focal["source_version"],
@@ -185,12 +202,13 @@ def compare(data: dict) -> ComparisonResponse:
 
         services.append(ServiceComparison(
             id=service, modes=response_modes,
-            peer_median_car_gap=median_difference("car", "walk_transit"),
-            peer_median_bike_gain=median_difference("bike", "walk_transit"),
+            peer_median_car_gap=median_difference("car", "walk_transit") if has_comparison else None,
+            peer_median_bike_gain=median_difference("bike", "walk_transit") if has_comparison else None,
         ))
     return ComparisonResponse(
         publication_id=data["publication_id"], territory=data["territory"],
-        scope={**data["scope"], "member_count": len(members)}, services=services,
+        scope={**data["scope"], "member_count": len(members)} if data["scope"] else None,
+        services=services,
     )
 
 
@@ -206,3 +224,18 @@ def essential_services(
     repository: ReadRepository = Depends(get_repository),
 ) -> ComparisonResponse:
     return compare(repository.read(territory_id, comparison))
+
+
+@app.get("/api/territories/epci/{territory_id}/essential-services", response_model=ComparisonResponse)
+def epci_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
+    return compare(repository.read_level("epci", territory_id))
+
+
+@app.get("/api/territories/departement/{territory_id}/essential-services", response_model=ComparisonResponse)
+def department_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
+    return compare(repository.read_level("departement", territory_id))
+
+
+@app.get("/api/territories/region/{territory_id}/essential-services", response_model=ComparisonResponse)
+def region_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
+    return compare(repository.read_level("region", territory_id))
