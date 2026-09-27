@@ -127,7 +127,6 @@ $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 ```
 
 ```powershell
-$env:PGPASSFILE = '<operator-owned absolute path outside the repo>'
 python -m api.importer public/data --host <pi-host> --database lusk --user lusk_publisher
 ```
 
@@ -137,6 +136,18 @@ fails nonzero without changing the prior dataset if validation or SQL fails.
 The publisher serializes competing runs before comparing fingerprints. Only
 essential-service access is a Postgres dataset in this slice; other pipeline
 datasets stay in their own canonical Parquet and are not invented as tables.
+
+**Observed verification, 2026-09-27:** 22 local Python tests passed; the operator
+ran all 7 opt-in real-Postgres tests in disposable `lusk_it_spike` (2.28 s),
+including changed/unchanged publication, failed refresh and the changed value
+through the read-only HTTP contract. With an operator-created Windows-profile
+passfile and no password prompt, the live publisher first reported 19,020
+observations `published`, then the identical second run reported 19,020
+`unchanged`. The public API's publication ID matched the validated canonical
+Parquet snapshot (`2026-08-06-e1cc6023cf17e99e`), and Allineuc's health
+walking/transit rank remained 19/38 with source version 2026-02. No static-site
+release or API rebuild was needed. No full R suite was run for this Python-only
+change.
 
 ## Operator-run deployment and checks (#571)
 
