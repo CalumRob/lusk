@@ -38,6 +38,7 @@ _Avoid_: page de thème (confusable with the **Page d'indicateur**), payload the
 
 **Modèle de lecture**:
 A static, generated browser projection shaped for one product reading surface rather than for an internal pipeline table. Lusk publishes one complete model per **Territoire**, carrying everything needed to resolve its themes' `ThemeContent`, and one complete model per **Indicateur**, carrying everything needed by its Page d'indicateur across published levels and details. Both derive from the canonical Parquet outputs and may deliberately duplicate facts; they never duplicate fact ownership or business logic. A territory model is fetched and validated as one atomic unit, so its content does not grow as auxiliary tables arrive (ADR-0031).
+**Status (2026-09-27):** the incumbent static form remains on existing pages while ADR-0033's single product-data serving path is adopted by surface. It is no longer the default for new product-data work; this status does not claim existing pages have migrated.
 _Avoid_: payload global, table de pipeline, cache applicatif, base de données navigateur, view model
 
 **ContentUnit**:
