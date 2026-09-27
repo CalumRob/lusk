@@ -30,7 +30,9 @@ its weights and membership; do not substitute the snapshot indicator
 `nb_buildings`. The two inputs disagree for Allineuc (168 versus 174) because
 their building-to-commune assignments differ. Whole selected territories must
 be resolved into **distinct communes**, with overlapping parents counted only
-once. Reject unbounded, unknown or partially published selections; a serving
+once. The focal territory is neither added to nor removed from the peer set
+automatically: membership is exactly what the person selected, after resolving
+overlaps. Reject unbounded, unknown or partially published selections; a serving
 read must use one committed publication. There is no browser database access.
 
 This ADR changes the meaning of the peer comparison, not the selected
