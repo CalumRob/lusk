@@ -37,6 +37,15 @@ pipeline metadata. `TRUNCATE` is intentionally not used. Concurrent publishers
 are serialized with an advisory transaction lock. The API uses a repeatable-read
 snapshot per request; successive requests may observe different refreshes.
 
+The access publication identifier fingerprints the **validated serving
+projection**: access facts and their source/vintage, territory reference fields,
+and the published regional comparison scope. It identifies this pipeline-owned
+data snapshot, not an arbitrary run timestamp or raw Parquet encoding. Changes
+to unrelated indicators or vintages in shared Parquet do not refresh the access
+dataset. A repeat run with the same fingerprint skips the write entirely,
+leaving `imported_at` and all other datasets untouched. The first run after the
+older raw-file-hash importer changes the identifier once, even if values match.
+
 ## API contract
 
 `GET /api/territories/commune/{code}/essential-services?comparison=densite|epci|bretagne`
@@ -76,15 +85,58 @@ python -m pytest api/tests
 python -m api.importer --check public/data
 ```
 
-No PostgreSQL is needed for those checks. Before any database publication, an
-operator must review `schema.sql`, apply it to a **designated test database**,
-configure a separate publishing credential as `PUBLISH_DATABASE_URL`, and run
-`python -m api.importer public/data`. For a guided, one-off import, use
-`python -m api.importer public/data --host 192.168.1.120 --database lusk
---user lusk_publisher` instead; it prompts for the password without recording
-it in the shell. The API takes a *different, read-only*
+No PostgreSQL is needed for those checks. Before a first database publication,
+test in a **designated disposable database**. For a guided, one-off import, use
+`python -m api.importer public/data --host <pi-host> --database lusk
+--user lusk_publisher`; without `PGPASSFILE`, it prompts for the password
+without recording it in the shell. The API takes a *different, read-only*
 `DATABASE_URL`; give it SELECT on the serving relations it reads and no
 write permissions. Credentials must never be copied to `/srv/lusk/api`.
+
+### Repeatable R-to-Postgres access publication (#572)
+
+Run **after** a successful R pipeline publication (including the shared
+`vintages.parquet` fusion), from the repository root. Use canonical
+`public/data/*.parquet` and pipeline-owned Mobilité metadata; JSON outputs and
+the static-site release are not inputs. This step is explicit/operator-run, not
+added to the static-site cron or a `targets` side effect.
+
+The operator creates a libpq password file **outside this checkout and any
+agent-writable deployment directory**, restricts access to the operator, and
+sets `PGPASSFILE` to its absolute path in the publishing environment. A line
+matches `host:port:database:username:password` (for example,
+`<pi-host>:5432:lusk:lusk_publisher:<private-password>`); escape literal `:`
+and `\` according to libpq's passfile rules. The file is never copied into
+`api/`, shown in logs, or committed. `PGPASSFILE` contains only a path, not a
+password; the importer rejects missing files and files inside the repository.
+That check cannot establish filesystem ACLs or discover every other
+agent-writable directory: **the operator must verify** the chosen location is
+outside those directories and accessible only to the publishing identity.
+The importer passes the path to libpq; it does not read or print the secret.
+On this PC the operator chose a passfile under their Windows user profile;
+programs running as the **same Windows identity** can technically read it.
+That is an accepted local trust boundary here, not isolation from the agent.
+Use an exact host, port, database and publisher role in each entry; avoid a
+wildcard that could silently select the wrong database. The operator creates
+the file and restricts its ACL without pasting its contents into an agent
+session. To persist **only the path** across new PowerShell sessions:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+[Environment]::SetEnvironmentVariable('PGPASSFILE', $env:PGPASSFILE, 'User')
+```
+
+```powershell
+$env:PGPASSFILE = '<operator-owned absolute path outside the repo>'
+python -m api.importer public/data --host <pi-host> --database lusk --user lusk_publisher
+```
+
+The command reports `published` when the validated access snapshot changes,
+`unchanged` when it already matches the current database publication, and
+fails nonzero without changing the prior dataset if validation or SQL fails.
+The publisher serializes competing runs before comparing fingerprints. Only
+essential-service access is a Postgres dataset in this slice; other pipeline
+datasets stay in their own canonical Parquet and are not invented as tables.
 
 ## Operator-run deployment and checks (#571)
 
@@ -108,8 +160,8 @@ them. A blank Pi/base site/database installation is outside this slice.
    the reader gets SELECT and the publisher gets only the access-serving writes.
    Do not use this fresh-install sequence on the already-deployed Pi.
 3. The operator places the reader `DATABASE_URL` in the mode-600
-   `/srv/lusk-private/api.env`, outside the checkout; the publisher password
-   stays on the PC and is supplied by the importer's prompt. From the PC,
+   `/srv/lusk-private/api.env`, outside the checkout; the publisher credential
+   stays in the operator's private PC password file (or a one-off prompt). From the PC,
    validate and publish canonical Parquet with `python -m api.importer
    public/data --host <pi-host> --database lusk --user lusk_publisher`.
 4. From `/srv/lusk/api/deploy`, use **`docker compose -p lusk-api -f compose.yaml

@@ -143,6 +143,7 @@ def test_schema_import_and_public_api(db_env, monkeypatch):
     root, metadata = db_env["artifacts"]
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
         published = importer.import_publication(connection, root, metadata)
+    assert published.changed is True
     assert _current(db_env["publish_dsn"]) == published.publication_id
 
     pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
@@ -249,6 +250,14 @@ def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
     root, metadata = db_env["artifacts"]
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
         original = importer.import_publication(connection, root, metadata)
+        connection.execute("CREATE TABLE unrelated_fixture (id integer PRIMARY KEY)")
+        connection.execute("INSERT INTO unrelated_fixture VALUES (42)")
+        original_imported_at = connection.execute("SELECT imported_at FROM dataset_publication").fetchone()[0]
+        unchanged = importer.import_publication(connection, root, metadata)
+        assert unchanged.changed is False
+        assert unchanged.publication_id == original.publication_id
+        assert connection.execute("SELECT imported_at FROM dataset_publication").fetchone()[0] == original_imported_at
+        assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(original.rows)
         # Even after replacement starts, a concurrent reader sees committed rows.
         with pytest.raises(RuntimeError, match="rollback probe"):
             with connection.transaction():
@@ -266,6 +275,7 @@ def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
         next(row for row in facts if row["territoire"] == "29001" and row["key"] == "share_school_t")["value"] = 0.9
         pq.write_table(pa.Table.from_pylist(facts), facts_path)
         updated = importer.import_publication(connection, replacement_root, metadata)
+        assert updated.changed is True
         assert updated.publication_id != original.publication_id
         assert _current(db_env["publish_dsn"]) == updated.publication_id
         assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(updated.rows)
@@ -273,6 +283,32 @@ def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
         assert connection.execute(
             "SELECT share FROM essential_service_access WHERE territory_id = '29001' AND service = 'school' AND mode = 'walk_transit'"
         ).fetchone()[0] == pytest.approx(0.9)
+        assert connection.execute("SELECT id FROM unrelated_fixture").fetchone()[0] == 42
+
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
+                          kwargs={"autocommit": True})
+    previous_override = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            response = client.get("/api/territories/commune/29001/essential-services?comparison=densite")
+        assert response.status_code == 200, response.text
+        assert response.json()["publication_id"] == updated.publication_id
+        school = next(service for service in response.json()["services"] if service["id"] == "school")
+        assert school["modes"]["walk_transit"]["value"] == pytest.approx(0.9)
+        assert school["modes"]["walk_transit"]["median"] == pytest.approx(0.7)
+        assert school["modes"]["walk_transit"]["rank"] == {"position": 1, "size": 2}
+        assert school["modes"]["walk_transit"]["source_version"] == "2026-01"
+    finally:
+        if previous_override is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_override
+        pool.close()
 
 
 @pytest.mark.parametrize("legacy_file", ["legacy_initial_schema.sql", "legacy_schema.sql"])
