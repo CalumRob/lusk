@@ -1,6 +1,6 @@
 # ADR-0034: R precomputes the bounded building-access comparison ramps
 
-- **Status:** accepted
+- **Status:** superseded by ADR-0036 (custom-group mean curves)
 - **Decision:** product owner, 2026-09-27
 - **Parent:** ADR-0033 (canonical R/Parquet → Postgres projection → bounded read-only API)
 
