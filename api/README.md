@@ -113,6 +113,18 @@ That check cannot establish filesystem ACLs or discover every other
 agent-writable directory: **the operator must verify** the chosen location is
 outside those directories and accessible only to the publishing identity.
 The importer passes the path to libpq; it does not read or print the secret.
+On this PC the operator chose a passfile under their Windows user profile;
+programs running as the **same Windows identity** can technically read it.
+That is an accepted local trust boundary here, not isolation from the agent.
+Use an exact host, port, database and publisher role in each entry; avoid a
+wildcard that could silently select the wrong database. The operator creates
+the file and restricts its ACL without pasting its contents into an agent
+session. To persist **only the path** across new PowerShell sessions:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+[Environment]::SetEnvironmentVariable('PGPASSFILE', $env:PGPASSFILE, 'User')
+```
 
 ```powershell
 $env:PGPASSFILE = '<operator-owned absolute path outside the repo>'
