@@ -238,14 +238,16 @@ def test_non_commune_ranks_match_independent_r_publication():
 
     root = Path(__file__).resolve().parents[2] / "public" / "data"
     publication = load_publication(root)
-    published_ranks = {str(row["territoire"]): row for row in
-                       pq.read_table(root / "indicateurs_mobilite.parquet").to_pylist()
-                       if row["key"] == "share_health_t" and str(row["territoire"]) in ("200067460", "22", "53")}
-    for territory_type, territory_id, kind in (
-        ("epci", "200067460", "epcis-bretagne"),
-        ("departement", "22", "departements-bretagne"),
-        ("region", "53", None),
-    ):
+    department_ids = [str(row["territoire"]) for row in publication.territories if row["type"] == "departement"]
+    region_ids = [str(row["territoire"]) for row in publication.territories if row["type"] == "region"]
+    assert len(department_ids) == 4 and len(region_ids) == 1
+    cases = [("epci", "200067460", "epcis-bretagne"),
+             *(("departement", code, "departements-bretagne") for code in department_ids),
+             ("region", region_ids[0], None)]
+    selected_ids = {code for _, code, _ in cases}
+    published_shares = [row for row in pq.read_table(root / "indicateurs_mobilite.parquet").to_pylist()
+                        if row["key"].startswith("share_") and str(row["territoire"]) in selected_ids]
+    for territory_type, territory_id, kind in cases:
         class PublishedRepository:
             def read_level(self, level, code):
                 assert (level, code) == (territory_type, territory_id)
@@ -269,10 +271,15 @@ def test_non_commune_ranks_match_independent_r_publication():
         finally:
             app.dependency_overrides.clear()
         assert response.status_code == 200
-        health = next(service for service in response.json()["services"] if service["id"] == "health")
-        walk = health["modes"]["walk_transit"]
-        oracle = published_ranks[territory_id]
-        assert walk["value"] == oracle["value"]
-        assert walk["source_version"] == oracle["vintage_version"]
-        expected_rank = None if kind is None else {"position": int(oracle["rang_reg"]), "size": int(oracle["rang_reg_n"])}
-        assert walk["rank"] == expected_rank
+        served = {service["id"]: service["modes"] for service in response.json()["services"]}
+        oracles = [row for row in published_shares if str(row["territoire"]) == territory_id]
+        assert len(oracles) == 15  # five pipeline-declared services × three published modes
+        for oracle in oracles:
+            service, mode_code = oracle["key"].removeprefix("share_").rsplit("_", 1)
+            mode = {"t": "walk_transit", "b": "bike", "c": "car"}[mode_code]
+            actual = served[service][mode]
+            assert actual["value"] == oracle["value"]
+            assert actual["source_version"] == oracle["vintage_version"]
+            expected_rank = (None if kind is None or oracle["rang_reg"] is None else
+                             {"position": int(oracle["rang_reg"]), "size": int(oracle["rang_reg_n"])})
+            assert actual["rank"] == expected_rank
