@@ -69,14 +69,15 @@ Variant E, not invented inside the API. Unknown territory types have no route.
 The publication is still the existing 19,020-observation access dataset; these
 reads require no new table or browser credential.
 
-Variant E alone requests these routes in development. To view it with
-`npm run dev`, set `LUSK_API_ORIGIN` to an explicit public API origin (for example
-`https://lusk.calumrobertson.fr`) before starting Vite. Vite proxies `/api`
-same-origin; the variable is a URL, not a database secret. Without a configured
-origin, requests fail visibly in that section instead of silently showing
-static access facts. The Pi API must deploy the expanded routes before the
-all-level prototype can be checked against its live database. This does not
-publish Variant E in production or change the site's current static pages.
+Variant E alone requests these routes in development. `npm run dev` proxies
+`/api` same-origin to the public read-only API at
+`https://lusk.calumrobertson.fr` by default. To use another API server,
+set `LUSK_API_ORIGIN` before starting Vite (Command Prompt:
+`set LUSK_API_ORIGIN=http://localhost:8000`; PowerShell:
+`$env:LUSK_API_ORIGIN='http://localhost:8000'`). It is a URL, not a database
+secret. If the API is unavailable, the section fails visibly instead of
+silently showing static access facts. This does not publish Variant E in
+production or change the site's current static pages.
 
 This spike does **not** implement an interactive indicator page, arbitrary
 searched-territory comparisons, legacy `iso_*` pages, or a generic site-wide

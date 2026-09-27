@@ -114,11 +114,15 @@ export default defineConfig({
     fs: {
       allow: [path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..')],
     },
-    // Prototype API reads remain same-origin in the browser. Opt in to a public
-    // API origin for local development; no database credential enters Vite.
-    ...(process.env.LUSK_API_ORIGIN ? {
-      proxy: { '/api': { target: process.env.LUSK_API_ORIGIN, changeOrigin: true } },
-    } : {}),
+    // Variant E keeps /api same-origin in the browser. The public read-only API
+    // is the development default; override for a local API with LUSK_API_ORIGIN.
+    // This server setting is never bundled into the production frontend.
+    proxy: {
+      '/api': {
+        target: process.env.LUSK_API_ORIGIN || 'https://lusk.calumrobertson.fr',
+        changeOrigin: true,
+      },
+    },
   },
   resolve: {
     alias: {
