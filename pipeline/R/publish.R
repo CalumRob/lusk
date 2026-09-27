@@ -1,3 +1,82 @@
+# publier_comparaisons_acces_batiments -----------------------------------------
+# Refresh ciblé : le même résultat R sert aux modèles JSON existants et au
+# Parquet canonique que pourra importer la projection SQL. On prépare les
+# quatre fichiers avant de remplacer les précédents ; la release Git reste
+# l'unité atomique de publication des fichiers du site.
+publier_comparaisons_acces_batiments <- function(projections, cible) {
+  if (!dir.exists(cible)) {
+    stop("Répertoire de publication introuvable : ", cible, call. = FALSE)
+  }
+  noms <- c(
+    distribution = "distribution_acces_batiments_comparaisons",
+    rampe = "rampe_acces_batiments_comparaisons"
+  )
+  if (!all(names(noms) %in% names(projections)) ||
+      any(!vapply(projections[names(noms)], is.data.frame, logical(1)))) {
+    stop("Comparaisons de bâtiments incomplètes.", call. = FALSE)
+  }
+  rampe <- projections$rampe
+  colonnes <- c("territoire", "type", "comparison_mode", "scope_kind",
+                "scope_label", "mode", "quantile", "comparison_total_buildings",
+                "comparison_accessible_types")
+  if (!all(colonnes %in% names(rampe)) ||
+      anyNA(rampe[, colonnes]) ||
+      any(!rampe$mode %in% c("b", "c", "t")) ||
+      any(!is.finite(rampe$comparison_accessible_types)) ||
+      any(!is.finite(rampe$comparison_total_buildings)) ||
+      any(rampe$comparison_total_buildings <= 0)) {
+    stop("Comparaisons de bâtiments : rampe invalide.", call. = FALSE)
+  }
+  # Une comparaison absente n'a aucune ligne ; si elle existe, elle porte
+  # exactement les 11 positions pour chacun des trois modes.
+  groupes <- split(seq_len(nrow(rampe)),
+                   interaction(rampe$territoire, rampe$comparison_mode, drop = TRUE))
+  if (any(vapply(groupes, function(indices) {
+    points <- rampe[indices, , drop = FALSE]
+    if (nrow(points) != 3L * length(RAMPE_ACCES_BATIMENTS_QUANTILES) ||
+        anyDuplicated(paste(points$mode, points$quantile)) ||
+        length(unique(points$scope_kind)) != 1L ||
+        length(unique(points$scope_label)) != 1L) return(TRUE)
+    any(vapply(c("b", "c", "t"), function(mode) {
+      courbe <- points[points$mode == mode, , drop = FALSE]
+      if (nrow(courbe) != length(RAMPE_ACCES_BATIMENTS_QUANTILES) ||
+          !isTRUE(all.equal(sort(courbe$quantile),
+                            RAMPE_ACCES_BATIMENTS_QUANTILES, tolerance = 1e-12)) ||
+          length(unique(courbe$comparison_total_buildings)) != 1L) return(TRUE)
+      any(diff(courbe$comparison_accessible_types[order(courbe$quantile)]) < 0)
+    }, logical(1)))
+  }, logical(1)))) {
+    stop("Comparaisons de bâtiments : rampe incomplète ou incohérente.",
+         call. = FALSE)
+  }
+  fichiers <- list()
+  temporaires <- character()
+  on.exit(unlink(temporaires), add = TRUE)
+  for (kind in names(noms)) {
+    table <- projections[[kind]]
+    for (extension in c("parquet", "json")) {
+      cible_fichier <- file.path(cible, paste0(noms[[kind]], ".", extension))
+      temporaire <- tempfile(".building-comparisons-", tmpdir = cible,
+                            fileext = paste0(".", extension))
+      temporaires <- c(temporaires, temporaire)
+      if (extension == "parquet") {
+        nanoparquet::write_parquet(table, temporaire)
+      } else {
+        jsonlite::write_json(table, temporaire, dataframe = "rows", na = "null",
+                             digits = 17, pretty = TRUE)
+      }
+      fichiers[[length(fichiers) + 1L]] <- c(temporaire, cible_fichier)
+    }
+  }
+  for (fichier in fichiers) {
+    if (file.exists(fichier[[2L]])) unlink(fichier[[2L]])
+    if (!file.rename(fichier[[1L]], fichier[[2L]])) {
+      stop("Publication impossible : ", fichier[[2L]], call. = FALSE)
+    }
+  }
+  invisible(noms)
+}
+
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
 #   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet

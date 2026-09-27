@@ -1,5 +1,6 @@
 #!/usr/bin/env Rscript
-# Rebuild the compact building cohorts from the cached Mobilité source target.
+# Rebuild the building cohorts from the cached Mobilité source target as
+# canonical Parquet plus the existing static JSON projection.
 # Run from pipeline/ after `targets::tar_make(names = 'brut_mobilite')`.
 # Then run `Rscript scripts/publish-territory-models.R` to refresh the fiches.
 # The full graph remains the authority for regular releases; this targeted
@@ -40,19 +41,10 @@ verifier_integrite_projections_acces_batiments(list(
   rampe_acces_batiments_comparaisons = projections$rampe
 ))
 
+publier_comparaisons_acces_batiments(projections, output)
 for (kind in c("distribution", "rampe")) {
-  file <- file.path(output, paste0(
+  cat(sprintf("%s: %d rows\n", file.path(output, paste0(
     if (kind == "distribution") "distribution_acces_batiments_comparaisons" else
-      "rampe_acces_batiments_comparaisons", ".json"
-  ))
-  temporary <- tempfile(".building-comparisons-", tmpdir = output, fileext = ".json")
-  jsonlite::write_json(
-    projections[[kind]], temporary,
-    dataframe = "rows", na = "null", digits = 17, pretty = TRUE
-  )
-  if (file.exists(file)) unlink(file)
-  if (!file.rename(temporary, file)) {
-    stop("Cannot publish ", file, call. = FALSE)
-  }
-  cat(sprintf("%s: %d rows\n", file, nrow(projections[[kind]])))
+      "rampe_acces_batiments_comparaisons", ".parquet"
+  )), nrow(projections[[kind]])))
 }
