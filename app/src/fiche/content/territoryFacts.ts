@@ -275,7 +275,7 @@ const ACCESS_MODES: Readonly<Record<MobiliteAccessMode, SourceAccessMode>> = {
   walkTransit: 't',
 }
 
-const ACCESS_INDICATOR_KEYS: Readonly<
+export const ACCESS_INDICATOR_KEYS: Readonly<
   Record<MobiliteService, Record<SourceAccessMode, string>>
 > = {
   administration: {
