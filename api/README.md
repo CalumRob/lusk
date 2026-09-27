@@ -109,6 +109,10 @@ matches `host:port:database:username:password` (for example,
 and `\` according to libpq's passfile rules. The file is never copied into
 `api/`, shown in logs, or committed. `PGPASSFILE` contains only a path, not a
 password; the importer rejects missing files and files inside the repository.
+That check cannot establish filesystem ACLs or discover every other
+agent-writable directory: **the operator must verify** the chosen location is
+outside those directories and accessible only to the publishing identity.
+The importer passes the path to libpq; it does not read or print the secret.
 
 ```powershell
 $env:PGPASSFILE = '<operator-owned absolute path outside the repo>'
