@@ -51,7 +51,7 @@ function reponseAccesApi(type: string, code: string, kind: string | null, label?
     publication_id: 'api-access-v1',
     territory: { id: code, name: 'Territoire', type },
     scope: kind ? { kind, label, member_count: 38 } : null,
-    services: ['administration', 'alimentation', 'sante', 'banque', 'ecole'].map((id) => ({
+    services: ['admin', 'food', 'health', 'bank', 'school'].map((id) => ({
       id,
       modes: Object.fromEntries(['car', 'bike', 'walk_transit'].map((mode) => [mode, {
         value: mode === 'walk_transit' ? 0.42 : 0.8,

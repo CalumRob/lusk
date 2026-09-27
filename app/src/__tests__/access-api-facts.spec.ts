@@ -3,7 +3,8 @@ import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import type { Payload } from '@/payload/types'
 
-const services = ['administration', 'alimentation', 'sante', 'banque', 'ecole']
+// API publication IDs follow the canonical share_* keys, not the French page IDs.
+const services = ['admin', 'food', 'health', 'bank', 'school']
 const responseFor = (overrides: Record<string, unknown> = {}) => ({
   publication_id: 'publication-api', territory: { id: '22001', name: 'Test', type: 'commune' },
   scope: { kind: 'communes-epci', label: 'Pairs API', member_count: 2 },
@@ -23,7 +24,7 @@ describe('applyAccessApiFacts', () => {
     const result = applyAccessApiFacts(base, responseFor(), 'communes-epci', 'Pairs API')
     const access = result.mobility.access
     expect(access.byService.administration.car.value).toBe(0.8)
-    expect(access.byService.administration.car.provenance?.sourceId).toBe('api-administration-car')
+    expect(access.byService.administration.car.provenance?.sourceId).toBe('api-admin-car')
     expect(access.byService.administration.car.comparison?.rank).toEqual({ position: 1, size: 2 })
     expect(access.gapsByService.administration.carGap.value).toBeCloseTo(0.6)
     expect(access.gapsByService.administration.carGap.comparison?.reference?.value).toBe(0.3)

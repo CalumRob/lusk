@@ -9,6 +9,7 @@ import type {
   NumericFact,
   TerritoryFacts,
 } from './territoryFacts'
+import { ACCESS_INDICATOR_KEYS } from './territoryFacts'
 
 // The semantic facts already declare the served service/mode grammar; do not
 // independently select indicators or service groups in the API adapter.
@@ -47,11 +48,17 @@ export function applyAccessApiFacts(
     if (byId.has(item.id)) invalid()
     byId.set(item.id, item)
   }
-  if (byId.size !== services.length || services.some((service) => !byId.has(service))) invalid()
+  if (byId.size !== services.length) invalid()
   const parsed: Record<string, MobiliteAccessModes> = {}
   const gaps: Record<string, MobiliteAccessGaps> = {}
   for (const service of services) {
-    const item = byId.get(service)!
+    // The publication uses the service token in the canonical share_* key;
+    // the semantic facts own the mapping to the page's service identity.
+    const publishedKey = ACCESS_INDICATOR_KEYS[service].c
+    const publishedId = /^share_(.+)_c$/.exec(publishedKey)?.[1]
+    if (!publishedId) invalid()
+    const item = byId.get(publishedId)
+    if (!item) invalid()
     const modes = Object.keys(facts.mobility.access.byService[service]) as MobiliteAccessMode[]
     if (region && (item.peer_median_car_gap !== null || item.peer_median_bike_gain !== null)) invalid()
     if (modes.some((mode) => !record(item.modes) || !(apiMode[mode] in item.modes))) invalid()
