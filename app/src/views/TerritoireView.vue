@@ -41,8 +41,10 @@ import {
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
+import { applyBuildingApiFacts, clearBuildingApiPeers } from '@/fiche/content/buildingApiFacts'
+import type { PeerTerritory } from '@/fiche/prototype/BuildingPeerSelector.vue'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { MobiliteAccessFacts } from '@/fiche/content/territoryFacts'
+import type { MobiliteAccessFacts, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -205,6 +207,83 @@ watch(
 function rechargerAccesApi(): void {
   relancerAccesApi.value += 1
 }
+const buildingCatalogStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const buildingComparisonStatus = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const buildingTerritories = ref<PeerTerritory[]>([])
+const buildingPublicationId = ref<string | null>(null)
+const buildingSelected = ref<PeerTerritory[] | null>(null)
+const buildingApiFacts = ref<TerritoryFacts | null>(null)
+let buildingSequence = 0
+
+watch([prototypeAccesApi, typeRoute, idRoute], (_values, _previous, onCleanup) => {
+  ++buildingSequence
+  buildingSelected.value = null
+  buildingApiFacts.value = null
+  buildingComparisonStatus.value = 'idle'
+  buildingPublicationId.value = null
+  buildingTerritories.value = []
+  buildingCatalogStatus.value = 'loading'
+  if (!prototypeAccesApi.value) return
+  const controller = new AbortController()
+  onCleanup(() => controller.abort())
+  void fetch('/api/building-access/territories', { signal: controller.signal })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json() as Promise<unknown>
+    }).then((value) => {
+      if (controller.signal.aborted) return
+      if (!value || typeof value !== 'object' || !('publication_id' in value) ||
+          typeof value.publication_id !== 'string' || !('territories' in value) ||
+          !Array.isArray(value.territories) || value.territories.some((item: unknown) =>
+            !item || typeof item !== 'object' || !('id' in item) || typeof item.id !== 'string' ||
+            !('type' in item) || !['commune', 'epci', 'departement', 'region'].includes(String(item.type)) ||
+            !('name' in item) || typeof item.name !== 'string')) throw new Error('Catalogue invalide')
+      buildingPublicationId.value = value.publication_id
+      buildingTerritories.value = value.territories as PeerTerritory[]
+      buildingCatalogStatus.value = 'ready'
+    }).catch(() => { if (!controller.signal.aborted) buildingCatalogStatus.value = 'error' })
+})
+
+watch([() => modeleTerritoire.model.value, () => resolutionComparaison.value?.mode], () => {
+  // The focal facts changed. Any in-flight response must not overlay the new read model.
+  ++buildingSequence
+  buildingApiFacts.value = null
+  if (buildingSelected.value) {
+    if (modeleTerritoire.model.value && buildingCatalogStatus.value === 'ready') choisirBuildingPeers(buildingSelected.value)
+    else buildingComparisonStatus.value = 'loading'
+  }
+})
+
+function choisirBuildingPeers(selected: PeerTerritory[]): void {
+  if (buildingCatalogStatus.value !== 'ready' || !buildingPublicationId.value || !selected.length) return
+  buildingSelected.value = [...selected]
+  buildingApiFacts.value = null
+  buildingComparisonStatus.value = 'loading'
+  const sequence = ++buildingSequence
+  const type = typeRoute.value
+  const code = idRoute.value
+  const publication = buildingPublicationId.value
+  void fetch(`/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(code)}/building-access-comparison`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selected: selected.map(({ type, id }) => ({ type, id })) }),
+  }).then(async (response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return response.json() as Promise<unknown>
+  }).then((data) => {
+    if (sequence !== buildingSequence || !payloadPourRendu.value) return
+    const facts = territoryFactsFor(toRaw(payloadPourRendu.value), code, resolutionComparaison.value?.contexte ?? undefined)
+    if (!facts) throw new Error('Territoire inconnu')
+    buildingApiFacts.value = applyBuildingApiFacts(facts, data, publication)
+    buildingComparisonStatus.value = 'ready'
+  }).catch(() => { if (sequence === buildingSequence) buildingComparisonStatus.value = 'error' })
+}
+
+function effacerBuildingPeers(): void {
+  ++buildingSequence
+  buildingSelected.value = null
+  buildingApiFacts.value = null
+  buildingComparisonStatus.value = 'idle'
+}
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !prototypeCahierMobilite.value ||
@@ -218,9 +297,14 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     resolutionComparaison.value?.contexte ?? undefined,
   )
   if (!facts) return null
-  const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
-    ? { ...facts, mobility: { ...facts.mobility, access: accesApi.value } }
+  const withBuilding = buildingSelected.value
+    ? buildingApiFacts.value && buildingComparisonStatus.value === 'ready'
+      ? buildingApiFacts.value
+      : clearBuildingApiPeers(facts)
     : facts
+  const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
+    ? { ...withBuilding, mobility: { ...withBuilding.mobility, access: accesApi.value } }
+    : withBuilding
   return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>
@@ -363,7 +447,13 @@ watch(
               :pagination="paginationCahier"
                :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
                :access-status="variante.clef === 'E' ? statutAccesApi : undefined"
-               :retry-access="rechargerAccesApi"
+                :retry-access="rechargerAccesApi"
+                :building-territories="variante.clef === 'E' ? buildingTerritories : undefined"
+                :building-catalog-status="variante.clef === 'E' ? buildingCatalogStatus : undefined"
+                :building-comparison-status="variante.clef === 'E' ? buildingComparisonStatus : undefined"
+                :building-selected="variante.clef === 'E' ? buildingSelected : undefined"
+                @building-select="choisirBuildingPeers"
+                @building-clear="effacerBuildingPeers"
             />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation

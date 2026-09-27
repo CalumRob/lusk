@@ -830,29 +830,38 @@ function buildingDistributionFigureLecture(
 function accessRampFigureLecture(ramp: MobiliteAccessRamp | null): readonly TextBlock[] {
   const example = ramp?.availability === 'complete' ? ramp.curves.walkTransit.points.find((point) => point.quantile === 0.5) : null
   return [[
-    text('Pour chaque mode, la courbe classe les bâtiments du moins au plus grand nombre de types accessibles en vingt minutes. Les courbes du territoire et du groupe comparé suivent la même échelle.'),
+    text(ramp?.comparisonStatistic === 'mean'
+      ? 'Pour chaque mode, la courbe du territoire classe ses bâtiments par nombre de types accessibles en vingt minutes. Celle du groupe comparé est la moyenne, pondérée par le nombre de bâtiments, des positions correspondantes de chaque commune : ce n’est pas une courbe de bâtiments regroupés.'
+      : 'Pour chaque mode, la courbe classe les bâtiments du moins au plus grand nombre de types accessibles en vingt minutes. Les courbes du territoire et du groupe comparé suivent la même échelle.'),
   ], ...(example?.comparisonAccessibleTypes !== null && example?.comparisonAccessibleTypes !== undefined ? [[
-    text(`Exemple : à pied ou en transports en commun, la moitié des bâtiments accèdent à au plus ${formatNumber(example.accessibleTypes)} types, contre ${formatNumber(example.comparisonAccessibleTypes)} dans le groupe comparé.`),
+    text(ramp?.comparisonStatistic === 'mean'
+      ? `Exemple : à pied ou en transports en commun, la position médiane du territoire est de ${formatNumber(example.accessibleTypes)} types, contre ${formatNumber(example.comparisonAccessibleTypes)} pour la moyenne pondérée des positions médianes des communes choisies.`
+      : `Exemple : à pied ou en transports en commun, la moitié des bâtiments accèdent à au plus ${formatNumber(example.accessibleTypes)} types, contre ${formatNumber(example.comparisonAccessibleTypes)} dans le groupe comparé.`),
   ]] : [])]
 }
 
 function buildingComparisonPopulationLabel(
   rawLabel: string | null,
+  statistic?: 'mean' | null,
 ): string | null {
+  if (statistic === 'mean') return rawLabel ? `moyenne des ${libelleComparaisonBâtiments(rawLabel)}` : null
   return libelleComparaisonBâtiments(rawLabel)
 }
 
 function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
   const buildingDistribution = facts.mobility.buildingDistribution
   const accessRamp = facts.mobility.accessRamp
-  const rawComparisonLabel = buildingDistribution?.comparisonLabel ?? accessRamp?.comparisonLabel ?? null
+  const customComparison = buildingDistribution?.comparisonStatistic === 'mean' || accessRamp?.comparisonStatistic === 'mean'
+  const rawComparisonLabel = customComparison
+    ? 'territoires sélectionnés'
+    : buildingDistribution?.comparisonLabel ?? accessRamp?.comparisonLabel ?? null
   const hasAny = buildingDistribution !== null || accessRamp !== null
   const evidence: DistributionEvidence | null = hasAny
     ? {
         kind: 'distribution',
         buildingDistribution,
         accessRamp,
-        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel),
+        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, customComparison ? 'mean' : null),
         buildingDistributionLecture: buildingDistributionFigureLecture(buildingDistribution, facts.territory),
         accessRampLecture: accessRampFigureLecture(accessRamp),
       }

@@ -204,6 +204,7 @@ export interface MobiliteBuildingDistribution {
   provenance: FactProvenance | null
   comparisonLabel: string | null
   comparisonTotalBuildings: number | null
+  comparisonStatistic?: 'mean' | null
 }
 
 export interface MobiliteAccessRampPoint {
@@ -229,6 +230,7 @@ export interface MobiliteAccessRamp {
   provenance: FactProvenance | null
   comparisonLabel: string | null
   comparisonTotalBuildings: number | null
+  comparisonStatistic?: 'mean' | null
 }
 
 export interface TerritoryIdentity {

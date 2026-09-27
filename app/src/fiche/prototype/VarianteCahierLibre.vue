@@ -55,6 +55,8 @@ import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonNote from './CahierComparisonNote.vue'
+import BuildingPeerSelector from './BuildingPeerSelector.vue'
+import type { PeerTerritory } from './BuildingPeerSelector.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
 import CahierSummaryPlot from './CahierSummaryPlot.vue'
@@ -75,7 +77,12 @@ const props = defineProps<{
   comparisonOptions?: readonly OptionContexteComparaison[]
   accessStatus?: 'loading' | 'ready' | 'error'
   retryAccess?: () => void
+  buildingTerritories?: readonly PeerTerritory[]
+  buildingCatalogStatus?: 'loading' | 'ready' | 'error'
+  buildingComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
+  buildingSelected?: readonly PeerTerritory[] | null
 }>()
+const emit = defineEmits<{ buildingSelect: [territories: PeerTerritory[]]; buildingClear: [] }>()
 
 provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
 
@@ -598,6 +605,16 @@ onBeforeUnmount(() => {
                     />
                   </div>
                   <p v-if="!section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
+
+                  <BuildingPeerSelector
+                    v-if="props.buildingCatalogStatus && section.evidence?.kind === 'distribution'"
+                    :territories="props.buildingTerritories ?? []"
+                    :catalog-status="props.buildingCatalogStatus"
+                    :comparison-status="props.buildingComparisonStatus ?? 'idle'"
+                    :selected="props.buildingSelected ?? null"
+                    @select="emit('buildingSelect', $event)"
+                    @clear="emit('buildingClear')"
+                  />
 
                 </div>
 
