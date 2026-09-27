@@ -42,6 +42,7 @@ import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import type { ThemeContent } from '@/fiche/content/themeContent'
+import type { MobiliteAccessFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -161,7 +162,7 @@ const prototypeCahierMobilite = computed(
   () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
 )
 const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
-const accesApi = ref<unknown>(null)
+const accesApi = ref<MobiliteAccessFacts | null>(null)
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const relancerAccesApi = ref(0)
 let sequenceAccesApi = 0
@@ -190,9 +191,9 @@ watch(
       // Validate at the semantic boundary, before a stale static figure could render.
       const facts = territoryFactsFor(toRaw(payloadPourRendu.value!), code, resolutionComparaison.value?.contexte ?? undefined)
       if (!facts) throw new Error('Territoire inconnu')
-      applyAccessApiFacts(facts, data, resolutionComparaison.value?.contexte?.scope.kind ?? null,
+      const normalized = applyAccessApiFacts(facts, data, resolutionComparaison.value?.contexte?.scope.kind ?? null,
         resolutionComparaison.value?.contexte?.scope.label ?? null)
-      accesApi.value = data
+      accesApi.value = normalized.mobility.access
       statutAccesApi.value = 'ready'
     }).catch(() => {
       if (sequence === sequenceAccesApi) statutAccesApi.value = 'error'
@@ -211,17 +212,16 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     !payloadPourRendu.value ||
     !typeValide.value
   ) return null
-  let facts = territoryFactsFor(
+  const facts = territoryFactsFor(
     toRaw(payloadPourRendu.value),
     idRoute.value,
     resolutionComparaison.value?.contexte ?? undefined,
   )
   if (!facts) return null
-  if (prototypeAccesApi.value && statutAccesApi.value === 'ready') {
-    facts = applyAccessApiFacts(facts, accesApi.value, resolutionComparaison.value?.contexte?.scope.kind ?? null,
-      resolutionComparaison.value?.contexte?.scope.label ?? null)
-  }
-  return resolveMobiliteThemeContent(facts)
+  const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
+    ? { ...facts, mobility: { ...facts.mobility, access: accesApi.value } }
+    : facts
+  return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value

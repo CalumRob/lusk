@@ -4,14 +4,15 @@ import type {
   FactProvenance,
   MobiliteAccessGaps,
   MobiliteAccessModes,
+  MobiliteAccessMode,
   MobiliteService,
   NumericFact,
   TerritoryFacts,
 } from './territoryFacts'
 
-const services = ['administration', 'alimentation', 'sante', 'banque', 'ecole'] as const
-const modes = ['car', 'bike', 'walkTransit'] as const
-const apiMode: Record<(typeof modes)[number], string> = {
+// The semantic facts already declare the served service/mode grammar; do not
+// independently select indicators or service groups in the API adapter.
+const apiMode: Record<MobiliteAccessMode, string> = {
   car: 'car', bike: 'bike', walkTransit: 'walk_transit',
 }
 const scopeKinds = new Set<ComparisonScopeKind>([
@@ -39,6 +40,7 @@ export function applyAccessApiFacts(
   if (!region && (kind !== expectedScope || !expectedLabel ||
       !record(response.scope) ||
       !Number.isInteger(response.scope.member_count) || (response.scope.member_count as number) < 1)) invalid()
+  const services = Object.keys(facts.mobility.access.byService) as MobiliteService[]
   const byId = new Map<unknown, Record<string, unknown>>()
   for (const item of response.services) {
     if (!record(item) || typeof item.id !== 'string' || !record(item.modes)) invalid()
@@ -50,6 +52,7 @@ export function applyAccessApiFacts(
   const gaps: Record<string, MobiliteAccessGaps> = {}
   for (const service of services) {
     const item = byId.get(service)!
+    const modes = Object.keys(facts.mobility.access.byService[service]) as MobiliteAccessMode[]
     if (region && (item.peer_median_car_gap !== null || item.peer_median_bike_gain !== null)) invalid()
     if (modes.some((mode) => !record(item.modes) || !(apiMode[mode] in item.modes))) invalid()
     const built = {} as MobiliteAccessModes
