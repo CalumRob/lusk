@@ -2,8 +2,10 @@
 -- These are the existing Pi roles; the serving schema is rebuilt by postgres.
 GRANT USAGE ON SCHEMA public TO lusk_reader;
 GRANT SELECT ON TABLE dataset_publication, territory_reference,
-    service_registry, essential_service_access TO lusk_reader;
+    service_registry, essential_service_access, building_ramp, building_grid TO lusk_reader;
 GRANT USAGE ON SCHEMA public TO lusk_publisher;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE dataset_publication,
-    territory_reference, service_registry, essential_service_access TO lusk_publisher;
+    territory_reference, service_registry, essential_service_access,
+    building_ramp, building_grid TO lusk_publisher;
 GRANT EXECUTE ON FUNCTION assert_current_dataset_complete(integer) TO lusk_publisher;
+GRANT EXECUTE ON FUNCTION assert_building_dataset_complete(integer, integer) TO lusk_publisher;

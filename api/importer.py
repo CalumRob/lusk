@@ -1,6 +1,7 @@
 """Validated, transactional importer for the published essential-service projection."""
 
 from dataclasses import asdict, dataclass, replace
+from collections import Counter
 import argparse
 import getpass
 import hashlib
@@ -9,6 +10,10 @@ import os
 from pathlib import Path
 import re
 import math
+
+from api.building_comparison import (
+    ComparisonInputError, pooled_peer_distribution, weighted_peer_ramp,
+)
 
 
 class ImportError(ValueError):
@@ -39,6 +44,9 @@ class Publication:
     provenance: tuple[dict, ...]
     comparison_scope: dict[str, str]
     changed: bool | None = None  # None = validated without a database publication
+    building_ramp: tuple[dict, ...] = ()
+    building_grid: tuple[dict, ...] = ()
+    building_direction: str | None = None
 
 
 _MODES = {"t": "walk_transit", "b": "bike", "c": "car"}
@@ -195,16 +203,65 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
         "epci_id": t.get("epci"), "density_class_code": t.get("classe_densite_code"),
         "density_class_label": t.get("classe_densite_libelle_public"),
     } for t in territories]
+    ramp_path = root / "rampe_acces_batiments.parquet"
+    grid_path = root / "distribution_acces_batiments.parquet"
+    if ramp_path.exists() != grid_path.exists():
+        raise ImportError("Both building-access artifacts must be published together")
+    ramp_rows: list[dict] = []
+    grid_rows: list[dict] = []
+    direction = None
+    if ramp_path.exists():
+        descriptor = theme.get("building_comparison", {})
+        direction = descriptor.get("direction")
+        if descriptor.get("statistic") != "mean" or direction not in ("high", "low"):
+            raise ImportError("Missing pipeline building comparison metadata")
+        commune_ids = sorted(tid for tid, t in territory_by_id.items() if t["type"] == "commune")
+        ramp_rows = [row for row in _read_parquet(ramp_path, ramp_path.name)
+                     if row.get("type") == "commune"]
+        grid_rows = [row for row in _read_parquet(grid_path, grid_path.name)
+                     if row.get("type") == "commune"]
+        if not commune_ids:
+            raise ImportError("No communes in building-access reference")
+        grid_sizes = Counter(row["territoire"] for row in grid_rows)
+        grid_complete = {row["territoire"] for row in grid_rows
+                         if row["availability"] == "complete"}
+        if any(grid_sizes.get(code) != (30 if code in grid_complete else 1)
+               for code in commune_ids):
+            raise ImportError("Incomplete canonical building-access grid")
+        try:
+            weighted_peer_ramp(ramp_rows, commune_ids, max_members=len(commune_ids))
+            pooled_peer_distribution(grid_rows, commune_ids, max_members=len(commune_ids))
+        except (ComparisonInputError, KeyError, TypeError) as exc:
+            raise ImportError("Incomplete canonical building-access facts") from exc
+        ramp_support = {row["territoire"]: row["total_buildings"] for row in ramp_rows}
+        grid_support = {row["territoire"]: row["total_buildings"] for row in grid_rows}
+        if ramp_support != grid_support:
+            raise ImportError("Building figures disagree on commune building populations")
+        for row in ramp_rows + grid_rows:
+            source = vintage_by_id.get(row["source_id"])
+            if (not source or row["version"] != source.get("version") or
+                    row["source"] != source.get("source") or
+                    row["date_reference"] != source.get("date_reference") or
+                    row["date_publication"] != source.get("date_publication")):
+                raise ImportError("Building-access provenance does not match published vintage")
+        ramp_rows.sort(key=lambda row: (row["territoire"], row["mode"],
+                                        row["quantile"] if row["quantile"] is not None else -1))
+        grid_rows.sort(key=lambda row: (row["territoire"], row["breadth_bucket"] or "",
+                                        row["depth_bucket"] or ""))
     snapshot = {
         "territories": sorted(serving_territories, key=lambda t: t["territory_id"]),
         "access": [asdict(row) for row in result],
         "comparison_scope": comparison_scope,
+        **({"building_ramp": ramp_rows, "building_grid": grid_rows,
+            "building_direction": direction} if ramp_rows else {}),
     }
     fingerprint = json.dumps(snapshot, sort_keys=True, separators=(",", ":"),
                              ensure_ascii=False, allow_nan=False, default=str)
     digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:16]
     publication_id = f"{max((r.source_publication_date or '' for r in result), default='undated')}-{digest}"
-    return Publication(publication_id, tuple(result), tuple(territories), tuple(vintages), comparison_scope)
+    return Publication(publication_id, tuple(result), tuple(territories), tuple(vintages),
+                       comparison_scope, building_ramp=tuple(ramp_rows),
+                       building_grid=tuple(grid_rows), building_direction=direction)
 
 
 def import_publication(connection, artifacts_dir: str | Path, metadata_path: str | Path | None = None) -> Publication:
@@ -219,16 +276,53 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
             current = cur.fetchone()
             if current and current[0] == publication.publication_id:
                 return replace(publication, changed=False)
+            cur.execute("""SELECT publication_id FROM dataset_publication
+                WHERE dataset_key = 'building_access'""")
+            current_building = cur.fetchone()
+            if current_building and not publication.building_ramp:
+                raise ImportError("A building-access publication requires both canonical building artifacts")
+            # There is no ownership marker for shared territory identities.
+            # If another fact table references them, compatibility cannot be
+            # inferred here, so fail closed rather than reinterpret its facts.
+            cur.execute("""SELECT EXISTS (
+                SELECT 1 FROM pg_constraint c
+                JOIN pg_class target ON target.oid = c.confrelid
+                JOIN pg_namespace target_ns ON target_ns.oid = target.relnamespace
+                JOIN pg_class source ON source.oid = c.conrelid
+                JOIN pg_namespace source_ns ON source_ns.oid = source.relnamespace
+                WHERE c.contype = 'f'
+                  AND target.relname = 'territory_reference'
+                  AND target_ns.nspname = current_schema()
+                  AND NOT (source.relname = 'essential_service_access'
+                           AND source_ns.nspname = current_schema())
+                  AND NOT (%s AND source.relname IN ('building_ramp', 'building_grid')
+                           AND source_ns.nspname = current_schema())
+            )""", (bool(publication.building_ramp),))
+            independent_refs = cur.fetchone()
+            if independent_refs and independent_refs[0]:
+                raise ImportError("Cannot refresh territory references while independently published facts reference them")
+            if publication.building_ramp:
+                cur.execute("DELETE FROM building_ramp")
+                cur.execute("DELETE FROM building_grid")
             cur.execute("DELETE FROM essential_service_access")
-            cur.execute("DELETE FROM territory_reference")
             cur.execute("DELETE FROM service_registry")
             cur.executemany("""INSERT INTO territory_reference
                 (territory_id, territory_type, name, department_id, epci_id,
                   density_class_code, density_class_label)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (territory_id) DO UPDATE SET
+                    territory_type = EXCLUDED.territory_type,
+                    name = EXCLUDED.name,
+                    department_id = EXCLUDED.department_id,
+                    epci_id = EXCLUDED.epci_id,
+                    density_class_code = EXCLUDED.density_class_code,
+                    density_class_label = EXCLUDED.density_class_label""",
                 [(str(t["territoire"]), t["type"], t.get("nom", ""),
                   t.get("departement"), t.get("epci"), t.get("classe_densite_code"),
                   t.get("classe_densite_libelle_public")) for t in publication.territories])
+            cur.execute("""DELETE FROM territory_reference
+                WHERE NOT (territory_id = ANY(%s))""",
+                ([str(t["territoire"]) for t in publication.territories],))
             services = sorted({row.service for row in publication.rows})
             cur.executemany("INSERT INTO service_registry (service) VALUES (%s)", [(service,) for service in services])
             cur.executemany("""INSERT INTO essential_service_access
@@ -241,6 +335,34 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
                    r.reference_date, r.source_publication_date)
                    for r in publication.rows])
             cur.execute("SELECT assert_current_dataset_complete(%s)", (len(publication.rows),))
+            if publication.building_ramp:
+                cur.executemany("""INSERT INTO building_ramp
+                    (territory_id, territory_type, availability, mode, quantile_index,
+                     quantile, accessible_types, total_buildings, source_id, source_version,
+                     effective_direction) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    [(row["territoire"], row["type"], row["availability"], row["mode"],
+                      -1 if row["quantile"] is None else round(row["quantile"] * 10),
+                      row["quantile"], row["accessible_types"], row["total_buildings"],
+                      row["source_id"], row["version"], publication.building_direction)
+                     for row in publication.building_ramp])
+                cell_indices = {}
+                grid_values = []
+                for row in publication.building_grid:
+                    code = row["territoire"]
+                    index = cell_indices.get(code, 0) if row["availability"] == "complete" else -1
+                    if index >= 0:
+                        cell_indices[code] = index + 1
+                    grid_values.append((code, row["type"], row["availability"], row["mode"],
+                                        index, row["breadth_bucket"], row["depth_bucket"],
+                                        row["building_count"], row["total_buildings"],
+                                        row["source_id"], row["version"]))
+                cur.executemany("""INSERT INTO building_grid
+                    (territory_id, territory_type, availability, mode, cell_index,
+                     breadth_bucket, depth_bucket, building_count, total_buildings,
+                     source_id, source_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    grid_values)
+                cur.execute("SELECT assert_building_dataset_complete(%s, %s)",
+                            (len(publication.building_ramp), len(publication.building_grid)))
             cur.execute("""INSERT INTO dataset_publication
                 (dataset_key, publication_id, row_count, bretagne_kind, bretagne_label)
                 VALUES ('essential_service_access', %s, %s, %s, %s)
@@ -251,7 +373,20 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
                     bretagne_label = EXCLUDED.bretagne_label,
                     imported_at = now()""",
                 (publication.publication_id, len(publication.rows),
-                 publication.comparison_scope["kind"], publication.comparison_scope["label"]))
+                  publication.comparison_scope["kind"], publication.comparison_scope["label"]))
+            if publication.building_ramp:
+                cur.execute("""INSERT INTO dataset_publication
+                    (dataset_key, publication_id, row_count, bretagne_kind, bretagne_label)
+                    VALUES ('building_access', %s, %s, %s, %s)
+                    ON CONFLICT (dataset_key) DO UPDATE SET
+                        publication_id = EXCLUDED.publication_id,
+                        row_count = EXCLUDED.row_count,
+                        bretagne_kind = EXCLUDED.bretagne_kind,
+                        bretagne_label = EXCLUDED.bretagne_label,
+                        imported_at = now()""",
+                    (publication.publication_id,
+                     len(publication.building_ramp) + len(publication.building_grid),
+                     publication.comparison_scope["kind"], publication.comparison_scope["label"]))
     return replace(publication, changed=True)
 
 

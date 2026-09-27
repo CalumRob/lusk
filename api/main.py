@@ -7,8 +7,13 @@ from statistics import median
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from psycopg_pool import ConnectionPool
+
+from api.building_comparison import (
+    ComparisonInputError, pooled_peer_distribution, resolve_commune_members,
+    weighted_peer_ramp,
+)
 
 
 class Rank(BaseModel):
@@ -43,6 +48,15 @@ class ComparisonResponse(BaseModel):
     services: list[ServiceComparison]
 
 
+class SelectedTerritory(BaseModel):
+    type: Literal["commune", "epci", "departement", "region"]
+    id: str = Field(min_length=1, max_length=32)
+
+
+class BuildingSelection(BaseModel):
+    selected: list[SelectedTerritory] = Field(min_length=1, max_length=1500)
+
+
 @lru_cache(maxsize=1)
 def pool() -> ConnectionPool:
     url = os.environ.get("DATABASE_URL")
@@ -72,6 +86,86 @@ class ReadRepository:
 
     def read_level(self, territory_type: str, territory_id: str) -> dict:
         return self._read(territory_type, territory_id, None)
+
+    def read_building_catalog(self) -> dict:
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                markers = dict(connection.execute(
+                    """SELECT dataset_key, publication_id FROM dataset_publication
+                       WHERE dataset_key IN ('building_access', 'essential_service_access')"""
+                ).fetchall())
+                if ('building_access' not in markers or
+                        markers['building_access'] != markers.get('essential_service_access')):
+                    raise HTTPException(503, "No building-access dataset has been published")
+                rows = connection.execute(
+                    """SELECT territory_type, territory_id, name FROM territory_reference
+                       ORDER BY territory_type, name, territory_id"""
+                ).fetchall()
+                return {"publication_id": markers['building_access'],
+                        "territories": [dict(zip(("type", "id", "name"), row)) for row in rows]}
+
+    def read_building(self, territory_type: str, territory_id: str,
+                      selected: tuple[tuple[str, str], ...]) -> dict:
+        # The reference, publication marker and selected rows share one MVCC view.
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                markers = connection.execute(
+                    """SELECT dataset_key, publication_id FROM dataset_publication
+                       WHERE dataset_key IN ('building_access', 'essential_service_access')"""
+                ).fetchall()
+                versions = dict(markers)
+                if ('building_access' not in versions or
+                        versions['building_access'] != versions.get('essential_service_access')):
+                    raise HTTPException(503, "No building-access dataset has been published")
+                territory = connection.execute(
+                    """SELECT territory_id, territory_type, name FROM territory_reference
+                       WHERE territory_id = %s AND territory_type = %s""",
+                    (territory_id, territory_type),
+                ).fetchone()
+                if not territory:
+                    raise HTTPException(404, "Territory not found")
+                reference = [dict(zip(("territoire", "type", "departement", "epci"), row))
+                             for row in connection.execute(
+                                 """SELECT territory_id, territory_type, department_id, epci_id
+                                    FROM territory_reference""").fetchall()]
+                try:
+                    members = resolve_commune_members(reference, selected,
+                                                      max_members=len(reference))
+                except ComparisonInputError as exc:
+                    raise HTTPException(422, str(exc)) from exc
+                ramp_rows = connection.execute(
+                    """SELECT territory_id, territory_type, availability, mode,
+                              quantile, accessible_types, total_buildings,
+                              source_id, source_version, effective_direction
+                       FROM building_ramp WHERE territory_id = ANY(%s)""",
+                    (list(members),),
+                ).fetchall()
+                grid_rows = connection.execute(
+                    """SELECT territory_id, territory_type, availability, mode,
+                              breadth_bucket, depth_bucket, building_count,
+                              total_buildings, source_id, source_version
+                       FROM building_grid WHERE territory_id = ANY(%s)""",
+                    (list(members),),
+                ).fetchall()
+                directions = {row[9] for row in ramp_rows}
+                if len(directions) != 1 or next(iter(directions)) not in ("high", "low"):
+                    raise HTTPException(503, "Inconsistent published ramp direction")
+                return {
+                    "publication_id": versions['building_access'],
+                    "territory": dict(zip(("id", "type", "name"), territory)),
+                    "reference": reference,
+                    "ramp_rows": [dict(zip(("territoire", "type", "availability", "mode",
+                                             "quantile", "accessible_types", "total_buildings",
+                                             "source_id", "version"), row))
+                                  for row in (point[:9] for point in ramp_rows)],
+                    "grid_rows": [dict(zip(("territoire", "type", "availability", "mode",
+                                             "breadth_bucket", "depth_bucket", "building_count",
+                                             "total_buildings", "source_id", "version"), row))
+                                  for row in grid_rows],
+                    "direction": next(iter(directions)),
+                }
 
     def _read(self, territory_type: str, territory_id: str, comparison: str | None) -> dict:
         # A repeatable-read snapshot pins metadata and rows to one committed refresh.
@@ -149,6 +243,37 @@ class ReadRepository:
 
 def get_repository() -> ReadRepository:
     return ReadRepository(pool())
+
+
+@app.get("/api/building-access/territories")
+def building_access_territories(repository: ReadRepository = Depends(get_repository)) -> dict:
+    return repository.read_building_catalog()
+
+
+@app.post("/api/territories/{territory_type}/{territory_id}/building-access-comparison")
+def custom_building_comparison(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    territory_id: str,
+    selection: BuildingSelection,
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    selected = tuple((item.type, item.id) for item in selection.selected)
+    data = repository.read_building(territory_type, territory_id, selected)
+    try:
+        members = resolve_commune_members(data["reference"], selected,
+                                          max_members=len(data["reference"]))
+    except ComparisonInputError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
+        ramp = weighted_peer_ramp(data["ramp_rows"], members, max_members=max(2, len(members)))
+        distribution = pooled_peer_distribution(data["grid_rows"], members,
+                                                max_members=max(2, len(members)))
+    except ComparisonInputError as exc:
+        raise HTTPException(503, "Incomplete building-access publication") from exc
+    return {"publication_id": data["publication_id"], "territory": data["territory"],
+            "scope": {"kind": "custom", "direction": data["direction"],
+                      "level": "commune", "members": members},
+            "ramp": ramp, "distribution": distribution}
 
 
 def compare(data: dict) -> ComparisonResponse:

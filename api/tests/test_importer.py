@@ -42,6 +42,100 @@ def artifacts(tmp_path: Path, *, values=None):
     return tmp_path, metadata
 
 
+def building_artifacts(tmp_path: Path):
+    root, metadata = artifacts(tmp_path)
+    theme = json.loads(metadata.read_text(encoding="utf-8"))
+    theme["building_comparison"] = {"statistic": "mean", "direction": "high"}
+    metadata.write_text(json.dumps(theme), encoding="utf-8")
+    territories_path = root / "territoires.parquet"
+    territories = pq.read_table(territories_path).to_pylist()
+    territories.append({**territories[0], "territoire": "22002"})
+    pq.write_table(pa.Table.from_pylist(territories), territories_path)
+    facts_path = root / "indicateurs_mobilite.parquet"
+    facts = pq.read_table(facts_path).to_pylist()
+    pq.write_table(pa.Table.from_pylist(facts + [{**row, "territoire": "22002"} for row in facts]), facts_path)
+    vintages_path = root / "vintages.parquet"
+    vintages = pq.read_table(vintages_path).to_pylist()
+    vintages.append({**vintages[0], "id": "snapshot", "source": "Building source"})
+    pq.write_table(pa.Table.from_pylist(vintages), vintages_path)
+    common = dict(type="commune", availability="complete", source_id="snapshot",
+                  source="Building source", version="2026-01", date_reference="2026-01-01",
+                  date_publication="2026-02-01")
+    ramp = [dict(common, territoire=code, total_buildings=count, mode=mode,
+                 quantile=position / 10, accessible_types=position + offset)
+            for code, count, offset in (("22001", 2, 0), ("22002", 6, 10))
+            for mode in "cbt" for position in range(11)]
+    grid = [dict(common, territoire=code, total_buildings=count, mode="t",
+                 breadth_bucket=breadth, depth_bucket=depth,
+                 building_count=count if breadth == "0" and depth == "0" else 0)
+            for code, count in (("22001", 2), ("22002", 6))
+            for breadth in ("0", "1-9", "10-24", "25-39", "40-53")
+            for depth in ("0", "1-9", "10-49", "50-199", "200-499", "500+")]
+    pq.write_table(pa.Table.from_pylist(ramp), root / "rampe_acces_batiments.parquet")
+    pq.write_table(pa.Table.from_pylist(grid), root / "distribution_acces_batiments.parquet")
+    return root, metadata
+
+
+def test_joint_building_publisher_validates_both_grains_and_fingerprints_mean_direction(tmp_path):
+    root, metadata = building_artifacts(tmp_path)
+    publication = load_publication(root, metadata)
+    assert len(publication.building_ramp) == 66
+    assert len(publication.building_grid) == 60
+    assert publication.building_direction == "high"
+    ramp_path = root / "rampe_acces_batiments.parquet"
+    ramp = pq.read_table(ramp_path).to_pylist()
+    ramp[-1]["accessible_types"] = 20.5
+    pq.write_table(pa.Table.from_pylist(ramp), ramp_path)
+    assert load_publication(root, metadata).publication_id != publication.publication_id
+    theme = json.loads(metadata.read_text(encoding="utf-8"))
+    theme["building_comparison"]["direction"] = "low"
+    metadata.write_text(json.dumps(theme), encoding="utf-8")
+    assert load_publication(root, metadata).publication_id != publication.publication_id
+
+
+def test_joint_building_publisher_rejects_partial_artifacts_before_database_transaction(tmp_path):
+    root, metadata = building_artifacts(tmp_path)
+    path = root / "rampe_acces_batiments.parquet"
+    pq.write_table(pq.read_table(path).slice(0, 65), path)
+
+    class UntouchedDatabase:
+        def transaction(self):
+            raise AssertionError("partial building curves must not reach the database")
+
+    with pytest.raises(ImportError, match="Incomplete canonical building-access"):
+        import_publication(UntouchedDatabase(), root, metadata)
+
+
+def test_joint_refresh_replaces_building_facts_and_access_under_one_publication(tmp_path):
+    root, metadata = building_artifacts(tmp_path)
+
+    class Cursor:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None): self.calls.append((sql, params))
+        def executemany(self, sql, params): self.calls.append((sql, list(params)))
+        def fetchone(self): return None
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+
+    class Connection:
+        def __init__(self): self.cur = Cursor()
+        def transaction(self): return self.cur
+        def cursor(self): return self.cur
+
+    connection = Connection()
+    publication = import_publication(connection, root, metadata)
+    calls = connection.cur.calls
+    def index(fragment):
+        return next(i for i, (sql, _) in enumerate(calls) if fragment in sql)
+    assert index("DELETE FROM building_ramp") < index("INSERT INTO territory_reference")
+    assert index("DELETE FROM building_grid") < index("INSERT INTO territory_reference")
+    assert index("INSERT INTO territory_reference") < index("INSERT INTO building_ramp")
+    markers = [(sql, params) for sql, params in calls if "INSERT INTO dataset_publication" in sql]
+    assert len(markers) == 2
+    assert all(params[0] == publication.publication_id for _, params in markers)
+    assert any("building_access" in sql for sql, _ in markers)
+
+
 def test_loader_maps_metadata_to_service_rows_and_keeps_null(tmp_path):
     root, metadata = artifacts(tmp_path)
     publication = load_publication(root, metadata)
@@ -181,6 +275,101 @@ def test_importer_publishes_changed_comparison_label_to_current_table(tmp_path):
                            if "INSERT INTO dataset_publication" in query)
     assert metadata_insert == (publication.publication_id, len(publication.rows),
                                "communes-bretagne", "label publié pour cette version")
+
+
+@pytest.mark.parametrize("new_id", [None, "22002"])
+def test_reference_refresh_upserts_identities_and_only_prunes_stale_ids(tmp_path, new_id):
+    root, metadata = artifacts(tmp_path)
+    if new_id:
+        territory_file = root / "territoires.parquet"
+        territories = pq.read_table(territory_file).to_pylist()
+        territories[0]["territoire"] = new_id
+        pq.write_table(pa.Table.from_pylist(territories), territory_file)
+        facts_file = root / "indicateurs_mobilite.parquet"
+        facts = pq.read_table(facts_file).to_pylist()
+        for row in facts:
+            row["territoire"] = new_id
+        pq.write_table(pa.Table.from_pylist(facts), facts_file)
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+        def execute(self, query, params=None):
+            self.calls.append((query, params))
+        def executemany(self, query, params):
+            self.calls.append((query, list(params)))
+        def fetchone(self):
+            return None
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+
+    class Connection:
+        def __init__(self):
+            self.cur = Cursor()
+        class Transaction:
+            def __enter__(self):
+                return None
+            def __exit__(self, *_):
+                return False
+        def transaction(self):
+            return self.Transaction()
+        def cursor(self):
+            return self.cur
+
+    connection = Connection()
+    import_publication(connection, root, metadata)
+    reference_upsert = next((query, params) for query, params in connection.cur.calls
+                            if "INSERT INTO territory_reference" in query)
+    query, rows = reference_upsert
+    assert "ON CONFLICT (territory_id) DO UPDATE" in query
+    assert rows[0][0] == (new_id or "22001")
+    stale_delete = next((query, params) for query, params in connection.cur.calls
+                        if "DELETE FROM territory_reference" in query)
+    assert "territory_id = ANY(%s)" in stale_delete[0]
+    assert stale_delete[1] == ([new_id or "22001"],)
+    assert not any(query.strip() == "DELETE FROM territory_reference"
+                   for query, _ in connection.cur.calls)
+
+
+def test_independent_reference_foreign_key_aborts_before_mutation(tmp_path):
+    root, metadata = artifacts(tmp_path)
+
+    class Cursor:
+        def __init__(self):
+            self.calls = []
+        def execute(self, query, params=None):
+            self.calls.append(query)
+        def executemany(self, query, params):
+            self.calls.append(query)
+        def fetchone(self):
+            if any("pg_constraint" in query for query in self.calls):
+                return (True,)
+            return None
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+
+    class Connection:
+        def __init__(self):
+            self.cur = Cursor()
+        class Transaction:
+            def __enter__(self):
+                return None
+            def __exit__(self, *_):
+                return False
+        def transaction(self):
+            return self.Transaction()
+        def cursor(self):
+            return self.cur
+
+    connection = Connection()
+    with pytest.raises(ImportError, match="independently published facts"):
+        import_publication(connection, root, metadata)
+    assert not any("DELETE FROM essential_service_access" in query
+                   for query in connection.cur.calls)
 
 
 def test_invalid_publication_fails_before_database_transaction(tmp_path):

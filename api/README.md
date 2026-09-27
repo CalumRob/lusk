@@ -4,7 +4,9 @@ This slice does not replace the static site. The access-only API is deployed
 on the Pi as a bounded serving experiment. It tests one dataset's
 read contract with FastAPI + psycopg against PostgreSQL. R remains the computation
 owner; the database holds a serving projection of its published outputs. There is
-no endpoint for arbitrary SQL or user-supplied lists of peers.
+no endpoint for arbitrary SQL. The new custom building-group endpoints in this
+branch are **not deployed**; they accept an explicit, bounded list of published
+territories and never add the focal territory automatically.
 ADR-0031 continues to govern today's static read models during ADR-0033's
 route-by-route transition. Variant E's existing Services essentiels figure is
 the first development-only browser consumer (#581); its renderer is unchanged.
@@ -17,6 +19,8 @@ the first development-only browser consumer (#581); its renderer is unchanged.
 | `indicateurs_mobilite.parquet` | `essential_service_access`: one territory × service × mode for the current dataset; nullable share as a **fraction** in 0–1, despite its `%` display unit |
 | `pipeline/inst/extdata/theme-metadata/theme_mobilite.json` | Pipeline-owned descriptor of declared share keys, indicator labels, source IDs and effective directions; its directions are contract-tested against the R ranking registry |
 | `vintages.parquet` | Source version, name and dates attached to served observations |
+| `rampe_acces_batiments.parquet` | `building_ramp`: three modes × eleven positions per complete commune, with its own building denominator; explicit absent sentinels |
+| `distribution_acces_batiments.parquet` | `building_grid`: thirty cells per complete commune; explicit absent sentinel |
 
 The importer reads **canonical Parquet**, not published JSON or route-scoped
 models. The theme descriptor is a pipeline-owned configuration file, not a
@@ -26,8 +30,13 @@ requires publishing JSON. The importer validates all three modes for every
 published territory and service. Null means unavailable, never zero. It does not
 manufacture building denominators from the separately published building count.
 
-`import_publication()` validates canonical inputs, then replaces **only the
-essential-service dataset** with transactional DELETE/INSERT. The current
+`import_publication()` validates canonical inputs, then replaces access and,
+when both building files are present, building facts in **one transaction**.
+`territory_reference` is upserted rather than deleted wholesale; references
+outside the incoming universe are removed only after dependent facts are
+replaced. Unrecognized foreign-key dependents block the refresh. Once building
+facts have been published, an access-only refresh without both building files
+is rejected. Both publication markers carry the same identifier. The
 publication identifier, row count and regional scope label are updated in the
 same transaction. Invalid input never reaches the DB; a database error rolls
 the entire refresh back. Committed readers see either the previous complete
@@ -47,6 +56,24 @@ leaving `imported_at` and all other datasets untouched. The first run after the
 older raw-file-hash importer changes the identifier once, even if values match.
 
 ## API contract
+
+The branch adds `GET /api/building-access/territories` for the bounded,
+published choice catalog and `POST /api/territories/{type}/{id}/building-access-comparison`
+with `{ "selected": [{"type": "commune", "id": "22001"}, ...] }`.
+Selections expand to **distinct communes**, even when parents overlap; none
+are selected or excluded on behalf of the user. The response has one
+publication ID, declared direction and explicit member set, and both figures
+carry metric type `mean`. The ramp has eleven building-count-weighted mean
+positions **per mode**, not quantiles of pooled buildings; the grid pools cell
+counts. An absent member contributes nothing, and fewer than two available
+members yield a null comparison. A single repeatable-read transaction pins the
+marker, identity and selected rows. Unknown/unbounded selections fail closed.
+
+The new `migrations/002_building_access.sql` is a **candidate** for the
+existing schema. It has not been applied. No production migration or Pi change
+is implied by the code in this branch.
+
+### Existing access reads
 
 `GET /api/territories/commune/{code}/essential-services?comparison=densite|epci|bretagne`
 defaults to the commune's published density class. EPCI means **the commune's own
@@ -93,8 +120,9 @@ follows the generic R ranking rule (1/1); some current read models suppress it.
 `schema.sql` is a **fresh-install schema**, not an idempotent migration. The
 original Pi schema was replaced once on 2026-09-27 with the tested,
 transaction-scoped `migrations/001_replace_versioned_access.sql`; **do not run
-that migration again**. Ordinary refreshes use only the importer, which
-atomically replaces the access dataset without dropping tables. The Pi-specific
+that migration again**. Do not run the new building importer against the old
+schema without first reviewing and applying its candidate migration.
+Ordinary refreshes use only the importer, without dropping tables. The Pi-specific
 operator notes in `README-deploy.md` are local and gitignored, consistent with
 `docs/self-hosting.md`; the reusable source and test contract remain tracked.
 
@@ -106,8 +134,12 @@ python -m pytest api/tests
 python -m api.importer --check public/data
 ```
 
-No PostgreSQL is needed for those checks. Before a first database publication,
-test in a **designated disposable database**. For a guided, one-off import, use
+No PostgreSQL is needed for those checks. Physical SQL behavior of the new
+building tables remains unverified: do not apply their candidate migration
+to production on the strength of fixture/Parquet tests alone. The product
+owner declined a disposable-Postgres **performance gate** while the app has no
+users; this does not turn mock SQL tests into a live database check. For a
+guided, one-off import after operator review, use
 `python -m api.importer public/data --host <pi-host> --database lusk
 --user lusk_publisher`; without `PGPASSFILE`, it prompts for the password
 without recording it in the shell. The API takes a *different, read-only*
