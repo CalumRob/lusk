@@ -511,21 +511,23 @@ function sourceFrom(provenance: FactProvenance | null): ContentSource | null {
 
 function registerFor(sections: readonly MobiliteContentSection[]): ContentSource[] {
   const sources = new Map<string, ContentSource>()
+  const sourceKey = (source: ContentSource): string =>
+    [source.id, source.version, source.referenceDate, source.publicationDate].join('\u0000')
   const add = (value: ContentFact): void => {
     const source = sourceFrom(value.fact.provenance)
-    if (source && !sources.has(source.id)) sources.set(source.id, source)
+    if (source && !sources.has(sourceKey(source))) sources.set(sourceKey(source), source)
   }
 
   for (const section of sections) {
     for (const indicator of section.indicators) add(indicator)
     if (section.evidence?.kind === 'distribution') {
       const buildingSource = sourceFrom(section.evidence.buildingDistribution?.provenance ?? null)
-      if (buildingSource && !sources.has(buildingSource.id)) {
-        sources.set(buildingSource.id, buildingSource)
+      if (buildingSource && !sources.has(sourceKey(buildingSource))) {
+        sources.set(sourceKey(buildingSource), buildingSource)
       }
       const rampSource = sourceFrom(section.evidence.accessRamp?.provenance ?? null)
-      if (rampSource && !sources.has(rampSource.id)) {
-        sources.set(rampSource.id, rampSource)
+      if (rampSource && !sources.has(sourceKey(rampSource))) {
+        sources.set(sourceKey(rampSource), rampSource)
       }
     }
     if (section.evidence?.kind === 'summary') {

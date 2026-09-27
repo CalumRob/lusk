@@ -71,6 +71,49 @@ def test_health_does_not_need_database():
     assert TestClient(app).get("/api/health").json() == {"status": "ok"}
 
 
+def test_level_routes_use_only_bounded_published_comparisons_and_region_has_null_statistics():
+    class LevelsRepository:
+        def read_level(self, territory_type, territory_id):
+            assert (territory_type, territory_id) in {
+                ("epci", "EPCI-1"), ("departement", "22"), ("region", "BRE"),
+            }
+            peers = {"epci": ["EPCI-1", "EPCI-2"],
+                     "departement": ["22", "29", "35", "56"],
+                     "region": ["BRE"]}[territory_type]
+            return {
+                "publication_id": "fixture-v1",
+                "territory": {"id": territory_id, "name": "Territoire", "type": territory_type},
+                "scope": None if territory_type == "region" else {"kind": f"{territory_type}-scope"},
+                "comparison": territory_type != "region",
+                "rows": [dict(territory_id=peer, service="health", mode="car", share=.5,
+                              indicator_label="Santé", direction="high", source_id="source",
+                              source_name="Source", source_version="v1", reference_date=None,
+                              source_publication_date=None) for peer in peers],
+            }
+
+    app.dependency_overrides[get_repository] = lambda: LevelsRepository()
+    try:
+        client = TestClient(app)
+        epci = client.get("/api/territories/epci/EPCI-1/essential-services").json()
+        departement = client.get("/api/territories/departement/22/essential-services").json()
+        region = client.get("/api/territories/region/BRE/essential-services").json()
+    finally:
+        app.dependency_overrides.clear()
+    assert epci["territory"]["type"] == "epci"
+    assert epci["scope"] == {"kind": "epci-scope", "member_count": 2}
+    assert epci["services"][0]["modes"]["car"]["rank"]["size"] == 2
+    assert departement["scope"] == {"kind": "departement-scope", "member_count": 4}
+    assert departement["services"][0]["modes"]["car"]["rank"]["size"] == 4
+    assert region["scope"] is None
+    assert region["services"][0]["modes"]["car"]["rank"] is None
+    assert region["services"][0]["modes"]["car"]["median"] is None
+    assert region["services"][0]["peer_median_car_gap"] is None
+
+
+def test_level_route_rejects_unbounded_territory_types():
+    assert TestClient(app).get("/api/territories/pays/FR/essential-services").status_code == 404
+
+
 def test_regional_scope_is_read_from_current_dataset_database_row():
     class Result:
         def __init__(self, value):
@@ -112,9 +155,44 @@ def test_regional_scope_is_read_from_current_dataset_database_row():
     result = ReadRepository(connections).read("22001", "bretagne")
     assert result["scope"] == {"kind": "communes-bretagne-v2", "label": "label version active"}
     query, params = next((q, p) for q, p in connections.connection_value.queries
-                         if "FROM dataset_publication" in q)
+                          if "FROM dataset_publication" in q)
     assert "dataset_key = 'essential_service_access'" in query
     assert params is None
+    query, params = next((q, p) for q, p in connections.connection_value.queries
+                          if "FROM essential_service_access" in q)
+    assert "t.territory_type = %s" in query
+    assert params == ("commune", "commune")
+
+
+def test_non_commune_query_uses_the_selected_territory_level_before_its_peer_scope():
+    class Result:
+        def __init__(self, row=None): self.row = row
+        def fetchone(self): return self.row
+        def fetchall(self): return []
+
+    class Connection:
+        def __init__(self): self.queries = []
+        def transaction(self): return self
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def execute(self, query, params=None):
+            self.queries.append((query, params))
+            if "FROM dataset_publication" in query:
+                return Result(("v1", "communes-bretagne", "communes bretonnes"))
+            if "FROM territory_reference" in query:
+                return Result(("EPCI-1", "Example", "epci", None, None, None))
+            return Result()
+
+    class Connections:
+        def __init__(self): self.current = Connection()
+        def connection(self): return self.current
+
+    connections = Connections()
+    ReadRepository(connections).read_level("epci", "EPCI-1")
+    query, params = next((q, p) for q, p in connections.current.queries
+                          if "FROM essential_service_access" in q)
+    assert "t.territory_type = %s" in query
+    assert params == ("epci", "epci")
 
 
 def test_published_epci_rank_parity_for_allineuc():
@@ -152,3 +230,49 @@ def test_published_epci_rank_parity_for_allineuc():
     health = next(s for s in body["services"] if s["id"] == "health")
     assert health["modes"]["walk_transit"]["rank"] == {"position": 19, "size": 38}
     assert health["modes"]["walk_transit"]["value"] == 0
+
+
+def test_non_commune_ranks_match_independent_r_publication():
+    from pathlib import Path
+    import pyarrow.parquet as pq
+
+    root = Path(__file__).resolve().parents[2] / "public" / "data"
+    publication = load_publication(root)
+    published_ranks = {str(row["territoire"]): row for row in
+                       pq.read_table(root / "indicateurs_mobilite.parquet").to_pylist()
+                       if row["key"] == "share_health_t" and str(row["territoire"]) in ("200067460", "22", "53")}
+    for territory_type, territory_id, kind in (
+        ("epci", "200067460", "epcis-bretagne"),
+        ("departement", "22", "departements-bretagne"),
+        ("region", "53", None),
+    ):
+        class PublishedRepository:
+            def read_level(self, level, code):
+                assert (level, code) == (territory_type, territory_id)
+                return {
+                    "publication_id": publication.publication_id,
+                    "territory": {"id": code, "name": "Territory", "type": level},
+                    "scope": {"kind": kind} if kind else None,
+                    "comparison": kind is not None,
+                    "rows": [dict(territory_id=row.territory_id, service=row.service, mode=row.mode,
+                                  share=row.share, indicator_label=row.indicator_label,
+                                  direction=row.effective_direction, source_id=row.source_id,
+                                  source_name=row.source_name, source_version=row.source_version,
+                                  reference_date=row.reference_date,
+                                  source_publication_date=row.source_publication_date)
+                             for row in publication.rows if row.territory_type == level],
+                }
+
+        app.dependency_overrides[get_repository] = lambda: PublishedRepository()
+        try:
+            response = TestClient(app).get(f"/api/territories/{territory_type}/{territory_id}/essential-services")
+        finally:
+            app.dependency_overrides.clear()
+        assert response.status_code == 200
+        health = next(service for service in response.json()["services"] if service["id"] == "health")
+        walk = health["modes"]["walk_transit"]
+        oracle = published_ranks[territory_id]
+        assert walk["value"] == oracle["value"]
+        assert walk["source_version"] == oracle["vintage_version"]
+        expected_rank = None if kind is None else {"position": int(oracle["rang_reg"]), "size": int(oracle["rang_reg_n"])}
+        assert walk["rank"] == expected_rank
