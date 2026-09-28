@@ -30,6 +30,18 @@ on its tables to the configured read role. The read-role test verifies an
 python -m pytest api/tests/integration -m integration
 ```
 
+`test_building_evidence_contract.py` uses that same explicit test-only database
+and creates its own random `it_building_*` schema per fresh-schema and prior
+shared-schema/migration-008 rehearsal. It checks valid ramp/grid fixture
+publications, rejected source/level/axis/quantile/availability mutations,
+deferred descriptor/source marker constraints, and rollback preservation of
+the previous facts and markers after an injected mid-refresh failure. A
+dedicated local database can be named `lusk_it_contract`; do not point these
+tests at the live `lusk` database. The migration's `NOT VALID` source-vintage
+foreign keys leave pre-migration rows readable and enforce new/updated rows;
+operators must backfill/verify source vintages and run the documented
+`VALIDATE CONSTRAINT` statements before claiming historical rows are validated.
+
 By default the uniquely named schema is retained for inspection. To explicitly
 allow cleanup of only that run's schema, set
 `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. Cleanup never targets `public`, tables, or

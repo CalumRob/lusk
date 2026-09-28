@@ -26,8 +26,13 @@ ALTER TABLE building_ramp ADD CONSTRAINT building_ramp_source_vintage_fk
   FOREIGN KEY(source_id,source_version) REFERENCES source_vintage(source_id,vintage_id) NOT VALID;
 ALTER TABLE building_grid ADD CONSTRAINT building_grid_source_vintage_fk
   FOREIGN KEY(source_id,source_version) REFERENCES source_vintage(source_id,vintage_id) NOT VALID;
+-- NOT VALID preserves the existing published facts during expand. It still
+-- enforces every new/updated row. After canonical source/vintage backfill and
+-- operator verification that all historical rows resolve, validate both:
+--   ALTER TABLE building_ramp VALIDATE CONSTRAINT building_ramp_source_vintage_fk;
+--   ALTER TABLE building_grid VALIDATE CONSTRAINT building_grid_source_vintage_fk;
 CREATE FUNCTION assert_building_fact_source() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE serving_table text; descriptor jsonb;
+DECLARE serving_table text; descriptor jsonb; expected_quantile jsonb;
 BEGIN
   serving_table := CASE WHEN TG_TABLE_NAME='building_ramp' THEN 'building_ramp' ELSE 'building_grid' END;
   SELECT contract INTO descriptor FROM building_evidence_descriptor WHERE table_name=serving_table;
@@ -36,18 +41,21 @@ BEGIN
       WHERE s.table_name=serving_table AND s.source_id=NEW.source_id) THEN
     RAISE EXCEPTION 'building fact source is not declared by its descriptor';
   END IF;
-  IF NOT (descriptor->'territory_levels' ? NEW.territory_type) THEN
+  IF NOT COALESCE(descriptor->'territory_levels' ? NEW.territory_type, false) THEN
     RAISE EXCEPTION 'building fact territory level is not descriptor-eligible';
   END IF;
-  IF serving_table='building_ramp' AND NEW.availability='complete' AND
-     (NOT (descriptor->'axes'->'mode' ? NEW.mode) OR
-      NEW.quantile <> (descriptor->'axes'->'quantile'->>NEW.quantile_index::text)::double precision OR
-      NEW.effective_direction <> (descriptor->>'direction')) THEN
-    RAISE EXCEPTION 'ramp point is outside its declared axes';
+  IF serving_table='building_ramp' AND NEW.availability='complete' THEN
+    expected_quantile := descriptor->'axes'->'quantile'->(NEW.quantile_index::integer);
+    IF NOT COALESCE(descriptor->'axes'->'mode' ? NEW.mode, false)
+       OR expected_quantile IS NULL OR expected_quantile = 'null'::jsonb
+       OR NEW.quantile IS DISTINCT FROM (expected_quantile #>> '{}')::double precision
+       OR NEW.effective_direction IS DISTINCT FROM (descriptor->>'direction') THEN
+      RAISE EXCEPTION 'ramp point is outside its declared axes';
+    END IF;
   ELSIF serving_table='building_grid' AND NEW.availability='complete' AND
-     (NEW.mode <> (descriptor->'axes'->>'mode') OR
-      NOT (descriptor->'axes'->'breadth' ? NEW.breadth_bucket) OR
-      NOT (descriptor->'axes'->'depth' ? NEW.depth_bucket)) THEN
+     (NEW.mode IS DISTINCT FROM (descriptor->'axes'->>'mode') OR
+      NOT COALESCE(descriptor->'axes'->'breadth' ? NEW.breadth_bucket, false) OR
+      NOT COALESCE(descriptor->'axes'->'depth' ? NEW.depth_bucket, false)) THEN
     RAISE EXCEPTION 'grid cell is outside its declared axes';
   END IF;
   RETURN NEW;
