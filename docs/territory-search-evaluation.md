@@ -30,8 +30,15 @@ JS `rechercherTerritoires` runs over those candidates and its top-eight IDs are
 compared with the JS full-reference search for every one of 1,262 unique names
 (1,268 territory rows). The local check passed. This establishes candidate and
 final ordering parity against the current static artifact, not a live database
-snapshot or independent R export. The user's exact-code choice is implemented
-separately in the API response; browser consumption remains pending cutover work.
+snapshot or independent R export. A separate read-only, repeatable-read query
+against the live Pi publication on 2026-09-28 checked all 1,268
+`territory_reference` rows (content-version prefix `6648ff769603`) against the
+current `territoires.json`: zero missing/extra IDs and zero mismatches in type,
+public name, département or EPCI ID. This establishes the live reference's
+identity/name parity at that snapshot, but not deployed endpoint performance,
+browser behavior or a future publication's parity. The user's exact-code choice
+is implemented separately in the API response; browser consumption remains
+pending cutover work.
 
 The reference is ordered by type (commune, EPCI, département, région), then ID,
 matching the static payload's stable source ordering for comparator-equal
@@ -44,7 +51,9 @@ shared static artifact remains for other consumers.
 Python PyICU is not installed in this worktree. SSH with the explicit
 read-only key succeeded, but the SSH user cannot access the Docker socket;
 `sudo -n docker ps` requires a password, and `psql` is not installed on the Pi
-host. No DB credentials were inspected and no live DB query was run. Thus an
+host. The independent live reference comparison above used a local read-only
+database transaction without printing or copying credentials; the worker did
+not run that query. ICU collation was not inspected. Thus an
 ICU French collation's availability/version on the live database is unknown.
 The candidate seam avoids dependence on either database or Python ICU while
 keeping final collation in the already-tested browser JS implementation.
