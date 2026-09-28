@@ -310,6 +310,58 @@ scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     paste("DROP SCHEMA IF EXISTS", as.character(quote_identifier(schema)), "RESTRICT"))
 }
 
+# Shared inventory for guarded publisher smokes. Drop dependents before
+# referenced tables, then trigger functions, and finally the owned schema
+# using RESTRICT. Every object is schema-qualified to avoid search_path drift.
+serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (!is.function(quote_identifier) || length(schema) != 1L ||
+      !grepl("^(scalar_it|profile_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned smoke schema", call. = FALSE)
+  qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
+  tables <- c("ordered_series", "series_descriptor", "profile_observation_source",
+    "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
+    "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
+    "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
+    "building_evidence_descriptor", "essential_service_access", "service_registry",
+    "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
+    "table_publication")
+  functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_smoke_ramp()",
+    "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
+    "assert_scalar_descriptor_sources()", "assert_scalar_levels()",
+    "assert_scalar_descriptor_update()", "assert_scalar_territory_update()",
+    "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
+    "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
+    "validate_ordered_series()")
+  c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
+    paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
+      split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
+      paste0(qualified(split[[1L]]), "(", split[[2L]])
+    }, character(1)), "RESTRICT"),
+    paste("DROP SCHEMA IF EXISTS", as.character(quote_identifier(schema)), "RESTRICT"))
+}
+
+# Cleanup is destructive even in a disposable database: check both database
+# identity and ownership immediately before issuing any DROP statement.
+cleanup_serving_smoke_schema <- function(connection, schema, kind) {
+  expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
+    profile="^profile_it_[A-Za-z0-9_]+$",
+    building="^it_building_publisher_[A-Za-z0-9_]+$", NULL)
+  if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
+      length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
+    stop("Cleanup requires an owned ", kind, " smoke schema", call. = FALSE)
+  identity <- DBI::dbGetQuery(connection, "SELECT current_database() AS database,
+    EXISTS (SELECT 1 FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner
+      WHERE n.nspname=$1 AND r.rolname=current_user) AS owned", params=list(schema))
+  if (!grepl("^lusk_it_[A-Za-z0-9_]+$", identity$database[[1L]]) ||
+      identity$database[[1L]] %in% c("lusk", "postgres", "template0", "template1") ||
+      !isTRUE(identity$owned[[1L]]))
+    stop("Refusing cleanup: database is not guarded lusk_it_* or schema is not owned by current user", call. = FALSE)
+  statements <- serving_smoke_schema_cleanup_sql(function(parts)
+    DBI::dbQuoteIdentifier(connection, parts), schema)
+  for (statement in statements) DBI::dbExecute(connection, statement)
+  invisible(TRUE)
+}
+
 # db is a narrow transaction adapter (transaction, marker, replace). Keeping
 # it injectable makes retry/rollback behavior testable without a live service.
 publish_registered_scalar <- function(registry, name, canonical, db) {

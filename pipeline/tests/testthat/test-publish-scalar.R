@@ -275,6 +275,9 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
 
 test_that("smoke schema cleanup is explicitly dependency ordered and restricted", {
   sql <- scalar_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
+  serving_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
+  profile_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "profile_it_test")
+  building_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "it_building_publisher_test")
   expect_true(grepl('DROP TABLE IF EXISTS "scalar_it_test"."scalar_observation_source" RESTRICT', sql[[1L]], fixed=TRUE))
   expect_true(any(grepl('DROP FUNCTION IF EXISTS "scalar_it_test"."reject_smoke_value"() RESTRICT', sql, fixed=TRUE)))
   expect_lt(which(grepl('"scalar_observation_source"', sql, fixed=TRUE))[1L],
@@ -283,7 +286,18 @@ test_that("smoke schema cleanup is explicitly dependency ordered and restricted"
             which(grepl('"table_publication"', sql, fixed=TRUE))[1L])
   expect_true(grepl("DROP SCHEMA IF EXISTS \"scalar_it_test\" RESTRICT", tail(sql, 1L), fixed=TRUE))
   expect_false(any(grepl("CASCADE", sql, fixed=TRUE)))
+  expect_true(any(grepl('DROP TABLE IF EXISTS "scalar_it_test"."ordered_series" RESTRICT', serving_sql, fixed=TRUE)))
+  expect_true(any(grepl('DROP TABLE IF EXISTS "scalar_it_test"."building_evidence_descriptor_source" RESTRICT', serving_sql, fixed=TRUE)))
+  expect_lt(which(grepl('"scalar_observation_source"', serving_sql, fixed=TRUE))[1L],
+            which(grepl('"scalar_observation"', serving_sql, fixed=TRUE))[1L])
+  expect_lt(which(grepl('"profile_observation_source"', serving_sql, fixed=TRUE))[1L],
+            which(grepl('"profile_observation"', serving_sql, fixed=TRUE))[1L])
+  expect_true(grepl('DROP SCHEMA IF EXISTS "profile_it_test" RESTRICT', tail(profile_sql, 1L), fixed=TRUE))
+  expect_true(grepl('DROP SCHEMA IF EXISTS "it_building_publisher_test" RESTRICT', tail(building_sql, 1L), fixed=TRUE))
+  expect_false(any(grepl("CASCADE", c(serving_sql, profile_sql, building_sql), fixed=TRUE)))
   expect_error(scalar_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
+  expect_error(serving_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
+  expect_error(serving_smoke_schema_cleanup_sql(identity, "unowned_it_test"), "owned smoke schema")
 })
 
 test_that("PostgreSQL schema splitter preserves literals, quoted identifiers, and function bodies", {
