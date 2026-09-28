@@ -333,7 +333,11 @@ def test_ordered_series_bounded_read_comparison_and_rollback(db_env):
             ('fixture_annual','59702','commune','2024','2024',1,'measured','series_fixture','v1'),
             ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1'),
             ('fixture_annual','53','region','2024','2024',10,'measured','series_fixture','v1')""")
-        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-series-v1',4)")
+        # The fresh-install schema publishes an empty territory_reference marker.
+        # This isolated per-test schema replaces that marker with the fixture's
+        # reference version rather than attempting a duplicate insert.
+        updated = publisher.execute("UPDATE table_publication SET content_version='territory-series-v1',row_count=4 WHERE table_name='territory_reference'")
+        assert updated.rowcount == 1
         publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
         with pytest.raises(psycopg.errors.CheckViolation):
             with publisher.transaction():
@@ -399,6 +403,12 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
             connection.execute("DROP TRIGGER scalar_territory_compatibility ON territory_reference")
             connection.execute("DROP TRIGGER scalar_descriptor_compatibility ON scalar_descriptor")
             connection.execute("DROP TRIGGER scalar_observation_levels ON scalar_observation")
+            # This is a random disposable schema created for this rehearsal.
+            # Remove #597's downstream objects before reconstructing the
+            # explicit pre-#594 catalog; never use CASCADE or touch public.
+            connection.execute("DROP TRIGGER ordered_series_contract ON ordered_series")
+            connection.execute("DROP FUNCTION validate_ordered_series()")
+            connection.execute("DROP TABLE ordered_series, series_descriptor")
             connection.execute("DROP TABLE scalar_observation_source, scalar_observation, scalar_descriptor_source, scalar_descriptor, source_vintage, source_dataset")
             connection.execute("DROP FUNCTION assert_scalar_observation_has_source(), assert_scalar_descriptor_sources(), assert_scalar_territory_update(), assert_scalar_descriptor_update(), assert_scalar_levels()")
             connection.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
