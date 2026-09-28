@@ -141,6 +141,29 @@ associations (the second is explicitly synthetic smoke lineage), no-op behavior,
 dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
 after an injected insert failure.
 
+The building publisher path has a separate RPostgres smoke so it exercises the
+real `.adapter_postgres` and `publier_tables_postgres` code rather than a fake
+adapter. It uses only synthetic canonical-like rows, accepts only explicit
+`LUSK_BUILDING_TEST_*` connection variables naming a `lusk_it_*` database, and
+uses a private passfile outside the checkout. It creates a random schema, runs
+the final `api/schema.sql`, then dependency-orders table/function drops and
+`DROP SCHEMA ... RESTRICT` for cleanup; it never uses `CASCADE` or touches
+`public`.
+
+```powershell
+$env:LUSK_BUILDING_TEST_HOST = "192.168.1.120"
+$env:LUSK_BUILDING_TEST_PORT = "5432"
+$env:LUSK_BUILDING_TEST_DATABASE = "lusk_it_contract"
+$env:LUSK_BUILDING_TEST_USER = "lusk_it_contract_pub"
+$env:LUSK_BUILDING_TEST_PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+Rscript scripts/smoke-building-postgres.R  # run from pipeline/
+```
+
+This verifies actual R/DBI parameter and JSON serialization, descriptor/source
+lineage and independent markers, grid ordinal mapping, no-op republish,
+DB-behind retry, and rollback of facts/descriptors/markers after injected
+replacement failure. It uses no pipeline raw/processed data.
+
 The shared-scalar migration/read tests are selected with
 `-k shared_scalar`. Several older importer integration cases in this module
 still assert the retired `dataset_publication` fixture even though the current
