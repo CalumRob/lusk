@@ -62,9 +62,9 @@ def test_declared_profile_postgres_api_contract():
                 ('structure_age','detail','15-29','15 à 29 ans',0),
                 ('structure_age','detail','0-14','Moins de 15 ans',1),
                 ('structure_age','sex','F','Femmes',0),('structure_age','sex','M','Hommes',1)""")
-            conn.execute("INSERT INTO profile_descriptor_source VALUES ('structure_age','age_detail')")
             conn.execute("INSERT INTO source_dataset VALUES ('age_detail','INSEE fixture')")
             conn.execute("INSERT INTO source_vintage VALUES ('age_detail','v1','2023','2023-01-01',NULL)")
+            conn.execute("INSERT INTO profile_descriptor_source VALUES ('structure_age','age_detail')")
             for tid, vals in ((territory, (.2,.3,.4,.5)), (peer, (.6,.7,.8,.9))):
                 for detail, sex, value in zip(('15-29','15-29','0-14','0-14'), ('F','M','F','M'), vals):
                     conn.execute("INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,sex_key,value,status) VALUES ('structure_age',%s,'commune',%s,%s,%s,'measured')", (tid,detail,sex,value))
@@ -101,6 +101,8 @@ def test_declared_profile_postgres_api_contract():
             main.app.dependency_overrides[main.get_repository] = previous
         if pool is not None:
             pool.close()
+        # The test schema is uniquely random and dropped only under the harness's
+        # explicit cleanup opt-in; CASCADE cannot reach shared/public objects.
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publisher_dsn, autocommit=True) as conn:
                 conn.execute(f'DROP SCHEMA "{schema}" CASCADE')
