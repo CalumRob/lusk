@@ -10,12 +10,13 @@ import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 const metadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
   it('preserves the page grammar and comparison scope, adapts API facts, and never falls back to static series on failure', async () => {
+    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
     const calls: string[] = []
     const loader: ChargerFichier = async (file) => {
       calls.push(file)
@@ -81,5 +82,30 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     await flushPromises()
     expect(wrapper.text()).toContain('Précautions')
     expect(calls).toContain('theme_milieux')
+  })
+
+  it('keeps the legacy indicator facts and does not call the API when the build gate is off by default', async () => {
+    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '')
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
+      if (file === 'theme_milieux') return metadataMilieux
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('momentanément indisponibles')
+    expect(wrapper.text()).toContain('12 ha')
+    expect(wrapper.find('.vues').exists()).toBe(true)
   })
 })

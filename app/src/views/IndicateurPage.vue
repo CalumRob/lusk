@@ -44,7 +44,12 @@ const niveauMemorise = ref<string | undefined>(localStorage.getItem('lusk:niveau
 // portés, lus et validés UNE fois par le contrat d'exploration.
 const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
-const orderedSeriesAdapter = computed(() => orderedSeriesAdapterFor(theme.value, indicator.value))
+// Cutover is an operator-controlled build setting. Keep static behavior until
+// the serving schema/API are deployed and explicitly enabled together.
+const orderedSeriesApiEnabled = import.meta.env.VITE_CONSO_ENAF_SERIES_API === '1'
+const orderedSeriesAdapter = computed(() => orderedSeriesApiEnabled
+  ? orderedSeriesAdapterFor(theme.value, indicator.value)
+  : null)
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
 const attendreLegacy: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']

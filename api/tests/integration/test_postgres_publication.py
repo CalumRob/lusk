@@ -315,71 +315,88 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         pool.close()
 
 
-def test_ordered_series_bounded_read_comparison_and_rollback(db_env):
+def test_ordered_series_bounded_read_comparison_and_rollback():
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
     from api import main
 
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
-        publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59701','commune','Series focal','22','e1'),('59702','commune','Series peer','22','e1'),('59703','commune','Series tie','22','e2'),('53','region','Series region',NULL,NULL)")
-        publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
-        publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
-        publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
-            VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune','region'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
-        publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
-            ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
-            ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
-            ('fixture_annual','59702','commune','2024','2024',1,'measured','series_fixture','v1'),
-            ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1'),
-            ('fixture_annual','53','region','2024','2024',10,'measured','series_fixture','v1')""")
-        # The fresh-install schema publishes an empty territory_reference marker.
-        # This isolated per-test schema replaces that marker with the fixture's
-        # reference version rather than attempting a duplicate insert.
-        updated = publisher.execute("UPDATE table_publication SET content_version='territory-series-v1',row_count=4 WHERE table_name='territory_reference'")
-        assert updated.rowcount == 1
-        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
-        with pytest.raises(psycopg.errors.CheckViolation):
-            with publisher.transaction():
-                publisher.execute("UPDATE ordered_series SET value=99 WHERE territory_id='59701' AND axis_value='2024'")
-                publisher.execute("UPDATE table_publication SET content_version='partial' WHERE table_name='ordered_series'")
-                publisher.execute("INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES ('fixture_annual','59701','commune','2023','2023',NULL,'measured','series_fixture','v1')")
-        assert publisher.execute("SELECT value FROM ordered_series WHERE territory_id='59701' AND axis_value='2024'").fetchone()[0] == 2
-        assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v1'
-
-    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
-                          kwargs={"autocommit": True})
-    previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    publish_dsn, read_dsn, _, _ = _configuration()
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
     try:
-        with TestClient(main.app) as client:
-            response = client.get('/api/territories/commune/59701/series/fixture_annual')
-            epci_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e1')
-            region_response = client.get('/api/territories/region/53/series/fixture_annual?scope_level=region')
-        assert response.status_code == 200, response.text
-        body = response.json()
-        assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
-        assert body['points'][0]['value'] == 0
-        assert body['points'][1]['status'] == 'missing' and body['points'][1]['value'] is None
-        assert body['comparison'] == {
-            'point': '2024', 'value': 2.0, 'median': 2.0, 'rank': 2,
-            'ties': 2, 'comparable_count': 3,
-            'scope': {'kind': 'level', 'territory_type': 'commune', 'department_id': None, 'epci_id': None},
-        }
-        assert body['points'][2]['source_version'] == '2026-01'
-        assert body['availability'] == 'incomplete'
-        assert epci_response.status_code == 200, epci_response.text
-        assert epci_response.json()['comparison']['scope']['epci_id'] == 'e1'
-        assert epci_response.json()['comparison']['comparable_count'] == 2
-        assert region_response.status_code == 200, region_response.text
-        assert region_response.json()['comparison']['scope']['territory_type'] == 'region'
-        assert region_response.json()['comparison']['rank'] == 1
+        reader_role = urlsplit(read_dsn).username
+        if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+            pytest.fail("Read DSN must identify a simple PostgreSQL role name")
+        quoted_role = '"' + reader_role.replace('"', '""') + '"'
+        with psycopg.connect(scoped_publish, autocommit=True) as publisher:
+            publisher.execute(schema_path.read_text(encoding="utf-8"))
+            publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59701','commune','Series focal','22','e1'),('59702','commune','Series peer','22','e1'),('59703','commune','Series tie','22','e2'),('53','region','Series region',NULL,NULL)")
+            publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
+            publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune','region'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
+            publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
+                ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
+                ('fixture_annual','59702','commune','2024','2024',1,'measured','series_fixture','v1'),
+                ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1'),
+                ('fixture_annual','53','region','2024','2024',10,'measured','series_fixture','v1')""")
+            publisher.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+                VALUES ('territory_reference','territory-series-v1',4)
+                ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
+            publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with publisher.transaction():
+                    publisher.execute("UPDATE ordered_series SET value=99 WHERE territory_id='59701' AND axis_value='2024'")
+                    publisher.execute("UPDATE table_publication SET content_version='partial' WHERE table_name='ordered_series'")
+                    publisher.execute("INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES ('fixture_annual','59701','commune','2023','2023',NULL,'measured','series_fixture','v1')")
+            assert publisher.execute("SELECT value FROM ordered_series WHERE territory_id='59701' AND axis_value='2024'").fetchone()[0] == 2
+            assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v1'
+
+        pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
+                          kwargs={"autocommit": True})
+        previous = main.app.dependency_overrides.get(main.get_repository)
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+        try:
+            with TestClient(main.app) as client:
+                response = client.get('/api/territories/commune/59701/series/fixture_annual')
+                epci_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e1')
+                region_response = client.get('/api/territories/region/53/series/fixture_annual?scope_level=region')
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
+            assert body['points'][0]['value'] == 0
+            assert body['points'][1]['status'] == 'missing' and body['points'][1]['value'] is None
+            assert body['comparison'] == {
+                'point': '2024', 'value': 2.0, 'median': 2.0, 'rank': 2,
+                'ties': 2, 'comparable_count': 3,
+                'scope': {'kind': 'level', 'territory_type': 'commune', 'department_id': None, 'epci_id': None},
+            }
+            assert body['points'][2]['source_version'] == '2026-01'
+            assert body['availability'] == 'incomplete'
+            assert epci_response.status_code == 200, epci_response.text
+            assert epci_response.json()['comparison']['scope']['epci_id'] == 'e1'
+            assert epci_response.json()['comparison']['comparable_count'] == 2
+            assert region_response.status_code == 200, region_response.text
+            assert region_response.json()['comparison']['scope']['territory_type'] == 'region'
+            assert region_response.json()['comparison']['rank'] == 1
+        finally:
+            if previous is None:
+                main.app.dependency_overrides.pop(main.get_repository, None)
+            else:
+                main.app.dependency_overrides[main.get_repository] = previous
+            pool.close()
     finally:
-        if previous is None:
-            main.app.dependency_overrides.pop(main.get_repository, None)
-        else:
-            main.app.dependency_overrides[main.get_repository] = previous
-        pool.close()
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 def test_shared_scalar_additive_migration_rehearsal(db_env):
