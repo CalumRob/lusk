@@ -589,39 +589,39 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert unavailable.status_code == 404
         absent_fact = client.get("/api/territories/commune/29002/indicators/fixture_scalar")
         assert absent_fact.status_code == 404
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET content_version='territory-v2' WHERE table_name='territory_reference'")
         not_rebound = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert not_rebound.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='territory-v2' WHERE table_name='scalar_observation'")
             scalar_marker = publisher.execute("SELECT content_version FROM table_publication WHERE table_name='scalar_observation'").fetchone()[0]
             assert scalar_marker == "fixture-v1"  # dependency rebind is not a scalar-content version change
         compatible_rebind = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert compatible_rebind.status_code == 200
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM territory_reference WHERE territory_id='29002'")
             publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
             publisher.execute("UPDATE table_publication SET content_version='territory-v3' WHERE table_name='territory_reference'")
         incompatible_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert incompatible_reference.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='territory-v3',row_count=9 WHERE table_name='scalar_observation'")
         # row_count is publication metadata, not a reason to scan the full
         # observation/reference tables on this point read.
         tampered_count = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert tampered_count.status_code == 200
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='obsolete' WHERE table_name='scalar_observation'")
         stale = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert stale.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM table_publication WHERE table_name='territory_reference'")
         missing_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert missing_reference.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v3',2)")
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
         missing = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert missing.status_code == 503
