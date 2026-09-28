@@ -644,22 +644,28 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
         connection.execute(f'CREATE SCHEMA "{schema}"')
     try:
         with psycopg.connect(scoped, autocommit=True) as connection:
-            connection.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
-            # Restore the known pre-594 catalog shape while keeping the actual
-            # existing serving tables and marker untouched.
-            connection.execute("DROP TRIGGER scalar_observation_source_required ON scalar_observation")
-            connection.execute("DROP TRIGGER scalar_observation_source_not_empty ON scalar_observation_source")
-            connection.execute("DROP TRIGGER scalar_descriptor_requires_sources ON scalar_descriptor")
-            connection.execute("DROP TRIGGER scalar_descriptor_source_set_not_empty ON scalar_descriptor_source")
-            connection.execute("DROP TRIGGER scalar_territory_compatibility ON territory_reference")
-            connection.execute("DROP TRIGGER scalar_descriptor_compatibility ON scalar_descriptor")
-            connection.execute("DROP TRIGGER scalar_observation_levels ON scalar_observation")
-            connection.execute("DROP TABLE scalar_observation_source, scalar_observation, scalar_descriptor_source, scalar_descriptor, source_vintage, source_dataset")
-            connection.execute("DROP FUNCTION assert_scalar_observation_has_source(), assert_scalar_descriptor_sources(), assert_scalar_territory_update(), assert_scalar_descriptor_update(), assert_scalar_levels()")
-            connection.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
-            connection.execute("ALTER TABLE table_publication DROP CONSTRAINT scalar_publication_requires_reference")
-            connection.execute("ALTER TABLE table_publication DROP COLUMN reference_content_version")
-            connection.execute("ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK (table_name IN ('territory_reference','service_registry','essential_service_access','building_ramp','building_grid'))")
+            # Model the pre-594 catalog directly. Do not start from today's
+            # fresh-install schema and reverse-engineer extensions: later
+            # profile/scalar FKs would make that teardown depend on new objects.
+            connection.execute("""
+                CREATE TABLE table_publication (
+                    table_name text PRIMARY KEY CHECK (table_name IN (
+                        'territory_reference','service_registry','essential_service_access',
+                        'building_ramp','building_grid')),
+                    content_version text NOT NULL,
+                    row_count integer NOT NULL CHECK (row_count >= 0),
+                    published_at timestamptz NOT NULL DEFAULT now()
+                );
+                CREATE TABLE territory_reference (
+                    territory_id text PRIMARY KEY,
+                    territory_type text NOT NULL,
+                    name text NOT NULL,
+                    department_id text,
+                    epci_id text,
+                    density_class_code text,
+                    density_class_label text
+                );
+            """)
             connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
             names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
             assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
