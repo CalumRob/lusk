@@ -53,6 +53,46 @@ the new tables. The live `lusk` schema is never involved.
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
 
+## Persistent Pi test-only database and R publisher smoke
+
+The R publisher-to-PostgreSQL smoke is a separate opt-in path; it does not use
+production configuration, product data, `data/raw`, or `data/processed`. The
+operator must provision a permanent **test-only database on the Pi server**
+whose name begins `lusk_it_`, plus a dedicated login role with `CONNECT` and
+`CREATE` on that database only. Do not point it at `lusk`; the script refuses
+names outside the `lusk_it_*` pattern and creates its own random schema. It
+executes fresh `api/schema.sql` in that schema, publishes the tiny canonical
+fixture through `scalar_postgres_adapter`, and drops only that schema (without
+`CASCADE`) when explicit cleanup is enabled. `public` and other schemas are
+never changed. Do not grant the test role access to serving objects or reuse
+serving credentials. Rotate any credentials previously shared for disposable
+testing before provisioning this permanent target.
+
+Run from `pipeline/` on the trusted workstation after the database and role are
+ready. Store credentials in a private libpq passfile (not the repository or
+shell history) and set `PGPASSFILE` to its path; use a separate test role from
+the serving publisher. The role name is the only credential passed in process
+environment:
+
+```powershell
+$env:LUSK_SCALAR_TEST_HOST = "<Pi test endpoint>"
+$env:LUSK_SCALAR_TEST_PORT = "5432"
+$env:LUSK_SCALAR_TEST_DATABASE = "lusk_it_<dedicated-name>"
+$env:LUSK_SCALAR_TEST_USER = "<dedicated test publisher role>"
+$env:PGPASSFILE = "<private passfile path>"
+Rscript scripts/smoke-scalar-postgres.R
+```
+
+The test leaves its random schema for inspection by default. After review,
+remove only the printed `scalar_it_*` schema manually, or explicitly set
+`LUSK_SCALAR_TEST_CLEANUP=1` to have the script drop its own schema. Assign an
+operator-owned TTL (recommended: 14 days) to abandoned `scalar_it_*` schemas;
+inspect ownership and contents before cleanup. Never automate database drops.
+The smoke checks canonical fact/status, descriptor and versions, two source
+associations (the second is explicitly synthetic smoke lineage), no-op behavior,
+dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
+after an injected insert failure.
+
 The shared-scalar migration/read tests are selected with
 `-k shared_scalar`. Several older importer integration cases in this module
 still assert the retired `dataset_publication` fixture even though the current
