@@ -190,6 +190,133 @@ def test_reader_role_cannot_insert_or_create(db_env):
             connection.execute("CREATE SCHEMA forbidden_reader_schema")
 
 
+def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matrix(db_env, monkeypatch):
+    """Exercise both SQL readers against the same disposable PostgreSQL snapshot.
+
+    The deliberately small fixture has all fifteen public indicators, ties,
+    unavailable values, multiple peer scopes, and a singleton regional scope.
+    The fast API tests cover exact comparison statistics; this verifies that
+    the actual scalar joins/status mapping feed that same comparison contract.
+    """
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    territories = [
+        ("29001", "Alpha", "commune", "29", "200000001", "D1", "Dense"),
+        ("29002", "Beta", "commune", "29", "200000001", "D1", "Dense"),
+        ("29003", "Gamma", "commune", "29", "200000002", "D2", "Rural"),
+        ("29004", "Delta", "commune", "29", "200000002", "D2", "Rural"),
+        ("200000001", "EPCI One", "epci", "29", None, None, None),
+        ("200000002", "EPCI Two", "epci", "29", None, None, None),
+        ("29", "Department", "departement", "29", None, None, None),
+        ("BRE", "Brittany", "region", None, None, None, None),
+    ]
+    services = ("food", "health", "admin", "school", "bank")
+    mode_codes = {"t": "walk_transit", "b": "bike", "c": "car"}
+    levels = {"commune": ["29001", "29002", "29003", "29004"],
+              "epci": ["200000001", "200000002"],
+              "departement": ["29"], "region": ["BRE"]}
+    with psycopg.connect(db_env["publish_dsn"]) as connection:
+        connection.executemany(
+            "INSERT INTO territory_reference(territory_id,name,territory_type,department_id,epci_id,density_class_code,density_class_label) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            territories)
+        connection.executemany("INSERT INTO service_registry(service) VALUES (%s)", [(s,) for s in services])
+        connection.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES (true,'communes-bretagne','communes bretonnes')")
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-fixture-v1',8),('essential_service_access','legacy-fixture-v1',0)")
+        connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
+        connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('fixture','v2026','2026','2025-01-01','2026-02-01')")
+        descriptors = []
+        legacy_rows = []
+        scalar_rows = []
+        source_rows = []
+        types_by_id = {t[0]: t[2] for t in territories}
+        for service_index, service in enumerate(services):
+            for mode_index, (mode_code, mode) in enumerate(mode_codes.items()):
+                indicator = f"share_{service}_{mode_code}"
+                direction = "low" if service == "food" and mode_code == "c" else "high"
+                descriptors.append((indicator, f"{service} {mode}", "%", direction,
+                    indicator, ["commune", "epci", "departement", "region"],
+                    "fixture service access share", "dense_complete", "desc-v1"))
+                for territory_type, ids in levels.items():
+                    for index, territory_id in enumerate(ids):
+                        # Produce equal values for rank ties, a direction-low
+                        # case, and one explicit unavailable commune fact.
+                        value = round(.2 + ((index + service_index + mode_index) % 3) * .1, 2)
+                        missing = territory_id == "29004" and service == "school" and mode_code == "b"
+                        share = None if missing else value
+                        legacy_rows.append((territory_id, service, mode, share,
+                            f"{service} {mode}", direction, "fixture", "Fixture source",
+                            "2026", "2025-01-01", "2026-02-01"))
+                        scalar_rows.append((indicator, territory_id, territory_type,
+                            share, "not_available" if missing else "measured"))
+                        source_rows.append((indicator, territory_id, "fixture", "v2026"))
+        connection.executemany("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", legacy_rows)
+        connection.execute("UPDATE table_publication SET row_count=%s WHERE table_name='essential_service_access'", (len(legacy_rows),))
+        connection.executemany("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
+        connection.executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,'fixture')", [(d[0],) for d in descriptors])
+        connection.executemany("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES (%s,%s,%s,%s,%s)", scalar_rows)
+        connection.executemany("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES (%s,%s,%s,%s)", source_rows)
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',%s,'ref-fixture-v1')", (len(scalar_rows),))
+
+    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
+                          kwargs={"autocommit": True})
+    previous_override = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    monkeypatch.delenv("LUSK_SERVICES_SCALAR_READ", raising=False)
+    try:
+        with TestClient(main.app) as client:
+            cases = [
+                ("commune", "29001", "bretagne"),
+                ("commune", "29001", "densite"),
+                ("commune", "29001", "epci"),
+                ("epci", "200000001", None),
+                ("departement", "29", None),
+                ("region", "BRE", None),
+            ]
+            legacy = {}
+            for territory_type, code, comparison in cases:
+                suffix = f"?comparison={comparison}" if comparison else ""
+                path = f"/api/territories/{territory_type}/{code}/essential-services{suffix}"
+                response = client.get(path)
+                assert response.status_code == 200, response.text
+                legacy[(territory_type, code, comparison)] = response.json()
+
+            monkeypatch.setenv("LUSK_SERVICES_SCALAR_READ", "1")
+            for territory_type, code, comparison in cases:
+                suffix = f"?comparison={comparison}" if comparison else ""
+                path = f"/api/territories/{territory_type}/{code}/essential-services{suffix}"
+                response = client.get(path)
+                assert response.status_code == 200, response.text
+                scalar = response.json()
+                old = legacy[(territory_type, code, comparison)]
+                assert scalar["territory"] == old["territory"]
+                assert scalar["scope"] == old["scope"]
+                assert scalar["comparison"] == old["comparison"]
+                assert scalar["services"] == old["services"]
+            # Region is deliberately a singleton: comparison stats are absent.
+            regional = client.get("/api/territories/region/BRE/essential-services").json()
+            assert regional["scope"] is None
+            assert all(mode["rank"] is None and mode["median"] is None
+                       for service in regional["services"] for mode in service["modes"].values())
+            assert any(mode["value"] is None for service in regional["services"]
+                       for mode in service["modes"].values())
+
+            # An unavailable scalar publication must fail closed while legacy
+            # rows still exist; the handler may not quietly fall back to them.
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
+            failed = client.get("/api/territories/commune/29001/essential-services?comparison=bretagne")
+            assert failed.status_code == 503
+    finally:
+        if previous_override is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_override
+        pool.close()
+
+
 def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
     import psycopg
     from fastapi.testclient import TestClient
