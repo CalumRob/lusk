@@ -274,6 +274,7 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                 ("commune", "29001", "bretagne"),
                 ("commune", "29001", "densite"),
                 ("commune", "29001", "epci"),
+                ("commune", "29004", "densite"),
                 ("epci", "200000001", None),
                 ("departement", "29", None),
                 ("region", "BRE", None),
@@ -302,8 +303,12 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
             assert regional["scope"] is None
             assert all(mode["rank"] is None and mode["median"] is None
                        for service in regional["services"] for mode in service["modes"].values())
-            assert any(mode["value"] is None for service in regional["services"]
-                       for mode in service["modes"].values())
+            unavailable = client.get("/api/territories/commune/29004/essential-services?comparison=densite").json()
+            school = next(service for service in unavailable["services"] if service["id"] == "school")
+            assert school["modes"]["bike"]["value"] is None
+            legacy_school = next(service for service in legacy[("commune", "29004", "densite")]["services"]
+                                 if service["id"] == "school")
+            assert legacy_school["modes"]["bike"]["value"] is None
 
             # An unavailable scalar publication must fail closed while legacy
             # rows still exist; the handler may not quietly fall back to them.
