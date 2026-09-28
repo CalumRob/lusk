@@ -329,3 +329,48 @@ for scope in epci densite bretagne; do
   done | sort -n | awk 'NR == 10 { a = $1 } NR == 11 { median = 500 * (a + $1) } NR == 19 { p95 = 1000 * $1 } END { printf "median %.1f ms, p95 %.1f ms\n", median, p95 }'
 done
 ```
+# Shared scalar publication contract (#594)
+
+R/Parquet remains authoritative. A scalar publisher registers a stable name,
+projects canonical facts and declared descriptors, validates them with
+`validate_scalar_projection()`, and replaces facts plus the independent
+`scalar_observation` marker in one DB transaction. Hash facts and meaning-
+affecting descriptor/source-vintage metadata. An unchanged table is a no-op
+even when another changed; failure rolls back facts and marker together for
+retry. Never infer labels, levels, source, missingness, denominator or zero.
+Readers use named bounded selectors and one repeatable-read transaction, not
+arbitrary SQL or browser credentials.
+
+The scalar publication marker pins `reference_content_version` to the
+independent `territory_reference` marker version. This is a dependency token,
+not part of or a replacement for the scalar table's independent
+`content_version`. When the territory-reference version changes, the publisher
+checks the complete eligible territory-ID/type set before rebinding that token;
+equal identity sets can be rebound without changing scalar content, while any
+added, removed, or type-changed eligible identity leaves the old token in place
+and the reader unavailable pending a coherent republish. Scalar reads fail with 503 if
+either marker is missing, the versions differ, or either marker row count no
+longer matches its committed table. This exact-version compatibility token is
+the cross-table identity strategy; readers never blend a scalar snapshot with
+a newer territorial reference and return 404 only for an absent row in a
+validated compatible snapshot.
+
+Fresh installs use `schema.sql`; existing installs use numbered additive
+migrations. Orchestration reserves numbers serially before parallel workers;
+workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
+applies live migrations serially; only the product owner runs API Compose on
+Pi. Future detail, series, evidence and service slices reserve distinct
+migration numbers and use constrained shape-specific contracts. Fixture tests
+are not full-site performance evidence.
+
+The opt-in `Rscript scripts/publish-serving-tables.R --scalar-fixture-check`
+projects only the small tracked Démographie fixture through the registered
+scalar publisher. `--scalar-fixture-publish` is additionally guarded to a DSN
+whose database exactly matches `LUSK_TEST_DATABASE_NAME=lusk_it_*`; it is for a
+disposable integration database only. Neither mode invokes the production
+targets graph or needs `data/raw`.
+The theme metadata does not declare scalar completeness. This fixture adapter
+therefore requires an explicit caller policy and uses `dense_complete` only
+because its checked projection covers every eligible identity in that fixture;
+it does not add completeness metadata to a product descriptor or establish a
+catalogue-wide default.

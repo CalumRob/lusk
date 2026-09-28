@@ -9,7 +9,7 @@ import unicodedata
 from statistics import median
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from psycopg_pool import ConnectionPool
 
@@ -548,6 +548,58 @@ def compare(data: dict) -> ComparisonResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
+def scalar_observation(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    territory_id: str = Path(min_length=1, max_length=32),
+    indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Read one declared scalar and its lineage/version from one DB snapshot."""
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            marker = conn.execute(
+                """SELECT scalar.content_version,
+                          scalar.reference_content_version,
+                          territory.content_version AS territory_version
+                   FROM table_publication scalar
+                   LEFT JOIN table_publication territory
+                     ON territory.table_name = 'territory_reference'
+                   WHERE scalar.table_name = 'scalar_observation'"""
+            ).fetchone()
+            if marker is None:
+                raise HTTPException(503, "Scalar publication is unavailable")
+            if (not marker[0] or not marker[0].strip() or marker[1] is None
+                    or marker[2] is None or marker[1] != marker[2]):
+                raise HTTPException(503, "Scalar publication is stale or incompatible")
+            cursor = conn.execute(
+                """SELECT o.indicator_id, o.territory_id, o.territory_type,
+                          o.value, o.status, o.support_count, o.denominator_count,
+                          d.label, d.unit, d.direction, d.comparison_facet,
+                          p.content_version,
+                          (SELECT json_agg(json_build_object('source_id', os.source_id,
+                              'name', sd.name, 'vintage_id', os.vintage_id,
+                              'version', sv.version, 'reference_date', sv.reference_date,
+                              'publication_date', sv.publication_date)
+                           ORDER BY os.source_id, os.vintage_id)
+                           FROM scalar_observation_source os
+                           JOIN source_dataset sd ON sd.source_id=os.source_id
+                           JOIN source_vintage sv ON sv.source_id=os.source_id AND sv.vintage_id=os.vintage_id
+                           WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id) AS sources
+                   FROM scalar_observation o
+                   JOIN scalar_descriptor d USING (indicator_id)
+                   JOIN table_publication p ON p.table_name = 'scalar_observation'
+                   WHERE o.indicator_id = %s AND o.territory_id = %s
+                     AND o.territory_type = %s AND o.territory_type = ANY(d.allowed_levels)""",
+                (indicator_id, territory_id, territory_type),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise HTTPException(404, "Declared scalar observation is unavailable")
+            return dict(zip((column.name for column in cursor.description), row))
 
 
 @app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)
