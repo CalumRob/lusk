@@ -327,8 +327,19 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
     try:
         with psycopg.connect(scoped, autocommit=True) as connection:
             connection.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
-            # Restore the known pre-594 catalog shape while keeping the actual
-            # existing serving tables and marker untouched.
+            # Restore the known pre-594 catalog shape in this test-owned
+            # random schema only. Remove the building contract's dependencies
+            # explicitly, in dependency order (never CASCADE), while keeping
+            # the physical serving tables and publication markers untouched.
+            connection.execute("DROP TRIGGER building_publication_descriptor ON table_publication")
+            connection.execute("DROP TRIGGER building_ramp_source_declared ON building_ramp")
+            connection.execute("DROP TRIGGER building_grid_source_declared ON building_grid")
+            connection.execute("DROP FUNCTION assert_building_descriptor_publication()")
+            connection.execute("DROP FUNCTION assert_building_fact_source()")
+            connection.execute("DROP TABLE building_evidence_descriptor_source")
+            connection.execute("DROP TABLE building_evidence_descriptor")
+            connection.execute("ALTER TABLE building_ramp DROP CONSTRAINT building_ramp_source_vintage_fk")
+            connection.execute("ALTER TABLE building_grid DROP CONSTRAINT building_grid_source_vintage_fk")
             connection.execute("DROP TRIGGER scalar_observation_source_required ON scalar_observation")
             connection.execute("DROP TRIGGER scalar_observation_source_not_empty ON scalar_observation_source")
             connection.execute("DROP TRIGGER scalar_descriptor_requires_sources ON scalar_descriptor")
