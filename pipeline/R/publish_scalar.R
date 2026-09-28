@@ -3,8 +3,8 @@
 # part of this interface.
 validate_scalar_projection <- function(facts, descriptors, eligible_territories = NULL) {
   required_facts <- c("indicator_id", "territory_id", "territory_type", "value",
-                      "status", "support_count", "denominator_count", "source_id", "vintage_id")
-  required_descriptors <- c("indicator_id", "source_id", "label", "unit", "direction",
+                      "status", "support_count", "denominator_count")
+  required_descriptors <- c("indicator_id", "allowed_sources", "label", "unit", "direction",
                             "comparison_facet", "allowed_levels", "denominator_semantics",
                             "completeness", "descriptor_version")
   if (!is.data.frame(facts) || !all(required_facts %in% names(facts)) ||
@@ -13,23 +13,25 @@ validate_scalar_projection <- function(facts, descriptors, eligible_territories 
   if (!setequal(names(facts), required_facts) ||
       !setequal(names(descriptors), required_descriptors))
     stop("Scalar projection contains undeclared fields", call. = FALSE)
-  if (anyNA(facts[c("indicator_id", "territory_id", "territory_type", "status", "source_id", "vintage_id")]) ||
+  if (anyNA(facts[c("indicator_id", "territory_id", "territory_type", "status")]) ||
       any(!nzchar(as.character(facts$territory_id))) ||
       any(!grepl("^[a-z][a-z0-9_]{0,95}$", facts$indicator_id)) ||
-      any(!facts$territory_type %in% c("commune", "epci", "departement", "region")) ||
-      any(!nzchar(facts$source_id)) || any(!nzchar(facts$vintage_id)))
+      any(!facts$territory_type %in% c("commune", "epci", "departement", "region")))
     stop("Invalid or missing scalar identity/key fields", call. = FALSE)
   allowed <- lapply(descriptors$allowed_levels, as.character)
-  if (anyNA(descriptors[c("indicator_id", "source_id", "label", "unit", "direction",
+  allowed_sources <- lapply(descriptors$allowed_sources, as.character)
+  if (anyNA(descriptors[c("indicator_id", "label", "unit", "direction",
                           "denominator_semantics", "completeness", "descriptor_version")]) ||
       any(!grepl("^[a-z][a-z0-9_]{0,95}$", descriptors$indicator_id)) ||
-      any(!nzchar(descriptors$source_id)) || any(!nzchar(descriptors$label)) ||
+      any(!nzchar(trimws(descriptors$label))) ||
       any(!nzchar(descriptors$unit)) || any(!nzchar(descriptors$denominator_semantics)) ||
       any(!nzchar(descriptors$descriptor_version)) ||
       any(!descriptors$direction %in% c("high", "low", "none")) ||
       any(!descriptors$completeness %in% c("dense_complete", "sparse")) ||
       any(vapply(allowed, function(x) !length(x) || anyNA(x) || anyDuplicated(x) ||
         any(!x %in% c("commune", "epci", "departement", "region")), logical(1))) ||
+      any(vapply(allowed_sources, function(x) !length(x) || anyNA(x) || anyDuplicated(x) ||
+        any(!nzchar(x)), logical(1))) ||
       any(!is.na(descriptors$comparison_facet) & !nzchar(descriptors$comparison_facet)))
     stop("Invalid or missing scalar descriptor fields", call. = FALSE)
   if (anyDuplicated(facts[c("indicator_id", "territory_id")]))
@@ -37,8 +39,6 @@ validate_scalar_projection <- function(facts, descriptors, eligible_territories 
   if (anyDuplicated(descriptors$indicator_id)) stop("Duplicate scalar descriptor", call. = FALSE)
   if (any(!facts$indicator_id %in% descriptors$indicator_id)) stop("Undeclared scalar indicator", call. = FALSE)
   descriptor <- descriptors[match(facts$indicator_id, descriptors$indicator_id), , drop = FALSE]
-  if (any(facts$source_id != descriptor$source_id))
-    stop("Scalar descriptor/source disagreement", call. = FALSE)
   levels_ok <- mapply(function(level, allowed) level %in% allowed,
                       facts$territory_type, descriptor$allowed_levels)
   if (any(!levels_ok)) stop("Scalar territory level is not eligible", call. = FALSE)
@@ -96,7 +96,8 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
   facts <- payload$indicateurs
   facts <- facts[facts$key == indicator_id & facts$type %in% page$levels, , drop=FALSE]
   if (!nrow(facts)) stop("Canonical fixture has no declared scalar facts", call. = FALSE)
-  source_id <- page$sources[[1L]]
+  source_ids <- unlist(page$sources, use.names=FALSE)
+  if (!length(source_ids)) stop("Fixture descriptor has no declared source", call. = FALSE)
   version <- as.character(facts$vintage_version)
   vintage_id <- paste(version, facts$vintage_date_reference, sep="/")
   scalar_facts <- data.frame(
@@ -104,26 +105,30 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
     territory_type=facts$type, value=facts$value,
     status=ifelse(is.na(facts$value), "not_available", "measured"),
     support_count=NA_integer_, denominator_count=NA_integer_,
-    source_id=source_id, vintage_id=vintage_id,
     stringsAsFactors=FALSE
   )
   descriptor_row <- data.frame(
-    indicator_id=indicator_id, source_id=source_id, label=page$label,
+    indicator_id=indicator_id, allowed_sources=I(list(source_ids)), label=page$label,
     unit=page$unit, direction=page$direction,
     comparison_facet=NA_character_, allowed_levels=I(list(unlist(page$levels))),
     denominator_semantics=page$calculation, completeness=completeness,
     descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE
   )
-  provenance <- unique(scalar_facts[c("indicator_id", "territory_id", "source_id", "vintage_id")])
+  provenance <- unique(data.frame(indicator_id=indicator_id,
+    territory_id=rep(scalar_facts$territory_id, each=length(source_ids)),
+    source_id=rep(source_ids, times=nrow(scalar_facts)),
+    vintage_id=rep(vintage_id, each=length(source_ids)), stringsAsFactors=FALSE))
   vintages <- unique(data.frame(
-    source_id=source_id, vintage_id=vintage_id, version=version,
-    reference_date=as.Date(facts$vintage_date_reference),
-    publication_date=as.Date(facts$vintage_date_publication),
+    source_id=rep(source_ids, times=nrow(facts)), vintage_id=rep(vintage_id, each=length(source_ids)),
+    version=rep(version, each=length(source_ids)),
+    reference_date=rep(as.Date(facts$vintage_date_reference), each=length(source_ids)),
+    publication_date=rep(as.Date(facts$vintage_date_publication), each=length(source_ids)),
     stringsAsFactors=FALSE
   ))
   list(facts=scalar_facts, descriptors=descriptor_row,
        provenance=provenance,
-       datasets=data.frame(source_id=source_id, name=unique(as.character(facts$vintage_source))[[1L]]),
+        datasets=data.frame(source_id=source_ids, name=c(unique(as.character(facts$vintage_source))[[1L]],
+          rep(source_ids[-1L], length.out=max(0L,length(source_ids)-1L))), stringsAsFactors=FALSE),
        vintages=vintages,
        eligible_territories=payload$territoires[payload$territoires$type %in% page$levels,
          c("territoire", "type"), drop=FALSE] |>
@@ -164,12 +169,13 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
           !nzchar(provenance$source_id) | !nzchar(provenance$vintage_id)) ||
       anyDuplicated(provenance[provenance_columns]) ||
       any(!paste(projection$facts$indicator_id, projection$facts$territory_id) %in%
-          paste(provenance$indicator_id, provenance$territory_id)) ||
-      any(!paste(projection$facts$indicator_id, projection$facts$territory_id,
-                 projection$facts$source_id, projection$facts$vintage_id) %in%
-          paste(provenance$indicator_id, provenance$territory_id,
-                provenance$source_id, provenance$vintage_id)))
+          paste(provenance$indicator_id, provenance$territory_id)))
     stop("Invalid or incomplete scalar provenance associations", call. = FALSE)
+  provenance_descriptors <- projection$descriptors[match(provenance$indicator_id,
+                                                projection$descriptors$indicator_id), , drop=FALSE]
+  if (any(!mapply(function(source, allowed) source %in% allowed,
+                  provenance$source_id, provenance_descriptors$allowed_sources)))
+    stop("Observation source is not permitted by its descriptor", call. = FALSE)
   datasets <- projection$datasets
   vintages <- projection$vintages
   if (!is.data.frame(datasets) || !setequal(names(datasets), c("source_id", "name")) ||
@@ -247,17 +253,24 @@ scalar_postgres_adapter <- function(con) {
                        params = unname(as.list(v[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
       }
       DBI::dbExecute(con, "DELETE FROM scalar_observation")
+      DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor")
       for (i in seq_len(nrow(descriptors))) {
         d <- descriptors[i, , drop = FALSE]
         levels <- as.character(d$allowed_levels[[1L]])
         array_sql <- paste0("ARRAY[", paste(vapply(levels, quote_value, character(1)), collapse=","), "]::text[]")
-        fields <- c("indicator_id", "source_id", "label", "unit", "direction",
+        fields <- c("indicator_id", "label", "unit", "direction",
                     "comparison_facet", "denominator_semantics", "completeness", "descriptor_version")
         values <- vapply(fields, function(field) quote_value(d[[field]][[1L]]), character(1))
         sql <- paste0("INSERT INTO scalar_descriptor(", paste(fields, collapse=","), ",allowed_levels) VALUES (",
           paste(c(values, array_sql), collapse=","), ")")
         DBI::dbExecute(con, sql)
+        allowed_sources <- as.character(d$allowed_sources[[1L]])
+        for (source_id in allowed_sources) {
+          DBI::dbExecute(con,
+            "INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES($1,$2)",
+            params=list(d$indicator_id[[1L]], source_id))
+        }
       }
       DBI::dbWriteTable(con, "scalar_observation", facts, append = TRUE, row.names = FALSE)
       DBI::dbWriteTable(con, "scalar_observation_source", provenance, append = TRUE, row.names = FALSE)

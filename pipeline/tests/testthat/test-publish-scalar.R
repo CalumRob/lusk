@@ -4,8 +4,8 @@ test_that("scalar publisher validates registered canonical fixture facts", {
   expect_equal(nrow(fixture_fact), 1L)
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=fixture_fact$value[[1L]], status="measured", support_count=1L,
-    denominator_count=1L, source_id="fixture", vintage_id="2024")
-  descriptors <- data.frame(indicator_id="fixture_scalar", source_id="fixture", label="Fixture",
+    denominator_count=1L)
+  descriptors <- data.frame(indicator_id="fixture_scalar", allowed_sources=I(list("fixture")), label="Fixture",
     unit="count", direction="high", comparison_facet=NA_character_,
     allowed_levels=I(list("commune")), denominator_semantics="units",
     completeness="sparse", descriptor_version="1")
@@ -20,9 +20,9 @@ test_that("scalar publisher validates registered canonical fixture facts", {
   expect_error(validate_scalar_projection(facts, invalid_descriptor), "descriptor fields")
   invalid_descriptor <- descriptors; invalid_descriptor$allowed_levels <- I(list("unknown"))
   expect_error(validate_scalar_projection(facts, invalid_descriptor), "descriptor fields")
-  descriptors$source_id <- "other"
-  expect_error(validate_scalar_projection(facts, descriptors), "source disagreement")
-  descriptors$source_id <- "fixture"
+  descriptors$allowed_sources <- I(list(character()))
+  expect_error(validate_scalar_projection(facts, descriptors), "descriptor fields")
+  descriptors$allowed_sources <- I(list("fixture"))
   dense <- descriptors; dense$completeness <- "dense_complete"
   eligible <- data.frame(territory_id=c("22001", "22002"),
                          territory_type=c("commune", "commune"))
@@ -38,8 +38,8 @@ test_that("scalar publisher validates registered canonical fixture facts", {
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=0, status="measured", support_count=1L,
-    denominator_count=1L, source_id="fixture", vintage_id="2024")
-  descriptors <- data.frame(indicator_id="fixture_scalar", source_id="fixture", label="Fixture",
+    denominator_count=1L)
+  descriptors <- data.frame(indicator_id="fixture_scalar", allowed_sources=I(list(c("fixture", "fixture_secondary"))), label="Fixture",
     unit="count", direction="high", comparison_facet=NA_character_,
     allowed_levels=I(list("commune")), denominator_semantics="units",
     completeness="sparse", descriptor_version="1")
@@ -96,7 +96,7 @@ test_that("registered publisher versions independently, retries DB-behind-local,
   marker <- state$markers$scalar_observation
   expect_false(publish_registered_scalar(registry, "fixture", list(value=0), db)$changed)
   bad_provenance_registry <- register_scalar_publisher(list(), "bad-provenance",
-    project=function(x) { p <- projection(x); p$provenance$vintage_id[[2]] <- NA_character_; p },
+    project=function(x) { p <- projection(x); p$provenance$vintage_id[[1]] <- NA_character_; p },
     function(value, db, version) db$replace(value, version))
   expect_error(publish_registered_scalar(bad_provenance_registry, "bad-provenance", list(value=0), db),
                "provenance associations")
@@ -147,18 +147,18 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
   expected_facts <- data.frame(indicator_id="densite", territory_id=expected$territoire,
     territory_type=expected$type, value=expected$value,
     status=ifelse(is.na(expected$value), "not_available", "measured"),
-    support_count=NA_integer_, denominator_count=NA_integer_, source_id=source_id,
-    vintage_id=vintage_id, stringsAsFactors=FALSE)
+    support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
   expect_equal(projected$facts, expected_facts)
   expect_equal(projected$provenance,
-    unique(expected_facts[c("indicator_id", "territory_id", "source_id", "vintage_id")]))
+    unique(data.frame(indicator_id="densite", territory_id=expected$territoire,
+      source_id=source_id, vintage_id=vintage_id)))
   expect_equal(projected$descriptors$label, metadata$indicator_pages$densite$label)
   expect_equal(projected$descriptors$unit, metadata$indicator_pages$densite$unit)
   expect_equal(projected$descriptors$direction, metadata$indicator_pages$densite$direction)
   expect_equal(projected$descriptors$allowed_levels[[1]], unlist(metadata$indicator_pages$densite$levels))
   expect_equal(projected$descriptors$denominator_semantics,
                metadata$indicator_pages$densite$calculation)
-  expect_equal(projected$descriptors$source_id, source_id)
+  expect_equal(projected$descriptors$allowed_sources[[1]], source_id)
   expect_identical(projected$descriptors$completeness, "dense_complete")
   expect_equal(projected$datasets,
     data.frame(source_id=source_id, name=unique(as.character(expected$vintage_source))[[1L]]))

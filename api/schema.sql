@@ -28,7 +28,6 @@ CREATE TABLE source_vintage (
 );
 CREATE TABLE scalar_descriptor (
     indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
-    source_id text NOT NULL REFERENCES source_dataset(source_id),
     label text NOT NULL CHECK (length(label) BETWEEN 1 AND 200),
     unit text NOT NULL,
     direction text NOT NULL CHECK (direction IN ('high', 'low', 'none')),
@@ -39,6 +38,27 @@ CREATE TABLE scalar_descriptor (
     completeness text NOT NULL CHECK (completeness IN ('dense_complete','sparse')),
     descriptor_version text NOT NULL
 );
+CREATE TABLE scalar_descriptor_source (
+    indicator_id text NOT NULL REFERENCES scalar_descriptor(indicator_id) ON DELETE CASCADE,
+    source_id text NOT NULL REFERENCES source_dataset(source_id),
+    PRIMARY KEY (indicator_id, source_id)
+);
+CREATE FUNCTION assert_scalar_descriptor_sources() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE key text;
+BEGIN
+  key := COALESCE(NEW.indicator_id, OLD.indicator_id);
+  IF EXISTS (SELECT 1 FROM scalar_descriptor d WHERE d.indicator_id=key)
+     AND NOT EXISTS (SELECT 1 FROM scalar_descriptor_source s WHERE s.indicator_id=key) THEN
+    RAISE EXCEPTION 'scalar descriptor must declare at least one source dataset';
+  END IF;
+  RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER scalar_descriptor_requires_sources
+AFTER INSERT OR UPDATE ON scalar_descriptor DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION assert_scalar_descriptor_sources();
+CREATE CONSTRAINT TRIGGER scalar_descriptor_source_set_not_empty
+AFTER INSERT OR UPDATE OR DELETE ON scalar_descriptor_source DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION assert_scalar_descriptor_sources();
 
 -- The access descriptor is part of the validated access publication, not a
 -- renderer constant. It is updated atomically with the access table marker.
@@ -66,10 +86,7 @@ CREATE TABLE scalar_observation (
     status text NOT NULL CHECK (status IN ('measured','suppressed','unsupported','not_available')),
     support_count bigint CHECK (support_count IS NULL OR support_count >= 0),
     denominator_count bigint CHECK (denominator_count IS NULL OR denominator_count >= 0),
-    source_id text NOT NULL,
-    vintage_id text NOT NULL,
     PRIMARY KEY (indicator_id, territory_id),
-    FOREIGN KEY (source_id, vintage_id) REFERENCES source_vintage(source_id, vintage_id),
     CHECK ((status = 'measured' AND value IS NOT NULL AND value NOT IN ('Infinity'::float8, '-Infinity'::float8, 'NaN'::float8))
         OR (status <> 'measured' AND value IS NULL)),
     CHECK (denominator_count IS NULL OR support_count IS NULL OR denominator_count >= support_count)
@@ -81,25 +98,36 @@ CREATE TABLE scalar_observation_source (
     vintage_id text NOT NULL,
     PRIMARY KEY (indicator_id, territory_id, source_id, vintage_id),
     FOREIGN KEY (indicator_id, territory_id) REFERENCES scalar_observation(indicator_id, territory_id) ON DELETE CASCADE,
-    FOREIGN KEY (source_id, vintage_id) REFERENCES source_vintage(source_id, vintage_id)
+    FOREIGN KEY (source_id, vintage_id) REFERENCES source_vintage(source_id, vintage_id),
+    FOREIGN KEY (indicator_id, source_id) REFERENCES scalar_descriptor_source(indicator_id, source_id)
 );
-CREATE FUNCTION assert_scalar_source_link() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION assert_scalar_observation_has_source() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE indicator text; territory text;
 BEGIN
- IF NOT EXISTS (SELECT 1 FROM scalar_observation_source s WHERE
-   s.indicator_id=NEW.indicator_id AND s.territory_id=NEW.territory_id
-   AND s.source_id=NEW.source_id AND s.vintage_id=NEW.vintage_id) THEN
-   RAISE EXCEPTION 'scalar observation lacks its declared source-vintage link';
+ IF TG_OP = 'DELETE' THEN
+   indicator := OLD.indicator_id; territory := OLD.territory_id;
+ ELSE
+   indicator := NEW.indicator_id; territory := NEW.territory_id;
  END IF;
- RETURN NEW;
+ IF EXISTS (SELECT 1 FROM scalar_observation o WHERE
+   o.indicator_id=indicator AND o.territory_id=territory)
+   AND NOT EXISTS (SELECT 1 FROM scalar_observation_source s WHERE
+     s.indicator_id=indicator AND s.territory_id=territory) THEN
+   RAISE EXCEPTION 'scalar observation lacks a source-vintage association';
+ END IF;
+ RETURN NULL;
 END $$;
 CREATE CONSTRAINT TRIGGER scalar_observation_source_required
 AFTER INSERT OR UPDATE ON scalar_observation DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION assert_scalar_source_link();
+FOR EACH ROW EXECUTE FUNCTION assert_scalar_observation_has_source();
+CREATE CONSTRAINT TRIGGER scalar_observation_source_not_empty
+AFTER INSERT OR UPDATE OR DELETE ON scalar_observation_source DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION assert_scalar_observation_has_source();
 CREATE FUNCTION assert_scalar_levels() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM scalar_descriptor d
     WHERE d.indicator_id = NEW.indicator_id AND NEW.territory_type = ANY(d.allowed_levels)
-      AND d.source_id = NEW.source_id)
+      )
     OR NOT EXISTS (SELECT 1 FROM territory_reference t
       WHERE t.territory_id = NEW.territory_id AND t.territory_type = NEW.territory_type) THEN
     RAISE EXCEPTION 'scalar descriptor/territory level mismatch';
@@ -111,7 +139,7 @@ FOR EACH ROW EXECUTE FUNCTION assert_scalar_levels();
 CREATE FUNCTION assert_scalar_descriptor_update() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
  IF EXISTS (SELECT 1 FROM scalar_observation o WHERE o.indicator_id=OLD.indicator_id
-   AND (o.source_id <> NEW.source_id OR NOT (o.territory_type = ANY(NEW.allowed_levels)))) THEN
+   AND NOT (o.territory_type = ANY(NEW.allowed_levels))) THEN
    RAISE EXCEPTION 'descriptor update invalidates published scalar observations';
  END IF;
  RETURN NEW;
