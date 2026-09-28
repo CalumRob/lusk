@@ -31,3 +31,5 @@ def test_operator_guide_requires_backup_and_rehearsal_and_rejects_down_script_cl
     assert "external" in guide and "grants" in guide
     assert "there is intentionally no down migration" in guide
     assert "do not apply this migration" in guide
+    assert "--file api/migrations/009_retire_dataset_publication.sql" in guide
+    assert "do **not** add `--single-transaction`" in guide

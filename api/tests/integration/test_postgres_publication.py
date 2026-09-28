@@ -448,6 +448,20 @@ def test_migration_009_rehearses_guarded_retirement_in_owned_random_schema():
             assert connection.execute("SELECT to_regclass('dataset_publication')").fetchone()[0] is None
             assert connection.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
             assert connection.execute("SELECT territory_id FROM territory_reference").fetchone()[0] == "fixture"
+            # Schema-level simulation of the supported per-table publication
+            # contract (not execution of the R publisher): replace a reference
+            # fact and its marker together, then verify the read-only role sees
+            # only the committed new version and fact.
+            with connection.transaction():
+                connection.execute("UPDATE territory_reference SET territory_id='fixture-v2' WHERE territory_id='fixture'")
+                connection.execute("UPDATE table_publication SET content_version='active-v2' WHERE table_name='territory_reference'")
+            with psycopg.connect(reader_dsn, autocommit=True) as reader:
+                published = reader.execute("""SELECT p.content_version, t.territory_id
+                    FROM table_publication p JOIN territory_reference t ON true
+                    WHERE p.table_name='territory_reference'""").fetchone()
+                assert published == ("active-v2", "fixture-v2")
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    reader.execute("UPDATE table_publication SET content_version='forbidden'")
             with pytest.raises(psycopg.errors.RaiseException, match="expected .*dataset_publication"):
                 run(connection)
         finally:

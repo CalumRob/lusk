@@ -28,17 +28,22 @@ closed; it cannot discover external consumers.
 The opt-in test `test_migration_009_rehearses_guarded_retirement_in_owned_random_schema`
 executes the actual migration file in a random, test-role-owned `it_<20 hex>`
 schema only. It checks the unexpected-column guard, dependent-FK atomic failure,
-successful removal, and reads plus denied writes for the active read-only marker
-role. The script has no path to `public` in this database; do not weaken the
+successful removal, then a schema-level simulated per-table fact/marker update
+and read-after-commit through the active read-only role (this is not execution
+of the R publisher). It also verifies denied writes for that role. The script
+has no path to `public` in this database; do not weaken the
 production `lusk.public` guard to make a rehearsal pass. Current
 `table_publication` and `territory_reference` data must survive. For operational
 rehearsal, restore recent data to a disposable database and verify publication
 and reads before proceeding.
 5. Obtain explicit operator approval after recording rehearsal output, backup
-verification, dependency inventory, and maintenance window. Run once with
-`psql -X --set ON_ERROR_STOP=on --single-transaction` against the approved
-database. 009 also owns its transaction and has a five-second lock timeout; use
-the script as written and abort on any error.
+   verification, dependency inventory, and maintenance window. Run once with
+   `psql -X --set ON_ERROR_STOP=on --file api/migrations/009_retire_dataset_publication.sql "$APPROVED_DSN"`.
+   Do **not** add `--single-transaction`: migration 009 owns the transaction
+   with its in-file `BEGIN`/`COMMIT` and five-second lock timeout. On any SQL
+   error, `ON_ERROR_STOP` terminates psql; disconnect rolls back the still-open
+   transaction, so the drop cannot partially commit. Investigate and abort on
+   any error rather than retrying blindly.
 
 There is intentionally no down migration. Reversal means restore the verified
 backup (or explicitly recreate the relation from that backup), then restore

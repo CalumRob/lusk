@@ -133,6 +133,9 @@ after an injected insert failure.
 The shared-scalar migration/read tests are selected with `-k shared_scalar`.
 Run the guarded migration rehearsal with `-k migration_009`; the configured
 publisher and reader DSNs must both target `lusk_it_contract`. The test creates
-and cleans up a random `it_*` schema only. The operator must still perform the
-separate restored-database rehearsal and approval in `api/migrations/README.md`
-before any live migration.
+and cleans up a random `it_*` schema only. After the actual retirement script,
+it simulates a supported per-table fact/marker transaction in that schema and
+checks the read-only role sees its committed update; this is schema-level
+contract evidence, not a run of the R publisher. The operator must still perform
+the separate restored-database rehearsal and approval in
+`api/migrations/README.md` before any live migration.
