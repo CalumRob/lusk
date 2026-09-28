@@ -101,6 +101,15 @@ def _create_prior_publication(connection):
       ('territory_reference','ref-old',1),('building_ramp','ramp-old',1),('building_grid','grid-old',1)""")
 
 
+def _seed_fresh_reference(connection):
+    """Seed the canonical territory identity and its independent publication marker."""
+    connection.execute("""INSERT INTO territory_reference
+      (territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label)
+      VALUES ('A','commune','Alpha','29','E1','D1','Centres urbains')""")
+    connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+      VALUES ('territory_reference','ref-fixture-v1',1)""")
+
+
 def _publish_fixture(connection, version: str):
     contracts = _contracts()
     connection.execute("INSERT INTO source_dataset VALUES ('snapshot','Canonical fixture source') ON CONFLICT DO NOTHING")
@@ -152,6 +161,7 @@ def test_building_descriptor_constraints_and_atomic_refresh(building_db_env, lay
         with psycopg.connect(scoped, autocommit=True) as connection:
             if layout == "fresh":
                 connection.execute(schema_sql)
+                _seed_fresh_reference(connection)
             else:
                 connection.execute(_previous_layout_sql())
                 _create_prior_publication(connection)
