@@ -41,7 +41,8 @@ def test_profile_endpoint_is_bounded_and_uses_independent_marker():
     sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
     assert "table_name='declared_profile'" in sql
     assert "profile_observation" in sql and "profile_axis" in sql
-    assert "ORDER BY d.ordinal,s.ordinal" in sql
+    assert "LEFT JOIN profile_axis d" in sql and "LEFT JOIN profile_axis s" in sql
+    assert "ORDER BY d.ordinal NULLS LAST,s.ordinal NULLS LAST" in sql
     assert "territory_id=%s AND o.territory_type=%s" in sql
     assert "fallback" not in sql.lower()
 
@@ -74,13 +75,17 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
         def fetchall(self): return self.rows
 
     class Conn:
-        def __init__(self, incomplete=False, stale=False): self.incomplete = incomplete; self.stale = stale; self.queries = []
+        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False):
+            self.incomplete = incomplete; self.stale = stale; self.bad_facet = bad_facet
+            self.undeclared = undeclared; self.bad_direction = bad_direction; self.queries = []
         @contextmanager
         def transaction(self): yield
         def execute(self, sql, params=None):
             self.queries.append(sql)
             if "table_publication" in sql: return Cursor([("profile-v1", 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
-            if "profile_descriptor" in sql: return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1", "<15", "F", "high")])
+            if "profile_descriptor" in sql:
+                return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1",
+                    "outside" if self.bad_facet else "<15", "F", "sideways" if self.bad_direction else "high")])
             if "SELECT axis_name" in sql:
                 return Cursor([("detail", "<15", "Moins de 15 ans", 0), ("detail", "80+", "80 ans et plus", 1), ("sex", "F", "F", 0), ("sex", "M", "M", 1)])
             if "SELECT DISTINCT sd.source_id" in sql: return Cursor([("age_detail", "INSEE fixture", "2023", "2023-01-01", None)])
@@ -88,10 +93,12 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
                 return Cursor([("22001", "Fixture", .2, "measured"), ("22002", "Other", .1, "measured")])
             rows = [("commune", "<15", "F", .2, "measured"), ("commune", "<15", "M", .2, "measured"),
                     ("commune", "80+", "F", .1, "measured"), ("commune", "80+", "M", .1, "measured")]
+            if self.undeclared: rows.append(("commune", "outside", "F", .3, "measured"))
             return Cursor(rows[:-1] if self.incomplete else rows)
 
     class Connections:
-        def __init__(self, incomplete=False, stale=False): self.conn = Conn(incomplete, stale)
+        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False):
+            self.conn = Conn(incomplete, stale, bad_facet, undeclared, bad_direction)
         @contextmanager
         def connection(self): yield self.conn
     repo = SimpleNamespace(connections=Connections())
@@ -104,6 +111,15 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
     assert [row["value"] for row in result["comparison"]["values"]] == [.2, .1]
     with __import__("pytest").raises(HTTPException) as error:
         declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(True)))
+    assert error.value.status_code == 503
+    with __import__("pytest").raises(HTTPException) as error:
+        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(bad_facet=True)))
+    assert error.value.status_code == 503
+    with __import__("pytest").raises(HTTPException) as error:
+        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(bad_direction=True)))
+    assert error.value.status_code == 503
+    with __import__("pytest").raises(HTTPException) as error:
+        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(undeclared=True)))
     assert error.value.status_code == 503
     with __import__("pytest").raises(HTTPException) as error:
         declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(stale=True)))

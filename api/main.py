@@ -576,6 +576,8 @@ def declared_profile(
                 (indicator_id,)).fetchone()
             if descriptor is None or territory_type not in descriptor[2]:
                 raise HTTPException(404, "Declared profile is unavailable")
+            if (not descriptor[5] or not descriptor[6] or descriptor[7] not in ("high", "low")):
+                raise HTTPException(503, "Profile comparison descriptor is invalid")
             if comparison_scope_id is not None and (territory_type != "commune" or comparison_scope == "bretagne"):
                 raise HTTPException(422, "Comparison scope identifier is not valid for this level")
             department_id = comparison_scope_id if comparison_scope == "departement" else None
@@ -589,13 +591,19 @@ def declared_profile(
                     len({(axis[0],axis[1]) for axis in axes}) != len(axes) or
                     len({(axis[0],axis[3]) for axis in axes}) != len(axes)):
                 raise HTTPException(503, "Profile descriptor axes are invalid")
+            detail_keys = {axis[1] for axis in axes if axis[0] == "detail"}
+            sex_keys = {axis[1] for axis in axes if axis[0] == "sex"}
+            if descriptor[5] not in detail_keys or descriptor[6] not in sex_keys:
+                raise HTTPException(503, "Profile comparison facet is not declared by its axes")
             rows = conn.execute(
-                "SELECT o.territory_type,o.detail_key,o.sex_key,o.value,o.status FROM profile_observation o JOIN profile_axis d ON d.indicator_id=o.indicator_id AND d.axis_name='detail' AND d.axis_key=o.detail_key JOIN profile_axis s ON s.indicator_id=o.indicator_id AND s.axis_name='sex' AND s.axis_key=o.sex_key WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s ORDER BY d.ordinal,s.ordinal",
+                "SELECT o.territory_type,o.detail_key,o.sex_key,o.value,o.status FROM profile_observation o LEFT JOIN profile_axis d ON d.indicator_id=o.indicator_id AND d.axis_name='detail' AND d.axis_key=o.detail_key LEFT JOIN profile_axis s ON s.indicator_id=o.indicator_id AND s.axis_name='sex' AND s.axis_key=o.sex_key WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s ORDER BY d.ordinal NULLS LAST,s.ordinal NULLS LAST",
                 (indicator_id, territory_id, territory_type)).fetchall()
             expected = sum(1 for axis in axes if axis[0] == 'detail') * sum(1 for axis in axes if axis[0] == 'sex')
             if not rows:
                 raise HTTPException(404, "Profile territory is absent")
-            if len(rows) != expected:
+            coordinates = [(row[1], row[2]) for row in rows]
+            if (len(rows) != expected or len(set(coordinates)) != len(coordinates) or
+                    any(detail not in detail_keys or sex not in sex_keys for detail, sex in coordinates)):
                 raise HTTPException(503, "Profile publication is incomplete")
             sources = conn.execute(
                 """SELECT DISTINCT sd.source_id,sd.name,sv.version,sv.reference_date,sv.publication_date

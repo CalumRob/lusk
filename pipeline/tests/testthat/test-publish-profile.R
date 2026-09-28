@@ -1,7 +1,8 @@
 test_that("dense profile validator rejects incomplete, duplicate, and undeclared cells", {
   axes <- data.frame(axis_name = c("detail", "detail", "sex", "sex"),
     axis_key = c("a", "b", "F", "M"), label = c("A", "B", "Femmes", "Hommes"), ordinal = c(0L,1L,0L,1L))
-  descriptor <- list(levels = "commune", details = c("a", "b"), sexes = c("F", "M"))
+  descriptor <- list(levels = "commune", details = c("a", "b"), sexes = c("F", "M"),
+    comparison_detail = "a", comparison_sex = "F", comparison_direction = "high")
   facts <- expand.grid(territory_id = "x", territory_type = "commune", detail = c("a", "b"), sex = c("F", "M"), stringsAsFactors = FALSE)
   facts$value <- 0.25
   facts$status <- "measured"
@@ -10,6 +11,16 @@ test_that("dense profile validator rejects incomplete, duplicate, and undeclared
   expect_error(validate_declared_profile(rbind(facts, facts[1, ]), descriptor, axes), "Duplicate")
   facts$detail[1] <- "outside"
   expect_error(validate_declared_profile(facts, descriptor, axes), "Undeclared")
+  facts$detail[1] <- "a"
+  bad_facet <- descriptor
+  bad_facet$comparison_detail <- "outside"
+  expect_error(validate_declared_profile(facts, bad_facet, axes), "comparison facet")
+  bad_facet <- descriptor
+  bad_facet$comparison_sex <- "X"
+  expect_error(validate_declared_profile(facts, bad_facet, axes), "comparison facet")
+  bad_facet <- descriptor
+  bad_facet$comparison_direction <- "none"
+  expect_error(validate_declared_profile(facts, bad_facet, axes), "comparison facet")
 })
 
 test_that("structure_age projection uses canonical fixture and descriptor order", {
@@ -22,7 +33,12 @@ test_that("structure_age projection uses canonical fixture and descriptor order"
   canonical_rows <- canonical[canonical$key == "structure_age" & canonical$type %in% unlist(metadata$indicator_pages$structure_age$levels), , drop=FALSE]
   expect_equal(nrow(profile$facts), nrow(canonical_rows))
   expect_equal(profile$facts$value, canonical_rows$value)
+  expect_identical(profile$facts$status, ifelse(is.na(canonical_rows$value), "not_available", "measured"))
   expect_setequal(unique(profile$facts$territory_type), unlist(metadata$indicator_pages$structure_age$levels))
+  canonical$value[which(canonical$key == "structure_age")[[1L]]] <- NA_real_
+  unavailable <- project_structure_age_profile(canonical, metadata)
+  expect_equal(sum(unavailable$facts$status == "not_available"), 1L)
+  expect_true(is.na(unavailable$facts$value[unavailable$facts$status == "not_available"][[1L]]))
 })
 
 test_that("profile publisher keeps the committed version when replacement fails", {

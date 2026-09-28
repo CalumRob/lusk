@@ -18,6 +18,13 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
       !identical(as.integer(sexes$ordinal), seq_along(descriptor$sexes) - 1L) ||
       anyDuplicated(axes[c("axis_name", "axis_key")]) || anyDuplicated(axes[c("axis_name", "ordinal")]))
     stop("Profile axes differ from declared metadata", call. = FALSE)
+  if (length(descriptor$comparison_detail) != 1L || is.na(descriptor$comparison_detail) ||
+      !descriptor$comparison_detail %in% details$axis_key ||
+      length(descriptor$comparison_sex) != 1L || is.na(descriptor$comparison_sex) ||
+      !descriptor$comparison_sex %in% sexes$axis_key ||
+      length(descriptor$comparison_direction) != 1L ||
+      !descriptor$comparison_direction %in% c("high", "low"))
+    stop("Profile comparison facet differs from declared axes or direction", call. = FALSE)
   key <- paste(facts$territory_type, facts$territory_id, facts$detail, facts$sex, sep = "\r")
   if (anyDuplicated(key)) stop("Duplicate profile coordinate", call. = FALSE)
   if (any(!facts$detail %in% descriptor$details) || any(!facts$sex %in% descriptor$sexes))
@@ -60,6 +67,10 @@ project_structure_age_profile <- function(indicateurs, metadata, territoires = N
   facts <- indicateurs[indicateurs$key == "structure_age" & indicateurs$type %in% unlist(page$levels), , drop = FALSE]
   projected <- data.frame(territory_id = facts$territoire, territory_type = facts$type,
     detail = facts$detail, sex = facts$sex, value = facts$value,
+    # The canonical structure_age contract is a numeric value or NA only:
+    # indicator_structure_age() computes effectif/population and carries no
+    # suppression/unsupported reason. NA therefore has the declared
+    # not_available meaning; do not infer finer-grained status distinctions.
     status = ifelse(is.na(facts$value), "not_available", "measured"), stringsAsFactors = FALSE)
   descriptor <- list(levels = unlist(page$levels), details = details, sexes = sexes,
     label = page$label, unit = page$unit, source = unlist(page$sources),
