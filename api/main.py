@@ -9,7 +9,7 @@ import unicodedata
 from statistics import median
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from psycopg_pool import ConnectionPool
 
@@ -548,6 +548,36 @@ def compare(data: dict) -> ComparisonResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
+def scalar_observation(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    territory_id: str = Path(min_length=1, max_length=32),
+    indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Read one declared scalar and its lineage/version from one DB snapshot."""
+    with repository.connections.connection() as conn:
+        with conn.transaction(isolation_level="repeatable read", read_only=True):
+            row = conn.execute(
+                """SELECT o.indicator_id, o.territory_id, o.territory_type,
+                          o.value, o.status, o.support_count, o.denominator_count,
+                          d.label, d.unit, d.direction, d.comparison_facet,
+                          o.source_id, s.name AS source_name, v.version,
+                          v.reference_date, v.publication_date, p.content_version
+                   FROM scalar_observation o
+                   JOIN scalar_descriptor d USING (indicator_id)
+                   JOIN source_dataset s USING (source_id)
+                   JOIN source_vintage v USING (source_id, vintage_id)
+                   JOIN table_publication p ON p.table_name = 'scalar_observation'
+                   WHERE o.indicator_id = %s AND o.territory_id = %s
+                     AND o.territory_type = %s AND o.territory_type = ANY(d.allowed_levels)""",
+                (indicator_id, territory_id, territory_type),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(404, "Declared scalar observation is unavailable")
+            return dict(row)
 
 
 @app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)
