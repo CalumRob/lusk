@@ -7,6 +7,7 @@ name are supplied. Each run owns a fresh schema; public is never modified.
 from __future__ import annotations
 
 import json
+import concurrent.futures
 import os
 import re
 import uuid
@@ -388,6 +389,117 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert region_response.json()['comparison']['scope']['territory_type'] == 'region'
             assert region_response.json()['comparison']['rank'] == 1
         finally:
+            if previous is None:
+                main.app.dependency_overrides.pop(main.get_repository, None)
+            else:
+                main.app.dependency_overrides[main.get_repository] = previous
+            pool.close()
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
+    """Pause after the marker read while a second complete publication commits."""
+    from contextlib import contextmanager
+    import threading
+
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    publish_dsn, read_dsn = _configuration()
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    marker_read = threading.Event()
+    continue_read = threading.Event()
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        reader_role = urlsplit(read_dsn).username
+        if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+            pytest.fail("Read DSN must identify a simple PostgreSQL role name")
+        quoted_role = '"' + reader_role.replace('"', '""') + '"'
+        with psycopg.connect(scoped_publish, autocommit=True) as publisher:
+            publisher.execute(schema_path.read_text(encoding="utf-8"))
+            publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59791','commune','Snapshot focal','22','e1'),('59792','commune','Snapshot peer','22','e1')")
+            publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('snapshot_fixture','Snapshot fixture')")
+            publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('snapshot_fixture','v1','2026-01','2025-01-01','2026-02-01')")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('snapshot_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune'],'Snapshot annual','ha','low','snapshot_fixture','v1','descriptor-v1')""")
+            publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('snapshot_annual','59791','commune','2022','2022',0,'measured','snapshot_fixture','v1'),
+                ('snapshot_annual','59791','commune','2024','2024',2,'measured','snapshot_fixture','v1'),
+                ('snapshot_annual','59792','commune','2024','2024',1,'measured','snapshot_fixture','v1')""")
+            publisher.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+                VALUES ('territory_reference','territory-snapshot-v1',2)
+                ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
+            publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-snapshot-v1',3,'territory-snapshot-v1')")
+
+        pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
+                              kwargs={"autocommit": True})
+
+        class ConnectionProxy:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, query, *args, **kwargs):
+                result = self.connection.execute(query, *args, **kwargs)
+                if isinstance(query, str) and "FROM table_publication s LEFT JOIN" in query:
+                    marker_read.set()
+                    if not continue_read.wait(timeout=15):
+                        raise TimeoutError("publication snapshot test barrier was not released")
+                return result
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        class PausingPool:
+            @contextmanager
+            def connection(self):
+                with pool.connection() as connection:
+                    yield ConnectionProxy(connection)
+
+        previous = main.app.dependency_overrides.get(main.get_repository)
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(PausingPool())
+        try:
+            with TestClient(main.app) as client:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as requests:
+                    pending = requests.submit(client.get,
+                        "/api/territories/commune/59791/series/snapshot_annual")
+                    assert marker_read.wait(timeout=10), "API did not reach the publication-marker barrier"
+                    with psycopg.connect(scoped_publish) as publisher:
+                        with publisher.transaction():
+                            publisher.execute("UPDATE series_descriptor SET descriptor_version='descriptor-v2' WHERE indicator_id='snapshot_annual'")
+                            publisher.execute("UPDATE source_vintage SET version='2026-02' WHERE source_id='snapshot_fixture' AND vintage_id='v1'")
+                            publisher.execute("UPDATE ordered_series SET value=9 WHERE indicator_id='snapshot_annual' AND territory_id='59791' AND axis_value='2024'")
+                            publisher.execute("UPDATE table_publication SET content_version='series-snapshot-v2',row_count=3 WHERE table_name='ordered_series'")
+                    continue_read.set()
+                    response = pending.result(timeout=20)
+                assert response.status_code == 200, response.text
+                old = response.json()
+                assert old["publication_id"] == "series-snapshot-v1"
+                assert old["descriptor_version"] == "descriptor-v1"
+                assert old["points"][2]["value"] == 2
+                assert old["points"][2]["source_version"] == "2026-01"
+
+                # A new request must see the next committed snapshot, proving
+                # the paused response was consistently old, not stale forever.
+                current = client.get("/api/territories/commune/59791/series/snapshot_annual")
+                assert current.status_code == 200, current.text
+                new = current.json()
+                assert new["publication_id"] == "series-snapshot-v2"
+                assert new["descriptor_version"] == "descriptor-v2"
+                assert new["points"][2]["value"] == 9
+                assert new["points"][2]["source_version"] == "2026-02"
+        finally:
+            continue_read.set()
             if previous is None:
                 main.app.dependency_overrides.pop(main.get_repository, None)
             else:
