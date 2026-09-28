@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'ordered_series')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT scalar_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','ordered_series') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL)
 );
 
 -- Shared scalar foundation. Descriptors own the allowed territory levels and

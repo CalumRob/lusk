@@ -3,10 +3,11 @@ BEGIN;
 ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check;
 ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check
  CHECK (table_name IN ('territory_reference','service_registry','essential_service_access',
-   'building_ramp','building_grid','scalar_observation','ordered_series'));
+   'building_ramp','building_grid','scalar_observation','declared_profile','ordered_series'));
+ALTER TABLE table_publication DROP CONSTRAINT profile_publication_requires_reference;
 ALTER TABLE table_publication DROP CONSTRAINT scalar_publication_requires_reference;
 ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_reference
- CHECK (table_name NOT IN ('scalar_observation','ordered_series') OR reference_content_version IS NOT NULL);
+ CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL);
 CREATE TABLE series_descriptor (
  indicator_id text PRIMARY KEY CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
  axis_kind text NOT NULL CHECK(axis_kind='year'),
