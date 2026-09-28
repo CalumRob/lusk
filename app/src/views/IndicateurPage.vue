@@ -21,11 +21,11 @@ import { ancreSource, datasetDeSource } from '@/methodes/sources'
 import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
 import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
-import { fusionnerFacette, queryCanonique, resoudreEtatUrl } from '@/indicateurs/etatUrl'
+import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError } from '@/payload/validate'
+import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
-import type { Indicateur } from '@/payload/types'
-import type { ThemeMetadata } from '@/payload/types'
+import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -46,6 +46,12 @@ const niveauMemorise = ref<string | undefined>(localStorage.getItem('lusk:niveau
 // portés, lus et validés UNE fois par le contrat d'exploration.
 const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
+// Cutover is an operator-controlled build setting. Keep static behavior until
+// the serving schema/API are deployed and explicitly enabled together.
+const orderedSeriesApiEnabled = import.meta.env.VITE_CONSO_ENAF_SERIES_API === '1'
+const orderedSeriesAdapter = computed(() => orderedSeriesApiEnabled
+  ? orderedSeriesAdapterFor(theme.value, indicator.value)
+  : null)
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
 const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
@@ -171,17 +177,67 @@ watch(
   },
   { immediate: true },
 )
-const payload = computed(() =>
-  profilAgeApi
+
+const serieLecture = ref<OrderedSeriesRead | null>(null)
+const serieErreur = ref(false)
+const serieChargement = ref(false)
+let serieRequete = 0
+let serieRequestKey: string | null = null
+const niveauSerie = computed(() => resoudreNiveau(porte.value.niveau, niveauMemorise.value,
+  payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels ?? ['commune']))
+async function chargerSerie(force = false) {
+  const adapter = orderedSeriesAdapter.value
+  if (!adapter || !payloadLegacy.value.territoires.length) return
+  const scope = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels,
+    niveauMemorise: niveauMemorise.value }).scopeValide
+  const department = scope?.departement
+  const epci = scope?.epci
+  const scopeTerritories = payloadLegacy.value.territoires.filter((territory) => territory.type === niveauSerie.value &&
+    (niveauSerie.value !== 'commune' || ((!department || territory.departement === department) &&
+      (!epci || territory.epci === epci))))
+  const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire) ?? scopeTerritories[0]
+  if (!focal) { serieErreur.value = false; serieLecture.value = null; return }
+  const request = ++serieRequete
+  const query = new URLSearchParams({ scope_level: niveauSerie.value })
+  if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
+  if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
+  const url = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
+  if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
+  serieRequestKey = url
+  serieChargement.value = true
+  serieErreur.value = false
+  serieLecture.value = null
+  try {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const result = await response.json() as OrderedSeriesRead
+    if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) || !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
+    if (request === serieRequete) serieLecture.value = result
+  } catch {
+    if (request === serieRequete) serieErreur.value = true
+  } finally {
+    if (request === serieRequete) serieChargement.value = false
+  }
+}
+const payload = computed(() => {
+  const base = profilAgeApi
     ? { ...payloadLegacy.value,
         indicateurs: remplacerStructureAgeStatique(payloadLegacy.value.indicateurs, faitsProfilAge.value),
         themeMetadata: metadataStructureAgeApi.value
           ? { ...payloadLegacy.value.themeMetadata, demographie: metadataStructureAgeApi.value }
           : payloadLegacy.value.themeMetadata }
     : modeleIndicateur.value
-    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
-    : payloadLegacy.value,
-)
+      ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
+      : payloadLegacy.value
+  const adapter = orderedSeriesAdapter.value
+  if (!adapter) return base
+  const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
+  const apiFacts = serieLecture.value && page
+    ? orderedSeriesFacts(serieLecture.value, adapter.theme, base.territoires).map((fact) => ({ ...fact, unit: page.unit }))
+    : []
+  return { ...base, indicateurs: [...base.indicateurs.filter((fact) => fact.key !== adapter.indicator), ...apiFacts] }
+})
 const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
   if (profilAgeApi) return erreurProfilAge.value
@@ -228,6 +284,10 @@ const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme ===
 // les territoires publiés, les niveaux de la facette et la mémoire lue à la
 // couture ; ses watchers ci-dessous n'en appliquent que le résultat.
 const etatUrl = computed(() => resoudreEtatUrl({ query: route.query, territoires: payload.value.territoires, niveauxPublies: familyDispatch.value?.facet.levels, niveauMemorise: niveauMemorise.value }))
+watch(() => [orderedSeriesAdapter.value?.indicator, porte.value.territoire, porte.value.niveau,
+  route.query.departement, route.query.epci, niveauMemorise.value, payloadLegacy.value.territoires.length,
+  payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.indicator] as const,
+  () => { void chargerSerie() }, { immediate: true })
 const niveauRoute = computed(() => porte.value.niveau)
 const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value.scopeValide ?? {}), territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
 const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, niveauMemorise.value) : null)
@@ -336,6 +396,8 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
 </script>
 <template>
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
+    <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
+    <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
     <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
@@ -349,11 +411,10 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
           <div class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>
            <div class="controls"><label>Niveau <select :value="model!.state.niveau" @change="setQuery(PARAM_NIVEAU, ($event.target as HTMLSelectElement).value)"><option v-for="niveau in page.levels" :key="niveau" :value="niveau">{{ niveau === 'commune' ? 'Communes' : niveau === 'epci' ? 'EPCI' : 'Départements' }}</option></select></label><label v-if="model!.state.niveau === 'commune'">Département <input :value="route.query.departement ?? ''" @input="setQuery('departement', ($event.target as HTMLInputElement).value)" /></label><label v-if="model!.state.niveau === 'commune'">EPCI <input :value="route.query.epci ?? ''" @input="setQuery('epci', ($event.target as HTMLInputElement).value)" /></label><label>Rechercher <input v-model="recherche" @input="setQuery('recherche', recherche)" /></label><label v-if="familyDispatch.family === 'trajectory'">Détail (actif) <select aria-label="Détail (actif)" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ libelleDetail(detail) }}</option></select></label><label v-if="familyDispatch.family === 'list'">Catégorie comparée <select aria-label="Catégorie comparée" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ familyDispatch.facet.labels[detail] ?? detail }}</option></select></label></div>
            <table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</td><td><span :title="`${directionGlyph} ${directionText}`" :aria-label="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`">{{ formaterRang(row.rang, row.rangTaille) }}</span></td><td><button type="button" @click="setQuery(PARAM_TERRITOIRE, row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>
-         </template>
-       </RepereFamilyOutlet></main>
+          </template></RepereFamilyOutlet></main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
         <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><p v-if="horlogeService" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
-    </template>
+     </template>
   </section>
 </template>
 <style scoped>

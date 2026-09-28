@@ -7,6 +7,7 @@ name are supplied. Each run owns a fresh schema; public is never modified.
 from __future__ import annotations
 
 import json
+import concurrent.futures
 import os
 import re
 import uuid
@@ -633,21 +634,234 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         pool.close()
 
 
-def test_shared_scalar_additive_migration_rehearsal(db_env):
-    """Rehearse migration 004 in an isolated schema with the pre-594 catalog."""
+def test_ordered_series_bounded_read_comparison_and_rollback():
     import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
 
+    publish_dsn, read_dsn = _configuration()
     schema = "it_" + uuid.uuid4().hex[:20]
-    scoped = _dsn_with_schema(db_env["publish_dsn"], schema)
-    api_root = Path(__file__).resolve().parents[2]
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'CREATE SCHEMA "{schema}"')
     try:
-        with psycopg.connect(scoped, autocommit=True) as connection:
-            # Model the pre-594 catalog directly. Do not start from today's
-            # fresh-install schema and reverse-engineer extensions: later
-            # profile/scalar FKs would make that teardown depend on new objects.
-            connection.execute("""
+        reader_role = urlsplit(read_dsn).username
+        if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+            pytest.fail("Read DSN must identify a simple PostgreSQL role name")
+        quoted_role = '"' + reader_role.replace('"', '""') + '"'
+        with psycopg.connect(scoped_publish, autocommit=True) as publisher:
+            publisher.execute(schema_path.read_text(encoding="utf-8"))
+            publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59701','commune','Series focal','22','e1'),('59702','commune','Series peer','22','e1'),('59703','commune','Series tie','22','e2'),('53','region','Series region',NULL,NULL)")
+            publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
+            publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune','region'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
+            publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
+                ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
+                ('fixture_annual','59702','commune','2024','2024',1,'measured','series_fixture','v1'),
+                ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1'),
+                ('fixture_annual','53','region','2024','2024',10,'measured','series_fixture','v1')""")
+            publisher.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+                VALUES ('territory_reference','territory-series-v1',4)
+                ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
+            publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with publisher.transaction():
+                    publisher.execute("UPDATE ordered_series SET value=99 WHERE territory_id='59701' AND axis_value='2024'")
+                    publisher.execute("UPDATE table_publication SET content_version='partial' WHERE table_name='ordered_series'")
+                    publisher.execute("INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES ('fixture_annual','59701','commune','2023','2023',NULL,'measured','series_fixture','v1')")
+            assert publisher.execute("SELECT value FROM ordered_series WHERE territory_id='59701' AND axis_value='2024'").fetchone()[0] == 2
+            assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v1'
+
+        pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
+                          kwargs={"autocommit": True})
+        previous = main.app.dependency_overrides.get(main.get_repository)
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+        try:
+            with TestClient(main.app) as client:
+                response = client.get('/api/territories/commune/59701/series/fixture_annual')
+                department_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=22')
+                epci_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e1')
+                region_response = client.get('/api/territories/region/53/series/fixture_annual?scope_level=region')
+                invalid_department = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=99')
+                invalid_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=missing')
+                mismatched_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e2')
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
+            assert body['points'][0]['value'] == 0
+            assert body['points'][1]['status'] == 'missing' and body['points'][1]['value'] is None
+            assert body['comparison'] == {
+                'point': '2024', 'value': 2.0, 'median': 2.0, 'rank': 2,
+                'ties': 2, 'comparable_count': 3,
+                'scope': {'kind': 'level', 'territory_type': 'commune', 'department_id': None, 'epci_id': None},
+            }
+            assert body['points'][2]['source_version'] == '2026-01'
+            assert body['availability'] == 'incomplete'
+            assert department_response.status_code == 200, department_response.text
+            assert department_response.json()['comparison']['scope']['department_id'] == '22'
+            assert epci_response.status_code == 200, epci_response.text
+            assert epci_response.json()['comparison']['scope']['epci_id'] == 'e1'
+            assert epci_response.json()['comparison']['comparable_count'] == 2
+            assert region_response.status_code == 200, region_response.text
+            assert region_response.json()['comparison']['scope']['territory_type'] == 'region'
+            assert region_response.json()['comparison']['rank'] == 1
+            assert invalid_department.status_code == 422
+            assert invalid_epci.status_code == 422
+            assert mismatched_epci.status_code == 422
+        finally:
+            if previous is None:
+                main.app.dependency_overrides.pop(main.get_repository, None)
+            else:
+                main.app.dependency_overrides[main.get_repository] = previous
+            pool.close()
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
+    """Pause after the marker read while a second complete publication commits."""
+    from contextlib import contextmanager
+    import threading
+
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    publish_dsn, read_dsn = _configuration()
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    marker_read = threading.Event()
+    continue_read = threading.Event()
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        reader_role = urlsplit(read_dsn).username
+        if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+            pytest.fail("Read DSN must identify a simple PostgreSQL role name")
+        quoted_role = '"' + reader_role.replace('"', '""') + '"'
+        with psycopg.connect(scoped_publish, autocommit=True) as publisher:
+            publisher.execute(schema_path.read_text(encoding="utf-8"))
+            publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59791','commune','Snapshot focal','22','e1'),('59792','commune','Snapshot peer','22','e1')")
+            publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('snapshot_fixture','Snapshot fixture')")
+            publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('snapshot_fixture','v1','2026-01','2025-01-01','2026-02-01')")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('snapshot_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune'],'Snapshot annual','ha','low','snapshot_fixture','v1','descriptor-v1')""")
+            publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('snapshot_annual','59791','commune','2022','2022',0,'measured','snapshot_fixture','v1'),
+                ('snapshot_annual','59791','commune','2024','2024',2,'measured','snapshot_fixture','v1'),
+                ('snapshot_annual','59792','commune','2024','2024',1,'measured','snapshot_fixture','v1')""")
+            publisher.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+                VALUES ('territory_reference','territory-snapshot-v1',2)
+                ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
+            publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-snapshot-v1',3,'territory-snapshot-v1')")
+
+        pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
+                              kwargs={"autocommit": True})
+
+        class ConnectionProxy:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, query, *args, **kwargs):
+                result = self.connection.execute(query, *args, **kwargs)
+                if isinstance(query, str) and "FROM table_publication s LEFT JOIN" in query:
+                    marker_read.set()
+                    if not continue_read.wait(timeout=15):
+                        raise TimeoutError("publication snapshot test barrier was not released")
+                return result
+
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+
+        class PausingPool:
+            @contextmanager
+            def connection(self):
+                with pool.connection() as connection:
+                    yield ConnectionProxy(connection)
+
+        previous = main.app.dependency_overrides.get(main.get_repository)
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(PausingPool())
+        try:
+            with TestClient(main.app) as client:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as requests:
+                    pending = requests.submit(client.get,
+                        "/api/territories/commune/59791/series/snapshot_annual")
+                    assert marker_read.wait(timeout=10), "API did not reach the publication-marker barrier"
+                    with psycopg.connect(scoped_publish) as publisher:
+                        with publisher.transaction():
+                            publisher.execute("UPDATE series_descriptor SET descriptor_version='descriptor-v2' WHERE indicator_id='snapshot_annual'")
+                            publisher.execute("UPDATE source_vintage SET version='2026-02' WHERE source_id='snapshot_fixture' AND vintage_id='v1'")
+                            publisher.execute("UPDATE ordered_series SET value=9 WHERE indicator_id='snapshot_annual' AND territory_id='59791' AND axis_value='2024'")
+                            publisher.execute("UPDATE table_publication SET content_version='series-snapshot-v2',row_count=3 WHERE table_name='ordered_series'")
+                    continue_read.set()
+                    response = pending.result(timeout=20)
+                assert response.status_code == 200, response.text
+                old = response.json()
+                assert old["publication_id"] == "series-snapshot-v1"
+                assert old["descriptor_version"] == "descriptor-v1"
+                assert old["points"][2]["value"] == 2
+                assert old["points"][2]["source_version"] == "2026-01"
+
+                # A new request must see the next committed snapshot, proving
+                # the paused response was consistently old, not stale forever.
+                current = client.get("/api/territories/commune/59791/series/snapshot_annual")
+                assert current.status_code == 200, current.text
+                new = current.json()
+                assert new["publication_id"] == "series-snapshot-v2"
+                assert new["descriptor_version"] == "descriptor-v2"
+                assert new["points"][2]["value"] == 9
+                assert new["points"][2]["source_version"] == "2026-02"
+        finally:
+            continue_read.set()
+            if previous is None:
+                main.app.dependency_overrides.pop(main.get_repository, None)
+            else:
+                main.app.dependency_overrides[main.get_repository] = previous
+            pool.close()
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_profile_and_series_migration_chain_matches_fresh_schema():
+    """Rehearse existing-schema 004→006→007 and compare fresh marker contracts."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    api_root = Path(__file__).resolve().parents[2]
+    profile_migration = api_root / "migrations/006_declared_profile.sql"
+    if not profile_migration.exists():
+        pytest.skip("migration 006 is supplied by the #596 branch; fetch its SQL before combined rehearsal")
+    schema, fresh_schema = ("it_" + uuid.uuid4().hex[:20] for _ in range(2))
+    fresh_dsn = _dsn_with_schema(publish_dsn, fresh_schema)
+    chain_dsn = _dsn_with_schema(publish_dsn, schema)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+        connection.execute(f'CREATE SCHEMA "{fresh_schema}"')
+    try:
+        with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
+            fresh.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
+
+        with psycopg.connect(chain_dsn, autocommit=True) as chain:
+            # Model the pre-594 publication/reference catalog directly. Do not
+            # reverse-engineer it from today's fresh schema: later profile and
+            # scalar foreign keys make that teardown depend on downstream DDL.
+            chain.execute("""
                 CREATE TABLE table_publication (
                     table_name text PRIMARY KEY CHECK (table_name IN (
                         'territory_reference','service_registry','essential_service_access',
@@ -666,52 +880,47 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
                     density_class_label text
                 );
             """)
-            connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
-            names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
-            assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
-            assert connection.execute("SELECT count(*) FROM territory_reference").fetchone()[0] == 0
-            connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-01','commune','Fixture')")
-            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_source','Fixture source')")
-            connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_source','v2026','2026')")
-            with connection.transaction():
-                connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
-                connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
-            with connection.transaction():
-                connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','fixture-01','commune',3.5,'measured')")
-                connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','fixture-01','fixture_source','v2026')")
-            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','migrated-reference-v1',1)")
-            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','migrated-scalar-v1',1,'migrated-reference-v1')")
-            role = urlsplit(db_env["read_dsn"]).username
-            assert role and re.fullmatch(r"[A-Za-z0-9_$-]+", role)
-            quoted_role = '"' + role.replace('"', '""') + '"'
-            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
-            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+            chain.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
+            chain.execute(profile_migration.read_text(encoding="utf-8"))
+            chain.execute((api_root / "migrations/007_ordered_series.sql").read_text(encoding="utf-8"))
 
-        from fastapi.testclient import TestClient
-        from psycopg_pool import ConnectionPool
-        from api import main
-        pool = ConnectionPool(conninfo=_dsn_with_schema(db_env["read_dsn"], schema),
-                              min_size=0, max_size=1, open=True,
-                              kwargs={"autocommit": True})
-        previous = main.app.dependency_overrides.get(main.get_repository)
-        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-        try:
-            with TestClient(main.app) as client:
-                response = client.get("/api/territories/commune/fixture-01/indicators/fixture_scalar")
-            assert response.status_code == 200, response.text
-            assert response.json()["value"] == pytest.approx(3.5)
-            assert len(response.json()["sources"]) == 1
-            assert response.json()["content_version"] == "migrated-scalar-v1"
-        finally:
-            if previous is None:
-                main.app.dependency_overrides.pop(main.get_repository, None)
-            else:
-                main.app.dependency_overrides[main.get_repository] = previous
-            pool.close()
+            # Both publication markers must reference the same committed territory snapshot.
+            chain.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('reconcile','commune','Reconcile')")
+            chain.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',1)")
+            chain.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-v1',1,'territory-v1'),('ordered_series','series-v1',1,'territory-v1')")
+            for marker in ("declared_profile", "ordered_series"):
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    with chain.transaction():
+                        chain.execute("UPDATE table_publication SET reference_content_version=NULL WHERE table_name=%s", (marker,))
+
+            def marker_contract(connection):
+                return connection.execute("""SELECT c.conname, pg_get_constraintdef(c.oid)
+                    FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+                    JOIN pg_namespace n ON n.oid=t.relnamespace
+                    WHERE n.nspname=current_schema() AND t.relname='table_publication' AND c.contype='c'
+                    ORDER BY c.conname""").fetchall()
+
+            # Different equivalent CHECK partitioning is acceptable; assert
+            # both marker values and reference semantics in actual DDL behavior.
+            with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
+                assert marker_contract(chain) == marker_contract(fresh)
+            marker_constraint_names = {name for name, _definition in marker_contract(chain)}
+            assert "shared_fact_publication_requires_reference" in marker_constraint_names
+            marker_names = {row[0] for row in chain.execute(
+                "SELECT table_name FROM table_publication WHERE table_name IN ('declared_profile','ordered_series')").fetchall()}
+            assert marker_names == {"declared_profile", "ordered_series"}
+            with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
+                fresh.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-v1',1,'territory-v1'),('ordered_series','series-v1',1,'territory-v1')")
+                fresh_markers = dict(fresh.execute("SELECT table_name,reference_content_version FROM table_publication WHERE table_name IN ('declared_profile','ordered_series')").fetchall())
+                assert fresh_markers == {"declared_profile": "territory-v1", "ordered_series": "territory-v1"}
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with chain.transaction():
+                    chain.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('unregistered_marker','x',1)")
     finally:
         if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
-            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+                connection.execute(f'DROP SCHEMA "{fresh_schema}" CASCADE')
 
 
 def test_failed_replacement_keeps_current_dataset(db_env, tmp_path):

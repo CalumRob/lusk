@@ -34,6 +34,40 @@ def test_fresh_and_additive_schema_define_independent_scalar_publication():
     assert "scalar_observation" in migration
 
 
+
+def test_ordered_series_route_and_fresh_schema_mirror_migration():
+    from pathlib import Path
+    root = Path(__file__).parents[1]
+    fresh = (root / "schema.sql").read_text()
+    migration = (root / "migrations/007_ordered_series.sql").read_text()
+    for sql in (fresh, migration):
+        assert "CREATE TABLE series_descriptor" in sql
+        assert "CREATE TABLE ordered_series" in sql
+        assert "comparison_point" in sql and "axis_values" in sql
+        assert "status='measured' AND value IS NOT NULL" in sql
+    route = next(r for r in app.routes if r.path ==
+        "/api/territories/{territory_type}/{territory_id}/series/{indicator_id}")
+    assert route.methods == {"GET"}
+    assert route.endpoint.__name__ == "annual_series"
+    import inspect
+    source = inspect.getsource(route.endpoint)
+    assert "read_series" in source
+    reader = inspect.getsource(__import__("api.main", fromlist=["ReadRepository"]).ReadRepository.read_series)
+    assert "scope_rows" in reader and "department_id" in reader and "epci_id" in reader
+    assert "SELECT count(*) FROM ordered_series" not in reader
+
+
+def test_series_comparison_uses_declared_direction_and_ties():
+    from api.main import summarize_series_comparison
+    values = [("focal", 2.0), ("peer-a", 2.0), ("peer-b", 5.0), ("missing-excluded", 9.0)]
+    low = summarize_series_comparison(values[:3], "focal", 2.0, "low")
+    assert low == {"value": 2.0, "median": 2.0, "rank": 1, "ties": 2, "comparable_count": 3}
+    high = summarize_series_comparison(values[:3], "focal", 2.0, "high")
+    assert high["rank"] == 2 and high["ties"] == 2
+    missing = summarize_series_comparison(values[:3], "focal", None, "low")
+    assert missing["rank"] is None and missing["comparable_count"] == 2
+
+
 def test_profile_endpoint_is_bounded_and_uses_independent_marker():
     route = next(r for r in app.routes if r.path ==
                  "/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
