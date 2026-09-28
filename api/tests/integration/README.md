@@ -130,10 +130,8 @@ dependency-only marker rebinding, DB-behind-local retry, and transaction rollbac
 after an injected insert failure.
 
 The shared-scalar migration/read tests are selected with
-`-k shared_scalar`. Several older importer integration cases in this module
-still assert the retired `dataset_publication` fixture even though the current
-fresh schema uses independent `table_publication` markers and intentionally
-rejects the legacy importer. Do not make the legacy importer writable again to
-green those tests. Their fixture isolation/rehearsal needs a separate follow-up;
-the scalar tests use the current schema and disposable namespace described
-above.
+`-k shared_scalar`. Importer-dependent historical integration cases have been
+removed with the retired Python database-write path. To rehearse migration 009,
+use the separate operator procedure in `api/migrations/README.md` against a
+disposable restored database; this ordinary integration fixture is not that
+operational rehearsal and must never target a live Pi.
