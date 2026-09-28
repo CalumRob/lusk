@@ -19,20 +19,32 @@ test_that("structure_age projection uses canonical fixture and descriptor order"
   expect_identical(profile$axes$axis_key[profile$axes$axis_name == "detail"],
     unlist(metadata$indicator_pages$structure_age$comparison$details, use.names = FALSE))
   expect_identical(profile$axes$axis_key[profile$axes$axis_name == "sex"], c("F", "M"))
-  expect_true(nrow(profile$facts) > 0)
+  canonical_rows <- canonical[canonical$key == "structure_age" & canonical$type %in% unlist(metadata$indicator_pages$structure_age$levels), , drop=FALSE]
+  expect_equal(nrow(profile$facts), nrow(canonical_rows))
+  expect_equal(profile$facts$value, canonical_rows$value)
+  expect_setequal(unique(profile$facts$territory_type), unlist(metadata$indicator_pages$structure_age$levels))
 })
 
 test_that("profile publisher keeps the committed version when replacement fails", {
   marker <- "old-complete"
+  stored <- "old-facts"
   replaced <- FALSE
-  db <- list(transaction = function(expr) force(expr), marker = function(name)
-    data.frame(content_version = marker), replace = function(projection, version) {
+  db <- list(transaction = function(expr) {
+    before <- list(marker=marker,stored=stored)
+    tryCatch(force(expr), error=function(e) { marker <<- before$marker; stored <<- before$stored; stop(e) })
+  }, marker = function(name)
+    data.frame(content_version = marker), reference_marker = function() data.frame(content_version="ref-v1"),
+    validate_territories = function(...) invisible(NULL), replace = function(projection, version) {
       replaced <<- TRUE
+      stored <<- "partial replacement"
+      marker <<- version
       stop("fixture write rejected")
     })
   metadata <- lire_theme_metadata("demographie")
-  canonical <- compute_payload(load_fixture())$indicateurs
-  expect_error(publish_structure_age_profile(canonical, metadata, db), "fixture write rejected")
+  canonical <- compute_payload(load_fixture())
+  registry <- register_structure_age_profile_publisher(list(), metadata)
+  expect_error(publish_registered_profile(registry, "structure_age", canonical, db), "fixture write rejected")
   expect_true(replaced)
   expect_identical(marker, "old-complete")
+  expect_identical(stored, "old-facts")
 })

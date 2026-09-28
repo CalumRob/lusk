@@ -55,9 +55,11 @@ def test_profile_fresh_schema_and_reserved_additive_migration_declare_dense_axes
         assert "CREATE TABLE profile_descriptor" in sql
         assert "CREATE TABLE profile_axis" in sql
         assert "CREATE TABLE profile_observation" in sql
+        assert "CREATE TABLE profile_observation_source" in sql
         assert "dense_complete" in sql
         assert "primarykey(indicator_id,territory_id,detail_key,sex_key)" in "".join(sql.lower().split())
     assert "declared_profile" in migration
+    assert "profile_publication_requires_reference" in migration
 
 
 def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapshot():
@@ -72,25 +74,34 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
         def fetchall(self): return self.rows
 
     class Conn:
-        def __init__(self, incomplete=False): self.incomplete = incomplete
+        def __init__(self, incomplete=False, stale=False): self.incomplete = incomplete; self.stale = stale
         @contextmanager
         def transaction(self): yield
         def execute(self, sql, params=None):
-            if "table_publication" in sql: return Cursor([("profile-v1",)])
-            if "profile_descriptor" in sql: return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1")])
+            if "table_publication" in sql: return Cursor([("profile-v1", 4, 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
+            if "profile_descriptor" in sql: return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1", "<15", "F", "high")])
             if "SELECT axis_name" in sql:
                 return Cursor([("detail", "<15", "Moins de 15 ans", 0), ("detail", "80+", "80 ans et plus", 1), ("sex", "F", "F", 0), ("sex", "M", "M", 1)])
+            if "SELECT DISTINCT sd.source_id" in sql: return Cursor([("age_detail", "INSEE fixture", "2023", "2023-01-01", None)])
+            if "SELECT t.territory_id" in sql:
+                return Cursor([("22001", "Fixture", .2, "measured"), ("22002", "Other", .1, "measured")])
             rows = [("commune", "<15", "F", .2, "measured"), ("commune", "<15", "M", .2, "measured"),
                     ("commune", "80+", "F", .1, "measured"), ("commune", "80+", "M", .1, "measured")]
             return Cursor(rows[:-1] if self.incomplete else rows)
 
     class Connections:
-        def __init__(self, incomplete=False): self.conn = Conn(incomplete)
+        def __init__(self, incomplete=False, stale=False): self.conn = Conn(incomplete, stale)
         @contextmanager
         def connection(self): yield self.conn
     repo = SimpleNamespace(connections=Connections())
-    result = declared_profile("commune", "22001", "structure_age", repo)
+    result = declared_profile("commune", "22001", "structure_age", repository=repo)
     assert [cell["detail"] for cell in result["cells"]] == ["<15", "<15", "80+", "80+"]
+    assert result["comparison"]["detail"] == "<15"
+    assert result["comparison"]["sex"] == "F"
+    assert [row["value"] for row in result["comparison"]["values"]] == [.2, .1]
     with __import__("pytest").raises(HTTPException) as error:
-        declared_profile("commune", "22001", "structure_age", SimpleNamespace(connections=Connections(True)))
+        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(True)))
+    assert error.value.status_code == 503
+    with __import__("pytest").raises(HTTPException) as error:
+        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(stale=True)))
     assert error.value.status_code == 503

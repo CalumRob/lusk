@@ -357,11 +357,24 @@ validated compatible snapshot.
 
 Fresh installs use `schema.sql`; existing installs use numbered additive
 migrations. Orchestration reserves numbers serially before parallel workers;
-workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
+the declared-profile migration is `006_declared_profile.sql`. Workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
 applies live migrations serially; only the product owner runs API Compose on
 Pi. Future detail, series, evidence and service slices reserve distinct
 migration numbers and use constrained shape-specific contracts. Fixture tests
 are not full-site performance evidence.
+
+The dense `structure_age` profile uses the declared `detail × sex` axes and the
+page descriptor's comparison detail/sex. `GET /api/territories/{level}/{id}/profiles/structure_age`
+returns one territory's ordered cells plus the bounded peer values for that
+declared comparison facet. It fails closed on a missing/stale publication,
+missing/duplicate profile coordinates or provenance; the app's switched
+structure-age page has no static-fact fallback. Other profile consumers, map
+layers and the remaining theme pages continue to use their incumbent artifacts.
+The R publisher is opt-in with `LUSK_PUBLISH_PROFILE=1` for a local full or
+Démographie-targeted run; it is never part of the scheduled static publication.
+Publication and territory-reference compatibility are pinned to independent
+table markers. Representative-size Pi latency/storage and recovery validation
+remain mandatory before the product owner deploys or switches live traffic.
 
 The opt-in `Rscript scripts/publish-serving-tables.R --scalar-fixture-check`
 projects only the small tracked Démographie fixture through the registered
@@ -374,3 +387,9 @@ therefore requires an explicit caller policy and uses `dense_complete` only
 because its checked projection covers every eligible identity in that fixture;
 it does not add completeness metadata to a product descriptor or establish a
 catalogue-wide default.
+
+`pipeline/scripts/smoke-profile-postgres.R` exercises fresh schema creation,
+registered profile publication, source-vintage lineage, marker/reference
+binding and transactional failure rollback against an isolated database named
+`lusk_it_*` using the `LUSK_PROFILE_TEST_HOST/PORT/DATABASE/USER` variables.
+It must never target the Pi or a production/default database.

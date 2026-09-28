@@ -12,6 +12,7 @@ import IndicateurView from '../views/IndicateurView.vue'
 import { chargerFichier } from '../payload/loader'
 import type { ChargerOptions, Fichier, ReponseFetch } from '../payload/loader'
 import type { Territoire } from '../payload/types'
+import type { Indicateur, ThemeMetadata } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
@@ -66,6 +67,31 @@ describe('La carte de la page pyramide (structure_age) contre le payload commis 
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/demographie/structure_age?vue=carte&territoire=22001')
     await router.isReady()
+    const [facts, metadata, territories] = await Promise.all([
+      chargerCommis('indicateurs_demographie') as Promise<Indicateur[]>,
+      chargerCommis('theme_demographie') as Promise<ThemeMetadata>,
+      chargerCommis('territoires') as Promise<Territoire[]>,
+    ])
+    const page = metadata.indicator_pages!.structure_age!
+    const focal = facts.filter((fact) => fact.key === 'structure_age' && fact.territoire === '22001')
+    const stamp = focal[0]!
+    const apiProfile = {
+      indicator: 'structure_age', label: page.label, unit: page.unit, content_version: 'fixture-profile-v1', descriptor_version: 'fixture-descriptor-v1',
+      axes: [...page.comparison!.details!.map((key, order) => ({ name: 'detail', key, label: page.comparison!.labels![key]!, order })),
+        ...page.comparison!.sexes!.map((key, order) => ({ name: 'sex', key, label: key, order }))],
+      cells: focal.map((fact) => ({ detail: fact.detail!, sex: fact.sex!, value: fact.value, status: fact.value === null ? 'not_available' : 'measured' })),
+      comparison: { detail: page.comparison!.detail!, sex: page.comparison!.sex!, direction: page.direction, scope: 'bretagne', scope_id: null,
+        values: facts.filter((fact) => fact.key === 'structure_age' && fact.type === 'commune' &&
+          fact.detail === page.comparison!.detail && fact.sex === page.comparison!.sex)
+          .map((fact) => ({ territory_id: fact.territoire,
+            name: territories.find((territory) => territory.territoire === fact.territoire)?.nom ?? fact.territoire,
+            value: fact.value, status: fact.value === null ? 'not_available' : 'measured' })) },
+      sources: [{ source_id: 'age_detail', name: stamp.vintage_source, version: stamp.vintage_version,
+        reference_date: stamp.vintage_date_reference, publication_date: stamp.vintage_date_publication }],
+    }
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => String(input) === '/data/theme_demographie.json'
+      ? new Response(JSON.stringify(metadata), { status: 200 })
+      : new Response(JSON.stringify(apiProfile), { status: 200 }))
     const wrapper = mount(IndicateurView, {
       global: {
         plugins: [router],
