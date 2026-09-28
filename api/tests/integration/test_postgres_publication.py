@@ -508,13 +508,13 @@ def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_d
         pool.close()
 
 
-def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
+def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
     from api import main
 
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+    with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as connection:
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29001','commune','Alpha')")
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29002','commune','Beta')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
@@ -568,10 +568,10 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
                 connection.execute("DELETE FROM scalar_observation_source WHERE indicator_id='fixture_scalar'")
 
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with psycopg.connect(db_env["read_dsn"], autocommit=True) as reader:
+        with psycopg.connect(canonical_db_env["read_dsn"], autocommit=True) as reader:
             reader.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','29001','commune',1,'measured')")
 
-    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=2, open=True,
                           kwargs={"autocommit": True})
     previous = main.app.dependency_overrides.get(main.get_repository)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
