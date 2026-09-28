@@ -7,11 +7,13 @@ validate_series_projection <- function(points, descriptor) {
       !is.list(descriptor) || !all(c("indicator_id", "axis_kind", "axis_values", "completeness",
         "comparison_point", "label", "unit", "direction", "allowed_levels", "source_id", "vintage_id") %in% names(descriptor)))
     stop("Series projection is missing contract fields", call.=FALSE)
+  if (!nrow(points)) stop("Series projection cannot publish an empty dataset", call.=FALSE)
   axis <- as.character(descriptor$axis_values)
   if (descriptor$axis_kind != "year" || !length(axis) || anyDuplicated(axis) ||
       any(!grepl("^\\d{4}$", axis)) || !identical(axis, axis[order(as.integer(axis))]) ||
       !descriptor$completeness %in% c("dense_complete", "may_be_missing") ||
-      (!is.null(descriptor$comparison_point) && !descriptor$comparison_point %in% axis))
+      (!is.null(descriptor$comparison_point) && (!descriptor$comparison_point %in% axis ||
+        !descriptor$direction %in% c("high", "low"))))
     stop("Invalid series descriptor axis/order/comparison", call.=FALSE)
   if (anyNA(points[c("indicator_id", "territory_id", "territory_type", "axis_value", "status", "source_id", "vintage_id")]) ||
       any(points$indicator_id != descriptor$indicator_id) || any(!points$axis_value %in% axis) ||
@@ -26,6 +28,11 @@ validate_series_projection <- function(points, descriptor) {
       any((points$status == "measured") != !is.na(points$value)) ||
       any(!is.na(points$value) & !is.finite(points$value)))
     stop("Series missing status/value mismatch", call.=FALSE)
+  if (descriptor$completeness == "dense_complete") {
+    observed <- split(as.character(points$axis_value), as.character(points$territory_id))
+    if (any(vapply(observed, function(values) !setequal(values, axis), logical(1))))
+      stop("Dense-complete series is missing declared axis points", call.=FALSE)
+  }
   invisible(points[order(match(points$axis_value, axis)), , drop=FALSE])
 }
 
@@ -76,7 +83,7 @@ series_postgres_adapter <- function(con) {
     transaction=function(expr) DBI::dbWithTransaction(con, expr),
     lock=function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(597, 1)"),
     marker=function(name) DBI::dbGetQuery(con,
-      "SELECT content_version FROM table_publication WHERE table_name=$1", params=list(name)),
+      "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
     replace=function(projection, version) {
       d <- projection$descriptor
       levels_sql <- paste0("ARRAY[", paste(vapply(d$allowed_levels, quote, character(1)), collapse=","), "]::text[]")
@@ -92,6 +99,9 @@ series_postgres_adapter <- function(con) {
       DBI::dbExecute(con, paste0("INSERT INTO series_descriptor(",paste(fields,collapse=","),",axis_values,allowed_levels) VALUES(",
         paste(c(values,paste0("ARRAY[",paste(vapply(d$axis_values,quote,character(1)),collapse=","),"]::text[]"),levels_sql),collapse=","),")"))
       DBI::dbWriteTable(con,"ordered_series",projection$points,append=TRUE,row.names=FALSE)
+      published_rows <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM ordered_series")$n[[1L]]
+      if (!identical(as.integer(published_rows), as.integer(nrow(projection$points))))
+        stop("Ordered-series row count differs from the validated projection", call.=FALSE)
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (!nrow(reference)) stop("Territory reference publication is unavailable",call.=FALSE)
       DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('ordered_series',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",
@@ -117,9 +127,13 @@ publish_registered_series <- function(registry, name, canonical, db) {
   db$transaction({
     if (is.function(db$lock)) db$lock()
     marker <- db$marker("ordered_series")
+    reference <- db$marker("territory_reference")
+    if (!nrow(reference)) stop("Territory reference publication is unavailable", call.=FALSE)
     changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]), version)
-    if (changed) publisher$publish(projection, db, version)
-    invisible(list(changed=changed, content_version=version))
+    rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),
+      as.character(reference$content_version[[1L]]))
+    if (changed || rebound) publisher$publish(projection, db, version)
+    invisible(list(changed=changed, rebound=rebound, content_version=version))
   })
 }
 

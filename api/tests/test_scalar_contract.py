@@ -51,6 +51,9 @@ def test_ordered_series_route_and_fresh_schema_mirror_migration():
     import inspect
     source = inspect.getsource(route.endpoint)
     assert "read_series" in source
+    reader = inspect.getsource(__import__("api.main", fromlist=["ReadRepository"]).ReadRepository.read_series)
+    assert "scope_rows" in reader and "department_id" in reader and "epci_id" in reader
+    assert "SELECT count(*) FROM ordered_series" not in reader
 
 
 def test_series_comparison_uses_declared_direction_and_ties():

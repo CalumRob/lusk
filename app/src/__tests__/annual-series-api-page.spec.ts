@@ -1,8 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { territoiresFixture } from '../payload/fixtures'
+import { indicateursMilieuxFixture, territoiresFixture } from '../payload/fixtures'
 import { INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY } from '../payload/indicatorReadModel'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
@@ -10,24 +12,47 @@ import IndicateurView from '../views/IndicateurView.vue'
 
 afterEach(() => vi.restoreAllMocks())
 
-describe('Page de la série annuelle conso ENAF', () => {
-  it('uses the bounded API, never loads the static facts, and offers retry on failure', async () => {
+const metadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
+
+describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
+  it('preserves the page grammar and comparison scope, adapts API facts, and never falls back to static series on failure', async () => {
     const calls: string[] = []
     const loader: ChargerFichier = async (file) => {
       calls.push(file)
       if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
+      if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(
-      new Response(JSON.stringify({
-        indicator_id: 'conso_enaf_annuel', label: 'Série ENAF', unit: 'ha',
-        comparison: { point: '2024', median: 0, rank: 1, comparable_count: 2 },
-        points: [{ axis: '2011', status: 'measured', value: 0, source_id: 'consoenaf', vintage_id: '2025' },
-          { axis: '2012', status: 'missing', value: null, source_id: 'consoenaf', vintage_id: '2025' }],
-      }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-    )
+    const fixtureFacts = indicateursMilieuxFixture.filter((fact) => fact.key === 'conso_enaf_annuel' && fact.type === 'commune')
+    const axis: string[] = metadataMilieux.indicator_pages.conso_enaf_annuel.comparison.details
+    const scopeSeries = [...new Set(fixtureFacts.map((fact) => fact.territoire))].map((id) => {
+      const territory = territoiresFixture.find((item) => item.territoire === id)!
+      return { territory: { id, type: territory.type, name: territory.nom }, points: fixtureFacts
+        .filter((fact) => fact.territoire === id).map((fact) => ({ axis: fact.detail!, observation_period: fact.detail,
+          value: fact.value, status: fact.value === null ? 'missing' : 'measured', source_id: 'consoenaf',
+          vintage_id: 'v2025', source_version: '2025', source_reference_date: '2025-01-01', source_publication_date: '2026-07-24' })) }
+    })
+    const apiRead = {
+      indicator_id: 'conso_enaf_annuel', axis_kind: 'year', unit: 'ha',
+      territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: axis.map((year) => ({ axis: year,
+        observation_period: year, value: fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value ?? null,
+        status: fixtureFacts.some((fact) => fact.territoire === '22001' && fact.detail === year)
+          ? (fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value === null ? 'missing' : 'measured') : 'missing',
+        source_id: 'consoenaf', vintage_id: 'v2025' })), scope_series: scopeSeries,
+      comparison: { point: '2024', value: null, median: null, rank: null, ties: null, comparable_count: 0,
+        scope: { kind: 'level', territory_type: 'commune', department_id: '22', epci_id: null } },
+    }
+    let apiCalls = 0
+    let retryEnabled = false
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (!String(input).startsWith('/api/')) return new Response('{}', { status: 404 })
+      apiCalls++
+      if (!retryEnabled) throw new Error('offline')
+      return new Response(JSON.stringify(apiRead), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001')
+    await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
     const empty = { type: 'FeatureCollection' as const, features: [] }
     const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
@@ -36,13 +61,25 @@ describe('Page de la série annuelle conso ENAF', () => {
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await flushPromises()
-    expect(wrapper.text()).toContain('Série annuelle indisponible')
-    expect(calls).not.toContain('indicateurs_milieux')
-    await wrapper.get('button').trigger('click')
+    expect(wrapper.text()).toContain('momentanément indisponibles')
+    expect(wrapper.find('.vues').exists()).toBe(true)
+    expect(wrapper.text()).toContain('L’indicateur')
+    expect(wrapper.text()).not.toContain(String(fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === '2011')?.value))
+    const beforeRetry = apiCalls
+    retryEnabled = true
+    await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/territories/commune/22001/series/conso_enaf_annuel')
-    expect(wrapper.text()).toContain('Série ENAF')
-    expect(wrapper.text()).toContain('Indisponible')
+    expect(apiCalls).toBeGreaterThan(beforeRetry)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/territories/commune/22001/series/conso_enaf_annuel?scope_level=commune&department_id=22')
+    expect(wrapper.find('.vues').exists()).toBe(true)
+    expect(wrapper.find('.controls').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Consommation')
+    expect(wrapper.text()).toContain('4,32')
+    expect(wrapper.text()).toContain('Département 22')
+    expect(wrapper.text()).not.toContain('Territoire de la série')
+    await wrapper.findAll('.vues button')[2].trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Précautions')
+    expect(calls).toContain('theme_milieux')
   })
 })

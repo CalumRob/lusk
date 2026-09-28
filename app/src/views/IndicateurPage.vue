@@ -21,8 +21,9 @@ import { ancreSource, datasetDeSource } from '@/methodes/sources'
 import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
 import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
-import { fusionnerFacette, queryCanonique, resoudreEtatUrl } from '@/indicateurs/etatUrl'
+import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError } from '@/payload/validate'
+import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -43,12 +44,10 @@ const niveauMemorise = ref<string | undefined>(localStorage.getItem('lusk:niveau
 // portés, lus et validés UNE fois par le contrat d'exploration.
 const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
-const annualSeriesPage = computed(() => theme.value === 'milieux' && indicator.value === 'conso_enaf_annuel')
+const orderedSeriesAdapter = computed(() => orderedSeriesAdapterFor(theme.value, indicator.value))
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
-const attendreLegacy: Fichier[] = themeValide.value ? (annualSeriesPage.value
-  ? ['territoires']
-  : ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`]) : ['territoires']
+const attendreLegacy: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
 const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
 const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, null)
 const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
@@ -112,67 +111,60 @@ watch(
   },
   { immediate: true },
 )
-const payload = computed(() =>
-  modeleIndicateur.value
-    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
-    : payloadLegacy.value,
-)
-type AnnualSeriesResponse = {
-  publication_id: string
-  indicator_id: string
-  label: string
-  unit: string
-  direction: 'high' | 'low' | 'none'
-  comparison_point: string | null
-  points: Array<{ axis: string; status: 'measured' | 'missing'; value: number | null; observation_period: string | null; source_id: string; vintage_id: string }>
-  comparison: { point: string | null; value: number | null; median: number | null; rank: number | null; ties: number; comparable_count: number; scope: { kind: string; territory_type: string } }
-}
-const annualSeries = ref<AnnualSeriesResponse | null>(null)
-function annualY(value: number): number {
-  const values = annualSeries.value?.points.flatMap((point) => point.status === 'measured' && point.value !== null ? [point.value] : []) ?? []
-  if (!values.length || Math.max(...values) === Math.min(...values)) return 80
-  return 150 - ((value - Math.min(...values)) / (Math.max(...values) - Math.min(...values))) * 130
-}
-const annualSeriesPath = computed(() => {
-  const points = annualSeries.value?.points ?? []
-  const values = points.flatMap((point) => point.status === 'measured' && point.value !== null ? [point.value] : [])
-  if (!values.length) return ''
-  const min = Math.min(...values); const max = Math.max(...values)
-  let penDown = false
-  return points.map((point, index) => {
-    if (point.status !== 'measured' || point.value === null) { penDown = false; return '' }
-    const x = points.length <= 1 ? 0 : index * 600 / (points.length - 1)
-    const y = max === min ? 80 : 150 - ((point.value - min) / (max - min)) * 130
-    const command = `${penDown ? 'L' : 'M'} ${x} ${y}`
-    penDown = true
-    return command
-  }).filter(Boolean).join(' ')
-})
-const annualSeriesError = ref(false)
-const annualSeriesLoading = ref(false)
-let annualSeriesRequest = 0
-async function chargerSerieAnnuelle() {
-  if (!annualSeriesPage.value) return
-  const territory = payload.value.territoires.find((item) => item.territoire === porte.value.territoire)
-  if (!territory) { annualSeriesError.value = false; annualSeriesLoading.value = false; annualSeries.value = null; return }
-  const request = ++annualSeriesRequest
-  annualSeriesLoading.value = true
-  annualSeriesError.value = false
-  annualSeries.value = null
+const serieLecture = ref<OrderedSeriesRead | null>(null)
+const serieErreur = ref(false)
+const serieChargement = ref(false)
+let serieRequete = 0
+let serieRequestKey: string | null = null
+const niveauSerie = computed(() => resoudreNiveau(porte.value.niveau, niveauMemorise.value,
+  payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels ?? ['commune']))
+async function chargerSerie(force = false) {
+  const adapter = orderedSeriesAdapter.value
+  if (!adapter || !payloadLegacy.value.territoires.length) return
+  const scope = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+    niveauxPublies: payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels,
+    niveauMemorise: niveauMemorise.value }).scopeValide
+  const department = scope?.departement
+  const epci = scope?.epci
+  const scopeTerritories = payloadLegacy.value.territoires.filter((territory) => territory.type === niveauSerie.value &&
+    (niveauSerie.value !== 'commune' || ((!department || territory.departement === department) &&
+      (!epci || territory.epci === epci))))
+  const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire) ?? scopeTerritories[0]
+  if (!focal) { serieErreur.value = false; serieLecture.value = null; return }
+  const request = ++serieRequete
+  const query = new URLSearchParams({ scope_level: niveauSerie.value })
+  if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
+  if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
+  const url = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
+  if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
+  serieRequestKey = url
+  serieChargement.value = true
+  serieErreur.value = false
+  serieLecture.value = null
   try {
-    const response = await fetch(`/api/territories/${encodeURIComponent(territory.type)}/${encodeURIComponent(territory.territoire)}/series/conso_enaf_annuel`)
+    const response = await fetch(url)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const data = await response.json() as AnnualSeriesResponse
-    if (data.indicator_id !== 'conso_enaf_annuel' || !Array.isArray(data.points)) throw new Error('Invalid series response')
-    if (request === annualSeriesRequest) annualSeries.value = data
+    const result = await response.json() as OrderedSeriesRead
+    if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) || !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
+    if (request === serieRequete) serieLecture.value = result
   } catch {
-    if (request === annualSeriesRequest) annualSeriesError.value = true
+    if (request === serieRequete) serieErreur.value = true
   } finally {
-    if (request === annualSeriesRequest) annualSeriesLoading.value = false
+    if (request === serieRequete) serieChargement.value = false
   }
 }
-watch(() => [annualSeriesPage.value, porte.value.territoire, porte.value.niveau, payload.value.territoires.length] as const,
-  () => { void chargerSerieAnnuelle() }, { immediate: true })
+const payload = computed(() => {
+  const base = modeleIndicateur.value
+    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
+    : payloadLegacy.value
+  const adapter = orderedSeriesAdapter.value
+  if (!adapter) return base
+  const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
+  const apiFacts = serieLecture.value && page
+    ? orderedSeriesFacts(serieLecture.value, adapter.theme, base.territoires).map((fact) => ({ ...fact, unit: page.unit }))
+    : []
+  return { ...base, indicateurs: [...base.indicateurs.filter((fact) => fact.key !== adapter.indicator), ...apiFacts] }
+})
 const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
@@ -217,6 +209,10 @@ const facts = computed(() => payload.value.indicateurs.filter((f) => f.theme ===
 // les territoires publiés, les niveaux de la facette et la mémoire lue à la
 // couture ; ses watchers ci-dessous n'en appliquent que le résultat.
 const etatUrl = computed(() => resoudreEtatUrl({ query: route.query, territoires: payload.value.territoires, niveauxPublies: familyDispatch.value?.facet.levels, niveauMemorise: niveauMemorise.value }))
+watch(() => [orderedSeriesAdapter.value?.indicator, porte.value.territoire, porte.value.niveau,
+  route.query.departement, route.query.epci, niveauMemorise.value, payloadLegacy.value.territoires.length,
+  payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.indicator] as const,
+  () => { void chargerSerie() }, { immediate: true })
 const niveauRoute = computed(() => porte.value.niveau)
 const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value.scopeValide ?? {}), territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
 const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, niveauMemorise.value) : null)
@@ -325,13 +321,8 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
 </script>
 <template>
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
-     <template v-if="annualSeriesPage">
-       <div v-if="chargement || annualSeriesLoading" role="status">Chargement de la série annuelle…</div>
-       <div v-else-if="annualSeriesError" role="alert">Série annuelle indisponible.<button type="button" @click="chargerSerieAnnuelle">Réessayer</button></div>
-       <section v-else-if="!annualSeries" class="series-annuelle"><label>Territoire de la série <select :value="porte.territoire ?? ''" @change="setQuery(PARAM_TERRITOIRE, ($event.target as HTMLSelectElement).value)"><option value="" disabled>Choisir un territoire</option><option v-for="territory in payload.territoires.filter((item) => item.type !== 'region')" :key="territory.territoire" :value="territory.territoire">{{ territory.nom }}</option></select></label></section>
-       <main v-else class="series-annuelle"><h1>{{ annualSeries.label }}</h1><p>Comparaison {{ annualSeries.comparison.point ?? 'indisponible' }} · Médiane {{ annualSeries.comparison.median ?? '—' }} {{ annualSeries.unit }} · Rang {{ annualSeries.comparison.rank ?? '—' }} ({{ annualSeries.comparison.comparable_count }} comparables)</p><svg viewBox="0 0 600 180" role="img" aria-label="Série annuelle des valeurs publiées"><path :d="annualSeriesPath"/><g v-for="(point, index) in annualSeries.points" :key="point.axis"><circle v-if="point.status === 'measured'" :cx="annualSeries.points.length <= 1 ? 0 : index * 600 / (annualSeries.points.length - 1)" :cy="annualY(point.value!)" r="4"><title>{{ point.axis }} : {{ point.value }} {{ annualSeries.unit }}</title></circle><text :x="annualSeries.points.length <= 1 ? 0 : index * 600 / (annualSeries.points.length - 1)" y="176">{{ point.axis }}</text></g></svg><ol><li v-for="point in annualSeries.points" :key="point.axis"><strong>{{ point.axis }}</strong> — <span v-if="point.status === 'measured'">{{ point.value }} {{ annualSeries.unit }}</span><span v-else>Indisponible</span><small> · {{ point.source_id }} · {{ point.vintage_id }}</small></li></ol></main>
-     </template>
-      <template v-else>
+     <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
+      <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
      <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.</div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
@@ -348,7 +339,6 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
           </template></RepereFamilyOutlet></main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
         <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><p v-if="horlogeService" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
-      </template>
      </template>
   </section>
 </template>

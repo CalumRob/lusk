@@ -16,6 +16,10 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_error(validate_series_projection(invalid, descriptor), "Undeclared")
   bad_descriptor <- descriptor; bad_descriptor$comparison_point <- "2015"
   expect_error(validate_series_projection(points, bad_descriptor), "descriptor")
+  no_direction <- descriptor; no_direction$direction <- "none"
+  expect_error(validate_series_projection(points, no_direction), "descriptor")
+  dense <- descriptor; dense$completeness <- "dense_complete"
+  expect_error(validate_series_projection(points, dense), "Dense-complete")
   comparison <- series_comparison(data.frame(territory_id=c("a","b","c","d"),
     value=c(0,2,2,NA_real_)), "b", "low")
   expect_equal(comparison$median, 2)
@@ -47,21 +51,33 @@ test_that("registered series publication is atomic, idempotent and rollback-safe
   points <- data.frame(indicator_id="fixture_series", territory_id="t1", territory_type="commune",
     axis_value="2020", observation_period="2020", value=0, status="measured",
     source_id="fixture", vintage_id="v1")
-  state <- new.env(parent=emptyenv()); state$marker <- NULL; state$projection <- NULL
+  state <- new.env(parent=emptyenv()); state$marker <- NULL; state$marker_reference <- NULL
+  state$reference <- "territory-v1"; state$projection <- NULL
   db <- list(transaction=function(expr) {
-    before <- list(marker=state$marker, projection=state$projection)
+    before <- list(marker=state$marker, marker_reference=state$marker_reference, projection=state$projection)
     tryCatch(force(expr), error=function(e) {
-      state$marker <- before$marker; state$projection <- before$projection; stop(e)
+      state$marker <- before$marker; state$marker_reference <- before$marker_reference
+      state$projection <- before$projection; stop(e)
     })
-  }, marker=function(name) if(is.null(state$marker)) data.frame() else data.frame(content_version=state$marker),
+  }, marker=function(name) {
+    if (name == "territory_reference") return(data.frame(content_version=state$reference,
+      reference_content_version=NA_character_))
+    if (is.null(state$marker)) data.frame() else data.frame(content_version=state$marker,
+      reference_content_version=state$marker_reference)
+  },
   replace=function(projection, version) {
-    state$projection <- projection; state$marker <- version
+    state$projection <- projection; state$marker <- version; state$marker_reference <- state$reference
   })
   registry <- register_series_publisher(list(), "fixture", function(input) list(points=points, descriptor=descriptor),
     function(projection, db, version) db$replace(projection, version))
   expect_true(publish_registered_series(registry, "fixture", NULL, db)$changed)
   marker <- state$marker
   expect_false(publish_registered_series(registry, "fixture", NULL, db)$changed)
+  state$reference <- "territory-v2"
+  rebound <- publish_registered_series(registry, "fixture", NULL, db)
+  expect_false(rebound$changed)
+  expect_true(rebound$rebound)
+  expect_identical(state$marker_reference, "territory-v2")
   changed_points <- points; changed_points$value <- 1
   broken <- register_series_publisher(list(), "broken", function(input) list(points=changed_points, descriptor=descriptor),
     function(projection, db, version) { db$replace(projection, version); stop("injected failure") })

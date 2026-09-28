@@ -322,18 +322,19 @@ def test_ordered_series_bounded_read_comparison_and_rollback(db_env):
     from api import main
 
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
-        publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('59701','commune','Series focal'),('59702','commune','Series peer'),('59703','commune','Series tie')")
+        publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59701','commune','Series focal','22','e1'),('59702','commune','Series peer','22','e1'),('59703','commune','Series tie','22','e2'),('53','region','Series region',NULL,NULL)")
         publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
         publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
         publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
-            VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
+            VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune','region'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
         publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
             ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
             ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
             ('fixture_annual','59702','commune','2024','2024',1,'measured','series_fixture','v1'),
-            ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1')""")
-        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-series-v1',3)")
-        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',4,'territory-series-v1')")
+            ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1'),
+            ('fixture_annual','53','region','2024','2024',10,'measured','series_fixture','v1')""")
+        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-series-v1',4)")
+        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
         with pytest.raises(psycopg.errors.CheckViolation):
             with publisher.transaction():
                 publisher.execute("UPDATE ordered_series SET value=99 WHERE territory_id='59701' AND axis_value='2024'")
@@ -349,6 +350,8 @@ def test_ordered_series_bounded_read_comparison_and_rollback(db_env):
     try:
         with TestClient(main.app) as client:
             response = client.get('/api/territories/commune/59701/series/fixture_annual')
+            epci_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e1')
+            region_response = client.get('/api/territories/region/53/series/fixture_annual?scope_level=region')
         assert response.status_code == 200, response.text
         body = response.json()
         assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
@@ -357,10 +360,16 @@ def test_ordered_series_bounded_read_comparison_and_rollback(db_env):
         assert body['comparison'] == {
             'point': '2024', 'value': 2.0, 'median': 2.0, 'rank': 2,
             'ties': 2, 'comparable_count': 3,
-            'scope': {'kind': 'same-level', 'territory_type': 'commune'},
+            'scope': {'kind': 'level', 'territory_type': 'commune', 'department_id': None, 'epci_id': None},
         }
         assert body['points'][2]['source_version'] == '2026-01'
         assert body['availability'] == 'incomplete'
+        assert epci_response.status_code == 200, epci_response.text
+        assert epci_response.json()['comparison']['scope']['epci_id'] == 'e1'
+        assert epci_response.json()['comparison']['comparable_count'] == 2
+        assert region_response.status_code == 200, region_response.text
+        assert region_response.json()['comparison']['scope']['territory_type'] == 'region'
+        assert region_response.json()['comparison']['rank'] == 1
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
