@@ -17,6 +17,7 @@ connection <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
 schema <- paste0("scalar_it_", Sys.getpid(), "_", sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
 created <- FALSE
+smoke_failure <- NULL
 tryCatch({
   DBI::dbExecute(connection, paste0("CREATE SCHEMA ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
   created <- TRUE
@@ -113,16 +114,17 @@ tryCatch({
     identical(DBI::dbGetQuery(connection, "SELECT value,status FROM scalar_observation WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1"), previous_fact),
     identical(DBI::dbGetQuery(connection, "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]], previous_marker))
   cat("Scalar PostgreSQL smoke passed; schema:", schema, "\n")
+}, error=function(e) {
+  smoke_failure <<- conditionMessage(e)
+  stop(e)
 }, finally={
   if (created && identical(Sys.getenv("LUSK_SCALAR_TEST_CLEANUP", "0"), "1")) {
     tryCatch({
-      cleanup <- scalar_smoke_schema_cleanup_sql(
-        function(parts) DBI::dbQuoteIdentifier(connection, parts), schema)
-      for (statement in cleanup) DBI::dbExecute(connection, statement)
+      cleanup_serving_smoke_schema(connection, schema, "scalar")
       cat("Scalar smoke schema cleaned with RESTRICT:", schema, "\n")
-    }, error=function(e) warning("Could not clean scalar smoke schema ", schema,
-      " (it remains for inspection): ", conditionMessage(e), call.=FALSE))
+    }, error=function(e) stop("Could not clean scalar smoke schema ", schema,
+      " (inspect and remove manually): ", conditionMessage(e),
+      if (!is.null(smoke_failure)) paste0("; original smoke error: ", smoke_failure) else "", call.=FALSE))
   }
-  tryCatch(DBI::dbDisconnect(connection), error=function(e)
-    warning("Could not disconnect scalar smoke DB connection: ", conditionMessage(e), call.=FALSE))
+  DBI::dbDisconnect(connection)
 })

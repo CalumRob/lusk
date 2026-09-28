@@ -87,6 +87,35 @@ def db_env(tmp_path_factory):
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
+@pytest.fixture
+def canonical_db_env():
+    """A separate owned schema for comparisons sourced from tracked Parquet."""
+    publish_dsn, read_dsn = _configuration()
+    psycopg = pytest.importorskip("psycopg")
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    created = False
+    try:
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+            connection.execute(f'SET search_path TO "{schema}"')
+            connection.execute(schema_path.read_text(encoding="utf-8"))
+            reader_role = urlsplit(read_dsn).username
+            if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+                pytest.fail("Read DSN must identify a simple database role name")
+            quoted_role = '"' + reader_role.replace('"', '""') + '"'
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+        yield {"publish_dsn": scoped_publish, "read_dsn": scoped_read, "schema": schema}
+    finally:
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
 def _write_artifacts(root: Path) -> tuple[Path, Path]:
     """Small canonical Parquet-shaped publication, with metadata owned by fixture."""
     pa = pytest.importorskip("pyarrow")
@@ -191,13 +220,302 @@ def test_reader_role_cannot_insert_or_create(db_env):
             connection.execute("CREATE SCHEMA forbidden_reader_schema")
 
 
-def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
+def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matrix(db_env, monkeypatch):
+    """Exercise both SQL readers against the same disposable PostgreSQL snapshot.
+
+    The deliberately small fixture has all fifteen public indicators, ties,
+    unavailable values, multiple peer scopes, and a singleton regional scope.
+    The fast API tests cover exact comparison statistics; this verifies that
+    the actual scalar joins/status mapping feed that same comparison contract.
+    """
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
     from api import main
 
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+    territories = [
+        ("29001", "Alpha", "commune", "29", "200000001", "D1", "Dense"),
+        ("29002", "Beta", "commune", "29", "200000001", "D1", "Dense"),
+        ("29003", "Gamma", "commune", "29", "200000002", "D2", "Rural"),
+        ("29004", "Delta", "commune", "29", "200000002", "D2", "Rural"),
+        ("200000001", "EPCI One", "epci", "29", None, None, None),
+        ("200000002", "EPCI Two", "epci", "29", None, None, None),
+        ("29", "Department", "departement", "29", None, None, None),
+        ("BRE", "Brittany", "region", None, None, None, None),
+    ]
+    services = ("food", "health", "admin", "school", "bank")
+    mode_codes = {"t": "walk_transit", "b": "bike", "c": "car"}
+    levels = {"commune": ["29001", "29002", "29003", "29004"],
+              "epci": ["200000001", "200000002"],
+              "departement": ["29"], "region": ["BRE"]}
+    with psycopg.connect(db_env["publish_dsn"]) as connection:
+        def executemany(query, rows):
+            with connection.cursor() as cur:
+                cur.executemany(query, rows)
+
+        executemany(
+            "INSERT INTO territory_reference(territory_id,name,territory_type,department_id,epci_id,density_class_code,density_class_label) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            territories)
+        executemany("INSERT INTO service_registry(service) VALUES (%s)", [(s,) for s in services])
+        connection.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES (true,'communes-bretagne','communes bretonnes')")
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-fixture-v1',8),('essential_service_access','legacy-fixture-v1',0)")
+        connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
+        connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('fixture','v2026','2026','2025-01-01','2026-02-01')")
+        descriptors = []
+        legacy_rows = []
+        scalar_rows = []
+        source_rows = []
+        for service_index, service in enumerate(services):
+            for mode_index, (mode_code, mode) in enumerate(mode_codes.items()):
+                indicator = f"share_{service}_{mode_code}"
+                direction = "low" if service == "food" and mode_code == "c" else "high"
+                descriptors.append((indicator, f"{service} {mode}", "%", direction,
+                    indicator, ["commune", "epci", "departement", "region"],
+                    "fixture service access share", "dense_complete", "desc-v1"))
+                for territory_type, ids in levels.items():
+                    for index, territory_id in enumerate(ids):
+                        # Produce equal values for rank ties, a direction-low
+                        # case, and one explicit unavailable commune fact.
+                        value = round(.2 + ((index + service_index + mode_index) % 3) * .1, 2)
+                        missing = territory_id == "29004" and service == "school" and mode_code == "b"
+                        share = None if missing else value
+                        legacy_rows.append((territory_id, service, mode, share,
+                            f"{service} {mode}", direction, "fixture", "Fixture source",
+                            "2026", "2025-01-01", "2026-02-01"))
+                        scalar_rows.append((indicator, territory_id, territory_type,
+                            share, "not_available" if missing else "measured"))
+                        source_rows.append((indicator, territory_id, "fixture", "v2026"))
+        executemany("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", legacy_rows)
+        connection.execute("UPDATE table_publication SET row_count=%s WHERE table_name='essential_service_access'", (len(legacy_rows),))
+        executemany("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
+        executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,'fixture')", [(d[0],) for d in descriptors])
+        executemany("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES (%s,%s,%s,%s,%s)", scalar_rows)
+        executemany("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES (%s,%s,%s,%s)", source_rows)
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',%s,'ref-fixture-v1')", (len(scalar_rows),))
+
+    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
+                          kwargs={"autocommit": True})
+    previous_override = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    monkeypatch.delenv("LUSK_SERVICES_SCALAR_READ", raising=False)
+    try:
+        with TestClient(main.app) as client:
+            cases = [
+                ("commune", "29001", "bretagne"),
+                ("commune", "29001", "densite"),
+                ("commune", "29001", "epci"),
+                ("commune", "29004", "densite"),
+                ("epci", "200000001", None),
+                ("departement", "29", None),
+                ("region", "BRE", None),
+            ]
+            legacy = {}
+            for territory_type, code, comparison in cases:
+                suffix = f"?comparison={comparison}" if comparison else ""
+                path = f"/api/territories/{territory_type}/{code}/essential-services{suffix}"
+                response = client.get(path)
+                assert response.status_code == 200, response.text
+                legacy[(territory_type, code, comparison)] = response.json()
+
+            monkeypatch.setenv("LUSK_SERVICES_SCALAR_READ", "1")
+            for territory_type, code, comparison in cases:
+                suffix = f"?comparison={comparison}" if comparison else ""
+                path = f"/api/territories/{territory_type}/{code}/essential-services{suffix}"
+                response = client.get(path)
+                assert response.status_code == 200, response.text
+                scalar = response.json()
+                old = legacy[(territory_type, code, comparison)]
+                assert scalar["territory"] == old["territory"]
+                assert scalar["scope"] == old["scope"]
+                assert scalar["services"] == old["services"]
+            # Region is deliberately a singleton: comparison stats are absent.
+            regional = client.get("/api/territories/region/BRE/essential-services").json()
+            assert regional["scope"] is None
+            assert all(mode["rank"] is None and mode["median"] is None
+                       for service in regional["services"] for mode in service["modes"].values())
+            unavailable = client.get("/api/territories/commune/29004/essential-services?comparison=densite").json()
+            school = next(service for service in unavailable["services"] if service["id"] == "school")
+            assert school["modes"]["bike"]["value"] is None
+            legacy_school = next(service for service in legacy[("commune", "29004", "densite")]["services"]
+                                 if service["id"] == "school")
+            assert legacy_school["modes"]["bike"]["value"] is None
+
+            # An unavailable scalar publication must fail closed while legacy
+            # rows still exist; the handler may not quietly fall back to them.
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
+            failed = client.get("/api/territories/commune/29001/essential-services?comparison=bretagne")
+            assert failed.status_code == 503
+    finally:
+        if previous_override is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_override
+        pool.close()
+
+
+def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_db_env, monkeypatch):
+    """Compare both PostgreSQL readers to R-published, tracked canonical facts."""
+    import pyarrow.parquet as pq
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    root = Path(__file__).resolve().parents[3]
+    data = root / "public" / "data"
+    metadata_path = root / "pipeline" / "inst" / "extdata" / "theme-metadata" / "theme_mobilite.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    territories = pq.read_table(data / "territoires.parquet").to_pylist()
+    indicator_ids = sorted(key for key in metadata["sources"] if key.startswith("share_"))
+    service_ids = sorted({key.removeprefix("share_").rsplit("_", 1)[0]
+                          for key in indicator_ids})
+    all_rows = [row for row in pq.read_table(data / "indicateurs_mobilite.parquet").to_pylist()
+                if row["theme"] == "mobilite" and row["key"] in indicator_ids]
+    vintages = {row["id"]: row for row in pq.read_table(data / "vintages.parquet").to_pylist()}
+    assert len(indicator_ids) == 15
+
+    territory_by_id = {row["territoire"]: row for row in territories}
+    rows_by_territory = {}
+    for row in all_rows:
+        if row["type"] == "commune":
+            rows_by_territory.setdefault(row["territoire"], set()).add(row["key"])
+    target_id = next(code for code in sorted(rows_by_territory)
+                     if rows_by_territory[code] == set(indicator_ids)
+                     and territory_by_id[code].get("epci"))
+    target = territory_by_id[target_id]
+    epci_id = target["epci"]
+    member_ids = sorted(row["territoire"] for row in territories
+                        if row["type"] == "commune" and row.get("epci") == epci_id
+                        and rows_by_territory.get(row["territoire"]) == set(indicator_ids))
+    assert target_id in member_ids and len(member_ids) > 1
+    canonical_rows = [row for row in all_rows if row["type"] == "commune"
+                      and row["territoire"] in member_ids]
+    canonical_by_key = {(row["territoire"], row["key"]): row for row in canonical_rows}
+    assert len(canonical_rows) == len(member_ids) * len(indicator_ids)
+
+    reference_rows = [territory_by_id[code] for code in member_ids]
+    epci_ref = next(row for row in territories if row["type"] == "epci" and row["territoire"] == epci_id)
+    reference_rows.append(epci_ref)
+    source_ids = sorted({metadata["sources"][key] for key in indicator_ids})
+    vintage_rows = {source_id: vintages[source_id] for source_id in source_ids}
+
+    with psycopg.connect(canonical_db_env["publish_dsn"]) as connection:
+        with connection.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO territory_reference(territory_id,name,territory_type,department_id,epci_id,density_class_code,density_class_label) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                [(row["territoire"], row["nom"], row["type"], row.get("departement"),
+                  row.get("epci"), row.get("classe_densite_code"),
+                  row.get("classe_densite_libelle_public")) for row in reference_rows])
+            cur.executemany("INSERT INTO service_registry(service) VALUES (%s)",
+                            [(service,) for service in service_ids])
+            cur.executemany("INSERT INTO source_dataset(source_id,name) VALUES (%s,%s)",
+                            [(source_id, vintage_rows[source_id]["source"]) for source_id in source_ids])
+            cur.executemany(
+                "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES (%s,%s,%s,%s,%s)",
+                [(source_id,
+                  f"{vintage_rows[source_id]['version']}/{vintage_rows[source_id]['date_reference']}",
+                  vintage_rows[source_id]["version"], vintage_rows[source_id]["date_reference"],
+                  vintage_rows[source_id]["date_publication"]) for source_id in source_ids])
+        bretagne = metadata["comparison_scopes"]["bretagne"]
+        connection.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES (true,%s,%s)",
+                           (bretagne["kind"], bretagne["label"]))
+        connection.execute(
+            "INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','canonical-ref-v1',%s),('essential_service_access','canonical-legacy-v1',%s)",
+            (len(reference_rows), len(canonical_rows)))
+
+        legacy_rows = []
+        scalar_facts = []
+        provenance = []
+        descriptor_rows = []
+        descriptor_sources = []
+        for indicator in indicator_ids:
+            source_id = metadata["sources"][indicator]
+            direction = metadata["indicator_directions"][indicator]
+            label = metadata["indicator_labels"][indicator]
+            service, mode_code = indicator.removeprefix("share_").rsplit("_", 1)
+            mode = {"t": "walk_transit", "b": "bike", "c": "car"}[mode_code]
+            descriptor_rows.append((indicator, label, "%", direction, indicator, ["commune"],
+                metadata["service_share_scalar"]["denominator_semantics"],
+                metadata["service_share_scalar"]["completeness"], "canonical-test-v1"))
+            descriptor_sources.append((indicator, source_id))
+            for territory_id in member_ids:
+                row = canonical_by_key[(territory_id, indicator)]
+                vintage = vintage_rows[source_id]
+                vintage_id = f"{row['vintage_version']}/{row['vintage_date_reference']}"
+                legacy_rows.append((territory_id, service, mode, row["value"], label, direction,
+                    source_id, row["vintage_source"], row["vintage_version"],
+                    row["vintage_date_reference"], row["vintage_date_publication"]))
+                scalar_facts.append((indicator, territory_id, "commune", row["value"],
+                    "not_available" if row["value"] is None else "measured"))
+                provenance.append((indicator, territory_id, source_id, vintage_id))
+        with connection.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                legacy_rows)
+            cur.executemany(
+                "INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                descriptor_rows)
+            cur.executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,%s)",
+                            descriptor_sources)
+            cur.executemany(
+                "INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES (%s,%s,%s,%s,%s)",
+                scalar_facts)
+            cur.executemany(
+                "INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES (%s,%s,%s,%s)",
+                provenance)
+        connection.execute(
+            "INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','canonical-scalar-v1',%s,'canonical-ref-v1')",
+            (len(scalar_facts),))
+
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=2,
+                          open=True, kwargs={"autocommit": True})
+    previous_override = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        path = f"/api/territories/commune/{target_id}/essential-services?comparison=epci"
+        with TestClient(main.app) as client:
+            monkeypatch.delenv("LUSK_SERVICES_SCALAR_READ", raising=False)
+            legacy = client.get(path)
+            assert legacy.status_code == 200, legacy.text
+            monkeypatch.setenv("LUSK_SERVICES_SCALAR_READ", "1")
+            scalar = client.get(path)
+            assert scalar.status_code == 200, scalar.text
+        old_body, new_body = legacy.json(), scalar.json()
+        assert new_body["territory"] == old_body["territory"]
+        assert new_body["scope"] == old_body["scope"]
+        assert new_body["services"] == old_body["services"]
+
+        service_by_id = {service["id"]: service for service in new_body["services"]}
+        for indicator in indicator_ids:
+            canonical = canonical_by_key[(target_id, indicator)]
+            service, mode_code = indicator.removeprefix("share_").rsplit("_", 1)
+            mode = {"t": "walk_transit", "b": "bike", "c": "car"}[mode_code]
+            actual = service_by_id[service]["modes"][mode]
+            source_id = metadata["sources"][indicator]
+            assert actual["value"] == canonical["value"]
+            assert actual["indicator_label"] == metadata["indicator_labels"][indicator]
+            assert actual["direction"] == metadata["indicator_directions"][indicator]
+            assert actual["source_id"] == source_id
+            assert actual["source_name"] == canonical["vintage_source"]
+            assert actual["source_version"] == canonical["vintage_version"]
+            assert actual["reference_date"] == canonical["vintage_date_reference"]
+            assert actual["source_publication_date"] == canonical["vintage_date_publication"]
+    finally:
+        if previous_override is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_override
+        pool.close()
+
+
+def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as connection:
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29001','commune','Alpha')")
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29002','commune','Beta')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
@@ -251,10 +569,10 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
                 connection.execute("DELETE FROM scalar_observation_source WHERE indicator_id='fixture_scalar'")
 
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
-        with psycopg.connect(db_env["read_dsn"], autocommit=True) as reader:
+        with psycopg.connect(canonical_db_env["read_dsn"], autocommit=True) as reader:
             reader.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','29001','commune',1,'measured')")
 
-    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=2, open=True,
                           kwargs={"autocommit": True})
     previous = main.app.dependency_overrides.get(main.get_repository)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
@@ -272,39 +590,39 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         assert unavailable.status_code == 404
         absent_fact = client.get("/api/territories/commune/29002/indicators/fixture_scalar")
         assert absent_fact.status_code == 404
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET content_version='territory-v2' WHERE table_name='territory_reference'")
         not_rebound = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert not_rebound.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='territory-v2' WHERE table_name='scalar_observation'")
             scalar_marker = publisher.execute("SELECT content_version FROM table_publication WHERE table_name='scalar_observation'").fetchone()[0]
             assert scalar_marker == "fixture-v1"  # dependency rebind is not a scalar-content version change
         compatible_rebind = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert compatible_rebind.status_code == 200
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM territory_reference WHERE territory_id='29002'")
             publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
             publisher.execute("UPDATE table_publication SET content_version='territory-v3' WHERE table_name='territory_reference'")
         incompatible_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert incompatible_reference.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='territory-v3',row_count=9 WHERE table_name='scalar_observation'")
         # row_count is publication metadata, not a reason to scan the full
         # observation/reference tables on this point read.
         tampered_count = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert tampered_count.status_code == 200
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='obsolete' WHERE table_name='scalar_observation'")
         stale = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert stale.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM table_publication WHERE table_name='territory_reference'")
         missing_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert missing_reference.status_code == 503
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v3',2)")
-        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
         missing = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert missing.status_code == 503
@@ -508,87 +826,6 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
     finally:
         if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
-                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
-
-
-def test_shared_scalar_additive_migration_rehearsal(db_env):
-    """Rehearse migration 004 in an isolated schema with the pre-594 catalog."""
-    import psycopg
-
-    schema = "it_" + uuid.uuid4().hex[:20]
-    scoped = _dsn_with_schema(db_env["publish_dsn"], schema)
-    api_root = Path(__file__).resolve().parents[2]
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        connection.execute(f'CREATE SCHEMA "{schema}"')
-    try:
-        with psycopg.connect(scoped, autocommit=True) as connection:
-            connection.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
-            # Restore the known pre-594 catalog shape while keeping the actual
-            # existing serving tables and marker untouched.
-            connection.execute("DROP TRIGGER scalar_observation_source_required ON scalar_observation")
-            connection.execute("DROP TRIGGER scalar_observation_source_not_empty ON scalar_observation_source")
-            connection.execute("DROP TRIGGER scalar_descriptor_requires_sources ON scalar_descriptor")
-            connection.execute("DROP TRIGGER scalar_descriptor_source_set_not_empty ON scalar_descriptor_source")
-            connection.execute("DROP TRIGGER scalar_territory_compatibility ON territory_reference")
-            connection.execute("DROP TRIGGER scalar_descriptor_compatibility ON scalar_descriptor")
-            connection.execute("DROP TRIGGER scalar_observation_levels ON scalar_observation")
-            # This is a random disposable schema created for this rehearsal.
-            # Remove #597's downstream objects before reconstructing the
-            # explicit pre-#594 catalog; never use CASCADE or touch public.
-            connection.execute("DROP TRIGGER ordered_series_contract ON ordered_series")
-            connection.execute("DROP FUNCTION validate_ordered_series()")
-            connection.execute("DROP TABLE ordered_series, series_descriptor")
-            connection.execute("DROP TABLE scalar_observation_source, scalar_observation, scalar_descriptor_source, scalar_descriptor, source_vintage, source_dataset")
-            connection.execute("DROP FUNCTION assert_scalar_observation_has_source(), assert_scalar_descriptor_sources(), assert_scalar_territory_update(), assert_scalar_descriptor_update(), assert_scalar_levels()")
-            connection.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
-            connection.execute("ALTER TABLE table_publication DROP CONSTRAINT scalar_publication_requires_reference")
-            connection.execute("ALTER TABLE table_publication DROP COLUMN reference_content_version")
-            connection.execute("ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK (table_name IN ('territory_reference','service_registry','essential_service_access','building_ramp','building_grid'))")
-            connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
-            names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
-            assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
-            assert connection.execute("SELECT count(*) FROM territory_reference").fetchone()[0] == 0
-            connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-01','commune','Fixture')")
-            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_source','Fixture source')")
-            connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_source','v2026','2026')")
-            with connection.transaction():
-                connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
-                connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
-            with connection.transaction():
-                connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','fixture-01','commune',3.5,'measured')")
-                connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','fixture-01','fixture_source','v2026')")
-            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','migrated-reference-v1',1)")
-            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','migrated-scalar-v1',1,'migrated-reference-v1')")
-            role = urlsplit(db_env["read_dsn"]).username
-            assert role and re.fullmatch(r"[A-Za-z0-9_$-]+", role)
-            quoted_role = '"' + role.replace('"', '""') + '"'
-            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
-            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
-
-        from fastapi.testclient import TestClient
-        from psycopg_pool import ConnectionPool
-        from api import main
-        pool = ConnectionPool(conninfo=_dsn_with_schema(db_env["read_dsn"], schema),
-                              min_size=0, max_size=1, open=True,
-                              kwargs={"autocommit": True})
-        previous = main.app.dependency_overrides.get(main.get_repository)
-        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-        try:
-            with TestClient(main.app) as client:
-                response = client.get("/api/territories/commune/fixture-01/indicators/fixture_scalar")
-            assert response.status_code == 200, response.text
-            assert response.json()["value"] == pytest.approx(3.5)
-            assert len(response.json()["sources"]) == 1
-            assert response.json()["content_version"] == "migrated-scalar-v1"
-        finally:
-            if previous is None:
-                main.app.dependency_overrides.pop(main.get_repository, None)
-            else:
-                main.app.dependency_overrides[main.get_repository] = previous
-            pool.close()
-    finally:
-        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
-            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 

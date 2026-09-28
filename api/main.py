@@ -542,6 +542,59 @@ class ReadRepository:
                 else:
                     condition, value = "territory_type", "commune"
                     kind, label = active[1:]
+                # Reversible server-side cutover: remain on the frozen table by
+                # default; when enabled, missing/stale scalar publication fails
+                # closed (never falls back to the legacy table or static JSON).
+                if os.environ.get("LUSK_SERVICES_SCALAR_READ") == "1":
+                    markers = connection.execute(
+                        """SELECT scalar.content_version, scalar.reference_content_version,
+                                  territory.content_version
+                           FROM table_publication scalar LEFT JOIN table_publication territory
+                             ON territory.table_name='territory_reference'
+                           WHERE scalar.table_name='scalar_observation'"""
+                    ).fetchone()
+                    if (not markers or not markers[0] or not markers[1] or
+                            markers[1] != markers[2]):
+                        raise HTTPException(503, "Scalar service publication is unavailable or stale")
+                    scalar_rows = connection.execute(
+                        f"""SELECT o.indicator_id, o.territory_id, o.value, o.status,
+                                  d.label, d.direction, sd.source_id, sd.name,
+                                  sv.version, sv.reference_date, sv.publication_date
+                           FROM scalar_observation o
+                           JOIN scalar_descriptor d USING(indicator_id)
+                           JOIN territory_reference t ON t.territory_id=o.territory_id
+                             AND t.territory_type=o.territory_type
+                            JOIN scalar_observation_source os
+                              ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
+                            JOIN source_dataset sd ON sd.source_id=os.source_id
+                            JOIN source_vintage sv ON sv.source_id=os.source_id
+                              AND sv.vintage_id=os.vintage_id
+                            WHERE o.indicator_id LIKE 'share!_%%' ESCAPE '!'
+                             AND o.territory_type = %s AND t.{condition} = %s
+                             AND o.territory_type = ANY(d.allowed_levels)
+                           ORDER BY o.indicator_id, o.territory_id, sd.source_id, sv.vintage_id""",
+                        (territory_type, value),
+                    ).fetchall()
+                    converted = []
+                    for row in scalar_rows:
+                        indicator = row[0]
+                        parts = indicator.split("_")
+                        if len(parts) != 3 or parts[0] != "share" or parts[2] not in ("t", "b", "c"):
+                            raise HTTPException(503, "Malformed service scalar descriptor")
+                        mode = {"t": "walk_transit", "b": "bike", "c": "car"}[parts[2]]
+                        converted.append({"territory_id": row[1], "service": parts[1], "mode": mode,
+                            "share": row[2] if row[3] == "measured" else None,
+                            "indicator_label": row[4], "direction": row[5], "source_id": row[6],
+                            "source_name": row[7], "source_version": row[8],
+                            "reference_date": row[9], "source_publication_date": row[10]})
+                    if not converted or len({r[0] for r in scalar_rows}) != 15:
+                        raise HTTPException(503, "Incomplete scalar service publication")
+                    publication = "scalar-service-v1-" + hashlib.sha256(
+                        (markers[0] + ":" + markers[2]).encode("utf-8")).hexdigest()
+                    return {"publication_id": publication,
+                        "territory": {"id": code, "name": name, "type": territory_type},
+                        "scope": {"kind": kind, **({"label": label} if label is not None else {})} if kind else None,
+                        "comparison": territory_type != "region", "rows": converted}
                 # `condition` is selected exclusively from the three literals above; all
                 # externally supplied values are parameters, never SQL identifiers.
                 rows = connection.execute(
@@ -687,6 +740,105 @@ def compare(data: dict) -> ComparisonResponse:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
+def declared_profile(
+    territory_type: Literal["commune", "epci", "departement"],
+    territory_id: str = Path(min_length=1, max_length=32),
+    indicator_id: Literal["structure_age"] = Path(),
+    comparison_scope: Literal["bretagne", "departement", "epci"] = Query(default="bretagne"),
+    comparison_scope_id: str | None = Query(default=None, min_length=1, max_length=32),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Return a complete, descriptor-ordered profile; never substitutes static data."""
+    if comparison_scope == "bretagne":
+        if comparison_scope_id is not None:
+            raise HTTPException(422, "Bretagne comparison scope does not accept an identifier")
+    elif territory_type != "commune":
+        raise HTTPException(422, "Local comparison scopes are valid only for communes")
+    elif comparison_scope_id is None:
+        raise HTTPException(422, "Local comparison scope requires an identifier")
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            marker = conn.execute(
+                """SELECT p.content_version,p.row_count,
+                          p.reference_content_version,t.content_version AS territory_version
+                     FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.table_name='declared_profile'""").fetchone()
+            if (marker is None or not marker[0] or marker[1] < 1 or
+                    not marker[2] or marker[2] != marker[3]):
+                raise HTTPException(503, "Profile publication is unavailable")
+            descriptor = conn.execute(
+                "SELECT label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction FROM profile_descriptor WHERE indicator_id=%s",
+                (indicator_id,)).fetchone()
+            if descriptor is None or territory_type not in descriptor[2]:
+                raise HTTPException(404, "Declared profile is unavailable")
+            if (not descriptor[5] or not descriptor[6] or descriptor[7] not in ("high", "low")):
+                raise HTTPException(503, "Profile comparison descriptor is invalid")
+            department_id = comparison_scope_id if comparison_scope == "departement" else None
+            epci_id = comparison_scope_id if comparison_scope == "epci" else None
+            if territory_type != "commune":
+                department_id = epci_id = None
+            axes = conn.execute(
+                "SELECT axis_name,axis_key,label,ordinal FROM profile_axis WHERE indicator_id=%s ORDER BY axis_name,ordinal",
+                (indicator_id,)).fetchall()
+            if (not axes or {axis[0] for axis in axes} != {"detail", "sex"} or
+                    len({(axis[0],axis[1]) for axis in axes}) != len(axes) or
+                    len({(axis[0],axis[3]) for axis in axes}) != len(axes)):
+                raise HTTPException(503, "Profile descriptor axes are invalid")
+            detail_keys = {axis[1] for axis in axes if axis[0] == "detail"}
+            sex_keys = {axis[1] for axis in axes if axis[0] == "sex"}
+            if descriptor[5] not in detail_keys or descriptor[6] not in sex_keys:
+                raise HTTPException(503, "Profile comparison facet is not declared by its axes")
+            rows = conn.execute(
+                "SELECT o.territory_type,o.detail_key,o.sex_key,o.value,o.status FROM profile_observation o LEFT JOIN profile_axis d ON d.indicator_id=o.indicator_id AND d.axis_name='detail' AND d.axis_key=o.detail_key LEFT JOIN profile_axis s ON s.indicator_id=o.indicator_id AND s.axis_name='sex' AND s.axis_key=o.sex_key WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s ORDER BY d.ordinal NULLS LAST,s.ordinal NULLS LAST",
+                (indicator_id, territory_id, territory_type)).fetchall()
+            expected = sum(1 for axis in axes if axis[0] == 'detail') * sum(1 for axis in axes if axis[0] == 'sex')
+            if not rows:
+                raise HTTPException(404, "Profile territory is absent")
+            coordinates = [(row[1], row[2]) for row in rows]
+            if (len(rows) != expected or len(set(coordinates)) != len(coordinates) or
+                    any(detail not in detail_keys or sex not in sex_keys for detail, sex in coordinates)):
+                raise HTTPException(503, "Profile publication is incomplete")
+            sources = conn.execute(
+                """SELECT DISTINCT sd.source_id,sd.name,sv.version,sv.reference_date,sv.publication_date
+                     FROM profile_observation_source os JOIN source_dataset sd USING(source_id)
+                     JOIN source_vintage sv USING(source_id,vintage_id)
+                    WHERE os.indicator_id=%s AND os.territory_id=%s
+                    ORDER BY sd.source_id""", (indicator_id, territory_id)).fetchall()
+            if not sources:
+                raise HTTPException(503, "Profile provenance is unavailable")
+            peers = conn.execute(
+                """SELECT t.territory_id,t.name,o.value,o.status
+                     FROM profile_observation o JOIN territory_reference t USING(territory_id)
+                    WHERE o.indicator_id=%s AND o.territory_type=%s
+                      AND o.detail_key=%s AND o.sex_key=%s
+                      AND (%s::text IS NULL OR t.department_id=%s)
+                      AND (%s::text IS NULL OR t.epci_id=%s)
+                    ORDER BY t.name,t.territory_id LIMIT %s""",
+                (indicator_id, territory_type, descriptor[5], descriptor[6],
+                 department_id, department_id, epci_id, epci_id, MAX_TERRITORY_SEARCH_SCAN + 1)).fetchall()
+            if len(peers) > MAX_TERRITORY_SEARCH_SCAN:
+                raise HTTPException(503, "Declared comparison scope exceeds the bounded profile read")
+            if not any(peer[0] == territory_id for peer in peers):
+                raise HTTPException(503, "Focal territory is not eligible in declared comparison scope")
+            return {"indicator": indicator_id, "label": descriptor[0], "unit": descriptor[1],
+                    "descriptor_version": descriptor[4], "content_version": marker[0],
+                    "sources": [{"source_id": source_id, "name": name, "version": version,
+                        "reference_date": str(reference_date) if reference_date else None,
+                        "publication_date": str(publication_date) if publication_date else None}
+                        for source_id,name,version,reference_date,publication_date in sources],
+                    "comparison": {"detail": descriptor[5], "sex": descriptor[6],
+                        "direction": descriptor[7], "scope": comparison_scope,
+                        "scope_id": comparison_scope_id, "values": [
+                            {"territory_id": tid, "name": name, "value": value, "status": status}
+                            for tid,name,value,status in peers]},
+                    "axes": [{"name": name, "key": key, "label": label, "order": order}
+                             for name,key,label,order in axes],
+                    "cells": [{"detail": detail, "sex": sex, "value": value, "status": status}
+                              for _level,detail,sex,value,status in rows]}
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")

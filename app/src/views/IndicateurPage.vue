@@ -24,6 +24,8 @@ import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError } from '@/payload/validate'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
+import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
+import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -52,13 +54,17 @@ const orderedSeriesAdapter = computed(() => orderedSeriesApiEnabled
   : null)
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
-const attendreLegacy: Fichier[] = themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
+const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
+  structureAgeProfileEnabled(import.meta.env as Record<string, string | undefined>)
+const attendreLegacy: Fichier[] = profilAgeApi
+  ? ['territoires', 'indicateurs_demographie', 'theme_demographie']
+  : themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
 const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
 const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY, null)
 const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
 // Production resolves this from the generated manifest. Tests that inject only
 // the legacy file seam keep the historical page contract without network work.
-const utiliseManifeste = themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
+const utiliseManifeste = !profilAgeApi && themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
 const attendrePage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const demarrerPage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
@@ -88,12 +94,67 @@ if (utiliseManifeste) {
     },
   )
 }
-const utiliseModeleIndicateur = computed(() => utiliseManifeste && routeModeleIndicateur.value)
+const utiliseModeleIndicateur = computed(() => !profilAgeApi && utiliseManifeste && routeModeleIndicateur.value)
 const modeleIndicateur = ref<IndicatorReadModel | null>(null)
 const erreurModeleIndicateur = ref<PayloadError | null>(null)
 const chargementModeleIndicateur = ref(false)
 let modeleIndicateurDemarre = false
 const chargerModele = modeleChargerInjecte ?? chargerModeleIndicateur
+const faitsProfilAge = ref<Indicateur[]>([])
+const erreurProfilAge = ref<PayloadError | null>(null)
+const chargementProfilAge = ref(false)
+const retryProfilAge = ref(0)
+const metadataStructureAgeApi = ref<ThemeMetadata | null>(null)
+let sequenceProfilAge = 0
+let chargementMetadataProfil: Promise<ThemeMetadata> | null = null
+let derniereCleRequeteProfil = ''
+watch(
+  () => [profilAgeApi, porte.value.territoire, porte.value.niveau, route.query.departement,
+    route.query.epci, payloadLegacy.value.territoires.length, retryProfilAge.value] as const,
+  async ([active, territoryId, level, department, epci, territoryCount]) => {
+    const requestKey = JSON.stringify([active, territoryId, level, department, epci, territoryCount, retryProfilAge.value])
+    if (active && requestKey === derniereCleRequeteProfil) return
+    derniereCleRequeteProfil = requestKey
+    const sequence = ++sequenceProfilAge
+    faitsProfilAge.value = []
+    erreurProfilAge.value = null
+    if (!active || !territoryCount) return
+    chargementProfilAge.value = true
+    try {
+      if (!metadataStructureAgeApi.value) {
+        chargementMetadataProfil ??= chargerMetadataStructureAge()
+        try { metadataStructureAgeApi.value = await chargementMetadataProfil }
+        finally { chargementMetadataProfil = null }
+      }
+      if (sequence !== sequenceProfilAge) return
+      const page = metadataStructureAgeApi.value.indicator_pages?.structure_age
+      if (!page) throw new PayloadError('validation', 'theme_demographie.json', 'La page structure_age est absente des métadonnées.')
+      const comparison = page.comparison
+      if (!comparison?.details || !comparison.sexes || !comparison.sex || !comparison.detail) {
+        throw new PayloadError('validation', 'structure_age', 'La facette de comparaison déclarée est incomplète.')
+      }
+    if (!territoryId) {
+      erreurProfilAge.value = new PayloadError('validation', 'structure_age', 'Sélectionnez un territoire pour charger le profil complet.')
+      return
+    }
+    const selected = payloadLegacy.value.territoires.find((item) => item.territoire === territoryId && (!level || item.type === level))
+    if (!selected) {
+      erreurProfilAge.value = new PayloadError('validation', 'structure_age', 'Le territoire sélectionné est absent du référentiel.')
+      return
+    }
+      const profileFacts = await chargerStructureAgeProfile(selected, payloadLegacy.value.territoires,
+        { department: typeof department === 'string' ? department : undefined,
+          epci: typeof epci === 'string' ? epci : undefined },
+        { details: comparison.details, sexes: comparison.sexes,
+          labels: metadataStructureAgeApi.value.detail_labels.structure_age,
+          detail: comparison.detail, sex: comparison.sex, label: page.label, unit: page.unit,
+          direction: page.direction, sources: page.sources })
+      if (sequence === sequenceProfilAge) faitsProfilAge.value = profileFacts
+    } catch (cause) {
+      if (sequence === sequenceProfilAge) erreurProfilAge.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', 'structure_age', 'Impossible de charger le profil.')
+    } finally { if (sequence === sequenceProfilAge) chargementProfilAge.value = false }
+  }, { immediate: true },
+)
 watch(
   () => [payloadLegacy.value.territoires.length, utiliseModeleIndicateur.value] as const,
   ([nombreTerritoires, doitChargerModele]) => {
@@ -116,6 +177,7 @@ watch(
   },
   { immediate: true },
 )
+
 const serieLecture = ref<OrderedSeriesRead | null>(null)
 const serieErreur = ref(false)
 const serieChargement = ref(false)
@@ -159,9 +221,15 @@ async function chargerSerie(force = false) {
   }
 }
 const payload = computed(() => {
-  const base = modeleIndicateur.value
-    ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
-    : payloadLegacy.value
+  const base = profilAgeApi
+    ? { ...payloadLegacy.value,
+        indicateurs: remplacerStructureAgeStatique(payloadLegacy.value.indicateurs, faitsProfilAge.value),
+        themeMetadata: metadataStructureAgeApi.value
+          ? { ...payloadLegacy.value.themeMetadata, demographie: metadataStructureAgeApi.value }
+          : payloadLegacy.value.themeMetadata }
+    : modeleIndicateur.value
+      ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
+      : payloadLegacy.value
   const adapter = orderedSeriesAdapter.value
   if (!adapter) return base
   const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
@@ -172,10 +240,12 @@ const payload = computed(() => {
 })
 const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
+  if (profilAgeApi) return erreurProfilAge.value
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
 })
 const chargement = computed(() =>
   chargementManifesteModeles.value ||
+  (profilAgeApi && chargementProfilAge.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
     : chargementLegacy.value),
@@ -326,9 +396,9 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
 </script>
 <template>
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
-     <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
-      <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
-     <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.</div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
+    <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
+    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes

@@ -34,6 +34,7 @@ def test_fresh_and_additive_schema_define_independent_scalar_publication():
     assert "scalar_observation" in migration
 
 
+
 def test_ordered_series_route_and_fresh_schema_mirror_migration():
     from pathlib import Path
     root = Path(__file__).parents[1]
@@ -65,3 +66,109 @@ def test_series_comparison_uses_declared_direction_and_ties():
     assert high["rank"] == 2 and high["ties"] == 2
     missing = summarize_series_comparison(values[:3], "focal", None, "low")
     assert missing["rank"] is None and missing["comparable_count"] == 2
+
+
+def test_profile_endpoint_is_bounded_and_uses_independent_marker():
+    route = next(r for r in app.routes if r.path ==
+                 "/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
+    assert route.methods == {"GET"}
+    sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
+    assert "table_name='declared_profile'" in sql
+    assert "profile_observation" in sql and "profile_axis" in sql
+    assert "LEFT JOIN profile_axis d" in sql and "LEFT JOIN profile_axis s" in sql
+    assert "ORDER BY d.ordinal NULLS LAST,s.ordinal NULLS LAST" in sql
+    assert "territory_id=%s AND o.territory_type=%s" in sql
+    assert "fallback" not in sql.lower()
+
+
+def test_profile_fresh_schema_and_reserved_additive_migration_declare_dense_axes():
+    from pathlib import Path
+    root = Path(__file__).parents[1]
+    fresh = (root / "schema.sql").read_text()
+    migration = (root / "migrations/006_declared_profile.sql").read_text()
+    for sql in (fresh, migration):
+        assert "CREATE TABLE profile_descriptor" in sql
+        assert "CREATE TABLE profile_axis" in sql
+        assert "CREATE TABLE profile_observation" in sql
+        assert "CREATE TABLE profile_observation_source" in sql
+        assert "dense_complete" in sql
+        assert "primarykey(indicator_id,territory_id,detail_key,sex_key)" in "".join(sql.lower().split())
+    assert "declared_profile" in migration
+    assert "profile_publication_requires_reference" in migration
+
+
+def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapshot():
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from api.main import declared_profile
+
+    class Cursor:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+
+    class Conn:
+        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False):
+            self.incomplete = incomplete; self.stale = stale; self.bad_facet = bad_facet
+            self.undeclared = undeclared; self.bad_direction = bad_direction; self.queries = []
+        @contextmanager
+        def transaction(self): yield
+        def execute(self, sql, params=None):
+            self.queries.append(sql)
+            if "table_publication" in sql: return Cursor([("profile-v1", 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
+            if "profile_descriptor" in sql:
+                return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1",
+                    "outside" if self.bad_facet else "<15", "F", "sideways" if self.bad_direction else "high")])
+            if "SELECT axis_name" in sql:
+                return Cursor([("detail", "<15", "Moins de 15 ans", 0), ("detail", "80+", "80 ans et plus", 1), ("sex", "F", "F", 0), ("sex", "M", "M", 1)])
+            if "SELECT DISTINCT sd.source_id" in sql: return Cursor([("age_detail", "INSEE fixture", "2023", "2023-01-01", None)])
+            if "SELECT t.territory_id" in sql:
+                return Cursor([("22001", "Fixture", .2, "measured"), ("22002", "Other", .1, "measured")])
+            rows = [("commune", "<15", "F", .2, "measured"), ("commune", "<15", "M", .2, "measured"),
+                    ("commune", "80+", "F", .1, "measured"), ("commune", "80+", "M", .1, "measured")]
+            if self.undeclared: rows.append(("commune", "outside", "F", .3, "measured"))
+            return Cursor(rows[:-1] if self.incomplete else rows)
+
+    class Connections:
+        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False):
+            self.conn = Conn(incomplete, stale, bad_facet, undeclared, bad_direction)
+        @contextmanager
+        def connection(self): yield self.conn
+    repo = SimpleNamespace(connections=Connections())
+    result = declared_profile("commune", "22001", "structure_age", repository=repo)
+    marker_query = next(sql for sql in repo.connections.conn.queries if "table_publication" in sql)
+    assert "count(*)" not in marker_query.lower()
+    assert [cell["detail"] for cell in result["cells"]] == ["<15", "<15", "80+", "80+"]
+    assert result["comparison"]["detail"] == "<15"
+    assert result["comparison"]["sex"] == "F"
+    assert [row["value"] for row in result["comparison"]["values"]] == [.2, .1]
+    with __import__("pytest").raises(HTTPException) as error:
+        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(True)))
+    assert error.value.status_code == 503
+    for repository in (Connections(bad_facet=True), Connections(bad_direction=True),
+                       Connections(undeclared=True), Connections(stale=True)):
+        with __import__("pytest").raises(HTTPException) as error:
+            declared_profile("commune", "22001", "structure_age",
+                             repository=SimpleNamespace(connections=repository))
+        assert error.value.status_code == 503
+
+
+def test_profile_comparison_scope_requires_compatible_explicit_identifier():
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from api.main import declared_profile
+
+    invalid_requests = [
+        ("commune", "departement", None),
+        ("commune", "epci", None),
+        ("commune", "bretagne", "29"),
+        ("epci", "departement", None),
+        ("departement", "epci", "E1"),
+    ]
+    for territory_type, scope, scope_id in invalid_requests:
+        with __import__("pytest").raises(HTTPException) as error:
+            declared_profile(territory_type, "id", "structure_age",
+                             comparison_scope=scope, comparison_scope_id=scope_id,
+                             repository=SimpleNamespace())
+        assert error.value.status_code == 422
