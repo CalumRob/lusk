@@ -341,29 +341,38 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
 def test_database_rejects_missing_service_group(db_env):
     import psycopg
 
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        # This test owns its fixture: no importer test or module execution order
-        # is allowed to supply the pre-existing complete service group.
-        connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
-        connection.execute("INSERT INTO service_registry(service) VALUES ('school')")
-        connection.execute("""INSERT INTO essential_service_access
-            (territory_id,service,mode,share,indicator_label,effective_direction,
-             source_id,source_name,source_version)
-            VALUES ('29003','school','walk_transit',0.2,'School access','high','fixture','Fixture source','2026-01'),
-                   ('29003','school','bike',0.5,'School access','high','fixture','Fixture source','2026-01'),
-                   ('29003','school','car',0.8,'School access','low','fixture','Fixture source','2026-01')""")
-        complete_count = connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0]
-        assert complete_count == 3
-        with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
-            with connection.transaction():
-                connection.execute("DELETE FROM essential_service_access WHERE territory_id = '29003'")
-                connection.execute("SELECT assert_current_dataset_complete(%s)",
-                                   (connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0],))
-        assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = '29003'").fetchone()[0] == complete_count
-        assert {row[0] for row in connection.execute(
-            "SELECT mode FROM essential_service_access WHERE territory_id = '29003'").fetchall()} == {
-                "walk_transit", "bike", "car",
-            }
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped = _dsn_with_schema(db_env["publish_dsn"], schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    created = False
+    try:
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+        with psycopg.connect(scoped, autocommit=True) as connection:
+            connection.execute(schema_path.read_text(encoding="utf-8"), prepare=False)
+            connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-29003','commune','Gamma')")
+            connection.execute("INSERT INTO service_registry(service) VALUES ('school')")
+            connection.execute("""INSERT INTO essential_service_access
+                (territory_id,service,mode,share,indicator_label,effective_direction,
+                 source_id,source_name,source_version)
+                VALUES ('fixture-29003','school','walk_transit',0.2,'School access','high','fixture','Fixture source','2026-01'),
+                       ('fixture-29003','school','bike',0.5,'School access','high','fixture','Fixture source','2026-01'),
+                       ('fixture-29003','school','car',0.8,'School access','low','fixture','Fixture source','2026-01')""")
+            assert connection.execute("SELECT assert_current_dataset_complete(3)").fetchone() == (None,)
+            with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
+                with connection.transaction():
+                    connection.execute("DELETE FROM essential_service_access WHERE territory_id = 'fixture-29003'")
+                    connection.execute("SELECT assert_current_dataset_complete(0)")
+            assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = 'fixture-29003'").fetchone()[0] == 3
+            assert {row[0] for row in connection.execute(
+                "SELECT mode FROM essential_service_access WHERE territory_id = 'fixture-29003'").fetchall()} == {
+                    "walk_transit", "bike", "car",
+                }
+    finally:
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 def test_migration_009_rehearses_guarded_retirement_in_owned_random_schema():
