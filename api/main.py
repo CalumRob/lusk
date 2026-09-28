@@ -428,7 +428,7 @@ class ReadRepository:
                            JOIN scalar_observation_source os USING(indicator_id,territory_id)
                            JOIN source_dataset sd USING(source_id)
                            JOIN source_vintage sv USING(source_id,vintage_id)
-                           WHERE o.indicator_id LIKE 'share!_%' ESCAPE '!'
+                            WHERE o.indicator_id LIKE 'share!_%%' ESCAPE '!'
                              AND o.territory_type = %s AND t.{condition} = %s
                              AND o.territory_type = ANY(d.allowed_levels)
                            ORDER BY o.indicator_id, o.territory_id, sd.source_id, sv.vintage_id""",

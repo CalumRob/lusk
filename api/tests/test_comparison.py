@@ -237,6 +237,11 @@ def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypat
     monkeypatch.setenv("LUSK_SERVICES_SCALAR_READ", "1")
     new_repo = ReadRepository(Connections())
     scalar_response = compare(new_repo.read("22001", "bretagne"))
+    scalar_sql = next(query for query in new_repo.connections.conn.queries
+                      if "FROM scalar_observation o" in query)
+    # psycopg parameter style requires doubled percent signs in a query string
+    # even when the percent is part of a SQL LIKE literal.
+    assert "LIKE 'share!_%%' ESCAPE '!'" in scalar_sql
     legacy_rows = []
     for row in source_rows:
         service, mode_code = row[0].removeprefix("share_").rsplit("_", 1)
