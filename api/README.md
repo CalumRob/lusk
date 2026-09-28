@@ -329,3 +329,22 @@ for scope in epci densite bretagne; do
   done | sort -n | awk 'NR == 10 { a = $1 } NR == 11 { median = 500 * (a + $1) } NR == 19 { p95 = 1000 * $1 } END { printf "median %.1f ms, p95 %.1f ms\n", median, p95 }'
 done
 ```
+# Shared scalar publication contract (#594)
+
+R/Parquet remains authoritative. A scalar publisher registers a stable name,
+projects canonical facts and declared descriptors, validates them with
+`validate_scalar_projection()`, and replaces facts plus the independent
+`scalar_observation` marker in one DB transaction. Hash facts and meaning-
+affecting descriptor/source-vintage metadata. An unchanged table is a no-op
+even when another changed; failure rolls back facts and marker together for
+retry. Never infer labels, levels, source, missingness, denominator or zero.
+Readers use named bounded selectors and one repeatable-read transaction, not
+arbitrary SQL or browser credentials.
+
+Fresh installs use `schema.sql`; existing installs use numbered additive
+migrations. Orchestration reserves numbers serially before parallel workers;
+workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
+applies live migrations serially; only the product owner runs API Compose on
+Pi. Future detail, series, evidence and service slices reserve distinct
+migration numbers and use constrained shape-specific contracts. Fixture tests
+are not full-site performance evidence.
