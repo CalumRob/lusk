@@ -4,7 +4,7 @@ These tests are **read-only by default**: with no configuration they skip
 without importing psycopg or opening a connection. They never use `DATABASE_URL`
 or `PUBLISH_DATABASE_URL` and never guess that `lusk` is safe.
 
-## Disposable database guard
+## Test database guard
 
 Provide both explicit DSNs plus the exact database name and prefix `lusk_it_`.
 Both DSNs must name that same explicitly specified host/port and database; role
@@ -55,6 +55,41 @@ integrator must inspect the DSNs and disposable target before opting in.
 
 ## Persistent Pi test-only database and R publisher smoke
 
+The operator-owned integration target is PostgreSQL on the Pi at
+`192.168.1.120:5432`, in **`lusk_it_contract`**, not the serving database
+`lusk`. Its test-only roles are `lusk_it_contract_pub` (database owner; creates
+isolated schemas) and `lusk_it_contract_read` (CONNECT only until a test grants
+SELECT on its own schema). These roles must not have access to serving data.
+The database persists between runs; **test schemas are disposable**, uniquely
+named, and never created in `public`. Do not drop the database after each run.
+
+Credentials are **not in this repository**. On the publishing PC, libpq reads
+exact-host entries for these two roles and `lusk_it_contract` from the private
+`%APPDATA%\PostgreSQL\pgpass.conf`. Keep that file private to the operator;
+never print, commit, or pass its contents to workers. Set `PGPASSFILE` to that
+path in the test process. A password once shared in chat for the old disposable
+`lusk_it_594` database must not be reused for this persistent target. Future
+workers should request that the operator provision or confirm access rather
+than guessing credentials or using production roles.
+
+From the checkout root on the PC, the **focused SQL/API tests** use:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:PYTHONPATH = '.'
+python -m pytest api/tests/integration/test_postgres_publication.py -k shared_scalar -q
+```
+
+Before running, verify both connections report `current_database() =
+lusk_it_contract` and the expected test roles. Afterward, unset the
+`LUSK_TEST_*` variables; do not export them globally. The Python harness
+leaves its schemas for inspection by default; use its cleanup flag only when
+you have reviewed its cleanup behavior and the test-only target.
+
 The R publisher-to-PostgreSQL smoke is a separate opt-in path; it does not use
 production configuration, product data, `data/raw`, or `data/processed`. The
 operator must provision a permanent **test-only database on the Pi server**
@@ -75,11 +110,12 @@ the serving publisher. The role name is the only credential passed in process
 environment:
 
 ```powershell
-$env:LUSK_SCALAR_TEST_HOST = "<Pi test endpoint>"
+$env:LUSK_SCALAR_TEST_HOST = "192.168.1.120"
 $env:LUSK_SCALAR_TEST_PORT = "5432"
-$env:LUSK_SCALAR_TEST_DATABASE = "lusk_it_<dedicated-name>"
-$env:LUSK_SCALAR_TEST_USER = "<dedicated test publisher role>"
-$env:PGPASSFILE = "<private passfile path>"
+$env:LUSK_SCALAR_TEST_DATABASE = "lusk_it_contract"
+$env:LUSK_SCALAR_TEST_USER = "lusk_it_contract_pub"
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_SCALAR_TEST_CLEANUP = "1"
 Rscript scripts/smoke-scalar-postgres.R
 ```
 
