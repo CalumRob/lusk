@@ -321,7 +321,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
     from psycopg_pool import ConnectionPool
     from api import main
 
-    publish_dsn, read_dsn, _, _ = _configuration()
+    publish_dsn, read_dsn = _configuration()
     schema = "it_" + uuid.uuid4().hex[:20]
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
