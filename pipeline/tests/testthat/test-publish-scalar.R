@@ -35,6 +35,32 @@ test_that("scalar publisher validates registered canonical fixture facts", {
   expect_error(register_scalar_publisher(registry, "fixture", identity, registered_publish), "duplicate")
 })
 
+test_that("services scalar projection keeps all fifteen canonical indicator identities", {
+  keys <- unlist(lapply(c("food", "health", "admin", "school", "bank"),
+    function(service) paste0("share_", service, "_", c("t", "b", "c"))), use.names=FALSE)
+  access <- expand.grid(territory_id=c("29001", "29"), indicator_id=keys,
+    stringsAsFactors=FALSE)
+  access$territory_type <- ifelse(access$territory_id == "29001", "commune", "departement")
+  access$value <- seq_len(nrow(access)) / 100
+  access$label <- paste("label", access$indicator_id)
+  access$direction <- "high"
+  access$source_id <- "mobilite_snapshot"
+  access$source_name <- "Snapshot"
+  access$source_version <- "2024"
+  access$reference_date <- "2024-01-01"
+  access$publication_date <- "2024-02-01"
+  projection <- project_service_share_scalars(access)
+  expect_equal(nrow(projection$facts), 30L)
+  expect_setequal(unique(projection$facts$indicator_id), keys)
+  expect_equal(nrow(projection$descriptors), 15L)
+  expect_true(all(projection$descriptors$unit == "%"))
+  expect_equal(projection$facts$value, access$value)
+  expect_true(all(projection$facts$status == "measured"))
+  expect_setequal(unique(projection$provenance$indicator_id), keys)
+  expect_invisible(validate_scalar_projection(projection$facts,
+    projection$descriptors, projection$eligible_territories))
+})
+
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=0, status="measured", support_count=1L,
