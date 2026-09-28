@@ -5,11 +5,14 @@ test_that("annual series preserves declared gaps and source vintage", {
     allowed_levels="commune", source_id="consoenaf", vintage_id="2025")
   points <- data.frame(indicator_id="conso_enaf_annuel", territory_id="22001",
     territory_type="commune", axis_value=c("2011","2013","2014"),
-    observation_period=c("2011","2013","2014"), value=c(2,0,4),
-    status="measured", source_id="consoenaf", vintage_id="2025")
+    observation_period=c("2011","2013","2014"), value=c(2,0,NA_real_),
+    status=c("measured","measured","missing"), source_id="consoenaf", vintage_id="2025")
   result <- validate_series_projection(points, descriptor)
   expect_identical(result$axis_value, c("2011","2013","2014"))
   expect_equal(result$value[result$axis_value == "2013"], 0)
+  expect_identical(result$status[result$axis_value == "2013"], "measured")
+  expect_true(is.na(result$value[result$axis_value == "2014"]))
+  expect_identical(result$status[result$axis_value == "2014"], "missing")
   expect_false("2012" %in% result$axis_value)
   expect_error(validate_series_projection(rbind(points, points[1,]), descriptor), "duplicate")
   invalid <- points; invalid$axis_value[1] <- "2015"
@@ -35,13 +38,29 @@ test_that("conso ENAF projection follows canonical facts and descriptor-selected
   projection <- registry$conso_enaf_annuel$project(payload)
   expect_identical(projection$descriptor$comparison_point,
     as.character(metadata$indicator_pages$conso_enaf_annuel$comparison$detail))
-  expect_true(all(projection$points$axis_value %in% projection$descriptor$axis_values))
   canonical <- payload$indicateurs[payload$indicateurs$key == "conso_enaf_annuel", , drop=FALSE]
-  expected <- canonical[canonical$territoire == projection$points$territory_id[1] &
-    canonical$detail == projection$points$axis_value[1], "value"]
-  expect_equal(projection$points$value[1], expected[[1]])
+  expect_identical(projection$descriptor$axis_values,
+    as.character(metadata$indicator_pages$conso_enaf_annuel$comparison$details))
+  expect_identical(projection$descriptor$allowed_levels,
+    unlist(metadata$indicator_pages$conso_enaf_annuel$levels, use.names=FALSE))
+  canonical <- canonical[canonical$detail %in% projection$descriptor$axis_values &
+    canonical$type %in% projection$descriptor$allowed_levels, , drop=FALSE]
+  key <- function(territory, level, axis) paste(territory, level, axis, sep="|")
+  canonical_key <- key(canonical$territoire, canonical$type, as.character(canonical$detail))
+  projected_key <- key(projection$points$territory_id, projection$points$territory_type,
+    projection$points$axis_value)
+  expect_length(unique(canonical_key), nrow(canonical))
+  expect_length(unique(projected_key), nrow(projection$points))
+  expect_setequal(projected_key, canonical_key)
+  canonical <- canonical[match(projected_key, canonical_key), , drop=FALSE]
+  expect_identical(projection$points$indicator_id, rep("conso_enaf_annuel", nrow(canonical)))
+  expect_identical(projection$points$observation_period, as.character(canonical$detail))
+  expect_equal(projection$points$value, canonical$value)
+  expect_identical(projection$points$status, ifelse(is.na(canonical$value), "missing", "measured"))
   expect_true(all(projection$points$source_id == projection$descriptor$source_id))
-  expect_true(all(projection$points$vintage_id == projection$descriptor$vintage_id))
+  expect_identical(projection$points$vintage_id,
+    paste(as.character(canonical$vintage_version), canonical$vintage_date_reference, sep="/"))
+  expect_true(all(projection$points$axis_value %in% projection$descriptor$axis_values))
 })
 
 test_that("registered series publication is atomic, idempotent and rollback-safe", {

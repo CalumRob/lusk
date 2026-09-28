@@ -267,7 +267,6 @@ class ReadRepository:
                         "department_id": department_id, "epci_id": epci_id}}
                 return {"publication_id": marker[0], "territory":{"id":territory_id,"type":territory_type,"name":target[0]},
                          "indicator_id":indicator_id,"axis_kind":descriptor[0],"completeness":descriptor[2],
-                         "territory":{"id":territory_id,"type":territory_type,"name":target[0]},
                          "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
                         "descriptor_version":descriptor[9],"comparison_point":descriptor[3],"points":points,
                         "availability": "complete" if all(point["status"] == "measured" for point in points) else "incomplete",
