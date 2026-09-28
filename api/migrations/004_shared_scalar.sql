@@ -6,6 +6,9 @@ ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check
 ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check
  CHECK (table_name IN ('territory_reference','service_registry','essential_service_access',
    'building_ramp','building_grid','scalar_observation'));
+ALTER TABLE table_publication ADD COLUMN reference_content_version text;
+ALTER TABLE table_publication ADD CONSTRAINT scalar_publication_requires_reference
+ CHECK (table_name <> 'scalar_observation' OR reference_content_version IS NOT NULL);
 CREATE TABLE source_dataset (source_id text PRIMARY KEY, name text NOT NULL);
 CREATE TABLE source_vintage (
  source_id text NOT NULL REFERENCES source_dataset(source_id), vintage_id text NOT NULL,

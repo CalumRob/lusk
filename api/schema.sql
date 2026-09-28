@@ -6,7 +6,10 @@ CREATE TABLE table_publication (
         'building_ramp', 'building_grid', 'scalar_observation')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
-    published_at timestamptz NOT NULL DEFAULT now()
+    reference_content_version text,
+    published_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT scalar_publication_requires_reference
+      CHECK (table_name <> 'scalar_observation' OR reference_content_version IS NOT NULL)
 );
 
 -- Shared scalar foundation. Descriptors own the allowed territory levels and

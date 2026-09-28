@@ -198,6 +198,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
 
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29001','commune','Alpha')")
+        connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29002','commune','Beta')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture','v2026','2026')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_secondary','Secondary source')")
@@ -207,7 +208,8 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count,source_id,vintage_id) VALUES ('fixture_scalar','29001','commune',0,'measured',0,0,'fixture','v2026')")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture','v2026')")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture_secondary','v2025')")
-        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('scalar_observation','fixture-v1',1)")
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',2)")
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','fixture-v1',1,'territory-v1')")
         # Zero is measured; null is legal only with typed unavailability.
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,source_id,vintage_id) VALUES ('fixture_scalar','29001','commune',NULL,'measured','fixture','v2026')")
@@ -244,6 +246,20 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         assert body["content_version"] == "fixture-v1"
         assert [source["version"] for source in body["provenance"]] == ["2026", "2025"]
         assert unavailable.status_code == 404
+        absent_fact = client.get("/api/territories/commune/29002/indicators/fixture_scalar")
+        assert absent_fact.status_code == 404
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("UPDATE table_publication SET reference_content_version='obsolete' WHERE table_name='scalar_observation'")
+        stale = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+        assert stale.status_code == 503
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("UPDATE table_publication SET reference_content_version='territory-v1',row_count=9 WHERE table_name='scalar_observation'")
+        inconsistent = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+        assert inconsistent.status_code == 503
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
+        missing = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+        assert missing.status_code == 503
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
@@ -273,6 +289,8 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
             connection.execute("DROP TABLE scalar_observation_source, scalar_observation, scalar_descriptor, source_vintage, source_dataset")
             connection.execute("DROP FUNCTION assert_scalar_source_link(), assert_scalar_territory_update(), assert_scalar_descriptor_update(), assert_scalar_levels()")
             connection.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
+            connection.execute("ALTER TABLE table_publication DROP CONSTRAINT scalar_publication_requires_reference")
+            connection.execute("ALTER TABLE table_publication DROP COLUMN reference_content_version")
             connection.execute("ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK (table_name IN ('territory_reference','service_registry','essential_service_access','building_ramp','building_grid'))")
             connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
             names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}

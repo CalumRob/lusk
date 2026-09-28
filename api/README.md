@@ -341,6 +341,14 @@ retry. Never infer labels, levels, source, missingness, denominator or zero.
 Readers use named bounded selectors and one repeatable-read transaction, not
 arbitrary SQL or browser credentials.
 
+The scalar publication marker pins `reference_content_version` to the
+independent `territory_reference` marker version. Scalar reads fail with 503 if
+either marker is missing, the versions differ, or either marker row count no
+longer matches its committed table. This exact-version compatibility token is
+the cross-table identity strategy; readers never blend a scalar snapshot with
+a newer territorial reference and return 404 only for an absent row in a
+validated compatible snapshot.
+
 Fresh installs use `schema.sql`; existing installs use numbered additive
 migrations. Orchestration reserves numbers serially before parallel workers;
 workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
@@ -348,3 +356,10 @@ applies live migrations serially; only the product owner runs API Compose on
 Pi. Future detail, series, evidence and service slices reserve distinct
 migration numbers and use constrained shape-specific contracts. Fixture tests
 are not full-site performance evidence.
+
+The opt-in `Rscript scripts/publish-serving-tables.R --scalar-fixture-check`
+projects only the small tracked Démographie fixture through the registered
+scalar publisher. `--scalar-fixture-publish` is additionally guarded to a DSN
+whose database exactly matches `LUSK_TEST_DATABASE_NAME=lusk_it_*`; it is for a
+disposable integration database only. Neither mode invokes the production
+targets graph or needs `data/raw`.

@@ -52,3 +52,12 @@ the new tables. The live `lusk` schema is never involved.
 
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
+
+The shared-scalar migration/read tests are selected with
+`-k shared_scalar`. Several older importer integration cases in this module
+still assert the retired `dataset_publication` fixture even though the current
+fresh schema uses independent `table_publication` markers and intentionally
+rejects the legacy importer. Do not make the legacy importer writable again to
+green those tests. Their fixture isolation/rehearsal needs a separate follow-up;
+the scalar tests use the current schema and disposable namespace described
+above.

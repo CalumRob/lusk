@@ -561,6 +561,23 @@ def scalar_observation(
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            marker = conn.execute(
+                """SELECT scalar.content_version, scalar.row_count,
+                          scalar.reference_content_version,
+                          territory.content_version AS territory_version,
+                          territory.row_count AS territory_row_count,
+                          (SELECT count(*) FROM scalar_observation) AS actual_scalar_rows,
+                          (SELECT count(*) FROM territory_reference) AS actual_territories
+                   FROM table_publication scalar
+                   LEFT JOIN table_publication territory
+                     ON territory.table_name = 'territory_reference'
+                   WHERE scalar.table_name = 'scalar_observation'"""
+            ).fetchone()
+            if marker is None:
+                raise HTTPException(503, "Scalar publication is unavailable")
+            if (marker[2] is None or marker[3] is None or marker[2] != marker[3]
+                    or marker[1] != marker[5] or marker[4] != marker[6]):
+                raise HTTPException(503, "Scalar publication is stale or incompatible")
             cursor = conn.execute(
                 """SELECT o.indicator_id, o.territory_id, o.territory_type,
                           o.value, o.status, o.support_count, o.denominator_count,

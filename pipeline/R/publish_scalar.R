@@ -13,6 +13,25 @@ validate_scalar_projection <- function(facts, descriptors, eligible_territories 
   if (!setequal(names(facts), required_facts) ||
       !setequal(names(descriptors), required_descriptors))
     stop("Scalar projection contains undeclared fields", call. = FALSE)
+  if (anyNA(facts[c("indicator_id", "territory_id", "territory_type", "status", "source_id", "vintage_id")]) ||
+      any(!nzchar(as.character(facts$territory_id))) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,95}$", facts$indicator_id)) ||
+      any(!facts$territory_type %in% c("commune", "epci", "departement", "region")) ||
+      any(!nzchar(facts$source_id)) || any(!nzchar(facts$vintage_id)))
+    stop("Invalid or missing scalar identity/key fields", call. = FALSE)
+  allowed <- lapply(descriptors$allowed_levels, as.character)
+  if (anyNA(descriptors[c("indicator_id", "source_id", "label", "unit", "direction",
+                          "denominator_semantics", "completeness", "descriptor_version")]) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,95}$", descriptors$indicator_id)) ||
+      any(!nzchar(descriptors$source_id)) || any(!nzchar(descriptors$label)) ||
+      any(!nzchar(descriptors$unit)) || any(!nzchar(descriptors$denominator_semantics)) ||
+      any(!nzchar(descriptors$descriptor_version)) ||
+      any(!descriptors$direction %in% c("high", "low", "none")) ||
+      any(!descriptors$completeness %in% c("dense_complete", "sparse")) ||
+      any(vapply(allowed, function(x) !length(x) || anyNA(x) || anyDuplicated(x) ||
+        any(!x %in% c("commune", "epci", "departement", "region")), logical(1))) ||
+      any(!is.na(descriptors$comparison_facet) & !nzchar(descriptors$comparison_facet)))
+    stop("Invalid or missing scalar descriptor fields", call. = FALSE)
   if (anyDuplicated(facts[c("indicator_id", "territory_id")]))
     stop("Duplicate scalar observation key", call. = FALSE)
   if (anyDuplicated(descriptors$indicator_id)) stop("Duplicate scalar descriptor", call. = FALSE)
@@ -47,6 +66,17 @@ validate_scalar_projection <- function(facts, descriptors, eligible_territories 
         stop("Dense scalar observations do not cover eligible territories", call. = FALSE)
     }
   }
+  if (!is.null(eligible_territories)) {
+    if (!is.data.frame(eligible_territories) ||
+        !all(c("territory_id", "territory_type") %in% names(eligible_territories)) ||
+        anyNA(eligible_territories[c("territory_id", "territory_type")]) ||
+        any(!eligible_territories$territory_type %in% c("commune", "epci", "departement", "region")) ||
+        anyDuplicated(eligible_territories[c("territory_id", "territory_type")]))
+      stop("Invalid eligible territory universe", call. = FALSE)
+    if (any(!paste(facts$territory_id, facts$territory_type) %in%
+            paste(eligible_territories$territory_id, eligible_territories$territory_type)))
+      stop("Scalar fact references an unknown eligible territory", call. = FALSE)
+  }
   invisible(facts)
 }
 
@@ -56,6 +86,52 @@ register_scalar_publisher <- function(registry, name, project, publish) {
     stop("Invalid or duplicate scalar publisher registration", call. = FALSE)
   registry[[name]] <- list(project = project, publish = publish)
   registry
+}
+
+project_fixture_scalar <- function(payload, descriptor, indicator_id = "densite") {
+  page <- descriptor$indicator_pages[[indicator_id]]
+  if (is.null(page)) stop("Fixture indicator is not declared", call. = FALSE)
+  facts <- payload$indicateurs
+  facts <- facts[facts$key == indicator_id & facts$type %in% page$levels, , drop=FALSE]
+  if (!nrow(facts)) stop("Canonical fixture has no declared scalar facts", call. = FALSE)
+  source_id <- page$sources[[1L]]
+  version <- as.character(facts$vintage_version)
+  vintage_id <- paste(version, facts$vintage_date_reference, sep="/")
+  scalar_facts <- data.frame(
+    indicator_id=indicator_id, territory_id=facts$territoire,
+    territory_type=facts$type, value=facts$value,
+    status=ifelse(is.na(facts$value), "not_available", "measured"),
+    support_count=NA_integer_, denominator_count=NA_integer_,
+    source_id=source_id, vintage_id=vintage_id,
+    stringsAsFactors=FALSE
+  )
+  descriptor_row <- data.frame(
+    indicator_id=indicator_id, source_id=source_id, label=page$label,
+    unit=page$unit, direction=page$direction,
+    comparison_facet=NA_character_, allowed_levels=I(list(unlist(page$levels))),
+    denominator_semantics=page$calculation, completeness="sparse",
+    descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE
+  )
+  provenance <- unique(scalar_facts[c("indicator_id", "territory_id", "source_id", "vintage_id")])
+  vintages <- unique(data.frame(
+    source_id=source_id, vintage_id=vintage_id, version=version,
+    reference_date=as.Date(facts$vintage_date_reference),
+    publication_date=as.Date(facts$vintage_date_publication),
+    stringsAsFactors=FALSE
+  ))
+  list(facts=scalar_facts, descriptors=descriptor_row,
+       provenance=provenance,
+       datasets=data.frame(source_id=source_id, name=unique(as.character(facts$vintage_source))[[1L]]),
+       vintages=vintages,
+       eligible_territories=payload$territoires[payload$territoires$type %in% page$levels,
+         c("territoire", "type"), drop=FALSE] |>
+         stats::setNames(c("territory_id", "territory_type")))
+}
+
+register_fixture_scalar_publisher <- function(registry, descriptor) {
+  register_scalar_publisher(registry, "canonical_fixture_densite",
+    project=function(payload) project_fixture_scalar(payload, descriptor, "densite"),
+    publish=function(projection, db, version) db$replace(projection, version))
 }
 
 scalar_content_version <- function(projection) {
@@ -70,7 +146,9 @@ scalar_content_version <- function(projection) {
 publish_registered_scalar <- function(registry, name, canonical, db) {
   publisher <- registry[[name]]
   if (is.null(publisher)) stop("Unregistered scalar publisher", call. = FALSE)
-  if (!is.function(db$transaction) || !is.function(db$marker) || !is.function(db$replace))
+  if (!is.function(db$transaction) || !is.function(db$marker) || !is.function(db$replace) ||
+      !is.function(db$reference_marker) || !is.function(db$validate_territories) ||
+      !is.function(db$set_reference_version))
     stop("Invalid scalar database adapter", call. = FALSE)
   projection <- publisher$project(canonical)
   if (!is.list(projection) || !all(c("facts", "descriptors", "provenance", "datasets", "vintages", "eligible_territories") %in% names(projection)))
@@ -78,7 +156,10 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
   validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
   provenance <- projection$provenance
   provenance_columns <- c("indicator_id", "territory_id", "source_id", "vintage_id")
-  if (!is.data.frame(provenance) || !all(provenance_columns %in% names(provenance)) ||
+  if (!is.data.frame(provenance) || !setequal(names(provenance), provenance_columns) ||
+      anyNA(provenance[provenance_columns]) ||
+      any(!nzchar(provenance$indicator_id) | !nzchar(provenance$territory_id) |
+          !nzchar(provenance$source_id) | !nzchar(provenance$vintage_id)) ||
       anyDuplicated(provenance[provenance_columns]) ||
       any(!paste(projection$facts$indicator_id, projection$facts$territory_id) %in%
           paste(provenance$indicator_id, provenance$territory_id)) ||
@@ -89,10 +170,14 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
     stop("Invalid or incomplete scalar provenance associations", call. = FALSE)
   datasets <- projection$datasets
   vintages <- projection$vintages
-  if (!is.data.frame(datasets) || !all(c("source_id", "name") %in% names(datasets)) ||
+  if (!is.data.frame(datasets) || !setequal(names(datasets), c("source_id", "name")) ||
+      anyNA(datasets[c("source_id", "name")]) || any(!nzchar(datasets$source_id)) ||
+      any(!nzchar(trimws(datasets$name))) ||
       anyDuplicated(datasets$source_id) ||
       !is.data.frame(vintages) ||
-      !all(c("source_id", "vintage_id", "version", "reference_date", "publication_date") %in% names(vintages)) ||
+      !setequal(names(vintages), c("source_id", "vintage_id", "version", "reference_date", "publication_date")) ||
+      anyNA(vintages[c("source_id", "vintage_id", "version")]) ||
+      any(!nzchar(vintages$source_id) | !nzchar(vintages$vintage_id) | !nzchar(vintages$version)) ||
       anyDuplicated(vintages[c("source_id", "vintage_id")]) ||
       any(!provenance$source_id %in% datasets$source_id) ||
       any(!paste(provenance$source_id, provenance$vintage_id) %in%
@@ -101,10 +186,22 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
   version <- scalar_content_version(projection)
   db$transaction({
     if (is.function(db$lock)) db$lock()
+    reference <- db$reference_marker()
+    if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
+        !nzchar(reference$content_version[[1L]]) ||
+        (all(c("row_count", "actual_rows") %in% names(reference)) &&
+         reference$row_count[[1L]] != reference$actual_rows[[1L]]))
+      stop("Territory reference has no committed publication marker", call. = FALSE)
+    db$validate_territories(projection$eligible_territories, projection$descriptors)
     marker <- db$marker("scalar_observation")
     changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
+    reference_changed <- nrow(marker) && !identical(
+      as.character(marker$reference_content_version[[1L]]),
+      as.character(reference$content_version[[1L]]))
     if (changed) publisher$publish(projection, db, version)
-    invisible(list(changed = changed, content_version = version))
+    else if (reference_changed) db$set_reference_version(reference$content_version[[1L]])
+    invisible(list(changed = changed, compatibility_updated = reference_changed,
+                   content_version = version))
   })
 }
 
@@ -114,7 +211,21 @@ scalar_postgres_adapter <- function(con) {
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
     lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
-      "SELECT content_version FROM table_publication WHERE table_name = $1", params = list(name)),
+      "SELECT content_version, reference_content_version FROM table_publication WHERE table_name = $1", params = list(name)),
+    reference_marker = function() DBI::dbGetQuery(con,
+      "SELECT p.content_version, p.row_count, (SELECT count(*) FROM territory_reference) AS actual_rows FROM table_publication p WHERE p.table_name='territory_reference'"),
+    validate_territories = function(territories, descriptors) {
+      expected <- unique(territories[c("territory_id", "territory_type")])
+      actual <- DBI::dbGetQuery(con, "SELECT territory_id, territory_type FROM territory_reference")
+      levels <- unique(unlist(descriptors$allowed_levels, use.names=FALSE))
+      actual <- actual[actual$territory_type %in% levels, , drop=FALSE]
+      if (!setequal(paste(expected$territory_id, expected$territory_type),
+                    paste(actual$territory_id, actual$territory_type)))
+        stop("Scalar eligible territory universe differs from the committed reference", call. = FALSE)
+    },
+    set_reference_version = function(version) DBI::dbExecute(con,
+      "UPDATE table_publication SET reference_content_version=$1 WHERE table_name='scalar_observation'",
+      params = list(version)),
     replace = function(projection, version) {
       facts <- projection$facts
       descriptors <- projection$descriptors
@@ -148,8 +259,10 @@ scalar_postgres_adapter <- function(con) {
       }
       DBI::dbWriteTable(con, "scalar_observation", facts, append = TRUE, row.names = FALSE)
       DBI::dbWriteTable(con, "scalar_observation_source", provenance, append = TRUE, row.names = FALSE)
-      DBI::dbExecute(con, "INSERT INTO table_publication(table_name,content_version,row_count,published_at) VALUES ('scalar_observation',$1,$2,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,published_at=EXCLUDED.published_at",
-                     params = list(version, nrow(facts)))
+      reference <- DBI::dbGetQuery(con, "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
+      if (!nrow(reference)) stop("Territory reference publication is unavailable", call. = FALSE)
+      DBI::dbExecute(con, "INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES ('scalar_observation',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",
+                     params = list(version, nrow(facts), reference$content_version[[1L]]))
     }
   )
 }
