@@ -24,12 +24,16 @@ functions, ownership/grants, and search-path/dynamic-SQL consumers. Also ask the
 operator to verify external scripts, dashboards, scheduled jobs, and other
 out-of-database references. `DROP ... RESTRICT` makes catalog dependencies fail
 closed; it cannot discover external consumers.
-4. Rehearse on a disposable PostgreSQL database restored from a recent backup.
-Verify 009 succeeds on the expected clean target; separately attach a dependent
-view/object and verify it fails atomically without removing the table. While
-rehearsing, query active per-table readers and verify a representative
-publication still updates/reads `table_publication` normally. Preserve those
-reader roles and grants; never test by dropping/recreating their active tables.
+4. Rehearse on the explicitly named disposable database `lusk_it_contract`.
+The opt-in test `test_migration_009_rehearses_guarded_retirement_in_owned_random_schema`
+executes the actual migration file in a random, test-role-owned `it_<20 hex>`
+schema only. It checks the unexpected-column guard, dependent-FK atomic failure,
+successful removal, and reads plus denied writes for the active read-only marker
+role. The script has no path to `public` in this database; do not weaken the
+production `lusk.public` guard to make a rehearsal pass. Current
+`table_publication` and `territory_reference` data must survive. For operational
+rehearsal, restore recent data to a disposable database and verify publication
+and reads before proceeding.
 5. Obtain explicit operator approval after recording rehearsal output, backup
 verification, dependency inventory, and maintenance window. Run once with
 `psql -X --set ON_ERROR_STOP=on --single-transaction` against the approved

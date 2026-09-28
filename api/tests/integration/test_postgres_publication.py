@@ -348,3 +348,83 @@ def test_database_rejects_missing_service_group(db_env):
                 connection.execute("SELECT assert_current_dataset_complete(%s)",
                                    (connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0],))
         assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = '29003'").fetchone()[0] == 3
+
+
+def test_migration_009_rehearses_guarded_retirement_in_owned_random_schema():
+    """Run the actual script only in the explicitly named disposable contract DB."""
+    configured = os.environ.get("LUSK_TEST_PUBLISH_DSN")
+    read_dsn = os.environ.get("LUSK_TEST_READ_DSN")
+    if not configured or not read_dsn:
+        pytest.skip("requires explicit publish/read disposable PostgreSQL DSNs")
+    parts = urlsplit(configured)
+    if parts.path.lstrip("/") != "lusk_it_contract":
+        pytest.skip("migration 009 rehearsal is restricted to lusk_it_contract")
+    read_parts = urlsplit(read_dsn)
+    if (read_parts.path.lstrip("/") != "lusk_it_contract"
+            or parts.hostname != read_parts.hostname or parts.port != read_parts.port
+            or parts.username == read_parts.username):
+        pytest.fail("migration rehearsal requires distinct publisher/reader roles on the same lusk_it_contract server")
+    psycopg = pytest.importorskip("psycopg")
+    migration = (Path(__file__).resolve().parents[2] / "migrations" /
+                 "009_retire_dataset_publication.sql").read_text(encoding="utf-8")
+    schema = "it_" + uuid.uuid4().hex[:20]
+    reader_dsn = _dsn_with_schema(read_dsn, schema)
+
+    def seed(connection, *, extra_column=False, dependent=False):
+        columns = "dataset_key text PRIMARY KEY, publication_id text NOT NULL, row_count integer NOT NULL, bretagne_kind text NOT NULL, bretagne_label text NOT NULL, imported_at timestamptz NOT NULL"
+        if extra_column:
+            columns += ", unexpected text"
+        connection.execute(f"CREATE TABLE dataset_publication ({columns})")
+        connection.execute("INSERT INTO dataset_publication VALUES ('legacy','old',1,'kind','label',now()" + (",'unknown'" if extra_column else "") + ")")
+        connection.execute("CREATE TABLE table_publication (table_name text PRIMARY KEY, content_version text NOT NULL)")
+        connection.execute("INSERT INTO table_publication VALUES ('territory_reference','active-v1')")
+        connection.execute("CREATE TABLE territory_reference (territory_id text PRIMARY KEY)")
+        connection.execute("INSERT INTO territory_reference VALUES ('fixture')")
+        if dependent:
+            connection.execute("CREATE TABLE legacy_dependent (dataset_key text REFERENCES dataset_publication(dataset_key))")
+            connection.execute("INSERT INTO legacy_dependent VALUES ('legacy')")
+
+    def run(connection):
+        connection.execute("SELECT set_config('lusk.migration_009_rehearsal_schema', %s, false)", (schema,))
+        try:
+            connection.execute(migration, prepare=False)
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+
+    with psycopg.connect(configured, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}" AUTHORIZATION CURRENT_USER')
+        try:
+            connection.execute(f'SET search_path TO "{schema}"')
+            read_role = urlsplit(read_dsn).username
+            if not read_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", read_role):
+                pytest.fail("Read DSN must identify a simple PostgreSQL role name")
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
+            seed(connection, extra_column=True)
+            with pytest.raises(psycopg.errors.RaiseException, match="unexpected dataset_publication columns"):
+                run(connection)
+            assert connection.execute("SELECT publication_id FROM dataset_publication").fetchone()[0] == "old"
+            connection.execute("DROP TABLE dataset_publication, table_publication, territory_reference")
+
+            seed(connection, dependent=True)
+            connection.execute(f'GRANT SELECT ON table_publication, territory_reference TO "{read_role}"')
+            with pytest.raises(psycopg.errors.DependentObjectsStillExist):
+                run(connection)
+            assert connection.execute("SELECT publication_id FROM dataset_publication").fetchone()[0] == "old"
+            assert connection.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
+            assert connection.execute("SELECT territory_id FROM territory_reference").fetchone()[0] == "fixture"
+            with psycopg.connect(reader_dsn, autocommit=True) as reader:
+                assert reader.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    reader.execute("UPDATE table_publication SET content_version='forbidden'")
+            connection.execute("DROP TABLE legacy_dependent")
+
+            run(connection)
+            assert connection.execute("SELECT to_regclass('dataset_publication')").fetchone()[0] is None
+            assert connection.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
+            assert connection.execute("SELECT territory_id FROM territory_reference").fetchone()[0] == "fixture"
+            with pytest.raises(psycopg.errors.RaiseException, match="expected .*dataset_publication"):
+                run(connection)
+        finally:
+            connection.execute("RESET search_path")
+            connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
