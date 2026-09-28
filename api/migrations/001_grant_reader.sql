@@ -1,5 +1,6 @@
--- Apply only after api/schema.sql, in the same transaction as the live migration.
--- These are the existing Pi roles; the serving schema is rebuilt by postgres.
+-- Fresh-install privilege script only: apply after api/schema.sql, in the same
+-- transaction as fresh schema creation. It is not numbered upgrade migration 004.
+-- Additive upgrade grants live in the corresponding numbered migration.
 GRANT USAGE ON SCHEMA public TO lusk_reader;
 GRANT SELECT ON TABLE table_publication,
     access_publication_metadata, territory_reference, service_registry,

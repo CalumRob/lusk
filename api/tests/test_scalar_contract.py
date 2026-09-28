@@ -10,6 +10,13 @@ def test_scalar_endpoint_is_named_bounded_and_registered():
     assert "REPEATABLE READ, READ ONLY" in sql
     assert "WHERE o.indicator_id = %s" in sql
     assert "AND o.territory_id = %s" in sql
+    marker_sql = next(c for c in route.endpoint.__code__.co_consts
+                      if isinstance(c, str) and "scalar.reference_content_version" in c)
+    assert "scalar.content_version" in marker_sql
+    assert "territory.content_version" in marker_sql
+    assert "count(" not in marker_sql.lower()
+    assert "actual_scalar_rows" not in marker_sql
+    assert "actual_territories" not in marker_sql
 
 
 def test_fresh_and_additive_schema_define_independent_scalar_publication():

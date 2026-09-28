@@ -288,13 +288,21 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         incompatible_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert incompatible_reference.status_code == 503
         with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("UPDATE table_publication SET reference_content_version='territory-v3',row_count=9 WHERE table_name='scalar_observation'")
+        # row_count is publication metadata, not a reason to scan the full
+        # observation/reference tables on this point read.
+        tampered_count = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+        assert tampered_count.status_code == 200
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET reference_content_version='obsolete' WHERE table_name='scalar_observation'")
         stale = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert stale.status_code == 503
         with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
-            publisher.execute("UPDATE table_publication SET reference_content_version='territory-v1',row_count=9 WHERE table_name='scalar_observation'")
-        inconsistent = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
-        assert inconsistent.status_code == 503
+            publisher.execute("DELETE FROM table_publication WHERE table_name='territory_reference'")
+        missing_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+        assert missing_reference.status_code == 503
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+            publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v3',2)")
         with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
         missing = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
