@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from api.main import ReadRepository, app, get_repository
+from api.main import ReadRepository, _building_publication, app, get_repository
 from api.tests.test_building_comparison import curve
 
 
@@ -92,8 +92,9 @@ def test_repository_reads_only_resolved_members_in_one_consistent_publication():
         def execute(self, sql, params=None):
             self.calls.append((sql, params))
             if "SET TRANSACTION" in sql: return Result([])
-            if "FROM dataset_publication" in sql:
-                return Result([("essential_service_access", "v1"), ("building_access", "v1")])
+            if "FROM table_publication" in sql:
+                return Result([("territory_reference", "ref-1"),
+                               ("building_ramp", "ramp-1"), ("building_grid", "grid-1")])
             if "FROM territory_reference" in sql and "WHERE" in sql:
                 return Result([("A", "commune", "A")])
             if "FROM territory_reference" in sql:
@@ -115,7 +116,9 @@ def test_repository_reads_only_resolved_members_in_one_consistent_publication():
 
     connections = Connections()
     data = ReadRepository(connections).read_building("commune", "A", (("commune", "B"), ("commune", "C")))
-    assert data["publication_id"] == "v1"
+    assert data["publication_id"] == _building_publication([
+        ("territory_reference", "ref-1"), ("building_ramp", "ramp-1"),
+        ("building_grid", "grid-1")])
     assert data["direction"] == "high"
     assert "REPEATABLE READ, READ ONLY" in connections.current.calls[0][0]
     selected_queries = [(sql, params) for sql, params in connections.current.calls
@@ -139,3 +142,69 @@ def test_catalog_exposes_only_published_territory_identities_for_explicit_choice
         app.dependency_overrides.clear()
     assert response.status_code == 200
     assert response.json() == CatalogRepository().read_building_catalog()
+
+
+def test_building_identity_composes_only_its_physical_table_versions():
+    base = [("territory_reference", "r1"), ("building_ramp", "a1"),
+            ("building_grid", "g1")]
+    identity = _building_publication(base)
+    assert _building_publication(base + [("essential_service_access", "access-2")]) == identity
+    assert _building_publication([("territory_reference", "r1"),
+                                  ("building_ramp", "a2"), ("building_grid", "g1")]) != identity
+
+
+def test_building_identity_fails_closed_if_any_required_marker_is_missing():
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as error:
+        _building_publication([("territory_reference", "r1"), ("building_grid", "g1")])
+    assert error.value.status_code == 503
+
+
+def test_initial_building_access_uses_exact_default_rows_and_explicit_scope():
+    class InitialRepository:
+        def read_building_initial(self, territory_type, territory_id, comparison):
+            assert (territory_type, territory_id, comparison) == ("commune", "A", "densite")
+            return {"publication_id": "v1", "territory": {"id": "A", "type": "commune", "name": "A"},
+                    "scope": {"kind": "communes-densite", "label": "Dense", "comparison_mode": "densite"},
+                    "ramp": [{"mode": "t", "quantile": 0.5, "accessible_types": 2}],
+                    "peer_ramp": [{"mode": "t", "quantile": 0.5, "accessible_types": 1.5}],
+                    "distribution": [{"breadth_bucket": "0", "depth_bucket": "0", "building_count": 4}],
+                    "peer_distribution": [{"breadth_bucket": "0", "depth_bucket": "0", "share": 0.6}]}
+
+    app.dependency_overrides[get_repository] = InitialRepository
+    try:
+        response = TestClient(app).get("/api/territories/commune/A/building-access?comparison=densite")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    assert response.json()["scope"]["comparison_mode"] == "densite"
+    assert response.json()["peer_ramp"][0]["accessible_types"] == 1.5
+
+
+def test_initial_building_access_rejects_arbitrary_comparison_scope():
+    app.dependency_overrides[get_repository] = lambda: object()
+    try:
+        response = TestClient(app).get("/api/territories/commune/A/building-access?comparison=custom")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+def test_region_initial_access_returns_focal_facts_without_comparison():
+    class RegionRepository:
+        def read_building_initial(self, territory_type, territory_id, comparison):
+            assert (territory_type, territory_id) == ("region", "53")
+            return {"publication_id": "v1", "territory": {"id": "53", "type": "region", "name": "Bretagne"},
+                    "scope": {"kind": "regions", "label": "Bretagne", "comparison_mode": comparison},
+                    "ramp": [], "peer_ramp": None, "distribution": [], "peer_distribution": None}
+
+    app.dependency_overrides[get_repository] = RegionRepository
+    try:
+        response = TestClient(app).get("/api/territories/region/53/building-access")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    assert response.json()["peer_ramp"] is None
+    assert response.json()["peer_distribution"] is None

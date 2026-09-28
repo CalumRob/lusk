@@ -76,7 +76,7 @@ publier_theme_metadata <- function(metadata, sortie = "public/data",
   # ["demographie"] que write_json donnerait à une liste — tandis que les
   # tableaux (story_keys, indicator_keys, template, ...) restent des tableaux
   # (la forme que l'app valide, types.ts).
-  jsonlite::write_json(
+  ecrire_json_si_modifie(
     metadata,
     file.path(sortie, paste0("theme_", metadata$theme, ".json")),
     dataframe = "rows", na = "null", digits = 17, pretty = TRUE,

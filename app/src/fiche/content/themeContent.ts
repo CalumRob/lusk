@@ -851,17 +851,15 @@ function buildingComparisonPopulationLabel(
 function distributionSection(facts: TerritoryFacts): DistributionAccesParBatimentSection {
   const buildingDistribution = facts.mobility.buildingDistribution
   const accessRamp = facts.mobility.accessRamp
-  const customComparison = buildingDistribution?.comparisonStatistic === 'mean' || accessRamp?.comparisonStatistic === 'mean'
-  const rawComparisonLabel = customComparison
-    ? 'territoires sélectionnés'
-    : buildingDistribution?.comparisonLabel ?? accessRamp?.comparisonLabel ?? null
+  const meanComparison = buildingDistribution?.comparisonStatistic === 'mean' || accessRamp?.comparisonStatistic === 'mean'
+  const rawComparisonLabel = buildingDistribution?.comparisonLabel ?? accessRamp?.comparisonLabel ?? null
   const hasAny = buildingDistribution !== null || accessRamp !== null
   const evidence: DistributionEvidence | null = hasAny
     ? {
         kind: 'distribution',
         buildingDistribution,
         accessRamp,
-        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, customComparison ? 'mean' : null),
+        comparisonPopulationLabel: buildingComparisonPopulationLabel(rawComparisonLabel, meanComparison ? 'mean' : null),
         buildingDistributionLecture: buildingDistributionFigureLecture(buildingDistribution, facts.territory),
         accessRampLecture: accessRampFigureLecture(accessRamp),
       }

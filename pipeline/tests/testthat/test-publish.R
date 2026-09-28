@@ -138,6 +138,18 @@ test_that("publish est un upsert : relancer écrase sans dupliquer", {
   expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
 })
 
+test_that("publish conserve un parquet canonique inchangé", {
+  payload <- compute_payload(load_fixture())
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+  publish(payload, cible, backend = "parquet")
+  fichier <- file.path(cible, "territoires.parquet")
+  avant <- file.info(fichier)$mtime
+  Sys.sleep(1.1)
+  publish(payload, cible, backend = "parquet")
+  expect_identical(file.info(fichier)$mtime, avant)
+})
+
 # issue #19 : le layout par thème s'étend à Habitat — les faits partent en
 # indicateurs_habitat / histoires_habitat, la référence reste partagée, le
 # contrat JSON-égale-parquet couvre les nouveaux fichiers.

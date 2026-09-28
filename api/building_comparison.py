@@ -55,7 +55,7 @@ def resolve_commune_members(reference, selected, *, max_members):
     return tuple(sorted(members))
 
 
-def _selected_communes(rows, member_ids, max_members):
+def _selected_communes(rows, member_ids, max_members, member_type="commune"):
     members = tuple(member_ids)
     if (not isinstance(max_members, int) or isinstance(max_members, bool)
             or max_members < 2 or not 1 <= len(members) <= max_members
@@ -65,7 +65,7 @@ def _selected_communes(rows, member_ids, max_members):
     by_member = defaultdict(list)
     for row in rows:
         code = row.get("territoire")
-        if code not in members or row.get("type") != "commune":
+        if code not in members or row.get("type") != member_type:
             raise ComparisonInputError("Unexpected territory in ramp publication")
         by_member[code].append(row)
     if set(by_member) != set(members):
@@ -79,14 +79,14 @@ def _selected_communes(rows, member_ids, max_members):
     return members, by_member
 
 
-def weighted_peer_ramp(rows, member_ids, *, max_members):
+def weighted_peer_ramp(rows, member_ids, *, max_members, member_type="commune"):
     """Compare distinct communes from one publication; return None for <2 available.
 
     The caller resolves whole selected territories into disjoint commune IDs and
     fetches ONLY those rows in the same publication before calling this seam.
     Missing or malformed rows are errors, not an absent comparison.
     """
-    members, by_member = _selected_communes(rows, member_ids, max_members)
+    members, by_member = _selected_communes(rows, member_ids, max_members, member_type)
 
     complete = []
     for code in members:
@@ -150,9 +150,9 @@ def weighted_peer_ramp(rows, member_ids, *, max_members):
     }
 
 
-def pooled_peer_distribution(rows, member_ids, *, max_members):
+def pooled_peer_distribution(rows, member_ids, *, max_members, member_type="commune"):
     """The grid's peer share is the mean of per-building cell membership (0/1)."""
-    members, by_member = _selected_communes(rows, member_ids, max_members)
+    members, by_member = _selected_communes(rows, member_ids, max_members, member_type)
     complete = []
     expected_cells = None
     for code in members:

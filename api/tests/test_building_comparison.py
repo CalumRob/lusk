@@ -74,6 +74,12 @@ def test_mixed_level_selection_expands_to_distinct_communes_without_double_count
     ]
     assert resolve_commune_members(reference, [("epci", "E"), ("commune", "A")],
                                    max_members=3) == ("A", "B")
+    assert resolve_commune_members(reference, [("epci", "E"), ("departement", "22")],
+                                   max_members=3) == ("A", "B")
+    # A focal commune is neither included nor excluded by the server: selection
+    # of another department omits it; an explicitly selected parent includes it.
+    assert resolve_commune_members(reference, [("departement", "29")],
+                                   max_members=3) == ("C",)
     assert resolve_commune_members(reference, [("region", "53")], max_members=3) == ("A", "B", "C")
     with pytest.raises(ComparisonInputError):
         resolve_commune_members(reference, [("region", "53")], max_members=2)

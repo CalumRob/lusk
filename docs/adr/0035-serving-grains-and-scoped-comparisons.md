@@ -50,19 +50,19 @@ future is known.
 ## Publication and provenance constraints
 
 1. A territory identity/reference projection has one clear publication owner.
-   The access + building slice now refreshes its shared reference and fact
-   grains together under one committed publication. Independently owned
-   foreign-key dependents block refresh until a compatible ownership contract
-   exists.
-2. Each published dataset is validated for its declared grain, allowed keys,
+   R publishes the shared reference and each serving fact table independently
+   from this machine; unchanged tables are not replaced. Changed tables with
+   dependencies can commit together in one database transaction, without
+   sharing a permanent global version. A changed reference must remain
+   compatible with independently versioned facts or fail closed.
+2. Each published table is validated for its declared grain, allowed keys,
    detail universes, duplicate observations, missingness, provenance, and
    parity with canonical Parquet before its active snapshot changes. An
-   unchanged fingerprint does not re-publish; failed validation or SQL keeps
-   the prior complete publication. A read uses one committed snapshot and
-   returns the publication ID. If a future response composes independently
-   published datasets, either require a compatible release group or expose
-   their separate publication IDs; never imply cross-dataset atomicity that
-   does not exist.
+   unchanged table version does not re-publish; a database version behind an
+   unchanged local Parquet version is retried. Failed validation or SQL keeps
+   the previous complete database table. Reads use one committed snapshot
+   and carry the relevant table versions (or a token derived from them), never
+   misrepresent independently versioned tables as one stored release.
 3. Observation period, source version, source reference date, source
    publication date and database publication time are different concepts.
    Provenance may vary by observation (OCS-GE endpoints, programmes) and may
@@ -123,12 +123,13 @@ recomputes shares from the pooled denominator. Both figures carry metric type
 nor precomputed fixed-scope peer ramps is required. ADR-0036 supersedes
 ADR-0034's fixed-scope prescription; old JSON comparisons are not API inputs.
 
-The proposed narrow implementation uses the existing shared territory reference
-and publication machinery, adding only `building_ramp` and `building_grid` fact
-grains. The access and building artifacts are validated before one transactional
-refresh; both committed markers have the same publication ID. Reference rows
-are upserted rather than deleted wholesale, and unknown foreign-key dependents
-fail closed. A read pins the publication, identity and selected commune facts
+The narrow implementation uses the existing shared territory reference and
+publication machinery, adding only `building_ramp` and `building_grid` fact
+grains. R writes canonical Parquet locally and publishes validated projections
+from this machine to Postgres; the Pi does not need the Parquet. Each physical
+serving table has its own content version. Only changed tables are replaced,
+while related changes may commit atomically. Unknown foreign-key dependents
+fail closed. A read pins the table versions, identity and selected commune facts
 in one repeatable-read transaction. The browser gets no database credentials.
 `api/migrations/002_building_access.sql` is a candidate migration, **not** an
 authorization to run it in production or change the Pi. The disposable-Postgres
@@ -148,8 +149,9 @@ For the still-proposed general indicator catalogue, discuss with the owner:
 1. Should eventual scalar/detail/series storage be shared across themes,
    with shape-specific publisher validation, or physically separated by theme?
    The building-access slice does not decide this.
-2. Beyond the joint access + building publication, which future datasets need
-   shared release IDs and which can honestly expose separate publication IDs?
+2. Which future fact shapes need their own serving tables? Adding one requires
+   a declared contract, an explicit fresh-install schema update and an
+   additive migration, not automatic DDL from an arbitrary R frame.
 3. Which fixed `rang_*` outputs remain compatibility evidence versus served
    comparisons? In particular, profiles' repeated ranks are not evidence
    that every category was independently ranked.

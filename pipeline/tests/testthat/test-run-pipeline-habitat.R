@@ -63,6 +63,7 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
       if (!dir.exists(cible)) dir.create(cible, recursive = TRUE)
       invisible(NULL)
     },
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
     .package = "lusk"
   )
   local_mocked_bindings(

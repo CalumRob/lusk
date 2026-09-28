@@ -41,6 +41,10 @@ A static, generated browser projection shaped for one product reading surface ra
 **Status (2026-09-27):** the incumbent static form remains on existing pages while ADR-0033's single product-data serving path is adopted by surface. It is no longer the default for new product-data work; this status does not claim existing pages have migrated.
 _Avoid_: payload global, table de pipeline, cache applicatif, base de données navigateur, view model
 
+**Version de table publiée**:
+The content identity of one complete Lusk serving table derived from canonical R facts. It changes only when that table's validated facts or meaning change; it is distinct from a source's observation date or vintage, a Parquet file's encoding, and a whole-site release.
+_Avoid_: version globale, vintage de la source, date de déploiement
+
 **ContentUnit**:
 A coherent semantic subject within ThemeContent, such as « Accès aux services » in Mobilité. It groups related indicators and ContentSections, but is not a page, spread, or other presentation container; its order and interpretation belong to typed theme grammar rather than the published payload contract.
 _Avoid_: page, bloc de mise en page, subgroup (the legacy payload assembly term)

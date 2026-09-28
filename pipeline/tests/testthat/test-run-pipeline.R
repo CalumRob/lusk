@@ -122,6 +122,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$rapport_cible_vue <- cible
       invisible(NULL)
     },
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
     .package = "lusk"
   )
   local_mocked_bindings(
@@ -235,8 +236,9 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
                                       directions_module = NULL)
       invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
-                                  couverture = NULL)
+                                   couverture = NULL)
       invisible(NULL),
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
     .package = "lusk"
   )
   local_mocked_bindings(
@@ -289,10 +291,11 @@ test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapp
                                       directions_module = NULL)
       invisible(metadata),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
-                                  couverture = NULL) {
+                                   couverture = NULL) {
       recu <<- couverture
       invisible(NULL)
     },
+    remplacer_fichier_si_modifie = function(...) invisible(TRUE),
     .package = "lusk"
   )
   local_mocked_bindings(

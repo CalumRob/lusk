@@ -19,45 +19,43 @@ the first development-only browser consumer (#581); its renderer is unchanged.
 | `indicateurs_mobilite.parquet` | `essential_service_access`: one territory × service × mode for the current dataset; nullable share as a **fraction** in 0–1, despite its `%` display unit |
 | `pipeline/inst/extdata/theme-metadata/theme_mobilite.json` | Pipeline-owned descriptor of declared share keys, indicator labels, source IDs and effective directions; its directions are contract-tested against the R ranking registry |
 | `vintages.parquet` | Source version, name and dates attached to served observations |
-| `rampe_acces_batiments.parquet` | `building_ramp`: three modes × eleven positions per complete commune, with its own building denominator; explicit absent sentinels |
-| `distribution_acces_batiments.parquet` | `building_grid`: thirty cells per complete commune; explicit absent sentinel |
+| `rampe_acces_batiments.parquet` | `building_ramp`: three modes × eleven positions per complete territory, with its own building denominator; explicit absent sentinels |
+| `distribution_acces_batiments.parquet` | `building_grid`: thirty cells per complete territory; explicit absent sentinel |
 
 The importer reads **canonical Parquet**, not published JSON or route-scoped
 models. The theme descriptor is a pipeline-owned configuration file, not a
-published browser payload. A future R-to-Postgres publisher may send these
-validated tables directly without a Python Parquet reader; neither approach
-requires publishing JSON. The importer validates all three modes for every
-published territory and service. Null means unavailable, never zero. It does not
-manufacture building denominators from the separately published building count.
+published browser payload. R sends validated projections from the desktop
+without publishing new JSON mirrors. Three modes are required for every served
+territory and service. Null means unavailable, never zero; building denominators
+come from the building facts themselves.
 
-`import_publication()` validates canonical inputs, then replaces access and,
-when both building files are present, building facts in **one transaction**.
-`territory_reference` is upserted rather than deleted wholesale; references
-outside the incoming universe are removed only after dependent facts are
-replaced. Unrecognized foreign-key dependents block the refresh. Once building
-facts have been published, an access-only refresh without both building files
-is rejected. Both publication markers carry the same identifier. The
-publication identifier, row count and regional scope label are updated in the
-same transaction. Invalid input never reaches the DB; a database error rolls
-the entire refresh back. Committed readers see either the previous complete
-dataset or the next complete dataset. No old facts are retained in Postgres:
-to return to an earlier snapshot, republish its canonical Parquet and matching
-pipeline metadata. `TRUNCATE` is intentionally not used. Concurrent publishers
-are serialized with an advisory transaction lock. The API uses a repeatable-read
-snapshot per request; successive requests may observe different refreshes.
-
-The access publication identifier fingerprints the **validated serving
-projection**: access facts and their source/vintage, territory reference fields,
-and the published regional comparison scope. It identifies this pipeline-owned
-data snapshot, not an arbitrary run timestamp or raw Parquet encoding. Changes
-to unrelated indicators or vintages in shared Parquet do not refresh the access
-dataset. A repeat run with the same fingerprint skips the write entirely,
-leaving `imported_at` and all other datasets untouched. The first run after the
-older raw-file-hash importer changes the identifier once, even if values match.
+The desktop R pipeline projects the canonical Parquet into five declared SQL
+tables. Each table has its own content version in `table_publication`; changes
+to access alone do not rewrite building facts, and vice versa. A publication
+transaction serializes writers, replaces only changed fact tables, upserts
+changed shared references and removes only unreferenced stale identities. It
+updates each changed table's marker together with its rows; the access scope
+descriptor is updated with access. Foreign-key conflicts or incomplete tables
+roll the transaction back. Re-running after a Parquet-success/DB-failure
+compares **database** markers and retries even when the local files are already
+unchanged. API reads pin one repeatable-read snapshot. The legacy Python
+`import_publication()` is retained for pre-migration validation/history but is
+not a publisher for the per-table schema; its CLI rejects database writes.
 
 ## API contract
 
-The branch adds `GET /api/building-access/territories` for the bounded,
+The initial Variant E figures use `GET /api/territories/{type}/{id}/building-access`,
+returning focal ramp/grid values and the mean comparison for the existing default
+scope in one committed publication. The commune's comparison mode is resolved
+against its density, EPCI, or Bretagne scope; EPCI and département compare to
+their own level, while the region has no peers. The browser has **no peer-group
+chooser** in this pilot. Its labels come from the existing typed read-model
+scope, not a second API copy. The figure values fail closed if this read fails.
+The rest of the territory model (including the figure's presentation grammar
+and other theme sections) still loads from static JSON; this pilot migrates the
+building-figure **values**, not the entire page or its metadata.
+
+The internal API also has `GET /api/building-access/territories` for the bounded,
 published choice catalog and `POST /api/territories/{type}/{id}/building-access-comparison`
 with `{ "selected": [{"type": "commune", "id": "22001"}, ...] }`.
 Selections expand to **distinct communes**, even when parents overlap; none
@@ -67,11 +65,18 @@ carry metric type `mean`. The ramp has eleven building-count-weighted mean
 positions **per mode**, not quantiles of pooled buildings; the grid pools cell
 counts. An absent member contributes nothing, and fewer than two available
 members yield a null comparison. A single repeatable-read transaction pins the
-marker, identity and selected rows. Unknown/unbounded selections fail closed.
+marker versions, identity and selected rows. Its token derives from the
+reference, ramp and grid versions, not access. Unknown/unbounded selections
+fail closed.
 
-The new `migrations/002_building_access.sql` is a **candidate** for the
-existing schema. It has not been applied. No production migration or Pi change
-is implied by the code in this branch.
+`migrations/002_building_access.sql` was applied to the Pi's `lusk` database
+on 2026-09-28. R then published all five tables and their row counts were
+checked against the canonical Parquet. The existing catalog and explicit-group
+API routes were deployed. `migrations/003_building_access_all_levels.sql` was
+rehearsed in a rolled-back live transaction and applied on 2026-09-28. R then
+published 41,784 ramp rows and 37,982 grid rows. Local current API code read
+the live PostgreSQL publication for a commune, EPCI, département and region;
+the operator rebuilt the API and checked Variant E in the browser.
 
 ### Existing access reads
 
@@ -120,9 +125,11 @@ follows the generic R ranking rule (1/1); some current read models suppress it.
 `schema.sql` is a **fresh-install schema**, not an idempotent migration. The
 original Pi schema was replaced once on 2026-09-27 with the tested,
 transaction-scoped `migrations/001_replace_versioned_access.sql`; **do not run
-that migration again**. Do not run the new building importer against the old
-schema without first reviewing and applying its candidate migration.
-Ordinary refreshes use only the importer, without dropping tables. The Pi-specific
+that migration again**. `migrations/002_building_access.sql` and
+`migrations/003_building_access_all_levels.sql` were applied on 2026-09-28;
+do not rerun them. They preserve the existing access marker while introducing
+per-table markers and all-level building grains. Ordinary refreshes use R,
+without dropping tables. The Pi-specific
 operator notes in `README-deploy.md` are local and gitignored, consistent with
 `docs/self-hosting.md`; the reusable source and test contract remain tracked.
 
@@ -134,25 +141,68 @@ python -m pytest api/tests
 python -m api.importer --check public/data
 ```
 
-No PostgreSQL is needed for those checks. Physical SQL behavior of the new
-building tables remains unverified: do not apply their candidate migration
-to production on the strength of fixture/Parquet tests alone. The product
-owner declined a disposable-Postgres **performance gate** while the app has no
-users; this does not turn mock SQL tests into a live database check. For a
-guided, one-off import after operator review, use
-`python -m api.importer public/data --host <pi-host> --database lusk
---user lusk_publisher`; without `PGPASSFILE`, it prompts for the password
-without recording it in the shell. The API takes a *different, read-only*
-`DATABASE_URL`; give it SELECT on the serving relations it reads and no
-write permissions. Credentials must never be copied to `/srv/lusk/api`.
+No PostgreSQL is needed for those checks. Migrations 002 and 003 were first
+rehearsed in rolled-back transactions, then applied to live PostgreSQL; R
+committed the changed tables and their row counts were checked. The product
+owner checked the Variant E browser after the API image was rebuilt. The
+product owner declined a disposable-Postgres **performance gate**. The API
+uses a *different, read-only* `DATABASE_URL`; no database credentials belong in
+the browser or `/srv/lusk/api` checkout.
 
-### Repeatable R-to-Postgres access publication (#572)
+### Deployment procedure for the bounded building pilot
 
-Run **after** a successful R pipeline publication (including the shared
-`vintages.parquet` fusion), from the repository root. Use canonical
+The PC connects **directly** to Pi PostgreSQL over LAN at `192.168.1.120:5432`,
+database `lusk`, role `lusk_publisher`. libpq reads the private password from
+`%APPDATA%\PostgreSQL\pgpass.conf`; use the literal IP, not the SSH hostname
+`calum-pi`, because passfile host matching is exact. Do not copy the passfile,
+credentials, or Parquet to the Pi. On 2026-09-28 the publisher owned both
+building tables and the completeness-check function; verify ownership and
+rehearse in a rolled-back transaction before **any future** migration, and get
+operator approval before applying it. Never reapply migrations 001–003.
+
+The Pi API checkout is root-owned at `/srv/lusk/api`. Stage **current** source
+files with SSH as `lusk-agent`, then ask the operator to install them. For this
+pilot the staging path was `/tmp/lusk-sql-pilot-588/api`:
+
+```powershell
+scp -i "$HOME/.ssh/lusk_pi_ed25519" api/main.py api/building_comparison.py api/schema.sql lusk-agent@calum-pi:/tmp/lusk-sql-pilot-588/api/
+```
+
+```sh
+sudo install -m 0644 /tmp/lusk-sql-pilot-588/api/main.py /srv/lusk/api/main.py
+sudo install -m 0644 /tmp/lusk-sql-pilot-588/api/building_comparison.py /srv/lusk/api/building_comparison.py
+sudo install -m 0644 /tmp/lusk-sql-pilot-588/api/schema.sql /srv/lusk/api/schema.sql
+cd /srv/lusk/api/deploy
+sudo docker compose -p lusk-api -f compose.yaml ps
+sudo docker compose -p lusk-api -f compose.yaml up -d --build --no-deps api
+```
+
+The existing Compose project is **`lusk-api`**, with config at
+`/srv/lusk/api/deploy/compose.yaml`. Confirm `compose ps` lists the existing
+container before rebuilding; without `-p lusk-api`, Docker Compose would use
+the directory's default project and could create a second stack. The Dockerfile
+copies `api/` into the image, so a restart alone does not pick up source changes.
+For data changes, publish **from the PC** with R below; rebuilding Docker does
+not publish data. Local operator-only detail remains in gitignored
+`api/README-deploy.md` (no password is recorded there).
+
+### Desktop-to-Pi publication after R (#572)
+
+Run **on the publishing PC**, after a successful R pipeline publication
+(including the shared `vintages.parquet` fusion), from `pipeline/`.
+The canonical Parquet files remain on the PC; the publisher reads them here
+and sends the validated serving projection to PostgreSQL on the Pi. Pulling
+API code on the Pi does not transfer or publish these files. Use canonical
 `public/data/*.parquet` and pipeline-owned Mobilité metadata; JSON outputs and
-the static-site release are not inputs. This step is explicit/operator-run, not
-added to the static-site cron or a `targets` side effect.
+the static-site release are not inputs. Publication is opt-in: the normal
+`targets` graph and static-site cron do not include a DB target. The `--targets`
+command opts in to a leaf target after the final territory publication,
+Mobilité metadata and fused vintages. Targets skips unchanged upstream compute;
+the leaf checks the database markers every explicit run so a failed DB write
+can be retried. The `--publish` command retries from already-published files
+without evaluating the graph. RPostgres connects directly from the PC to the
+Pi's existing PostgreSQL service over libpq; SSH is for copying API code, not
+for publishing data.
 
 The operator creates a libpq password file **outside this checkout and any
 agent-writable deployment directory**, restricts access to the operator, and
@@ -161,11 +211,11 @@ matches `host:port:database:username:password` (for example,
 `<pi-host>:5432:lusk:lusk_publisher:<private-password>`); escape literal `:`
 and `\` according to libpq's passfile rules. The file is never copied into
 `api/`, shown in logs, or committed. `PGPASSFILE` contains only a path, not a
-password; the importer rejects missing files and files inside the repository.
+password; the operator must verify the file is private and outside the checkout.
 That check cannot establish filesystem ACLs or discover every other
 agent-writable directory: **the operator must verify** the chosen location is
 outside those directories and accessible only to the publishing identity.
-The importer passes the path to libpq; it does not read or print the secret.
+RPostgres uses libpq; the script does not read or print the secret.
 On this PC the operator chose a passfile under their Windows user profile;
 programs running as the **same Windows identity** can technically read it.
 That is an accepted local trust boundary here, not isolation from the agent.
@@ -180,15 +230,25 @@ $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 ```
 
 ```powershell
-python -m api.importer public/data --host <pi-host> --database lusk --user lusk_publisher
+# From pipeline/; --check reads canonical files without a database connection.
+Rscript scripts/publish-serving-tables.R --check
+# The one-time migration 002 has already been applied; do not rerun it.
+$env:LUSK_PUBLISH_HOST = '<pi-db-host>'
+$env:LUSK_PUBLISH_PORT = '5432' # optional: default 5432
+$env:LUSK_PUBLISH_DATABASE = 'lusk'
+$env:LUSK_PUBLISH_USER = 'lusk_publisher'
+Rscript scripts/publish-serving-tables.R --targets
+# DB retry from existing canonical files without evaluating the targets graph:
+Rscript scripts/publish-serving-tables.R --publish
 ```
 
-The command reports `published` when the validated access snapshot changes,
-`unchanged` when it already matches the current database publication, and
-fails nonzero without changing the prior dataset if validation or SQL fails.
-The publisher serializes competing runs before comparing fingerprints. Only
-essential-service access is a Postgres dataset in this slice; other pipeline
-datasets stay in their own canonical Parquet and are not invented as tables.
+The standalone command reports changed physical tables or `No table changes`;
+the targets command reports the result in the targets run log. Each explicit
+publication compares local content versions to database markers, so a
+Parquet-success/DB-failure is retried without rewriting already-current files.
+Reference, service registry, access, ramp and grid each retain their own version;
+other pipeline facts stay in canonical Parquet. Deploying the new API code and
+testing its read paths in the browser are the remaining live checks.
 
 **Observed verification, 2026-09-27:** 22 local Python tests passed; the operator
 ran all 7 opt-in real-Postgres tests in disposable `lusk_it_spike` (2.28 s),
@@ -221,13 +281,12 @@ them. A blank Pi/base site/database installation is outside this slice.
    logins. Set their passwords interactively in `psql` (`\password`), never in
    command history or tracked files. Apply `schema.sql` to a **fresh, empty
    serving schema** and `migrations/001_grant_reader.sql` in one transaction;
-   the reader gets SELECT and the publisher gets only the access-serving writes.
+    the reader gets SELECT and the publisher gets only the serving-table writes.
    Do not use this fresh-install sequence on the already-deployed Pi.
 3. The operator places the reader `DATABASE_URL` in the mode-600
    `/srv/lusk-private/api.env`, outside the checkout; the publisher credential
-   stays in the operator's private PC password file (or a one-off prompt). From the PC,
-   validate and publish canonical Parquet with `python -m api.importer
-   public/data --host <pi-host> --database lusk --user lusk_publisher`.
+    stays in the operator's private PC password file. The desktop R publisher
+    runs only after the reviewed migration and publication checks below.
 4. From `/srv/lusk/api/deploy`, use **`docker compose -p lusk-api -f compose.yaml
    config --quiet`** and `docker compose -p lusk-api -f compose.yaml up -d
    --build api`. Always pass `-p lusk-api`: the default project inferred from

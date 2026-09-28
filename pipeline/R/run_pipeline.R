@@ -32,10 +32,14 @@
 # JSON (backend "static" par défaut de publish) + vintages + rapport de run.
 
 run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
-                         sortie = "public/data",
-                         mode = c("full", "cron"),
-                         noms_epci_geo_api = lire_noms_epci_geo_api()) {
+                          sortie = "public/data",
+                          mode = c("full", "cron"),
+                          noms_epci_geo_api = lire_noms_epci_geo_api(),
+                          connexion_service = NULL) {
   mode <- match.arg(mode)
+  if (!is.null(connexion_service) && !identical(theme$theme, "mobilite")) {
+    stop("La publication SQL de service exige le thème Mobilité.", call. = FALSE)
+  }
 
   # Le téléchargement renvoie les statuts par source — le cœur du rapport de
   # run. En mode cron, un échec s'arrête ici en portant les statuts sur
@@ -176,13 +180,21 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     character(0)
   }
   vintages <- fusionner_vintages(vintages, sortie, retires = retires)
-  nanoparquet::write_parquet(vintages, file.path(sortie, "vintages.parquet"))
+  ecrire_parquet_si_modifie(vintages, file.path(sortie, "vintages.parquet"))
   # Issue #73 : la table des vintages est aussi projetée en JSON — la table
   # partagée que l'app lit pour citer les sources d'un bloc (le Story cite SES
   # jeux de données, plus jamais un tampon de thème).
-  jsonlite::write_json(vintages, file.path(sortie, "vintages.json"),
-                       dataframe = "rows", na = "null",
-                       digits = 17, pretty = TRUE)
+  ecrire_json_si_modifie(vintages, file.path(sortie, "vintages.json"),
+                         dataframe = "rows", na = "null",
+                         digits = 17, pretty = TRUE)
+  # Optional operator-owned desktop connection (usually via SSH tunnel). The
+  # pipeline writes canonical Parquet here first; the DB publisher compares
+  # per-table markers even when none of those files changed in this run.
+  if (!is.null(connexion_service)) {
+    service <- preparer_tables_service(sortie)
+    publier_tables_postgres(connexion_service, service$tables, service$versions,
+                            access_scope = service$access_scope)
+  }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème
   # le porte.

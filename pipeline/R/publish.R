@@ -69,14 +69,62 @@ publier_comparaisons_acces_batiments <- function(projections, cible) {
     }
   }
   for (fichier in fichiers) {
-    if (file.exists(fichier[[2L]])) unlink(fichier[[2L]])
-    if (!file.rename(fichier[[1L]], fichier[[2L]])) {
-      stop("Publication impossible : ", fichier[[2L]], call. = FALSE)
-    }
+    remplacer_fichier_si_modifie(fichier[[1L]], fichier[[2L]])
   }
   invisible(noms)
 }
 
+# Same-directory rename avoids touching a published file whose bytes have not
+# changed. Keep the old file as a rollback candidate on platforms where rename
+# cannot replace an existing destination (notably Windows).
+remplacer_fichier_si_modifie <- function(temporaire, fichier) {
+  if (file.exists(fichier) &&
+      identical(unname(tools::md5sum(temporaire)), unname(tools::md5sum(fichier)))) {
+    return(invisible(FALSE))
+  }
+  precedent <- NULL
+  if (file.exists(fichier)) {
+    precedent <- tempfile(".previous-", tmpdir = dirname(fichier))
+    if (!file.rename(fichier, precedent)) {
+      stop("Publication impossible : ", fichier, call. = FALSE)
+    }
+  }
+  if (!file.rename(temporaire, fichier)) {
+    if (!is.null(precedent) && !file.rename(precedent, fichier)) {
+      stop("Publication et restauration impossibles : ", fichier, call. = FALSE)
+    }
+    stop("Publication impossible : ", fichier, call. = FALSE)
+  }
+  if (!is.null(precedent)) unlink(precedent)
+  invisible(TRUE)
+}
+
+ecrire_json_si_modifie <- function(objet, fichier, ...) {
+  temporaire <- tempfile(".publish-", tmpdir = dirname(fichier), fileext = ".json")
+  on.exit(unlink(temporaire), add = TRUE)
+  jsonlite::write_json(objet, temporaire, ...)
+  remplacer_fichier_si_modifie(temporaire, fichier)
+}
+
+ecrire_parquet_si_modifie <- function(table, fichier) {
+  temporaire <- tempfile(".publish-", tmpdir = dirname(fichier),
+                         fileext = ".parquet")
+  on.exit(unlink(temporaire), add = TRUE)
+  if (file.exists(fichier)) {
+    existant <- tryCatch(nanoparquet::read_parquet(fichier), error = function(e) NULL)
+    memes_colonnes <- !is.null(existant) &&
+      identical(names(existant), names(table)) && nrow(existant) == nrow(table)
+    memes_valeurs <- memes_colonnes && all(vapply(names(table), function(nom) {
+      identical(class(existant[[nom]]), class(table[[nom]])) &&
+        identical(unname(existant[[nom]]), unname(table[[nom]]))
+    }, logical(1)))
+    if (memes_valeurs) {
+      return(invisible(FALSE))
+    }
+  }
+  nanoparquet::write_parquet(table, temporaire)
+  remplacer_fichier_si_modifie(temporaire, fichier)
+}
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
 #   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet
@@ -123,11 +171,11 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   }
   theme <- themes[[1L]]
 
-  nanoparquet::write_parquet(payload$indicateurs,
+  ecrire_parquet_si_modifie(payload$indicateurs,
                              file.path(cible, paste0("indicateurs_", theme, ".parquet")))
-  nanoparquet::write_parquet(payload$histoires,
+  ecrire_parquet_si_modifie(payload$histoires,
                              file.path(cible, paste0("histoires_", theme, ".parquet")))
-  nanoparquet::write_parquet(payload$territoires,
+  ecrire_parquet_si_modifie(payload$territoires,
                              file.path(cible, "territoires.parquet"))
   # Issue #116 : apercu est un fichier PARTAGÉ (pas par-thème) — seule la
   # table Démographie le peuple (les thèmes sans aperçu ont une table vide par
@@ -137,7 +185,7 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   # contrat, validate_payload l'exige) ; publish ne la sérialise que lorsqu'elle
   # porte des lignes.
   if (nrow(payload$apercu) > 0) {
-    nanoparquet::write_parquet(payload$apercu,
+    ecrire_parquet_si_modifie(payload$apercu,
                                file.path(cible, "apercu.parquet"))
   }
   # Le profil BPE est une projection publique bornée du thème Mobilité. Il est
@@ -145,33 +193,33 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   # (comme l'aperçu), jamais une table vide fabriquée par publish.
   if ("profils_acces_bpe" %in% names(payload) &&
       !is.null(payload$profils_acces_bpe)) {
-    nanoparquet::write_parquet(payload$profils_acces_bpe,
+    ecrire_parquet_si_modifie(payload$profils_acces_bpe,
                                file.path(cible, "profils_acces_bpe.parquet"))
   }
   if ("distribution_acces_batiments" %in% names(payload) &&
       !is.null(payload$distribution_acces_batiments)) {
-    nanoparquet::write_parquet(
+    ecrire_parquet_si_modifie(
       payload$distribution_acces_batiments,
       file.path(cible, "distribution_acces_batiments.parquet")
     )
   }
   if ("rampe_acces_batiments" %in% names(payload) &&
       !is.null(payload$rampe_acces_batiments)) {
-    nanoparquet::write_parquet(
+    ecrire_parquet_si_modifie(
       payload$rampe_acces_batiments,
       file.path(cible, "rampe_acces_batiments.parquet")
     )
   }
   if ("distribution_acces_batiments_comparaisons" %in% names(payload) &&
       !is.null(payload$distribution_acces_batiments_comparaisons)) {
-    nanoparquet::write_parquet(
+    ecrire_parquet_si_modifie(
       payload$distribution_acces_batiments_comparaisons,
       file.path(cible, "distribution_acces_batiments_comparaisons.parquet")
     )
   }
   if ("rampe_acces_batiments_comparaisons" %in% names(payload) &&
       !is.null(payload$rampe_acces_batiments_comparaisons)) {
-    nanoparquet::write_parquet(
+    ecrire_parquet_si_modifie(
       payload$rampe_acces_batiments_comparaisons,
       file.path(cible, "rampe_acces_batiments_comparaisons.parquet")
     )
@@ -187,9 +235,9 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     # toujours à un aller-retour exact — le défaut jsonlite, 4 chiffres,
     # tronquerait les parts d'âge).
     ecrire_projection <- function(table, nom) {
-      jsonlite::write_json(table, file.path(cible, nom),
-                           dataframe = "rows", na = "null",
-                           digits = 17, pretty = TRUE)
+      ecrire_json_si_modifie(table, file.path(cible, nom),
+                             dataframe = "rows", na = "null",
+                             digits = 17, pretty = TRUE)
     }
     ecrire_projection(payload$indicateurs, paste0("indicateurs_", theme, ".json"))
     ecrire_projection(payload$histoires, paste0("histoires_", theme, ".json"))
@@ -240,7 +288,7 @@ publish <- function(payload, cible = "public/data", backend = "static") {
       "classe_densite_libelle_public"
     )
     if (all(champs_densite %in% names(payload$territoires))) {
-      jsonlite::write_json(
+      ecrire_json_si_modifie(
         metadata_classes_densite(),
         file.path(cible, "territoires-metadata.json"),
         dataframe = "rows", na = "null", digits = 17, pretty = TRUE,

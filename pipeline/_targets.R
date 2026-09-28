@@ -553,15 +553,15 @@ fusion_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
     table <- as.name(paste0("vintages_table_", t$theme))
     corps <- c(corps, list(bquote({
       v <- fusionner_vintages(.(table), .(sortie), retires = .(retires))
-      nanoparquet::write_parquet(v, file.path(.(sortie), "vintages.parquet"))
+       ecrire_parquet_si_modifie(v, file.path(.(sortie), "vintages.parquet"))
     })))
   }
   corps <- c(corps, list(
     # Issue #73 : la table des vintages est aussi projetée en JSON — la table
     # partagée que l'app lit pour citer les sources d'un bloc.
-    bquote(jsonlite::write_json(v, file.path(.(sortie), "vintages.json"),
-                                dataframe = "rows", na = "null",
-                                digits = 17, pretty = TRUE)),
+     bquote(ecrire_json_si_modifie(v, file.path(.(sortie), "vintages.json"),
+                                   dataframe = "rows", na = "null",
+                                   digits = 17, pretty = TRUE)),
     bquote(v)
   ))
   tar_target_raw("fusion_vintages", as.call(c(list(as.name("{")), corps)))
@@ -1211,6 +1211,32 @@ themes_fusion <- if (!nzchar(selection)) {
   THEMES_RUN
 }
 
+# Publication SQL explicite depuis le PC : jamais dans le cron/static par
+# défaut. Le leaf attend la dernière écriture du référentiel territorial, la
+# table fusionnée des vintages et les métadonnées Mobilité. Un marqueur DB en
+# retard doit être retenté même quand tous les upstream targets sont à jour :
+# seul ce LEAF a cue=always, pas les calculs coûteux en amont.
+publication_service <- list()
+if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
+  if (identical(MODE_RUN, "cron") || !"mobilite" %in% names(THEMES_RUN)) {
+    stop("LUSK_PUBLISH_DB exige un run local incluant le thème Mobilité.",
+         call. = FALSE)
+  }
+  derniere_publication <- as.name(paste0(
+    "publie_", THEMES_RUN[[length(THEMES_RUN)]]$theme
+  ))
+  publication_service <- list(tar_target_raw(
+    "publie_tables_service",
+    bquote({
+      .(derniere_publication)
+      metadata_mobilite
+      fusion_vintages
+      publier_tables_service_depuis_parquet(.(SORTIE_RUN))
+    }),
+    cue = tar_cue(mode = "always")
+  ))
+}
+
 list(
   fichier_epci_geo_api_cible,
   sources_classes_densite_cible,
@@ -1221,6 +1247,7 @@ list(
   targets_modeles_territoire,
   target_manifeste_modeles_lecture,
   fusion_themes(themes_fusion),
+  publication_service,
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),
   verifications,

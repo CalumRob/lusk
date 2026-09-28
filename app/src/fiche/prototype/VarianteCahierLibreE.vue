@@ -10,6 +10,8 @@ defineProps<{
   comparisonOptions?: readonly OptionContexteComparaison[]
   accessStatus?: 'loading' | 'ready' | 'error'
   retryAccess?: () => void
+  buildingStatus?: 'loading' | 'ready' | 'error'
+  retryBuilding?: () => void
 }>()
 </script>
 
@@ -20,6 +22,8 @@ defineProps<{
     :comparison-options="comparisonOptions"
     :access-status="accessStatus"
     :retry-access="retryAccess"
+    :building-status="buildingStatus"
+    :retry-building="retryBuilding"
     show-all-units
     show-map-prototype
     presentation="plain"

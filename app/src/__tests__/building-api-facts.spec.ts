@@ -21,6 +21,16 @@ describe('applyBuildingApiFacts', () => {
     expect(result.mobility.accessRamp?.comparisonStatistic).toBe('mean')
     expect(applyBuildingApiFacts(before, response({ ramp: null, distribution: null })).mobility.accessRamp?.curves.car.points[0]?.comparisonAccessibleTypes).toBeNull()
   })
+  it('matches the eleven declared ramp positions despite floating-point serialization differences', () => {
+    const before = facts()
+    before.mobility.accessRamp!.curves.car.points[0]!.quantile = 0.30000000000000004
+    const after = applyBuildingApiFacts(before, response())
+    expect(after.mobility.accessRamp?.curves.car.points[0]?.comparisonAccessibleTypes).toBe(1.5)
+    expect(() => applyBuildingApiFacts(before, response({ ramp: {
+      ...response().ramp,
+      points: response().ramp.points.map((point, i) => i === 3 ? { ...point, quantile: 0.31 } : point),
+    } }))).toThrow()
+  })
   it('fails closed for malformed data and mismatched expected publication', () => {
     expect(() => applyBuildingApiFacts(facts(), response(), 'other')).toThrow()
     expect(() => applyBuildingApiFacts(facts(), response({ ramp: { statistic: 'median' } }))).toThrow()
@@ -32,5 +42,24 @@ describe('applyBuildingApiFacts', () => {
     expect(result.mobility.buildingDistribution?.cells[0]?.comparisonShare).toBeNull()
     expect(result.mobility.accessRamp?.curves.car.points[0]?.accessibleTypes).toBe(3)
     expect(result.mobility.accessRamp?.comparisonStatistic).toBe('mean')
+  })
+  it('fails closed on a failed API read instead of retaining JSON peer figures', () => {
+    const before = facts()
+    let apiFailed = false
+    try {
+      applyBuildingApiFacts(before, null)
+    } catch {
+      apiFailed = true
+    }
+    expect(apiFailed).toBe(true)
+    const failedRead = clearBuildingApiPeers(before)
+    expect(failedRead.mobility.accessRamp?.curves.car.points[0]).toMatchObject({
+      accessibleTypes: 3,
+      comparisonAccessibleTypes: null,
+    })
+    expect(failedRead.mobility.buildingDistribution?.cells[0]).toMatchObject({
+      buildingCount: 4,
+      comparisonShare: null,
+    })
   })
 })

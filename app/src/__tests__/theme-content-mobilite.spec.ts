@@ -527,6 +527,18 @@ describe('resolveMobiliteThemeContent', () => {
       .toBe('moyenne des bâtiments des communes de EPCI X')
   })
 
+  it('labels the initial building mean with its published default scope, not a selected group', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.accessRamp = structuredClone(accessRamp)
+    facts.mobility.accessRamp!.comparisonStatistic = 'mean'
+    facts.mobility.buildingDistribution!.comparisonStatistic = 'mean'
+    const section = resolveMobiliteThemeContent(facts).units
+      .flatMap((unit) => [...unit.sections] as MobiliteContentSection[])
+      .find((candidate) => candidate.key === 'distribution-acces-par-batiment')
+    expect(section?.evidence?.kind === 'distribution' && section.evidence.comparisonPopulationLabel)
+      .toBe('moyenne des bâtiments des communes de EPCI X')
+  })
+
   it('keeps an unavailable BPE comparison label available to the selector', () => {
     const facts = structuredClone(completeFacts)
     const profile = facts.mobility.bpeAccess.profiles[0]

@@ -23,6 +23,8 @@ import {
 } from '../payload/territoryReadModel'
 import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
 import { PayloadError } from '../payload/validate'
+import { payloadDepuisModeleTerritoire } from '../payload/territoryReadModel'
+import { territoryFactsFor } from '../fiche/content/territoryFacts'
 import { routes } from '../router'
 
 const indicateurs: Indicateur[] = [
@@ -112,6 +114,93 @@ async function monter(
 describe('TerritoireView — modèle atomique par territoire', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
   afterEach(() => vi.unstubAllGlobals())
+  it('keeps the building figures without exposing an interactive peer selector', async () => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+      vi.fn(async () => modeleAvecContextesComparaison()))
+    await flushPromises()
+    expect(wrapper.find('#building-peer-search').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
+    wrapper.unmount()
+  })
+  it('requests initial building figures and never displays static JSON figures when the API fails', async () => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+      vi.fn(async () => modeleAvecContextesComparaison()))
+    await flushPromises()
+    expect(fetchApi.mock.calls.some(([url]) => String(url) ===
+      '/api/territories/commune/22001/building-access?comparison=densite')).toBe(true)
+    const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
+    expect(section.find('.access-ramp-evidence').exists()).toBe(false)
+    expect(section.find('.bivariate-evidence').exists()).toBe(false)
+    expect(section.get('[role="alert"]').text()).toContain('Impossible de charger')
+    await section.get('button').trigger('click')
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/building-access?'))).toHaveLength(2)
+    wrapper.unmount()
+  })
+  it('renders both initial building figures from the API with the default mean label', async () => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
+    const initial = territoryFactsFor(payloadDepuisModeleTerritoire(model), '22001', context)!
+    const ramp = initial.mobility.accessRamp!
+    const grid = initial.mobility.buildingDistribution!
+    const displayModes = { c: 'car', b: 'bike', t: 'walkTransit' } as const
+    const figure = {
+      publication_id: 'building-v1', territory: { id: '22001', type: 'commune' },
+      scope: { comparison_mode: 'densite', kind: context.scope.kind, label: context.scope.label },
+      ramp: (['c', 'b', 't'] as const).flatMap((mode) =>
+        ramp.curves[displayModes[mode]].points.map((p, quantile_index) => ({
+          mode, quantile_index, quantile: quantile_index / 10, accessible_types: p.accessibleTypes + 1,
+          total_buildings: ramp.totalBuildings,
+        }))),
+      peer_ramp: { statistic: 'mean', member_count: 2, total_buildings: grid.totalBuildings,
+        points: (['c', 'b', 't'] as const).flatMap((mode) =>
+          ramp.curves[displayModes[mode]].points.map((p, index) => ({
+            mode, quantile: index / 10, accessible_types: p.accessibleTypes + 2,
+          }))) },
+      distribution: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
+        depth_bucket: cell.depthBucket, building_count: cell.buildingCount,
+        total_buildings: grid.totalBuildings })),
+      peer_distribution: { statistic: 'mean', member_count: 2, total_buildings: grid.totalBuildings,
+        cells: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
+          depth_bucket: cell.depthBucket, building_count: cell.buildingCount,
+          share: cell.buildingCount / grid.totalBuildings })) },
+    }
+    const fetchApi = vi.fn(async (url: string) => ({ ok: true, json: async () =>
+      url.includes('/building-access?') ? figure : reponseAccesApi('commune', '22001', context.scope.kind, context.scope.label),
+    }))
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
+    await flushPromises()
+    const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
+    expect(section.find('.access-ramp-evidence').exists()).toBe(true)
+    expect(section.find('.bivariate-evidence').exists()).toBe(true)
+    expect(section.text()).toContain('moyenne des')
+    expect(section.text()).not.toContain('territoires sélectionnés')
+    wrapper.unmount()
+  })
+  it.each([
+    ['epci', '242200715'], ['departement', '22'], ['region', '53'],
+  ] as const)('requests initial %s building figures without a static fallback', async (type, code) => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
+    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
+    const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
+    expect(fetchApi.mock.calls.some(([url]) => String(url) ===
+      `/api/territories/${type}/${code}/building-access`)).toBe(true)
+    const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
+    expect(section.find('.access-ramp-evidence').exists()).toBe(false)
+    expect(section.find('.bivariate-evidence').exists()).toBe(false)
+    expect(section.get('[role="alert"]').text()).toContain('Impossible de charger')
+    wrapper.unmount()
+  })
   it('alimente les anneaux Variant E depuis l’API sans changer les autres sections', async () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const scope = modeleAvecContextesComparaison().themes.mobilite!.comparisons.densite!.scope
@@ -135,9 +224,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('n’affiche jamais les anneaux statiques si l’API échoue, et réessaie', async () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const scope = modeleAvecContextesComparaison().themes.mobilite!.comparisons.epci!.scope
-    const fetchApi = vi.fn()
-      .mockRejectedValueOnce(new Error('API indisponible'))
-      .mockResolvedValue({ ok: true, json: async () => reponseAccesApi('commune', '22001', scope.kind, scope.label) })
+    let accessCalls = 0
+    const fetchApi = vi.fn((_url: string) => ++accessCalls === 1
+        ? Promise.reject(new Error('API indisponible'))
+        : Promise.resolve({ ok: true, json: async () => reponseAccesApi('commune', '22001', scope.kind, scope.label) }))
     vi.stubGlobal('fetch', fetchApi)
     try {
       const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
@@ -149,7 +239,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       await section.get('button').trigger('click')
       await flushPromises()
       expect(section.findAll('.access-figure')).toHaveLength(5)
-      expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/'))).toHaveLength(2)
+      expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/essential-services'))).toHaveLength(2)
       wrapper.unmount()
     } finally {
       vi.unstubAllGlobals()
@@ -346,7 +436,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       contexts.epci!.scope.label,
     )
     const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
-    expect(comparisonNotes.length).toBeGreaterThan(5)
+    // Without a building API response, its two notes must not leak from JSON.
+    expect(comparisonNotes).toHaveLength(5)
     expect(comparisonNotes.every((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
     wrapper.unmount()
   })

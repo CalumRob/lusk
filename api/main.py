@@ -2,6 +2,8 @@
 
 from contextlib import asynccontextmanager
 from functools import lru_cache
+import hashlib
+import json
 import os
 from statistics import median
 from typing import Literal
@@ -77,6 +79,16 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Lusk read API — architecture spike", lifespan=lifespan)
 
 
+def _building_publication(markers: list[tuple[str, str]]) -> str:
+    versions = dict(markers)
+    required = ("territory_reference", "building_ramp", "building_grid")
+    if any(not versions.get(name) for name in required):
+        raise HTTPException(503, "No building-access dataset has been published")
+    payload = json.dumps([(name, versions[name]) for name in required],
+                         ensure_ascii=True, separators=(",", ":"))
+    return "building-v1-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class ReadRepository:
     def __init__(self, connections: ConnectionPool):
         self.connections = connections
@@ -91,19 +103,119 @@ class ReadRepository:
         with self.connections.connection() as connection:
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-                markers = dict(connection.execute(
-                    """SELECT dataset_key, publication_id FROM dataset_publication
-                       WHERE dataset_key IN ('building_access', 'essential_service_access')"""
+                publication = _building_publication(connection.execute(
+                    """SELECT table_name, content_version FROM table_publication
+                       WHERE table_name IN ('territory_reference', 'building_ramp', 'building_grid')"""
                 ).fetchall())
-                if ('building_access' not in markers or
-                        markers['building_access'] != markers.get('essential_service_access')):
-                    raise HTTPException(503, "No building-access dataset has been published")
                 rows = connection.execute(
                     """SELECT territory_type, territory_id, name FROM territory_reference
                        ORDER BY territory_type, name, territory_id"""
                 ).fetchall()
-                return {"publication_id": markers['building_access'],
-                        "territories": [dict(zip(("type", "id", "name"), row)) for row in rows]}
+                return {"publication_id": publication,
+                         "territories": [dict(zip(("type", "id", "name"), row)) for row in rows]}
+
+    def read_building_initial(self, territory_type: str, territory_id: str,
+                              comparison_mode: str | None = None) -> dict:
+        """Read canonical focal facts and same-level published default peers."""
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                publication = _building_publication(connection.execute(
+                    """SELECT table_name, content_version FROM table_publication
+                       WHERE table_name IN ('territory_reference', 'building_ramp', 'building_grid')"""
+                ).fetchall())
+                target = connection.execute(
+                    """SELECT territory_id, territory_type, name, department_id, epci_id,
+                              density_class_code, density_class_label
+                       FROM territory_reference WHERE territory_id = %s AND territory_type = %s""",
+                    (territory_id, territory_type),
+                ).fetchone()
+                if not target:
+                    raise HTTPException(404, "Territory not found")
+                tid, ttype, name, department, epci, density, density_label = target
+                if ttype == "commune" and comparison_mode == "epci":
+                    if not epci:
+                        raise HTTPException(422, "EPCI comparison unavailable for this commune")
+                    parent = connection.execute(
+                        "SELECT name FROM territory_reference WHERE territory_id = %s AND territory_type = 'epci'",
+                        (epci,),
+                    ).fetchone()
+                    if not parent:
+                        raise HTTPException(503, "Published EPCI reference is incomplete")
+                    kind = "communes-epci"
+                elif ttype == "commune" and comparison_mode == "densite":
+                    if not density or not density_label:
+                        raise HTTPException(422, "Density comparison unavailable for this commune")
+                    kind = "communes-densite"
+                else:
+                    kind = f"{ {'commune': 'communes', 'epci': 'epcis', 'departement': 'departements', 'region': 'regions'}[ttype] }-bretagne"
+                reference_rows = connection.execute(
+                    """SELECT territory_id, territory_type, department_id, epci_id,
+                              density_class_code FROM territory_reference"""
+                ).fetchall()
+                reference = [dict(zip(("id", "type", "departement", "epci", "densite"), row))
+                             for row in reference_rows]
+                members = None
+                peer_type = ttype
+                if ttype == "region":
+                    kind = "regions"
+                elif ttype == "commune":
+                    if comparison_mode == "densite":
+                        members = tuple(sorted(r[0] for r in reference_rows
+                                               if r[1] == "commune" and r[4] == density))
+                    elif comparison_mode == "epci":
+                        members = tuple(sorted(r[0] for r in reference_rows
+                                               if r[1] == "commune" and r[3] == epci))
+                    else:
+                        members = tuple(sorted(r[0] for r in reference_rows if r[1] == "commune"))
+                else:
+                    members = tuple(sorted(r[0] for r in reference_rows if r[1] == ttype))
+                    kind = "epcis-bretagne" if ttype == "epci" else "departements-bretagne"
+                focal_and_peers = set(members or ()) | {tid}
+                ramp_rows = connection.execute(
+                    """SELECT territory_id, territory_type, availability, mode, quantile_index,
+                              quantile, accessible_types, total_buildings, source_id, source_version
+                       FROM building_ramp WHERE territory_type = %s AND territory_id = ANY(%s)""",
+                    (ttype, list(focal_and_peers))
+                ).fetchall()
+                grid_rows = connection.execute(
+                    """SELECT territory_id, territory_type, availability, mode, breadth_bucket,
+                              depth_bucket, building_count, total_buildings, source_id, source_version
+                       FROM building_grid WHERE territory_type = %s AND territory_id = ANY(%s)""",
+                    (ttype, list(focal_and_peers))
+                ).fetchall()
+                ramp_data = [dict(zip(("territoire", "type", "availability", "mode", "quantile_index",
+                                      "quantile", "accessible_types", "total_buildings", "source_id", "version"), row))
+                             for row in ramp_rows]
+                grid_data = [dict(zip(("territoire", "type", "availability", "mode", "breadth_bucket",
+                                      "depth_bucket", "building_count", "total_buildings", "source_id", "version"), row))
+                             for row in grid_rows]
+                try:
+                    peer_ramp = (weighted_peer_ramp(ramp_data, members, max_members=len(reference),
+                                                    member_type=peer_type) if members else None)
+                    peer_distribution = (pooled_peer_distribution(grid_data, members,
+                                                                 max_members=len(reference),
+                                                                 member_type=peer_type) if members else None)
+                except ComparisonInputError as exc:
+                    raise HTTPException(503, "Incomplete building-access publication") from exc
+                focal_ramp = [r for r in ramp_data if r["territoire"] == tid and r["type"] == ttype and r["availability"] == "complete"]
+                focal_grid = [r for r in grid_data if r["territoire"] == tid and r["type"] == ttype and r["availability"] == "complete"]
+                focal_ramp.sort(key=lambda r: (r["mode"], r["quantile"]))
+                focal_grid.sort(key=lambda r: (r["breadth_bucket"], r["depth_bucket"]))
+                return {
+                    "publication_id": publication,
+                    "territory": {"id": tid, "type": ttype, "name": name},
+                    "scope": None if ttype == "region" else {
+                        "kind": kind,
+                        "comparison_mode": comparison_mode if ttype == "commune" else "bretagne"},
+                    "ramp": [{"mode": r["mode"], "quantile_index": r["quantile_index"],
+                              **{k: r[k] for k in ("quantile", "accessible_types", "total_buildings", "source_id")},
+                              "source_version": r["version"]} for r in focal_ramp],
+                    "peer_ramp": peer_ramp,
+                    "distribution": [{**{k: r[k] for k in ("breadth_bucket", "depth_bucket", "building_count", "total_buildings", "source_id")},
+                                      "source_version": r["version"]} for r in focal_grid],
+                    "peer_distribution": peer_distribution,
+                }
 
     def read_building(self, territory_type: str, territory_id: str,
                       selected: tuple[tuple[str, str], ...]) -> dict:
@@ -111,14 +223,10 @@ class ReadRepository:
         with self.connections.connection() as connection:
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-                markers = connection.execute(
-                    """SELECT dataset_key, publication_id FROM dataset_publication
-                       WHERE dataset_key IN ('building_access', 'essential_service_access')"""
-                ).fetchall()
-                versions = dict(markers)
-                if ('building_access' not in versions or
-                        versions['building_access'] != versions.get('essential_service_access')):
-                    raise HTTPException(503, "No building-access dataset has been published")
+                publication = _building_publication(connection.execute(
+                    """SELECT table_name, content_version FROM table_publication
+                       WHERE table_name IN ('territory_reference', 'building_ramp', 'building_grid')"""
+                ).fetchall())
                 territory = connection.execute(
                     """SELECT territory_id, territory_type, name FROM territory_reference
                        WHERE territory_id = %s AND territory_type = %s""",
@@ -139,21 +247,21 @@ class ReadRepository:
                     """SELECT territory_id, territory_type, availability, mode,
                               quantile, accessible_types, total_buildings,
                               source_id, source_version, effective_direction
-                       FROM building_ramp WHERE territory_id = ANY(%s)""",
+                       FROM building_ramp WHERE territory_type = 'commune' AND territory_id = ANY(%s)""",
                     (list(members),),
                 ).fetchall()
                 grid_rows = connection.execute(
                     """SELECT territory_id, territory_type, availability, mode,
                               breadth_bucket, depth_bucket, building_count,
                               total_buildings, source_id, source_version
-                       FROM building_grid WHERE territory_id = ANY(%s)""",
+                       FROM building_grid WHERE territory_type = 'commune' AND territory_id = ANY(%s)""",
                     (list(members),),
                 ).fetchall()
                 directions = {row[9] for row in ramp_rows}
                 if len(directions) != 1 or next(iter(directions)) not in ("high", "low"):
                     raise HTTPException(503, "Inconsistent published ramp direction")
                 return {
-                    "publication_id": versions['building_access'],
+                    "publication_id": publication,
                     "territory": dict(zip(("id", "type", "name"), territory)),
                     "reference": reference,
                     "ramp_rows": [dict(zip(("territoire", "type", "availability", "mode",
@@ -173,8 +281,9 @@ class ReadRepository:
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 active = connection.execute(
-                    """SELECT publication_id, bretagne_kind, bretagne_label
-                       FROM dataset_publication WHERE dataset_key = 'essential_service_access'"""
+                    """SELECT p.content_version, m.bretagne_kind, m.bretagne_label
+                       FROM table_publication p CROSS JOIN access_publication_metadata m
+                       WHERE p.table_name = 'essential_service_access' AND m.singleton"""
                 ).fetchone()
                 if not active:
                     raise HTTPException(503, "No access dataset has been published")
@@ -248,6 +357,17 @@ def get_repository() -> ReadRepository:
 @app.get("/api/building-access/territories")
 def building_access_territories(repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_building_catalog()
+
+
+@app.get("/api/territories/{territory_type}/{territory_id}/building-access")
+def initial_building_access(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    territory_id: str,
+    comparison: Literal["bretagne", "densite", "epci"] = Query(default="bretagne"),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Initial view; non-commune comparisons use same-level peer territories."""
+    return repository.read_building_initial(territory_type, territory_id, comparison)
 
 
 @app.post("/api/territories/{territory_type}/{territory_id}/building-access-comparison")

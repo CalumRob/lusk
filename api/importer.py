@@ -3,10 +3,8 @@
 from dataclasses import asdict, dataclass, replace
 from collections import Counter
 import argparse
-import getpass
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import math
@@ -265,10 +263,14 @@ def load_publication(artifacts_dir: str | Path, metadata_path: str | Path | None
 
 
 def import_publication(connection, artifacts_dir: str | Path, metadata_path: str | Path | None = None) -> Publication:
-    """Validate Parquet; skip identical access data or atomically replace it."""
+    """Historical publisher for the pre-R schema; forbidden after per-table migration."""
     publication = load_publication(artifacts_dir, metadata_path)
     with connection.transaction():
         with connection.cursor() as cur:
+            cur.execute("SELECT to_regclass('table_publication')")
+            marker_table = cur.fetchone()
+            if marker_table and marker_table[0] is not None:
+                raise ImportError("R owns database publication after the per-table migration")
             # Serialize concurrent publishers, including on an initially empty database.
             cur.execute("SELECT pg_advisory_xact_lock(569, 1)")
             cur.execute("""SELECT publication_id FROM dataset_publication
@@ -391,7 +393,7 @@ def import_publication(connection, artifacts_dir: str | Path, metadata_path: str
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Publish a validated access-to-services dataset")
+    parser = argparse.ArgumentParser(description="Validate canonical access-to-services Parquet")
     parser.add_argument("artifacts_dir", type=Path, help="Directory containing published Parquet inputs")
     parser.add_argument("--check", action="store_true", help="Validate inputs without connecting to PostgreSQL")
     parser.add_argument("--metadata", type=Path, help="Pipeline theme metadata descriptor (defaults to repository path)")
@@ -402,27 +404,7 @@ def main() -> None:
     if args.check:
         publication = load_publication(args.artifacts_dir, args.metadata)
     else:
-        import psycopg
-
-        dsn = os.environ.get("PUBLISH_DATABASE_URL")
-        if dsn and any((args.host, args.database, args.user)):
-            parser.error("Use either PUBLISH_DATABASE_URL or --host, --database, and --user")
-        if not dsn and not all((args.host, args.database, args.user)):
-            parser.error("Set PUBLISH_DATABASE_URL or supply --host, --database, and --user")
-        passfile = os.environ.get("PGPASSFILE")
-        if passfile:
-            private_file = Path(passfile).expanduser().resolve()
-            if not private_file.is_file() or private_file.is_relative_to(Path(__file__).resolve().parents[1]):
-                parser.error("PGPASSFILE must be an existing file outside the repository")
-        options = {"conninfo": dsn} if dsn else {
-            "host": args.host, "dbname": args.database, "user": args.user,
-        }
-        if passfile:
-            options["passfile"] = str(private_file)
-        elif not dsn:
-            options["password"] = getpass.getpass("Publishing role password: ")
-        with psycopg.connect(**options, autocommit=True) as connection:
-            publication = import_publication(connection, args.artifacts_dir, args.metadata)
+        parser.error("Database publication belongs to the desktop R pipeline; use pipeline/scripts/publish-serving-tables.R --publish")
     action = "validated" if publication.changed is None else ("published" if publication.changed else "unchanged")
     print(f"{publication.publication_id}: {len(publication.rows)} access observations {action}")
 

@@ -1,8 +1,6 @@
 import json
 import sys
-from contextlib import nullcontext
 from pathlib import Path
-from types import SimpleNamespace
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -384,44 +382,35 @@ def test_invalid_publication_fails_before_database_transaction(tmp_path):
         import_publication(UntouchedDatabase(), root, metadata)
 
 
-def test_cli_uses_operator_pgpass_without_prompt_or_password_argument(tmp_path, monkeypatch, capsys):
-    import psycopg
+def test_cli_refuses_legacy_python_database_publication(tmp_path, monkeypatch):
     import api.importer as importer
 
-    passfile = tmp_path / "pgpass.conf"
-    passfile.write_text("test:5432:lusk:publisher:secret", encoding="utf-8")
-    monkeypatch.setenv("PGPASSFILE", str(passfile))
-    monkeypatch.delenv("PUBLISH_DATABASE_URL", raising=False)
-    monkeypatch.setattr(sys, "argv", ["api.importer", str(tmp_path), "--host", "test",
-                                  "--database", "lusk", "--user", "publisher"])
-    monkeypatch.setattr(importer.getpass, "getpass", lambda *_: pytest.fail("must not prompt"))
-    monkeypatch.setattr(importer, "import_publication", lambda *_: SimpleNamespace(
-        publication_id="dataset-snapshot", rows=(1, 2), changed=False))
-    options = {}
-    def connect(**kwargs):
-        options.update(kwargs)
-        return nullcontext(object())
-    monkeypatch.setattr(psycopg, "connect", connect)
-
-    importer.main()
-    assert options == {"host": "test", "dbname": "lusk", "user": "publisher",
-                       "passfile": str(passfile), "autocommit": True}
-    assert "2 access observations unchanged" in capsys.readouterr().out
-
-
-def test_cli_refuses_repository_pgpass(tmp_path, monkeypatch):
-    import api.importer as importer
-
-    inside_repo = Path(importer.__file__).resolve().parents[1] / "api" / "pgpass.conf"
-    real_is_file = Path.is_file
-    monkeypatch.setattr(Path, "is_file", lambda path: path == inside_repo or real_is_file(path))
-    monkeypatch.setenv("PGPASSFILE", str(inside_repo))
-    monkeypatch.delenv("PUBLISH_DATABASE_URL", raising=False)
     monkeypatch.setattr(sys, "argv", ["api.importer", str(tmp_path), "--host", "test",
                                   "--database", "lusk", "--user", "publisher"])
     with pytest.raises(SystemExit) as error:
         importer.main()
     assert error.value.code == 2
+
+
+def test_legacy_python_publisher_cannot_write_to_per_table_schema(tmp_path):
+    root, metadata = artifacts(tmp_path)
+
+    class Cursor:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None): self.calls.append(sql)
+        def fetchone(self): return ("table_publication",)
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+
+    class Database:
+        def __init__(self): self.cursor_value = Cursor()
+        def transaction(self): return self.cursor_value
+        def cursor(self): return self.cursor_value
+
+    connection = Database()
+    with pytest.raises(ImportError, match="R owns database publication"):
+        import_publication(connection, root, metadata)
+    assert connection.cursor_value.calls == ["SELECT to_regclass('table_publication')"]
 
 
 @pytest.mark.parametrize("bad", [-0.01, 1.01, float("nan")])

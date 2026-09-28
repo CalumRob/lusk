@@ -4,6 +4,12 @@ const record = (v: unknown): v is Record<string, unknown> => typeof v === 'objec
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const modes = { c: 'car', b: 'bike', t: 'walkTransit' } as const satisfies Record<string, MobiliteAccessMode>
 function invalid(): never { throw new Error('Publication API bâtiments invalide') }
+/** Compare the declared 0–100 % ramp positions, not their floating encodings. */
+function position(quantile: number): number {
+  const index = Math.round(quantile * 10)
+  if (!finite(quantile) || index < 0 || index > 10 || Math.abs(quantile - index / 10) > 1e-9) invalid()
+  return index
+}
 
 /** Apply validated custom-scope peers while leaving all focal publication facts intact. */
 export function applyBuildingApiFacts(facts: TerritoryFacts, response: unknown, expectedPublicationId?: string): TerritoryFacts {
@@ -29,16 +35,16 @@ export function applyBuildingApiFacts(facts: TerritoryFacts, response: unknown, 
     for (const p of ramp.points) {
       if (!record(p) || !(p.mode === 'c' || p.mode === 'b' || p.mode === 't') || !finite(p.quantile) ||
           !finite(p.accessible_types) || p.accessible_types < 0) invalid()
-      const key = `${p.mode}:${p.quantile}`
+      const key = `${p.mode}:${position(p.quantile)}`
       if (peers.has(key)) invalid()
       peers.set(key, p.accessible_types as number)
     }
     if ((Object.keys(modes) as Array<keyof typeof modes>).some((mode) =>
-      nextRamp!.curves[modes[mode]].points.some((point) => !peers.has(`${mode}:${point.quantile}`)))) invalid()
+      nextRamp!.curves[modes[mode]].points.some((point) => !peers.has(`${mode}:${position(point.quantile)}`)))) invalid()
     nextRamp = { ...nextRamp, comparisonStatistic: 'mean', comparisonTotalBuildings: ramp.total_buildings as number,
       curves: Object.fromEntries((Object.keys(modes) as Array<keyof typeof modes>).map((mode) => [modes[mode], {
         ...nextRamp!.curves[modes[mode]], points: nextRamp!.curves[modes[mode]].points.map((point) => ({ ...point,
-          comparisonAccessibleTypes: peers.get(`${mode}:${point.quantile}`) ?? null,
+          comparisonAccessibleTypes: peers.get(`${mode}:${position(point.quantile)}`) ?? null,
         })),
       }])) as unknown as typeof nextRamp.curves }
   } else if (nextRamp) nextRamp = { ...nextRamp, comparisonStatistic: 'mean', comparisonTotalBuildings: null,

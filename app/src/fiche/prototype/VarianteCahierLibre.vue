@@ -55,8 +55,6 @@ import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierComparisonNote from './CahierComparisonNote.vue'
-import BuildingPeerSelector from './BuildingPeerSelector.vue'
-import type { PeerTerritory } from './BuildingPeerSelector.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
 import BpeProfilesChartCahier from './BpeProfilesChartCahier.vue'
 import CahierSummaryPlot from './CahierSummaryPlot.vue'
@@ -77,12 +75,9 @@ const props = defineProps<{
   comparisonOptions?: readonly OptionContexteComparaison[]
   accessStatus?: 'loading' | 'ready' | 'error'
   retryAccess?: () => void
-  buildingTerritories?: readonly PeerTerritory[]
-  buildingCatalogStatus?: 'loading' | 'ready' | 'error'
-  buildingComparisonStatus?: 'idle' | 'loading' | 'ready' | 'error'
-  buildingSelected?: readonly PeerTerritory[] | null
+  buildingStatus?: 'loading' | 'ready' | 'error'
+  retryBuilding?: () => void
 }>()
-const emit = defineEmits<{ buildingSelect: [territories: PeerTerritory[]]; buildingClear: [] }>()
 
 provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
 
@@ -606,17 +601,19 @@ onBeforeUnmount(() => {
                   </div>
                   <p v-if="!section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
 
-                  <BuildingPeerSelector
-                    v-if="props.buildingCatalogStatus && section.evidence?.kind === 'distribution'"
-                    :territories="props.buildingTerritories ?? []"
-                    :catalog-status="props.buildingCatalogStatus"
-                    :comparison-status="props.buildingComparisonStatus ?? 'idle'"
-                    :selected="props.buildingSelected ?? null"
-                    @select="emit('buildingSelect', $event)"
-                    @clear="emit('buildingClear')"
-                  />
-
                 </div>
+
+                  <figure
+                    v-if="section.key === 'distribution-acces-par-batiment' && props.buildingStatus && props.buildingStatus !== 'ready'"
+                    class="evidence-side evidence-figure building-api-state"
+                    :aria-busy="props.buildingStatus === 'loading'"
+                  >
+                    <p v-if="props.buildingStatus === 'loading'" role="status">Chargement des données d’accès aux bâtiments…</p>
+                    <div v-else role="alert">
+                      <p>Impossible de charger les données d’accès aux bâtiments.</p>
+                      <button type="button" @click="props.retryBuilding?.()">Réessayer</button>
+                    </div>
+                  </figure>
 
                   <figure
                     v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"

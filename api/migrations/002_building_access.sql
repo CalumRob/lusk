@@ -1,10 +1,31 @@
--- Candidate migration; do not apply to the live service without an operator
--- review and a joint access + building artifact publication.
-ALTER TABLE dataset_publication
-    DROP CONSTRAINT dataset_publication_dataset_key_check;
-ALTER TABLE dataset_publication
-    ADD CONSTRAINT dataset_publication_dataset_key_check
-    CHECK (dataset_key IN ('essential_service_access', 'building_access'));
+-- Applied to the Pi's lusk database on 2026-09-28 after the publisher received
+-- REFERENCES (territory_id) on territory_reference; do not apply a second time.
+-- Keep dataset_publication and its rows untouched for rollback/legacy clients.
+CREATE TABLE IF NOT EXISTS table_publication (
+    table_name text PRIMARY KEY CHECK (table_name IN (
+        'territory_reference', 'service_registry', 'essential_service_access',
+        'building_ramp', 'building_grid')),
+    content_version text NOT NULL,
+    row_count integer NOT NULL CHECK (row_count >= 0),
+    published_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS access_publication_metadata (
+    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+    bretagne_kind text NOT NULL,
+    bretagne_label text NOT NULL
+);
+
+-- Preserve the currently served access version and its validated descriptor.
+-- Existing legacy building_access is intentionally not converted: the new
+-- building reader stays unavailable until each physical table is published.
+INSERT INTO table_publication (table_name, content_version, row_count, published_at)
+SELECT 'essential_service_access', publication_id, row_count, imported_at
+FROM dataset_publication WHERE dataset_key = 'essential_service_access'
+ON CONFLICT (table_name) DO NOTHING;
+INSERT INTO access_publication_metadata (singleton, bretagne_kind, bretagne_label)
+SELECT true, bretagne_kind, bretagne_label FROM dataset_publication
+WHERE dataset_key = 'essential_service_access'
+ON CONFLICT (singleton) DO NOTHING;
 
 CREATE TABLE building_ramp (
     territory_id text NOT NULL REFERENCES territory_reference(territory_id),
@@ -60,5 +81,7 @@ BEGIN
 END $$;
 
 GRANT SELECT ON TABLE building_ramp, building_grid TO lusk_reader;
+GRANT SELECT ON TABLE table_publication, access_publication_metadata TO lusk_reader;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE building_ramp, building_grid TO lusk_publisher;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE table_publication, access_publication_metadata TO lusk_publisher;
 GRANT EXECUTE ON FUNCTION assert_building_dataset_complete(integer, integer) TO lusk_publisher;

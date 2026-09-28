@@ -135,7 +135,7 @@ def test_regional_scope_is_read_from_current_dataset_database_row():
             self.queries.append((query, params))
             if "SET TRANSACTION" in query:
                 return Result(None)
-            if "FROM dataset_publication" in query:
+            if "FROM table_publication" in query:
                 return Result(("publication-current", "communes-bretagne-v2", "label version active"))
             if "FROM territory_reference" in query:
                 return Result(("22001", "Exemple", "commune", "EPCI", "5", "Bourg"))
@@ -155,8 +155,8 @@ def test_regional_scope_is_read_from_current_dataset_database_row():
     result = ReadRepository(connections).read("22001", "bretagne")
     assert result["scope"] == {"kind": "communes-bretagne-v2", "label": "label version active"}
     query, params = next((q, p) for q, p in connections.connection_value.queries
-                          if "FROM dataset_publication" in q)
-    assert "dataset_key = 'essential_service_access'" in query
+                          if "FROM table_publication" in q)
+    assert "p.table_name = 'essential_service_access'" in query
     assert params is None
     query, params = next((q, p) for q, p in connections.connection_value.queries
                           if "FROM essential_service_access" in q)
@@ -177,7 +177,7 @@ def test_non_commune_query_uses_the_selected_territory_level_before_its_peer_sco
         def __exit__(self, *_): return False
         def execute(self, query, params=None):
             self.queries.append((query, params))
-            if "FROM dataset_publication" in query:
+            if "FROM table_publication" in query:
                 return Result(("v1", "communes-bretagne", "communes bretonnes"))
             if "FROM territory_reference" in query:
                 return Result(("EPCI-1", "Example", "epci", None, None, None))
