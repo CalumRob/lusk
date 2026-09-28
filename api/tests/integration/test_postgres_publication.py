@@ -361,7 +361,7 @@ def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_d
     from psycopg_pool import ConnectionPool
     from api import main
 
-    root = Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[3]
     data = root / "public" / "data"
     metadata_path = root / "pipeline" / "inst" / "extdata" / "theme-metadata" / "theme_mobilite.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
