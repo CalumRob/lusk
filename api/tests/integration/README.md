@@ -37,18 +37,19 @@ another schema. Unset all `LUSK_TEST_*` variables after verification.
 
 The fixture writes tiny canonical Parquet artifacts and a matching
 pipeline-shaped metadata descriptor locally in pytest's temporary directory;
-it does not read production artifacts. Checks run the importer and public HTTP
-API seam against PostgreSQL, including rank, median, scope and provenance. Any
-query timing (if added later) is strictly local to this explicitly provided test
-database and is not a Pi or deployment performance claim.
+it does not read production artifacts. Current integration checks exercise the
+serving schema, read-only public HTTP API seam, and publication-marker read
+contract; they do not run a Python publisher. Any query timing (if added later)
+is strictly local to this explicitly provided test database and is not a Pi or
+deployment performance claim.
 
-The migration rehearsal uses a *second* unique test schema in the same disposable
-database. `legacy_initial_schema.sql` is the frozen four-table schema actually
-deployed on the Pi; `legacy_schema.sql` is the later six-table schema committed
-before the single-dataset redesign. Both variants are tested. The test checks
-that a partial/unknown schema or unexpected dependent object aborts the whole
-migration, an unrelated table survives, and canonical Parquet can repopulate
-the new tables. The live `lusk` schema is never involved.
+`legacy_initial_schema.sql` and `legacy_schema.sql` are frozen historical schema
+fixtures: respectively the original four-table Pi layout and the later six-table
+layout from before the single-dataset redesign. No current test references or
+executes these files; they are retained solely as historical reference, not as
+supported migration rehearsals. Migration 009 has its own focused opt-in test
+that executes the actual retirement script in a random owned schema in
+`lusk_it_contract` and never targets `public`.
 
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
@@ -129,9 +130,9 @@ associations (the second is explicitly synthetic smoke lineage), no-op behavior,
 dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
 after an injected insert failure.
 
-The shared-scalar migration/read tests are selected with
-`-k shared_scalar`. Importer-dependent historical integration cases have been
-removed with the retired Python database-write path. To rehearse migration 009,
-use the separate operator procedure in `api/migrations/README.md` against a
-disposable restored database; this ordinary integration fixture is not that
-operational rehearsal and must never target a live Pi.
+The shared-scalar migration/read tests are selected with `-k shared_scalar`.
+Run the guarded migration rehearsal with `-k migration_009`; the configured
+publisher and reader DSNs must both target `lusk_it_contract`. The test creates
+and cleans up a random `it_*` schema only. The operator must still perform the
+separate restored-database rehearsal and approval in `api/migrations/README.md`
+before any live migration.
