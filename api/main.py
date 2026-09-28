@@ -92,25 +92,31 @@ def _building_publication(markers: list[tuple[str, str]]) -> str:
 
 def _search_normalize(value: str) -> str:
     value = unicodedata.normalize("NFD", value.lower())
-    value = "".join(char for char in value if unicodedata.category(char) != "Mn")
-    return value.replace("œ", "oe").replace("æ", "ae").replace("'", " ").replace("-", " ").split()
+    value = "".join(char for char in value if not 0x0300 <= ord(char) <= 0x036F)
+    return " ".join(value.replace("œ", "oe").replace("æ", "ae").replace("'", " ")
+                 .replace("’", " ").replace("-", " ").split())
 
 
 def search_territory_rows(rows: list[dict], query: str, limit: int) -> list[dict]:
-    """Apply the current client search scoring to canonical territory names and IDs."""
+    """Apply the current client name-only matching and score bands."""
     normalized = " ".join(_search_normalize(query))
     scored = []
     for row in rows:
         name = " ".join(_search_normalize(row["name"]))
-        code = " ".join(_search_normalize(row["id"]))
         score = 100 if name == normalized else 80 if name.startswith(normalized) else 60 if any(
             word.startswith(normalized) for word in name.split()
         ) else 40 if normalized in name else 0
-        if not score and normalized and normalized in code:
-            score = 40
         if score:
             scored.append((score, row))
-    scored.sort(key=lambda item: (-item[0], len(item[1]["name"]), item[1]["name"].casefold(), item[1]["id"]))
+    # Python has no standard-library equivalent of JS Intl localeCompare('fr').
+    # Fail closed for a result set whose ordering depends on that comparator.
+    buckets: dict[tuple[int, int], list[dict]] = {}
+    for score, row in scored:
+        buckets.setdefault((score, len(row["name"])), []).append(row)
+    for tied in buckets.values():
+        if len(tied) > 1:
+            raise ValueError("French locale tie ordering is not safely reproducible")
+    scored.sort(key=lambda item: (-item[0], len(item[1]["name"])))
     return [row for _, row in scored[:limit]]
 
 
@@ -149,8 +155,11 @@ class ReadRepository:
                 if not marker:
                     raise HTTPException(503, "No territory reference has been published")
                 rows = connection.execute(
-                    "SELECT territory_type, territory_id, name FROM territory_reference"
+                    "SELECT territory_type, territory_id, name FROM territory_reference "
+                    "ORDER BY territory_type, name, territory_id LIMIT 1501"
                 ).fetchall()
+                if len(rows) > 1500:
+                    raise HTTPException(503, "Territory reference exceeds search scan bound")
                 entries = [dict(zip(("type", "id", "name"), row)) for row in rows]
                 return {"publication_id": "territory-v1-" + marker[0], "query": query,
                         "results": search_territory_rows(entries, query, limit)}
@@ -416,14 +425,17 @@ def building_access_territories(repository: ReadRepository = Depends(get_reposit
 
 @app.get("/api/territories/search")
 def search_territories(
-    q: str = Query(min_length=2, max_length=64),
+    q: str = Query(min_length=1, max_length=64),
     limit: int = Query(default=8, ge=1, le=50),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Bounded search over the R-published territory reference."""
     if not q.strip():
         raise HTTPException(422, "Query must contain a non-whitespace character")
-    return repository.search_territories(q, limit)
+    try:
+        return repository.search_territories(q, limit)
+    except ValueError as exc:
+        raise HTTPException(503, "Search ordering parity is unavailable") from exc
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/building-access")
