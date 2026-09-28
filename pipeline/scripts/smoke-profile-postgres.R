@@ -51,14 +51,11 @@ tryCatch({
 },finally={
   if (created) {
     tryCatch({
-      cleanup <- profile_smoke_schema_cleanup_sql(
-        function(parts) DBI::dbQuoteIdentifier(con, parts), schema)
-      for (statement in cleanup) DBI::dbExecute(con, statement)
+      cleanup_serving_smoke_schema(con, schema, "profile")
       cat("Profile smoke schema cleaned with dependency-ordered RESTRICT:", schema, "\n")
     }, error=function(e) {
-      message("Profile smoke schema left for manual inspection: ", schema)
-      warning("Could not clean profile smoke schema ", schema, " (it remains for inspection): ",
-        conditionMessage(e), call.=FALSE)
+      stop("Could not clean profile smoke schema ", schema,
+        " (inspect and remove manually): ", conditionMessage(e), call.=FALSE)
     })
   }
   tryCatch(DBI::dbDisconnect(con), error=function(e)

@@ -135,6 +135,100 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
          stats::setNames(c("territory_id", "territory_type")))
 }
 
+# Project the canonical service-share relation into the shared scalar grain.
+# The Parquet key remains indicator_id; service/mode are grouping dimensions
+# only for the legacy bounded response and never replace the declared identity.
+project_service_share_scalars <- function(access, metadata, eligible_territories) {
+  required <- c("territory_id", "territory_type", "indicator_id", "value",
+    "unit", "label", "direction", "source_id", "source_name", "source_version",
+    "reference_date", "publication_date")
+  if (!is.data.frame(access) || !all(required %in% names(access)) || !is.list(metadata) ||
+      !is.data.frame(eligible_territories) ||
+      !setequal(names(eligible_territories), c("territory_id", "territory_type")))
+    stop("Canonical service shares are missing contract fields", call.=FALSE)
+  if (any(!grepl("^share_[a-z0-9]+_[tbc]$", access$indicator_id)))
+    stop("Canonical service share has an invalid indicator key", call.=FALSE)
+  declared <- unique(unlist(lapply(metadata$subgroups, `[[`, "indicators"), use.names=FALSE))
+  ids <- sort(declared[grepl("^share_", declared)])
+  scalar_contract <- metadata$service_share_scalar
+  if (length(ids) != 15L || anyDuplicated(ids) ||
+      !is.list(metadata$indicator_labels) || !is.list(metadata$indicator_directions) ||
+      !is.list(metadata$sources) || !is.list(scalar_contract) ||
+      !identical(scalar_contract$completeness, "dense_complete") ||
+      !is.character(scalar_contract$denominator_semantics) ||
+      length(scalar_contract$denominator_semantics) != 1L ||
+      !nzchar(trimws(scalar_contract$denominator_semantics)) ||
+      any(!ids %in% names(metadata$indicator_labels)) ||
+      any(!ids %in% names(metadata$indicator_directions)) || any(!ids %in% names(metadata$sources)))
+    stop("Metadata must declare fifteen complete service-share descriptors", call.=FALSE)
+  if (!setequal(unique(as.character(access$indicator_id)), ids) ||
+      any(!access$unit %in% "%"))
+    stop("Canonical service shares do not match declared metadata or percent unit", call.=FALSE)
+  if (length(ids) != 15L || anyDuplicated(access[c("territory_id", "indicator_id")]))
+    stop("Canonical service scalar projection must contain fifteen complete indicator keys", call.=FALSE)
+  access <- access[order(access$indicator_id, access$territory_id), , drop=FALSE]
+  eligible_territories <- unique(eligible_territories[c("territory_id", "territory_type")])
+  eligible_territories <- eligible_territories[order(eligible_territories$territory_type,
+                                                       eligible_territories$territory_id), , drop=FALSE]
+  group <- split(access, access$indicator_id)
+  descriptors <- do.call(rbind, lapply(ids, function(id) {
+    rows <- group[[id]]
+    sources <- as.character(metadata$sources[[id]])
+    if (length(sources) != 1L || !nzchar(sources) ||
+        !identical(unique(as.character(rows$source_id)), sources) ||
+        length(unique(rows$label)) != 1L || rows$label[[1L]] != metadata$indicator_labels[[id]] ||
+        length(unique(rows$direction)) != 1L || rows$direction[[1L]] != metadata$indicator_directions[[id]])
+      stop("Canonical service scalar descriptor is inconsistent", call.=FALSE)
+    data.frame(indicator_id=id, allowed_sources=I(list(sources)),
+      label=as.character(rows$label[[1L]]), unit=as.character(rows$unit[[1L]]),
+      direction=as.character(rows$direction[[1L]]),
+      comparison_facet=id, allowed_levels=I(list(unique(as.character(rows$territory_type)))),
+      denominator_semantics=scalar_contract$denominator_semantics,
+      completeness=scalar_contract$completeness, descriptor_version=scalar_content_version(list(
+        indicator_id=id,
+        label=metadata$indicator_labels[[id]], direction=metadata$indicator_directions[[id]],
+        source=sources, levels=unique(as.character(rows$territory_type)), unit=unique(as.character(rows$unit)),
+        scalar_contract=scalar_contract)),
+      stringsAsFactors=FALSE)
+  }))
+  facts <- data.frame(indicator_id=as.character(access$indicator_id),
+    territory_id=as.character(access$territory_id), territory_type=as.character(access$territory_type),
+    value=as.numeric(access$value), status=ifelse(is.na(access$value), "not_available", "measured"),
+    support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
+  provenance <- unique(data.frame(indicator_id=as.character(access$indicator_id),
+    territory_id=as.character(access$territory_id), source_id=as.character(access$source_id),
+    vintage_id=paste(access$source_version, access$reference_date, sep="/"), stringsAsFactors=FALSE))
+  datasets <- unique(data.frame(source_id=as.character(access$source_id),
+    name=as.character(access$source_name), stringsAsFactors=FALSE))
+  vintages <- unique(data.frame(source_id=as.character(access$source_id),
+    vintage_id=paste(access$source_version, access$reference_date, sep="/"),
+    version=as.character(access$source_version), reference_date=as.Date(access$reference_date),
+    publication_date=as.Date(access$publication_date), stringsAsFactors=FALSE))
+  eligible <- unique(eligible_territories[c("territory_id", "territory_type")])
+  list(facts=facts, descriptors=descriptors, provenance=provenance,
+    datasets=datasets, vintages=vintages, eligible_territories=eligible)
+}
+
+register_service_share_scalar_publisher <- function(registry, metadata) {
+  register_scalar_publisher(registry, "services_essentiels_scalar",
+    project=function(canonical) {
+      if (!is.list(canonical) || !is.data.frame(canonical$access))
+        stop("Service scalar publisher requires canonical access facts", call.=FALSE)
+      if (!is.data.frame(canonical$eligible_territories))
+        stop("Service scalar publisher requires the canonical territory universe", call.=FALSE)
+      project_service_share_scalars(canonical$access, metadata,
+                                    canonical$eligible_territories)
+    },
+    publish=function(projection, db, version) db$replace(projection, version))
+}
+
+publish_service_share_scalars <- function(con, access, metadata, eligible_territories) {
+  publisher <- register_service_share_scalar_publisher(list(), metadata)
+  db <- scalar_postgres_adapter(con)
+  publish_registered_scalar(publisher, "services_essentiels_scalar",
+    canonical=list(access=access, eligible_territories=eligible_territories), db=db)
+}
+
 register_fixture_scalar_publisher <- function(registry, descriptor, completeness) {
   register_scalar_publisher(registry, "canonical_fixture_densite",
     project=function(payload) project_fixture_scalar(payload, descriptor, completeness, "densite"),
@@ -196,20 +290,23 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar|profile)_it_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("essential_service_access", "building_ramp", "building_grid",
-    "profile_observation_source", "profile_observation", "profile_descriptor_source",
-    "profile_axis", "profile_descriptor", "scalar_observation_source", "scalar_observation",
-    "scalar_descriptor_source", "scalar_descriptor", "source_vintage", "source_dataset",
-    "territory_reference", "service_registry",
-    "access_publication_metadata", "table_publication")
-  functions <- c("reject_profile_insert()", "reject_smoke_value()", "assert_profile_territory_level()",
-    "assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
-    "assert_scalar_levels()", "assert_scalar_descriptor_update()",
-    "assert_scalar_territory_update()", "assert_building_dataset_complete(integer, integer)",
-    "assert_current_dataset_complete(integer)")
+  tables <- c("ordered_series", "series_descriptor", "profile_observation_source",
+    "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
+    "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
+    "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
+    "building_evidence_descriptor", "essential_service_access", "service_registry",
+    "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
+    "table_publication")
+  functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_smoke_ramp()",
+    "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
+    "assert_scalar_descriptor_sources()", "assert_scalar_levels()",
+    "assert_scalar_descriptor_update()", "assert_scalar_territory_update()",
+    "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
+    "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
+    "validate_ordered_series()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
@@ -217,6 +314,9 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     }, character(1)), "RESTRICT"),
     paste("DROP SCHEMA IF EXISTS", as.character(quote_identifier(schema)), "RESTRICT"))
 }
+
+# Cleanup is destructive even in a disposable database: check both database
+# identity and ownership immediately before issuing any DROP statement.
 
 scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (length(schema) != 1L || !grepl("^scalar_it_[A-Za-z0-9_]+$", schema))
@@ -228,6 +328,27 @@ profile_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (length(schema) != 1L || !grepl("^profile_it_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned profile smoke schema", call. = FALSE)
   serving_smoke_schema_cleanup_sql(quote_identifier, schema)
+}
+
+
+cleanup_serving_smoke_schema <- function(connection, schema, kind) {
+  expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
+    profile="^profile_it_[A-Za-z0-9_]+$",
+    building="^it_building_publisher_[A-Za-z0-9_]+$", NULL)
+  if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
+      length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
+    stop("Cleanup requires an owned ", kind, " smoke schema", call. = FALSE)
+  identity <- DBI::dbGetQuery(connection, "SELECT current_database() AS database,
+    EXISTS (SELECT 1 FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner
+      WHERE n.nspname=$1 AND r.rolname=current_user) AS owned", params=list(schema))
+  if (!grepl("^lusk_it_[A-Za-z0-9_]+$", identity$database[[1L]]) ||
+      identity$database[[1L]] %in% c("lusk", "postgres", "template0", "template1") ||
+      !isTRUE(identity$owned[[1L]]))
+    stop("Refusing cleanup: database is not guarded lusk_it_* or schema is not owned by current user", call. = FALSE)
+  statements <- serving_smoke_schema_cleanup_sql(function(parts)
+    DBI::dbQuoteIdentifier(connection, parts), schema)
+  for (statement in statements) DBI::dbExecute(connection, statement)
+  invisible(TRUE)
 }
 
 # db is a narrow transaction adapter (transaction, marker, replace). Keeping
