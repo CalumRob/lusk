@@ -550,6 +550,45 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
+def declared_profile(
+    territory_type: Literal["commune", "epci", "departement"],
+    territory_id: str = Path(min_length=1, max_length=32),
+    indicator_id: Literal["structure_age"] = Path(),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Return a complete, descriptor-ordered profile; never substitutes static data."""
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            marker = conn.execute(
+                "SELECT content_version FROM table_publication WHERE table_name='declared_profile'").fetchone()
+            if marker is None or not marker[0]:
+                raise HTTPException(503, "Profile publication is unavailable")
+            descriptor = conn.execute(
+                "SELECT label,unit,allowed_levels,completeness,descriptor_version FROM profile_descriptor WHERE indicator_id=%s",
+                (indicator_id,)).fetchone()
+            if descriptor is None or territory_type not in descriptor[2]:
+                raise HTTPException(404, "Declared profile is unavailable")
+            axes = conn.execute(
+                "SELECT axis_name,axis_key,label,ordinal FROM profile_axis WHERE indicator_id=%s ORDER BY axis_name,ordinal",
+                (indicator_id,)).fetchall()
+            rows = conn.execute(
+                "SELECT o.territory_type,o.detail_key,o.sex_key,o.value,o.status FROM profile_observation o JOIN profile_axis d ON d.indicator_id=o.indicator_id AND d.axis_name='detail' AND d.axis_key=o.detail_key JOIN profile_axis s ON s.indicator_id=o.indicator_id AND s.axis_name='sex' AND s.axis_key=o.sex_key WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s ORDER BY d.ordinal,s.ordinal",
+                (indicator_id, territory_id, territory_type)).fetchall()
+            expected = sum(1 for axis in axes if axis[0] == 'detail') * sum(1 for axis in axes if axis[0] == 'sex')
+            if not rows:
+                raise HTTPException(404, "Profile territory is absent")
+            if len(rows) != expected:
+                raise HTTPException(503, "Profile publication is incomplete")
+            return {"indicator": indicator_id, "label": descriptor[0], "unit": descriptor[1],
+                    "descriptor_version": descriptor[4], "content_version": marker[0],
+                    "axes": [{"name": name, "key": key, "label": label, "order": order}
+                             for name,key,label,order in axes],
+                    "cells": [{"detail": detail, "sex": sex, "value": value, "status": status}
+                              for _level,detail,sex,value,status in rows]}
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
 def scalar_observation(
     territory_type: Literal["commune", "epci", "departement", "region"],
