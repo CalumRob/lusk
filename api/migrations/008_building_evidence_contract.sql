@@ -33,6 +33,7 @@ ALTER TABLE building_grid ADD CONSTRAINT building_grid_source_vintage_fk
 --   ALTER TABLE building_grid VALIDATE CONSTRAINT building_grid_source_vintage_fk;
 CREATE FUNCTION assert_building_fact_source() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE serving_table text; descriptor jsonb; expected_quantile jsonb;
+  breadth_ordinal integer; depth_ordinal integer; expected_cell_index integer;
 BEGIN
   serving_table := CASE WHEN TG_TABLE_NAME='building_ramp' THEN 'building_ramp' ELSE 'building_grid' END;
   SELECT contract INTO descriptor FROM building_evidence_descriptor WHERE table_name=serving_table;
@@ -52,11 +53,26 @@ BEGIN
        OR NEW.effective_direction IS DISTINCT FROM (descriptor->>'direction') THEN
       RAISE EXCEPTION 'ramp point is outside its declared axes';
     END IF;
-  ELSIF serving_table='building_grid' AND NEW.availability='complete' AND
-     (NEW.mode IS DISTINCT FROM (descriptor->'axes'->>'mode') OR
-      NOT COALESCE(descriptor->'axes'->'breadth' ? NEW.breadth_bucket, false) OR
-      NOT COALESCE(descriptor->'axes'->'depth' ? NEW.depth_bucket, false)) THEN
-    RAISE EXCEPTION 'grid cell is outside its declared axes';
+  ELSIF serving_table='building_grid' AND NEW.availability='complete' THEN
+    IF NEW.mode IS DISTINCT FROM (descriptor->'axes'->>'mode') THEN
+      RAISE EXCEPTION 'grid cell mode is outside its declared axes';
+    END IF;
+    SELECT axis.ordinality::integer INTO breadth_ordinal
+      FROM jsonb_array_elements_text(descriptor->'axes'->'breadth')
+        WITH ORDINALITY AS axis(value, ordinality)
+      WHERE axis.value=NEW.breadth_bucket ORDER BY axis.ordinality LIMIT 1;
+    SELECT axis.ordinality::integer INTO depth_ordinal
+      FROM jsonb_array_elements_text(descriptor->'axes'->'depth')
+        WITH ORDINALITY AS axis(value, ordinality)
+      WHERE axis.value=NEW.depth_bucket ORDER BY axis.ordinality LIMIT 1;
+    IF breadth_ordinal IS NULL OR depth_ordinal IS NULL THEN
+      RAISE EXCEPTION 'grid cell is missing a declared breadth/depth axis';
+    END IF;
+    expected_cell_index := (breadth_ordinal - 1) * jsonb_array_length(descriptor->'axes'->'depth')
+                           + depth_ordinal - 1;
+    IF NEW.cell_index IS DISTINCT FROM expected_cell_index THEN
+      RAISE EXCEPTION 'grid cell index does not match its declared breadth/depth pair';
+    END IF;
   END IF;
   RETURN NEW;
 END $$;

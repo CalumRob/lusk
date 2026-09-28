@@ -84,6 +84,10 @@ test_that("les projections canoniques ont leurs formes SQL et leurs indices loca
   grid <- result$tables$building_grid
   complete_grid <- grid[grid$availability=="complete",]
   expect_true(all(vapply(split(complete_grid$cell_index, paste(complete_grid$territory_type,complete_grid$territory_id)), function(z) identical(sort(z),0:29), logical(1))))
+  breadth_ordinal <- match(as.character(complete_grid$breadth_bucket), DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key)
+  depth_ordinal <- match(as.character(complete_grid$depth_bucket), DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key)
+  expect_identical(complete_grid$cell_index,
+    as.integer((breadth_ordinal - 1L) * length(DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key) + depth_ordinal - 1L))
   expect_true(all(grid$cell_index[grid$availability=="absent"] == -1L))
   expect_true(all(result$tables$building_ramp$effective_direction == "high"))
   expect_true(all(result$tables$essential_service_access$effective_direction %in% c("high","low")))

@@ -200,6 +200,11 @@ def test_building_descriptor_constraints_and_atomic_refresh(building_db_env, lay
             with pytest.raises(psycopg.Error):
                 with connection.transaction():
                     connection.execute("UPDATE building_grid SET breadth_bucket='not-declared' WHERE territory_id='A' AND cell_index=1")
+            # A declared pair is still invalid when stored at another cell's
+            # index: the PK alone does not ensure the dense Cartesian mapping.
+            with pytest.raises(psycopg.Error):
+                with connection.transaction():
+                    connection.execute("UPDATE building_grid SET breadth_bucket='1-9' WHERE territory_id='A' AND cell_index=1")
 
             # Deferred marker validation happens at transaction commit, and a
             # source link without a matching descriptor is also not publishable.

@@ -105,7 +105,16 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
   ))
   ramp <- ramp[order(ramp$type,ramp$territoire,ramp$mode,ramp$quantile,na.last=TRUE),,drop=FALSE]
   ramp$quantile_index <- ifelse(is.na(ramp$quantile), -1L, as.integer(round(ramp$quantile*10)))
-  grid <- grid[order(grid$type,grid$territoire,grid$breadth_bucket,grid$depth_bucket,na.last=TRUE),,drop=FALSE]
+  breadth_order <- match(as.character(grid$breadth_bucket),
+                         DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key)
+  depth_order <- match(as.character(grid$depth_bucket),
+                       DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key)
+  complete_grid <- grid$availability == "complete"
+  if (any(complete_grid & (is.na(breadth_order) | is.na(depth_order)))) {
+    abort("Grid cell is missing from declared axes.")
+  }
+  grid <- grid[order(grid$type, grid$territoire, breadth_order, depth_order,
+                     na.last=TRUE),,drop=FALSE]
   grid$cell_index <- ave(seq_len(nrow(grid)), interaction(grid$type,grid$territoire, drop=TRUE), FUN=function(i) seq_along(i)-1L)
   grid$cell_index[grid$availability=="absent"] <- -1L
   ramp_table <- data.frame(territory_id=as.character(ramp$territoire),territory_type=as.character(ramp$type),availability=as.character(ramp$availability),mode=as.character(ramp$mode),quantile_index=ramp$quantile_index,quantile=as.numeric(ramp$quantile),accessible_types=as.numeric(ramp$accessible_types),total_buildings=as.integer(ramp$total_buildings),source_id=as.character(ramp$source_id),source_version=as.character(ramp$version),effective_direction=direction,stringsAsFactors=FALSE)
