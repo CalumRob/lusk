@@ -14,6 +14,7 @@ created <- FALSE
 tryCatch({
   DBI::dbExecute(con,paste0("CREATE SCHEMA ",DBI::dbQuoteIdentifier(con,schema)))
   created <- TRUE
+  cat("Profile smoke schema created:", schema, "\n")
   DBI::dbExecute(con,paste0("SET search_path TO ",DBI::dbQuoteIdentifier(con,schema)))
   ddl <- paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n")
   for (statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
@@ -49,7 +50,17 @@ tryCatch({
   cat("Profile PostgreSQL publication, lineage, independent marker, and rollback: PASS\n")
 },finally={
   if (created) {
-    DBI::dbExecute(con,paste0("DROP SCHEMA ",as.character(DBI::dbQuoteIdentifier(con,schema))," RESTRICT"))
+    tryCatch({
+      cleanup <- profile_smoke_schema_cleanup_sql(
+        function(parts) DBI::dbQuoteIdentifier(con, parts), schema)
+      for (statement in cleanup) DBI::dbExecute(con, statement)
+      cat("Profile smoke schema cleaned with dependency-ordered RESTRICT:", schema, "\n")
+    }, error=function(e) {
+      message("Profile smoke schema left for manual inspection: ", schema)
+      warning("Could not clean profile smoke schema ", schema, " (it remains for inspection): ",
+        conditionMessage(e), call.=FALSE)
+    })
   }
-  DBI::dbDisconnect(con)
+  tryCatch(DBI::dbDisconnect(con), error=function(e)
+    warning("Could not disconnect profile smoke DB connection: ", conditionMessage(e), call.=FALSE))
 })

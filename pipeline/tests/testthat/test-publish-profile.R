@@ -48,3 +48,18 @@ test_that("profile publisher keeps the committed version when replacement fails"
   expect_identical(marker, "old-complete")
   expect_identical(stored, "old-facts")
 })
+
+test_that("profile smoke cleanup removes only its owned schema in dependency order with RESTRICT", {
+  sql <- profile_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "profile_it_test")
+  joined <- paste(sql, collapse="\n")
+  expect_true(grepl('DROP TABLE IF EXISTS "profile_it_test"."profile_observation_source" RESTRICT', joined, fixed=TRUE))
+  expect_true(grepl('DROP TABLE IF EXISTS "profile_it_test"."profile_observation" RESTRICT', joined, fixed=TRUE))
+  expect_true(grepl('DROP TABLE IF EXISTS "profile_it_test"."profile_descriptor" RESTRICT', joined, fixed=TRUE))
+  expect_true(grepl('DROP FUNCTION IF EXISTS "profile_it_test"."assert_profile_territory_level"() RESTRICT', joined, fixed=TRUE))
+  expect_true(grepl('DROP FUNCTION IF EXISTS "profile_it_test"."reject_profile_insert"() RESTRICT', joined, fixed=TRUE))
+  expect_lt(gregexpr('profile_observation_source', joined, fixed=TRUE)[[1L]][[1L]],
+    gregexpr('profile_observation" RESTRICT', joined, fixed=TRUE)[[1L]][[1L]])
+  expect_true(endsWith(tail(sql, 1L), 'DROP SCHEMA IF EXISTS "profile_it_test" RESTRICT'))
+  expect_false(grepl("CASCADE", joined, fixed=TRUE))
+  expect_error(profile_smoke_schema_cleanup_sql(identity, "public"), "owned profile smoke schema")
+})

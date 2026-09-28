@@ -191,20 +191,22 @@ split_postgres_sql <- function(sql) {
   statements
 }
 
-# Exact inventory created by api/schema.sql for the isolated publisher smoke.
-# Drop dependents before referenced tables, then trigger functions, and finally
-# the owned schema using RESTRICT. The schema is name-guarded and all object
-# names are schema-qualified so cleanup cannot follow search_path elsewhere.
-scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+# Exact inventory created by api/schema.sql and the profile smoke's injected
+# trigger. Drop dependents before referenced tables, then functions, then the
+# owned schema using RESTRICT. Every object is schema-qualified.
+serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^scalar_it_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar|profile)_it_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
-    "scalar_descriptor", "source_vintage", "source_dataset", "essential_service_access",
-    "building_ramp", "building_grid", "territory_reference", "service_registry",
+  tables <- c("essential_service_access", "building_ramp", "building_grid",
+    "profile_observation_source", "profile_observation", "profile_descriptor_source",
+    "profile_axis", "profile_descriptor", "scalar_observation_source", "scalar_observation",
+    "scalar_descriptor_source", "scalar_descriptor", "source_vintage", "source_dataset",
+    "territory_reference", "service_registry",
     "access_publication_metadata", "table_publication")
-  functions <- c("reject_smoke_value()", "assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
+  functions <- c("reject_profile_insert()", "reject_smoke_value()", "assert_profile_territory_level()",
+    "assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
     "assert_scalar_levels()", "assert_scalar_descriptor_update()",
     "assert_scalar_territory_update()", "assert_building_dataset_complete(integer, integer)",
     "assert_current_dataset_complete(integer)")
@@ -214,6 +216,18 @@ scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
       paste0(qualified(split[[1L]]), "(", split[[2L]])
     }, character(1)), "RESTRICT"),
     paste("DROP SCHEMA IF EXISTS", as.character(quote_identifier(schema)), "RESTRICT"))
+}
+
+scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (length(schema) != 1L || !grepl("^scalar_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned smoke schema", call. = FALSE)
+  serving_smoke_schema_cleanup_sql(quote_identifier, schema)
+}
+
+profile_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (length(schema) != 1L || !grepl("^profile_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned profile smoke schema", call. = FALSE)
+  serving_smoke_schema_cleanup_sql(quote_identifier, schema)
 }
 
 # db is a narrow transaction adapter (transaction, marker, replace). Keeping

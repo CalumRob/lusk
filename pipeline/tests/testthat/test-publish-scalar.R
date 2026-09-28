@@ -185,7 +185,7 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
 
 test_that("smoke schema cleanup is explicitly dependency ordered and restricted", {
   sql <- scalar_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
-  expect_true(grepl('DROP TABLE IF EXISTS "scalar_it_test"."scalar_observation_source" RESTRICT', sql[[1L]], fixed=TRUE))
+  expect_true(any(grepl('DROP TABLE IF EXISTS "scalar_it_test"."scalar_observation_source" RESTRICT', sql, fixed=TRUE)))
   expect_true(any(grepl('DROP FUNCTION IF EXISTS "scalar_it_test"."reject_smoke_value"() RESTRICT', sql, fixed=TRUE)))
   expect_lt(which(grepl('"scalar_observation_source"', sql, fixed=TRUE))[1L],
             which(grepl('"territory_reference"', sql, fixed=TRUE))[1L])
