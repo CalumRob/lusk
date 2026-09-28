@@ -198,21 +198,35 @@ class ReadRepository:
                                                                  member_type=peer_type) if members else None)
                 except ComparisonInputError as exc:
                     raise HTTPException(503, "Incomplete building-access publication") from exc
-                focal_ramp = [r for r in ramp_data if r["territoire"] == tid and r["type"] == ttype and r["availability"] == "complete"]
-                focal_grid = [r for r in grid_data if r["territoire"] == tid and r["type"] == ttype and r["availability"] == "complete"]
+                target_ramp = [r for r in ramp_data if r["territoire"] == tid and r["type"] == ttype]
+                target_grid = [r for r in grid_data if r["territoire"] == tid and r["type"] == ttype]
+                if ({r["availability"] for r in target_ramp} == {"absent"} and
+                    {r["availability"] for r in target_grid} == {"absent"} and
+                    len(target_ramp) == 3 and {r["mode"] for r in target_ramp} == {"c", "b", "t"} and
+                    len(target_grid) == 1):
+                    availability = "absent"
+                    focal_ramp, focal_grid = [], []
+                elif ({r["availability"] for r in target_ramp} == {"complete"} and
+                      {r["availability"] for r in target_grid} == {"complete"} and
+                      len(target_ramp) == 33 and len(target_grid) == 30):
+                    availability = "complete"
+                    focal_ramp, focal_grid = target_ramp, target_grid
+                else:
+                    raise HTTPException(503, "Incomplete published building figure")
                 focal_ramp.sort(key=lambda r: (r["mode"], r["quantile"]))
                 focal_grid.sort(key=lambda r: (r["breadth_bucket"], r["depth_bucket"]))
                 return {
                     "publication_id": publication,
                     "territory": {"id": tid, "type": ttype, "name": name},
+                    "availability": availability,
                     "scope": None if ttype == "region" else {
                         "kind": kind,
                         "comparison_mode": comparison_mode if ttype == "commune" else "bretagne"},
-                    "ramp": [{"mode": r["mode"], "quantile_index": r["quantile_index"],
+                    "ramp": None if availability == "absent" else [{"mode": r["mode"], "quantile_index": r["quantile_index"],
                               **{k: r[k] for k in ("quantile", "accessible_types", "total_buildings", "source_id")},
                               "source_version": r["version"]} for r in focal_ramp],
                     "peer_ramp": peer_ramp,
-                    "distribution": [{**{k: r[k] for k in ("breadth_bucket", "depth_bucket", "building_count", "total_buildings", "source_id")},
+                    "distribution": None if availability == "absent" else [{**{k: r[k] for k in ("breadth_bucket", "depth_bucket", "building_count", "total_buildings", "source_id")},
                                       "source_version": r["version"]} for r in focal_grid],
                     "peer_distribution": peer_distribution,
                 }

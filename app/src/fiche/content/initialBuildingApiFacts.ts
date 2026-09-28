@@ -10,7 +10,18 @@ export function applyInitialBuildingApiFacts(facts: TerritoryFacts, response: un
   const hasScope = kind !== null && label !== null
   const hasPeer = isRecord(response) && response.peer_ramp !== null && response.peer_distribution !== null
   const expectedMode = mode ?? (hasScope ? 'bretagne' : null)
+  if (isRecord(response) && response.availability === 'absent') {
+    if (typeof response.publication_id !== 'string' || !response.publication_id ||
+        !isRecord(response.territory) || response.territory.id !== facts.territory.code ||
+        response.territory.type !== facts.territory.type ||
+        (hasScope ? !isRecord(response.scope) || response.scope.kind !== kind ||
+          response.scope.comparison_mode !== expectedMode : response.scope !== null) ||
+        response.ramp !== null || response.distribution !== null) invalid()
+    return { ...facts, mobility: { ...facts.mobility,
+      accessRamp: null, buildingDistribution: null } }
+  }
   if (!isRecord(response) || typeof response.publication_id !== 'string' || !response.publication_id ||
+      response.availability !== 'complete' ||
       !isRecord(response.territory) || response.territory.id !== facts.territory.code ||
       response.territory.type !== facts.territory.type ||
       (hasScope ? !isRecord(response.scope) || response.scope.comparison_mode !== expectedMode ||

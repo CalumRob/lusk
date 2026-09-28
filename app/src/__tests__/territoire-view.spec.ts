@@ -150,7 +150,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const grid = initial.mobility.buildingDistribution!
     const displayModes = { c: 'car', b: 'bike', t: 'walkTransit' } as const
     const figure = {
-      publication_id: 'building-v1', territory: { id: '22001', type: 'commune' },
+      publication_id: 'building-v1', availability: 'complete', territory: { id: '22001', type: 'commune' },
       scope: { comparison_mode: 'densite', kind: context.scope.kind, label: context.scope.label },
       ramp: (['c', 'b', 't'] as const).flatMap((mode) =>
         ramp.curves[displayModes[mode]].points.map((p, quantile_index) => ({

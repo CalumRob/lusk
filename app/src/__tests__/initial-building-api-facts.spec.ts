@@ -24,7 +24,7 @@ function facts(): TerritoryFacts {
     } }
 }
 function response() {
-  return { publication_id: 'building-v1', territory: { type: 'commune', id: '22001' },
+  return { publication_id: 'building-v1', availability: 'complete', territory: { type: 'commune', id: '22001' },
     scope: { comparison_mode: 'densite', kind: 'communes-densite', label: 'communes peu denses' },
     ramp: Object.keys(modes).flatMap((mode) => Array.from({ length: 11 }, (_, i) => ({ mode,
       quantile_index: i, quantile: i / 10, accessible_types: 2, total_buildings: 30 }))),
@@ -68,5 +68,11 @@ describe('initial building figures', () => {
     expect(result.mobility.accessRamp?.curves.car.points[0]?.comparisonAccessibleTypes).toBeNull()
     expect(result.mobility.accessRamp?.comparisonStatistic).toBe('mean')
     expect(result.mobility.accessRamp?.comparisonLabel).toBe('communes peu denses')
+  })
+  it('represents a declared absent publication without rendering stale JSON figures', () => {
+    const data = { ...response(), availability: 'absent', ramp: null, distribution: null }
+    const result = applyInitialBuildingApiFacts(facts(), data, 'densite', 'communes-densite', 'communes peu denses')
+    expect(result.mobility.accessRamp).toBeNull()
+    expect(result.mobility.buildingDistribution).toBeNull()
   })
 })
