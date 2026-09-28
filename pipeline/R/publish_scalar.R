@@ -161,7 +161,7 @@ scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "scalar_descriptor", "source_vintage", "source_dataset", "essential_service_access",
     "building_ramp", "building_grid", "territory_reference", "service_registry",
     "access_publication_metadata", "table_publication")
-  functions <- c("assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
+  functions <- c("reject_smoke_value()", "assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
     "assert_scalar_levels()", "assert_scalar_descriptor_update()",
     "assert_scalar_territory_update()", "assert_building_dataset_complete(integer, integer)",
     "assert_current_dataset_complete(integer)")
