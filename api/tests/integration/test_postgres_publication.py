@@ -315,6 +315,60 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         pool.close()
 
 
+def test_ordered_series_bounded_read_comparison_and_rollback(db_env):
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as publisher:
+        publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('59701','commune','Series focal'),('59702','commune','Series peer'),('59703','commune','Series tie')")
+        publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
+        publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
+        publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+            VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
+        publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+            ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
+            ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
+            ('fixture_annual','59702','commune','2024','2024',1,'measured','series_fixture','v1'),
+            ('fixture_annual','59703','commune','2024','2024',2,'measured','series_fixture','v1')""")
+        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-series-v1',3)")
+        publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',4,'territory-series-v1')")
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with publisher.transaction():
+                publisher.execute("UPDATE ordered_series SET value=99 WHERE territory_id='59701' AND axis_value='2024'")
+                publisher.execute("UPDATE table_publication SET content_version='partial' WHERE table_name='ordered_series'")
+                publisher.execute("INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES ('fixture_annual','59701','commune','2023','2023',NULL,'measured','series_fixture','v1')")
+        assert publisher.execute("SELECT value FROM ordered_series WHERE territory_id='59701' AND axis_value='2024'").fetchone()[0] == 2
+        assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v1'
+
+    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
+                          kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            response = client.get('/api/territories/commune/59701/series/fixture_annual')
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
+        assert body['points'][0]['value'] == 0
+        assert body['points'][1]['status'] == 'missing' and body['points'][1]['value'] is None
+        assert body['comparison'] == {
+            'point': '2024', 'value': 2.0, 'median': 2.0, 'rank': 2,
+            'ties': 2, 'comparable_count': 3,
+            'scope': {'kind': 'same-level', 'territory_type': 'commune'},
+        }
+        assert body['points'][2]['source_version'] == '2026-01'
+        assert body['availability'] == 'incomplete'
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()
+
+
 def test_shared_scalar_additive_migration_rehearsal(db_env):
     """Rehearse migration 004 in an isolated schema with the pre-594 catalog."""
     import psycopg

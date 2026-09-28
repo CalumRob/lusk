@@ -8,11 +8,34 @@ pkgload::load_all(".", quiet = TRUE)
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
-                                               "--scalar-fixture-check", "--scalar-fixture-publish")) {
-  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish (from pipeline/)",
+                                               "--scalar-fixture-check", "--scalar-fixture-publish",
+                                               "--series-fixture-check", "--series-fixture-publish")) {
+  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish (from pipeline/)",
        call. = FALSE)
 }
-if (args[[1L]] %in% c("--scalar-fixture-check", "--scalar-fixture-publish")) {
+if (args[[1L]] %in% c("--series-fixture-check", "--series-fixture-publish")) {
+  canonical <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
+  metadata <- jsonlite::read_json("inst/extdata/theme-metadata/theme_milieux.json", simplifyVector=FALSE)
+  registry <- register_conso_enaf_series_publisher(list(), metadata)
+  projection <- registry$conso_enaf_annuel$project(canonical)
+  cat("Validated conso_enaf_annuel:", nrow(projection$points), "observations; comparison",
+      projection$descriptor$comparison_point, "; version", scalar_content_version(projection), "\n")
+  if (args[[1L]] == "--series-fixture-publish") {
+    database <- Sys.getenv("LUSK_TEST_DATABASE_NAME", unset="")
+    dsn <- Sys.getenv("LUSK_TEST_PUBLISH_DSN", unset="")
+    uri <- regmatches(dsn, regexec("^postgres(?:ql)?://([^/:@]+)(?::([^@]*))?@([^:/]+):([0-9]+)/([^?]+)", dsn, perl=TRUE))[[1L]]
+    if (!startsWith(database, "lusk_it_") || !nzchar(dsn) || length(uri) != 6L ||
+        !identical(utils::URLdecode(uri[[6L]]), database) || !uri[[4L]] %in% c("localhost", "127.0.0.1", "::1"))
+      stop("Series fixture publication requires a matching lusk_it_* disposable DSN", call.=FALSE)
+    connection_args <- list(drv=RPostgres::Postgres(), host=uri[[4L]], port=as.integer(uri[[5L]]),
+      dbname=utils::URLdecode(uri[[6L]]), user=utils::URLdecode(uri[[2L]]))
+    if (nzchar(uri[[3L]])) connection_args$password <- utils::URLdecode(uri[[3L]])
+    connection <- do.call(DBI::dbConnect, connection_args)
+    result <- tryCatch(publish_registered_series(registry, "conso_enaf_annuel", canonical,
+      series_postgres_adapter(connection)), finally=DBI::dbDisconnect(connection))
+    print(result)
+  }
+} else if (args[[1L]] %in% c("--scalar-fixture-check", "--scalar-fixture-publish")) {
   fixture <- readr::read_csv("tests/testthat/fixtures/demographie-fixture.csv",
     col_types=readr::cols(code=readr::col_character(), epci=readr::col_character()),
     show_col_types=FALSE)

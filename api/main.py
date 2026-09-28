@@ -127,6 +127,26 @@ def search_territory_rows(rows: list[dict], query: str, limit: int) -> list[dict
             if score > cutoff_score or (score == cutoff_score and len(row["name"]) <= cutoff_length)]
 
 
+def summarize_series_comparison(values: list[tuple[str, float]], focal_id: str,
+                                focal_value: float | None, direction: str) -> dict:
+    """Direction-aware rank/median for one metadata-declared axis point."""
+    if direction not in ("high", "low"):
+        raise ValueError("Series comparison requires declared high/low direction")
+    members = {territory_id: value for territory_id, value in values if territory_id != focal_id}
+    if focal_value is not None:
+        members[focal_id] = focal_value
+    ordered = list(members.values())
+    if focal_value is None:
+        rank = ties = None
+    else:
+        better = sum(value > focal_value if direction == "high" else value < focal_value
+                     for value in ordered)
+        rank = better + 1
+        ties = sum(value == focal_value for value in ordered)
+    return {"value": focal_value, "median": median(ordered) if ordered else None,
+            "rank": rank, "ties": ties, "comparable_count": len(ordered)}
+
+
 class ReadRepository:
     def __init__(self, connections: ConnectionPool):
         self.connections = connections
@@ -140,14 +160,18 @@ class ReadRepository:
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 marker = connection.execute(
-                    "SELECT content_version FROM table_publication WHERE table_name='ordered_series'"
+                    """SELECT s.content_version,s.reference_content_version,t.content_version,
+                              s.row_count,(SELECT count(*) FROM ordered_series)
+                       FROM table_publication s LEFT JOIN table_publication t
+                         ON t.table_name='territory_reference' WHERE s.table_name='ordered_series'"""
                 ).fetchone()
-                if not marker or not marker[0]:
+                if (not marker or not marker[0] or not marker[1] or marker[1] != marker[2]
+                        or marker[3] != marker[4]):
                     raise HTTPException(503, "Series publication is unavailable")
                 descriptor = connection.execute(
                     """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
                               source_id,vintage_id,descriptor_version
-                       FROM series_descriptor WHERE indicator_id=%s""", (indicator_id,)
+                       ,allowed_levels FROM series_descriptor WHERE indicator_id=%s""", (indicator_id,)
                 ).fetchone()
                 if not descriptor:
                     raise HTTPException(404, "Series descriptor is unavailable")
@@ -157,12 +181,23 @@ class ReadRepository:
                 ).fetchone()
                 if not target:
                     raise HTTPException(404, "Territory not found")
+                if territory_type not in descriptor[10]:
+                    raise HTTPException(422, "Series is not declared for this territory level")
                 rows = connection.execute(
-                    """SELECT axis_value,observation_period,value,status,source_id,vintage_id
-                       FROM ordered_series WHERE indicator_id=%s AND territory_id=%s
-                         AND territory_type=%s ORDER BY array_position(%s::text[],axis_value)""",
+                    """SELECT s.axis_value,s.observation_period,s.value,s.status,s.source_id,s.vintage_id,
+                              v.version,v.reference_date,v.publication_date
+                       FROM ordered_series s JOIN source_vintage v USING(source_id,vintage_id)
+                       WHERE s.indicator_id=%s AND s.territory_id=%s
+                         AND s.territory_type=%s ORDER BY array_position(%s::text[],s.axis_value)""",
                     (indicator_id, territory_id, territory_type, list(descriptor[1])),
                 ).fetchall()
+                peer_values = connection.execute(
+                    """SELECT s.territory_id,s.value FROM ordered_series s
+                       JOIN territory_reference t USING(territory_id)
+                       WHERE s.indicator_id=%s AND t.territory_type=%s AND s.axis_value=%s
+                         AND s.status='measured' ORDER BY s.territory_id""",
+                    (indicator_id, territory_type, descriptor[3]),
+                ).fetchall() if descriptor[3] else []
                 by_axis = {row[0]: row for row in rows}
                 if len(by_axis) != len(rows) or any(axis not in descriptor[1] for axis in by_axis):
                     raise HTTPException(503, "Invalid published series axis")
@@ -175,11 +210,20 @@ class ReadRepository:
                                    "value": row[2] if row else None,
                                    "observation_period": row[1] if row else None,
                                    "source_id": row[4] if row else descriptor[7],
-                                   "vintage_id": row[5] if row else descriptor[8]})
+                                   "vintage_id": row[5] if row else descriptor[8],
+                                   "source_version": row[6] if row else None,
+                                   "source_reference_date": row[7] if row else None,
+                                   "source_publication_date": row[8] if row else None})
+                focal_value = next((v for axis, _, v, status, *_ in rows if axis == descriptor[3] and status == "measured"), None)
+                comparison = {"point": descriptor[3],
+                    **summarize_series_comparison(peer_values, territory_id, focal_value, descriptor[6]),
+                    "scope": {"kind": "same-level", "territory_type": territory_type}}
                 return {"publication_id": marker[0], "territory":{"id":territory_id,"type":territory_type,"name":target[0]},
                         "indicator_id":indicator_id,"axis_kind":descriptor[0],"completeness":descriptor[2],
                         "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
-                        "descriptor_version":descriptor[9],"comparison_point":descriptor[3],"points":points}
+                        "descriptor_version":descriptor[9],"comparison_point":descriptor[3],"points":points,
+                        "availability": "complete" if all(point["status"] == "measured" for point in points) else "incomplete",
+                        "comparison": comparison}
 
     def read_level(self, territory_type: str, territory_id: str) -> dict:
         return self._read(territory_type, territory_id, None)
