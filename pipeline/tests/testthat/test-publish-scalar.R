@@ -296,6 +296,7 @@ test_that("smoke schema cleanup is explicitly dependency ordered and restricted"
   expect_true(grepl('DROP SCHEMA IF EXISTS "it_building_publisher_test" RESTRICT', tail(building_sql, 1L), fixed=TRUE))
   expect_false(any(grepl("CASCADE", c(serving_sql, profile_sql, building_sql), fixed=TRUE)))
   expect_error(scalar_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
+  expect_error(profile_smoke_schema_cleanup_sql(identity, "public"), "owned profile smoke schema")
   expect_error(serving_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
   expect_error(serving_smoke_schema_cleanup_sql(identity, "unowned_it_test"), "owned smoke schema")
 })
