@@ -367,6 +367,8 @@ def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_d
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     territories = pq.read_table(data / "territoires.parquet").to_pylist()
     indicator_ids = sorted(key for key in metadata["sources"] if key.startswith("share_"))
+    service_ids = sorted({key.removeprefix("share_").rsplit("_", 1)[0]
+                          for key in indicator_ids})
     all_rows = [row for row in pq.read_table(data / "indicateurs_mobilite.parquet").to_pylist()
                 if row["theme"] == "mobilite" and row["key"] in indicator_ids]
     vintages = {row["id"]: row for row in pq.read_table(data / "vintages.parquet").to_pylist()}
@@ -405,7 +407,7 @@ def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_d
                   row.get("epci"), row.get("classe_densite_code"),
                   row.get("classe_densite_libelle_public")) for row in reference_rows])
             cur.executemany("INSERT INTO service_registry(service) VALUES (%s)",
-                            [(service,) for service in ("food", "health", "admin", "school", "bank")])
+                            [(service,) for service in service_ids])
             cur.executemany("INSERT INTO source_dataset(source_id,name) VALUES (%s,%s)",
                             [(source_id, vintage_rows[source_id]["source"]) for source_id in source_ids])
             cur.executemany(
