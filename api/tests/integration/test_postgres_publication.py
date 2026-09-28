@@ -203,8 +203,9 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture','v2026','2026')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_secondary','Secondary source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_secondary','v2025','2025')")
-        connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
-        connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture'),('fixture_scalar','fixture_secondary')")
+        with connection.transaction():
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture'),('fixture_scalar','fixture_secondary')")
         with connection.transaction():
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('fixture_scalar','29001','commune',0,'measured',0,0)")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture','v2026')")
@@ -215,8 +216,9 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         with pytest.raises(psycopg.errors.RaiseException, match="descriptor must declare at least one source dataset"):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture'")
-        connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('cascade_fixture','Cascade fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
-        connection.execute("INSERT INTO scalar_descriptor_source VALUES ('cascade_fixture','fixture')")
+        with connection.transaction():
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('cascade_fixture','Cascade fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('cascade_fixture','fixture')")
         connection.execute("DELETE FROM scalar_descriptor WHERE indicator_id='cascade_fixture'")
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',2)")
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','fixture-v1',1,'territory-v1')")
@@ -332,8 +334,9 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
             connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-01','commune','Fixture')")
             connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_source','Fixture source')")
             connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_source','v2026','2026')")
-            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
-            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
+            with connection.transaction():
+                connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
+                connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
             with connection.transaction():
                 connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','fixture-01','commune',3.5,'measured')")
                 connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','fixture-01','fixture_source','v2026')")
