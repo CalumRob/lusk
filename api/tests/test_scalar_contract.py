@@ -112,15 +112,29 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
     with __import__("pytest").raises(HTTPException) as error:
         declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(True)))
     assert error.value.status_code == 503
-    with __import__("pytest").raises(HTTPException) as error:
-        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(bad_facet=True)))
-    assert error.value.status_code == 503
-    with __import__("pytest").raises(HTTPException) as error:
-        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(bad_direction=True)))
-    assert error.value.status_code == 503
-    with __import__("pytest").raises(HTTPException) as error:
-        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(undeclared=True)))
-    assert error.value.status_code == 503
-    with __import__("pytest").raises(HTTPException) as error:
-        declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(stale=True)))
-    assert error.value.status_code == 503
+    for repository in (Connections(bad_facet=True), Connections(bad_direction=True),
+                       Connections(undeclared=True), Connections(stale=True)):
+        with __import__("pytest").raises(HTTPException) as error:
+            declared_profile("commune", "22001", "structure_age",
+                             repository=SimpleNamespace(connections=repository))
+        assert error.value.status_code == 503
+
+
+def test_profile_comparison_scope_requires_compatible_explicit_identifier():
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from api.main import declared_profile
+
+    invalid_requests = [
+        ("commune", "departement", None),
+        ("commune", "epci", None),
+        ("commune", "bretagne", "29"),
+        ("epci", "departement", None),
+        ("departement", "epci", "E1"),
+    ]
+    for territory_type, scope, scope_id in invalid_requests:
+        with __import__("pytest").raises(HTTPException) as error:
+            declared_profile(territory_type, "id", "structure_age",
+                             comparison_scope=scope, comparison_scope_id=scope_id,
+                             repository=SimpleNamespace())
+        assert error.value.status_code == 422

@@ -560,6 +560,13 @@ def declared_profile(
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Return a complete, descriptor-ordered profile; never substitutes static data."""
+    if comparison_scope == "bretagne":
+        if comparison_scope_id is not None:
+            raise HTTPException(422, "Bretagne comparison scope does not accept an identifier")
+    elif territory_type != "commune":
+        raise HTTPException(422, "Local comparison scopes are valid only for communes")
+    elif comparison_scope_id is None:
+        raise HTTPException(422, "Local comparison scope requires an identifier")
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -578,8 +585,6 @@ def declared_profile(
                 raise HTTPException(404, "Declared profile is unavailable")
             if (not descriptor[5] or not descriptor[6] or descriptor[7] not in ("high", "low")):
                 raise HTTPException(503, "Profile comparison descriptor is invalid")
-            if comparison_scope_id is not None and (territory_type != "commune" or comparison_scope == "bretagne"):
-                raise HTTPException(422, "Comparison scope identifier is not valid for this level")
             department_id = comparison_scope_id if comparison_scope == "departement" else None
             epci_id = comparison_scope_id if comparison_scope == "epci" else None
             if territory_type != "commune":

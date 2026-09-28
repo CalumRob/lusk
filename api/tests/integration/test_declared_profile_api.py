@@ -76,6 +76,17 @@ def test_declared_profile_postgres_api_contract():
         main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
         with TestClient(main.app) as client:
             base = f"/api/territories/commune/{territory}/profiles/structure_age"
+            # Local comparison universes must be explicit; silently treating a
+            # missing id as Bretagne would claim a narrower cohort than queried.
+            for query in (
+                "?comparison_scope=departement",
+                "?comparison_scope=epci",
+                "?comparison_scope=bretagne&comparison_scope_id=29",
+            ):
+                assert client.get(base + query).status_code == 422
+            assert client.get(
+                f"/api/territories/epci/{territory}/profiles/structure_age?comparison_scope=departement"
+            ).status_code == 422
             response = client.get(base + "?comparison_scope=departement&comparison_scope_id=29")
             assert response.status_code == 200, response.text
             body = response.json()

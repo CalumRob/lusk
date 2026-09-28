@@ -380,6 +380,9 @@ Démographie-targeted run; it is never part of the scheduled static publication.
 Publication and territory-reference compatibility are pinned to independent
 table markers. Representative-size Pi latency/storage and recovery validation
 remain mandatory before the product owner deploys or switches live traffic.
+Merging the API code is not an operator cutover: keep issue #596 open through
+migration 006, publication and marker verification, measured Pi cost/P95 and
+parity review, and the separately approved deployment/flag change.
 The app rollout is separately gated at build time by
 `VITE_STRUCTURE_AGE_PROFILE_API=1`; unset/any other value keeps the incumbent
 static structure-age page. This is a build-time SPA flag, not a runtime switch:
