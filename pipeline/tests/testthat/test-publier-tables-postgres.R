@@ -67,6 +67,7 @@ test_that("un marqueur en retard republie même si le fichier est inchangé", {
   f <- fake_postgres(markers)
   publish_fake(f)
   expect_true("insert building_grid" %in% f$state$log)
+  expect_identical(f$state$markers$building_grid$content_version, "v1")
 })
 
 test_that("une erreur annule la transaction et les marqueurs", {

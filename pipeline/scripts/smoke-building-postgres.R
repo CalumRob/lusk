@@ -59,20 +59,21 @@ db_connect <- function(options = NULL) {
 
 schema <- paste0("it_building_publisher_", paste(sample(c(letters, 0:9), 20, TRUE), collapse = ""))
 created <- FALSE
-main <- db_connect()
-on.exit(if (DBI::dbIsValid(main)) DBI::dbDisconnect(main), add = TRUE)
-connected_database <- DBI::dbGetQuery(main, "SELECT current_database() AS name")$name[[1]]
-if (!identical(connected_database, database)) abort("Connected database does not match the explicitly guarded target.")
-DBI::dbExecute(main, paste0("CREATE SCHEMA ", as.character(DBI::dbQuoteIdentifier(main, schema))))
-created <- TRUE
-schema_ident <- as.character(DBI::dbQuoteIdentifier(main, schema))
-DBI::dbExecute(main, paste("SET search_path TO", schema_ident))
-
 run_connection <- NULL
+main <- NULL
+schema_ident <- NULL
 
 cleanup <- function() {
   if (!created) return(invisible(NULL))
   if (!is.null(run_connection) && DBI::dbIsValid(run_connection)) DBI::dbDisconnect(run_connection)
+  run_connection <<- NULL
+  # An injected failure may have left its trigger behind. Remove it explicitly
+  # before dropping the test tables; cleanup errors are intentionally surfaced.
+  if (!is.null(main) && DBI::dbIsValid(main) &&
+      DBI::dbExistsTable(main, DBI::Id(schema = schema, table = "building_ramp"))) {
+    DBI::dbExecute(main, "DROP TRIGGER IF EXISTS reject_smoke_ramp ON building_ramp")
+    DBI::dbExecute(main, "DROP FUNCTION IF EXISTS reject_smoke_ramp() RESTRICT")
+  }
   # Remove only this random schema's objects, in FK dependency order. RESTRICT
   # is deliberate: unexpected objects stop cleanup instead of being cascaded.
   ordered_tables <- c(
@@ -97,10 +98,18 @@ cleanup <- function() {
   created <<- FALSE
   invisible(NULL)
 }
-on.exit(cleanup(), add = TRUE)
+on.exit(tryCatch(cleanup(), finally = {
+  if (!is.null(main) && DBI::dbIsValid(main)) DBI::dbDisconnect(main)
+}), add = TRUE)
 
+main <- db_connect()
+connected_database <- DBI::dbGetQuery(main, "SELECT current_database() AS name")$name[[1]]
+if (!identical(connected_database, database)) abort("Connected database does not match the explicitly guarded target.")
+schema_ident <- as.character(DBI::dbQuoteIdentifier(main, schema))
+DBI::dbExecute(main, paste0("CREATE SCHEMA ", schema_ident))
+created <- TRUE
+DBI::dbExecute(main, paste("SET search_path TO", schema_ident))
 run_connection <- db_connect(paste0("-csearch_path=", schema))
-on.exit(if (DBI::dbIsValid(run_connection)) DBI::dbDisconnect(run_connection), add = TRUE)
 
 execute_sql_file(run_connection, "../api/schema.sql")
 
@@ -196,11 +205,25 @@ stopifnot(DBI::dbGetQuery(run_connection, "SELECT count(*) AS n FROM building_ra
 stopifnot(length(publish(tables)) == 0L)
 
 # A stale marker causes the unchanged canonical table to be resent and restored.
-DBI::dbExecute(run_connection,
-  "UPDATE table_publication SET content_version='db-behind' WHERE table_name='building_grid'")
-retry <- publish(tables)
-stopifnot(identical(retry, "building_grid"),
-  DBI::dbGetQuery(run_connection, "SELECT content_version FROM table_publication WHERE table_name='building_grid")$content_version[[1]] == versions[["building_grid"]])
+DBI::dbWithTransaction(run_connection, {
+  DBI::dbExecute(run_connection,
+    "UPDATE building_evidence_descriptor SET descriptor_version='db-behind' WHERE table_name='building_grid'")
+  DBI::dbExecute(run_connection,
+    "UPDATE table_publication SET content_version='db-behind' WHERE table_name='building_grid'")
+})
+behind_before_retry <- DBI::dbGetQuery(run_connection,
+  "SELECT p.content_version AS marker_version,d.descriptor_version FROM table_publication p
+   JOIN building_evidence_descriptor d USING(table_name) WHERE p.table_name='building_grid'")
+stopifnot(nrow(behind_before_retry) == 1L,
+  behind_before_retry$marker_version[[1]] == "db-behind",
+  behind_before_retry$descriptor_version[[1]] == "db-behind")
+invisible(publish(tables))
+marker_after_retry <- DBI::dbGetQuery(run_connection,
+  "SELECT content_version FROM table_publication WHERE table_name='building_grid'")$content_version[[1]]
+descriptor_after_retry <- DBI::dbGetQuery(run_connection,
+  "SELECT descriptor_version FROM building_evidence_descriptor WHERE table_name='building_grid'")$descriptor_version[[1]]
+stopifnot(identical(marker_after_retry, versions[["building_grid"]]),
+  identical(descriptor_after_retry, versions[["building_grid"]]))
 
 # Inject failure inside fact replacement and verify transaction rollback retains
 # the prior facts, descriptor and independent publication markers.
@@ -214,10 +237,6 @@ DBI::dbExecute(run_connection, "CREATE FUNCTION reject_smoke_ramp() RETURNS trig
   RETURN NEW; END $$")
 DBI::dbExecute(run_connection, "CREATE TRIGGER reject_smoke_ramp BEFORE INSERT ON building_ramp
   FOR EACH ROW EXECUTE FUNCTION reject_smoke_ramp()")
-on.exit({
-  try(DBI::dbExecute(run_connection, "DROP TRIGGER IF EXISTS reject_smoke_ramp ON building_ramp"), silent = TRUE)
-  try(DBI::dbExecute(run_connection, "DROP FUNCTION IF EXISTS reject_smoke_ramp()"), silent = TRUE)
-}, add = TRUE)
 replacement <- tables
 replacement$building_ramp$accessible_types[[1]] <- replacement$building_ramp$accessible_types[[1]] + 99
 failed_versions <- versions
