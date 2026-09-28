@@ -342,7 +342,13 @@ Readers use named bounded selectors and one repeatable-read transaction, not
 arbitrary SQL or browser credentials.
 
 The scalar publication marker pins `reference_content_version` to the
-independent `territory_reference` marker version. Scalar reads fail with 503 if
+independent `territory_reference` marker version. This is a dependency token,
+not part of or a replacement for the scalar table's independent
+`content_version`. When the territory-reference version changes, the publisher
+checks the complete eligible territory-ID/type set before rebinding that token;
+equal identity sets can be rebound without changing scalar content, while any
+added, removed, or type-changed eligible identity leaves the old token in place
+and the reader unavailable pending a coherent republish. Scalar reads fail with 503 if
 either marker is missing, the versions differ, or either marker row count no
 longer matches its committed table. This exact-version compatibility token is
 the cross-table identity strategy; readers never blend a scalar snapshot with
@@ -363,3 +369,8 @@ scalar publisher. `--scalar-fixture-publish` is additionally guarded to a DSN
 whose database exactly matches `LUSK_TEST_DATABASE_NAME=lusk_it_*`; it is for a
 disposable integration database only. Neither mode invokes the production
 targets graph or needs `data/raw`.
+The theme metadata does not declare scalar completeness. This fixture adapter
+therefore requires an explicit caller policy and uses `dense_complete` only
+because its checked projection covers every eligible identity in that fixture;
+it does not add completeness metadata to a product descriptor or establish a
+catalogue-wide default.

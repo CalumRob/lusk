@@ -111,6 +111,13 @@ test_that("registered publisher versions independently, retries DB-behind-local,
   expect_false(compatibility$changed)
   expect_true(compatibility$compatibility_updated)
   expect_identical(state$reference_version, "territory-v2")
+  state$reference_version <- "territory-v3"
+  state$territories$territory_id <- "99999"
+  expect_error(publish_registered_scalar(registry, "fixture", list(value=0), db),
+               "territory universe mismatch")
+  expect_identical(state$scalar_reference_version, "territory-v2")
+  state$territories$territory_id <- "22001"
+  state$reference_version <- "territory-v2"
   local_new <- publish_registered_scalar(registry, "fixture", list(value=1), db)
   expect_true(local_new$changed)
   state$markers$scalar_observation <- marker
@@ -122,20 +129,52 @@ test_that("registered publisher versions independently, retries DB-behind-local,
   expect_identical(state$markers$building_ramp, "building-v1")
 })
 
-test_that("fixture publisher projects canonical facts with independent parity and metadata versioning", {
+test_that("fixture publisher projects the complete canonical scalar slice and versions metadata", {
   payload <- compute_payload(load_fixture())
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_demographie.json"),
                                  simplifyVector=FALSE)
   expected <- payload$indicateurs[payload$indicateurs$key == "densite" &
-    payload$indicateurs$territoire == "22001", , drop=FALSE]
-  projected <- project_fixture_scalar(payload, metadata)
-  observed <- projected$facts[projected$facts$territory_id == "22001", , drop=FALSE]
-  expect_equal(observed$value[[1]], expected$value[[1]])
-  expect_true("source_id" %in% names(projected$descriptors))
+    payload$indicateurs$type %in% metadata$indicator_pages$densite$levels, , drop=FALSE]
+  # Explicit fixture-only policy: these fixture facts cover every declared
+  # level/territory. Completeness is not present in product metadata, so the
+  # projection API requires the caller to state it.
+  eligible <- payload$territoires[payload$territoires$type %in%
+    metadata$indicator_pages$densite$levels, c("territoire", "type"), drop=FALSE]
+  expect_equal(nrow(expected), nrow(eligible))
+  projected <- project_fixture_scalar(payload, metadata, completeness="dense_complete")
+  source_id <- metadata$indicator_pages$densite$sources[[1L]]
+  vintage_id <- paste(expected$vintage_version, expected$vintage_date_reference, sep="/")
+  expected_facts <- data.frame(indicator_id="densite", territory_id=expected$territoire,
+    territory_type=expected$type, value=expected$value,
+    status=ifelse(is.na(expected$value), "not_available", "measured"),
+    support_count=NA_integer_, denominator_count=NA_integer_, source_id=source_id,
+    vintage_id=vintage_id, stringsAsFactors=FALSE)
+  expect_equal(projected$facts, expected_facts)
+  expect_equal(projected$provenance,
+    unique(expected_facts[c("indicator_id", "territory_id", "source_id", "vintage_id")]))
+  expect_equal(projected$descriptors$label, metadata$indicator_pages$densite$label)
+  expect_equal(projected$descriptors$unit, metadata$indicator_pages$densite$unit)
+  expect_equal(projected$descriptors$direction, metadata$indicator_pages$densite$direction)
+  expect_equal(projected$descriptors$allowed_levels[[1]], unlist(metadata$indicator_pages$densite$levels))
+  expect_equal(projected$descriptors$denominator_semantics,
+               metadata$indicator_pages$densite$calculation)
+  expect_equal(projected$descriptors$source_id, source_id)
+  expect_identical(projected$descriptors$completeness, "dense_complete")
+  expect_equal(projected$datasets,
+    data.frame(source_id=source_id, name=unique(as.character(expected$vintage_source))[[1L]]))
+  expect_equal(projected$vintages, unique(data.frame(source_id=source_id,
+    vintage_id=vintage_id, version=as.character(expected$vintage_version),
+    reference_date=as.Date(expected$vintage_date_reference),
+    publication_date=as.Date(expected$vintage_date_publication))))
+  expect_equal(projected$eligible_territories,
+    stats::setNames(eligible, c("territory_id", "territory_type")))
   expect_invisible(validate_scalar_projection(projected$facts, projected$descriptors,
                                                projected$eligible_territories))
   changed_metadata <- metadata
   changed_metadata$indicator_pages$densite$label <- "Densité modifiée"
-  changed <- project_fixture_scalar(payload, changed_metadata)
+  changed <- project_fixture_scalar(payload, changed_metadata, completeness="dense_complete")
   expect_false(identical(scalar_content_version(projected), scalar_content_version(changed)))
+  expect_false(identical(projected$descriptors$descriptor_version,
+                         changed$descriptors$descriptor_version))
+  expect_error(project_fixture_scalar(payload, metadata), "completeness")
 })

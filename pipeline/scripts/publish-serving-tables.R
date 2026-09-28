@@ -19,7 +19,11 @@ if (args[[1L]] %in% c("--scalar-fixture-check", "--scalar-fixture-publish")) {
   payload <- compute_payload(fixture)
   descriptor <- jsonlite::fromJSON("inst/extdata/theme-metadata/theme_demographie.json",
                                    simplifyVector=FALSE)
-  projection <- project_fixture_scalar(payload, descriptor)
+  # This tiny fixture has one densite fact for every canonical territory at
+  # the descriptor's declared levels; the completeness policy is explicit for
+  # this fixture only, not inferred as a product-catalogue default.
+  completeness <- "dense_complete"
+  projection <- project_fixture_scalar(payload, descriptor, completeness)
   validate_scalar_projection(projection$facts, projection$descriptors,
                              projection$eligible_territories)
   if (args[[1L]] == "--scalar-fixture-check") {
@@ -35,7 +39,7 @@ if (args[[1L]] %in% c("--scalar-fixture-check", "--scalar-fixture-publish")) {
         !identical(utils::URLdecode(uri[[6L]]), database) ||
         !uri[[4L]] %in% c("localhost", "127.0.0.1", "::1"))
       stop("Scalar fixture publication requires a matching lusk_it_* disposable DSN", call.=FALSE)
-    registry <- register_fixture_scalar_publisher(list(), descriptor)
+    registry <- register_fixture_scalar_publisher(list(), descriptor, completeness)
     connection_args <- list(drv=RPostgres::Postgres(), host=uri[[4L]], port=as.integer(uri[[5L]]),
       dbname=utils::URLdecode(uri[[6L]]), user=utils::URLdecode(uri[[2L]]))
     if (nzchar(uri[[3L]])) connection_args$password <- utils::URLdecode(uri[[3L]])

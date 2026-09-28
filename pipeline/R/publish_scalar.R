@@ -88,7 +88,9 @@ register_scalar_publisher <- function(registry, name, project, publish) {
   registry
 }
 
-project_fixture_scalar <- function(payload, descriptor, indicator_id = "densite") {
+project_fixture_scalar <- function(payload, descriptor, completeness, indicator_id = "densite") {
+  if (length(completeness) != 1L || !completeness %in% c("dense_complete", "sparse"))
+    stop("Fixture completeness must be explicitly declared", call. = FALSE)
   page <- descriptor$indicator_pages[[indicator_id]]
   if (is.null(page)) stop("Fixture indicator is not declared", call. = FALSE)
   facts <- payload$indicateurs
@@ -109,7 +111,7 @@ project_fixture_scalar <- function(payload, descriptor, indicator_id = "densite"
     indicator_id=indicator_id, source_id=source_id, label=page$label,
     unit=page$unit, direction=page$direction,
     comparison_facet=NA_character_, allowed_levels=I(list(unlist(page$levels))),
-    denominator_semantics=page$calculation, completeness="sparse",
+    denominator_semantics=page$calculation, completeness=completeness,
     descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE
   )
   provenance <- unique(scalar_facts[c("indicator_id", "territory_id", "source_id", "vintage_id")])
@@ -128,9 +130,9 @@ project_fixture_scalar <- function(payload, descriptor, indicator_id = "densite"
          stats::setNames(c("territory_id", "territory_type")))
 }
 
-register_fixture_scalar_publisher <- function(registry, descriptor) {
+register_fixture_scalar_publisher <- function(registry, descriptor, completeness) {
   register_scalar_publisher(registry, "canonical_fixture_densite",
-    project=function(payload) project_fixture_scalar(payload, descriptor, "densite"),
+    project=function(payload) project_fixture_scalar(payload, descriptor, completeness, "densite"),
     publish=function(projection, db, version) db$replace(projection, version))
 }
 
