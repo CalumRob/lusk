@@ -8,7 +8,7 @@ CREATE TABLE table_publication (
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT scalar_publication_requires_reference
+    CONSTRAINT shared_fact_publication_requires_reference
       CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL)
 );
 

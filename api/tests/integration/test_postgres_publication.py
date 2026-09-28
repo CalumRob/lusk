@@ -612,28 +612,28 @@ def test_profile_and_series_migration_chain_matches_fresh_schema():
             fresh.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
 
         with psycopg.connect(chain_dsn, autocommit=True) as chain:
-            # Start from the supported fresh shared schema, then roll back only
-            # the #594 additions exactly as the existing 004 rehearsal does.
-            chain.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
-            for trigger, table in [
-                ("scalar_observation_source_required", "scalar_observation"),
-                ("scalar_observation_source_not_empty", "scalar_observation_source"),
-                ("scalar_descriptor_requires_sources", "scalar_descriptor"),
-                ("scalar_descriptor_source_set_not_empty", "scalar_descriptor_source"),
-                ("scalar_territory_compatibility", "territory_reference"),
-                ("scalar_descriptor_compatibility", "scalar_descriptor"),
-                ("scalar_observation_levels", "scalar_observation"),
-            ]:
-                chain.execute(f"DROP TRIGGER {trigger} ON {table}")
-            chain.execute("DROP TRIGGER ordered_series_contract ON ordered_series")
-            chain.execute("DROP FUNCTION validate_ordered_series()")
-            chain.execute("DROP TABLE ordered_series,series_descriptor")
-            chain.execute("DROP TABLE scalar_observation_source,scalar_observation,scalar_descriptor_source,scalar_descriptor,source_vintage,source_dataset")
-            chain.execute("DROP FUNCTION assert_scalar_observation_has_source(),assert_scalar_descriptor_sources(),assert_scalar_territory_update(),assert_scalar_descriptor_update(),assert_scalar_levels()")
-            chain.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
-            chain.execute("ALTER TABLE table_publication DROP CONSTRAINT scalar_publication_requires_reference")
-            chain.execute("ALTER TABLE table_publication DROP COLUMN reference_content_version")
-            chain.execute("ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK (table_name IN ('territory_reference','service_registry','essential_service_access','building_ramp','building_grid'))")
+            # Model the pre-594 publication/reference catalog directly. Do not
+            # reverse-engineer it from today's fresh schema: later profile and
+            # scalar foreign keys make that teardown depend on downstream DDL.
+            chain.execute("""
+                CREATE TABLE table_publication (
+                    table_name text PRIMARY KEY CHECK (table_name IN (
+                        'territory_reference','service_registry','essential_service_access',
+                        'building_ramp','building_grid')),
+                    content_version text NOT NULL,
+                    row_count integer NOT NULL CHECK (row_count >= 0),
+                    published_at timestamptz NOT NULL DEFAULT now()
+                );
+                CREATE TABLE territory_reference (
+                    territory_id text PRIMARY KEY,
+                    territory_type text NOT NULL,
+                    name text NOT NULL,
+                    department_id text,
+                    epci_id text,
+                    density_class_code text,
+                    density_class_label text
+                );
+            """)
             chain.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
             chain.execute(profile_migration.read_text(encoding="utf-8"))
             chain.execute((api_root / "migrations/007_ordered_series.sql").read_text(encoding="utf-8"))
@@ -648,16 +648,28 @@ def test_profile_and_series_migration_chain_matches_fresh_schema():
                         chain.execute("UPDATE table_publication SET reference_content_version=NULL WHERE table_name=%s", (marker,))
 
             def marker_contract(connection):
-                return connection.execute("""SELECT c.contype, pg_get_constraintdef(c.oid)
+                return connection.execute("""SELECT c.conname, pg_get_constraintdef(c.oid)
                     FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
-                    WHERE t.relname='table_publication' AND c.contype='c'
-                    ORDER BY pg_get_constraintdef(c.oid)""").fetchall()
+                    JOIN pg_namespace n ON n.oid=t.relnamespace
+                    WHERE n.nspname=current_schema() AND t.relname='table_publication' AND c.contype='c'
+                    ORDER BY c.conname""").fetchall()
 
             # Different equivalent CHECK partitioning is acceptable; assert
             # both marker values and reference semantics in actual DDL behavior.
-            assert marker_contract(chain) == marker_contract(fresh)
-            allowed = {row[0] for row in chain.execute("SELECT unnest(ARRAY['declared_profile','ordered_series'])").fetchall()}
-            assert allowed == {"declared_profile", "ordered_series"}
+            with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
+                assert marker_contract(chain) == marker_contract(fresh)
+            marker_constraint_names = {name for name, _definition in marker_contract(chain)}
+            assert "shared_fact_publication_requires_reference" in marker_constraint_names
+            marker_names = {row[0] for row in chain.execute(
+                "SELECT table_name FROM table_publication WHERE table_name IN ('declared_profile','ordered_series')").fetchall()}
+            assert marker_names == {"declared_profile", "ordered_series"}
+            with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
+                fresh.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-v1',1,'territory-v1'),('ordered_series','series-v1',1,'territory-v1')")
+                fresh_markers = dict(fresh.execute("SELECT table_name,reference_content_version FROM table_publication WHERE table_name IN ('declared_profile','ordered_series')").fetchall())
+                assert fresh_markers == {"declared_profile": "territory-v1", "ordered_series": "territory-v1"}
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with chain.transaction():
+                    chain.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('unregistered_marker','x',1)")
     finally:
         if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
