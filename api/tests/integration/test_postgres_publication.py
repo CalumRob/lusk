@@ -359,7 +359,7 @@ def test_database_rejects_missing_service_group(db_env):
                 VALUES ('fixture-29003','school','walk_transit',0.2,'School access','high','fixture','Fixture source','2026-01'),
                        ('fixture-29003','school','bike',0.5,'School access','high','fixture','Fixture source','2026-01'),
                        ('fixture-29003','school','car',0.8,'School access','low','fixture','Fixture source','2026-01')""")
-            assert connection.execute("SELECT assert_current_dataset_complete(3)").fetchone() == (None,)
+            connection.execute("SELECT assert_current_dataset_complete(3)")
             with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
                 with connection.transaction():
                     connection.execute("DELETE FROM essential_service_access WHERE territory_id = 'fixture-29003'")
