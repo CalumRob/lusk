@@ -46,7 +46,9 @@ CREATE TABLE scalar_descriptor_source (
 CREATE FUNCTION assert_scalar_descriptor_sources() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE key text;
 BEGIN
-  key := COALESCE(NEW.indicator_id, OLD.indicator_id);
+  IF TG_OP = 'DELETE' THEN key := OLD.indicator_id;
+  ELSE key := NEW.indicator_id;
+  END IF;
   IF EXISTS (SELECT 1 FROM scalar_descriptor d WHERE d.indicator_id=key)
      AND NOT EXISTS (SELECT 1 FROM scalar_descriptor_source s WHERE s.indicator_id=key) THEN
     RAISE EXCEPTION 'scalar descriptor must declare at least one source dataset';

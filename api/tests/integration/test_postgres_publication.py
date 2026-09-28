@@ -209,8 +209,15 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('fixture_scalar','29001','commune',0,'measured',0,0)")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture','v2026')")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture_secondary','v2025')")
-        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        with connection.transaction():
+            connection.execute("DELETE FROM scalar_observation_source WHERE source_id='fixture_secondary'")
             connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture_secondary'")
+        with pytest.raises(psycopg.errors.RaiseException, match="descriptor must declare at least one source dataset"):
+            with connection.transaction():
+                connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture'")
+        connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('cascade_fixture','Cascade fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+        connection.execute("INSERT INTO scalar_descriptor_source VALUES ('cascade_fixture','fixture')")
+        connection.execute("DELETE FROM scalar_descriptor WHERE indicator_id='cascade_fixture'")
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',2)")
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','fixture-v1',1,'territory-v1')")
         # Zero is measured; null is legal only with typed unavailability.

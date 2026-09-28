@@ -98,6 +98,9 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
   if (!nrow(facts)) stop("Canonical fixture has no declared scalar facts", call. = FALSE)
   source_ids <- unlist(page$sources, use.names=FALSE)
   if (!length(source_ids)) stop("Fixture descriptor has no declared source", call. = FALSE)
+  if (length(source_ids) != 1L)
+    stop("Canonical fixture projection requires exactly one declared source with fixture-backed provenance", call. = FALSE)
+  source_id <- source_ids[[1L]]
   version <- as.character(facts$vintage_version)
   vintage_id <- paste(version, facts$vintage_date_reference, sep="/")
   scalar_facts <- data.frame(
@@ -115,20 +118,17 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
     descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE
   )
   provenance <- unique(data.frame(indicator_id=indicator_id,
-    territory_id=rep(scalar_facts$territory_id, each=length(source_ids)),
-    source_id=rep(source_ids, times=nrow(scalar_facts)),
-    vintage_id=rep(vintage_id, each=length(source_ids)), stringsAsFactors=FALSE))
+    territory_id=scalar_facts$territory_id, source_id=source_id,
+    vintage_id=vintage_id, stringsAsFactors=FALSE))
   vintages <- unique(data.frame(
-    source_id=rep(source_ids, times=nrow(facts)), vintage_id=rep(vintage_id, each=length(source_ids)),
-    version=rep(version, each=length(source_ids)),
-    reference_date=rep(as.Date(facts$vintage_date_reference), each=length(source_ids)),
-    publication_date=rep(as.Date(facts$vintage_date_publication), each=length(source_ids)),
+    source_id=source_id, vintage_id=vintage_id, version=version,
+    reference_date=as.Date(facts$vintage_date_reference),
+    publication_date=as.Date(facts$vintage_date_publication),
     stringsAsFactors=FALSE
   ))
   list(facts=scalar_facts, descriptors=descriptor_row,
        provenance=provenance,
-        datasets=data.frame(source_id=source_ids, name=c(unique(as.character(facts$vintage_source))[[1L]],
-          rep(source_ids[-1L], length.out=max(0L,length(source_ids)-1L))), stringsAsFactors=FALSE),
+        datasets=data.frame(source_id=source_id, name=unique(as.character(facts$vintage_source))[[1L]]),
        vintages=vintages,
        eligible_territories=payload$territoires[payload$territoires$type %in% page$levels,
          c("territoire", "type"), drop=FALSE] |>

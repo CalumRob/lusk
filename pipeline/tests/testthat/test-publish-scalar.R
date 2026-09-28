@@ -177,4 +177,8 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
   expect_false(identical(projected$descriptors$descriptor_version,
                          changed$descriptors$descriptor_version))
   expect_error(project_fixture_scalar(payload, metadata), "completeness")
+  multi_source_metadata <- metadata
+  multi_source_metadata$indicator_pages$densite$sources <- c(source_id, "secondary_without_fixture_provenance")
+  expect_error(project_fixture_scalar(payload, multi_source_metadata,
+    completeness="dense_complete"), "exactly one declared source")
 })
