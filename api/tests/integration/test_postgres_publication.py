@@ -686,8 +686,12 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
         try:
             with TestClient(main.app) as client:
                 response = client.get('/api/territories/commune/59701/series/fixture_annual')
+                department_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=22')
                 epci_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e1')
                 region_response = client.get('/api/territories/region/53/series/fixture_annual?scope_level=region')
+                invalid_department = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=99')
+                invalid_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=missing')
+                mismatched_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e2')
             assert response.status_code == 200, response.text
             body = response.json()
             assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
@@ -700,12 +704,17 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             }
             assert body['points'][2]['source_version'] == '2026-01'
             assert body['availability'] == 'incomplete'
+            assert department_response.status_code == 200, department_response.text
+            assert department_response.json()['comparison']['scope']['department_id'] == '22'
             assert epci_response.status_code == 200, epci_response.text
             assert epci_response.json()['comparison']['scope']['epci_id'] == 'e1'
             assert epci_response.json()['comparison']['comparable_count'] == 2
             assert region_response.status_code == 200, region_response.text
             assert region_response.json()['comparison']['scope']['territory_type'] == 'region'
             assert region_response.json()['comparison']['rank'] == 1
+            assert invalid_department.status_code == 422
+            assert invalid_epci.status_code == 422
+            assert mismatched_epci.status_code == 422
         finally:
             if previous is None:
                 main.app.dependency_overrides.pop(main.get_repository, None)

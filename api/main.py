@@ -177,7 +177,7 @@ class ReadRepository:
                 if not descriptor:
                     raise HTTPException(404, "Series descriptor is unavailable")
                 target = connection.execute(
-                    "SELECT name FROM territory_reference WHERE territory_id=%s AND territory_type=%s",
+                    "SELECT name,department_id,epci_id FROM territory_reference WHERE territory_id=%s AND territory_type=%s",
                     (territory_id, territory_type),
                 ).fetchone()
                 if not target:
@@ -198,6 +198,10 @@ class ReadRepository:
                     raise HTTPException(422, "Department/EPCI filters apply only to commune scope")
                 if department_id and epci_id:
                     raise HTTPException(422, "Choose one existing commune scope filter")
+                if department_id and (territory_type != "commune" or target[1] != department_id):
+                    raise HTTPException(422, "Department filter does not contain the focal territory")
+                if epci_id and (territory_type != "commune" or target[2] != epci_id):
+                    raise HTTPException(422, "EPCI filter does not contain the focal territory")
                 axis_limit = len(descriptor[1])
                 territory_limit = min(5_000, max(1, 100_000 // axis_limit))
                 scoped_ids = connection.execute(
