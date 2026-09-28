@@ -210,15 +210,16 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('fixture_scalar','29001','commune',0,'measured',0,0)")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture','v2026')")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture_secondary','v2025')")
-        with connection.transaction():
-            connection.execute("DELETE FROM scalar_observation_source WHERE source_id='fixture_secondary'")
-            connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture_secondary'")
         with pytest.raises(psycopg.errors.ForeignKeyViolation):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture'")
         with connection.transaction():
             connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('unreferenced_fixture','Unreferenced fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
-            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('unreferenced_fixture','fixture')")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('unreferenced_fixture','fixture'),('unreferenced_fixture','fixture_secondary')")
+        # A non-last source can be removed without involving the observed
+        # fixture's provenance; the remaining declared source keeps the
+        # descriptor invariant satisfied.
+        connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='unreferenced_fixture' AND source_id='fixture_secondary'")
         with pytest.raises(psycopg.errors.RaiseException, match="descriptor must declare at least one source dataset"):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='unreferenced_fixture' AND source_id='fixture'")
