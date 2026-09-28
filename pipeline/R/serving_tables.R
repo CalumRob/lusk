@@ -110,8 +110,34 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
   denoms <- tapply(complete$total_buildings, complete_key, unique)
   if (any(sums != denoms[names(sums)])) abort("Cellules de grille ne recomposent pas le total.")
   tables <- list(territory_reference=refs[c("territory_id","territory_type","name","department_id","epci_id","density_class_code","density_class_label")], service_registry=registry, essential_service_access=access[c("territory_id","service","mode","share","indicator_label","effective_direction","source_id","source_name","source_version","reference_date","source_publication_date")], building_ramp=ramp_table, building_grid=grid_table)
-  versions <- versions_tables_service(tables, scope, meta$building_comparison)
+  # The physical tables remain dedicated evidence grains. Their descriptors
+  # are versioned with their own facts so a change to axis/weighting semantics
+  # cannot leave an apparently current marker behind.
+  building_contract <- contrat_publication_batiments(meta$building_comparison)
+  versions <- versions_tables_service(tables, scope, building_contract)
   list(tables=tables, versions=versions, access_scope=scope)
+}
+
+contrat_publication_batiments <- function(comparison) {
+  if (!identical(comparison$statistic, "mean") ||
+      !comparison$direction %in% c("high", "low")) {
+    stop("M\u00e9tadonn\u00e9es building_comparison invalides.", call. = FALSE)
+  }
+  list(
+    building_ramp = list(
+      shape = "building_ramp", modes = c("c", "b", "t"), positions = seq(0, 1, .1),
+      territory_levels = c("commune", "epci", "departement", "region"),
+      denominator = "ramp.total_buildings", peer_statistic = "building_count_weighted_mean",
+      absent = "explicit_absent_sentinel", source = "canonical_building_parquet",
+      direction = comparison$direction
+    ),
+    building_grid = list(
+      shape = "building_grid", mode = "t", breadth_cells = 6L, depth_cells = 5L,
+      territory_levels = c("commune", "epci", "departement", "region"),
+      denominator = "grid.total_buildings", peer_statistic = "pooled_building_counts",
+      absent = "explicit_absent_sentinel", source = "canonical_building_parquet"
+    )
+  )
 }
 
 versions_tables_service <- function(tables, access_scope, building_comparison) {
@@ -122,5 +148,5 @@ versions_tables_service <- function(tables, access_scope, building_comparison) {
   }
   vapply(names(tables), function(n) hash(tables[[n]],
     if(n=="essential_service_access") access_scope else
-      if(n=="building_ramp") building_comparison else NULL), character(1))
+      if(n %in% c("building_ramp", "building_grid")) building_comparison[[n]] else NULL), character(1))
 }

@@ -9,7 +9,7 @@ test_that("versions sémantiques isolent les tables et ignorent l'ordre des lign
     essential_service_access=data.frame(share=c(.2,.3)),
     building_ramp=data.frame(value=c(1,2)), building_grid=data.frame(cell=c(1,2)))
   scope <- list(kind="communes-bretagne",label="communes bretonnes")
-  building <- list(statistic="mean",direction="high")
+  building <- contrat_publication_batiments(list(statistic="mean",direction="high"))
   baseline <- versions_tables_service(tables,scope,building)
   reordered <- tables; reordered$building_ramp <- reordered$building_ramp[2:1,,drop=FALSE]
   expect_identical(versions_tables_service(reordered,scope,building),baseline)
@@ -22,6 +22,25 @@ test_that("versions sémantiques isolent les tables et ignorent l'ordre des lign
   scope_changed <- versions_tables_service(tables,modifyList(scope,list(label="autre portée")),building)
   expect_false(identical(scope_changed["essential_service_access"],baseline["essential_service_access"]))
   expect_identical(scope_changed[setdiff(names(baseline),"essential_service_access")],baseline[setdiff(names(baseline),"essential_service_access")])
+})
+
+test_that("chaque contrat bǽtimentier est explicite et versionnǸ avec son grain", {
+  contract <- contrat_publication_batiments(list(statistic="mean", direction="high"))
+  expect_identical(contract$building_ramp$positions, seq(0, 1, .1))
+  expect_identical(contract$building_ramp$denominator, "ramp.total_buildings")
+  expect_identical(contract$building_ramp$peer_statistic, "building_count_weighted_mean")
+  expect_identical(contract$building_grid$breadth_cells * contract$building_grid$depth_cells, 30L)
+  expect_identical(contract$building_grid$denominator, "grid.total_buildings")
+  expect_identical(contract$building_grid$peer_statistic, "pooled_building_counts")
+  tables <- list(territory_reference=data.frame(id="a"), service_registry=data.frame(service="x"),
+    essential_service_access=data.frame(share=.2), building_ramp=data.frame(value=1),
+    building_grid=data.frame(value=1))
+  versions <- versions_tables_service(tables, list(kind="x", label="x"), contract)
+  changed <- contract
+  changed$building_grid$absent <- "typed_unavailable"
+  next_versions <- versions_tables_service(tables, list(kind="x", label="x"), changed)
+  expect_identical(next_versions[["building_ramp"]], versions[["building_ramp"]])
+  expect_false(identical(next_versions[["building_grid"]], versions[["building_grid"]]))
 })
 
 test_that("les projections canoniques ont leurs formes SQL et leurs indices locaux", {
