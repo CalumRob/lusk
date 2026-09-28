@@ -403,6 +403,57 @@ class ReadRepository:
                 else:
                     condition, value = "territory_type", "commune"
                     kind, label = active[1:]
+                # Reversible server-side cutover: remain on the frozen table by
+                # default; when enabled, missing/stale scalar publication fails
+                # closed (never falls back to the legacy table or static JSON).
+                if os.environ.get("LUSK_SERVICES_SCALAR_READ") == "1":
+                    markers = connection.execute(
+                        """SELECT scalar.content_version, scalar.reference_content_version,
+                                  territory.content_version
+                           FROM table_publication scalar LEFT JOIN table_publication territory
+                             ON territory.table_name='territory_reference'
+                           WHERE scalar.table_name='scalar_observation'"""
+                    ).fetchone()
+                    if (not markers or not markers[0] or not markers[1] or
+                            markers[1] != markers[2]):
+                        raise HTTPException(503, "Scalar service publication is unavailable or stale")
+                    scalar_rows = connection.execute(
+                        f"""SELECT o.indicator_id, o.territory_id, o.value, o.status,
+                                  d.label, d.direction, sd.source_id, sd.name,
+                                  sv.version, sv.reference_date, sv.publication_date
+                           FROM scalar_observation o
+                           JOIN scalar_descriptor d USING(indicator_id)
+                           JOIN territory_reference t ON t.territory_id=o.territory_id
+                             AND t.territory_type=o.territory_type
+                           JOIN scalar_observation_source os USING(indicator_id,territory_id)
+                           JOIN source_dataset sd USING(source_id)
+                           JOIN source_vintage sv USING(source_id,vintage_id)
+                           WHERE o.indicator_id LIKE 'share!_%' ESCAPE '!'
+                             AND o.territory_type = %s AND t.{condition} = %s
+                             AND o.territory_type = ANY(d.allowed_levels)
+                           ORDER BY o.indicator_id, o.territory_id, sd.source_id, sv.vintage_id""",
+                        (territory_type, value),
+                    ).fetchall()
+                    converted = []
+                    for row in scalar_rows:
+                        indicator = row[0]
+                        parts = indicator.split("_")
+                        if len(parts) != 3 or parts[0] != "share" or parts[2] not in ("t", "b", "c"):
+                            raise HTTPException(503, "Malformed service scalar descriptor")
+                        mode = {"t": "walk_transit", "b": "bike", "c": "car"}[parts[2]]
+                        converted.append({"territory_id": row[1], "service": parts[1], "mode": mode,
+                            "share": row[2] if row[3] == "measured" else None,
+                            "indicator_label": row[4], "direction": row[5], "source_id": row[6],
+                            "source_name": row[7], "source_version": row[8],
+                            "reference_date": row[9], "source_publication_date": row[10]})
+                    if not converted or len({r[0] for r in scalar_rows}) != 15:
+                        raise HTTPException(503, "Incomplete scalar service publication")
+                    publication = "scalar-service-v1-" + hashlib.sha256(
+                        (markers[0] + ":" + markers[2]).encode("utf-8")).hexdigest()
+                    return {"publication_id": publication,
+                        "territory": {"id": code, "name": name, "type": territory_type},
+                        "scope": {"kind": kind, **({"label": label} if label is not None else {})} if kind else None,
+                        "comparison": territory_type != "region", "rows": converted}
                 # `condition` is selected exclusively from the three literals above; all
                 # externally supplied values are parameters, never SQL identifiers.
                 rows = connection.execute(
