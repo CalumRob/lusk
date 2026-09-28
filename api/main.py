@@ -5,6 +5,7 @@ from functools import lru_cache
 import hashlib
 import json
 import os
+import unicodedata
 from statistics import median
 from typing import Literal
 
@@ -89,6 +90,30 @@ def _building_publication(markers: list[tuple[str, str]]) -> str:
     return "building-v1-" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _search_normalize(value: str) -> str:
+    value = unicodedata.normalize("NFD", value.lower())
+    value = "".join(char for char in value if unicodedata.category(char) != "Mn")
+    return value.replace("œ", "oe").replace("æ", "ae").replace("'", " ").replace("-", " ").split()
+
+
+def search_territory_rows(rows: list[dict], query: str, limit: int) -> list[dict]:
+    """Apply the current client search scoring to canonical territory names and IDs."""
+    normalized = " ".join(_search_normalize(query))
+    scored = []
+    for row in rows:
+        name = " ".join(_search_normalize(row["name"]))
+        code = " ".join(_search_normalize(row["id"]))
+        score = 100 if name == normalized else 80 if name.startswith(normalized) else 60 if any(
+            word.startswith(normalized) for word in name.split()
+        ) else 40 if normalized in name else 0
+        if not score and normalized and normalized in code:
+            score = 40
+        if score:
+            scored.append((score, row))
+    scored.sort(key=lambda item: (-item[0], len(item[1]["name"]), item[1]["name"].casefold(), item[1]["id"]))
+    return [row for _, row in scored[:limit]]
+
+
 class ReadRepository:
     def __init__(self, connections: ConnectionPool):
         self.connections = connections
@@ -112,7 +137,23 @@ class ReadRepository:
                        ORDER BY territory_type, name, territory_id"""
                 ).fetchall()
                 return {"publication_id": publication,
-                         "territories": [dict(zip(("type", "id", "name"), row)) for row in rows]}
+                          "territories": [dict(zip(("type", "id", "name"), row)) for row in rows]}
+
+    def search_territories(self, query: str, limit: int) -> dict:
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                marker = connection.execute(
+                    "SELECT content_version FROM table_publication WHERE table_name = 'territory_reference'"
+                ).fetchone()
+                if not marker:
+                    raise HTTPException(503, "No territory reference has been published")
+                rows = connection.execute(
+                    "SELECT territory_type, territory_id, name FROM territory_reference"
+                ).fetchall()
+                entries = [dict(zip(("type", "id", "name"), row)) for row in rows]
+                return {"publication_id": "territory-v1-" + marker[0], "query": query,
+                        "results": search_territory_rows(entries, query, limit)}
 
     def read_building_initial(self, territory_type: str, territory_id: str,
                               comparison_mode: str | None = None) -> dict:
@@ -371,6 +412,18 @@ def get_repository() -> ReadRepository:
 @app.get("/api/building-access/territories")
 def building_access_territories(repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_building_catalog()
+
+
+@app.get("/api/territories/search")
+def search_territories(
+    q: str = Query(min_length=2, max_length=64),
+    limit: int = Query(default=8, ge=1, le=50),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Bounded search over the R-published territory reference."""
+    if not q.strip():
+        raise HTTPException(422, "Query must contain a non-whitespace character")
+    return repository.search_territories(q, limit)
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/building-access")
