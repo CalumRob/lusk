@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chargerStructureAgeProfile, remplacerStructureAgeStatique } from '../payload/structureAgeProfile'
+import { structureAgeProfileEnabled } from '../payload/structureAgeProfile'
 import type { Indicateur, Territoire } from '../payload/types'
 
 const territory = { territoire: '22001', type: 'commune', nom: 'Fixture' } as Territoire
@@ -19,11 +20,16 @@ const response = {
   sources: [{ source_id: 'age_detail', name: 'INSEE fixture', version: '2023', reference_date: '2023-01-01', publication_date: null }],
 }
 const declaration = { details: ['young', 'old'], sexes: ['F', 'M'], labels: { young: 'Young', old: 'Old' },
-  detail: 'young', sex: 'F', label: 'Structure par âge', unit: '%', direction: 'high' }
+  detail: 'young', sex: 'F', label: 'Structure par âge', unit: '%', direction: 'high', sources: ['age_detail'] }
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('structure_age API adapter', () => {
+  it('keeps the rollout switch off unless the reviewed build flag is exactly 1', () => {
+    expect(structureAgeProfileEnabled({})).toBe(false)
+    expect(structureAgeProfileEnabled({ VITE_STRUCTURE_AGE_PROFILE_API: 'true' })).toBe(false)
+    expect(structureAgeProfileEnabled({ VITE_STRUCTURE_AGE_PROFILE_API: '1' })).toBe(true)
+  })
   it('retire le fait âge statique en conservant tous les autres indicateurs', () => {
     const staticFacts = [
       { key: 'structure_age', territoire: '22001' },
@@ -49,6 +55,12 @@ describe('structure_age API adapter', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ ...response, cells: response.cells.slice(1) }), { status: 200 }))
     await expect(chargerStructureAgeProfile(territory, others, {},
       declaration)).rejects.toThrow('incomplet')
+  })
+
+  it('rejects ambiguous multi-source lineage instead of selecting an arbitrary source', async () => {
+    const multiSource = { ...response, sources: [...response.sources, { ...response.sources[0]!, source_id: 'other' }] }
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(multiSource), { status: 200 }))
+    await expect(chargerStructureAgeProfile(territory, others, {}, declaration)).rejects.toThrow('incomplet')
   })
 
   it('propagates unavailable API responses and does not make a static fallback request', async () => {

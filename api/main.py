@@ -564,12 +564,12 @@ def declared_profile(
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             marker = conn.execute(
-                """SELECT p.content_version,p.row_count,(SELECT count(*) FROM profile_observation) AS actual_rows,
+                """SELECT p.content_version,p.row_count,
                           p.reference_content_version,t.content_version AS territory_version
                      FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
                     WHERE p.table_name='declared_profile'""").fetchone()
-            if (marker is None or not marker[0] or marker[1] != marker[2] or
-                    not marker[3] or marker[3] != marker[4]):
+            if (marker is None or not marker[0] or marker[1] < 1 or
+                    not marker[2] or marker[2] != marker[3]):
                 raise HTTPException(503, "Profile publication is unavailable")
             descriptor = conn.execute(
                 "SELECT label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction FROM profile_descriptor WHERE indicator_id=%s",

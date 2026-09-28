@@ -196,6 +196,10 @@ profile_postgres_adapter <- function(con) {
       names(obs)[names(obs)=="sex"] <- "sex_key"
       DBI::dbWriteTable(con,"profile_observation",transform(obs,indicator_id="structure_age"),append=TRUE,row.names=FALSE)
       DBI::dbWriteTable(con,"profile_observation_source",projection$provenance,append=TRUE,row.names=FALSE)
+      actual_rows <- DBI::dbGetQuery(con,
+        "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='structure_age'")$n[[1L]]
+      if (actual_rows != nrow(projection$facts))
+        stop("Published profile row count differs from validated projection", call.=FALSE)
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (!nrow(reference)) stop("Territory reference publication is unavailable", call.=FALSE)
       DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('declared_profile',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",

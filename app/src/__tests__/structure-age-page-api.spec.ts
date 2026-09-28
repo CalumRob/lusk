@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { indicateursDemographieFixture, territoiresFixture } from '../payload/fixtures'
 import type { ThemeMetadata } from '../payload/types'
@@ -12,6 +12,7 @@ import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 
 beforeEach(() => localStorage.clear())
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 const metadataCanonique = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8')) as ThemeMetadata
 
@@ -49,7 +50,27 @@ function mountPage(fetcher: ChargerFichier) {
 }
 
 describe("Page structure_age — lecture API sans repli statique", () => {
+  it('keeps the incumbent static page when the build-time rollout flag is absent', async () => {
+    const payloadFiles: string[] = []
+    const payloadLoader: ChargerFichier = async (file) => {
+      payloadFiles.push(file)
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_demographie') return indicateursDemographieFixture
+      if (file === 'theme_demographie') return metadataCanonique
+      throw new Error(`unexpected static facts file ${file}`)
+    }
+    const fetcher = vi.fn(async () => { throw new Error('profile API must remain disabled by default') })
+    vi.stubGlobal('fetch', fetcher)
+    const wrapper = await mountPage(payloadLoader)
+    await flushPromises()
+    expect(payloadFiles).toContain('indicateurs_demographie')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Structure par âge')
+    wrapper.unmount()
+  })
+
   it('adapte le profil API et conserve les autres faits statiques sans charger le fait structure_age depuis le snapshot', async () => {
+    vi.stubEnv('VITE_STRUCTURE_AGE_PROFILE_API', '1')
     const payloadFiles: string[] = []
     const payloadLoader: ChargerFichier = async (file) => {
       payloadFiles.push(file)
@@ -72,6 +93,7 @@ describe("Page structure_age — lecture API sans repli statique", () => {
   })
 
   it('montre erreur/retry et ne demande jamais le payload statique après indisponibilité API', async () => {
+    vi.stubEnv('VITE_STRUCTURE_AGE_PROFILE_API', '1')
     const payloadFiles: string[] = []
     const payloadLoader: ChargerFichier = async (file) => {
       payloadFiles.push(file)

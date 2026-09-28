@@ -23,7 +23,7 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl } from '@/indicateurs/etatUrl'
 import { PayloadError } from '@/payload/validate'
-import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique } from '@/payload/structureAgeProfile'
+import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
 import type { Indicateur } from '@/payload/types'
 import type { ThemeMetadata } from '@/payload/types'
 
@@ -48,7 +48,8 @@ const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
-const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age'
+const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
+  structureAgeProfileEnabled(import.meta.env as Record<string, string | undefined>)
 const attendreLegacy: Fichier[] = profilAgeApi
   ? ['territoires', 'indicateurs_demographie', 'theme_demographie']
   : themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
@@ -140,7 +141,8 @@ watch(
           epci: typeof epci === 'string' ? epci : undefined },
         { details: comparison.details, sexes: comparison.sexes,
           labels: metadataStructureAgeApi.value.detail_labels.structure_age,
-          detail: comparison.detail, sex: comparison.sex, label: page.label, unit: page.unit, direction: page.direction })
+          detail: comparison.detail, sex: comparison.sex, label: page.label, unit: page.unit,
+          direction: page.direction, sources: page.sources })
       if (sequence === sequenceProfilAge) faitsProfilAge.value = profileFacts
     } catch (cause) {
       if (sequence === sequenceProfilAge) erreurProfilAge.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', 'structure_age', 'Impossible de charger le profil.')

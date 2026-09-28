@@ -74,11 +74,12 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
         def fetchall(self): return self.rows
 
     class Conn:
-        def __init__(self, incomplete=False, stale=False): self.incomplete = incomplete; self.stale = stale
+        def __init__(self, incomplete=False, stale=False): self.incomplete = incomplete; self.stale = stale; self.queries = []
         @contextmanager
         def transaction(self): yield
         def execute(self, sql, params=None):
-            if "table_publication" in sql: return Cursor([("profile-v1", 4, 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
+            self.queries.append(sql)
+            if "table_publication" in sql: return Cursor([("profile-v1", 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
             if "profile_descriptor" in sql: return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1", "<15", "F", "high")])
             if "SELECT axis_name" in sql:
                 return Cursor([("detail", "<15", "Moins de 15 ans", 0), ("detail", "80+", "80 ans et plus", 1), ("sex", "F", "F", 0), ("sex", "M", "M", 1)])
@@ -95,6 +96,8 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
         def connection(self): yield self.conn
     repo = SimpleNamespace(connections=Connections())
     result = declared_profile("commune", "22001", "structure_age", repository=repo)
+    marker_query = next(sql for sql in repo.connections.conn.queries if "table_publication" in sql)
+    assert "count(*)" not in marker_query.lower()
     assert [cell["detail"] for cell in result["cells"]] == ["<15", "<15", "80+", "80+"]
     assert result["comparison"]["detail"] == "<15"
     assert result["comparison"]["sex"] == "F"

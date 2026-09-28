@@ -49,7 +49,7 @@ tryCatch({
   cat("Profile PostgreSQL publication, lineage, independent marker, and rollback: PASS\n")
 },finally={
   if (created) {
-    DBI::dbExecute(con,paste0("DROP SCHEMA ",DBI::dbQuoteIdentifier(con,schema)," CASCADE"))
+    DBI::dbExecute(con,paste0("DROP SCHEMA ",as.character(DBI::dbQuoteIdentifier(con,schema))," RESTRICT"))
   }
   DBI::dbDisconnect(con)
 })

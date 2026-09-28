@@ -32,12 +32,16 @@ export interface StructureAgeProfileResponse {
   sources: Array<{ source_id: string; name: string; version: string; reference_date: string | null; publication_date: string | null }>
 }
 
+export function structureAgeProfileEnabled(env: Record<string, string | undefined>): boolean {
+  return env.VITE_STRUCTURE_AGE_PROFILE_API === '1'
+}
+
 /** Keep unrelated static facts while making structure_age API-only. */
 export function remplacerStructureAgeStatique(staticFacts: Indicateur[], apiFacts: Indicateur[]): Indicateur[] {
   return [...staticFacts.filter((fact) => fact.key !== 'structure_age'), ...apiFacts]
 }
 
-function parseProfile(raw: unknown, declaration: { details: string[]; sexes: string[]; labels: Record<string, string>; detail: string; sex: string; label: string; unit: string; direction: string }, scope: string, scopeId?: string): StructureAgeProfileResponse {
+function parseProfile(raw: unknown, declaration: { details: string[]; sexes: string[]; labels: Record<string, string>; detail: string; sex: string; label: string; unit: string; direction: string; sources: string[] }, scope: string, scopeId?: string): StructureAgeProfileResponse {
   if (typeof raw !== 'object' || raw === null) throw new Error('Réponse de profil invalide')
   const value = raw as Partial<StructureAgeProfileResponse>
   if (value.indicator !== 'structure_age' || typeof value.content_version !== 'string' ||
@@ -54,7 +58,8 @@ function parseProfile(raw: unknown, declaration: { details: string[]; sexes: str
   const expectedAxes = [...declaration.details.map((key, order) => ({ name: 'detail', key, label: declaration.labels[key], order })),
     ...declaration.sexes.map((key, order) => ({ name: 'sex', key, label: key, order }))]
   if (axes.length !== declaration.details.length + declaration.sexes.length ||
-      cells.length !== expectedCoordinates.length || sources.length === 0 ||
+      cells.length !== expectedCoordinates.length || sources.length !== 1 || declaration.sources.length !== 1 ||
+      sources[0]?.source_id !== declaration.sources[0] ||
       value.label !== declaration.label || value.unit !== declaration.unit ||
       value.comparison.detail !== declaration.detail || value.comparison.sex !== declaration.sex ||
       value.comparison.direction !== declaration.direction || value.comparison.scope !== scope ||
@@ -81,7 +86,7 @@ export async function chargerStructureAgeProfile(
   selected: Territoire,
   territories: Territoire[],
   scope: { department?: string; epci?: string },
-  declaration: { details: string[]; sexes: string[]; labels: Record<string, string>; detail: string; sex: string; label: string; unit: string; direction: string },
+  declaration: { details: string[]; sexes: string[]; labels: Record<string, string>; detail: string; sex: string; label: string; unit: string; direction: string; sources: string[] },
 ): Promise<Indicateur[]> {
   const comparisonScope = selected.type !== 'commune' ? 'bretagne' : scope.department ? 'departement' : scope.epci ? 'epci' : 'bretagne'
   const scopeId = selected.type === 'commune' ? scope.department ?? scope.epci : undefined
@@ -99,7 +104,8 @@ export async function chargerStructureAgeProfile(
   let profile: StructureAgeProfileResponse
   try { profile = parseProfile(raw, declaration, comparisonScope, scopeId) }
   catch (cause) { throw new PayloadError('validation', path, cause instanceof Error ? cause.message : String(cause)) }
-  const source = profile.sources[0]!
+  const [source] = profile.sources
+  if (!source) throw new PayloadError('validation', path, 'La provenance du profil est absente.')
   const peerIds = profile.comparison.values.map((item) => item.territory_id)
   if (new Set(peerIds).size !== peerIds.length || !peerIds.includes(selected.territoire)) {
     throw new PayloadError('validation', path, 'La facette comparative doit contenir une seule ligne pour le territoire focal.')

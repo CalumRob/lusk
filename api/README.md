@@ -375,6 +375,14 @@ Démographie-targeted run; it is never part of the scheduled static publication.
 Publication and territory-reference compatibility are pinned to independent
 table markers. Representative-size Pi latency/storage and recovery validation
 remain mandatory before the product owner deploys or switches live traffic.
+The app rollout is separately gated at build time by
+`VITE_STRUCTURE_AGE_PROFILE_API=1`; unset/any other value keeps the incumbent
+static structure-age page. Do not set it on the production static build until
+the owner has applied migration 006, populated and checked the profile marker,
+and approved Pi latency/parity results. Reverting/unsetting the variable
+restores the static reader without a schema rollback. Once enabled, API errors
+are shown as unavailable/retry and never fall back to the static
+`structure_age` fact.
 
 The opt-in `Rscript scripts/publish-serving-tables.R --scalar-fixture-check`
 projects only the small tracked Démographie fixture through the registered
