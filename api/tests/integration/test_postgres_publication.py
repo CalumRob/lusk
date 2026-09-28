@@ -342,12 +342,28 @@ def test_database_rejects_missing_service_group(db_env):
     import psycopg
 
     with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        # This test owns its fixture: no importer test or module execution order
+        # is allowed to supply the pre-existing complete service group.
+        connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
+        connection.execute("INSERT INTO service_registry(service) VALUES ('school')")
+        connection.execute("""INSERT INTO essential_service_access
+            (territory_id,service,mode,share,indicator_label,effective_direction,
+             source_id,source_name,source_version)
+            VALUES ('29003','school','walk_transit',0.2,'School access','high','fixture','Fixture source','2026-01'),
+                   ('29003','school','bike',0.5,'School access','high','fixture','Fixture source','2026-01'),
+                   ('29003','school','car',0.8,'School access','low','fixture','Fixture source','2026-01')""")
+        complete_count = connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0]
+        assert complete_count == 3
         with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
             with connection.transaction():
                 connection.execute("DELETE FROM essential_service_access WHERE territory_id = '29003'")
                 connection.execute("SELECT assert_current_dataset_complete(%s)",
                                    (connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0],))
-        assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = '29003'").fetchone()[0] == 3
+        assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = '29003'").fetchone()[0] == complete_count
+        assert {row[0] for row in connection.execute(
+            "SELECT mode FROM essential_service_access WHERE territory_id = '29003'").fetchall()} == {
+                "walk_transit", "bike", "car",
+            }
 
 
 def test_migration_009_rehearses_guarded_retirement_in_owned_random_schema():
