@@ -182,3 +182,15 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
   expect_error(project_fixture_scalar(payload, multi_source_metadata,
     completeness="dense_complete"), "exactly one declared source")
 })
+
+test_that("smoke schema cleanup is explicitly dependency ordered and restricted", {
+  sql <- scalar_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
+  expect_true(grepl('DROP TABLE IF EXISTS "scalar_it_test"."scalar_observation_source" RESTRICT', sql[[1L]], fixed=TRUE))
+  expect_lt(which(grepl('"scalar_observation_source"', sql, fixed=TRUE))[1L],
+            which(grepl('"territory_reference"', sql, fixed=TRUE))[1L])
+  expect_lt(which(grepl('"territory_reference"', sql, fixed=TRUE))[1L],
+            which(grepl('"table_publication"', sql, fixed=TRUE))[1L])
+  expect_true(grepl("DROP SCHEMA IF EXISTS \"scalar_it_test\" RESTRICT", tail(sql, 1L), fixed=TRUE))
+  expect_false(any(grepl("CASCADE", sql, fixed=TRUE)))
+  expect_error(scalar_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
+})

@@ -58,6 +58,7 @@ execute_sql_file <- function(path) {
 tryCatch({
   DBI::dbExecute(connection, paste0("CREATE SCHEMA ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
   created <- TRUE
+  cat("Scalar smoke schema created:", schema, "\n")
   DBI::dbExecute(connection, paste0("SET search_path TO ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
   execute_sql_file(file.path("..", "api", "schema.sql"))
 
@@ -151,7 +152,14 @@ tryCatch({
   cat("Scalar PostgreSQL smoke passed; schema:", schema, "\n")
 }, finally={
   if (created && identical(Sys.getenv("LUSK_SCALAR_TEST_CLEANUP", "0"), "1")) {
-    DBI::dbExecute(connection, paste0("DROP SCHEMA ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
+    tryCatch({
+      cleanup <- scalar_smoke_schema_cleanup_sql(
+        function(parts) DBI::dbQuoteIdentifier(connection, parts), schema)
+      for (statement in cleanup) DBI::dbExecute(connection, statement)
+      cat("Scalar smoke schema cleaned with RESTRICT:", schema, "\n")
+    }, error=function(e) warning("Could not clean scalar smoke schema ", schema,
+      " (it remains for inspection): ", conditionMessage(e), call.=FALSE))
   }
-  DBI::dbDisconnect(connection)
+  tryCatch(DBI::dbDisconnect(connection), error=function(e)
+    warning("Could not disconnect scalar smoke DB connection: ", conditionMessage(e), call.=FALSE))
 })

@@ -148,6 +148,31 @@ scalar_content_version <- function(projection) {
   unname(tools::md5sum(path))
 }
 
+# Exact inventory created by api/schema.sql for the isolated publisher smoke.
+# Drop dependents before referenced tables, then trigger functions, and finally
+# the owned schema using RESTRICT. The schema is name-guarded and all object
+# names are schema-qualified so cleanup cannot follow search_path elsewhere.
+scalar_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (!is.function(quote_identifier) || length(schema) != 1L ||
+      !grepl("^scalar_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned smoke schema", call. = FALSE)
+  qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
+  tables <- c("scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
+    "scalar_descriptor", "source_vintage", "source_dataset", "essential_service_access",
+    "building_ramp", "building_grid", "territory_reference", "service_registry",
+    "access_publication_metadata", "table_publication")
+  functions <- c("assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
+    "assert_scalar_levels()", "assert_scalar_descriptor_update()",
+    "assert_scalar_territory_update()", "assert_building_dataset_complete(integer, integer)",
+    "assert_current_dataset_complete(integer)")
+  c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
+    paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
+      split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
+      paste0(qualified(split[[1L]]), "(", split[[2L]])
+    }, character(1)), "RESTRICT"),
+    paste("DROP SCHEMA IF EXISTS", as.character(quote_identifier(schema)), "RESTRICT"))
+}
+
 # db is a narrow transaction adapter (transaction, marker, replace). Keeping
 # it injectable makes retry/rollback behavior testable without a live service.
 publish_registered_scalar <- function(registry, name, canonical, db) {
