@@ -27,10 +27,12 @@ test_that("versions sémantiques isolent les tables et ignorent l'ordre des lign
 test_that("chaque contrat bǽtimentier est explicite et versionnǸ avec son grain", {
   contract <- contrat_publication_batiments(list(statistic="mean", direction="high"))
   expect_identical(contract$building_ramp$positions, seq(0, 1, .1))
-  expect_identical(contract$building_ramp$denominator, "ramp.total_buildings")
+  expect_identical(contract$building_ramp$denominator, "total_buildings")
   expect_identical(contract$building_ramp$peer_statistic, "building_count_weighted_mean")
-  expect_identical(contract$building_grid$breadth_cells * contract$building_grid$depth_cells, 30L)
-  expect_identical(contract$building_grid$denominator, "grid.total_buildings")
+  expect_length(contract$building_grid$axes$breadth, 5L)
+  expect_length(contract$building_grid$axes$depth, 6L)
+  expect_identical(length(contract$building_grid$axes$breadth) * length(contract$building_grid$axes$depth), 30L)
+  expect_identical(contract$building_grid$denominator, "total_buildings")
   expect_identical(contract$building_grid$peer_statistic, "pooled_building_counts")
   tables <- list(territory_reference=data.frame(id="a"), service_registry=data.frame(service="x"),
     essential_service_access=data.frame(share=.2), building_ramp=data.frame(value=1),
@@ -41,6 +43,12 @@ test_that("chaque contrat bǽtimentier est explicite et versionnǸ avec son grai
   next_versions <- versions_tables_service(tables, list(kind="x", label="x"), changed)
   expect_identical(next_versions[["building_ramp"]], versions[["building_ramp"]])
   expect_false(identical(next_versions[["building_grid"]], versions[["building_grid"]]))
+  provenance <- contract
+  provenance$building_ramp$provenance <- data.frame(source_id="src", source_name="Source",
+    vintage_id="v1", reference_date="2026-01-01", publication_date="2026-02-01")
+  provenance_version <- versions_tables_service(tables, list(kind="x", label="x"), provenance)
+  expect_false(identical(provenance_version[["building_ramp"]], versions[["building_ramp"]]))
+  expect_identical(provenance_version[["building_grid"]], versions[["building_grid"]])
 })
 
 test_that("les projections canoniques ont leurs formes SQL et leurs indices locaux", {
@@ -49,6 +57,13 @@ test_that("les projections canoniques ont leurs formes SQL et leurs indices loca
   files <- file.path(d, paste0(c("territoires", "indicateurs_mobilite", "vintages", "rampe_acces_batiments", "distribution_acces_batiments"), ".parquet"))
   skip_if_not(all(file.exists(files)), "Parquets canoniques non présents dans ce checkout")
   result <- preparer_tables_service(d)
+  expect_named(result$building_contract, c("building_ramp", "building_grid"))
+  expect_setequal(result$building_contract$building_ramp$axes$mode,
+                  unique(as.character(result$tables$building_ramp$mode)))
+  expect_setequal(result$building_contract$building_grid$axes$breadth,
+                  unique(na.omit(as.character(result$tables$building_grid$breadth_bucket))))
+  expect_true(all(result$building_sources$source_id %in% result$tables$building_ramp$source_id))
+  expect_true(all(vapply(result$building_contract, function(x) nrow(x$provenance) > 0L, logical(1))))
   expected <- list(
     territory_reference=c("territory_id","territory_type","name","department_id","epci_id","density_class_code","density_class_label"),
     service_registry="service",

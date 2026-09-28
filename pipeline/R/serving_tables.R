@@ -95,6 +95,14 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
     if (any(as.character(d$version)!=as.character(v$version)) || any(as.character(d$source)!=as.character(v$source)) || any(as.character(d$date_reference)!=as.character(v$date_reference)) || any(as.character(d$date_publication)!=as.character(v$date_publication))) abort("Provenance bâtimentière incohérente.")
   }
   check_prov(ramp); check_prov(grid)
+  building_sources <- unique(rbind(
+    data.frame(source_id=as.character(ramp$source_id), source_name=as.character(ramp$source),
+      vintage_id=as.character(ramp$version), reference_date=as.character(ramp$date_reference),
+      publication_date=as.character(ramp$date_publication), stringsAsFactors=FALSE),
+    data.frame(source_id=as.character(grid$source_id), source_name=as.character(grid$source),
+      vintage_id=as.character(grid$version), reference_date=as.character(grid$date_reference),
+      publication_date=as.character(grid$date_publication), stringsAsFactors=FALSE)
+  ))
   ramp <- ramp[order(ramp$type,ramp$territoire,ramp$mode,ramp$quantile,na.last=TRUE),,drop=FALSE]
   ramp$quantile_index <- ifelse(is.na(ramp$quantile), -1L, as.integer(round(ramp$quantile*10)))
   grid <- grid[order(grid$type,grid$territoire,grid$breadth_bucket,grid$depth_bucket,na.last=TRUE),,drop=FALSE]
@@ -114,8 +122,16 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
   # are versioned with their own facts so a change to axis/weighting semantics
   # cannot leave an apparently current marker behind.
   building_contract <- contrat_publication_batiments(meta$building_comparison)
+  for (n in names(building_contract)) {
+    source_ids <- unique(as.character(tables[[n]]$source_id))
+    provenance <- building_sources[building_sources$source_id %in% source_ids, , drop=FALSE]
+    provenance <- provenance[order(provenance$source_id, provenance$vintage_id), , drop=FALSE]
+    rownames(provenance) <- NULL
+    building_contract[[n]]$provenance <- provenance
+  }
   versions <- versions_tables_service(tables, scope, building_contract)
-  list(tables=tables, versions=versions, access_scope=scope)
+  list(tables=tables, versions=versions, access_scope=scope,
+       building_contract=building_contract, building_sources=building_sources)
 }
 
 contrat_publication_batiments <- function(comparison) {
@@ -125,17 +141,24 @@ contrat_publication_batiments <- function(comparison) {
   }
   list(
     building_ramp = list(
-      shape = "building_ramp", modes = c("c", "b", "t"), positions = seq(0, 1, .1),
+      shape = "building_ramp", modes = as.character(RAMPE_ACCES_BATIMENTS_MODES$mode),
+      positions = as.numeric(RAMPE_ACCES_BATIMENTS_QUANTILES),
       territory_levels = c("commune", "epci", "departement", "region"),
-      denominator = "ramp.total_buildings", peer_statistic = "building_count_weighted_mean",
-      absent = "explicit_absent_sentinel", source = "canonical_building_parquet",
-      direction = comparison$direction
+      axes = list(mode = as.character(RAMPE_ACCES_BATIMENTS_MODES$mode),
+                  quantile = as.numeric(RAMPE_ACCES_BATIMENTS_QUANTILES)),
+      denominator = "total_buildings", peer_statistic = "building_count_weighted_mean",
+      absent = "explicit_absent_sentinel", direction = comparison$direction
     ),
     building_grid = list(
-      shape = "building_grid", mode = "t", breadth_cells = 6L, depth_cells = 5L,
+      shape = "building_grid", mode = DISTRIBUTION_ACCES_BATIMENTS_MODE,
+      breadth_bins = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
+      depth_bins = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key,
       territory_levels = c("commune", "epci", "departement", "region"),
-      denominator = "grid.total_buildings", peer_statistic = "pooled_building_counts",
-      absent = "explicit_absent_sentinel", source = "canonical_building_parquet"
+      axes = list(mode = DISTRIBUTION_ACCES_BATIMENTS_MODE,
+                  breadth = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
+                  depth = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key),
+      denominator = "total_buildings", peer_statistic = "pooled_building_counts",
+      absent = "explicit_absent_sentinel"
     )
   )
 }

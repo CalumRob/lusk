@@ -25,6 +25,7 @@ fake_postgres <- function(markers = list(), fail = FALSE) {
         e$markers[[n]] <- data.frame(content_version = v, row_count = count)
       },
       save_scope = function(s) record("scope"),
+      save_building_contract = function(contract, sources, versions) record("building-contract"),
       assert_current = function(n) record("assert-current"),
       assert_buildings = function(r, g) record("assert-buildings")
     )
@@ -39,18 +40,23 @@ fake_scope <- list(kind = "communes-bretagne", label = "Communes bretonnes")
 all_markers <- function(version = "v1") setNames(lapply(.tables_postgres_autorisees,
   function(n) data.frame(content_version = version, row_count = 1L)),
   .tables_postgres_autorisees)
+publish_fake <- function(f) .publier_tables_postgres_impl(fake_tables(), fake_versions(), fake_scope,
+  f$db, contrat_publication_batiments(list(statistic="mean",direction="high")),
+  data.frame(source_id="snapshot",source_name="Canonical snapshot",vintage_id="v1",
+    reference_date=NA_character_,publication_date=NA_character_))
 
 test_that("aucune écriture quand les sept versions sont à jour", {
   f <- fake_postgres(all_markers())
-  .publier_tables_postgres_impl(fake_tables(), fake_versions(), fake_scope, f$db)
+  publish_fake(f)
   expect_length(f$state$log, 0L)
 })
 
 test_that("une rampe seule est remplacée", {
   markers <- all_markers(); markers$building_ramp$content_version <- "v0"
   f <- fake_postgres(markers)
-  .publier_tables_postgres_impl(fake_tables(), fake_versions(), fake_scope, f$db)
+  publish_fake(f)
   expect_true("delete building_ramp" %in% f$state$log)
+  expect_true("building-contract" %in% f$state$log)
   expect_true("insert building_ramp" %in% f$state$log)
   expect_false(any(grepl("delete (territory_reference|service_registry|building_grid)", f$state$log)))
   expect_identical(f$state$log[grepl("^marker ", f$state$log)], "marker building_ramp")
@@ -59,14 +65,14 @@ test_that("une rampe seule est remplacée", {
 test_that("un marqueur en retard republie même si le fichier est inchangé", {
   markers <- all_markers(); markers$building_grid$content_version <- "old-db"
   f <- fake_postgres(markers)
-  .publier_tables_postgres_impl(fake_tables(), fake_versions(), fake_scope, f$db)
+  publish_fake(f)
   expect_true("insert building_grid" %in% f$state$log)
 })
 
 test_that("une erreur annule la transaction et les marqueurs", {
   markers <- all_markers(); markers$building_ramp$content_version <- "v0"
   f <- fake_postgres(markers, fail = TRUE)
-  expect_error(.publier_tables_postgres_impl(fake_tables(), fake_versions(), fake_scope, f$db),
+  expect_error(publish_fake(f),
                "injected failure")
   expect_identical(f$state$log, character())
   expect_identical(f$state$markers$building_ramp$content_version, "v0")
@@ -75,7 +81,7 @@ test_that("une erreur annule la transaction et les marqueurs", {
 test_that("une référence seule est upsertée sans supprimer les faits inchangés", {
   markers <- all_markers(); markers$territory_reference$content_version <- "v0"
   f <- fake_postgres(markers)
-  .publier_tables_postgres_impl(fake_tables(), fake_versions(), fake_scope, f$db)
+  publish_fake(f)
   expect_true("upsert territory_reference" %in% f$state$log)
   expect_true("prune territory_reference" %in% f$state$log)
   expect_false(any(grepl("^delete (essential_service_access|building_ramp|building_grid)$",

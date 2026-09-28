@@ -1,0 +1,101 @@
+-- Additive common descriptor/provenance contract for dedicated building grains.
+-- Apply only through the reviewed serial DB migration procedure; never on Pi here.
+BEGIN;
+CREATE TABLE building_evidence_descriptor (
+  table_name text PRIMARY KEY CHECK (table_name IN ('building_ramp','building_grid')),
+  descriptor_version text NOT NULL,
+  contract jsonb NOT NULL CHECK (jsonb_typeof(contract)='object'),
+  CHECK (COALESCE((table_name='building_ramp' AND contract->>'shape'='building_ramp'
+          AND contract->>'peer_statistic'='building_count_weighted_mean'
+          AND jsonb_array_length(contract->'territory_levels')=4
+          AND jsonb_array_length(contract->'axes'->'mode')=3
+          AND jsonb_array_length(contract->'axes'->'quantile')=11), false) OR
+         COALESCE((table_name='building_grid' AND contract->>'shape'='building_grid'
+          AND contract->>'peer_statistic'='pooled_building_counts'
+          AND jsonb_array_length(contract->'territory_levels')=4
+          AND jsonb_typeof(contract->'axes'->'mode')='string'
+          AND jsonb_array_length(contract->'axes'->'breadth')=5
+          AND jsonb_array_length(contract->'axes'->'depth')=6), false))
+);
+CREATE TABLE building_evidence_descriptor_source (
+  table_name text NOT NULL REFERENCES building_evidence_descriptor(table_name) ON DELETE CASCADE,
+  source_id text NOT NULL REFERENCES source_dataset(source_id),
+  PRIMARY KEY(table_name,source_id)
+);
+ALTER TABLE building_ramp ADD CONSTRAINT building_ramp_source_vintage_fk
+  FOREIGN KEY(source_id,source_version) REFERENCES source_vintage(source_id,vintage_id) NOT VALID;
+ALTER TABLE building_grid ADD CONSTRAINT building_grid_source_vintage_fk
+  FOREIGN KEY(source_id,source_version) REFERENCES source_vintage(source_id,vintage_id) NOT VALID;
+CREATE FUNCTION assert_building_fact_source() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE serving_table text; descriptor jsonb;
+BEGIN
+  serving_table := CASE WHEN TG_TABLE_NAME='building_ramp' THEN 'building_ramp' ELSE 'building_grid' END;
+  SELECT contract INTO descriptor FROM building_evidence_descriptor WHERE table_name=serving_table;
+  IF descriptor IS NULL THEN RAISE EXCEPTION 'building fact descriptor is missing'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM building_evidence_descriptor_source s
+      WHERE s.table_name=serving_table AND s.source_id=NEW.source_id) THEN
+    RAISE EXCEPTION 'building fact source is not declared by its descriptor';
+  END IF;
+  IF NOT (descriptor->'territory_levels' ? NEW.territory_type) THEN
+    RAISE EXCEPTION 'building fact territory level is not descriptor-eligible';
+  END IF;
+  IF serving_table='building_ramp' AND NEW.availability='complete' AND
+     (NOT (descriptor->'axes'->'mode' ? NEW.mode) OR
+      NEW.quantile <> (descriptor->'axes'->'quantile'->>NEW.quantile_index::text)::double precision OR
+      NEW.effective_direction <> (descriptor->>'direction')) THEN
+    RAISE EXCEPTION 'ramp point is outside its declared axes';
+  ELSIF serving_table='building_grid' AND NEW.availability='complete' AND
+     (NEW.mode <> (descriptor->'axes'->>'mode') OR
+      NOT (descriptor->'axes'->'breadth' ? NEW.breadth_bucket) OR
+      NOT (descriptor->'axes'->'depth' ? NEW.depth_bucket)) THEN
+    RAISE EXCEPTION 'grid cell is outside its declared axes';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER building_ramp_source_declared BEFORE INSERT OR UPDATE ON building_ramp
+  FOR EACH ROW EXECUTE FUNCTION assert_building_fact_source();
+CREATE TRIGGER building_grid_source_declared BEFORE INSERT OR UPDATE ON building_grid
+  FOR EACH ROW EXECUTE FUNCTION assert_building_fact_source();
+
+CREATE FUNCTION assert_building_descriptor_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.table_name IN ('building_ramp','building_grid') AND
+     NOT EXISTS (SELECT 1 FROM building_evidence_descriptor d
+       JOIN building_evidence_descriptor_source s USING(table_name)
+       WHERE d.table_name=NEW.table_name AND d.descriptor_version=NEW.content_version) THEN
+    RAISE EXCEPTION 'building publication requires matching descriptor and source lineage';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER building_publication_descriptor
+  AFTER INSERT OR UPDATE ON table_publication DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION assert_building_descriptor_publication();
+
+CREATE OR REPLACE FUNCTION assert_building_dataset_complete(expected_ramp integer, expected_grid integer)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  IF expected_ramp <> (SELECT count(*) FROM building_ramp)
+     OR expected_grid <> (SELECT count(*) FROM building_grid)
+     OR EXISTS (SELECT 1 FROM territory_reference t WHERE
+       (SELECT count(DISTINCT mode) FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id) <> 3
+       OR EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id
+         GROUP BY r.territory_type,r.territory_id HAVING count(DISTINCT availability)<>1 OR count(DISTINCT total_buildings)<>1)
+       OR EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id
+         GROUP BY r.mode HAVING NOT ((bool_and(availability='absent') AND count(*)=1)
+           OR (bool_and(availability='complete') AND count(*)=11)))
+       OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
+           AND g.availability='complete') NOT IN (0,30)
+       OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
+           AND g.availability='absent') NOT IN (0,1)
+       OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id) NOT IN (1,30)
+       OR EXISTS (SELECT 1 FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
+          AND g.availability='complete' GROUP BY g.territory_type,g.territory_id
+          HAVING sum(g.building_count) <> min(g.total_buildings))) THEN
+    RAISE EXCEPTION 'incomplete building-access dataset';
+  END IF;
+END $$;
+
+GRANT SELECT ON building_evidence_descriptor, building_evidence_descriptor_source TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON building_evidence_descriptor,
+  building_evidence_descriptor_source TO lusk_publisher;
+COMMIT;
