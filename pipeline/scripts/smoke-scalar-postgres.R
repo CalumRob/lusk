@@ -17,50 +17,13 @@ connection <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
 schema <- paste0("scalar_it_", Sys.getpid(), "_", sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
 created <- FALSE
-execute_sql_file <- function(path) {
-  sql <- paste(readLines(path, warn=FALSE), collapse="\n")
-  chars <- strsplit(sql, "", fixed=TRUE)[[1L]]
-  statements <- character(); buffer <- character()
-  single <- double <- line_comment <- FALSE; dollar <- NULL; i <- 1L
-  while (i <= length(chars)) {
-    ch <- chars[[i]]; next_ch <- if (i < length(chars)) chars[[i+1L]] else ""
-    if (line_comment) {
-      if (ch == "\n") line_comment <- FALSE
-    } else if (!single && !double && is.null(dollar) && ch == "-" && next_ch == "-") {
-      line_comment <- TRUE; i <- i + 1L
-    } else if (!double && is.null(dollar) && ch == "'") {
-      if (single && next_ch == "'") { buffer <- c(buffer, ch, next_ch); i <- i + 1L }
-      else single <- !single
-    } else if (!single && is.null(dollar) && ch == '"') {
-      if (double && next_ch == '"') { buffer <- c(buffer, ch, next_ch); i <- i + 1L }
-      else double <- !double
-    } else if (!single && !double && ch == "$") {
-      rest <- paste0(chars[i:length(chars)], collapse="")
-      tag <- regmatches(rest, regexpr("^\\$[A-Za-z_0-9]*\\$", rest))
-      if (length(tag) && nzchar(tag)) {
-        if (is.null(dollar)) dollar <- tag
-        else if (identical(dollar, tag)) dollar <- NULL
-        buffer <- c(buffer, strsplit(tag, "", fixed=TRUE)[[1L]])
-        i <- i + nchar(tag) - 1L
-      } else buffer <- c(buffer, ch)
-    } else if (!single && !double && is.null(dollar) && ch == ";") {
-      statement <- trimws(paste(buffer, collapse=""))
-      if (nzchar(statement)) statements <- c(statements, statement)
-      buffer <- character()
-    } else buffer <- c(buffer, ch)
-    i <- i + 1L
-  }
-  tail <- trimws(paste(buffer, collapse=""))
-  if (nzchar(tail)) statements <- c(statements, tail)
-  for (statement in statements) DBI::dbExecute(connection, statement)
-  invisible(length(statements))
-}
 tryCatch({
   DBI::dbExecute(connection, paste0("CREATE SCHEMA ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
   created <- TRUE
   cat("Scalar smoke schema created:", schema, "\n")
   DBI::dbExecute(connection, paste0("SET search_path TO ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
-  execute_sql_file(file.path("..", "api", "schema.sql"))
+  schema_sql <- paste(readLines(file.path("..", "api", "schema.sql"), warn=FALSE), collapse="\n")
+  for (statement in split_postgres_sql(schema_sql)) DBI::dbExecute(connection, statement)
 
   fixture <- readr::read_csv("tests/testthat/fixtures/demographie-fixture.csv",
     col_types=readr::cols(code=readr::col_character(), epci=readr::col_character()),

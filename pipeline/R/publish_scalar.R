@@ -148,6 +148,49 @@ scalar_content_version <- function(projection) {
   unname(tools::md5sum(path))
 }
 
+# Split the repository's PostgreSQL DDL script without altering quoted SQL.
+# Supports standard doubled quote escapes, line comments and dollar-quoted
+# function bodies used by api/schema.sql.
+split_postgres_sql <- function(sql) {
+  stopifnot(is.character(sql), length(sql) == 1L)
+  chars <- strsplit(sql, "", fixed=TRUE)[[1L]]
+  statements <- character(); buffer <- character()
+  single <- double <- line_comment <- FALSE; dollar <- NULL; i <- 1L
+  while (i <= length(chars)) {
+    ch <- chars[[i]]; next_ch <- if (i < length(chars)) chars[[i+1L]] else ""
+    if (line_comment) {
+      if (ch == "\n") { line_comment <- FALSE; buffer <- c(buffer, ch) }
+    } else if (!single && !double && is.null(dollar) && ch == "-" && next_ch == "-") {
+      line_comment <- TRUE; buffer <- c(buffer, " "); i <- i + 1L
+    } else if (!double && is.null(dollar) && ch == "'") {
+      buffer <- c(buffer, ch)
+      if (single && next_ch == "'") { buffer <- c(buffer, next_ch); i <- i + 1L }
+      else single <- !single
+    } else if (!single && is.null(dollar) && ch == '"') {
+      buffer <- c(buffer, ch)
+      if (double && next_ch == '"') { buffer <- c(buffer, next_ch); i <- i + 1L }
+      else double <- !double
+    } else if (!single && !double && ch == "$") {
+      rest <- paste0(chars[i:length(chars)], collapse="")
+      tag <- regmatches(rest, regexpr("^\\$[A-Za-z_0-9]*\\$", rest))
+      if (length(tag) && nzchar(tag)) {
+        if (is.null(dollar)) dollar <- tag
+        else if (identical(dollar, tag)) dollar <- NULL
+        buffer <- c(buffer, strsplit(tag, "", fixed=TRUE)[[1L]])
+        i <- i + nchar(tag) - 1L
+      } else buffer <- c(buffer, ch)
+    } else if (!single && !double && is.null(dollar) && ch == ";") {
+      statement <- trimws(paste(buffer, collapse=""))
+      if (nzchar(statement)) statements <- c(statements, statement)
+      buffer <- character()
+    } else buffer <- c(buffer, ch)
+    i <- i + 1L
+  }
+  tail <- trimws(paste(buffer, collapse=""))
+  if (nzchar(tail)) statements <- c(statements, tail)
+  statements
+}
+
 # Exact inventory created by api/schema.sql for the isolated publisher smoke.
 # Drop dependents before referenced tables, then trigger functions, and finally
 # the owned schema using RESTRICT. The schema is name-guarded and all object

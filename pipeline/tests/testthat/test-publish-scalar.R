@@ -195,3 +195,16 @@ test_that("smoke schema cleanup is explicitly dependency ordered and restricted"
   expect_false(any(grepl("CASCADE", sql, fixed=TRUE)))
   expect_error(scalar_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
 })
+
+test_that("PostgreSQL schema splitter preserves literals, quoted identifiers, and function bodies", {
+  schema <- paste(readLines(testthat::test_path("../../../api/schema.sql"), warn=FALSE), collapse="\n")
+  statements <- split_postgres_sql(schema)
+  publication_ddl <- statements[grepl("CREATE TABLE table_publication", statements, fixed=TRUE)]
+  expect_length(publication_ddl, 1L)
+  expect_true(grepl("'territory_reference'", publication_ddl, fixed=TRUE))
+  expect_true(grepl("'scalar_observation'", publication_ddl, fixed=TRUE))
+  source_assertion <- statements[grepl("CREATE FUNCTION assert_scalar_descriptor_sources", statements, fixed=TRUE)]
+  expect_length(source_assertion, 1L)
+  expect_true(grepl("RAISE EXCEPTION 'scalar descriptor must declare at least one source dataset';", source_assertion, fixed=TRUE))
+  expect_length(split_postgres_sql("SELECT 'a'';b', \"quoted\"; -- ignored;\nSELECT $$body; stays$$;"), 2L)
+})
