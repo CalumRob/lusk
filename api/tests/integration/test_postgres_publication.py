@@ -592,6 +592,79 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
+def test_profile_and_series_migration_chain_matches_fresh_schema():
+    """Rehearse existing-schema 004→006→007 and compare fresh marker contracts."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    api_root = Path(__file__).resolve().parents[2]
+    profile_migration = api_root / "migrations/006_declared_profile.sql"
+    if not profile_migration.exists():
+        pytest.skip("migration 006 is supplied by the #596 branch; fetch its SQL before combined rehearsal")
+    schema, fresh_schema = ("it_" + uuid.uuid4().hex[:20] for _ in range(2))
+    fresh_dsn = _dsn_with_schema(publish_dsn, fresh_schema)
+    chain_dsn = _dsn_with_schema(publish_dsn, schema)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+        connection.execute(f'CREATE SCHEMA "{fresh_schema}"')
+    try:
+        with psycopg.connect(fresh_dsn, autocommit=True) as fresh:
+            fresh.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
+
+        with psycopg.connect(chain_dsn, autocommit=True) as chain:
+            # Start from the supported fresh shared schema, then roll back only
+            # the #594 additions exactly as the existing 004 rehearsal does.
+            chain.execute((api_root / "schema.sql").read_text(encoding="utf-8"))
+            for trigger, table in [
+                ("scalar_observation_source_required", "scalar_observation"),
+                ("scalar_observation_source_not_empty", "scalar_observation_source"),
+                ("scalar_descriptor_requires_sources", "scalar_descriptor"),
+                ("scalar_descriptor_source_set_not_empty", "scalar_descriptor_source"),
+                ("scalar_territory_compatibility", "territory_reference"),
+                ("scalar_descriptor_compatibility", "scalar_descriptor"),
+                ("scalar_observation_levels", "scalar_observation"),
+            ]:
+                chain.execute(f"DROP TRIGGER {trigger} ON {table}")
+            chain.execute("DROP TRIGGER ordered_series_contract ON ordered_series")
+            chain.execute("DROP FUNCTION validate_ordered_series()")
+            chain.execute("DROP TABLE ordered_series,series_descriptor")
+            chain.execute("DROP TABLE scalar_observation_source,scalar_observation,scalar_descriptor_source,scalar_descriptor,source_vintage,source_dataset")
+            chain.execute("DROP FUNCTION assert_scalar_observation_has_source(),assert_scalar_descriptor_sources(),assert_scalar_territory_update(),assert_scalar_descriptor_update(),assert_scalar_levels()")
+            chain.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
+            chain.execute("ALTER TABLE table_publication DROP CONSTRAINT scalar_publication_requires_reference")
+            chain.execute("ALTER TABLE table_publication DROP COLUMN reference_content_version")
+            chain.execute("ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK (table_name IN ('territory_reference','service_registry','essential_service_access','building_ramp','building_grid'))")
+            chain.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
+            chain.execute(profile_migration.read_text(encoding="utf-8"))
+            chain.execute((api_root / "migrations/007_ordered_series.sql").read_text(encoding="utf-8"))
+
+            # Both publication markers must reference the same committed territory snapshot.
+            chain.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('reconcile','commune','Reconcile')")
+            chain.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',1)")
+            chain.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-v1',1,'territory-v1'),('ordered_series','series-v1',1,'territory-v1')")
+            for marker in ("declared_profile", "ordered_series"):
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    with chain.transaction():
+                        chain.execute("UPDATE table_publication SET reference_content_version=NULL WHERE table_name=%s", (marker,))
+
+            def marker_contract(connection):
+                return connection.execute("""SELECT c.contype, pg_get_constraintdef(c.oid)
+                    FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+                    WHERE t.relname='table_publication' AND c.contype='c'
+                    ORDER BY pg_get_constraintdef(c.oid)""").fetchall()
+
+            # Different equivalent CHECK partitioning is acceptable; assert
+            # both marker values and reference semantics in actual DDL behavior.
+            assert marker_contract(chain) == marker_contract(fresh)
+            allowed = {row[0] for row in chain.execute("SELECT unnest(ARRAY['declared_profile','ordered_series'])").fetchall()}
+            assert allowed == {"declared_profile", "ordered_series"}
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+                connection.execute(f'DROP SCHEMA "{fresh_schema}" CASCADE')
+
+
 def test_failed_replacement_keeps_current_dataset(db_env, tmp_path):
     import psycopg
     from api import importer
