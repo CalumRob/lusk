@@ -134,6 +134,53 @@ class ReadRepository:
     def read(self, territory_id: str, comparison: str) -> dict:
         return self._read("commune", territory_id, comparison)
 
+    def read_series(self, territory_type: str, territory_id: str, indicator_id: str) -> dict:
+        """Read a declared series from one repeatable-read publication snapshot."""
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                marker = connection.execute(
+                    "SELECT content_version FROM table_publication WHERE table_name='ordered_series'"
+                ).fetchone()
+                if not marker or not marker[0]:
+                    raise HTTPException(503, "Series publication is unavailable")
+                descriptor = connection.execute(
+                    """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
+                              source_id,vintage_id,descriptor_version
+                       FROM series_descriptor WHERE indicator_id=%s""", (indicator_id,)
+                ).fetchone()
+                if not descriptor:
+                    raise HTTPException(404, "Series descriptor is unavailable")
+                target = connection.execute(
+                    "SELECT name FROM territory_reference WHERE territory_id=%s AND territory_type=%s",
+                    (territory_id, territory_type),
+                ).fetchone()
+                if not target:
+                    raise HTTPException(404, "Territory not found")
+                rows = connection.execute(
+                    """SELECT axis_value,observation_period,value,status,source_id,vintage_id
+                       FROM ordered_series WHERE indicator_id=%s AND territory_id=%s
+                         AND territory_type=%s ORDER BY array_position(%s::text[],axis_value)""",
+                    (indicator_id, territory_id, territory_type, list(descriptor[1])),
+                ).fetchall()
+                by_axis = {row[0]: row for row in rows}
+                if len(by_axis) != len(rows) or any(axis not in descriptor[1] for axis in by_axis):
+                    raise HTTPException(503, "Invalid published series axis")
+                if descriptor[2] == "dense_complete" and set(by_axis) != set(descriptor[1]):
+                    raise HTTPException(503, "Incomplete published series")
+                points = []
+                for axis in descriptor[1]:
+                    row = by_axis.get(axis)
+                    points.append({"axis": axis, "status": row[3] if row else "missing",
+                                   "value": row[2] if row else None,
+                                   "observation_period": row[1] if row else None,
+                                   "source_id": row[4] if row else descriptor[7],
+                                   "vintage_id": row[5] if row else descriptor[8]})
+                return {"publication_id": marker[0], "territory":{"id":territory_id,"type":territory_type,"name":target[0]},
+                        "indicator_id":indicator_id,"axis_kind":descriptor[0],"completeness":descriptor[2],
+                        "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
+                        "descriptor_version":descriptor[9],"comparison_point":descriptor[3],"points":points}
+
     def read_level(self, territory_type: str, territory_id: str) -> dict:
         return self._read(territory_type, territory_id, None)
 
@@ -599,7 +646,15 @@ def scalar_observation(
             row = cursor.fetchone()
             if row is None:
                 raise HTTPException(404, "Declared scalar observation is unavailable")
-            return dict(zip((column.name for column in cursor.description), row))
+    return dict(zip((column.name for column in cursor.description), row))
+
+
+@app.get("/api/territories/{territory_type}/{territory_id}/series/{indicator_id}")
+def annual_series(territory_type: Literal["commune", "epci", "departement", "region"],
+                  territory_id: str = Path(min_length=1, max_length=32),
+                  indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+                  repository: ReadRepository = Depends(get_repository)) -> dict:
+    return repository.read_series(territory_type, territory_id, indicator_id)
 
 
 @app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)
