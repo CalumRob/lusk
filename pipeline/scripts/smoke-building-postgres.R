@@ -206,6 +206,11 @@ stopifnot(length(publish(tables)) == 0L)
 
 # A stale marker causes the unchanged canonical table to be resent and restored.
 DBI::dbWithTransaction(run_connection, {
+  # Make the persisted facts differ from the canonical payload as well as
+  # making both local-version tokens stale, so marker repair alone cannot pass.
+  DBI::dbExecute(run_connection,
+    "UPDATE building_grid SET building_count=29 WHERE territory_id=$1 AND cell_index=0",
+    params = list(reference$territory_id))
   DBI::dbExecute(run_connection,
     "UPDATE building_evidence_descriptor SET descriptor_version='db-behind' WHERE table_name='building_grid'")
   DBI::dbExecute(run_connection,
@@ -223,7 +228,10 @@ marker_after_retry <- DBI::dbGetQuery(run_connection,
 descriptor_after_retry <- DBI::dbGetQuery(run_connection,
   "SELECT descriptor_version FROM building_evidence_descriptor WHERE table_name='building_grid'")$descriptor_version[[1]]
 stopifnot(identical(marker_after_retry, versions[["building_grid"]]),
-  identical(descriptor_after_retry, versions[["building_grid"]]))
+  identical(descriptor_after_retry, versions[["building_grid"]]),
+  DBI::dbGetQuery(run_connection,
+    "SELECT building_count FROM building_grid WHERE territory_id=$1 AND cell_index=0",
+    params = list(reference$territory_id))$building_count[[1]] == 30L)
 
 # Inject failure inside fact replacement and verify transaction rollback retains
 # the prior facts, descriptor and independent publication markers.
