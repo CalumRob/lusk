@@ -213,9 +213,15 @@ def test_shared_scalar_schema_constraints_and_bounded_read(db_env):
         with connection.transaction():
             connection.execute("DELETE FROM scalar_observation_source WHERE source_id='fixture_secondary'")
             connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture_secondary'")
-        with pytest.raises(psycopg.errors.RaiseException, match="descriptor must declare at least one source dataset"):
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture'")
+        with connection.transaction():
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('unreferenced_fixture','Unreferenced fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('unreferenced_fixture','fixture')")
+        with pytest.raises(psycopg.errors.RaiseException, match="descriptor must declare at least one source dataset"):
+            with connection.transaction():
+                connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='unreferenced_fixture' AND source_id='fixture'")
         with connection.transaction():
             connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('cascade_fixture','Cascade fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
             connection.execute("INSERT INTO scalar_descriptor_source VALUES ('cascade_fixture','fixture')")
