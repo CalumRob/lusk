@@ -60,6 +60,9 @@ class BuildingSelection(BaseModel):
     selected: list[SelectedTerritory] = Field(min_length=1, max_length=1500)
 
 
+MAX_TERRITORY_SEARCH_SCAN = 1500
+
+
 @lru_cache(maxsize=1)
 def pool() -> ConnectionPool:
     url = os.environ.get("DATABASE_URL")
@@ -98,26 +101,30 @@ def _search_normalize(value: str) -> str:
 
 
 def search_territory_rows(rows: list[dict], query: str, limit: int) -> list[dict]:
-    """Apply the current client name-only matching and score bands."""
-    normalized = " ".join(_search_normalize(query))
+    """Return all name candidates tied at the result-limit boundary.
+
+    The app's existing rechercherTerritoires applies the final French
+    localeCompare ordering and truncates this candidate window to `limit`.
+    """
+    normalized = _search_normalize(query)
     scored = []
     for row in rows:
-        name = " ".join(_search_normalize(row["name"]))
+        name = _search_normalize(row["name"])
         score = 100 if name == normalized else 80 if name.startswith(normalized) else 60 if any(
             word.startswith(normalized) for word in name.split()
         ) else 40 if normalized in name else 0
         if score:
             scored.append((score, row))
-    # Python has no standard-library equivalent of JS Intl localeCompare('fr').
-    # Fail closed for a result set whose ordering depends on that comparator.
-    buckets: dict[tuple[int, int], list[dict]] = {}
-    for score, row in scored:
-        buckets.setdefault((score, len(row["name"])), []).append(row)
-    for tied in buckets.values():
-        if len(tied) > 1:
-            raise ValueError("French locale tie ordering is not safely reproducible")
+    # Static payload order is type (commune, EPCI, département, région), then
+    # identifier. Repository reads preserve this stable base order; JS stable
+    # sort preserves it where French collation considers labels equal.
     scored.sort(key=lambda item: (-item[0], len(item[1]["name"])))
-    return [row for _, row in scored[:limit]]
+    if len(scored) <= limit:
+        return [row for _, row in scored]
+    cutoff_score, cutoff_row = scored[limit - 1]
+    cutoff_length = len(cutoff_row["name"])
+    return [row for score, row in scored
+            if score > cutoff_score or (score == cutoff_score and len(row["name"]) <= cutoff_length)]
 
 
 class ReadRepository:
@@ -155,14 +162,19 @@ class ReadRepository:
                 if not marker:
                     raise HTTPException(503, "No territory reference has been published")
                 rows = connection.execute(
-                    "SELECT territory_type, territory_id, name FROM territory_reference "
-                    "ORDER BY territory_type, name, territory_id LIMIT 1501"
+                    """SELECT territory_type, territory_id, name FROM territory_reference
+                       ORDER BY CASE territory_type WHEN 'commune' THEN 0 WHEN 'epci' THEN 1
+                                WHEN 'departement' THEN 2 WHEN 'region' THEN 3 ELSE 4 END,
+                                territory_id LIMIT %s""", (MAX_TERRITORY_SEARCH_SCAN + 1,)
                 ).fetchall()
-                if len(rows) > 1500:
+                if len(rows) > MAX_TERRITORY_SEARCH_SCAN:
                     raise HTTPException(503, "Territory reference exceeds search scan bound")
                 entries = [dict(zip(("type", "id", "name"), row)) for row in rows]
+                exact_code = next((row for row in entries if row["id"] == query.strip()), None)
                 return {"publication_id": "territory-v1-" + marker[0], "query": query,
-                        "results": search_territory_rows(entries, query, limit)}
+                        "limit": limit, "candidate_limit": MAX_TERRITORY_SEARCH_SCAN,
+                        "exact_code": exact_code,
+                        "candidates": search_territory_rows(entries, query, limit)}
 
     def read_building_initial(self, territory_type: str, territory_id: str,
                               comparison_mode: str | None = None) -> dict:
@@ -432,10 +444,7 @@ def search_territories(
     """Bounded search over the R-published territory reference."""
     if not q.strip():
         raise HTTPException(422, "Query must contain a non-whitespace character")
-    try:
-        return repository.search_territories(q, limit)
-    except ValueError as exc:
-        raise HTTPException(503, "Search ordering parity is unavailable") from exc
+    return repository.search_territories(q, limit)
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/building-access")
