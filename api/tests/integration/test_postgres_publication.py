@@ -219,10 +219,14 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
               "epci": ["200000001", "200000002"],
               "departement": ["29"], "region": ["BRE"]}
     with psycopg.connect(db_env["publish_dsn"]) as connection:
-        connection.executemany(
+        def executemany(query, rows):
+            with connection.cursor() as cur:
+                cur.executemany(query, rows)
+
+        executemany(
             "INSERT INTO territory_reference(territory_id,name,territory_type,department_id,epci_id,density_class_code,density_class_label) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             territories)
-        connection.executemany("INSERT INTO service_registry(service) VALUES (%s)", [(s,) for s in services])
+        executemany("INSERT INTO service_registry(service) VALUES (%s)", [(s,) for s in services])
         connection.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES (true,'communes-bretagne','communes bretonnes')")
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-fixture-v1',8),('essential_service_access','legacy-fixture-v1',0)")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
@@ -231,7 +235,6 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
         legacy_rows = []
         scalar_rows = []
         source_rows = []
-        types_by_id = {t[0]: t[2] for t in territories}
         for service_index, service in enumerate(services):
             for mode_index, (mode_code, mode) in enumerate(mode_codes.items()):
                 indicator = f"share_{service}_{mode_code}"
@@ -252,12 +255,12 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                         scalar_rows.append((indicator, territory_id, territory_type,
                             share, "not_available" if missing else "measured"))
                         source_rows.append((indicator, territory_id, "fixture", "v2026"))
-        connection.executemany("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", legacy_rows)
+        executemany("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", legacy_rows)
         connection.execute("UPDATE table_publication SET row_count=%s WHERE table_name='essential_service_access'", (len(legacy_rows),))
-        connection.executemany("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
-        connection.executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,'fixture')", [(d[0],) for d in descriptors])
-        connection.executemany("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES (%s,%s,%s,%s,%s)", scalar_rows)
-        connection.executemany("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES (%s,%s,%s,%s)", source_rows)
+        executemany("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
+        executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,'fixture')", [(d[0],) for d in descriptors])
+        executemany("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES (%s,%s,%s,%s,%s)", scalar_rows)
+        executemany("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES (%s,%s,%s,%s)", source_rows)
         connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',%s,'ref-fixture-v1')", (len(scalar_rows),))
 
     pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
