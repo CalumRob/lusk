@@ -425,9 +425,11 @@ class ReadRepository:
                            JOIN scalar_descriptor d USING(indicator_id)
                            JOIN territory_reference t ON t.territory_id=o.territory_id
                              AND t.territory_type=o.territory_type
-                           JOIN scalar_observation_source os USING(indicator_id,territory_id)
-                           JOIN source_dataset sd USING(source_id)
-                           JOIN source_vintage sv USING(source_id,vintage_id)
+                            JOIN scalar_observation_source os
+                              ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
+                            JOIN source_dataset sd ON sd.source_id=os.source_id
+                            JOIN source_vintage sv ON sv.source_id=os.source_id
+                              AND sv.vintage_id=os.vintage_id
                             WHERE o.indicator_id LIKE 'share!_%%' ESCAPE '!'
                              AND o.territory_type = %s AND t.{condition} = %s
                              AND o.territory_type = ANY(d.allowed_levels)

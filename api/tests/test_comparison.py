@@ -242,6 +242,7 @@ def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypat
     # psycopg parameter style requires doubled percent signs in a query string
     # even when the percent is part of a SQL LIKE literal.
     assert "LIKE 'share!_%%' ESCAPE '!'" in scalar_sql
+    assert "ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id" in scalar_sql
     legacy_rows = []
     for row in source_rows:
         service, mode_code = row[0].removeprefix("share_").rsplit("_", 1)
