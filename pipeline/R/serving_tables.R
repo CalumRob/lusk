@@ -57,6 +57,15 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
   access <- data.frame(territory_id=as.character(rows$territoire), service=service, mode=unname(c(t="walk_transit",b="bike",c="car")[modecode]), share=as.numeric(rows$value), indicator_label=labs, effective_direction=dirs, source_id=source_ids, source_name=as.character(vi$source), source_version=as.character(vi$version), reference_date=as.character(vi$date_reference), source_publication_date=as.character(vi$date_publication), stringsAsFactors=FALSE)
   access$reference_date[is.na(vi$date_reference)] <- NA_character_; access$source_publication_date[is.na(vi$date_publication)] <- NA_character_
   access$territory_type <- unname(typemap[access$territory_id])
+  scalar_access <- data.frame(territory_id=as.character(rows$territoire),
+    territory_type=unname(typemap[as.character(rows$territoire)]),
+    indicator_id=as.character(rows$key), value=as.numeric(rows$value),
+    unit=as.character(rows$unit), label=labs, direction=dirs,
+    source_id=source_ids, source_name=as.character(vi$source),
+    source_version=as.character(vi$version), reference_date=as.character(vi$date_reference),
+    publication_date=as.character(vi$date_publication), stringsAsFactors=FALSE)
+  scalar_access$reference_date[is.na(vi$date_reference)] <- NA_character_
+  scalar_access$publication_date[is.na(vi$date_publication)] <- NA_character_
   registry <- data.frame(service=sort(services), stringsAsFactors=FALSE)
 
   ramp0 <- input$rampe_acces_batiments; grid0 <- input$distribution_acces_batiments
@@ -111,7 +120,9 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
   if (any(sums != denoms[names(sums)])) abort("Cellules de grille ne recomposent pas le total.")
   tables <- list(territory_reference=refs[c("territory_id","territory_type","name","department_id","epci_id","density_class_code","density_class_label")], service_registry=registry, essential_service_access=access[c("territory_id","service","mode","share","indicator_label","effective_direction","source_id","source_name","source_version","reference_date","source_publication_date")], building_ramp=ramp_table, building_grid=grid_table)
   versions <- versions_tables_service(tables, scope, meta$building_comparison)
-  list(tables=tables, versions=versions, access_scope=scope)
+  list(tables=tables, versions=versions, access_scope=scope,
+       scalar_access=scalar_access, scalar_metadata=meta,
+       scalar_eligible_territories=refs[c("territory_id", "territory_type")])
 }
 
 versions_tables_service <- function(tables, access_scope, building_comparison) {

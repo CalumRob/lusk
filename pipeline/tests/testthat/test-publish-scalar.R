@@ -36,29 +36,93 @@ test_that("scalar publisher validates registered canonical fixture facts", {
 })
 
 test_that("services scalar projection keeps all fifteen canonical indicator identities", {
-  keys <- unlist(lapply(c("food", "health", "admin", "school", "bank"),
-    function(service) paste0("share_", service, "_", c("t", "b", "c"))), use.names=FALSE)
+  metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
+  keys <- unlist(lapply(metadata$subgroups, `[[`, "indicators"), use.names=FALSE)
+  keys <- keys[grepl("^share_", keys)]
   access <- expand.grid(territory_id=c("29001", "29"), indicator_id=keys,
     stringsAsFactors=FALSE)
   access$territory_type <- ifelse(access$territory_id == "29001", "commune", "departement")
   access$value <- seq_len(nrow(access)) / 100
-  access$label <- paste("label", access$indicator_id)
-  access$direction <- "high"
-  access$source_id <- "mobilite_snapshot"
+  access$unit <- "%"
+  access$label <- vapply(access$indicator_id, function(k) metadata$indicator_labels[[k]], character(1))
+  access$direction <- vapply(access$indicator_id, function(k) metadata$indicator_directions[[k]], character(1))
+  access$source_id <- vapply(access$indicator_id, function(k) metadata$sources[[k]], character(1))
   access$source_name <- "Snapshot"
   access$source_version <- "2024"
   access$reference_date <- "2024-01-01"
   access$publication_date <- "2024-02-01"
-  projection <- project_service_share_scalars(access)
+  eligible <- unique(access[c("territory_id", "territory_type")])
+  projection <- project_service_share_scalars(access, metadata, eligible)
   expect_equal(nrow(projection$facts), 30L)
   expect_setequal(unique(projection$facts$indicator_id), keys)
   expect_equal(nrow(projection$descriptors), 15L)
   expect_true(all(projection$descriptors$unit == "%"))
-  expect_equal(projection$facts$value, access$value)
+  expect_equal(projection$facts$value,
+    access$value[order(access$indicator_id, access$territory_id)])
   expect_true(all(projection$facts$status == "measured"))
+  expect_equal(projection$descriptors$label, unname(
+    vapply(projection$descriptors$indicator_id, function(k) metadata$indicator_labels[[k]], character(1))))
+  expect_equal(projection$descriptors$direction, unname(
+    vapply(projection$descriptors$indicator_id, function(k) metadata$indicator_directions[[k]], character(1))))
+  expect_equal(projection$descriptors$allowed_sources,
+    I(lapply(projection$descriptors$indicator_id, function(k) metadata$sources[[k]])))
+  expect_true(all(projection$descriptors$denominator_semantics ==
+    metadata$service_share_scalar$denominator_semantics))
   expect_setequal(unique(projection$provenance$indicator_id), keys)
   expect_invisible(validate_scalar_projection(projection$facts,
     projection$descriptors, projection$eligible_territories))
+  expect_identical(scalar_content_version(projection), scalar_content_version(
+    project_service_share_scalars(access[rev(seq_len(nrow(access))), ], metadata,
+      eligible[rev(seq_len(nrow(eligible))), ])))
+  changed_contract <- metadata
+  changed_contract$service_share_scalar$denominator_semantics <-
+    paste(changed_contract$service_share_scalar$denominator_semantics, "version 2")
+  expect_false(identical(scalar_content_version(projection), scalar_content_version(
+    project_service_share_scalars(access, changed_contract, eligible))))
+  invalid_source <- access
+  invalid_source$source_id[[1L]] <- "undeclared_source"
+  expect_error(project_service_share_scalars(invalid_source, metadata, eligible),
+    "descriptor is inconsistent")
+  registry <- register_service_share_scalar_publisher(list(), metadata)
+  canonical <- list(access=access, eligible_territories=eligible)
+  registered_projection <- registry$services_essentiels_scalar$project(canonical)
+  expect_equal(registered_projection, projection)
+
+  state <- new.env(parent=emptyenv())
+  state$version <- NULL; state$payload <- NULL; state$reference <- "territory-v1"
+  state$fail <- FALSE
+  db <- list(
+    transaction=function(expr) {
+      old <- list(version=state$version, payload=state$payload)
+      tryCatch(force(expr), error=function(e) {
+        state$version <- old$version; state$payload <- old$payload; stop(e)
+      })
+    },
+    marker=function(name) if (is.null(state$version)) data.frame(content_version=character()) else
+      data.frame(content_version=state$version, reference_content_version=state$reference),
+    reference_marker=function() data.frame(content_version=state$reference),
+    validate_territories=function(...) invisible(NULL),
+    set_reference_version=function(version) { state$reference <- version },
+    replace=function(value, version) {
+      state$payload <- value
+      if (state$fail) stop("simulated transaction failure")
+      state$version <- version
+    })
+  first <- publish_registered_scalar(registry, "services_essentiels_scalar", canonical, db)
+  expect_true(first$changed)
+  expect_equal(state$payload$facts, projection$facts)
+  expect_false(publish_registered_scalar(registry, "services_essentiels_scalar",
+    canonical, db)$changed)
+  state$version <- "behind-local"
+  expect_true(publish_registered_scalar(registry, "services_essentiels_scalar",
+    canonical, db)$changed)
+  committed <- state$version; committed_payload <- state$payload
+  state$fail <- TRUE
+  changed_access <- access; changed_access$value[[1L]] <- changed_access$value[[1L]] + .001
+  expect_error(publish_registered_scalar(registry, "services_essentiels_scalar",
+    list(access=changed_access, eligible_territories=eligible), db), "simulated transaction failure")
+  expect_identical(state$version, committed)
+  expect_identical(state$payload, committed_payload)
 })
 
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {

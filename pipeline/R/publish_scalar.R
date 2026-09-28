@@ -138,30 +138,57 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
 # Project the canonical service-share relation into the shared scalar grain.
 # The Parquet key remains indicator_id; service/mode are grouping dimensions
 # only for the legacy bounded response and never replace the declared identity.
-project_service_share_scalars <- function(access) {
+project_service_share_scalars <- function(access, metadata, eligible_territories) {
   required <- c("territory_id", "territory_type", "indicator_id", "value",
-    "label", "direction", "source_id", "source_name", "source_version",
+    "unit", "label", "direction", "source_id", "source_name", "source_version",
     "reference_date", "publication_date")
-  if (!is.data.frame(access) || !all(required %in% names(access)))
+  if (!is.data.frame(access) || !all(required %in% names(access)) || !is.list(metadata) ||
+      !is.data.frame(eligible_territories) ||
+      !setequal(names(eligible_territories), c("territory_id", "territory_type")))
     stop("Canonical service shares are missing contract fields", call.=FALSE)
   if (any(!grepl("^share_[a-z0-9]+_[tbc]$", access$indicator_id)))
     stop("Canonical service share has an invalid indicator key", call.=FALSE)
-  ids <- unique(as.character(access$indicator_id))
+  declared <- unique(unlist(lapply(metadata$subgroups, `[[`, "indicators"), use.names=FALSE))
+  ids <- sort(declared[grepl("^share_", declared)])
+  scalar_contract <- metadata$service_share_scalar
+  if (length(ids) != 15L || anyDuplicated(ids) ||
+      !is.list(metadata$indicator_labels) || !is.list(metadata$indicator_directions) ||
+      !is.list(metadata$sources) || !is.list(scalar_contract) ||
+      !identical(scalar_contract$completeness, "dense_complete") ||
+      !is.character(scalar_contract$denominator_semantics) ||
+      length(scalar_contract$denominator_semantics) != 1L ||
+      !nzchar(trimws(scalar_contract$denominator_semantics)) ||
+      any(!ids %in% names(metadata$indicator_labels)) ||
+      any(!ids %in% names(metadata$indicator_directions)) || any(!ids %in% names(metadata$sources)))
+    stop("Metadata must declare fifteen complete service-share descriptors", call.=FALSE)
+  if (!setequal(unique(as.character(access$indicator_id)), ids) ||
+      any(!access$unit %in% "%"))
+    stop("Canonical service shares do not match declared metadata or percent unit", call.=FALSE)
   if (length(ids) != 15L || anyDuplicated(access[c("territory_id", "indicator_id")]))
     stop("Canonical service scalar projection must contain fifteen complete indicator keys", call.=FALSE)
+  access <- access[order(access$indicator_id, access$territory_id), , drop=FALSE]
+  eligible_territories <- unique(eligible_territories[c("territory_id", "territory_type")])
+  eligible_territories <- eligible_territories[order(eligible_territories$territory_type,
+                                                       eligible_territories$territory_id), , drop=FALSE]
   group <- split(access, access$indicator_id)
   descriptors <- do.call(rbind, lapply(ids, function(id) {
     rows <- group[[id]]
-    sources <- unique(as.character(rows$source_id))
-    if (length(sources) != 1L || length(unique(rows$label)) != 1L ||
-        length(unique(rows$direction)) != 1L)
+    sources <- as.character(metadata$sources[[id]])
+    if (length(sources) != 1L || !nzchar(sources) ||
+        !identical(unique(as.character(rows$source_id)), sources) ||
+        length(unique(rows$label)) != 1L || rows$label[[1L]] != metadata$indicator_labels[[id]] ||
+        length(unique(rows$direction)) != 1L || rows$direction[[1L]] != metadata$indicator_directions[[id]])
       stop("Canonical service scalar descriptor is inconsistent", call.=FALSE)
     data.frame(indicator_id=id, allowed_sources=I(list(sources)),
-      label=as.character(rows$label[[1L]]), unit="%",
+      label=as.character(rows$label[[1L]]), unit=as.character(rows$unit[[1L]]),
       direction=as.character(rows$direction[[1L]]),
       comparison_facet=id, allowed_levels=I(list(unique(as.character(rows$territory_type)))),
-      denominator_semantics="Share of territory buildings with access to the declared service by the declared mode; canonical fraction stored in 0-1",
-      completeness="dense_complete", descriptor_version=scalar_content_version(rows),
+      denominator_semantics=scalar_contract$denominator_semantics,
+      completeness=scalar_contract$completeness, descriptor_version=scalar_content_version(list(
+        indicator_id=id,
+        label=metadata$indicator_labels[[id]], direction=metadata$indicator_directions[[id]],
+        source=sources, levels=unique(as.character(rows$territory_type)), unit=unique(as.character(rows$unit)),
+        scalar_contract=scalar_contract)),
       stringsAsFactors=FALSE)
   }))
   facts <- data.frame(indicator_id=as.character(access$indicator_id),
@@ -177,9 +204,29 @@ project_service_share_scalars <- function(access) {
     vintage_id=paste(access$source_version, access$reference_date, sep="/"),
     version=as.character(access$source_version), reference_date=as.Date(access$reference_date),
     publication_date=as.Date(access$publication_date), stringsAsFactors=FALSE))
-  eligible <- unique(facts[c("territory_id", "territory_type")])
+  eligible <- unique(eligible_territories[c("territory_id", "territory_type")])
   list(facts=facts, descriptors=descriptors, provenance=provenance,
     datasets=datasets, vintages=vintages, eligible_territories=eligible)
+}
+
+register_service_share_scalar_publisher <- function(registry, metadata) {
+  register_scalar_publisher(registry, "services_essentiels_scalar",
+    project=function(canonical) {
+      if (!is.list(canonical) || !is.data.frame(canonical$access))
+        stop("Service scalar publisher requires canonical access facts", call.=FALSE)
+      if (!is.data.frame(canonical$eligible_territories))
+        stop("Service scalar publisher requires the canonical territory universe", call.=FALSE)
+      project_service_share_scalars(canonical$access, metadata,
+                                    canonical$eligible_territories)
+    },
+    publish=function(projection, db, version) db$replace(projection, version))
+}
+
+publish_service_share_scalars <- function(con, access, metadata, eligible_territories) {
+  publisher <- register_service_share_scalar_publisher(list(), metadata)
+  db <- scalar_postgres_adapter(con)
+  publish_registered_scalar(publisher, "services_essentiels_scalar",
+    canonical=list(access=access, eligible_territories=eligible_territories), db=db)
 }
 
 register_fixture_scalar_publisher <- function(registry, descriptor, completeness) {
