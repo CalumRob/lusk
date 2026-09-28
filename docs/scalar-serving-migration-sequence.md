@@ -6,7 +6,7 @@ service-share slice; it does not require a service-specific migration.
 
 | Number | Scope | Status |
 | --- | --- | --- |
-| 004 | Shared scalar infrastructure and contract | Applied foundation |
+| 004 | Shared scalar infrastructure and contract | Shared foundation in merged code; live-application status not asserted here |
 | 005 | Reserved for service shares | Intentionally unused: #595 reuses 004; no no-op migration or fake applied record |
 | 006 | Profile | Reserved for its implementation |
 | 007 | Series | Reserved for its implementation |
