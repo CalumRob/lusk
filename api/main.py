@@ -559,25 +559,36 @@ def scalar_observation(
 ) -> dict:
     """Read one declared scalar and its lineage/version from one DB snapshot."""
     with repository.connections.connection() as conn:
-        with conn.transaction(isolation_level="repeatable read", read_only=True):
-            row = conn.execute(
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            cursor = conn.execute(
                 """SELECT o.indicator_id, o.territory_id, o.territory_type,
                           o.value, o.status, o.support_count, o.denominator_count,
                           d.label, d.unit, d.direction, d.comparison_facet,
                           o.source_id, s.name AS source_name, v.version,
-                          v.reference_date, v.publication_date, p.content_version
+                          v.reference_date, v.publication_date, p.content_version,
+                          (SELECT json_agg(json_build_object('source_id', os.source_id,
+                              'source_name', sd.name, 'vintage_id', os.vintage_id,
+                              'version', sv.version, 'reference_date', sv.reference_date,
+                              'publication_date', sv.publication_date)
+                           ORDER BY os.source_id, os.vintage_id)
+                           FROM scalar_observation_source os
+                           JOIN source_dataset sd USING (source_id)
+                           JOIN source_vintage sv USING (source_id, vintage_id)
+                           WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id) AS provenance
                    FROM scalar_observation o
                    JOIN scalar_descriptor d USING (indicator_id)
-                   JOIN source_dataset s USING (source_id)
-                   JOIN source_vintage v USING (source_id, vintage_id)
+                   JOIN source_dataset s ON s.source_id = o.source_id
+                   JOIN source_vintage v ON v.source_id = o.source_id AND v.vintage_id = o.vintage_id
                    JOIN table_publication p ON p.table_name = 'scalar_observation'
                    WHERE o.indicator_id = %s AND o.territory_id = %s
                      AND o.territory_type = %s AND o.territory_type = ANY(d.allowed_levels)""",
                 (indicator_id, territory_id, territory_type),
-            ).fetchone()
+            )
+            row = cursor.fetchone()
             if row is None:
                 raise HTTPException(404, "Declared scalar observation is unavailable")
-            return dict(row)
+            return dict(zip((column.name for column in cursor.description), row))
 
 
 @app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)

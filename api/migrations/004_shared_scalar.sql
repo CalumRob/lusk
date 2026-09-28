@@ -39,7 +39,34 @@ CREATE FUNCTION assert_scalar_levels() RETURNS trigger LANGUAGE plpgsql AS $$ BE
  THEN RAISE EXCEPTION 'scalar descriptor/territory level mismatch'; END IF; RETURN NEW; END $$;
 CREATE TRIGGER scalar_observation_levels BEFORE INSERT OR UPDATE ON scalar_observation
  FOR EACH ROW EXECUTE FUNCTION assert_scalar_levels();
+CREATE TABLE scalar_observation_source (
+ indicator_id text NOT NULL, territory_id text NOT NULL, source_id text NOT NULL,
+ vintage_id text NOT NULL, PRIMARY KEY(indicator_id,territory_id,source_id,vintage_id),
+ FOREIGN KEY(indicator_id,territory_id) REFERENCES scalar_observation(indicator_id,territory_id) ON DELETE CASCADE,
+ FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE FUNCTION assert_scalar_source_link() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM scalar_observation_source s WHERE s.indicator_id=NEW.indicator_id
+   AND s.territory_id=NEW.territory_id AND s.source_id=NEW.source_id AND s.vintage_id=NEW.vintage_id) THEN
+   RAISE EXCEPTION 'scalar observation lacks its declared source-vintage link'; END IF;
+ RETURN NEW; END $$;
+CREATE CONSTRAINT TRIGGER scalar_observation_source_required AFTER INSERT OR UPDATE ON scalar_observation
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_scalar_source_link();
+CREATE FUNCTION assert_scalar_descriptor_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF EXISTS(SELECT 1 FROM scalar_observation o WHERE o.indicator_id=OLD.indicator_id
+    AND (o.source_id<>NEW.source_id OR NOT(o.territory_type=ANY(NEW.allowed_levels)))) THEN
+   RAISE EXCEPTION 'descriptor update invalidates published scalar observations'; END IF;
+ RETURN NEW; END $$;
+CREATE TRIGGER scalar_descriptor_compatibility BEFORE UPDATE ON scalar_descriptor
+ FOR EACH ROW EXECUTE FUNCTION assert_scalar_descriptor_update();
+CREATE FUNCTION assert_scalar_territory_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF EXISTS(SELECT 1 FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id)
+   WHERE o.territory_id=OLD.territory_id
+     AND (NEW.territory_type<>o.territory_type OR NOT(NEW.territory_type=ANY(d.allowed_levels)))) THEN
+   RAISE EXCEPTION 'territory update invalidates published scalar observations'; END IF;
+ RETURN NEW; END $$;
+CREATE TRIGGER scalar_territory_compatibility BEFORE UPDATE OF territory_type ON territory_reference
+ FOR EACH ROW EXECUTE FUNCTION assert_scalar_territory_update();
 -- Reader receives no write privilege; publisher retains transactional writes.
-GRANT SELECT ON source_dataset, source_vintage, scalar_descriptor, scalar_observation TO lusk_reader;
-GRANT SELECT, INSERT, UPDATE, DELETE ON source_dataset, source_vintage, scalar_descriptor, scalar_observation TO lusk_publisher;
+GRANT SELECT ON source_dataset, source_vintage, scalar_descriptor, scalar_observation, scalar_observation_source TO lusk_reader;
+GRANT SELECT, INSERT, UPDATE, DELETE ON source_dataset, source_vintage, scalar_descriptor, scalar_observation, scalar_observation_source TO lusk_publisher;
 COMMIT;

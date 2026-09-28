@@ -6,8 +6,8 @@ def test_scalar_endpoint_is_named_bounded_and_registered():
                  "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
     assert route.methods == {"GET"}
     assert route.endpoint.__name__ == "scalar_observation"
-    assert "repeatable read" in route.endpoint.__code__.co_consts
     sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
+    assert "REPEATABLE READ, READ ONLY" in sql
     assert "WHERE o.indicator_id = %s" in sql
     assert "AND o.territory_id = %s" in sql
 
