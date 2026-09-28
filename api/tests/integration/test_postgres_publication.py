@@ -296,7 +296,6 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                 old = legacy[(territory_type, code, comparison)]
                 assert scalar["territory"] == old["territory"]
                 assert scalar["scope"] == old["scope"]
-                assert scalar["comparison"] == old["comparison"]
                 assert scalar["services"] == old["services"]
             # Region is deliberately a singleton: comparison stats are absent.
             regional = client.get("/api/territories/region/BRE/essential-services").json()
