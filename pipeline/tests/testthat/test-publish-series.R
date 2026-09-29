@@ -68,14 +68,31 @@ test_that("conso ENAF projection follows canonical facts and descriptor-selected
 test_that("production series input is projected from the canonical Parquet and metadata", {
   root <- testthat::test_path("../../../public/data")
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
-  expect_error(read_conso_enaf_series_projection(root, metadata_path), "undeclared territory level")
+  projection <- read_conso_enaf_series_projection(root, metadata_path)
   canonical <- nanoparquet::read_parquet(file.path(root, "indicateurs_milieux.parquet"))
   metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
-  selected <- canonical[canonical$key == "conso_enaf_annuel" &
-    canonical$detail %in% metadata$indicator_pages$conso_enaf_annuel$comparison$details &
-    canonical$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
-  expect_gt(nrow(selected), 0L)
-  expect_true(any(canonical$type[canonical$key == "conso_enaf_annuel"] == "region"))
+  annual <- canonical[canonical$key == "conso_enaf_annuel", , drop=FALSE]
+  selected <- annual[annual$detail %in% metadata$indicator_pages$conso_enaf_annuel$comparison$details &
+    annual$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
+  excluded_region <- annual[annual$type == "region", , drop=FALSE]
+  expect_equal(nrow(projection$points), 17710L)
+  expect_equal(nrow(excluded_region), 14L)
+  expect_equal(nrow(annual), nrow(projection$points) + nrow(excluded_region))
+  key <- function(territory, level, year) paste(territory, level, year, sep="|")
+  projected_key <- key(projection$points$territory_id, projection$points$territory_type,
+    projection$points$axis_value)
+  expected_key <- key(selected$territoire, selected$type, as.character(selected$detail))
+  expect_setequal(projected_key, expected_key)
+  matched <- selected[match(projected_key, expected_key), , drop=FALSE]
+  expect_equal(projection$points$value, matched$value)
+  expect_identical(projection$points$status, ifelse(is.na(matched$value), "missing", "measured"))
+  expect_identical(projection$points$vintage_id,
+    paste(as.character(matched$vintage_version), matched$vintage_date_reference, sep="/"))
+  expect_identical(projection$descriptor$comparison_point,
+    as.character(metadata$indicator_pages$conso_enaf_annuel$comparison$detail))
+  expect_true(all(projection$points$source_id == "consoenaf"))
+  expect_equal(projection$excluded$region$row_count, 14L)
+  expect_identical(projection$excluded$region$policy, "territory_fiche_only")
   expect_error(require_series_publish_opt_in(""), "explicit LUSK_PUBLISH_SERIES=1")
   expect_error(require_series_publish_opt_in("0"), "explicit LUSK_PUBLISH_SERIES=1")
   expect_invisible(require_series_publish_opt_in("1"))
@@ -91,9 +108,17 @@ test_that("canonical annual rows outside descriptor axes or levels are rejected"
   expect_error(project_conso_enaf_series(bad_axis, metadata), "undeclared.*axis|axis.*undeclared")
   bad_level <- payload
   extra <- bad_level$indicateurs[bad_level$indicateurs$key == "conso_enaf_annuel", ][1, , drop=FALSE]
-  extra$type <- "region"
+  extra$type <- "unknown_level"
   bad_level$indicateurs <- rbind(bad_level$indicateurs, extra)
-  expect_error(project_conso_enaf_series(bad_level, metadata), "undeclared.*level|level.*undeclared")
+  expect_error(project_conso_enaf_series(bad_level, metadata), "unexpected territory level")
+  duplicate <- payload
+  duplicate$indicateurs <- rbind(duplicate$indicateurs,
+    duplicate$indicateurs[duplicate$indicateurs$key == "conso_enaf_annuel", ][1, , drop=FALSE])
+  expect_error(project_conso_enaf_series(duplicate, metadata), "duplicate territory/axis keys")
+  mislabeled <- payload
+  annual_idx <- which(mislabeled$indicateurs$key == "conso_enaf_annuel")[[1L]]
+  mislabeled$indicateurs$theme[[annual_idx]] <- "demographie"
+  expect_error(project_conso_enaf_series(mislabeled, metadata), "mislabeled")
   bad_metadata <- metadata
   bad_metadata$indicator_pages$conso_enaf_annuel$label <- NULL
   expect_error(project_conso_enaf_series(payload, bad_metadata), "descriptor is invalid")

@@ -20,7 +20,8 @@ if (args[[1L]] %in% c("--series-check", "--series-publish")) {
   version <- scalar_content_version(projection)
   cat("Validated canonical conso_enaf_annuel:", nrow(projection$points), "rows; version", version,
       "; comparison", projection$descriptor$comparison_point,
-      "; source", projection$descriptor$source_id, "; vintage", projection$descriptor$vintage_id, "\n")
+      "; source", projection$descriptor$source_id, "; vintage", projection$descriptor$vintage_id,
+      "; excluded Région fiche rows", projection$excluded$region$row_count, "\n")
   if (args[[1L]] == "--series-publish") {
     config <- configuration_service_postgres()
     connection <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))

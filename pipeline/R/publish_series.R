@@ -56,24 +56,32 @@ project_conso_enaf_series <- function(payload, metadata) {
       !is.character(page$unit) || length(page$unit) != 1L || is.na(page$unit) || !nzchar(page$unit) ||
       length(page$direction) != 1L || is.na(page$direction) || !page$direction %in% c("high", "low"))
     stop("Annual series metadata descriptor is invalid or incomplete", call.=FALSE)
-  required <- c("key", "detail", "type", "territoire", "value", "vintage_source", "vintage_version",
+  required <- c("key", "theme", "detail", "type", "territoire", "value", "vintage_source", "vintage_version",
                 "vintage_date_reference", "vintage_date_publication")
   if (!is.data.frame(payload$indicateurs) || !all(required %in% names(payload$indicateurs)))
     stop("Canonical annual indicator Parquet is missing required fields", call.=FALSE)
   all_annual <- payload$indicateurs[!is.na(payload$indicateurs$key) &
     payload$indicateurs$key == "conso_enaf_annuel", , drop=FALSE]
   if (!nrow(all_annual)) stop("Canonical annual series is empty", call.=FALSE)
+  if (anyNA(all_annual$theme) || any(as.character(all_annual$theme) != "milieux"))
+    stop("Canonical annual series is mislabeled with a different theme", call.=FALSE)
   if (anyNA(all_annual$detail) || any(!as.character(all_annual$detail) %in% axis))
     stop("Canonical annual series contains an undeclared axis point", call.=FALSE)
-  if (anyNA(all_annual$type) || any(!as.character(all_annual$type) %in% allowed_levels))
-    stop("Canonical annual series contains an undeclared territory level", call.=FALSE)
-  raw <- all_annual
+  # Canonical territory-fiche data also contains the Région observation. It is
+  # explicitly accounted for and excluded from this indicator-page series;
+  # all other non-eligible levels fail rather than disappearing in a filter.
+  recognized_levels <- c(allowed_levels, "region")
+  if (anyNA(all_annual$type) || any(!as.character(all_annual$type) %in% recognized_levels))
+    stop("Canonical annual series contains an unexpected territory level", call.=FALSE)
+  if (anyNA(all_annual$territoire) || anyDuplicated(all_annual[c("key", "territoire", "type", "detail")]))
+    stop("Canonical annual series contains missing or duplicate territory/axis keys", call.=FALSE)
+  raw <- all_annual[as.character(all_annual$type) %in% allowed_levels, , drop=FALSE]
   if (!nrow(raw)) stop("Canonical annual series is empty", call.=FALSE)
-  if (anyNA(raw[c("territoire", "vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication")]) ||
-      length(unique(as.character(raw$vintage_source))) != 1L)
+  if (anyNA(all_annual[c("vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication")]) ||
+      length(unique(as.character(all_annual$vintage_source))) != 1L)
     stop("Canonical annual series provenance/identity is incomplete", call.=FALSE)
-  if (length(unique(paste(raw$vintage_version, raw$vintage_date_reference,
-                          raw$vintage_date_publication, sep="/"))) != 1L)
+  if (length(unique(paste(all_annual$vintage_version, all_annual$vintage_date_reference,
+                          all_annual$vintage_date_publication, sep="/"))) != 1L)
     stop("Annual series source vintage is inconsistent", call.=FALSE)
   points <- data.frame(indicator_id="conso_enaf_annuel", territory_id=raw$territoire,
     territory_type=raw$type, axis_value=as.character(raw$detail),
@@ -105,7 +113,9 @@ project_conso_enaf_series <- function(payload, metadata) {
     label=page$label, unit=page$unit, direction=page$direction, allowed_levels=allowed_levels, source_id=source_id,
     vintage_id=vintage_id, descriptor_version=as.character(page$descriptor_version %||% "1"))
   validate_series_projection(points, descriptor)
-  list(points=points, descriptor=descriptor, dataset_name=source_record$dataset, vintage=vintage)
+  list(points=points, descriptor=descriptor, dataset_name=source_record$dataset, vintage=vintage,
+    excluded=list(region=list(policy="territory_fiche_only", row_count=sum(all_annual$type == "region"),
+      keys=all_annual[all_annual$type == "region", c("territoire", "detail"), drop=FALSE])))
 }
 
 # Production entry point: the canonical build has already written these Parquets
