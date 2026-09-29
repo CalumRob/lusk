@@ -194,3 +194,12 @@ test_that("publishing a validated projection preserves its exact identity and ve
   expect_identical(state$seen_version, scalar_content_version(projection))
   expect_identical(result$content_version, state$seen_version)
 })
+
+test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
+  sql <- series_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "series_it_owned")
+  expect_true(grepl('DROP TABLE IF EXISTS "series_it_owned"."ordered_series" RESTRICT',
+    paste(sql, collapse="\n"), fixed=TRUE))
+  expect_true(grepl('DROP SCHEMA IF EXISTS "series_it_owned" RESTRICT', tail(sql, 1L), fixed=TRUE))
+  expect_error(series_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "public"),
+    "owned series smoke schema")
+})

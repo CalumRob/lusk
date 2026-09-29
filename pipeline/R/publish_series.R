@@ -170,7 +170,7 @@ series_postgres_adapter <- function(con) {
         params=list(d$source_id, projection$dataset_name))
       vintage <- projection$vintage
       DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
-        params=as.list(vintage[c("source_id","vintage_id","version","reference_date","publication_date")]))
+        params=unname(as.list(vintage[c("source_id","vintage_id","version","reference_date","publication_date")])) )
       DBI::dbExecute(con, "DELETE FROM ordered_series")
       DBI::dbExecute(con, "DELETE FROM series_descriptor")
       fields <- c("indicator_id","axis_kind","completeness","comparison_point","label","unit","direction","source_id","vintage_id","descriptor_version")
