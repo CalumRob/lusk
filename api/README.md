@@ -22,7 +22,7 @@ the first development-only browser consumer (#581); its renderer is unchanged.
 | `rampe_acces_batiments.parquet` | `building_ramp`: three modes × eleven positions per complete territory, with its own building denominator; explicit absent sentinels |
 | `distribution_acces_batiments.parquet` | `building_grid`: thirty cells per complete territory; explicit absent sentinel |
 
-The importer reads **canonical Parquet**, not published JSON or route-scoped
+The R publisher reads **canonical Parquet**, not published JSON or route-scoped
 models. The theme descriptor is a pipeline-owned configuration file, not a
 published browser payload. R sends validated projections from the desktop
 without publishing new JSON mirrors. Three modes are required for every served
@@ -38,9 +38,10 @@ updates each changed table's marker together with its rows; the access scope
 descriptor is updated with access. Foreign-key conflicts or incomplete tables
 roll the transaction back. Re-running after a Parquet-success/DB-failure
 compares **database** markers and retries even when the local files are already
-unchanged. API reads pin one repeatable-read snapshot. The legacy Python
-`import_publication()` is retained for pre-migration validation/history but is
-not a publisher for the per-table schema; its CLI rejects database writes.
+unchanged. API reads pin one repeatable-read snapshot. The obsolete Python
+database-write importer was removed in issue #600; it is not part of the current
+runtime or operator workflow. Historical migration files describe the former
+database layout only and must not be replayed to restore that writer.
 
 ## API contract
 
@@ -138,10 +139,11 @@ From the repository root in a Python virtual environment:
 ```text
 pip install -r api/requirements-dev.txt
 python -m pytest api/tests
-python -m api.importer --check public/data
 ```
 
-No PostgreSQL is needed for those checks. Migrations 002 and 003 were first
+No PostgreSQL is needed for those checks. To validate and publish current data,
+use the R commands under “Desktop-to-Pi publication after R (#572)” below; no
+Python importer CLI exists. Migrations 002 and 003 were first
 rehearsed in rolled-back transactions, then applied to live PostgreSQL; R
 committed the changed tables and their row counts were checked. The product
 owner checked the Variant E browser after the API image was rebuilt. The
@@ -304,7 +306,7 @@ The opt-in real-Postgres checks in `tests/integration/README.md` require an
 explicitly disposable `lusk_it_*` database. They cover failed refresh,
 concurrent readers, a successful replacement, historical-schema rehearsal and
 read-only/CREATE denial. **Seven passed** on the Pi's disposable database on
-2026-09-27. In live `lusk`, the canonical importer committed 19,020 access
+2026-09-27. In live `lusk`, the then-current R publisher committed 19,020 access
 observations in **9.06 seconds** end-to-end (operator-reported). Allineuc's
 health walking/transit rank was **19/38** through the public API. The live
 reader's SELECT/INSERT/schema CREATE/database CREATE privileges were

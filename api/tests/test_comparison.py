@@ -2,7 +2,6 @@
 
 from fastapi.testclient import TestClient
 
-from api.importer import load_publication
 from api.main import ReadRepository, app, compare, get_repository
 
 
@@ -193,8 +192,6 @@ def test_non_commune_query_uses_the_selected_territory_level_before_its_peer_sco
                           if "FROM essential_service_access" in q)
     assert "t.territory_type = %s" in query
     assert params == ("epci", "epci")
-
-
 def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypatch):
     import pytest
     from fastapi import HTTPException
@@ -260,93 +257,3 @@ def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypat
     with pytest.raises(HTTPException) as error:
         ReadRepository(Connections(current=False)).read("22001", "bretagne")
     assert error.value.status_code == 503
-
-
-def test_published_epci_rank_parity_for_allineuc():
-    """The R-published EPCI rank is an independent oracle for this specific scope."""
-    from pathlib import Path
-
-    publication = load_publication(Path(__file__).resolve().parents[2] / "public" / "data")
-    territories = {row["territoire"]: row for row in publication.territories}
-    members = {code for code, row in territories.items()
-               if row["type"] == "commune" and row.get("epci") == territories["22001"]["epci"]}
-
-    class PublishedRepository:
-        def read(self, territory_id, comparison):
-            assert (territory_id, comparison) == ("22001", "epci")
-            return {
-                "publication_id": publication.publication_id,
-                "territory": {"id": "22001", "name": territories["22001"]["nom"], "type": "commune"},
-                "scope": {"kind": "communes-epci", "label": "communes de l'EPCI"},
-                "rows": [dict(territory_id=r.territory_id, service=r.service, mode=r.mode,
-                              share=r.share, indicator_label=r.indicator_label,
-                              direction=r.effective_direction, source_id=r.source_id,
-                              source_name=r.source_name, source_version=r.source_version,
-                              reference_date=r.reference_date,
-                              source_publication_date=r.source_publication_date)
-                         for r in publication.rows if r.territory_id in members],
-            }
-
-    app.dependency_overrides[get_repository] = lambda: PublishedRepository()
-    try:
-        body = TestClient(app).get(
-            "/api/territories/commune/22001/essential-services?comparison=epci"
-        ).json()
-    finally:
-        app.dependency_overrides.clear()
-    health = next(s for s in body["services"] if s["id"] == "health")
-    assert health["modes"]["walk_transit"]["rank"] == {"position": 19, "size": 38}
-    assert health["modes"]["walk_transit"]["value"] == 0
-
-
-def test_non_commune_ranks_match_independent_r_publication():
-    from pathlib import Path
-    import pyarrow.parquet as pq
-
-    root = Path(__file__).resolve().parents[2] / "public" / "data"
-    publication = load_publication(root)
-    department_ids = [str(row["territoire"]) for row in publication.territories if row["type"] == "departement"]
-    region_ids = [str(row["territoire"]) for row in publication.territories if row["type"] == "region"]
-    assert len(department_ids) == 4 and len(region_ids) == 1
-    cases = [("epci", "200067460", "epcis-bretagne"),
-             *(("departement", code, "departements-bretagne") for code in department_ids),
-             ("region", region_ids[0], None)]
-    selected_ids = {code for _, code, _ in cases}
-    published_shares = [row for row in pq.read_table(root / "indicateurs_mobilite.parquet").to_pylist()
-                        if row["key"].startswith("share_") and str(row["territoire"]) in selected_ids]
-    for territory_type, territory_id, kind in cases:
-        class PublishedRepository:
-            def read_level(self, level, code):
-                assert (level, code) == (territory_type, territory_id)
-                return {
-                    "publication_id": publication.publication_id,
-                    "territory": {"id": code, "name": "Territory", "type": level},
-                    "scope": {"kind": kind} if kind else None,
-                    "comparison": kind is not None,
-                    "rows": [dict(territory_id=row.territory_id, service=row.service, mode=row.mode,
-                                  share=row.share, indicator_label=row.indicator_label,
-                                  direction=row.effective_direction, source_id=row.source_id,
-                                  source_name=row.source_name, source_version=row.source_version,
-                                  reference_date=row.reference_date,
-                                  source_publication_date=row.source_publication_date)
-                             for row in publication.rows if row.territory_type == level],
-                }
-
-        app.dependency_overrides[get_repository] = lambda: PublishedRepository()
-        try:
-            response = TestClient(app).get(f"/api/territories/{territory_type}/{territory_id}/essential-services")
-        finally:
-            app.dependency_overrides.clear()
-        assert response.status_code == 200
-        served = {service["id"]: service["modes"] for service in response.json()["services"]}
-        oracles = [row for row in published_shares if str(row["territoire"]) == territory_id]
-        assert len(oracles) == 15  # five pipeline-declared services × three published modes
-        for oracle in oracles:
-            service, mode_code = oracle["key"].removeprefix("share_").rsplit("_", 1)
-            mode = {"t": "walk_transit", "b": "bike", "c": "car"}[mode_code]
-            actual = served[service][mode]
-            assert actual["value"] == oracle["value"]
-            assert actual["source_version"] == oracle["vintage_version"]
-            expected_rank = (None if kind is None or oracle["rang_reg"] is None else
-                             {"position": int(oracle["rang_reg"]), "size": int(oracle["rang_reg_n"])})
-            assert actual["rank"] == expected_rank

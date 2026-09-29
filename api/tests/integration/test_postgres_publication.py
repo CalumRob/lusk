@@ -155,63 +155,11 @@ def _write_artifacts(root: Path) -> tuple[Path, Path]:
     return root, metadata
 
 
-def _current(dsn: str) -> str | None:
-    import psycopg
-    with psycopg.connect(dsn) as connection:
-        row = connection.execute(
-            "SELECT publication_id FROM dataset_publication WHERE dataset_key = 'essential_service_access'"
-        ).fetchone()
-        return row[0] if row else None
-
-
-def test_schema_import_and_public_api(db_env, monkeypatch):
-    import psycopg
-    from fastapi.testclient import TestClient
-    from psycopg_pool import ConnectionPool
-    from api import importer, main
-
-    root, metadata = db_env["artifacts"]
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        published = importer.import_publication(connection, root, metadata)
-    assert published.changed is True
-    assert _current(db_env["publish_dsn"]) == published.publication_id
-
-    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
-                          kwargs={"autocommit": True})
-    previous_override = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-    try:
-        with TestClient(main.app) as client:
-            response = client.get("/api/territories/commune/29001/essential-services?comparison=densite")
-            regional_response = client.get("/api/territories/commune/29001/essential-services?comparison=bretagne")
-        assert response.status_code == 200, response.text
-        body = response.json()
-        assert body["publication_id"] == published.publication_id
-        assert body["scope"]["member_count"] == 2
-        school = next(service for service in body["services"] if service["id"] == "school")
-        assert school["modes"]["walk_transit"]["value"] == pytest.approx(0.2)
-        assert school["modes"]["walk_transit"]["median"] == pytest.approx(0.35)
-        # Higher is better: 0.5 ranks ahead of Alpha's 0.2 in this density class.
-        assert school["modes"]["walk_transit"]["rank"] == {"position": 2, "size": 2}
-        assert school["modes"]["car"]["direction"] == "low"
-        assert school["modes"]["walk_transit"]["source_name"] == "Fixture source"
-        assert regional_response.status_code == 200, regional_response.text
-        assert regional_response.json()["scope"] == {
-            "kind": "communes-bretagne", "label": "communes bretonnes", "member_count": 3,
-        }
-    finally:
-        if previous_override is None:
-            main.app.dependency_overrides.pop(main.get_repository, None)
-        else:
-            main.app.dependency_overrides[main.get_repository] = previous_override
-        pool.close()
-
-
 def test_reader_role_cannot_insert_or_create(db_env):
     import psycopg
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         with psycopg.connect(db_env["read_dsn"], autocommit=True) as connection:
-            connection.execute("INSERT INTO dataset_publication(dataset_key,publication_id,row_count,bretagne_kind,bretagne_label) VALUES ('forbidden','x',1,'x','x')")
+            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','x',0)")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         with psycopg.connect(db_env["read_dsn"], autocommit=True) as connection:
             connection.execute("CREATE TABLE forbidden_reader_write (id integer)")
@@ -727,6 +675,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
+
 def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
     """Pause after the marker read while a second complete publication commits."""
     from contextlib import contextmanager
@@ -838,6 +787,87 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
+def test_shared_scalar_additive_migration_rehearsal(db_env):
+    """Rehearse migration 004 in an isolated schema with the pre-594 catalog."""
+    import psycopg
+
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped = _dsn_with_schema(db_env["publish_dsn"], schema)
+    api_root = Path(__file__).resolve().parents[2]
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        with psycopg.connect(scoped, autocommit=True) as connection:
+            # Model the pre-594 catalog directly. Do not start from today's
+            # fresh-install schema and reverse-engineer extensions: later
+            # profile/scalar FKs would make that teardown depend on new objects.
+            connection.execute("""
+                CREATE TABLE table_publication (
+                    table_name text PRIMARY KEY CHECK (table_name IN (
+                        'territory_reference','service_registry','essential_service_access',
+                        'building_ramp','building_grid')),
+                    content_version text NOT NULL,
+                    row_count integer NOT NULL CHECK (row_count >= 0),
+                    published_at timestamptz NOT NULL DEFAULT now()
+                );
+                CREATE TABLE territory_reference (
+                    territory_id text PRIMARY KEY,
+                    territory_type text NOT NULL,
+                    name text NOT NULL,
+                    department_id text,
+                    epci_id text,
+                    density_class_code text,
+                    density_class_label text
+                );
+            """)
+            connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
+            names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
+            assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
+            assert connection.execute("SELECT count(*) FROM territory_reference").fetchone()[0] == 0
+            connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-01','commune','Fixture')")
+            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_source','Fixture source')")
+            connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_source','v2026','2026')")
+            with connection.transaction():
+                connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
+                connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
+            with connection.transaction():
+                connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','fixture-01','commune',3.5,'measured')")
+                connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','fixture-01','fixture_source','v2026')")
+            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','migrated-reference-v1',1)")
+            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','migrated-scalar-v1',1,'migrated-reference-v1')")
+            role = urlsplit(db_env["read_dsn"]).username
+            assert role and re.fullmatch(r"[A-Za-z0-9_$-]+", role)
+            quoted_role = '"' + role.replace('"', '""') + '"'
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+
+        from fastapi.testclient import TestClient
+        from psycopg_pool import ConnectionPool
+        from api import main
+        pool = ConnectionPool(conninfo=_dsn_with_schema(db_env["read_dsn"], schema),
+                              min_size=0, max_size=1, open=True,
+                              kwargs={"autocommit": True})
+        previous = main.app.dependency_overrides.get(main.get_repository)
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+        try:
+            with TestClient(main.app) as client:
+                response = client.get("/api/territories/commune/fixture-01/indicators/fixture_scalar")
+            assert response.status_code == 200, response.text
+            assert response.json()["value"] == pytest.approx(3.5)
+            assert len(response.json()["sources"]) == 1
+            assert response.json()["content_version"] == "migrated-scalar-v1"
+        finally:
+            if previous is None:
+                main.app.dependency_overrides.pop(main.get_repository, None)
+            else:
+                main.app.dependency_overrides[main.get_repository] = previous
+            pool.close()
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
 def test_profile_and_series_migration_chain_matches_fresh_schema():
     """Rehearse existing-schema 004→006→007 and compare fresh marker contracts."""
     import psycopg
@@ -923,181 +953,132 @@ def test_profile_and_series_migration_chain_matches_fresh_schema():
                 connection.execute(f'DROP SCHEMA "{fresh_schema}" CASCADE')
 
 
-def test_failed_replacement_keeps_current_dataset(db_env, tmp_path):
-    import psycopg
-    from api import importer
-
-    root, metadata = db_env["artifacts"]
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        first = importer.import_publication(connection, root, metadata)
-        before = _current(db_env["publish_dsn"])
-
-        bad_root = tmp_path / "invalid"
-        bad_root.mkdir()
-        for source in root.iterdir():
-            (bad_root / source.name).write_bytes(source.read_bytes())
-        invalid_meta = tmp_path / "invalid.json"
-        invalid_meta.write_text(metadata.read_text(encoding="utf-8").replace('"high"', '"sideways"'), encoding="utf-8")
-        with pytest.raises(importer.ImportError):
-            importer.import_publication(connection, bad_root, invalid_meta)
-        assert _current(db_env["publish_dsn"]) == before == first.publication_id
-
-        # Force a database-side constraint failure midway through a distinct valid import.
-        changed_meta = tmp_path / "changed.json"
-        changed_meta.write_text(metadata.read_text(encoding="utf-8").replace("School access", "Schools access"), encoding="utf-8")
-        connection.execute("""CREATE FUNCTION reject_integration_rows() RETURNS trigger LANGUAGE plpgsql AS $$
-            BEGIN RAISE EXCEPTION 'integration constraint probe' USING ERRCODE = 'check_violation'; END $$""")
-        connection.execute("CREATE TRIGGER integration_constraint_probe BEFORE INSERT ON essential_service_access FOR EACH ROW EXECUTE FUNCTION reject_integration_rows()")
-        with pytest.raises(psycopg.errors.CheckViolation):
-            importer.import_publication(connection, root, changed_meta)
-        assert _current(db_env["publish_dsn"]) == before
-        assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(first.rows)
-        connection.execute("DROP TRIGGER integration_constraint_probe ON essential_service_access")
-        connection.execute("DROP FUNCTION reject_integration_rows()")
-
-        # A malformed row also demonstrates the serving schema's own CHECK constraint.
-        with pytest.raises(psycopg.errors.CheckViolation):
-            with connection.transaction():
-                connection.execute("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version) VALUES ('29001','school','plane',0.1,'x','high','x','x','x')")
-        assert _current(db_env["publish_dsn"]) == before
-
-
 def test_database_rejects_missing_service_group(db_env):
     import psycopg
 
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
-            with connection.transaction():
-                connection.execute("DELETE FROM essential_service_access WHERE territory_id = '29003'")
-                connection.execute("SELECT assert_current_dataset_complete(%s)",
-                                   (connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0],))
-        assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = '29003'").fetchone()[0] == 3
-
-
-def test_successful_replacement_keeps_only_current_rows(db_env, tmp_path):
-    import psycopg
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    from api import importer
-
-    root, metadata = db_env["artifacts"]
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        original = importer.import_publication(connection, root, metadata)
-        connection.execute("CREATE TABLE unrelated_fixture (id integer PRIMARY KEY)")
-        connection.execute("INSERT INTO unrelated_fixture VALUES (42)")
-        original_imported_at = connection.execute("SELECT imported_at FROM dataset_publication").fetchone()[0]
-        unchanged = importer.import_publication(connection, root, metadata)
-        assert unchanged.changed is False
-        assert unchanged.publication_id == original.publication_id
-        assert connection.execute("SELECT imported_at FROM dataset_publication").fetchone()[0] == original_imported_at
-        assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(original.rows)
-        # Even after replacement starts, a concurrent reader sees committed rows.
-        with pytest.raises(RuntimeError, match="rollback probe"):
-            with connection.transaction():
-                connection.execute("DELETE FROM essential_service_access")
-                with psycopg.connect(db_env["read_dsn"], autocommit=True) as reader:
-                    assert reader.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(original.rows)
-                    assert reader.execute("SELECT publication_id FROM dataset_publication").fetchone()[0] == original.publication_id
-                raise RuntimeError("rollback probe")
-        replacement_root = tmp_path / "changed"
-        replacement_root.mkdir()
-        for source in root.glob("*.parquet"):
-            (replacement_root / source.name).write_bytes(source.read_bytes())
-        facts_path = replacement_root / "indicateurs_mobilite.parquet"
-        facts = pq.read_table(facts_path).to_pylist()
-        next(row for row in facts if row["territoire"] == "29001" and row["key"] == "share_school_t")["value"] = 0.9
-        pq.write_table(pa.Table.from_pylist(facts), facts_path)
-        updated = importer.import_publication(connection, replacement_root, metadata)
-        assert updated.changed is True
-        assert updated.publication_id != original.publication_id
-        assert _current(db_env["publish_dsn"]) == updated.publication_id
-        assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(updated.rows)
-        assert connection.execute("SELECT count(*) FROM dataset_publication").fetchone()[0] == 1
-        assert connection.execute(
-            "SELECT share FROM essential_service_access WHERE territory_id = '29001' AND service = 'school' AND mode = 'walk_transit'"
-        ).fetchone()[0] == pytest.approx(0.9)
-        assert connection.execute("SELECT id FROM unrelated_fixture").fetchone()[0] == 42
-
-    from fastapi.testclient import TestClient
-    from psycopg_pool import ConnectionPool
-    from api import main
-
-    pool = ConnectionPool(conninfo=db_env["read_dsn"], min_size=0, max_size=2, open=True,
-                          kwargs={"autocommit": True})
-    previous_override = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-    try:
-        with TestClient(main.app) as client:
-            response = client.get("/api/territories/commune/29001/essential-services?comparison=densite")
-        assert response.status_code == 200, response.text
-        assert response.json()["publication_id"] == updated.publication_id
-        school = next(service for service in response.json()["services"] if service["id"] == "school")
-        assert school["modes"]["walk_transit"]["value"] == pytest.approx(0.9)
-        assert school["modes"]["walk_transit"]["median"] == pytest.approx(0.7)
-        assert school["modes"]["walk_transit"]["rank"] == {"position": 1, "size": 2}
-        assert school["modes"]["walk_transit"]["source_version"] == "2026-01"
-    finally:
-        if previous_override is None:
-            main.app.dependency_overrides.pop(main.get_repository, None)
-        else:
-            main.app.dependency_overrides[main.get_repository] = previous_override
-        pool.close()
-
-
-@pytest.mark.parametrize("legacy_file", ["legacy_initial_schema.sql", "legacy_schema.sql"])
-def test_legacy_migration_is_scoped_atomic_and_republishable(db_env, legacy_file):
-    """Rehearse both known legacy layouts in disposable schemas, never public."""
-    import psycopg
-    from api import importer
-
     schema = "it_" + uuid.uuid4().hex[:20]
-    legacy = _dsn_with_schema(db_env["publish_dsn"], schema)
-    root = Path(__file__).resolve().parent
-    api_root = root.parents[1]
-    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
-        connection.execute(f'CREATE SCHEMA "{schema}"')
+    scoped = _dsn_with_schema(db_env["publish_dsn"], schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    created = False
     try:
-        with psycopg.connect(legacy, autocommit=True) as connection:
-            connection.execute((root / legacy_file).read_text(encoding="utf-8"))
-            connection.execute("CREATE TABLE unrelated_data (id integer PRIMARY KEY)")
-            connection.execute("INSERT INTO unrelated_data VALUES (42)")
-            connection.execute("INSERT INTO import_publication (publication_id, status) VALUES ('old', 'validated')")
-            connection.execute("INSERT INTO territory_reference (publication_id, territory_id, territory_type, name) VALUES ('old','29001','commune','Old')")
+        with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+        with psycopg.connect(scoped, autocommit=True) as connection:
+            connection.execute(schema_path.read_text(encoding="utf-8"), prepare=False)
+            connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-29003','commune','Gamma')")
+            connection.execute("INSERT INTO service_registry(service) VALUES ('school')")
             connection.execute("""INSERT INTO essential_service_access
-                (publication_id, territory_id, service, mode, indicator_label, effective_direction,
-                 source_id, source_name, source_version)
-                VALUES ('old','29001','school','car','Old','high','old','Old','old')""")
-
-            migration = (api_root / "migrations" / "001_replace_versioned_access.sql").read_text(encoding="utf-8")
-            fresh = (api_root / "schema.sql").read_text(encoding="utf-8")
-            if legacy_file == "legacy_initial_schema.sql":
-                connection.execute("CREATE TABLE publication_service_registry (service text)")
-                with pytest.raises(psycopg.errors.RaiseException, match="unexpected partial legacy access schema"):
-                    with connection.transaction():
-                        connection.execute(migration)
-                        connection.execute(fresh)
-                assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 1
-                connection.execute("DROP TABLE publication_service_registry")
-            # Unrelated dependent objects must abort the complete transaction,
-            # rather than being silently dropped by CASCADE.
-            connection.execute("CREATE TABLE unrelated_dependent (publication_id text REFERENCES import_publication)")
-            with pytest.raises(psycopg.errors.DependentObjectsStillExist):
+                (territory_id,service,mode,share,indicator_label,effective_direction,
+                 source_id,source_name,source_version)
+                VALUES ('fixture-29003','school','walk_transit',0.2,'School access','high','fixture','Fixture source','2026-01'),
+                       ('fixture-29003','school','bike',0.5,'School access','high','fixture','Fixture source','2026-01'),
+                       ('fixture-29003','school','car',0.8,'School access','low','fixture','Fixture source','2026-01')""")
+            connection.execute("SELECT assert_current_dataset_complete(3)")
+            with pytest.raises(psycopg.errors.RaiseException, match="incomplete essential-service dataset"):
                 with connection.transaction():
-                    connection.execute(migration)
-                    connection.execute(fresh)
-            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 1
-            connection.execute("DROP TABLE unrelated_dependent")
-
-            with connection.transaction():
-                connection.execute(migration)
-                connection.execute(fresh)
-            assert connection.execute("SELECT id FROM unrelated_data").fetchone()[0] == 42
-            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == 0
-            artifacts, metadata = db_env["artifacts"]
-            published = importer.import_publication(connection, artifacts, metadata)
-            assert _current(legacy) == published.publication_id
-            assert connection.execute("SELECT count(*) FROM essential_service_access").fetchone()[0] == len(published.rows)
+                    connection.execute("DELETE FROM essential_service_access WHERE territory_id = 'fixture-29003'")
+                    connection.execute("SELECT assert_current_dataset_complete(0)")
+            assert connection.execute("SELECT count(*) FROM essential_service_access WHERE territory_id = 'fixture-29003'").fetchone()[0] == 3
+            assert {row[0] for row in connection.execute(
+                "SELECT mode FROM essential_service_access WHERE territory_id = 'fixture-29003'").fetchall()} == {
+                    "walk_transit", "bike", "car",
+                }
     finally:
-        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_migration_009_rehearses_guarded_retirement_in_owned_random_schema():
+    """Run the actual script only in the explicitly named disposable contract DB."""
+    configured = os.environ.get("LUSK_TEST_PUBLISH_DSN")
+    read_dsn = os.environ.get("LUSK_TEST_READ_DSN")
+    if not configured or not read_dsn:
+        pytest.skip("requires explicit publish/read disposable PostgreSQL DSNs")
+    parts = urlsplit(configured)
+    if parts.path.lstrip("/") != "lusk_it_contract":
+        pytest.skip("migration 009 rehearsal is restricted to lusk_it_contract")
+    read_parts = urlsplit(read_dsn)
+    if (read_parts.path.lstrip("/") != "lusk_it_contract"
+            or parts.hostname != read_parts.hostname or parts.port != read_parts.port
+            or parts.username == read_parts.username):
+        pytest.fail("migration rehearsal requires distinct publisher/reader roles on the same lusk_it_contract server")
+    psycopg = pytest.importorskip("psycopg")
+    migration = (Path(__file__).resolve().parents[2] / "migrations" /
+                 "009_retire_dataset_publication.sql").read_text(encoding="utf-8")
+    schema = "it_" + uuid.uuid4().hex[:20]
+    reader_dsn = _dsn_with_schema(read_dsn, schema)
+
+    def seed(connection, *, extra_column=False, dependent=False):
+        columns = "dataset_key text PRIMARY KEY, publication_id text NOT NULL, row_count integer NOT NULL, bretagne_kind text NOT NULL, bretagne_label text NOT NULL, imported_at timestamptz NOT NULL"
+        if extra_column:
+            columns += ", unexpected text"
+        connection.execute(f"CREATE TABLE dataset_publication ({columns})")
+        connection.execute("INSERT INTO dataset_publication VALUES ('legacy','old',1,'kind','label',now()" + (",'unknown'" if extra_column else "") + ")")
+        connection.execute("CREATE TABLE table_publication (table_name text PRIMARY KEY, content_version text NOT NULL)")
+        connection.execute("INSERT INTO table_publication VALUES ('territory_reference','active-v1')")
+        connection.execute("CREATE TABLE territory_reference (territory_id text PRIMARY KEY)")
+        connection.execute("INSERT INTO territory_reference VALUES ('fixture')")
+        if dependent:
+            connection.execute("CREATE TABLE legacy_dependent (dataset_key text REFERENCES dataset_publication(dataset_key))")
+            connection.execute("INSERT INTO legacy_dependent VALUES ('legacy')")
+
+    def run(connection):
+        connection.execute("SELECT set_config('lusk.migration_009_rehearsal_schema', %s, false)", (schema,))
+        try:
+            connection.execute(migration, prepare=False)
+        except Exception:
+            connection.execute("ROLLBACK")
+            raise
+
+    with psycopg.connect(configured, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}" AUTHORIZATION CURRENT_USER')
+        try:
+            connection.execute(f'SET search_path TO "{schema}"')
+            read_role = urlsplit(read_dsn).username
+            if not read_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", read_role):
+                pytest.fail("Read DSN must identify a simple PostgreSQL role name")
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
+            seed(connection, extra_column=True)
+            with pytest.raises(psycopg.errors.RaiseException, match="unexpected dataset_publication columns"):
+                run(connection)
+            assert connection.execute("SELECT publication_id FROM dataset_publication").fetchone()[0] == "old"
+            connection.execute("DROP TABLE dataset_publication, table_publication, territory_reference")
+
+            seed(connection, dependent=True)
+            connection.execute(f'GRANT SELECT ON table_publication, territory_reference TO "{read_role}"')
+            with pytest.raises(psycopg.errors.DependentObjectsStillExist):
+                run(connection)
+            assert connection.execute("SELECT publication_id FROM dataset_publication").fetchone()[0] == "old"
+            assert connection.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
+            assert connection.execute("SELECT territory_id FROM territory_reference").fetchone()[0] == "fixture"
+            with psycopg.connect(reader_dsn, autocommit=True) as reader:
+                assert reader.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    reader.execute("UPDATE table_publication SET content_version='forbidden'")
+            connection.execute("DROP TABLE legacy_dependent")
+
+            run(connection)
+            assert connection.execute("SELECT to_regclass('dataset_publication')").fetchone()[0] is None
+            assert connection.execute("SELECT content_version FROM table_publication").fetchone()[0] == "active-v1"
+            assert connection.execute("SELECT territory_id FROM territory_reference").fetchone()[0] == "fixture"
+            # Schema-level simulation of the supported per-table publication
+            # contract (not execution of the R publisher): replace a reference
+            # fact and its marker together, then verify the read-only role sees
+            # only the committed new version and fact.
+            with connection.transaction():
+                connection.execute("UPDATE territory_reference SET territory_id='fixture-v2' WHERE territory_id='fixture'")
+                connection.execute("UPDATE table_publication SET content_version='active-v2' WHERE table_name='territory_reference'")
+            with psycopg.connect(reader_dsn, autocommit=True) as reader:
+                published = reader.execute("""SELECT p.content_version, t.territory_id
+                    FROM table_publication p JOIN territory_reference t ON true
+                    WHERE p.table_name='territory_reference'""").fetchone()
+                assert published == ("active-v2", "fixture-v2")
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    reader.execute("UPDATE table_publication SET content_version='forbidden'")
+            with pytest.raises(psycopg.errors.RaiseException, match="expected .*dataset_publication"):
+                run(connection)
+        finally:
+            connection.execute("RESET search_path")
+            connection.execute(f'DROP SCHEMA "{schema}" CASCADE')

@@ -47,20 +47,11 @@ allow cleanup of only that run's schema, set
 `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. Cleanup never targets `public`, tables, or
 another schema. Unset all `LUSK_TEST_*` variables after verification.
 
-The fixture writes tiny canonical Parquet artifacts and a matching
-pipeline-shaped metadata descriptor locally in pytest's temporary directory;
-it does not read production artifacts. Checks run the importer and public HTTP
-API seam against PostgreSQL, including rank, median, scope and provenance. Any
-query timing (if added later) is strictly local to this explicitly provided test
-database and is not a Pi or deployment performance claim.
-
-The migration rehearsal uses a *second* unique test schema in the same disposable
-database. `legacy_initial_schema.sql` is the frozen four-table schema actually
-deployed on the Pi; `legacy_schema.sql` is the later six-table schema committed
-before the single-dataset redesign. Both variants are tested. The test checks
-that a partial/unknown schema or unexpected dependent object aborts the whole
-migration, an unrelated table survives, and canonical Parquet can repopulate
-the new tables. The live `lusk` schema is never involved.
+The current PostgreSQL integration tests exercise database-backed serving,
+publication contracts, and guarded migration rehearsals against an explicitly
+provided disposable database. They do not invoke the retired Python importer or
+read production artifacts. The `legacy_*.sql` files below are historical schema
+references; the current suite does not rehearse those importer-era layouts.
 
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
@@ -164,11 +155,12 @@ lineage and independent markers, grid ordinal mapping, no-op republish,
 DB-behind retry, and rollback of facts/descriptors/markers after injected
 replacement failure. It uses no pipeline raw/processed data.
 
-The shared-scalar migration/read tests are selected with
-`-k shared_scalar`. Several older importer integration cases in this module
-still assert the retired `dataset_publication` fixture even though the current
-fresh schema uses independent `table_publication` markers and intentionally
-rejects the legacy importer. Do not make the legacy importer writable again to
-green those tests. Their fixture isolation/rehearsal needs a separate follow-up;
-the scalar tests use the current schema and disposable namespace described
-above.
+The shared-scalar migration/read tests are selected with `-k shared_scalar`.
+Run the guarded migration rehearsal with `-k migration_009`; the configured
+publisher and reader DSNs must both target `lusk_it_contract`. The test creates
+and cleans up a random `it_*` schema only. After the actual retirement script,
+it simulates a supported per-table fact/marker transaction in that schema and
+checks the read-only role sees its committed update; this is schema-level
+contract evidence, not a run of the R publisher. The operator must still perform
+the separate restored-database rehearsal and approval in
+`api/migrations/README.md` before any live migration.
