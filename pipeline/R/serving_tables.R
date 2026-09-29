@@ -104,9 +104,26 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
     if (any(as.character(d$version)!=as.character(v$version)) || any(as.character(d$source)!=as.character(v$source)) || any(as.character(d$date_reference)!=as.character(v$date_reference)) || any(as.character(d$date_publication)!=as.character(v$date_publication))) abort("Provenance bâtimentière incohérente.")
   }
   check_prov(ramp); check_prov(grid)
+  building_sources <- unique(rbind(
+    data.frame(source_id=as.character(ramp$source_id), source_name=as.character(ramp$source),
+      vintage_id=as.character(ramp$version), reference_date=as.character(ramp$date_reference),
+      publication_date=as.character(ramp$date_publication), stringsAsFactors=FALSE),
+    data.frame(source_id=as.character(grid$source_id), source_name=as.character(grid$source),
+      vintage_id=as.character(grid$version), reference_date=as.character(grid$date_reference),
+      publication_date=as.character(grid$date_publication), stringsAsFactors=FALSE)
+  ))
   ramp <- ramp[order(ramp$type,ramp$territoire,ramp$mode,ramp$quantile,na.last=TRUE),,drop=FALSE]
   ramp$quantile_index <- ifelse(is.na(ramp$quantile), -1L, as.integer(round(ramp$quantile*10)))
-  grid <- grid[order(grid$type,grid$territoire,grid$breadth_bucket,grid$depth_bucket,na.last=TRUE),,drop=FALSE]
+  breadth_order <- match(as.character(grid$breadth_bucket),
+                         DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key)
+  depth_order <- match(as.character(grid$depth_bucket),
+                       DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key)
+  complete_grid <- grid$availability == "complete"
+  if (any(complete_grid & (is.na(breadth_order) | is.na(depth_order)))) {
+    abort("Grid cell is missing from declared axes.")
+  }
+  grid <- grid[order(grid$type, grid$territoire, breadth_order, depth_order,
+                     na.last=TRUE),,drop=FALSE]
   grid$cell_index <- ave(seq_len(nrow(grid)), interaction(grid$type,grid$territoire, drop=TRUE), FUN=function(i) seq_along(i)-1L)
   grid$cell_index[grid$availability=="absent"] <- -1L
   ramp_table <- data.frame(territory_id=as.character(ramp$territoire),territory_type=as.character(ramp$type),availability=as.character(ramp$availability),mode=as.character(ramp$mode),quantile_index=ramp$quantile_index,quantile=as.numeric(ramp$quantile),accessible_types=as.numeric(ramp$accessible_types),total_buildings=as.integer(ramp$total_buildings),source_id=as.character(ramp$source_id),source_version=as.character(ramp$version),effective_direction=direction,stringsAsFactors=FALSE)
@@ -119,10 +136,51 @@ preparer_tables_service <- function(sortie = "public/data", metadata_path = NULL
   denoms <- tapply(complete$total_buildings, complete_key, unique)
   if (any(sums != denoms[names(sums)])) abort("Cellules de grille ne recomposent pas le total.")
   tables <- list(territory_reference=refs[c("territory_id","territory_type","name","department_id","epci_id","density_class_code","density_class_label")], service_registry=registry, essential_service_access=access[c("territory_id","service","mode","share","indicator_label","effective_direction","source_id","source_name","source_version","reference_date","source_publication_date")], building_ramp=ramp_table, building_grid=grid_table)
-  versions <- versions_tables_service(tables, scope, meta$building_comparison)
+  # The physical tables remain dedicated evidence grains. Their descriptors
+  # are versioned with their own facts so a change to axis/weighting semantics
+  # cannot leave an apparently current marker behind.
+  building_contract <- contrat_publication_batiments(meta$building_comparison)
+  for (n in names(building_contract)) {
+    source_ids <- unique(as.character(tables[[n]]$source_id))
+    provenance <- building_sources[building_sources$source_id %in% source_ids, , drop=FALSE]
+    provenance <- provenance[order(provenance$source_id, provenance$vintage_id), , drop=FALSE]
+    rownames(provenance) <- NULL
+    building_contract[[n]]$provenance <- provenance
+  }
+  versions <- versions_tables_service(tables, scope, building_contract)
   list(tables=tables, versions=versions, access_scope=scope,
+       building_contract=building_contract, building_sources=building_sources,
        scalar_access=scalar_access, scalar_metadata=meta,
        scalar_eligible_territories=refs[c("territory_id", "territory_type")])
+}
+
+contrat_publication_batiments <- function(comparison) {
+  if (!identical(comparison$statistic, "mean") ||
+      !comparison$direction %in% c("high", "low")) {
+    stop("M\u00e9tadonn\u00e9es building_comparison invalides.", call. = FALSE)
+  }
+  list(
+    building_ramp = list(
+      shape = "building_ramp", modes = as.character(RAMPE_ACCES_BATIMENTS_MODES$mode),
+      positions = as.numeric(RAMPE_ACCES_BATIMENTS_QUANTILES),
+      territory_levels = c("commune", "epci", "departement", "region"),
+      axes = list(mode = as.character(RAMPE_ACCES_BATIMENTS_MODES$mode),
+                  quantile = as.numeric(RAMPE_ACCES_BATIMENTS_QUANTILES)),
+      denominator = "total_buildings", peer_statistic = "building_count_weighted_mean",
+      absent = "explicit_absent_sentinel", direction = comparison$direction
+    ),
+    building_grid = list(
+      shape = "building_grid", mode = DISTRIBUTION_ACCES_BATIMENTS_MODE,
+      breadth_bins = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
+      depth_bins = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key,
+      territory_levels = c("commune", "epci", "departement", "region"),
+      axes = list(mode = DISTRIBUTION_ACCES_BATIMENTS_MODE,
+                  breadth = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
+                  depth = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key),
+      denominator = "total_buildings", peer_statistic = "pooled_building_counts",
+      absent = "explicit_absent_sentinel"
+    )
+  )
 }
 
 versions_tables_service <- function(tables, access_scope, building_comparison) {
@@ -133,5 +191,5 @@ versions_tables_service <- function(tables, access_scope, building_comparison) {
   }
   vapply(names(tables), function(n) hash(tables[[n]],
     if(n=="essential_service_access") access_scope else
-      if(n=="building_ramp") building_comparison else NULL), character(1))
+      if(n %in% c("building_ramp", "building_grid")) building_comparison[[n]] else NULL), character(1))
 }
