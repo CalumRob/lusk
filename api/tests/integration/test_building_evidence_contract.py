@@ -128,7 +128,7 @@ def _publish_fixture(connection, version: str):
         for index in range(11):
             connection.execute("""INSERT INTO building_ramp VALUES
               ('A','commune','complete',%s,%s,%s,%s,2,'snapshot','v1','high')""",
-              (mode, index, index / 10, index / 5))
+              (mode, index, 0.1 + 0.2 if index == 3 else index / 10, index / 5))
     breadth = _contracts()["building_grid"]["axes"]["breadth"]
     depth = _contracts()["building_grid"]["axes"]["depth"]
     for i, b in enumerate(breadth):
@@ -153,6 +153,7 @@ def test_building_descriptor_constraints_and_atomic_refresh(building_db_env, lay
     api_root = Path(__file__).resolve().parents[2]
     schema_sql = (api_root / "schema.sql").read_text(encoding="utf-8")
     migration_sql = (api_root / "migrations" / "008_building_evidence_contract.sql").read_text(encoding="utf-8")
+    correction_sql = (api_root / "migrations" / "010_building_quantile_float_tolerance.sql").read_text(encoding="utf-8")
     created = False
     try:
         with psycopg.connect(building_db_env["publish_dsn"], autocommit=True) as connection:
@@ -166,10 +167,22 @@ def test_building_descriptor_constraints_and_atomic_refresh(building_db_env, lay
                 connection.execute(_previous_layout_sql())
                 _create_prior_publication(connection)
                 old_markers = connection.execute("SELECT table_name,content_version FROM table_publication ORDER BY table_name").fetchall()
-                connection.execute(migration_sql)
+                # The live installation has the original 008 trigger, which rejects
+                # R's 0.30000000000000004 even though its axis is declared as 0.3.
+                original_008 = migration_sql.replace(
+                    "NOT COALESCE(abs(NEW.quantile - (expected_quantile #>> '{}')::double precision) <= 1e-12, false)",
+                    "NEW.quantile IS DISTINCT FROM (expected_quantile #>> '{}')::double precision",
+                )
+                assert original_008 != migration_sql
+                connection.execute(original_008)
                 assert connection.execute("SELECT table_name,content_version FROM table_publication ORDER BY table_name").fetchall() == old_markers
                 # NOT VALID FKs intentionally leave this historic row unvalidated/readable.
                 assert connection.execute("SELECT count(*) FROM building_ramp").fetchone()[0] == 1
+                with pytest.raises(psycopg.errors.RaiseException, match="ramp point is outside its declared axes"):
+                    with connection.transaction():
+                        _publish_fixture(connection, "pre-correction")
+                assert connection.execute("SELECT table_name,content_version FROM table_publication ORDER BY table_name").fetchall() == old_markers
+                connection.execute(correction_sql)
 
             _publish_fixture(connection, "good")
             assert connection.execute("""SELECT table_name,content_version FROM table_publication
@@ -180,6 +193,8 @@ def test_building_descriptor_constraints_and_atomic_refresh(building_db_env, lay
             bad_rows = [
                 ("quantile", "DELETE FROM building_ramp WHERE territory_id='A' AND mode='c' AND quantile_index=1",
                  "INSERT INTO building_ramp VALUES ('A','commune','complete','c',1,0.15,0.3,2,'snapshot','v1','high')"),
+                ("off-axis quantile", "DELETE FROM building_ramp WHERE territory_id='A' AND mode='c' AND quantile_index=3",
+                 "INSERT INTO building_ramp VALUES ('A','commune','complete','c',3,0.3001,0.3,2,'snapshot','v1','high')"),
                 ("mode", None,
                  "INSERT INTO building_ramp VALUES ('A','commune','complete','x',10,1,2,2,'snapshot','v1','high')"),
                 ("source", None,

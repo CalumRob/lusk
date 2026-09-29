@@ -49,7 +49,8 @@ BEGIN
     expected_quantile := descriptor->'axes'->'quantile'->(NEW.quantile_index::integer);
     IF NOT COALESCE(descriptor->'axes'->'mode' ? NEW.mode, false)
        OR expected_quantile IS NULL OR expected_quantile = 'null'::jsonb
-       OR NEW.quantile IS DISTINCT FROM (expected_quantile #>> '{}')::double precision
+       -- R can emit 0.30000000000000004 for the declared 0.3 position.
+       OR NOT COALESCE(abs(NEW.quantile - (expected_quantile #>> '{}')::double precision) <= 1e-12, false)
        OR NEW.effective_direction IS DISTINCT FROM (descriptor->>'direction') THEN
       RAISE EXCEPTION 'ramp point is outside its declared axes';
     END IF;

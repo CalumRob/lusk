@@ -1,3 +1,16 @@
+# Migration 010: building ramp floating-point correction
+
+The original 008 trigger compared the R-published `double precision` quantile
+exactly with its JSON descriptor. R can publish `0.30000000000000004` for the
+declared `0.3` axis; the first live publication failed and rolled back without
+changing building markers. Migration 010 replaces only the trigger function,
+allowing representation noise of at most `1e-12` while rejecting real off-axis
+values. It does not change rows, markers, grants or reader flags. Fresh installs
+and future 008 applications use the same corrected predicate. On 2026-09-29,
+010 was applied to `lusk.public` before a successful building/scalar publication;
+the two building source-vintage FKs were then validated. Migration 009 was not
+applied.
+
 # Migration 009 operator procedure
 
 Migration 009 is reserved for issue #600 and is **not** part of fresh-install
