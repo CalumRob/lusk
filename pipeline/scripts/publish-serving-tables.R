@@ -8,12 +8,31 @@ pkgload::load_all(".", quiet = TRUE)
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
-                                               "--scalar-fixture-check", "--scalar-fixture-publish",
-                                               "--series-fixture-check", "--series-fixture-publish")) {
-  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish (from pipeline/)",
+                                                "--scalar-fixture-check", "--scalar-fixture-publish",
+                                                "--series-fixture-check", "--series-fixture-publish",
+                                                "--series-check", "--series-publish")) {
+  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish|--series-check|--series-publish (from pipeline/)",
        call. = FALSE)
 }
-if (args[[1L]] %in% c("--series-fixture-check", "--series-fixture-publish")) {
+if (args[[1L]] %in% c("--series-check", "--series-publish")) {
+  projection <- read_conso_enaf_series_projection(file.path("..", "public", "data"))
+  version <- scalar_content_version(projection)
+  cat("Validated canonical conso_enaf_annuel:", nrow(projection$points), "rows; version", version,
+      "; comparison", projection$descriptor$comparison_point,
+      "; source", projection$descriptor$source_id, "; vintage", projection$descriptor$vintage_id, "\n")
+  if (args[[1L]] == "--series-publish") {
+    require_series_publish_opt_in()
+    config <- configuration_service_postgres()
+    connection <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
+    registry <- register_conso_enaf_series_publisher(list(),
+      jsonlite::read_json("inst/extdata/theme-metadata/theme_milieux.json", simplifyVector=FALSE))
+    result <- tryCatch(publish_registered_series(registry, "conso_enaf_annuel",
+      list(indicateurs=nanoparquet::read_parquet(file.path("..", "public", "data", "indicateurs_milieux.parquet"))),
+      series_postgres_adapter(connection)), finally=DBI::dbDisconnect(connection))
+    cat("Publication:", if (result$changed || result$rebound) "updated" else "no-op",
+        "; content version", result$content_version, "\n")
+  }
+} else if (args[[1L]] %in% c("--series-fixture-check", "--series-fixture-publish")) {
   canonical <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json("inst/extdata/theme-metadata/theme_milieux.json", simplifyVector=FALSE)
   registry <- register_conso_enaf_series_publisher(list(), metadata)

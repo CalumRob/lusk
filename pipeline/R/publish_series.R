@@ -69,6 +69,36 @@ project_conso_enaf_series <- function(payload, metadata) {
   list(points=points, descriptor=descriptor, dataset_name=source_record$dataset, vintage=vintage)
 }
 
+# Production entry point: the canonical build has already written these Parquets
+# and the descriptor snapshot. This deliberately does not invoke fixture builders
+# or recompute indicator values.
+read_conso_enaf_series_projection <- function(sortie = "../public/data",
+                                              metadata_path = "inst/extdata/theme-metadata/theme_milieux.json") {
+  parquet <- file.path(sortie, "indicateurs_milieux.parquet")
+  vintages_path <- file.path(sortie, "vintages.parquet")
+  if (!file.exists(parquet) || !file.exists(vintages_path))
+    stop("Canonical Milieux indicator/vintage Parquet is missing", call.=FALSE)
+  indicators <- nanoparquet::read_parquet(parquet)
+  vintages <- nanoparquet::read_parquet(vintages_path)
+  metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
+  projection <- project_conso_enaf_series(list(indicateurs=indicators), metadata)
+  source <- projection$descriptor$source_id
+  record <- vintages[as.character(vintages$id) == source, , drop=FALSE]
+  if (nrow(record) != 1L) stop("Canonical vintage Parquet must declare exactly one source vintage", call.=FALSE)
+  expected <- projection$vintage
+  if (!identical(as.character(record$version[[1L]]), as.character(expected$version[[1L]])) ||
+      !identical(as.character(record$date_reference[[1L]]), as.character(expected$reference_date[[1L]])) ||
+      !identical(as.character(record$date_publication[[1L]]), as.character(expected$publication_date[[1L]])))
+    stop("Series provenance differs from canonical vintage Parquet", call.=FALSE)
+  projection
+}
+
+require_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_SERIES", unset="")) {
+  if (!identical(value, "1"))
+    stop("Real series publication requires explicit LUSK_PUBLISH_SERIES=1", call.=FALSE)
+  invisible(TRUE)
+}
+
 register_conso_enaf_series_publisher <- function(registry, metadata) {
   register_series_publisher(registry, "conso_enaf_annuel",
     project=function(canonical) project_conso_enaf_series(canonical, metadata),

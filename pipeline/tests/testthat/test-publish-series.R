@@ -63,6 +63,36 @@ test_that("conso ENAF projection follows canonical facts and descriptor-selected
   expect_true(all(projection$points$axis_value %in% projection$descriptor$axis_values))
 })
 
+test_that("production series input is projected from the canonical Parquet and metadata", {
+  root <- testthat::test_path("../../../public/data")
+  metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
+  projection <- read_conso_enaf_series_projection(root, metadata_path)
+  canonical <- nanoparquet::read_parquet(file.path(root, "indicateurs_milieux.parquet"))
+  metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
+  selected <- canonical[canonical$key == "conso_enaf_annuel" &
+    canonical$detail %in% metadata$indicator_pages$conso_enaf_annuel$comparison$details &
+    canonical$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
+  expect_gt(nrow(projection$points), 0L)
+  expect_equal(nrow(projection$points), nrow(selected))
+  expect_identical(projection$descriptor$comparison_point,
+    as.character(metadata$indicator_pages$conso_enaf_annuel$comparison$detail))
+  expect_setequal(paste(projection$points$territory_id, projection$points$axis_value),
+    paste(selected$territoire, as.character(selected$detail)))
+  expect_equal(projection$points$value,
+    selected$value[match(paste(projection$points$territory_id, projection$points$axis_value),
+      paste(selected$territoire, as.character(selected$detail)))])
+  expect_identical(projection$points$vintage_id,
+    paste(as.character(selected$vintage_version[match(paste(projection$points$territory_id,
+      projection$points$axis_value), paste(selected$territoire, as.character(selected$detail)))]),
+      selected$vintage_date_reference[match(paste(projection$points$territory_id,
+        projection$points$axis_value), paste(selected$territoire, as.character(selected$detail)))], sep="/"))
+  expect_true(all(projection$points$source_id == "consoenaf"))
+  expect_true(all(projection$points$observation_period == projection$points$axis_value))
+  expect_error(require_series_publish_opt_in(""), "explicit LUSK_PUBLISH_SERIES=1")
+  expect_error(require_series_publish_opt_in("0"), "explicit LUSK_PUBLISH_SERIES=1")
+  expect_invisible(require_series_publish_opt_in("1"))
+})
+
 test_that("registered series publication is atomic, idempotent and rollback-safe", {
   descriptor <- list(indicator_id="fixture_series", axis_kind="year", axis_values="2020",
     completeness="may_be_missing", comparison_point="2020", label="fixture", unit="ha",
