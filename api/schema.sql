@@ -3,13 +3,44 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT scalar_publication_requires_reference
-      CHECK (table_name <> 'scalar_observation' OR reference_content_version IS NOT NULL)
+    CONSTRAINT shared_fact_publication_requires_reference
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL)
+);
+
+-- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
+-- ordered axis declarations are persisted with the independently versioned
+-- profile table; observations remain one row per coordinate, never JSON blobs.
+CREATE TABLE profile_descriptor (
+    indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    label text NOT NULL, unit text NOT NULL, allowed_levels text[] NOT NULL,
+    completeness text NOT NULL CHECK (completeness = 'dense_complete'),
+    descriptor_version text NOT NULL, comparison_detail text NOT NULL,
+    comparison_sex text NOT NULL, comparison_direction text NOT NULL CHECK(comparison_direction IN ('high','low','none'))
+);
+CREATE TABLE profile_axis (
+    indicator_id text NOT NULL REFERENCES profile_descriptor(indicator_id) ON DELETE CASCADE,
+    axis_name text NOT NULL CHECK (axis_name IN ('detail','sex')),
+    axis_key text NOT NULL, label text NOT NULL, ordinal integer NOT NULL CHECK (ordinal >= 0),
+    PRIMARY KEY (indicator_id, axis_name, axis_key),
+    UNIQUE (indicator_id, axis_name, ordinal)
+);
+CREATE TABLE profile_observation (
+    indicator_id text NOT NULL REFERENCES profile_descriptor(indicator_id),
+    territory_id text NOT NULL, territory_type text NOT NULL,
+    detail_key text NOT NULL, sex_key text NOT NULL,
+    detail_axis_name text NOT NULL DEFAULT 'detail' CHECK(detail_axis_name='detail'),
+    sex_axis_name text NOT NULL DEFAULT 'sex' CHECK(sex_axis_name='sex'),
+    value double precision, status text NOT NULL CHECK (status IN ('measured','not_available','suppressed','unsupported')),
+    PRIMARY KEY (indicator_id, territory_id, detail_key, sex_key),
+    FOREIGN KEY (indicator_id,detail_axis_name,detail_key) REFERENCES profile_axis(indicator_id,axis_name,axis_key),
+    FOREIGN KEY (indicator_id,sex_axis_name,sex_key) REFERENCES profile_axis(indicator_id,axis_name,axis_key),
+    CHECK ((status='measured') = (value IS NOT NULL)),
+    CHECK (value IS NULL OR value NOT IN ('Infinity'::double precision, '-Infinity'::double precision, 'NaN'::double precision))
 );
 
 -- Shared scalar foundation. Descriptors own the allowed territory levels and
@@ -25,6 +56,21 @@ CREATE TABLE source_vintage (
     reference_date date,
     publication_date date,
     PRIMARY KEY (source_id, vintage_id)
+);
+CREATE TABLE profile_descriptor_source (
+    indicator_id text NOT NULL REFERENCES profile_descriptor(indicator_id) ON DELETE CASCADE,
+    source_id text NOT NULL REFERENCES source_dataset(source_id),
+    PRIMARY KEY(indicator_id, source_id)
+);
+CREATE TABLE profile_observation_source (
+    indicator_id text NOT NULL, territory_id text NOT NULL,
+    detail_key text NOT NULL, sex_key text NOT NULL,
+    source_id text NOT NULL, vintage_id text NOT NULL,
+    PRIMARY KEY(indicator_id,territory_id,detail_key,sex_key,source_id,vintage_id),
+    FOREIGN KEY(indicator_id,territory_id,detail_key,sex_key)
+      REFERENCES profile_observation(indicator_id,territory_id,detail_key,sex_key) ON DELETE CASCADE,
+    FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+    FOREIGN KEY(indicator_id,source_id) REFERENCES profile_descriptor_source(indicator_id,source_id)
 );
 CREATE TABLE scalar_descriptor (
     indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
@@ -79,6 +125,20 @@ CREATE TABLE territory_reference (
     density_class_code text,
     density_class_label text
 );
+ALTER TABLE profile_observation ADD CONSTRAINT profile_observation_territory_reference
+  FOREIGN KEY (territory_id) REFERENCES territory_reference(territory_id);
+CREATE FUNCTION assert_profile_territory_level() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM profile_descriptor d WHERE d.indicator_id=NEW.indicator_id
+      AND NEW.territory_type=ANY(d.allowed_levels)) OR NOT EXISTS (
+      SELECT 1 FROM territory_reference t WHERE t.territory_id=NEW.territory_id
+        AND t.territory_type=NEW.territory_type) THEN
+    RAISE EXCEPTION 'profile descriptor/territory level mismatch';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER profile_territory_level BEFORE INSERT OR UPDATE ON profile_observation
+  FOR EACH ROW EXECUTE FUNCTION assert_profile_territory_level();
 
 CREATE TABLE scalar_observation (
     indicator_id text NOT NULL REFERENCES scalar_descriptor(indicator_id),
@@ -162,6 +222,28 @@ FOR EACH ROW EXECUTE FUNCTION assert_scalar_territory_update();
 
 CREATE TABLE service_registry (service text PRIMARY KEY);
 
+CREATE TABLE building_evidence_descriptor (
+    table_name text PRIMARY KEY CHECK (table_name IN ('building_ramp','building_grid')),
+    descriptor_version text NOT NULL,
+    contract jsonb NOT NULL CHECK (jsonb_typeof(contract)='object'),
+    CHECK (COALESCE((table_name='building_ramp' AND contract->>'shape'='building_ramp'
+            AND contract->>'peer_statistic'='building_count_weighted_mean'
+            AND jsonb_array_length(contract->'territory_levels')=4
+            AND jsonb_array_length(contract->'axes'->'mode')=3
+            AND jsonb_array_length(contract->'axes'->'quantile')=11), false) OR
+           COALESCE((table_name='building_grid' AND contract->>'shape'='building_grid'
+            AND contract->>'peer_statistic'='pooled_building_counts'
+            AND jsonb_array_length(contract->'territory_levels')=4
+            AND jsonb_typeof(contract->'axes'->'mode')='string'
+            AND jsonb_array_length(contract->'axes'->'breadth')=5
+            AND jsonb_array_length(contract->'axes'->'depth')=6), false))
+);
+CREATE TABLE building_evidence_descriptor_source (
+    table_name text NOT NULL REFERENCES building_evidence_descriptor(table_name) ON DELETE CASCADE,
+    source_id text NOT NULL REFERENCES source_dataset(source_id),
+    PRIMARY KEY(table_name,source_id)
+);
+
 CREATE TABLE essential_service_access (
     territory_id text NOT NULL REFERENCES territory_reference(territory_id),
     service text NOT NULL REFERENCES service_registry(service),
@@ -195,6 +277,7 @@ CREATE TABLE building_ramp (
     source_version text NOT NULL,
     effective_direction text NOT NULL CHECK (effective_direction IN ('high', 'low')),
     PRIMARY KEY (territory_type, territory_id, mode, quantile_index),
+    FOREIGN KEY (source_id,source_version) REFERENCES source_vintage(source_id,vintage_id),
     CHECK ((availability = 'absent' AND quantile_index = -1 AND quantile IS NULL
             AND accessible_types IS NULL AND total_buildings = 0)
         OR (availability = 'complete' AND quantile_index >= 0 AND quantile IS NOT NULL
@@ -214,25 +297,100 @@ CREATE TABLE building_grid (
     source_id text NOT NULL,
     source_version text NOT NULL,
     PRIMARY KEY (territory_type, territory_id, cell_index),
+    FOREIGN KEY (source_id,source_version) REFERENCES source_vintage(source_id,vintage_id),
     CHECK ((availability = 'absent' AND cell_index = -1 AND breadth_bucket IS NULL
             AND depth_bucket IS NULL AND building_count IS NULL AND total_buildings = 0)
         OR (availability = 'complete' AND cell_index >= 0 AND breadth_bucket IS NOT NULL
             AND depth_bucket IS NOT NULL AND building_count >= 0 AND total_buildings > 0))
 );
 
+CREATE FUNCTION assert_building_fact_source() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE serving_table text; descriptor jsonb; expected_quantile jsonb;
+  breadth_ordinal integer; depth_ordinal integer; expected_cell_index integer;
+BEGIN
+  serving_table := TG_TABLE_NAME;
+  SELECT contract INTO descriptor FROM building_evidence_descriptor WHERE table_name=serving_table;
+  IF descriptor IS NULL THEN RAISE EXCEPTION 'building fact descriptor is missing'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM building_evidence_descriptor_source s
+      WHERE s.table_name=serving_table AND s.source_id=NEW.source_id) THEN
+    RAISE EXCEPTION 'building fact source is not declared by its descriptor';
+  END IF;
+  IF NOT COALESCE(descriptor->'territory_levels' ? NEW.territory_type, false) THEN
+    RAISE EXCEPTION 'building fact territory level is not descriptor-eligible';
+  END IF;
+  IF serving_table='building_ramp' AND NEW.availability='complete' THEN
+    expected_quantile := descriptor->'axes'->'quantile'->(NEW.quantile_index::integer);
+    IF NOT COALESCE(descriptor->'axes'->'mode' ? NEW.mode, false)
+       OR expected_quantile IS NULL OR expected_quantile = 'null'::jsonb
+       OR NEW.quantile IS DISTINCT FROM (expected_quantile #>> '{}')::double precision
+       OR NEW.effective_direction IS DISTINCT FROM (descriptor->>'direction') THEN
+      RAISE EXCEPTION 'ramp point is outside its declared axes';
+    END IF;
+  ELSIF serving_table='building_grid' AND NEW.availability='complete' THEN
+    IF NEW.mode IS DISTINCT FROM (descriptor->'axes'->>'mode') THEN
+      RAISE EXCEPTION 'grid cell mode is outside its declared axes';
+    END IF;
+    SELECT axis.ordinality::integer INTO breadth_ordinal
+      FROM jsonb_array_elements_text(descriptor->'axes'->'breadth')
+        WITH ORDINALITY AS axis(value, ordinality)
+      WHERE axis.value=NEW.breadth_bucket ORDER BY axis.ordinality LIMIT 1;
+    SELECT axis.ordinality::integer INTO depth_ordinal
+      FROM jsonb_array_elements_text(descriptor->'axes'->'depth')
+        WITH ORDINALITY AS axis(value, ordinality)
+      WHERE axis.value=NEW.depth_bucket ORDER BY axis.ordinality LIMIT 1;
+    IF breadth_ordinal IS NULL OR depth_ordinal IS NULL THEN
+      RAISE EXCEPTION 'grid cell is missing a declared breadth/depth axis';
+    END IF;
+    expected_cell_index := (breadth_ordinal - 1) * jsonb_array_length(descriptor->'axes'->'depth')
+                           + depth_ordinal - 1;
+    IF NEW.cell_index IS DISTINCT FROM expected_cell_index THEN
+      RAISE EXCEPTION 'grid cell index does not match its declared breadth/depth pair';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER building_ramp_source_declared BEFORE INSERT OR UPDATE ON building_ramp
+  FOR EACH ROW EXECUTE FUNCTION assert_building_fact_source();
+CREATE TRIGGER building_grid_source_declared BEFORE INSERT OR UPDATE ON building_grid
+  FOR EACH ROW EXECUTE FUNCTION assert_building_fact_source();
+
 CREATE FUNCTION assert_building_dataset_complete(expected_ramp integer, expected_grid integer)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
     IF expected_ramp <> (SELECT count(*) FROM building_ramp)
        OR expected_grid <> (SELECT count(*) FROM building_grid)
-       OR EXISTS (
-           SELECT 1 FROM territory_reference t
-             WHERE NOT EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type = t.territory_type AND r.territory_id = t.territory_id)
-                    OR NOT EXISTS (SELECT 1 FROM building_grid g WHERE g.territory_type = t.territory_type AND g.territory_id = t.territory_id)
-       ) THEN
+       OR EXISTS (SELECT 1 FROM territory_reference t WHERE
+         (SELECT count(DISTINCT mode) FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id) <> 3
+         OR EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id
+           GROUP BY r.territory_type,r.territory_id HAVING count(DISTINCT availability)<>1 OR count(DISTINCT total_buildings)<>1)
+         OR EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id
+           GROUP BY r.mode HAVING NOT ((bool_and(availability='absent') AND count(*)=1)
+             OR (bool_and(availability='complete') AND count(*)=11)))
+         OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
+             AND g.availability='complete') NOT IN (0,30)
+         OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
+             AND g.availability='absent') NOT IN (0,1)
+         OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id) NOT IN (1,30)
+         OR EXISTS (SELECT 1 FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
+            AND g.availability='complete' GROUP BY g.territory_type,g.territory_id
+            HAVING sum(g.building_count) <> min(g.total_buildings))) THEN
         RAISE EXCEPTION 'incomplete building-access dataset';
     END IF;
 END $$;
+
+CREATE FUNCTION assert_building_descriptor_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.table_name IN ('building_ramp','building_grid') AND
+     NOT EXISTS (SELECT 1 FROM building_evidence_descriptor d
+       JOIN building_evidence_descriptor_source s USING(table_name)
+       WHERE d.table_name=NEW.table_name AND d.descriptor_version=NEW.content_version) THEN
+    RAISE EXCEPTION 'building publication requires matching descriptor and source lineage';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER building_publication_descriptor
+  AFTER INSERT OR UPDATE ON table_publication DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION assert_building_descriptor_publication();
 
 -- Called by the publisher inside the replacement transaction, before the
 -- table_publication row is updated. The service list comes from metadata.
@@ -251,3 +409,40 @@ BEGIN
         RAISE EXCEPTION 'incomplete essential-service dataset';
     END IF;
 END $$;
+
+-- ADR-0038 declared series grain. Missing years are represented by omission;
+-- a present row with status='missing' is an explicit unavailable point.
+CREATE TABLE series_descriptor (
+ indicator_id text PRIMARY KEY CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+ axis_kind text NOT NULL CHECK(axis_kind='year'),
+ axis_values text[] NOT NULL CHECK(cardinality(axis_values)>0),
+ completeness text NOT NULL CHECK(completeness IN ('dense_complete','may_be_missing')),
+  comparison_point text,
+ allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
+   label text NOT NULL, unit text NOT NULL, direction text NOT NULL CHECK(direction IN ('high','low','none')),
+   source_id text NOT NULL REFERENCES source_dataset(source_id), vintage_id text NOT NULL,
+   descriptor_version text NOT NULL,
+   CHECK(comparison_point IS NULL OR (comparison_point=ANY(axis_values) AND direction IN ('high','low'))),
+   FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE TABLE ordered_series (
+ indicator_id text NOT NULL REFERENCES series_descriptor(indicator_id),
+ territory_id text NOT NULL REFERENCES territory_reference(territory_id),
+ territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+ axis_value text NOT NULL, observation_period text NOT NULL,
+ value double precision, status text NOT NULL CHECK(status IN ('measured','missing')),
+ source_id text NOT NULL, vintage_id text NOT NULL,
+ PRIMARY KEY(indicator_id,territory_id,axis_value),
+ FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+ CHECK((status='measured' AND value IS NOT NULL AND value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)) OR (status='missing' AND value IS NULL)));
+CREATE INDEX territory_reference_series_scope ON territory_reference(territory_type,department_id,epci_id,territory_id);
+CREATE INDEX ordered_series_comparison_point ON ordered_series(indicator_id,axis_value,territory_id) INCLUDE(value,status);
+CREATE FUNCTION validate_ordered_series() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM series_descriptor d JOIN territory_reference t ON t.territory_id=NEW.territory_id
+  WHERE d.indicator_id=NEW.indicator_id AND NEW.axis_value=ANY(d.axis_values) AND NEW.territory_type=ANY(d.allowed_levels)
+    AND t.territory_type=NEW.territory_type AND NEW.source_id=d.source_id AND NEW.vintage_id=d.vintage_id)
+ THEN RAISE EXCEPTION 'series point outside declared descriptor'; END IF;
+ RETURN NEW; END $$;
+CREATE TRIGGER ordered_series_contract BEFORE INSERT OR UPDATE ON ordered_series
+ FOR EACH ROW EXECUTE FUNCTION validate_ordered_series();
+GRANT SELECT ON series_descriptor,ordered_series TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON series_descriptor,ordered_series TO lusk_publisher;

@@ -193,7 +193,9 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   if (!is.null(connexion_service)) {
     service <- preparer_tables_service(sortie)
     publier_tables_postgres(connexion_service, service$tables, service$versions,
-                            access_scope = service$access_scope)
+                            access_scope = service$access_scope,
+                            building_contract = service$building_contract,
+                            building_sources = service$building_sources)
   }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème

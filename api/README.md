@@ -359,11 +359,44 @@ validated compatible snapshot.
 
 Fresh installs use `schema.sql`; existing installs use numbered additive
 migrations. Orchestration reserves numbers serially before parallel workers;
-workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
+the declared-profile migration is `006_declared_profile.sql`. Workers must not apply DDL to the live Pi. The orchestrator reviews/rehearses/
 applies live migrations serially; only the product owner runs API Compose on
 Pi. Future detail, series, evidence and service slices reserve distinct
 migration numbers and use constrained shape-specific contracts. Fixture tests
 are not full-site performance evidence.
+
+The dense `structure_age` profile uses the declared `detail × sex` axes and the
+page descriptor's comparison detail/sex. `GET /api/territories/{level}/{id}/profiles/structure_age`
+returns one territory's ordered cells plus the bounded peer values for that
+declared comparison facet. It fails closed on a missing/stale publication,
+missing/duplicate profile coordinates or provenance; the app's switched
+structure-age page has no static-fact fallback. Other profile consumers, map
+layers and the remaining theme pages continue to use their incumbent artifacts.
+The canonical `structure_age` fact contract is a numeric `value` or `NA` only:
+the R calculation derives each share from `effectif / population` and does not
+carry a suppression or unsupported reason. Accordingly, the profile publisher
+maps finite values to `measured` and `NA` to `not_available`; it does not infer
+more specific missingness from an input that does not encode it.
+The R publisher is opt-in with `LUSK_PUBLISH_PROFILE=1` for a local full or
+Démographie-targeted run; it is never part of the scheduled static publication.
+Publication and territory-reference compatibility are pinned to independent
+table markers. Representative-size Pi latency/storage and recovery validation
+remain mandatory before the product owner deploys or switches live traffic.
+Merging the API code is not an operator cutover: keep issue #596 open through
+migration 006, publication and marker verification, measured Pi cost/P95 and
+parity review, and the separately approved deployment/flag change.
+The app rollout is separately gated at build time by
+`VITE_STRUCTURE_AGE_PROFILE_API=1`; unset/any other value keeps the incumbent
+static structure-age page. This is a build-time SPA flag, not a runtime switch:
+enabling requires rebuilding and redeploying the static app with the flag set
+after migration 006 and profile publication are verified. Rollback requires
+rebuilding and redeploying with the flag unset (or any value other than `1`).
+Do not enable the production static build until
+the owner has applied migration 006, populated and checked the profile marker,
+and approved Pi latency/parity results. This restores the static reader without
+a schema rollback. Once enabled, API errors
+are shown as unavailable/retry and never fall back to the static
+`structure_age` fact.
 
 The opt-in `Rscript scripts/publish-serving-tables.R --scalar-fixture-check`
 projects only the small tracked Démographie fixture through the registered
@@ -376,3 +409,9 @@ therefore requires an explicit caller policy and uses `dense_complete` only
 because its checked projection covers every eligible identity in that fixture;
 it does not add completeness metadata to a product descriptor or establish a
 catalogue-wide default.
+
+`pipeline/scripts/smoke-profile-postgres.R` exercises fresh schema creation,
+registered profile publication, source-vintage lineage, marker/reference
+binding and transactional failure rollback against an isolated database named
+`lusk_it_*` using the `LUSK_PROFILE_TEST_HOST/PORT/DATABASE/USER` variables.
+It must never target the Pi or a production/default database.

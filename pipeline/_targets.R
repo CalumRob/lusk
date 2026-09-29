@@ -1237,6 +1237,23 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
   ))
 }
 
+# The age-profile table is an explicit operator publication, independent from
+# the static outputs and its own retryable publication marker.
+publication_profile <- list()
+if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
+  if (identical(MODE_RUN, "cron") || !"demographie" %in% names(THEMES_RUN)) {
+    stop("LUSK_PUBLISH_PROFILE exige un run local incluant Démographie.", call. = FALSE)
+  }
+  publication_profile <- list(tar_target_raw(
+    "publie_profile_structure_age",
+    bquote({
+      publie_demographie
+      publier_structure_age_profile_postgres(publie_demographie, metadata_demographie)
+    }),
+    cue = tar_cue(mode = "always")
+  ))
+}
+
 list(
   fichier_epci_geo_api_cible,
   sources_classes_densite_cible,
@@ -1248,6 +1265,7 @@ list(
   target_manifeste_modeles_lecture,
   fusion_themes(themes_fusion),
   publication_service,
+  publication_profile,
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),
   verifications,

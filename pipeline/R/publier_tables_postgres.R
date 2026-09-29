@@ -43,10 +43,26 @@
       qs(n), ", ", qs(version), ", ", count, ", CURRENT_TIMESTAMP) ON CONFLICT (table_name) ",
       "DO UPDATE SET content_version = EXCLUDED.content_version, row_count = EXCLUDED.row_count, ",
       "published_at = EXCLUDED.published_at")),
-     save_scope = function(s) DBI::dbExecute(con, paste0(
+    save_scope = function(s) DBI::dbExecute(con, paste0(
        "INSERT INTO access_publication_metadata (singleton, bretagne_kind, bretagne_label) VALUES (true, ",
        qs(s$kind), ", ", qs(s$label), ") ON CONFLICT (singleton) DO UPDATE SET ",
       "bretagne_kind = EXCLUDED.bretagne_kind, bretagne_label = EXCLUDED.bretagne_label")),
+    save_building_contract = function(contract, sources, versions) {
+      for (i in seq_len(nrow(sources))) {
+        DBI::dbExecute(con, "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
+          params=unname(as.list(sources[i,c("source_id","source_name"),drop=FALSE])))
+        DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$2,$3,$4) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
+          params=unname(as.list(sources[i,c("source_id","vintage_id","reference_date","publication_date"),drop=FALSE])))
+      }
+      for (n in names(contract)) {
+        DBI::dbExecute(con, "INSERT INTO building_evidence_descriptor(table_name,descriptor_version,contract) VALUES($1,$2,$3::jsonb) ON CONFLICT(table_name) DO UPDATE SET descriptor_version=EXCLUDED.descriptor_version,contract=EXCLUDED.contract",
+          params=list(n, versions[[n]], as.character(jsonlite::toJSON(contract[[n]], auto_unbox=TRUE, null="null"))))
+        DBI::dbExecute(con, "DELETE FROM building_evidence_descriptor_source WHERE table_name=$1", params=list(n))
+        for (source in unique(as.character(contract[[n]]$provenance$source_id))) DBI::dbExecute(con,
+          "INSERT INTO building_evidence_descriptor_source(table_name,source_id) VALUES($1,$2)", params=list(n,source))
+      }
+      invisible(TRUE)
+    },
     assert_current = function(count) DBI::dbGetQuery(con,
       paste0("SELECT assert_current_dataset_complete(", count, ")")),
     assert_buildings = function(ramp, grid) DBI::dbGetQuery(con,
@@ -54,7 +70,8 @@
   )
 }
 
-.publier_tables_postgres_impl <- function(tables, versions, access_scope, db) {
+.publier_tables_postgres_impl <- function(tables, versions, access_scope, db,
+                                          building_contract=NULL, building_sources=NULL) {
   db$transaction({
     if (!is.null(db$lock)) db$lock()
     current <- setNames(lapply(.tables_postgres_autorisees, db$marker),
@@ -63,6 +80,11 @@
       nrow(current[[n]]) > 0L && identical(as.character(current[[n]]$content_version[[1L]]),
                                             versions[[n]]), logical(1))]
     if (length(changed)) {
+    if (any(changed %in% c("building_ramp", "building_grid"))) {
+      if (is.null(building_contract) || is.null(building_sources) ||
+          is.null(db$save_building_contract)) stop("Building descriptor/provenance requis pour la publication.", call.=FALSE)
+      db$save_building_contract(building_contract, building_sources, versions)
+    }
     # Remove changed children before pruning shared identities. Unchanged
     # children stay in place; any stale referenced identity makes DELETE fail
     # and the enclosing transaction rolls back.
@@ -95,7 +117,8 @@
   })
 }
 
-publier_tables_postgres <- function(connexion, tables, versions, access_scope) {
+publier_tables_postgres <- function(connexion, tables, versions, access_scope,
+                                    building_contract=NULL, building_sources=NULL) {
   if (!is.list(tables) || is.null(names(tables)) || anyDuplicated(names(tables)) ||
      !setequal(names(tables), .tables_postgres_autorisees) ||
       !all(vapply(tables, is.data.frame, logical(1))))
@@ -109,7 +132,8 @@ publier_tables_postgres <- function(connexion, tables, versions, access_scope) {
        !nzchar(access_scope$label))
     stop("Versions ou descripteur access_scope invalides.", call. = FALSE)
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI est requis.", call. = FALSE)
-  .publier_tables_postgres_impl(tables, versions, access_scope, .adapter_postgres(connexion))
+  .publier_tables_postgres_impl(tables, versions, access_scope, .adapter_postgres(connexion),
+                                building_contract, building_sources)
 }
 
 # R connects directly from the publishing PC using libpq and the operator's
@@ -144,7 +168,12 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
   config <- configuration_service_postgres()
   donnees <- preparer_tables_service(sortie)
   conn <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
-  tryCatch(publier_tables_postgres(conn, donnees$tables, donnees$versions,
-                                   donnees$access_scope),
+  tryCatch({
+    access <- publier_tables_postgres(conn, donnees$tables, donnees$versions,
+      donnees$access_scope, donnees$building_contract, donnees$building_sources)
+    scalar <- publish_service_share_scalars(conn, donnees$scalar_access,
+      donnees$scalar_metadata, donnees$scalar_eligible_territories)
+    list(access=access, scalar=scalar)
+  },
            finally = DBI::dbDisconnect(conn))
 }

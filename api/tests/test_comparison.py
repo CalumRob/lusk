@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from api.main import ReadRepository, app, get_repository
+from api.main import ReadRepository, app, compare, get_repository
 
 
 class ExampleRepository:
@@ -192,3 +192,68 @@ def test_non_commune_query_uses_the_selected_territory_level_before_its_peer_sco
                           if "FROM essential_service_access" in q)
     assert "t.territory_type = %s" in query
     assert params == ("epci", "epci")
+def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+
+    keys = [f"share_{service}_{mode}" for service in
+            ("food", "health", "admin", "school", "bank") for mode in ("t", "b", "c")]
+    source_rows = []
+    for territory_id, value in (("22001", .5), ("22002", .5), ("22003", .8)):
+        for indicator in keys:
+            service, code = indicator.removeprefix("share_").rsplit("_", 1)
+            source_rows.append((indicator, territory_id, value, "measured", indicator,
+                "high", "snapshot", "Snapshot", "2024", None, None))
+
+    class Result:
+        def __init__(self, row=None, rows=None): self.row, self.rows = row, rows or []
+        def fetchone(self): return self.row
+        def fetchall(self): return self.rows
+
+    class Connection:
+        def __init__(self, current=True): self.current, self.queries = current, []
+        def transaction(self): return self
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def execute(self, query, params=None):
+            self.queries.append(query)
+            if "SET TRANSACTION" in query: return Result()
+            if "FROM table_publication p CROSS JOIN access_publication_metadata" in query:
+                return Result(("legacy-v1", "communes-bretagne", "communes bretonnes"))
+            if "FROM territory_reference" in query:
+                return Result(("22001", "Example", "commune", "EPCI-1", "D", "Dense"))
+            if "scalar.reference_content_version" in query:
+                return Result(("scalar-v1", "territory-v1", "territory-v1") if self.current else None)
+            if "FROM scalar_observation o" in query: return Result(rows=source_rows)
+            raise AssertionError(query)
+
+    class Connections:
+        def __init__(self, current=True): self.conn = Connection(current)
+        def connection(self): return self.conn
+
+    monkeypatch.setenv("LUSK_SERVICES_SCALAR_READ", "1")
+    new_repo = ReadRepository(Connections())
+    scalar_response = compare(new_repo.read("22001", "bretagne"))
+    scalar_sql = next(query for query in new_repo.connections.conn.queries
+                      if "FROM scalar_observation o" in query)
+    # psycopg parameter style requires doubled percent signs in a query string
+    # even when the percent is part of a SQL LIKE literal.
+    assert "LIKE 'share!_%%' ESCAPE '!'" in scalar_sql
+    assert "ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id" in scalar_sql
+    legacy_rows = []
+    for row in source_rows:
+        service, mode_code = row[0].removeprefix("share_").rsplit("_", 1)
+        legacy_rows.append({"territory_id": row[1], "service": service,
+            "mode": {"t": "walk_transit", "b": "bike", "c": "car"}[mode_code],
+            "share": row[2], "indicator_label": row[4], "direction": row[5],
+            "source_id": row[6], "source_name": row[7], "source_version": row[8],
+            "reference_date": None, "source_publication_date": None})
+    old_response = compare({"publication_id": "legacy-v1",
+        "territory": {"id": "22001", "name": "Example", "type": "commune"},
+        "scope": {"kind": "communes-bretagne", "label": "communes bretonnes"},
+        "comparison": True, "rows": legacy_rows})
+    assert scalar_response.model_copy(update={"publication_id": old_response.publication_id}) == old_response
+
+    with pytest.raises(HTTPException) as error:
+        ReadRepository(Connections(current=False)).read("22001", "bretagne")
+    assert error.value.status_code == 503

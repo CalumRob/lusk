@@ -30,26 +30,28 @@ on its tables to the configured read role. The read-role test verifies an
 python -m pytest api/tests/integration -m integration
 ```
 
+`test_building_evidence_contract.py` uses that same explicit test-only database
+and creates its own random `it_building_*` schema per fresh-schema and prior
+shared-schema/migration-008 rehearsal. It checks valid ramp/grid fixture
+publications, rejected source/level/axis/quantile/availability mutations,
+deferred descriptor/source marker constraints, and rollback preservation of
+the previous facts and markers after an injected mid-refresh failure. A
+dedicated local database can be named `lusk_it_contract`; do not point these
+tests at the live `lusk` database. The migration's `NOT VALID` source-vintage
+foreign keys leave pre-migration rows readable and enforce new/updated rows;
+operators must backfill/verify source vintages and run the documented
+`VALIDATE CONSTRAINT` statements before claiming historical rows are validated.
+
 By default the uniquely named schema is retained for inspection. To explicitly
 allow cleanup of only that run's schema, set
 `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. Cleanup never targets `public`, tables, or
 another schema. Unset all `LUSK_TEST_*` variables after verification.
 
-The fixture writes tiny canonical Parquet artifacts and a matching
-pipeline-shaped metadata descriptor locally in pytest's temporary directory;
-it does not read production artifacts. Current integration checks exercise the
-serving schema, read-only public HTTP API seam, and publication-marker read
-contract; they do not run a Python publisher. Any query timing (if added later)
-is strictly local to this explicitly provided test database and is not a Pi or
-deployment performance claim.
-
-`legacy_initial_schema.sql` and `legacy_schema.sql` are frozen historical schema
-fixtures: respectively the original four-table Pi layout and the later six-table
-layout from before the single-dataset redesign. No current test references or
-executes these files; they are retained solely as historical reference, not as
-supported migration rehearsals. Migration 009 has its own focused opt-in test
-that executes the actual retirement script in a random owned schema in
-`lusk_it_contract` and never targets `public`.
+The current PostgreSQL integration tests exercise database-backed serving,
+publication contracts, and guarded migration rehearsals against an explicitly
+provided disposable database. They do not invoke the retired Python importer or
+read production artifacts. The `legacy_*.sql` files below are historical schema
+references; the current suite does not rehearse those importer-era layouts.
 
 No external database is touched during ordinary development/test runs. The
 integrator must inspect the DSNs and disposable target before opting in.
@@ -129,6 +131,29 @@ The smoke checks canonical fact/status, descriptor and versions, two source
 associations (the second is explicitly synthetic smoke lineage), no-op behavior,
 dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
 after an injected insert failure.
+
+The building publisher path has a separate RPostgres smoke so it exercises the
+real `.adapter_postgres` and `publier_tables_postgres` code rather than a fake
+adapter. It uses only synthetic canonical-like rows, accepts only explicit
+`LUSK_BUILDING_TEST_*` connection variables naming a `lusk_it_*` database, and
+uses a private passfile outside the checkout. It creates a random schema, runs
+the final `api/schema.sql`, then dependency-orders table/function drops and
+`DROP SCHEMA ... RESTRICT` for cleanup; it never uses `CASCADE` or touches
+`public`.
+
+```powershell
+$env:LUSK_BUILDING_TEST_HOST = "192.168.1.120"
+$env:LUSK_BUILDING_TEST_PORT = "5432"
+$env:LUSK_BUILDING_TEST_DATABASE = "lusk_it_contract"
+$env:LUSK_BUILDING_TEST_USER = "lusk_it_contract_pub"
+$env:LUSK_BUILDING_TEST_PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+Rscript scripts/smoke-building-postgres.R  # run from pipeline/
+```
+
+This verifies actual R/DBI parameter and JSON serialization, descriptor/source
+lineage and independent markers, grid ordinal mapping, no-op republish,
+DB-behind retry, and rollback of facts/descriptors/markers after injected
+replacement failure. It uses no pipeline raw/processed data.
 
 The shared-scalar migration/read tests are selected with `-k shared_scalar`.
 Run the guarded migration rehearsal with `-k migration_009`; the configured
