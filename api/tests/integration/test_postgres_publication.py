@@ -787,6 +787,87 @@ def test_ordered_series_read_uses_one_repeatable_read_publication_snapshot():
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
+def test_shared_scalar_additive_migration_rehearsal(db_env):
+    """Rehearse migration 004 in an isolated schema with the pre-594 catalog."""
+    import psycopg
+
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped = _dsn_with_schema(db_env["publish_dsn"], schema)
+    api_root = Path(__file__).resolve().parents[2]
+    with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+    try:
+        with psycopg.connect(scoped, autocommit=True) as connection:
+            # Model the pre-594 catalog directly. Do not start from today's
+            # fresh-install schema and reverse-engineer extensions: later
+            # profile/scalar FKs would make that teardown depend on new objects.
+            connection.execute("""
+                CREATE TABLE table_publication (
+                    table_name text PRIMARY KEY CHECK (table_name IN (
+                        'territory_reference','service_registry','essential_service_access',
+                        'building_ramp','building_grid')),
+                    content_version text NOT NULL,
+                    row_count integer NOT NULL CHECK (row_count >= 0),
+                    published_at timestamptz NOT NULL DEFAULT now()
+                );
+                CREATE TABLE territory_reference (
+                    territory_id text PRIMARY KEY,
+                    territory_type text NOT NULL,
+                    name text NOT NULL,
+                    department_id text,
+                    epci_id text,
+                    density_class_code text,
+                    density_class_label text
+                );
+            """)
+            connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
+            names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
+            assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
+            assert connection.execute("SELECT count(*) FROM territory_reference").fetchone()[0] == 0
+            connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('fixture-01','commune','Fixture')")
+            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_source','Fixture source')")
+            connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_source','v2026','2026')")
+            with connection.transaction():
+                connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
+                connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
+            with connection.transaction():
+                connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','fixture-01','commune',3.5,'measured')")
+                connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','fixture-01','fixture_source','v2026')")
+            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','migrated-reference-v1',1)")
+            connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','migrated-scalar-v1',1,'migrated-reference-v1')")
+            role = urlsplit(db_env["read_dsn"]).username
+            assert role and re.fullmatch(r"[A-Za-z0-9_$-]+", role)
+            quoted_role = '"' + role.replace('"', '""') + '"'
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+
+        from fastapi.testclient import TestClient
+        from psycopg_pool import ConnectionPool
+        from api import main
+        pool = ConnectionPool(conninfo=_dsn_with_schema(db_env["read_dsn"], schema),
+                              min_size=0, max_size=1, open=True,
+                              kwargs={"autocommit": True})
+        previous = main.app.dependency_overrides.get(main.get_repository)
+        main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+        try:
+            with TestClient(main.app) as client:
+                response = client.get("/api/territories/commune/fixture-01/indicators/fixture_scalar")
+            assert response.status_code == 200, response.text
+            assert response.json()["value"] == pytest.approx(3.5)
+            assert len(response.json()["sources"]) == 1
+            assert response.json()["content_version"] == "migrated-scalar-v1"
+        finally:
+            if previous is None:
+                main.app.dependency_overrides.pop(main.get_repository, None)
+            else:
+                main.app.dependency_overrides[main.get_repository] = previous
+            pool.close()
+    finally:
+        if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
 def test_profile_and_series_migration_chain_matches_fresh_schema():
     """Rehearse existing-schema 004→006→007 and compare fresh marker contracts."""
     import psycopg
