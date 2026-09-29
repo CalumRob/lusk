@@ -56,6 +56,10 @@ jobs:
         run: npm test
 
       - name: Build (vue-tsc + vite → app/dist, payload copié dans dist/data)
+        # #596: Pi app release reads the published structure_age profile.
+        # Rollback: set this to '0', rebuild dist, and redeploy the static shell.
+        env:
+          VITE_STRUCTURE_AGE_PROFILE_API: '1'
         run: npm run build
 
       - name: Commit du dist (skip si inchangé)
