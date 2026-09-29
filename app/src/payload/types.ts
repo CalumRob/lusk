@@ -97,6 +97,11 @@ export interface Indicateur extends VintageStamp {
   unit: string
   /** Contextual explanation for an unavailable value (pipeline-owned fact). */
   rider?: string | null
+  /** Optional typed lineage carried by the ordered-series API adapter. */
+  observation_status?: 'measured' | 'missing'
+  observation_period?: string | null
+  source_id?: string | null
+  vintage_id?: string | null
   /**
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no

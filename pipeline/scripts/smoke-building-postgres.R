@@ -25,6 +25,8 @@ if (startsWith(tolower(passfile), paste0(tolower(repo), "/"))) {
 Sys.setenv(PGPASSFILE = passfile)
 
 run_smoke <- function() {
+smoke_failure <- NULL
+withCallingHandlers({
 if (!requireNamespace("DBI", quietly = TRUE) || !requireNamespace("RPostgres", quietly = TRUE)) {
   abort("DBI and RPostgres are required for this opt-in smoke.")
 }
@@ -67,40 +69,25 @@ cleanup <- function() {
   if (!created) return(invisible(NULL))
   if (!is.null(run_connection) && DBI::dbIsValid(run_connection)) DBI::dbDisconnect(run_connection)
   run_connection <<- NULL
-  # An injected failure may have left its trigger behind. Remove it explicitly
-  # before dropping the test tables; cleanup errors are intentionally surfaced.
-  if (!is.null(main) && DBI::dbIsValid(main) &&
-      DBI::dbExistsTable(main, DBI::Id(schema = schema, table = "building_ramp"))) {
-    DBI::dbExecute(main, "DROP TRIGGER IF EXISTS reject_smoke_ramp ON building_ramp")
-    DBI::dbExecute(main, "DROP FUNCTION IF EXISTS reject_smoke_ramp() RESTRICT")
-  }
-  # Remove only this random schema's objects, in FK dependency order. RESTRICT
-  # is deliberate: unexpected objects stop cleanup instead of being cascaded.
-  ordered_tables <- c(
-    "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
-    "scalar_descriptor", "essential_service_access", "building_ramp", "building_grid",
-    "building_evidence_descriptor_source", "building_evidence_descriptor",
-    "service_registry", "territory_reference", "source_vintage", "source_dataset",
-    "table_publication", "access_publication_metadata"
-  )
-  for (table in ordered_tables) {
-    if (DBI::dbExistsTable(main, DBI::Id(schema = schema, table = table))) {
-      DBI::dbExecute(main, paste("DROP TABLE", schema_ident, ".",
-        as.character(DBI::dbQuoteIdentifier(main, table)), "RESTRICT"))
-    }
-  }
-  signatures <- c("assert_scalar_observation_has_source()", "assert_scalar_descriptor_sources()",
-    "assert_scalar_territory_update()", "assert_scalar_descriptor_update()", "assert_scalar_levels()",
-    "assert_building_fact_source()", "assert_building_dataset_complete(integer, integer)",
-    "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)")
-  for (signature in signatures) DBI::dbExecute(main, paste("DROP FUNCTION IF EXISTS", signature, "RESTRICT"))
-  DBI::dbExecute(main, paste0("DROP SCHEMA ", schema_ident, " RESTRICT"))
+  cleanup_serving_smoke_schema(main, schema, "building")
   created <<- FALSE
   invisible(NULL)
 }
-on.exit(tryCatch(cleanup(), finally = {
-  if (!is.null(main) && DBI::dbIsValid(main)) DBI::dbDisconnect(main)
-}), add = TRUE)
+on.exit({
+  cleanup_error <- tryCatch({ cleanup(); NULL }, error = identity)
+  disconnect_error <- tryCatch({
+    if (!is.null(main) && DBI::dbIsValid(main)) DBI::dbDisconnect(main)
+    NULL
+  }, error = identity)
+  if (inherits(cleanup_error, "error")) {
+    stop("Building smoke cleanup failed (inspect schema ", schema, "): ",
+      conditionMessage(cleanup_error), if (!is.null(smoke_failure))
+        paste0("; original smoke error: ", smoke_failure) else "", call. = FALSE)
+  }
+  if (inherits(disconnect_error, "error")) stop("Building smoke disconnect failed: ",
+    conditionMessage(disconnect_error), if (!is.null(smoke_failure))
+      paste0("; original smoke error: ", smoke_failure) else "", call. = FALSE)
+}, add = TRUE)
 
 main <- db_connect()
 connected_database <- DBI::dbGetQuery(main, "SELECT current_database() AS name")$name[[1]]
@@ -263,6 +250,9 @@ stopifnot(identical(before_ramp, after_ramp), identical(before_markers, after_ma
           identical(before_descriptors, after_descriptors))
 
 cat("Building publisher PostgreSQL smoke passed in schema", schema, "on", database, "\n")
+}, error = function(e) {
+  smoke_failure <<- conditionMessage(e)
+})
 }
 
 run_smoke()

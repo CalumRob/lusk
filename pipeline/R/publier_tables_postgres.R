@@ -168,8 +168,12 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
   config <- configuration_service_postgres()
   donnees <- preparer_tables_service(sortie)
   conn <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
-  tryCatch(publier_tables_postgres(conn, donnees$tables, donnees$versions,
-                                   donnees$access_scope, donnees$building_contract,
-                                   donnees$building_sources),
+  tryCatch({
+    access <- publier_tables_postgres(conn, donnees$tables, donnees$versions,
+      donnees$access_scope, donnees$building_contract, donnees$building_sources)
+    scalar <- publish_service_share_scalars(conn, donnees$scalar_access,
+      donnees$scalar_metadata, donnees$scalar_eligible_territories)
+    list(access=access, scalar=scalar)
+  },
            finally = DBI::dbDisconnect(conn))
 }
