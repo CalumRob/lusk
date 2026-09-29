@@ -15,20 +15,18 @@ if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets"
        call. = FALSE)
 }
 if (args[[1L]] %in% c("--series-check", "--series-publish")) {
+  if (args[[1L]] == "--series-publish") require_series_publish_opt_in()
   projection <- read_conso_enaf_series_projection(file.path("..", "public", "data"))
   version <- scalar_content_version(projection)
   cat("Validated canonical conso_enaf_annuel:", nrow(projection$points), "rows; version", version,
       "; comparison", projection$descriptor$comparison_point,
       "; source", projection$descriptor$source_id, "; vintage", projection$descriptor$vintage_id, "\n")
   if (args[[1L]] == "--series-publish") {
-    require_series_publish_opt_in()
     config <- configuration_service_postgres()
     connection <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), config))
-    registry <- register_conso_enaf_series_publisher(list(),
-      jsonlite::read_json("inst/extdata/theme-metadata/theme_milieux.json", simplifyVector=FALSE))
-    result <- tryCatch(publish_registered_series(registry, "conso_enaf_annuel",
-      list(indicateurs=nanoparquet::read_parquet(file.path("..", "public", "data", "indicateurs_milieux.parquet"))),
-      series_postgres_adapter(connection)), finally=DBI::dbDisconnect(connection))
+    result <- tryCatch(publish_series_projection(projection, series_postgres_adapter(connection),
+      function(validated, db, content_version) db$replace(validated, content_version)),
+      finally=DBI::dbDisconnect(connection))
     cat("Publication:", if (result$changed || result$rebound) "updated" else "no-op",
         "; content version", result$content_version, "\n")
   }

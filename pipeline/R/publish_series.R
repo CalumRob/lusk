@@ -38,16 +38,43 @@ validate_series_projection <- function(points, descriptor) {
 
 project_conso_enaf_series <- function(payload, metadata) {
   page <- metadata$indicator_pages$conso_enaf_annuel
+  if (is.null(page) || !is.list(page))
+    stop("Annual series metadata descriptor is missing", call.=FALSE)
   comparison <- page$comparison
-  if (is.null(page) || is.null(comparison$details) || is.null(comparison$detail))
+  if (is.null(comparison) || is.null(comparison$details) || is.null(comparison$detail))
     stop("Annual series metadata must declare its points and comparison point", call.=FALSE)
   axis <- as.character(comparison$details)
   allowed_levels <- unlist(page$levels, use.names=FALSE)
-  raw <- payload$indicateurs[payload$indicateurs$key == "conso_enaf_annuel" &
-    payload$indicateurs$detail %in% axis & payload$indicateurs$type %in% allowed_levels, , drop=FALSE]
-  if (!nrow(raw)) stop("Canonical annual series is empty", call.=FALSE)
   source_id <- unlist(page$sources, use.names=FALSE)
-  if (length(source_id) != 1L) stop("Annual series requires its declared single source", call.=FALSE)
+  if (!length(axis) || anyNA(axis) || any(!grepl("^\\d{4}$", axis)) || anyDuplicated(axis) ||
+      !identical(axis, axis[order(as.integer(axis))]) || length(allowed_levels) == 0L ||
+      anyNA(allowed_levels) || any(!allowed_levels %in% c("commune","epci","departement","region")) ||
+      length(source_id) != 1L || is.na(source_id) || !nzchar(source_id) ||
+      length(comparison$detail) != 1L || is.na(comparison$detail) ||
+      !as.character(comparison$detail) %in% axis ||
+      !is.character(page$label) || length(page$label) != 1L || is.na(page$label) || !nzchar(page$label) ||
+      !is.character(page$unit) || length(page$unit) != 1L || is.na(page$unit) || !nzchar(page$unit) ||
+      length(page$direction) != 1L || is.na(page$direction) || !page$direction %in% c("high", "low"))
+    stop("Annual series metadata descriptor is invalid or incomplete", call.=FALSE)
+  required <- c("key", "detail", "type", "territoire", "value", "vintage_source", "vintage_version",
+                "vintage_date_reference", "vintage_date_publication")
+  if (!is.data.frame(payload$indicateurs) || !all(required %in% names(payload$indicateurs)))
+    stop("Canonical annual indicator Parquet is missing required fields", call.=FALSE)
+  all_annual <- payload$indicateurs[!is.na(payload$indicateurs$key) &
+    payload$indicateurs$key == "conso_enaf_annuel", , drop=FALSE]
+  if (!nrow(all_annual)) stop("Canonical annual series is empty", call.=FALSE)
+  if (anyNA(all_annual$detail) || any(!as.character(all_annual$detail) %in% axis))
+    stop("Canonical annual series contains an undeclared axis point", call.=FALSE)
+  if (anyNA(all_annual$type) || any(!as.character(all_annual$type) %in% allowed_levels))
+    stop("Canonical annual series contains an undeclared territory level", call.=FALSE)
+  raw <- all_annual
+  if (!nrow(raw)) stop("Canonical annual series is empty", call.=FALSE)
+  if (anyNA(raw[c("territoire", "vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication")]) ||
+      length(unique(as.character(raw$vintage_source))) != 1L)
+    stop("Canonical annual series provenance/identity is incomplete", call.=FALSE)
+  if (length(unique(paste(raw$vintage_version, raw$vintage_date_reference,
+                          raw$vintage_date_publication, sep="/"))) != 1L)
+    stop("Annual series source vintage is inconsistent", call.=FALSE)
   points <- data.frame(indicator_id="conso_enaf_annuel", territory_id=raw$territoire,
     territory_type=raw$type, axis_value=as.character(raw$detail),
     observation_period=as.character(raw$detail), value=raw$value,
@@ -57,6 +84,18 @@ project_conso_enaf_series <- function(payload, metadata) {
   vintage_id <- unique(points$vintage_id)
   if (length(vintage_id) != 1L) stop("Annual series source vintage is inconsistent", call.=FALSE)
   source_record <- metadata$source_records[[source_id]]
+  if (is.null(source_record) || is.null(source_record$dataset) || is.na(source_record$dataset) ||
+      !nzchar(source_record$dataset)) stop("Annual series source metadata is incomplete", call.=FALSE)
+  if (!is.list(source_record$vintages) || !length(source_record$vintages))
+    stop("Annual series source vintage metadata is missing", call.=FALSE)
+  declared_vintage <- source_record$vintages[[1L]]
+  if (is.null(declared_vintage) || length(declared_vintage$version) != 1L || is.na(declared_vintage$version) ||
+      length(declared_vintage$dateReference) != 1L || is.na(declared_vintage$dateReference) ||
+      length(declared_vintage$datePublication) != 1L || is.na(declared_vintage$datePublication) ||
+      !identical(as.character(declared_vintage$version), as.character(raw$vintage_version[[1L]])) ||
+      !identical(as.character(declared_vintage$dateReference), as.character(raw$vintage_date_reference[[1L]])) ||
+      !identical(as.character(declared_vintage$datePublication), as.character(raw$vintage_date_publication[[1L]])))
+    stop("Canonical annual series vintage disagrees with source metadata", call.=FALSE)
   vintage <- unique(data.frame(source_id=source_id, vintage_id=vintage_id,
     version=as.character(raw$vintage_version[[1L]]),
     reference_date=as.Date(raw$vintage_date_reference[[1L]]),
@@ -150,8 +189,12 @@ publish_registered_series <- function(registry, name, canonical, db) {
   publisher <- registry[[name]]
   if (is.null(publisher)) stop("Unregistered series publisher", call.=FALSE)
   projection <- publisher$project(canonical)
+  publish_series_projection(projection, db, publisher$publish)
+}
+
+publish_series_projection <- function(projection, db, publish) {
   validate_series_projection(projection$points, projection$descriptor)
-  if (!is.function(db$transaction) || !is.function(db$marker) || !is.function(db$replace))
+  if (!is.function(publish) || !is.function(db$transaction) || !is.function(db$marker))
     stop("Invalid series database adapter", call.=FALSE)
   version <- scalar_content_version(projection)
   db$transaction({
@@ -162,7 +205,7 @@ publish_registered_series <- function(registry, name, canonical, db) {
     changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]), version)
     rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),
       as.character(reference$content_version[[1L]]))
-    if (changed || rebound) publisher$publish(projection, db, version)
+    if (changed || rebound) publish(projection, db, version)
     invisible(list(changed=changed, rebound=rebound, content_version=version))
   })
 }

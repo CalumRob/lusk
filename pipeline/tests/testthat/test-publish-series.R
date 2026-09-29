@@ -34,6 +34,8 @@ test_that("annual series preserves declared gaps and source vintage", {
 test_that("conso ENAF projection follows canonical facts and descriptor-selected point", {
   payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
+  payload$indicateurs <- payload$indicateurs[payload$indicateurs$key != "conso_enaf_annuel" |
+    payload$indicateurs$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
   registry <- register_conso_enaf_series_publisher(list(), metadata)
   projection <- registry$conso_enaf_annuel$project(payload)
   expect_identical(projection$descriptor$comparison_point,
@@ -66,31 +68,41 @@ test_that("conso ENAF projection follows canonical facts and descriptor-selected
 test_that("production series input is projected from the canonical Parquet and metadata", {
   root <- testthat::test_path("../../../public/data")
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
-  projection <- read_conso_enaf_series_projection(root, metadata_path)
+  expect_error(read_conso_enaf_series_projection(root, metadata_path), "undeclared territory level")
   canonical <- nanoparquet::read_parquet(file.path(root, "indicateurs_milieux.parquet"))
   metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
   selected <- canonical[canonical$key == "conso_enaf_annuel" &
     canonical$detail %in% metadata$indicator_pages$conso_enaf_annuel$comparison$details &
     canonical$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
-  expect_gt(nrow(projection$points), 0L)
-  expect_equal(nrow(projection$points), nrow(selected))
-  expect_identical(projection$descriptor$comparison_point,
-    as.character(metadata$indicator_pages$conso_enaf_annuel$comparison$detail))
-  expect_setequal(paste(projection$points$territory_id, projection$points$axis_value),
-    paste(selected$territoire, as.character(selected$detail)))
-  expect_equal(projection$points$value,
-    selected$value[match(paste(projection$points$territory_id, projection$points$axis_value),
-      paste(selected$territoire, as.character(selected$detail)))])
-  expect_identical(projection$points$vintage_id,
-    paste(as.character(selected$vintage_version[match(paste(projection$points$territory_id,
-      projection$points$axis_value), paste(selected$territoire, as.character(selected$detail)))]),
-      selected$vintage_date_reference[match(paste(projection$points$territory_id,
-        projection$points$axis_value), paste(selected$territoire, as.character(selected$detail)))], sep="/"))
-  expect_true(all(projection$points$source_id == "consoenaf"))
-  expect_true(all(projection$points$observation_period == projection$points$axis_value))
+  expect_gt(nrow(selected), 0L)
+  expect_true(any(canonical$type[canonical$key == "conso_enaf_annuel"] == "region"))
   expect_error(require_series_publish_opt_in(""), "explicit LUSK_PUBLISH_SERIES=1")
   expect_error(require_series_publish_opt_in("0"), "explicit LUSK_PUBLISH_SERIES=1")
   expect_invisible(require_series_publish_opt_in("1"))
+})
+
+test_that("canonical annual rows outside descriptor axes or levels are rejected", {
+  payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
+  metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
+  bad_axis <- payload
+  extra <- bad_axis$indicateurs[bad_axis$indicateurs$key == "conso_enaf_annuel", ][1, , drop=FALSE]
+  extra$detail <- "2099"
+  bad_axis$indicateurs <- rbind(bad_axis$indicateurs, extra)
+  expect_error(project_conso_enaf_series(bad_axis, metadata), "undeclared.*axis|axis.*undeclared")
+  bad_level <- payload
+  extra <- bad_level$indicateurs[bad_level$indicateurs$key == "conso_enaf_annuel", ][1, , drop=FALSE]
+  extra$type <- "region"
+  bad_level$indicateurs <- rbind(bad_level$indicateurs, extra)
+  expect_error(project_conso_enaf_series(bad_level, metadata), "undeclared.*level|level.*undeclared")
+  bad_metadata <- metadata
+  bad_metadata$indicator_pages$conso_enaf_annuel$label <- NULL
+  expect_error(project_conso_enaf_series(payload, bad_metadata), "descriptor is invalid")
+  bad_metadata <- metadata
+  bad_metadata$source_records$consoenaf$vintages[[1]]$version <- "wrong-vintage"
+  eligible <- payload
+  eligible$indicateurs <- eligible$indicateurs[eligible$indicateurs$key != "conso_enaf_annuel" |
+    eligible$indicateurs$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
+  expect_error(project_conso_enaf_series(eligible, bad_metadata), "vintage disagrees")
 })
 
 test_that("registered series publication is atomic, idempotent and rollback-safe", {
@@ -132,4 +144,28 @@ test_that("registered series publication is atomic, idempotent and rollback-safe
     function(projection, db, version) { db$replace(projection, version); stop("injected failure") })
   expect_error(publish_registered_series(broken, "broken", NULL, db), "injected failure")
   expect_identical(state$marker, marker)
+})
+
+test_that("publishing a validated projection preserves its exact identity and version", {
+  payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
+  metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
+  payload$indicateurs <- payload$indicateurs[payload$indicateurs$key != "conso_enaf_annuel" |
+    payload$indicateurs$type %in% unlist(metadata$indicator_pages$conso_enaf_annuel$levels), , drop=FALSE]
+  projection <- project_conso_enaf_series(payload, metadata)
+  state <- new.env(parent=emptyenv()); state$marker <- NULL; state$marker_reference <- NULL
+  state$reference <- "territory-v1"; state$projection <- NULL; state$seen_version <- NULL
+  db <- list(transaction=function(expr) force(expr), marker=function(name) {
+    if (name == "territory_reference") return(data.frame(content_version=state$reference,
+      reference_content_version=NA_character_))
+    if (is.null(state$marker)) data.frame() else data.frame(content_version=state$marker,
+      reference_content_version=state$marker_reference)
+  }, replace=function(got, version) {
+    state$projection <- got; state$seen_version <- version
+    state$marker <- version; state$marker_reference <- state$reference
+  })
+  result <- publish_series_projection(projection, db,
+    function(got, database, version) database$replace(got, version))
+  expect_identical(state$projection, projection)
+  expect_identical(state$seen_version, scalar_content_version(projection))
+  expect_identical(result$content_version, state$seen_version)
 })
