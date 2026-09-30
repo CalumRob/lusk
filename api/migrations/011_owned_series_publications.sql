@@ -28,7 +28,7 @@ CREATE TABLE series_dataset_publication (
 CREATE TABLE series_dataset_descriptor (
   dataset_id text NOT NULL REFERENCES series_dataset_publication(dataset_id) ON DELETE CASCADE,
   indicator_id text NOT NULL CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
-  axis_kind text NOT NULL CHECK(axis_kind IN ('year','state_role')),
+  axis_kind text NOT NULL CHECK(axis_kind IN ('year','state_role','declared_detail')),
   axis_values text[] NOT NULL CHECK(cardinality(axis_values)>0),
   completeness text NOT NULL CHECK(completeness IN ('dense_complete','may_be_missing')),
   comparison_point text,
@@ -47,6 +47,7 @@ CREATE TABLE series_dataset_observation (
   territory_id text NOT NULL REFERENCES territory_reference(territory_id),
   territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
   axis_value text NOT NULL,
+  state_role text CHECK(state_role IS NULL OR state_role IN ('M2','M3')),
   observation_period text NOT NULL,
   value double precision,
   status text NOT NULL CHECK(status IN ('measured','missing')),
@@ -92,8 +93,14 @@ BEGIN
       NEW.axis_values<>ARRAY(SELECT a FROM unnest(NEW.axis_values) a ORDER BY a::integer) THEN
      RAISE EXCEPTION 'series year axis must be ordered numeric years';
    END IF;
- ELSIF NEW.axis_values<>ARRAY['M2','M3']::text[] THEN
+ ELSIF NEW.axis_kind='state_role' AND NEW.axis_values<>ARRAY['M2','M3']::text[] THEN
    RAISE EXCEPTION 'state-role axis must declare M2 then M3';
+ ELSIF NEW.axis_kind='declared_detail' AND cardinality(NEW.axis_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_values))) THEN
+   RAISE EXCEPTION 'declared detail axis contains duplicates';
+ END IF;
+ IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
+   AND o.indicator_id=NEW.indicator_id AND NOT o.axis_value=ANY(NEW.axis_values)) THEN
+   RAISE EXCEPTION 'series dataset descriptor excludes published observations';
  END IF;
  RETURN NEW;
 END $$;
@@ -106,6 +113,11 @@ BEGIN
    AND d.indicator_id=NEW.indicator_id AND NEW.axis_value=ANY(d.axis_values)
    AND NEW.territory_type=t.territory_type AND NEW.territory_type=ANY(d.allowed_levels)) THEN
    RAISE EXCEPTION 'series observation outside owned descriptor/reference contract';
+ END IF;
+ IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id
+   AND d.indicator_id=NEW.indicator_id AND d.axis_kind='declared_detail'
+   AND NEW.state_role IS NULL) THEN
+   RAISE EXCEPTION 'declared-detail state observation requires its typed M2/M3 role';
  END IF;
  RETURN NEW;
 END $$;
@@ -126,6 +138,12 @@ DECLARE actual_rows bigint; actual_descriptors bigint; BEGIN
    AND NOT EXISTS(SELECT 1 FROM series_observation_provenance p WHERE p.dataset_id=o.dataset_id
    AND p.indicator_id=o.indicator_id AND p.territory_id=o.territory_id AND p.axis_value=o.axis_value)) THEN
    RAISE EXCEPTION 'owned series observation is missing provenance association';
+ END IF;
+ IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id
+   AND d.axis_kind='declared_detail' AND EXISTS(SELECT 1 FROM series_dataset_observation o
+     WHERE o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id
+     GROUP BY o.territory_id HAVING count(DISTINCT o.state_role)<>2)) THEN
+   RAISE EXCEPTION 'declared-detail publication must contain both canonical state roles per territory';
  END IF;
  RETURN NULL;
 END $$;

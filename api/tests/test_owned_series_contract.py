@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 
 from api.main import ReadRepository, app
@@ -24,13 +25,20 @@ def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     assert "PRIMARY KEY(dataset_id,indicator_id,territory_id,axis_value,provenance_revision_id)" in migration
     assert "reference_content_version" in migration and "published_at" in migration
     assert "comparison_point IS NOT NULL OR direction='none'" in migration
+    assert "declared_detail" in migration and "state_role text" in migration
+    assert "rank_epci integer" not in migration and "rank_department integer" not in migration
     # Existing ENAF API and legacy table publication remain available.
     executable = "\n".join(line for line in migration.splitlines() if not line.lstrip().startswith("--"))
     assert not re.search(r"(?:INSERT|UPDATE|DELETE)\s+(?:INTO\s+)?table_publication\b", executable, re.I)
     assert "series_descriptor" in fresh and "ordered_series" in fresh
+    metadata = json.loads((root.parent / "pipeline/inst/extdata/theme-metadata/theme_milieux.json").read_text(encoding="utf-8"))
+    page = metadata["indicator_pages"]["artif_par_habitant"]
+    assert page["series_dataset_id"] == "ocsge_artif_etats"
+    assert page["series_publication"] == "owned"
+    assert page["comparison"]["detail"] in page["comparison"]["details"]
 
 
-def test_owned_reader_is_unit_scoped_snapshot_with_explicit_no_comparison():
+def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
     assert any(route.path == "/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}"
                for route in app.routes)
     class Cursor:
@@ -43,7 +51,7 @@ def test_owned_reader_is_unit_scoped_snapshot_with_explicit_no_comparison():
         def __exit__(self, *args): return False
 
     class Connection:
-        def __init__(self): self.queries=[]
+        def __init__(self): self.queries=[]; self.no_comparison=False
         def transaction(self): return Tx()
         def execute(self, sql, params=()):
             self.queries.append((sql,params))
@@ -53,13 +61,28 @@ def test_owned_reader_is_unit_scoped_snapshot_with_explicit_no_comparison():
             if "FROM table_publication" in sql: return Cursor([("ref1",)])
             if "FROM series_dataset_descriptor" in sql:
                 assert params == ("ocsge_artif_etats","artif_par_habitant")
-                return Cursor([("state_role",["M2","M3"],"may_be_missing",None,"État", "m²/hab","none",["commune"],"1")])
-            if "FROM territory_reference" in sql: return Cursor([("Rennes","commune")])
+                return Cursor([("declared_detail",["M2","M3","2021","2025"],"may_be_missing",None if self.no_comparison else "2025","?tat", "m?/hab","none" if self.no_comparison else "low",["commune","epci","departement"],"1")])
+            if "SELECT name,territory_type,department_id,epci_id" in sql:
+                return Cursor([("Rennes","commune","35","243500139")])
+            if "SELECT t.territory_id FROM territory_reference" in sql:
+                department, epci = params[1], params[3]
+                if epci: return Cursor([("35238",),("35239",)])
+                if department: return Cursor([("35238",),("35239",),("35240",)])
+                return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
             if "FROM series_dataset_observation" in sql:
-                assert params[:3] == ("ocsge_artif_etats","artif_par_habitant","35238")
-                return Cursor([("M2","2021-2025",0.0,"measured","rev-22-2021",
-                    "ocsge_artificialisation_22_2021","2021","IGN","OCS-GE","2021",
-                    "2021-01-01","2025-09-12","hash-a")])
+                ids=params[2]
+                values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
+                result=[]
+                for territory in ids:
+                    val=values[territory]
+                    for axis,role,value,status,source in (
+                        ("2021","M2",0.0,"measured","ocsge_artificialisation_29_2021"),
+                        ("2025","M3",val,"missing" if val is None else "measured","ocsge_artificialisation_29_2025"),
+                    ):
+                        result.append((territory,{"35238":"Rennes","35239":"Commune A","35240":"Commune B","22001":"Commune C","35241":"Commune D"}[territory],"commune",
+                            axis,role,"2021-2025",value,status,
+                            f"rev-{territory}-{axis}",source,axis,"IGN","OCS-GE",axis,"2021-01-01","2025-03-07",f"hash-{territory}-{axis}"))
+                return Cursor(result)
             raise AssertionError(sql)
     class Connections:
         def __init__(self): self.connection_value=Connection()
@@ -70,13 +93,32 @@ def test_owned_reader_is_unit_scoped_snapshot_with_explicit_no_comparison():
             return Context()
 
     connections=Connections()
-    response=ReadRepository(connections).read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant")
-    assert response["comparison"] is None
-    assert response["publication_id"] == "ocsge_v1"
-    assert response["availability"] == "incomplete"
-    assert response["points"][0]["value"] == 0.0
-    assert response["points"][0]["provenance"][0]["source_id"] == "ocsge_artificialisation_22_2021"
-    assert response["points"][1]["status"] == "missing"
+    repository=ReadRepository(connections)
+    epci=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+        "commune",None,"243500139","2025")
+    department=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+        "commune","35",None,"2025")
+    bretagne=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+        "commune",None,None,"2025")
+    assert epci["comparison"]["comparable_count"] == 2
+    assert epci["comparison"]["rank"] == 1 and epci["comparison"]["ties"] == 2
+    assert department["comparison"]["comparable_count"] == 3
+    assert bretagne["comparison"]["comparable_count"] == 4
+    assert bretagne["comparison"]["rank"] == 2 and bretagne["comparison"]["ties"] == 2
+    assert epci["comparison"]["median"] != bretagne["comparison"]["median"] or epci["comparison"]["comparable_count"] != bretagne["comparison"]["comparable_count"]
+    assert epci["publication_id"] == "ocsge_v1"
+    assert epci["points"][0]["value"] == 0.0
+    assert "rank_epci" not in epci["points"][0]
+    facet=next(p for p in epci["scope_series"][0]["points"] if p["axis"]=="2025")
+    assert facet["comparison_rank"] == 1 and facet["comparison_ties"] == 2
+    assert epci["scope_series"][1]["points"][1]["value"] == 50.0
+    missing=next(p for p in bretagne["scope_series"][-1]["points"] if p["axis"]=="2025")
+    assert missing["status"] == "missing" and missing["comparison_rank"] is None
+    connections.connection_value.no_comparison=True
+    no_comparison=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+        "commune","35",None,"2025")
+    assert no_comparison["comparison"] is None
+    assert all("comparison_rank" not in point for territory in no_comparison["scope_series"] for point in territory["points"])
     sql=" ".join(q for q,_ in connections.connection_value.queries)
     assert "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY" in sql
     assert "WHERE dataset_id=%s AND indicator_id=%s" in sql

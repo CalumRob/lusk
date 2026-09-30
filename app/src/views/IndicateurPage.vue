@@ -51,10 +51,14 @@ const theme = computed(() => String(route.params.theme)); const indicator = comp
 const orderedSeriesAdapter = computed(() => {
   const adapter = orderedSeriesAdapterFor(theme.value, indicator.value)
   if (!adapter) return null
-  const enabled = adapter.datasetId
+  const page = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+    ?.indicator_pages?.[indicator.value] as { series_dataset_id?: string; series_publication?: 'legacy' | 'owned' } | undefined
+  const datasetId = page?.series_dataset_id
+  const publicationMode = page?.series_publication
+  const enabled = publicationMode === 'owned'
     ? import.meta.env.VITE_OCSGE_STATE_SERIES_API === '1'
     : import.meta.env.VITE_CONSO_ENAF_SERIES_API === '1'
-  return enabled ? adapter : null
+  return enabled ? { ...adapter, datasetId, publicationMode } : null
 })
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
@@ -203,11 +207,17 @@ async function chargerSerie(force = false) {
   const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire) ?? scopeTerritories[0]
   if (!focal) { serieErreur.value = false; serieLecture.value = null; return }
   const request = ++serieRequete
+  const comparison = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+    ?.indicator_pages?.[indicator.value]?.comparison
+  const requestedDetail = typeof route.query.detail === 'string' ? route.query.detail : comparison?.detail
   const query = new URLSearchParams({ scope_level: niveauSerie.value })
   if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
   if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
-  const url = adapter.datasetId
-    ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId)}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}`
+  if (adapter.publicationMode === 'owned') {
+    query.set('comparison_detail', requestedDetail ?? '')
+  }
+  const url = adapter.publicationMode === 'owned'
+    ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
     : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
   if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
   serieRequestKey = url
@@ -219,8 +229,8 @@ async function chargerSerie(force = false) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const result = await response.json() as OrderedSeriesRead
     if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) ||
-      (adapter.datasetId && result.dataset_id !== adapter.datasetId) ||
-      (!adapter.datasetId && !Array.isArray(result.scope_series))) throw new Error('Invalid ordered-series response')
+      (adapter.publicationMode === 'owned' && result.dataset_id !== adapter.datasetId) ||
+      !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
     if (request === serieRequete) serieLecture.value = result
   } catch {
     if (request === serieRequete) serieErreur.value = true

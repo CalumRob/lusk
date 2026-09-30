@@ -28,10 +28,18 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     const fetchMock = vi.spyOn(globalThis,'fetch').mockImplementation(async () => {
       if(!apiAvailable) throw new Error('owned API unavailable')
       return new Response(JSON.stringify({
-      dataset_id:'ocsge_artif_etats',indicator_id:'artif_par_habitant',axis_kind:'state_role',unit:'m²/hab',
-      territory:{id:'22001',type:'commune',name:'Commune A1'},comparison:null,comparison_point:null,
-      points:[{axis:'M2',observation_period:'2021-2025',value:42,status:'measured',provenance:[]},
-        {axis:'M3',observation_period:'2021-2025',value:null,status:'missing',provenance:[]}],
+      dataset_id:'ocsge_artif_etats',indicator_id:'artif_par_habitant',axis_kind:'declared_detail',unit:'m²/hab',
+      territory:{id:'22001',type:'commune',name:'Commune A1'},comparison_point:'2025',
+      comparison:{point:'2025',direction:'low',scope:{kind:'level',territory_type:'commune',
+        department_id:'22',rank_field:'rang_dep'},rank:1,ties:1,median:61,comparable_count:2},
+      points:[{axis:'2021',state_role:'M2',observation_period:'2021-2025',value:0,status:'measured',provenance:[]},
+        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:42,status:'measured',provenance:[]}],
+      scope_series:[{territory:{id:'22001',type:'commune',name:'Commune A1'},points:[
+        {axis:'2021',state_role:'M2',observation_period:'2021-2025',value:0,status:'measured',provenance:[]},
+        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:42,status:'measured',comparison_rank:1,comparison_ties:1,comparison_count:2,provenance:[]}]},
+      {territory:{id:'22002',type:'commune',name:'Commune A2'},points:[
+        {axis:'2021',state_role:'M2',observation_period:'2021-2025',value:2,status:'measured',provenance:[]},
+        {axis:'2025',state_role:'M3',observation_period:'2021-2025',value:80,status:'measured',comparison_rank:2,comparison_ties:1,comparison_count:2,provenance:[]}]}],
       }),{status:200,headers:{'Content-Type':'application/json'}})
     })
     const router=createRouter({history:createMemoryHistory(),routes})
@@ -44,7 +52,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]:async()=>({communes:empty,epcis:empty,departements:empty}),
     }}})
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant')
+    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22&comparison_detail=2025')
     expect(wrapper.text()).toContain('momentanément indisponibles')
     apiAvailable=true
     await wrapper.get('[role="alert"] button').trigger('click')

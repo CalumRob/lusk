@@ -347,8 +347,8 @@ assembler_indicateurs <- function(territoires, indicateurs, rangs,
       "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
       "vintage_date_reference", "vintage_date_publication",
-      "source_reference",
-      "n"
+       "source_reference",
+       "n", "state_role", "source_components"
     )))
 }
 

@@ -195,36 +195,56 @@ test_that("owned ENAF projection preserves its canonical facts and immutable pro
   expect_error(validate_owned_series_projection(bad),"requires at least one provenance")
 })
 
-test_that("OCS-GE M2/M3 projection preserves role values, actual windows and source revisions", {
+test_that("OCS-GE projection uses typed per-role components and retains comparison details", {
   root <- testthat::test_path("../../../public/data")
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"),simplifyVector=FALSE)
-  indicators <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
-  histories <- nanoparquet::read_parquet(file.path(root,"histoires_milieux.parquet"))
   vintages <- nanoparquet::read_parquet(file.path(root,"vintages.parquet"))
-  projection <- project_artif_m2m3_projection(indicators,histories,vintages,metadata)
+  vintage_ids <- c("ocsge_artificialisation_22_2021","ocsge_artificialisation_22_2025",
+    "ocsge_artificialisation_35_2020","ocsge_artificialisation_35_2023",
+    "ocsge_artificialisation_56_2022","ocsge_artificialisation_56_2024")
+  ids <- list(c("ocsge_artificialisation_22_2021"),c("ocsge_artificialisation_22_2025"),
+    c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"),
+    c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
+  roles <- c("M2","M3","M2","M3")
+  details <- c("2021","2025","M2","M3")
+  territories <- c("22001","22001","200000003","200000003")
+  types <- c("commune","commune","epci","epci")
+  periods <- c("2021-2025","2021-2025","2020-2023 (35) ? 2022-2024 (56)",
+    "2020-2023 (35) ? 2022-2024 (56)")
+  components <- lapply(seq_along(ids),function(i) list(M2=if(roles[[i]]=="M2") ids[[i]] else character(),
+    M3=if(roles[[i]]=="M3") ids[[i]] else character()))
+  fields <- do.call(rbind,lapply(seq_along(ids),function(i) {
+    source <- vintages[match(ids[[i]][[1L]],vintages$id),]
+    data.frame(territoire=territories[[i]],type=types[[i]],theme="milieux",key="artif_par_habitant",
+      detail=details[[i]],state_role=roles[[i]],value=c(.18,.42,.31,.29)[[i]],unit="m?/hab",
+      source_reference=if(length(ids[[i]])==1L) ids[[i]] else periods[[i]],
+      source_components=jsonlite::toJSON(components[[i]],auto_unbox=FALSE),
+      vintage_source=source$source,vintage_version=source$version,
+      vintage_date_reference=source$date_reference,vintage_date_publication=source$date_publication,
+      stringsAsFactors=FALSE)
+  }))
+  histories <- data.frame(territoire=c("22001","200000003"),type=c("commune","epci"),theme="milieux",
+    periode_artif=c("2021-2025","2020-2023 (35) ? 2022-2024 (56)"),stringsAsFactors=FALSE)
+  projection <- project_artif_m2m3_projection(fields,histories,vintages,metadata)
   expect_invisible(validate_owned_series_projection(projection))
-  expect_identical(projection$descriptor$axis_values,c("M2","M3"))
-  expect_null(projection$descriptor$comparison_point)
-  expect_identical(projection$descriptor$direction,"none")
-  expect_true(any(grepl(" · ",projection$points$observation_period)))
-  expect_true(all(projection$provenance$source_id %in% vintages$id))
-  link_key <- paste(projection$point_provenance$territory_id,projection$point_provenance$axis_value)
-  expect_true(any(table(link_key)>1L))
-  mixed_keys <- paste(projection$points$territory_id[grepl(" · ",projection$points$observation_period)],
-    projection$points$axis_value[grepl(" · ",projection$points$observation_period)])
-  expect_true(all(vapply(mixed_keys,function(key) sum(link_key==key)>1L,logical(1))))
-  hidx <- match(paste(projection$points$territory_id,projection$points$territory_type),
-    paste(histories$territoire,histories$type))
-  expected <- ifelse(projection$points$axis_value=="M2",histories$artif_m2_par_habitant[hidx],
-    histories$artif_m3_par_habitant[hidx])
-  expect_equal(projection$points$value,expected,tolerance=0)
-  revisions <- projection$provenance[projection$provenance$source_id=="ocsge_artificialisation_29_2021",]
-  expect_equal(revisions$publication_date[[1L]],as.Date(vintages$date_publication[match(
-    "ocsge_artificialisation_29_2021",vintages$id)]))
-  all_metadata_vintages <- unlist(lapply(metadata$source_records,function(rec) rec$vintages),recursive=FALSE)
-  pinned <- Filter(function(v) identical(as.character(v$id),"ocsge_artificialisation_29_2021"),all_metadata_vintages)[[1L]]
-  expect_false(identical(as.character(revisions$publication_date[[1L]]),
-    as.character(pinned$datePublication)))
+  expect_identical(projection$descriptor$dataset_id,metadata$indicator_pages$artif_par_habitant$series_dataset_id)
+  expect_identical(projection$descriptor$comparison_point,"2025")
+  expect_identical(projection$descriptor$direction,"low")
+  expect_true(all(c("2021","2025","M2","M3") %in% projection$descriptor$axis_values))
+  expect_equal(projection$points$value,c(.18,.42,.31,.29),tolerance=0)
+  expect_equal(projection$points$state_role,roles)
+  source_links <- split(projection$provenance$source_id[match(projection$point_provenance$provenance_revision_id,
+      projection$provenance$provenance_revision_id)],
+    paste(projection$point_provenance$territory_id,projection$point_provenance$axis_value))
+  expect_setequal(source_links[["200000003 M2"]],c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"))
+  expect_setequal(source_links[["200000003 M3"]],c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
+  expect_equal(projection$points$observation_period[3],periods[[3]])
+  old_artifact <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
+  old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
+  old_artifact$state_role <- NULL
+  old_artifact$source_components <- NULL
+  expect_error(project_artif_m2m3_projection(old_artifact,histories,vintages,metadata),
+    "typed roles or source components")
 })
 
 test_that("canonical vintage source label is checked against vintage Parquet identity", {

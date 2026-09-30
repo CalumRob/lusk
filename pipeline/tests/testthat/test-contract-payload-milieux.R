@@ -51,7 +51,7 @@ test_that("la forme des quatre tables est le contrat (payload Milieux)", {
     "rang_epci_n", "rang_dep_n", "rang_reg_n",
     "vintage_source", "vintage_version",
     "vintage_date_reference", "vintage_date_publication",
-    "source_reference"
+    "source_reference", "state_role", "source_components"
   ))
   # histoires : la forme du contrat de l'Histoire pivotée (#238, ADR-0017) —
   # une ligne par territoire, les deux fenêtres (periode_pop / periode_artif),

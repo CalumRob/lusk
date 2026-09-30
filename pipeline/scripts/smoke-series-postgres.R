@@ -5,6 +5,9 @@
 # publisher lusk_it_contract_pub, reader lusk_it_contract_read. This is not a
 # general runner; the exact values are guards against accidental DB drift.
 pkgload::load_all(".", quiet=TRUE)
+canonical_indicators <- nanoparquet::read_parquet(file.path("..","public","data","indicateurs_milieux.parquet"))
+if (!all(c("state_role","source_components","rang_epci","rang_dep","rang_reg") %in% names(canonical_indicators)))
+  stop("Canonical Parquet predates the typed M2/M3 role/source-component producer seam; regenerate the pipeline artifacts before opening a disposable database schema",call.=FALSE)
 required <- c("HOST", "PORT", "DATABASE", "USER", "READER")
 config <- setNames(lapply(required, function(key)
   Sys.getenv(paste0("LUSK_SERIES_TEST_", key), unset="")), required)
@@ -106,6 +109,8 @@ tryCatch({
     DBI::dbQuoteIdentifier(connection, schema), " TO ", DBI::dbQuoteIdentifier(connection, config$READER)))
   DBI::dbExecute(connection, paste0("GRANT SELECT ON table_publication TO ",
     DBI::dbQuoteIdentifier(connection, config$READER)))
+  DBI::dbExecute(connection,paste0("GRANT SELECT ON territory_reference TO ",
+    DBI::dbQuoteIdentifier(connection,config$READER)))
   DBI::dbExecute(connection, paste0("GRANT SELECT ON series_descriptor,ordered_series TO ",
     DBI::dbQuoteIdentifier(connection, config$READER)))
   DBI::dbExecute(connection,paste0("GRANT SELECT ON series_provenance_revision,series_dataset_publication,series_dataset_descriptor,series_dataset_observation,series_observation_provenance TO ",
@@ -234,7 +239,7 @@ tryCatch({
   # Exercise the additive dataset-owned contract alongside the untouched ENAF
   # legacy reader/storage. Both real canonical units publish independently.
   metadata <- jsonlite::read_json(file.path("inst","extdata","theme-metadata","theme_milieux.json"),simplifyVector=FALSE)
-  indicators <- nanoparquet::read_parquet(file.path("..","public","data","indicateurs_milieux.parquet"))
+  indicators <- canonical_indicators
   vintages <- nanoparquet::read_parquet(file.path("..","public","data","vintages.parquet"))
   histories <- nanoparquet::read_parquet(file.path("..","public","data","histoires_milieux.parquet"))
   owned_canonical <- list(indicateurs=indicators,histoires=histories,vintages=vintages)
@@ -321,22 +326,41 @@ tryCatch({
   stopifnot(inherits(immutable,"try-error"),grepl("series provenance revisions are immutable",as.character(immutable),fixed=TRUE))
   DBI::dbBegin(connection)
   DBI::dbExecute(connection,"UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='ocsge_artif_etats'")
-  bad_association <- try(DBI::dbExecute(connection,"DELETE FROM series_observation_provenance WHERE dataset_id='ocsge_artif_etats' AND indicator_id='artif_par_habitant' AND territory_id=$1 AND axis_value='M2'",params=list(owned_ocsge$points$territory_id[[1L]])),silent=TRUE)
+  bad_association <- try(DBI::dbExecute(connection,"DELETE FROM series_observation_provenance WHERE dataset_id='ocsge_artif_etats' AND indicator_id='artif_par_habitant' AND territory_id=$1 AND axis_value=$2",params=list(owned_ocsge$points$territory_id[[1L]],owned_ocsge$points$axis_value[[1L]])),silent=TRUE)
   if(!inherits(bad_association,"try-error")) bad_association <- try(DBI::dbCommit(connection),silent=TRUE)
   if(inherits(bad_association,"try-error")) suppressWarnings(try(DBI::dbRollback(connection),silent=TRUE))
   if(!grepl("missing provenance association",as.character(bad_association),fixed=TRUE)) cat("ASSOCIATION REJECTION REASON:",as.character(bad_association),"\n")
   stopifnot(inherits(bad_association,"try-error"),grepl("missing provenance association",as.character(bad_association),fixed=TRUE))
   invalid_axis <- try(DBI::dbWithTransaction(connection,{
     DBI::dbExecute(connection,"UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='ocsge_artif_etats'")
-    DBI::dbExecute(connection,"UPDATE series_dataset_descriptor SET axis_values=ARRAY['M3','M2'] WHERE dataset_id='ocsge_artif_etats'")
+    DBI::dbExecute(connection,"UPDATE series_dataset_descriptor SET axis_values=ARRAY['M2','M3'] WHERE dataset_id='ocsge_artif_etats'")
   }),silent=TRUE)
   invalid_level <- try(DBI::dbWithTransaction(connection,{
     DBI::dbExecute(connection,"UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='ocsge_artif_etats'")
     DBI::dbExecute(connection,"UPDATE series_dataset_observation SET territory_type='epci' WHERE dataset_id='ocsge_artif_etats' AND indicator_id='artif_par_habitant' AND territory_type='commune' AND territory_id=(SELECT territory_id FROM series_dataset_observation WHERE dataset_id='ocsge_artif_etats' AND indicator_id='artif_par_habitant' AND territory_type='commune' LIMIT 1)")
   }),silent=TRUE)
-  stopifnot(inherits(invalid_axis,"try-error"),grepl("state-role axis must declare M2 then M3",as.character(invalid_axis),fixed=TRUE),
+  stopifnot(inherits(invalid_axis,"try-error"),grepl("series dataset descriptor excludes published observations",as.character(invalid_axis),fixed=TRUE),
     inherits(invalid_level,"try-error"),grepl("series observation outside owned descriptor/reference contract",as.character(invalid_level),fixed=TRUE),
     identical(before_ocsge,owned_table_snapshot("ocsge_artif_etats")))
+  http_target <- DBI::dbGetQuery(connection,
+    "SELECT territory_id,epci_id FROM series_dataset_observation o JOIN territory_reference t USING(territory_id) WHERE o.dataset_id='ocsge_artif_etats' AND o.indicator_id='artif_par_habitant' AND o.territory_type='commune' AND o.axis_value='2025' AND t.epci_id IS NOT NULL ORDER BY territory_id LIMIT 1")
+  if(nrow(http_target)!=1L) stop("Canonical owned projection has no selected 2025 commune facet for HTTP parity",call.=FALSE)
+  http_dsn <- sprintf("postgresql://%s@%s:%s/%s?options=-csearch_path%%3D%s",
+    config$READER,config$HOST,config$PORT,config$DATABASE,schema)
+  old_env <- Sys.getenv(c("DATABASE_URL","LUSK_SERIES_HTTP_DATABASE_URL","LUSK_SERIES_HTTP_DATASET",
+    "LUSK_SERIES_HTTP_INDICATOR","LUSK_SERIES_HTTP_TERRITORY","LUSK_SERIES_HTTP_DETAIL",
+    "LUSK_SERIES_HTTP_SCOPE","LUSK_SERIES_HTTP_EPCI","PYTHONPATH"),unset=NA_character_)
+  Sys.setenv(DATABASE_URL=http_dsn,LUSK_SERIES_HTTP_DATABASE_URL=http_dsn,
+    LUSK_SERIES_HTTP_DATASET="ocsge_artif_etats",LUSK_SERIES_HTTP_INDICATOR="artif_par_habitant",
+    LUSK_SERIES_HTTP_TERRITORY=http_target$territory_id[[1L]],LUSK_SERIES_HTTP_DETAIL="2025",
+    LUSK_SERIES_HTTP_SCOPE="commune",LUSK_SERIES_HTTP_EPCI=http_target$epci_id[[1L]],
+    PYTHONPATH="..")
+  http_output <- system2("python",c("-m","pytest","../api/tests/test_owned_series_postgres_http.py","-q"),
+    stdout=TRUE,stderr=TRUE)
+  http_status <- attr(http_output,"status") %||% 0L
+  cat(paste(http_output,collapse="\n"),"\n")
+  if(http_status!=0L) stop("Actual owned-series API HTTP parity test failed: ",paste(http_output,collapse="\n"),call.=FALSE)
+  for(n in names(old_env)) if(is.na(old_env[[n]])) Sys.unsetenv(n) else do.call(Sys.setenv,setNames(list(old_env[[n]]),n))
 
   sizes <- DBI::dbGetQuery(connection, "SELECT pg_total_relation_size('ordered_series')::text AS facts_bytes,pg_total_relation_size('series_descriptor')::text AS descriptor_bytes")
   cat("SERIES POSTGRES REHEARSAL ONLY | database:", config$DATABASE,

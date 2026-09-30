@@ -124,7 +124,9 @@ owned_conso_enaf_projection <- function(canonical, metadata) {
     project_conso_enaf_series(canonical, metadata)
   d <- projection$descriptor
   points <- projection$points
-  dataset_id <- "conso_enaf_annuel"
+  dataset_id <- metadata$indicator_pages$conso_enaf_annuel$series_dataset_id
+  if (is.null(dataset_id) || length(dataset_id)!=1L || !nzchar(dataset_id))
+    stop("ENAF owned-series identity is missing from metadata",call.=FALSE)
   d$dataset_id <- dataset_id
   points$dataset_id <- dataset_id
   source <- d$source_id; vintage_id <- unique(points$vintage_id)
@@ -147,11 +149,15 @@ owned_conso_enaf_projection <- function(canonical, metadata) {
 project_artif_m2m3_projection <- function(indicators, histories, vintages, metadata) {
   indicator_id <- "artif_par_habitant"
   page <- metadata$indicator_pages[[indicator_id]]
+  dataset_id <- page$series_dataset_id
+  if (is.null(dataset_id) || length(dataset_id)!=1L || !nzchar(dataset_id))
+    stop("OCS-GE owned-series identity is missing from metadata",call.=FALSE)
   levels <- unlist(page$levels, use.names=FALSE)
   raw <- indicators[!is.na(indicators$key) & indicators$key==indicator_id,,drop=FALSE]
-  if (!nrow(raw) || anyNA(raw[c("territoire","type","detail","source_reference",
+  if (!nrow(raw) || !all(c("state_role","source_components") %in% names(raw)) ||
+      anyNA(raw[c("territoire","type","detail","state_role","source_components","source_reference",
       "vintage_source","vintage_version","vintage_date_reference","vintage_date_publication")]))
-    stop("Canonical M2/M3 observations or provenance are incomplete",call.=FALSE)
+    stop("Canonical state observations, typed roles or source components are incomplete",call.=FALSE)
   if (any(!raw$type %in% c(levels,"region"))) stop("Canonical state has an unexpected territory level",call.=FALSE)
   excluded_region <- raw[raw$type=="region",,drop=FALSE]
   raw <- raw[raw$type %in% levels,,drop=FALSE]
@@ -160,42 +166,16 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
   if (anyDuplicated(history[c("territoire","type")])) stop("Canonical state history has duplicate territory keys",call.=FALSE)
   hidx <- match(paste(raw$territoire,raw$type),paste(history$territoire,history$type))
   if (anyNA(hidx)) stop("Canonical state lacks its authoritative OCS-GE window",call.=FALSE)
-  periods <- as.character(history$periode_artif[hidx])
-  period_windows <- function(period) {
-    with_dep <- regmatches(period,gregexpr("[0-9]{4}-[0-9]{4} \\([0-9]{2}\\)",period))[[1L]]
-    if(length(with_dep)) return(with_dep)
-    if(grepl("^[0-9]{4}-[0-9]{4}$",period)) return(period)
-    character()
-  }
-  role_for <- function(detail, period) {
-    if (detail %in% c("M2","M3")) return(detail)
-    windows <- period_windows(period)
-    if (!length(windows)) stop("Canonical OCS-GE window cannot map a state role",call.=FALSE)
-    starts <- as.integer(sub("^([0-9]{4})-.*$","\\1",windows))
-    ends <- as.integer(sub("^[0-9]{4}-([0-9]{4}).*$","\\1",windows))
-    year <- as.integer(detail)
-    if (length(windows)==1L && year==starts[[1L]]) return("M2")
-    if (length(windows)==1L && year==ends[[1L]]) return("M3")
-    stop("Canonical year-valued observation is not an endpoint in its declared OCS-GE window",call.=FALSE)
-  }
-  roles <- vapply(seq_len(nrow(raw)),function(i) role_for(as.character(raw$detail[[i]]),periods[[i]]),character(1))
-  points <- data.frame(dataset_id="ocsge_artif_etats",indicator_id=indicator_id,
-    territory_id=as.character(raw$territoire),territory_type=as.character(raw$type),axis_value=roles,
-    observation_period=periods,value=raw$value,status=ifelse(is.na(raw$value),"missing","measured"),
+  roles <- as.character(raw$state_role)
+  details <- as.character(raw$detail)
+  points <- data.frame(dataset_id=dataset_id,indicator_id=indicator_id,
+    territory_id=as.character(raw$territoire),territory_type=as.character(raw$type),axis_value=details,
+    state_role=roles,observation_period=as.character(history$periode_artif[hidx]),
+    value=raw$value,status=ifelse(is.na(raw$value),"missing","measured"),
     stringsAsFactors=FALSE)
+  components <- lapply(as.character(raw$source_components),jsonlite::fromJSON,simplifyVector=FALSE)
   if (anyDuplicated(points[c("dataset_id","indicator_id","territory_id","axis_value")]))
     stop("Canonical OCS-GE role projection contains duplicate territory states",call.=FALSE)
-  source_parts <- function(source_reference, role, period) {
-    if (grepl("^ocsge_artificialisation_[0-9]{2}_[0-9]{4}$",source_reference)) return(source_reference)
-    windows <- period_windows(period)
-    if (!length(windows)) stop("Mixed OCS-GE source window has no department/year components",call.=FALSE)
-    if(!grepl("\\(",windows[[1L]])) stop("A multi-window OCS-GE observation must identify each department",call.=FALSE)
-    parts <- regmatches(windows,regexec("([0-9]{4})-([0-9]{4}) \\(([0-9]{2})\\)",windows,perl=TRUE))
-    years <- vapply(parts,function(m) if(role=="M2") m[[2L]] else m[[3L]],character(1))
-    departments <- vapply(parts,function(m) m[[4L]],character(1))
-    paste0("ocsge_artificialisation_",departments,"_",years)
-  }
-  source_ids <- lapply(seq_len(nrow(raw)),function(i) source_parts(as.character(raw$source_reference[[i]]),roles[[i]],periods[[i]]))
   metadata_vintages <- unlist(lapply(metadata$source_records,function(rec) rec$vintages),recursive=FALSE)
   indicator_source <- unlist(page$sources,use.names=FALSE)[[1L]]
   source_record <- metadata$source_records[[indicator_source]]
@@ -206,7 +186,11 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
     publication_date=as.character(v$datePublication),stringsAsFactors=FALSE)))
   vintages <- as.data.frame(vintages,stringsAsFactors=FALSE)
   revision_rows <- list(); links <- list()
-  for (i in seq_len(nrow(raw))) for (source_id in source_ids[[i]]) {
+  for (i in seq_len(nrow(raw))) {
+    role_sources <- components[[i]][[roles[[i]]]]
+    if (is.null(role_sources) || !length(role_sources)) stop("Canonical state role has no typed source components",call.=FALSE)
+    source_ids <- as.character(role_sources)
+    for (source_id in source_ids) {
     vr <- vintages[as.character(vintages$id)==source_id,,drop=FALSE]
     md <- declared[declared$id==source_id,,drop=FALSE]
     # The emitted vintages Parquet is the canonical publication-date authority.
@@ -223,17 +207,19 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
       dataset_name=as.character(source_record$dataset),source_version=as.character(vr$version[[1L]]),
       reference_date=as.Date(vr$date_reference[[1L]]),publication_date=as.Date(vr$date_publication[[1L]]),
       revision_hash=hash,stringsAsFactors=FALSE)
-    links[[length(links)+1L]] <- data.frame(dataset_id="ocsge_artif_etats",indicator_id=indicator_id,
-      territory_id=points$territory_id[[i]],axis_value=roles[[i]],provenance_revision_id=revision_id,
+    links[[length(links)+1L]] <- data.frame(dataset_id=dataset_id,indicator_id=indicator_id,
+      territory_id=points$territory_id[[i]],axis_value=details[[i]],provenance_revision_id=revision_id,
       stringsAsFactors=FALSE)
+    }
   }
   provenance <- do.call(rbind,revision_rows); rownames(provenance)<-NULL
   point_provenance <- unique(do.call(rbind,links)); rownames(point_provenance)<-NULL
-  descriptor <- list(dataset_id="ocsge_artif_etats",indicator_id=indicator_id,axis_kind="state_role",
-    axis_values=c("M2","M3"),completeness="may_be_missing",comparison_point=NULL,
-    label=page$label,unit=page$unit,direction="none",allowed_levels=levels,
+  descriptor <- list(dataset_id=dataset_id,indicator_id=indicator_id,axis_kind="declared_detail",
+    axis_values=as.character(unlist(page$comparison$details,use.names=FALSE)),completeness="may_be_missing",
+    comparison_point=as.character(page$comparison$detail),
+    label=page$label,unit=page$unit,direction=as.character(page$comparison$direction %||% page$direction),allowed_levels=levels,
     descriptor_version=as.character(page$descriptor_version %||% "1"))
-  result <- list(dataset_id="ocsge_artif_etats",points=points,descriptor=descriptor,
+  result <- list(dataset_id=dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=point_provenance,
     excluded=list(region=list(policy="territory_fiche_only",row_count=nrow(excluded_region))))
   validate_owned_series_projection(result)
@@ -270,6 +256,7 @@ validate_owned_series_projection <- function(projection) {
   valid_axis <- if (identical(d$axis_kind, "year")) !anyNA(axes) && all(grepl("^\\d{4}$", axes)) &&
     identical(axes, axes[order(as.integer(axes))]) else identical(d$axis_kind, "state_role") &&
     identical(axes, c("M2", "M3"))
+  if (identical(d$axis_kind,"declared_detail")) valid_axis <- !anyNA(axes) && length(axes)>0L
   if (length(d$dataset_id)!=1L || is.na(d$dataset_id) || !nzchar(d$dataset_id) ||
       length(d$indicator_id)!=1L || is.na(d$indicator_id) || !nzchar(d$indicator_id) ||
       !length(axes) || anyDuplicated(axes) || !valid_axis ||
@@ -287,6 +274,16 @@ validate_owned_series_projection <- function(projection) {
       any((points$status=="measured") != !is.na(points$value)) ||
       any(!is.na(points$value) & !is.finite(points$value)))
     stop("Invalid owned series observation or undeclared axis/level", call.=FALSE)
+  if (identical(d$axis_kind,"declared_detail") &&
+      (!"state_role" %in% names(points) || anyNA(points$state_role) ||
+       any(!points$state_role %in% c("M2","M3")) ||
+       anyDuplicated(points[c("dataset_id","indicator_id","territory_id","state_role")])))
+    stop("Declared-detail state facts require unique typed M2/M3 roles",call.=FALSE)
+  if (identical(d$axis_kind,"declared_detail")) {
+    roles_by_territory <- split(points$state_role,points$territory_id)
+    if (any(!vapply(roles_by_territory,function(roles) setequal(roles,c("M2","M3")),logical(1))))
+      stop("Every declared-detail territory requires both canonical state roles",call.=FALSE)
+  }
   if (anyNA(provenance[required_prov]) || anyDuplicated(provenance$provenance_revision_id) ||
       anyDuplicated(provenance$revision_hash)) stop("Invalid or duplicate immutable provenance revision",call.=FALSE)
   expected_hash <- vapply(seq_len(nrow(provenance)),function(i) series_revision_hash(
@@ -365,8 +362,11 @@ owned_series_postgres_adapter <- function(con) {
         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
           d$comparison_point %||% NA_character_,d$label,d$unit,d$direction,
           array_literal(d$allowed_levels),d$descriptor_version))
+      point_columns <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
+        "observation_period","value","status")
+      optional_columns <- intersect(c("state_role"),names(projection$points))
       DBI::dbWriteTable(con,"series_dataset_observation",projection$points[
-        c("dataset_id","indicator_id","territory_id","territory_type","axis_value","observation_period","value","status")],append=TRUE,row.names=FALSE)
+        c(point_columns,optional_columns)],append=TRUE,row.names=FALSE)
       DBI::dbWriteTable(con,"series_observation_provenance",projection$point_provenance,append=TRUE,row.names=FALSE)
     })
 }
