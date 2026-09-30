@@ -439,6 +439,51 @@ read_conso_enaf_series_projection <- function(sortie = "../public/data",
   })
 }
 
+# Read one fingerprinted snapshot for both registered owned projections. The
+# four canonical inputs and pinned descriptor are the only publication inputs.
+read_owned_series_projections <- function(sortie="../public/data",
+    metadata_path="inst/extdata/theme-metadata/theme_milieux.json") {
+  paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"),
+    histories=file.path(sortie,"histoires_milieux.parquet"),
+    vintages=file.path(sortie,"vintages.parquet"), metadata=metadata_path)
+  read_stable_series_artifacts(paths,function(input) {
+    canonical <- list(indicateurs=nanoparquet::read_parquet(input[["indicators"]]),
+      histoires=nanoparquet::read_parquet(input[["histories"]]),
+      vintages=nanoparquet::read_parquet(input[["vintages"]]))
+    metadata <- jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE)
+    registry <- register_owned_series_publishers(list(),metadata)
+    projections <- lapply(registry,function(publisher) publisher$project(canonical))
+    lapply(projections,validate_owned_series_projection)
+    projections
+  })
+}
+
+require_owned_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_OWNED_SERIES",unset="")) {
+  if (!identical(value,"1")) stop("Owned series publication requires LUSK_PUBLISH_OWNED_SERIES=1",call.=FALSE)
+  invisible(TRUE)
+}
+
+# Injectable dispatch keeps operational ordering testable without a database.
+dispatch_owned_series_cli <- function(mode, projections, connect,
+    opt_in=Sys.getenv("LUSK_PUBLISH_OWNED_SERIES",unset=""),
+    lusk_mode=Sys.getenv("LUSK_MODE",unset="full")) {
+  if (!mode %in% c("check","publish")) stop("Unknown owned series action",call.=FALSE)
+  if (mode=="publish") {
+    require_owned_series_publish_opt_in(opt_in)
+    if (identical(lusk_mode,"cron")) stop("Owned series publication is not enabled for cron mode",call.=FALSE)
+  }
+  if (!length(projections) || any(!vapply(projections,function(p) {
+    tryCatch({validate_owned_series_projection(p); TRUE},error=function(e) FALSE)
+  },logical(1)))) stop("Both owned series projections must validate before publication",call.=FALSE)
+  versions <- lapply(projections,scalar_content_version)
+  if (mode=="check") return(list(projections=projections,versions=versions))
+  connection <- connect()
+  on.exit(DBI::dbDisconnect(connection),add=TRUE)
+  adapter <- owned_series_postgres_adapter(connection)
+  results <- lapply(projections,function(p) publish_owned_series_projection(p,adapter))
+  list(projections=projections,versions=versions,results=results)
+}
+
 require_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_SERIES", unset="")) {
   if (!identical(value, "1"))
     stop("Real series publication requires explicit LUSK_PUBLISH_SERIES=1", call.=FALSE)

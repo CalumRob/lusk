@@ -271,6 +271,32 @@ test_that("stable artifact reader detects replacement during the read window", {
   }), "changed while reading")
 })
 
+test_that("owned series CLI validates before connecting and enforces explicit publish guards", {
+  points <- data.frame(dataset_id="enaf",indicator_id="i",territory_id="t",
+    territory_type="commune",axis_value="2024",observation_period="2024",
+    value=1,status="measured")
+  hash <- series_revision_hash("s","v","n","d","v","2025-01-01","2025-01-02")
+  rid <- paste0("s-v-",substr(hash,1,16))
+  projection <- list(dataset_id="enaf",points=points,
+    descriptor=list(dataset_id="enaf",indicator_id="i",axis_kind="year",axis_values="2024",
+      completeness="may_be_missing",comparison_point="2024",label="i",unit="ha",direction="low",
+      allowed_levels="commune",descriptor_version="1"),
+    provenance=data.frame(provenance_revision_id=rid,source_id="s",vintage_id="v",source_name="n",
+      dataset_name="d",source_version="v",reference_date=as.Date("2025-01-01"),
+      publication_date=as.Date("2025-01-02"),revision_hash=hash),
+    point_provenance=data.frame(dataset_id="enaf",indicator_id="i",territory_id="t",
+      axis_value="2024",provenance_revision_id=rid))
+  connects <- 0L
+  connect <- function() { connects <<- connects+1L; stop("must not connect") }
+  expect_equal(length(dispatch_owned_series_cli("check",list(enaf=projection),connect)$versions),1L)
+  expect_equal(connects,0L)
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="0"),"LUSK_PUBLISH_OWNED_SERIES=1")
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="1",lusk_mode="cron"),"cron")
+  bad <- projection; bad$points$value <- Inf
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=bad),connect,opt_in="1"),"validate")
+  expect_equal(connects,0L)
+})
+
 test_that("canonical annual rows outside descriptor axes or levels are rejected", {
   payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
