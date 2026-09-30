@@ -1349,6 +1349,16 @@ indicator_artif_par_habitant <- function(territoires) {
                            "_", territoires$millesime_ocsge_fin),
                     territoires$periode_artif)
 
+  # Typed source membership for each state, assembled from the machine couples
+  # held by the territory producer (never parsed back from display windows).
+  components_json <- vapply(seq_len(nrow(territoires)), function(i) {
+    couples <- couples_ocsge_vers_table(territoires$couples_ocsge[[i]])
+    jsonlite::toJSON(list(
+      M2=as.character(paste0("ocsge_artificialisation_",couples$departement,"_",couples$m2)),
+      M3=as.character(paste0("ocsge_artificialisation_",couples$departement,"_",couples$m3))
+    ),auto_unbox=FALSE,null="null")
+  },character(1))
+
   # l'estampille des lignes-span : construite par le thème depuis les couples
   # du territoire (estampille_span — le produit, la fenêtre span, les dates du
   # manifeste) ; les lignes mono-couple portent NA (la machinerie partagée
@@ -1371,11 +1381,13 @@ indicator_artif_par_habitant <- function(territoires) {
   tibble::tibble(
     code = rep(territoires$code, each = 2L),
     key = "artif_par_habitant",
+    state_role = rep(c("M2", "M3"), nrow(territoires)),
     detail = as.vector(rbind(details$m2, details$m3)),
     value = as.vector(rbind(intensite$artif_m2_par_habitant,
                             intensite$artif_m3_par_habitant)),
     unit = "m²/hab",
     source_reference = as.vector(rbind(ref_debut, ref_fin)),
+    source_components = as.vector(rbind(components_json, components_json)),
     vintage_source = rep(v_source, each = 2L),
     vintage_version = rep(v_version, each = 2L),
     vintage_date_reference = rep(v_reference, each = 2L),

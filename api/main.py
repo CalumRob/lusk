@@ -275,7 +275,146 @@ class ReadRepository:
                         "descriptor_version":descriptor[9],"comparison_point":descriptor[3],"points":points,
                         "availability": "complete" if all(point["status"] == "measured" for point in points) else "incomplete",
                          "comparison": comparison,
-                         "scope_series": list(grouped_scope.values())}
+                          "scope_series": list(grouped_scope.values())}
+
+    def read_owned_series(self, dataset_id: str, territory_type: str, territory_id: str,
+                          indicator_id: str, scope_level: str, department_id: str | None,
+                          epci_id: str | None, comparison_detail: str | None = None) -> dict:
+        """Read an owned focal series and its declared peer cohort in one snapshot."""
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                publication = connection.execute(
+                    """SELECT content_version,reference_content_version,row_count,published_at
+                       FROM series_dataset_publication WHERE dataset_id=%s""", (dataset_id,)
+                ).fetchone()
+                reference = connection.execute(
+                    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+                ).fetchone()
+                if not publication or not reference or publication[1] != reference[0]:
+                    raise HTTPException(503, "Owned series publication is unavailable")
+                descriptor = connection.execute(
+                    """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
+                              allowed_levels,descriptor_version
+                       FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s""",
+                    (dataset_id, indicator_id),
+                ).fetchone()
+                if not descriptor:
+                    raise HTTPException(404, "Owned series descriptor is unavailable")
+                if territory_type not in descriptor[7]:
+                    raise HTTPException(422, "Owned series is not declared for this territory level")
+                if scope_level not in descriptor[7]:
+                    raise HTTPException(422, "Owned series comparison scope is not declared")
+                if scope_level != "commune" and (department_id or epci_id):
+                    raise HTTPException(422, "Department/EPCI filters apply only to commune scope")
+                if department_id and epci_id:
+                    raise HTTPException(422, "Choose one existing commune scope filter")
+                target = connection.execute(
+                    "SELECT name,territory_type,department_id,epci_id FROM territory_reference WHERE territory_id=%s",
+                    (territory_id,),
+                ).fetchone()
+                if not target:
+                    raise HTTPException(404, "Territory not found")
+                if target[1] != territory_type:
+                    raise HTTPException(422, "Territory identity/type mismatch")
+                if department_id and (territory_type != "commune" or target[2] != department_id):
+                    raise HTTPException(422, "Department filter does not contain the focal territory")
+                if epci_id and (territory_type != "commune" or target[3] != epci_id):
+                    raise HTTPException(422, "EPCI filter does not contain the focal territory")
+                if comparison_detail is not None and comparison_detail != descriptor[3]:
+                    raise HTTPException(422, "Comparison detail must match the dataset descriptor comparison point")
+                comparison_point = descriptor[3]
+                axis_limit = len(descriptor[1])
+                territory_limit = min(5_000, max(1, 100_000 // axis_limit))
+                scoped_ids = connection.execute(
+                    """SELECT t.territory_id FROM territory_reference t
+                       WHERE t.territory_type=%s AND (%s::text IS NULL OR t.department_id=%s)
+                         AND (%s::text IS NULL OR t.epci_id=%s)
+                         AND EXISTS(SELECT 1 FROM series_dataset_observation e WHERE e.dataset_id=%s
+                           AND e.indicator_id=%s AND e.territory_id=t.territory_id)
+                       ORDER BY t.territory_id LIMIT %s""",
+                    (scope_level,department_id,department_id,epci_id,epci_id,dataset_id,indicator_id,
+                     territory_limit+1),
+                ).fetchall()
+                if len(scoped_ids)>territory_limit:
+                    raise HTTPException(413,"Requested owned-series scope exceeds the bounded cohort")
+                peer_ids=[row[0] for row in scoped_ids]
+                read_ids=list(dict.fromkeys([*peer_ids,territory_id]))
+                scope_rows = connection.execute(
+                    """SELECT o.territory_id,t.name,t.territory_type,o.axis_value,o.state_role,o.observation_period,
+                              o.value,o.status,
+                              p.provenance_revision_id,p.source_id,p.vintage_id,p.source_name,p.dataset_name,
+                              p.source_version,p.reference_date,p.publication_date,p.revision_hash
+                       FROM series_dataset_observation o
+                       JOIN territory_reference t USING(territory_id)
+                       LEFT JOIN series_observation_provenance a USING(dataset_id,indicator_id,territory_id,axis_value)
+                       LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+                       WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=ANY(%s::text[])
+                       ORDER BY o.territory_id,array_position(%s::text[],o.axis_value),p.provenance_revision_id
+                       LIMIT %s""",
+                    (dataset_id,indicator_id,read_ids,list(descriptor[1]),
+                     territory_limit*axis_limit*8+1),
+                ).fetchall()
+                if len(scope_rows)>territory_limit*axis_limit*8:
+                    raise HTTPException(413,"Owned-series provenance scope exceeds the bounded response")
+                if not scope_rows:
+                    raise HTTPException(404, "Owned series observations are unavailable")
+                grouped: dict[str, dict] = {}
+                for row in scope_rows:
+                    peer_id,peer_name,peer_type,axis,role,period,value,status = row[:8]
+                    group=grouped.setdefault(peer_id,{"territory":{"id":peer_id,"type":peer_type,"name":peer_name},"points":[]})
+                    point=next((p for p in group["points"] if p["axis"]==axis),None)
+                    if point is None:
+                        point={"axis":axis,"state_role":role,"observation_period":period,"value":value,
+                            "status":status,"provenance":[]}
+                        group["points"].append(point)
+                    if row[8] is None:
+                        raise HTTPException(503, "Owned series provenance is incomplete")
+                    point["provenance"].append({"revision_id":row[8],"source_id":row[9],
+                        "vintage_id":row[10],"source_name":row[11],"dataset_name":row[12],
+                        "version":row[13],"reference_date":row[14],"publication_date":row[15],
+                        "revision_hash":row[16]})
+                if any(point["axis"] not in descriptor[1] for group in grouped.values() for point in group["points"]):
+                    raise HTTPException(503,"Owned series contains an undeclared axis")
+                focal=grouped.get(territory_id)
+                if focal is None:
+                    raise HTTPException(404,"Focal territory has no owned observations")
+                comparison = None
+                if descriptor[3] is not None:
+                    cohort = []
+                    for peer_id in peer_ids:
+                        peer = grouped.get(peer_id)
+                        facet = next((p for p in peer["points"] if p["axis"] == comparison_point), None) if peer else None
+                        if facet and facet["status"] == "measured":
+                            cohort.append((peer_id, facet["value"]))
+                    focal_facet = next((p for p in focal["points"] if p["axis"] == comparison_point), None)
+                    focal_value = focal_facet["value"] if focal_facet and focal_facet["status"] == "measured" else None
+                    summary = summarize_series_comparison(cohort, territory_id, focal_value, descriptor[6])
+                    comparison = {"point": comparison_point, "direction": descriptor[6], **summary,
+                        "scope":{"kind":"level","territory_type":scope_level,
+                        "department_id":department_id,"epci_id":epci_id,
+                        "rank_field":("rang_epci" if territory_type == "commune" and epci_id else
+                            "rang_dep" if territory_type == "commune" and department_id else
+                            "rang_reg" if territory_type != "region" else None)}}
+                    for peer_id in peer_ids:
+                        peer = grouped.get(peer_id)
+                        facet = next((p for p in peer["points"] if p["axis"] == comparison_point), None) if peer else None
+                        if facet:
+                            peer_summary = summarize_series_comparison(cohort, peer_id,
+                                facet["value"] if facet["status"] == "measured" else None, descriptor[6])
+                            facet["comparison_rank"] = peer_summary["rank"]
+                            facet["comparison_ties"] = peer_summary["ties"]
+                            facet["comparison_count"] = peer_summary["comparable_count"]
+                            facet["comparison_median"] = peer_summary["median"]
+                return {"dataset_id":dataset_id,"publication_id":publication[0],
+                    "reference_content_version":publication[1],"published_at":publication[3],
+                    "territory":{"id":territory_id,"type":territory_type,"name":target[0]},
+                    "indicator_id":indicator_id,"axis_kind":descriptor[0],"completeness":descriptor[2],
+                    "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
+                    "descriptor_version":descriptor[8],"comparison_point":descriptor[3],
+                    "comparison":comparison,"comparison_point":comparison_point,
+                    "points":focal["points"],"scope_series":[grouped[peer_id] for peer_id in peer_ids if peer_id in grouped],
+                    "availability":"complete" if all(p["status"]=="measured" for p in focal["points"]) else "incomplete"}
 
     def read_level(self, territory_type: str, territory_id: str) -> dict:
         return self._read(territory_type, territory_id, None)
@@ -907,6 +1046,20 @@ def annual_series(territory_type: Literal["commune", "epci", "departement", "reg
                   repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_series(territory_type, territory_id, indicator_id, scope_level,
                                   department_id, epci_id)
+
+
+@app.get("/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}")
+def owned_series(dataset_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+                 territory_type: Literal["commune","epci","departement","region"] = Path(),
+                 territory_id: str = Path(min_length=1,max_length=32),
+                 indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+                 scope_level: Literal["commune","epci","departement","region"] = Query(default="commune"),
+                 department_id: str | None = Query(default=None,min_length=1,max_length=8),
+                 epci_id: str | None = Query(default=None,min_length=1,max_length=16),
+                 comparison_detail: str | None = Query(default=None,min_length=1,max_length=32),
+                 repository: ReadRepository = Depends(get_repository)) -> dict:
+    return repository.read_owned_series(dataset_id,territory_type,territory_id,indicator_id,
+        scope_level,department_id,epci_id,comparison_detail)
 
 
 @app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)

@@ -11,6 +11,36 @@ and future 008 applications use the same corrected predicate. On 2026-09-29,
 the two building source-vintage FKs were then validated. Migration 009 was not
 applied.
 
+# Migration 011: dataset-owned ordered-series publications
+
+Migration 011 is additive and limited to the ordered-series/state slice. It
+creates owner-scoped series markers, descriptors, observations, immutable
+provenance revisions and observation-to-revision associations. It does not alter
+or backfill the legacy `ordered_series`, `series_descriptor`, shared source
+tables, or `table_publication`; the live ENAF legacy reader and its
+`VITE_CONSO_ENAF_SERIES_API=1` setting remain unchanged. `schema.sql` carries
+the same objects for fresh installs. Apply/test order is after 007/008/010; 009
+is unrelated and must not be applied to this worktree/database by the worker.
+
+The focused `pipeline/scripts/smoke-series-postgres.R` rehearses both fresh-schema
+parity and migration 011 in a random owned schema in `lusk_it_contract` (the
+script splits the fresh schema at the owned-series boundary, applies 011, then
+publishes canonical ENAF and OCS-GE projections). It checks independent markers,
+facts, descriptors and provenance across updates, immutable provenance revision
+corrections, rollback, no-op, and reader write denial. It never touches `public`
+or a serving database. Production migration and OCS-GE API deployment/flag are
+separate serial operator gates; never disable the live ENAF flag as part of this
+slice.
+
+The OCS-GE publisher requires canonical `indicateurs_milieux.parquet` to carry
+producer-emitted `state_role` and `source_components` columns. A stale artifact
+is rejected before the smoke script opens its disposable schema; do not
+reconstruct lineage by parsing `periode_artif`. Regenerate artifacts through the
+normal pipeline using its own data copy, then run focused fixtures and the
+documented slow byte-identical targets parity audit before treating the producer
+change as campaign-ready. A worktree without `pipeline/data/raw` cannot perform
+the final real-artifact/API rehearsal.
+
 # Migration 009 operator procedure
 
 Migration 009 is reserved for issue #600 and is **not** part of fresh-install

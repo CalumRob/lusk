@@ -48,10 +48,18 @@ const porte = computed(() => lireTerritoirePorte(route.query))
 const theme = computed(() => String(route.params.theme)); const indicator = computed(() => String(route.params.indicator))
 // Cutover is an operator-controlled build setting. Keep static behavior until
 // the serving schema/API are deployed and explicitly enabled together.
-const orderedSeriesApiEnabled = import.meta.env.VITE_CONSO_ENAF_SERIES_API === '1'
-const orderedSeriesAdapter = computed(() => orderedSeriesApiEnabled
-  ? orderedSeriesAdapterFor(theme.value, indicator.value)
-  : null)
+const orderedSeriesAdapter = computed(() => {
+  const adapter = orderedSeriesAdapterFor(theme.value, indicator.value)
+  if (!adapter) return null
+  const page = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+    ?.indicator_pages?.[indicator.value] as { series_dataset_id?: string; series_publication?: 'legacy' | 'owned' } | undefined
+  const datasetId = page?.series_dataset_id
+  const publicationMode = page?.series_publication
+  const enabled = publicationMode === 'owned'
+    ? import.meta.env.VITE_OCSGE_STATE_SERIES_API === '1'
+    : import.meta.env.VITE_CONSO_ENAF_SERIES_API === '1'
+  return enabled ? { ...adapter, datasetId, publicationMode } : null
+})
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
 const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
@@ -202,7 +210,9 @@ async function chargerSerie(force = false) {
   const query = new URLSearchParams({ scope_level: niveauSerie.value })
   if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
   if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
-  const url = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
+  const url = adapter.publicationMode === 'owned'
+    ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
+    : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
   if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
   serieRequestKey = url
   serieChargement.value = true
@@ -212,7 +222,9 @@ async function chargerSerie(force = false) {
     const response = await fetch(url)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const result = await response.json() as OrderedSeriesRead
-    if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) || !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
+    if (result.indicator_id !== adapter.indicator || !Array.isArray(result.points) ||
+      (adapter.publicationMode === 'owned' && result.dataset_id !== adapter.datasetId) ||
+      !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
     if (request === serieRequete) serieLecture.value = result
   } catch {
     if (request === serieRequete) serieErreur.value = true

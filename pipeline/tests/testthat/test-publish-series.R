@@ -31,6 +31,81 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_equal(comparison$comparable_count, 3L)
 })
 
+test_that("owned series publication retries, rebinds and replaces only its dataset", {
+  points <- data.frame(dataset_id="enaf", indicator_id="conso_enaf_annuel",
+    territory_id="22001", territory_type="commune", axis_value="2024",
+    observation_period="2024", value=0, status="measured", stringsAsFactors=FALSE)
+  descriptor <- list(dataset_id="enaf", indicator_id="conso_enaf_annuel", axis_kind="year",
+    axis_values="2024", completeness="may_be_missing", comparison_point="2024",
+    label="ENAF", unit="ha", direction="low", allowed_levels="commune", descriptor_version="1")
+  rev_hash <- series_revision_hash("consoenaf","2025","Cerema","ENAF","2025","2025-01-01","2026-07-24")
+  rev_id <- paste0("consoenaf-2025-",substr(rev_hash,1L,16L))
+  revisions <- data.frame(provenance_revision_id=rev_id, source_id="consoenaf",
+    vintage_id="2025", source_name="Cerema", dataset_name="ENAF", source_version="2025",
+    reference_date=as.Date("2025-01-01"), publication_date=as.Date("2026-07-24"), revision_hash=rev_hash)
+  projection <- list(points=points, descriptor=descriptor, provenance=revisions,
+    point_provenance=data.frame(dataset_id="enaf",indicator_id="conso_enaf_annuel",
+      territory_id="22001",axis_value="2024",provenance_revision_id=rev_id))
+  state <- new.env(parent=emptyenv())
+  state$units <- list(enaf=list(version="v1", facts="enaf-old", provenance="p1", timestamp=1),
+    ocsge=list(version="o1", facts="ocsge", provenance="p2", timestamp=2))
+  state$reference <- "ref1"
+  db <- list(transaction=function(expr) force(expr), lock=function(dataset) invisible(dataset),
+    dataset_marker=function(dataset) {
+      x <- state$units[[dataset]]
+      if (is.null(x)) data.frame() else data.frame(content_version=x$version,
+        reference_content_version=x$reference %||% state$reference)
+    }, reference_marker=function() data.frame(content_version=state$reference),
+    replace_dataset=function(p, version) {
+      old <- state$units[[p$descriptor$dataset_id]]
+      state$units[[p$descriptor$dataset_id]] <- list(version=version, facts=p$points,
+        descriptor=p$descriptor, provenance=p$provenance, reference=state$reference,
+        timestamp=(old$timestamp %||% 0)+1)
+    })
+  original_state <- state$units$ocsge
+  first <- publish_owned_series_projection(projection, db)
+  expect_true(first$changed)
+  expect_identical(state$units$ocsge, original_state)
+  after_first <- state$units$enaf
+  no_op <- publish_owned_series_projection(projection, db)
+  expect_false(no_op$changed)
+  expect_identical(state$units$enaf, after_first)
+  state$reference <- "ref2"
+  rebound <- publish_owned_series_projection(projection, db)
+  expect_true(rebound$rebound)
+  expect_identical(state$units$ocsge, original_state)
+  expect_identical(state$units$enaf$timestamp, after_first$timestamp + 1)
+})
+
+test_that("owned series validators reject duplicate axes, undeclared roles and missing provenance", {
+  p <- list(
+    descriptor=list(dataset_id="state",indicator_id="artif_par_habitant",axis_kind="state_role",
+      axis_values=c("M2","M3"),completeness="may_be_missing",comparison_point=NULL,
+      label="État",unit="m²/hab",direction="none",allowed_levels="commune",descriptor_version="1"),
+    points=data.frame(dataset_id="state",indicator_id="artif_par_habitant",territory_id="22001",
+      territory_type="commune",axis_value="M2",observation_period="2021-2025",value=0,
+      status="measured",stringsAsFactors=FALSE),
+    provenance=data.frame(provenance_revision_id="placeholder",source_id="s",vintage_id="v",source_name="IGN",
+      dataset_name="OCS-GE",source_version="2021",reference_date=as.Date("2021-01-01"),
+      publication_date=as.Date("2025-09-12"),revision_hash="h",stringsAsFactors=FALSE),
+    point_provenance=data.frame(dataset_id="state",indicator_id="artif_par_habitant",territory_id="22001",
+      axis_value="M2",provenance_revision_id="placeholder",stringsAsFactors=FALSE))
+  p$provenance$revision_hash <- series_revision_hash("s","v","IGN","OCS-GE","2021","2021-01-01","2025-09-12")
+  p$provenance$provenance_revision_id <- paste0("s-v-",substr(p$provenance$revision_hash,1L,16L))
+  p$point_provenance$provenance_revision_id <- p$provenance$provenance_revision_id[[1L]]
+  expect_invisible(validate_owned_series_projection(p))
+  bad <- p; bad$descriptor$axis_values <- c("M2","M2")
+  expect_error(validate_owned_series_projection(bad),"Invalid owned series descriptor")
+  bad <- p; bad$descriptor$axis_values <- c("M3","M2")
+  expect_error(validate_owned_series_projection(bad),"Invalid owned series descriptor")
+  bad <- p; bad$points$axis_value <- "M4"
+  expect_error(validate_owned_series_projection(bad),"undeclared axis")
+  bad <- p; bad$point_provenance <- bad$point_provenance[FALSE,,drop=FALSE]
+  expect_error(validate_owned_series_projection(bad),"requires at least one provenance")
+  bad <- p; bad$points$territory_type <- "region"
+  expect_error(validate_owned_series_projection(bad),"undeclared axis/level")
+})
+
 test_that("conso ENAF projection follows canonical facts and descriptor-selected point", {
   payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
@@ -99,6 +174,77 @@ test_that("production series input is projected from the canonical Parquet and m
   expect_error(require_series_publish_opt_in(""), "explicit LUSK_PUBLISH_SERIES=1")
   expect_error(require_series_publish_opt_in("0"), "explicit LUSK_PUBLISH_SERIES=1")
   expect_invisible(require_series_publish_opt_in("1"))
+})
+
+test_that("owned ENAF projection preserves its canonical facts and immutable provenance", {
+  root <- testthat::test_path("../../../public/data")
+  metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
+  metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
+  projection <- owned_conso_enaf_projection(list(
+    indicateurs=nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet")),
+    vintages=nanoparquet::read_parquet(file.path(root,"vintages.parquet"))), metadata)
+  expect_invisible(validate_owned_series_projection(projection))
+  expect_identical(projection$descriptor$dataset_id,"conso_enaf_annuel")
+  expect_equal(nrow(projection$points),17710L)
+  expect_true(all(projection$points$dataset_id=="conso_enaf_annuel"))
+  expect_equal(nrow(projection$point_provenance),nrow(projection$points))
+  expect_identical(projection$provenance$source_name,
+    as.character(nanoparquet::read_parquet(file.path(root,"vintages.parquet"))$source[
+      match("consoenaf",nanoparquet::read_parquet(file.path(root,"vintages.parquet"))$id)]))
+  bad <- projection; bad$point_provenance <- bad$point_provenance[-1,,drop=FALSE]
+  expect_error(validate_owned_series_projection(bad),"requires at least one provenance")
+})
+
+test_that("OCS-GE projection uses typed per-role components and retains comparison details", {
+  root <- testthat::test_path("../../../public/data")
+  metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"),simplifyVector=FALSE)
+  vintages <- nanoparquet::read_parquet(file.path(root,"vintages.parquet"))
+  vintage_ids <- c("ocsge_artificialisation_22_2021","ocsge_artificialisation_22_2025",
+    "ocsge_artificialisation_35_2020","ocsge_artificialisation_35_2023",
+    "ocsge_artificialisation_56_2022","ocsge_artificialisation_56_2024")
+  ids <- list(c("ocsge_artificialisation_22_2021"),c("ocsge_artificialisation_22_2025"),
+    c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"),
+    c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
+  roles <- c("M2","M3","M2","M3")
+  details <- c("2021","2025","M2","M3")
+  territories <- c("22001","22001","200000003","200000003")
+  types <- c("commune","commune","epci","epci")
+  periods <- c("2021-2025","2021-2025","2020-2023 (35) ? 2022-2024 (56)",
+    "2020-2023 (35) ? 2022-2024 (56)")
+  components <- lapply(seq_along(ids),function(i) list(M2=if(roles[[i]]=="M2") ids[[i]] else character(),
+    M3=if(roles[[i]]=="M3") ids[[i]] else character()))
+  fields <- do.call(rbind,lapply(seq_along(ids),function(i) {
+    source <- vintages[match(ids[[i]][[1L]],vintages$id),]
+    data.frame(territoire=territories[[i]],type=types[[i]],theme="milieux",key="artif_par_habitant",
+      detail=details[[i]],state_role=roles[[i]],value=c(.18,.42,.31,.29)[[i]],unit="m?/hab",
+      source_reference=if(length(ids[[i]])==1L) ids[[i]] else periods[[i]],
+      source_components=jsonlite::toJSON(components[[i]],auto_unbox=FALSE),
+      vintage_source=source$source,vintage_version=source$version,
+      vintage_date_reference=source$date_reference,vintage_date_publication=source$date_publication,
+      stringsAsFactors=FALSE)
+  }))
+  histories <- data.frame(territoire=c("22001","200000003"),type=c("commune","epci"),theme="milieux",
+    periode_artif=c("2021-2025","2020-2023 (35) ? 2022-2024 (56)"),stringsAsFactors=FALSE)
+  projection <- project_artif_m2m3_projection(fields,histories,vintages,metadata)
+  expect_invisible(validate_owned_series_projection(projection))
+  expect_identical(projection$descriptor$dataset_id,metadata$indicator_pages$artif_par_habitant$series_dataset_id)
+  expect_identical(projection$descriptor$comparison_point,"2025")
+  expect_identical(projection$descriptor$direction,"low")
+  expect_true(all(c("2021","2025","M2","M3") %in% projection$descriptor$axis_values))
+  expect_equal(projection$points$value,c(.18,.42,.31,.29),tolerance=0)
+  expect_equal(projection$points$state_role,roles)
+  source_links <- split(projection$provenance$source_id[match(projection$point_provenance$provenance_revision_id,
+      projection$provenance$provenance_revision_id)],
+    paste(projection$point_provenance$territory_id,projection$point_provenance$axis_value))
+  expect_setequal(source_links[["200000003 M2"]],c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"))
+  expect_setequal(source_links[["200000003 M3"]],c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
+  expect_equal(projection$points$observation_period[3],periods[[3]])
+  old_artifact <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
+  old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
+  old_artifact$state_role <- NULL
+  old_artifact$source_components <- NULL
+  expect_error(project_artif_m2m3_projection(old_artifact,histories,vintages,metadata),
+    "typed roles or source components")
 })
 
 test_that("canonical vintage source label is checked against vintage Parquet identity", {

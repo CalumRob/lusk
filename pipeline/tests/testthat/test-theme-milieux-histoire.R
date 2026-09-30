@@ -307,6 +307,23 @@ test_that("les deux horloges : des millésimes RP différents font glisser perio
 
 # Les états, leur unité et le bracket de population ----------------------------
 
+test_that("indicator state rows carry typed role and source-component lineage", {
+  territoires <- tibble::tibble(code=c("22001","200000003"),departement=c("22",NA_character_),
+    millesime_ocsge_debut=c(2021L,NA_integer_),millesime_ocsge_fin=c(2025L,NA_integer_),
+    artif_m2=c(400,1000),pop_debut=c(2200,5000),artif_m3=c(1200,900),pop_fin=c(2400,5100),
+    periode_artif=c("2021-2025","2020-2023 (35) · 2022-2024 (56)"),
+    couples_ocsge=c("22:2021:2025","35:2020:2023|56:2022:2024"))
+  rows <- indicator_artif_par_habitant(territoires)
+  expect_equal(rows$state_role,c("M2","M3","M2","M3"))
+  expect_equal(rows$detail,c("2021","2025","M2","M3"))
+  component <- lapply(rows$source_components,jsonlite::fromJSON,simplifyVector=FALSE)
+  expect_identical(unlist(component[[1]]$M2),"ocsge_artificialisation_22_2021")
+  expect_identical(unlist(component[[2]]$M3),"ocsge_artificialisation_22_2025")
+  expect_setequal(unlist(component[[3]]$M2),c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"))
+  expect_setequal(unlist(component[[4]]$M3),c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
+  expect_equal(rows$value,c(400/2200,1200/2400,1000/5000,900/5100))
+})
+
 test_that("les états : la conversion m² -> ha et l'intensité d'état en m²/habitant", {
   p <- compute_payload(communes_fixture_milieux_ocsge(), theme = theme_milieux())
   h <- function(code) p$histoires[p$histoires$territoire == code, ]

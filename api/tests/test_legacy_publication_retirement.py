@@ -7,7 +7,7 @@ API = Path(__file__).resolve().parents[1]
 def test_fresh_schema_uses_only_per_table_publication():
     schema = (API / "schema.sql").read_text(encoding="utf-8")
     assert "CREATE TABLE table_publication" in schema
-    assert "dataset_publication" not in schema
+    assert "CREATE TABLE dataset_publication" not in schema
 
 
 def test_retirement_migration_is_guarded_scoped_and_non_cascading():
