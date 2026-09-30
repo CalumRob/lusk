@@ -206,7 +206,6 @@ async function chargerSerie(force = false) {
       (!epci || territory.epci === epci))))
   const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire) ?? scopeTerritories[0]
   if (!focal) { serieErreur.value = false; serieLecture.value = null; return }
-  const request = ++serieRequete
   const query = new URLSearchParams({ scope_level: niveauSerie.value })
   if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
   if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
@@ -214,6 +213,7 @@ async function chargerSerie(force = false) {
     ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
     : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
   if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
+  const request = ++serieRequete
   serieRequestKey = url
   serieChargement.value = true
   serieErreur.value = false

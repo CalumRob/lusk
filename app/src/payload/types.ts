@@ -910,6 +910,9 @@ export interface SourceClock {
  * optional alias). */
 export interface IndicatorPageMetadataBase {
   indicator: string
+  /** Stable identity and compatibility path for an ordered-series publication. */
+  series_dataset_id?: string
+  series_publication?: 'legacy' | 'owned'
   /** Whether the pipeline publishes an independent route-scoped read model. */
   read_model?: boolean
   detail?: string | null

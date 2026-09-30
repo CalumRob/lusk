@@ -58,6 +58,8 @@ jobs:
       - name: Build (vue-tsc + vite → app/dist, payload copié dans dist/data)
         # #596: Pi app release reads the published structure_age profile.
         # #597: the CONSOENAF Page d'indicateur reads the published ordered series.
+        # #598: OCS-GE states use their independent owned publication and metadata.
+        # State rollback: disable only VITE_OCSGE_STATE_SERIES_API and rebuild.
         # Series rollback: set VITE_CONSO_ENAF_SERIES_API to '0', rebuild and
         # manually install the static shell. Leave the structure-age flag enabled.
         # Before installing on the Pi, confirm backup/recovery readiness and
@@ -70,6 +72,7 @@ jobs:
         env:
           VITE_CONSO_ENAF_SERIES_API: '1'
           VITE_STRUCTURE_AGE_PROFILE_API: '1'
+          VITE_OCSGE_STATE_SERIES_API: '1'
         run: npm run build
 
       - name: Commit du dist (skip si inchangé)
