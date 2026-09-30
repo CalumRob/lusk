@@ -53,6 +53,8 @@ const orderedSeriesAdapter = computed(() => {
   if (!adapter) return null
   const page = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
     ?.indicator_pages?.[indicator.value] as { series_dataset_id?: string; series_publication?: 'legacy' | 'owned' } | undefined
+  // Metadata selects ownership; absence during loading is not a legacy binding.
+  if (!page) return null
   const datasetId = page?.series_dataset_id
   const publicationMode = page?.series_publication
   const enabled = publicationMode === 'owned'
