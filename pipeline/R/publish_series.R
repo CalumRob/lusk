@@ -118,28 +118,55 @@ project_conso_enaf_series <- function(payload, metadata) {
       keys=all_annual[all_annual$type == "region", c("territoire", "detail"), drop=FALSE])))
 }
 
-# Production entry point: the canonical build has already written these Parquets
-# and the descriptor snapshot. This deliberately does not invoke fixture builders
-# or recompute indicator values.
-read_conso_enaf_series_projection <- function(sortie = "../public/data",
-                                              metadata_path = "inst/extdata/theme-metadata/theme_milieux.json") {
-  parquet <- file.path(sortie, "indicateurs_milieux.parquet")
-  vintages_path <- file.path(sortie, "vintages.parquet")
-  if (!file.exists(parquet) || !file.exists(vintages_path))
-    stop("Canonical Milieux indicator/vintage Parquet is missing", call.=FALSE)
-  indicators <- nanoparquet::read_parquet(parquet)
-  vintages <- nanoparquet::read_parquet(vintages_path)
-  metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
+# Fingerprint all authoritative inputs on both sides of one read window. This
+# detects persistent concurrent replacements; it is not an atomic build lock.
+read_stable_series_artifacts <- function(paths, reader) {
+  if (!is.character(paths) || !length(paths) || is.null(names(paths)) ||
+      any(!nzchar(names(paths))) || anyDuplicated(names(paths)) ||
+      anyNA(paths) || any(!file.exists(paths)) || !is.function(reader))
+    stop("Stable series input paths/reader are invalid or missing", call.=FALSE)
+  before <- unname(tools::md5sum(paths))
+  value <- reader(paths)
+  after <- unname(tools::md5sum(paths))
+  if (!identical(before, after))
+    stop("Canonical series inputs changed while reading", call.=FALSE)
+  value
+}
+
+project_conso_enaf_series_from_artifacts <- function(indicators, vintages, metadata) {
   projection <- project_conso_enaf_series(list(indicateurs=indicators), metadata)
   source <- projection$descriptor$source_id
+  required_vintages <- c("id", "source", "version", "date_reference", "date_publication")
+  if (!is.data.frame(vintages) || !all(required_vintages %in% names(vintages)))
+    stop("Canonical vintage Parquet is missing required source identity fields", call.=FALSE)
   record <- vintages[as.character(vintages$id) == source, , drop=FALSE]
   if (nrow(record) != 1L) stop("Canonical vintage Parquet must declare exactly one source vintage", call.=FALSE)
   expected <- projection$vintage
+  annual <- indicators[!is.na(indicators$key) & indicators$key == "conso_enaf_annuel", , drop=FALSE]
+  source_labels <- unique(as.character(annual$vintage_source))
+  if (length(source_labels) != 1L || is.na(record$source[[1L]]) ||
+      !identical(source_labels[[1L]], as.character(record$source[[1L]])))
+    stop("Canonical annual source label differs from its source-key vintage record", call.=FALSE)
   if (!identical(as.character(record$version[[1L]]), as.character(expected$version[[1L]])) ||
       !identical(as.character(record$date_reference[[1L]]), as.character(expected$reference_date[[1L]])) ||
       !identical(as.character(record$date_publication[[1L]]), as.character(expected$publication_date[[1L]])))
     stop("Series provenance differs from canonical vintage Parquet", call.=FALSE)
+  projection$canonical_vintage_source <- as.character(record$source[[1L]])
   projection
+}
+
+# Production entry point: read real Parquet + pinned metadata exactly once.
+# Never invoke fixture builders or recompute canonical indicator values here.
+read_conso_enaf_series_projection <- function(sortie = "../public/data",
+                                              metadata_path = "inst/extdata/theme-metadata/theme_milieux.json") {
+  paths <- c(indicators=file.path(sortie, "indicateurs_milieux.parquet"),
+    vintages=file.path(sortie, "vintages.parquet"), metadata=metadata_path)
+  read_stable_series_artifacts(paths, function(input) {
+    indicators <- nanoparquet::read_parquet(input[["indicators"]])
+    vintages <- nanoparquet::read_parquet(input[["vintages"]])
+    metadata <- jsonlite::read_json(input[["metadata"]], simplifyVector=FALSE)
+    project_conso_enaf_series_from_artifacts(indicators, vintages, metadata)
+  })
 }
 
 require_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_SERIES", unset="")) {
@@ -165,6 +192,14 @@ series_postgres_adapter <- function(con) {
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
     replace=function(projection, version) {
       d <- projection$descriptor
+      if (!is.list(d) || length(d$indicator_id) != 1L || is.na(d$indicator_id) ||
+          !nzchar(d$indicator_id))
+        stop("Series whole-table snapshot requires exactly one descriptor identity", call.=FALSE)
+      existing_ids <- DBI::dbGetQuery(con,
+        "SELECT indicator_id FROM series_descriptor UNION SELECT indicator_id FROM ordered_series")$indicator_id
+      foreign_ids <- setdiff(unique(as.character(existing_ids)), as.character(d$indicator_id))
+      if (length(foreign_ids))
+        stop("Refusing whole-table series replacement: existing other indicator snapshot(s) found", call.=FALSE)
       levels_sql <- paste0("ARRAY[", paste(vapply(d$allowed_levels, quote, character(1)), collapse=","), "]::text[]")
       DBI::dbExecute(con, "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
         params=list(d$source_id, projection$dataset_name))

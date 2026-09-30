@@ -1,6 +1,9 @@
 #!/usr/bin/env Rscript
 # Disposable-only end-to-end rehearsal for the real conso_enaf_annuel publisher.
 # Never reads LUSK_PUBLISH_* production settings; libpq resolves passwords.
+# Pinned, owner-approved rehearsal contract: 192.168.1.120:5432/lusk_it_contract,
+# publisher lusk_it_contract_pub, reader lusk_it_contract_read. This is not a
+# general runner; the exact values are guards against accidental DB drift.
 pkgload::load_all(".", quiet=TRUE)
 required <- c("HOST", "PORT", "DATABASE", "USER", "READER")
 config <- setNames(lapply(required, function(key)
@@ -155,6 +158,39 @@ tryCatch({
     reader_marker$row_count[[1L]]==17710L, inherits(denied, "try-error"))
   DBI::dbDisconnect(reader); reader <- NULL
 
+  # Deliberately put a second indicator snapshot in this owned schema after the
+  # ENAF-only rehearsal. The production adapter must refuse to replace the
+  # whole-table marker and leave both indicators' facts/descriptor/provenance
+  # intact. This is a contract regression only, not #598 multi-indicator support.
+  DBI::dbExecute(connection, "DROP TRIGGER reject_series_smoke ON ordered_series")
+  DBI::dbExecute(connection, "DROP FUNCTION reject_series_smoke_insert()")
+  DBI::dbExecute(connection, "INSERT INTO source_dataset(source_id,name) VALUES('smoke_other_source','Smoke-only second indicator')")
+  DBI::dbExecute(connection, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('smoke_other_source','smoke-v1','smoke-v1',NULL,NULL)")
+  DBI::dbExecute(connection, "INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version) VALUES('other_indicator','year',ARRAY['2020'],'may_be_missing',NULL,ARRAY['commune'],'Smoke-only other indicator','count','none','smoke_other_source','smoke-v1','test-v1')")
+  commune_id <- projection$points$territory_id[which(projection$points$territory_type == "commune")[[1L]]]
+  DBI::dbExecute(connection, "INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES('other_indicator',$1,'commune','2020','2020',7,'measured','smoke_other_source','smoke-v1')", params=list(commune_id))
+  before_guard_facts <- DBI::dbGetQuery(connection, "SELECT * FROM ordered_series ORDER BY indicator_id,territory_id,territory_type,axis_value")
+  before_guard_descriptors <- DBI::dbGetQuery(connection, "SELECT * FROM series_descriptor ORDER BY indicator_id")
+  before_guard_datasets <- DBI::dbGetQuery(connection, "SELECT * FROM source_dataset ORDER BY source_id")
+  before_guard_vintages <- DBI::dbGetQuery(connection, "SELECT * FROM source_vintage ORDER BY source_id,vintage_id")
+  before_guard_marker <- DBI::dbGetQuery(connection, marker_sql)
+  refused <- try(DBI::dbWithTransaction(connection,
+    adapter$replace(projection, "should-not-replace-mixed-snapshot")), silent=TRUE)
+  stopifnot(inherits(refused, "try-error"),
+    identical(before_guard_facts, DBI::dbGetQuery(connection, "SELECT * FROM ordered_series ORDER BY indicator_id,territory_id,territory_type,axis_value")),
+    identical(before_guard_descriptors, DBI::dbGetQuery(connection, "SELECT * FROM series_descriptor ORDER BY indicator_id")),
+    identical(before_guard_datasets, DBI::dbGetQuery(connection, "SELECT * FROM source_dataset ORDER BY source_id")),
+    identical(before_guard_vintages, DBI::dbGetQuery(connection, "SELECT * FROM source_vintage ORDER BY source_id,vintage_id")),
+    identical(before_guard_marker, DBI::dbGetQuery(connection, marker_sql)))
+  other_reader <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
+    port=as.integer(config$PORT), dbname=config$DATABASE, user=config$READER)
+  DBI::dbExecute(other_reader, paste0("SET search_path TO ", DBI::dbQuoteIdentifier(other_reader, schema)))
+  other_fact <- DBI::dbGetQuery(other_reader,
+    "SELECT indicator_id,territory_id,axis_value,value FROM ordered_series WHERE indicator_id='other_indicator'")
+  stopifnot(nrow(other_fact)==1L, other_fact$territory_id[[1L]]==commune_id,
+    other_fact$axis_value[[1L]]=="2020", other_fact$value[[1L]]==7)
+  DBI::dbDisconnect(other_reader)
+
   sizes <- DBI::dbGetQuery(connection, "SELECT pg_total_relation_size('ordered_series')::text AS facts_bytes,pg_total_relation_size('series_descriptor')::text AS descriptor_bytes")
   cat("SERIES POSTGRES REHEARSAL ONLY | database:", config$DATABASE,
     "| schema:", schema, "| points:", nrow(actual), "| excluded region:",
@@ -162,7 +198,7 @@ tryCatch({
     "| publication seconds:", format(publication_seconds, digits=5),
     "| facts+indexes bytes:", sizes$facts_bytes[[1L]],
     "| descriptor bytes:", sizes$descriptor_bytes[[1L]],
-    "| no-op/rebind/rollback/reader grants: PASS\n")
+    "| no-op/rebind/rollback/reader/whole-table guard: PASS\n")
 }, error=function(e) {
   smoke_failure <<- conditionMessage(e)
   stop(e)

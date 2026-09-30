@@ -93,9 +93,36 @@ test_that("production series input is projected from the canonical Parquet and m
   expect_true(all(projection$points$source_id == "consoenaf"))
   expect_equal(projection$excluded$region$row_count, 14L)
   expect_identical(projection$excluded$region$policy, "territory_fiche_only")
+  vintages <- nanoparquet::read_parquet(file.path(root, "vintages.parquet"))
+  expect_identical(projection$canonical_vintage_source,
+    as.character(vintages$source[match("consoenaf", vintages$id)]))
   expect_error(require_series_publish_opt_in(""), "explicit LUSK_PUBLISH_SERIES=1")
   expect_error(require_series_publish_opt_in("0"), "explicit LUSK_PUBLISH_SERIES=1")
   expect_invisible(require_series_publish_opt_in("1"))
+})
+
+test_that("canonical vintage source label is checked against vintage Parquet identity", {
+  root <- testthat::test_path("../../../public/data")
+  indicators <- nanoparquet::read_parquet(file.path(root, "indicateurs_milieux.parquet"))
+  vintages <- nanoparquet::read_parquet(file.path(root, "vintages.parquet"))
+  metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
+  # Keep version and both dates unchanged: only corrupt the human source label.
+  source_idx <- which(vintages$id == "consoenaf")
+  expect_length(source_idx, 1L)
+  vintages$source[[source_idx]] <- "wrong label with same vintage/date"
+  expect_error(project_conso_enaf_series_from_artifacts(indicators, vintages, metadata),
+    "source label differs")
+})
+
+test_that("stable artifact reader detects replacement during the read window", {
+  input <- tempfile("series-input-")
+  writeLines("before", input)
+  on.exit(unlink(input))
+  expect_error(read_stable_series_artifacts(c(input=input), function(paths) {
+    readLines(paths[["input"]])
+    writeLines("replacement", paths[["input"]])
+    "old projection"
+  }), "changed while reading")
 })
 
 test_that("canonical annual rows outside descriptor axes or levels are rejected", {
