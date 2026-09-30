@@ -113,7 +113,7 @@ const themeDe = (theme: string): Theme => theme as Theme
 
 .catalogue-theme h2 {
   margin: 0;
-  font: 600 1.5rem/1.3 var(--font-serif);
+  font: 600 1.5rem/1.3 var(--font-section-title);
 }
 
 /* La rampe du thème porte le titre — une variable posée par thème. */

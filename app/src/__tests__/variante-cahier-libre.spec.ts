@@ -815,6 +815,21 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
 })
 
 describe('Variante E — partage de l’espace public', () => {
+  it('routes Cahier reading and title styles through semantic font roles', () => {
+    expect(regleCss(varianteCahierLibreStyles, '\\.cahier')).toContain(
+      'font-family: var(--font-body);',
+    )
+    expect(regleCss(varianteCahierLibreStyles, '\\.page-heading h2')).toContain(
+      'font-family: var(--font-display-title);',
+    )
+    expect(regleCss(varianteCahierLibreStyles, '\\.concept-group-heading h3')).toContain(
+      'font-family: var(--font-narrative-lead);',
+    )
+    expect(regleCss(varianteCahierLibreStyles, '\\.cahier--sans-grille \.summary-metric-title')).toContain(
+      'font-family: var(--font-figure-label);',
+    )
+  })
+
   it('starts at the persistent AppHeader edge and aligns Sommaire page targets there', () => {
     expect(regleCss(varianteCahierLibreStyles, '\\.cahier')).toContain(
       '--cahier-sticky-top: var(--header-height);',

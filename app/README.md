@@ -4,9 +4,13 @@ The Vue application: the map, the fiches d'identité, the lists. **The app rende
 
 ## Stack
 
-Vue 3.5 · TypeScript · Vite 7 · vue-router 5 · Vitest 4 (+ @vue/test-utils, happy-dom) · lucide-vue-next · Fontsource (Manrope + Newsreader, variable, latin-ext).
+Vue 3.5 · TypeScript · Vite 7 · vue-router 5 · Vitest 4 (+ @vue/test-utils, happy-dom) · lucide-vue-next · Fontsource (Manrope, Newsreader, Mozilla Headline, Mozilla Text, Fira Code; variable, self-hosted).
 
 Design decisions live in **`DESIGN.md`** (repo root) — the single source of truth for every visual decision. The token layer (`src/styles/tokens.css`) implements it 1:1; the contract test `src/__tests__/tokens.spec.ts` asserts that correspondence.
+
+### Typography roles
+
+`src/styles/tokens.css` separates family primitives from semantic roles. The five site-wide roles are `--font-wordmark`, `--font-display-title`, `--font-section-title`, `--font-body`, and `--font-ui`; their approved family assignments are pinned by `src/__tests__/tokens.spec.ts`. More specific surfaces (the global header, theme tabs, metadata, and figure text) have family-only override points where independent tuning is useful. The shared type scale continues to own size, weight, line-height, and tracking; surface tokens should not duplicate those properties merely to change a family. Fonts are imported from Fontsource and served locally.
 
 ## Commands
 

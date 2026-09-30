@@ -23,6 +23,7 @@ function extraireStyleScoped(chemin: string): string {
 
 const cssThemeTabs = extraireStyleScoped('components/ThemeTabs.vue')
 const cssTerritoire = extraireStyleScoped('views/TerritoireView.vue')
+const cssAppHeader = extraireStyleScoped('components/AppHeader.vue')
 
 function regle(css: string, selecteur: string): string {
   const reg = new RegExp(`${selecteur}\\s*\\{([\\s\\S]*?)\\}`)
@@ -40,6 +41,15 @@ describe('#70 — le sous-en-tête de la fiche délimite les zones de fond', () 
 
   it('donne au bandeau ThemeTabs un fond solide distinct du fond de page (--surface-primary, pas le chrome translucide)', () => {
     expect(regle(cssThemeTabs, '\\.theme-tabs')).toContain('background: var(--surface-primary)')
+  })
+
+  it('gives theme tabs and global navigation independently assignable font families', () => {
+    expect(regle(cssThemeTabs, '\\.onglet')).toContain(
+      'font-family: var(--font-theme-tabs);',
+    )
+    expect(regle(cssAppHeader, '\\.nav-lien')).toContain(
+      'font-family: var(--font-global-header);',
+    )
   })
 
   it('garde la séparation basse du bandeau complet (border-bottom)', () => {

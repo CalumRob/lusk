@@ -83,6 +83,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
   justify-content: space-between;
   margin-bottom: var(--space-2);
   font: var(--text-caption);
+  font-family: var(--font-figure-legend);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-secondary);
 }
@@ -121,6 +122,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
 .bande-age-libelle {
   font: var(--text-caption);
+  font-family: var(--font-figure-label);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-secondary);
   text-align: center;

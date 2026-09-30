@@ -40,6 +40,12 @@ describe('Cahier typography roles', () => {
     expect(cssRule(layoutCss, '.cahier-figure-title')).toContain('letter-spacing: normal')
   })
 
+  it('routes Cahier figure titles through the figure-title family role', () => {
+    expect(cssRule(layoutCss, '.cahier-figure-title')).toContain(
+      'font-family: var(--font-figure-title)',
+    )
+  })
+
   it('uses one lecture size for the Lecture control and En savoir plus', () => {
     expect(tokensSource).toContain('--type-figure-lecture-size: 0.8125rem')
     expect(cssRule(lectureSource, '.cahier-figure-lecture')).toContain(

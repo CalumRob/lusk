@@ -443,6 +443,7 @@ onUnmounted(() => {
   background: var(--surface-primary);
   color: var(--text-primary);
   font: var(--text-body-sm);
+  font-family: var(--font-global-header);
   font-weight: 600;
   box-shadow: var(--shadow-subtle);
   cursor: pointer;
@@ -507,6 +508,7 @@ onUnmounted(() => {
   background: none;
   color: var(--text-secondary);
   font: var(--text-body-sm);
+  font-family: var(--font-global-header);
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -576,6 +578,7 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   font: var(--text-body-sm);
+  font-family: var(--font-global-header);
 }
 
 .sous-nav-lien:hover {
@@ -592,6 +595,7 @@ onUnmounted(() => {
   background: var(--brand-600);
   color: #ffffff;
   font: var(--text-body-sm);
+  font-family: var(--font-global-header);
   font-weight: 600;
   transition: background-color 150ms ease-out;
 }
@@ -706,12 +710,14 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font: var(--text-body-lg);
+  font-family: var(--font-global-header);
   font-weight: 500;
 }
 
 .tiroir-lien--sous {
   padding-left: var(--space-10);
   font: var(--text-body);
+  font-family: var(--font-global-header);
   color: var(--text-secondary);
 }
 
@@ -720,6 +726,7 @@ onUnmounted(() => {
 .tiroir-groupe-titre {
   color: var(--text-tertiary);
   font: var(--text-body-sm);
+  font-family: var(--font-global-header);
   font-weight: 600;
 }
 

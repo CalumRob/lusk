@@ -179,7 +179,7 @@ const messagesErreur = computed(() =>
 }
 
 .accueil-hero-marque :deep(.lusk-marque) {
-  font: 600 clamp(4.5rem, 9vw, 7.5rem)/0.9 var(--font-serif);
+  font: 600 clamp(4.5rem, 9vw, 7.5rem)/0.9 var(--font-wordmark);
   font-style: italic;
   letter-spacing: -0.02em;
   color: color-mix(in oklab, var(--brand-200) 55%, var(--surface-secondary));
@@ -256,7 +256,7 @@ const messagesErreur = computed(() =>
 
 .porte-titre {
   margin: 0;
-  font: 600 1.375rem/1.3 var(--font-serif);
+  font: 600 1.375rem/1.3 var(--font-subsection-title);
   color: var(--text-primary);
 }
 
@@ -339,7 +339,7 @@ const messagesErreur = computed(() =>
 .accueil-teaser {
   margin: 0;
   max-width: 52ch;
-  font: 400 1.125rem/1.6 var(--font-serif);
+  font: 400 1.125rem/1.6 var(--font-body);
   color: var(--text-secondary);
 }
 

@@ -302,6 +302,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 .trajectoire-axe-x-tick,
 .trajectoire-axe-x-label {
   font: var(--text-caption);
+  font-family: var(--font-figure-label);
   fill: var(--text-secondary);
 }
 
@@ -345,6 +346,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
 .trajectoire-marqueur-libelle {
   font: var(--text-caption);
+  font-family: var(--font-figure-label);
   font-weight: 600;
   fill: var(--text-primary);
 }
@@ -356,6 +358,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
   margin: 0 0 var(--space-2);
   color: var(--text-secondary);
   font: var(--text-caption);
+  font-family: var(--font-figure-legend);
 }
 
 .trajectoire-legende-item {
@@ -378,6 +381,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
   margin: var(--space-2) 0 0;
   color: var(--text-secondary);
   font: var(--text-caption);
+  font-family: var(--font-figure-comparison);
 }
 
 .trajectoire-indisponible {
@@ -389,6 +393,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 .figure-indicateur-libelle {
   margin: var(--space-2) 0 0;
   font: var(--text-body-sm);
+  font-family: var(--font-figure-label);
   font-weight: 600;
   color: var(--text-primary);
 }

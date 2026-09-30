@@ -37,6 +37,7 @@
   min-height: var(--cahier-figure-title-min-height, 36px);
   margin: 0 0 var(--cahier-figure-title-gap, 28px);
   color: var(--cahier-default);
+  font-family: var(--font-figure-title);
   font-size: 14px;
   font-weight: 700;
   line-height: 1.25;

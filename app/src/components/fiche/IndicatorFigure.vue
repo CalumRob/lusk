@@ -192,7 +192,7 @@ const segments = computed<Segment[]>(() => {
 }
 
 .valeur-numerique {
-  font-family: var(--font-sans);
+  font-family: var(--font-figure-value);
   font-size: 2rem;
   font-weight: var(--text-numeric-weight);
   font-variant-numeric: var(--text-numeric-variant);
@@ -203,11 +203,13 @@ const segments = computed<Segment[]>(() => {
 
 .valeur-unite {
   font: var(--text-body-sm);
+  font-family: var(--font-figure-label);
   color: var(--text-secondary);
 }
 
 .figure-indicateur-libelle {
   font: var(--text-body-sm);
+  font-family: var(--font-figure-label);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -277,7 +279,7 @@ const segments = computed<Segment[]>(() => {
 }
 
 .tranche-valeur {
-  font-family: var(--font-sans);
+  font-family: var(--font-figure-value);
   font-weight: var(--text-numeric-weight);
   font-variant-numeric: var(--text-numeric-variant);
   color: var(--text-primary);

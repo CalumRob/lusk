@@ -23,8 +23,8 @@ defineProps<{ lignes: LigneLQ[]; labels: { rang: string; activite: string; lq: s
 .figure-liste-lq { margin: 0; max-height: var(--figure-compact-max-height); overflow: hidden; }
 figcaption { margin-bottom: var(--space-2); font-weight: 600; color: var(--text-primary); }
 ol { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
-.entetes { display: grid; grid-template-columns: var(--figure-rank-width) 1fr auto; gap: var(--space-2); margin-bottom: var(--space-1); font: var(--text-caption); color: var(--text-tertiary); }
-li { display: grid; grid-template-columns: var(--figure-rank-width) 1fr auto; gap: var(--space-2); align-items: baseline; font: var(--text-body-sm); }
+.entetes { display: grid; grid-template-columns: var(--figure-rank-width) 1fr auto; gap: var(--space-2); margin-bottom: var(--space-1); font: var(--text-caption); font-family: var(--font-figure-label); color: var(--text-tertiary); }
+li { display: grid; grid-template-columns: var(--figure-rank-width) 1fr auto; gap: var(--space-2); align-items: baseline; font: var(--text-body-sm); font-family: var(--font-figure-comparison); }
 .rang { color: var(--text-tertiary); }
 .activite { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lq { font-variant-numeric: tabular-nums; font-weight: 600; }

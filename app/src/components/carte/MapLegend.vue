@@ -159,6 +159,7 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
 .carte-legendes-titre {
   margin: 0;
   font: var(--text-caption);
+  font-family: var(--font-figure-title);
   letter-spacing: var(--text-caption-tracking);
   text-transform: uppercase;
 }
@@ -190,6 +191,7 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
   align-items: center;
   gap: var(--space-3);
   font: var(--text-caption);
+  font-family: var(--font-figure-legend);
   color: var(--text-secondary);
 }
 
@@ -215,12 +217,14 @@ const bornes = computed<{ couleur: string; debut: string | null; fin: string | n
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
   font: var(--text-caption);
+  font-family: var(--font-figure-comparison);
   color: var(--text-tertiary);
 }
 
 .carte-legendes-masques {
   margin: 0;
   font: var(--text-body-sm);
+  font-family: var(--font-figure-comparison);
   color: var(--text-secondary);
 }
 </style>

@@ -420,7 +420,7 @@ const lignesReseaux = computed(
 
 .sous-groupe-titre {
   margin: 0;
-  font: 600 1.1875rem/1.4 var(--font-serif);
+  font: 600 1.1875rem/1.4 var(--font-subsection-title);
   color: var(--couleur-strong);
 }
 

@@ -33,6 +33,7 @@ defineProps<{
 
 .cahier-prose p { margin: 0; }
 .cahier-prose p:last-child { margin-bottom: 0; }
+.cahier-prose strong { font-family: var(--font-body-emphasis); }
 .cahier-prose strong.theme-emphasis { color: var(--cahier-theme-emphasis); font-weight: 700; }
 .cahier-prose strong.region-emphasis { color: var(--cahier-region-emphasis); font-weight: 700; }
 .cahier-prose strong.car-emphasis { color: var(--cahier-mode-car); font-weight: 700; }

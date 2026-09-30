@@ -535,7 +535,7 @@ onBeforeUnmount(() => {
   padding: var(--space-4);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-prominent);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
 }
 
 .popup-carte {
@@ -614,7 +614,7 @@ onBeforeUnmount(() => {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-subtle);
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
 }
 
 .tooltip-carte {
