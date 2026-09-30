@@ -121,7 +121,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       throw new Error(`unexpected static read: ${file}`)
     }
     const fixtureFacts = indicateursMilieuxFixture.filter((fact) => fact.key === 'conso_enaf_annuel' && fact.type === 'commune')
-    const axis: string[] = metadataMilieux.indicator_pages.conso_enaf_annuel.comparison.details
+    const axis: string[] = rawMetadataMilieux.indicator_pages.conso_enaf_annuel.comparison.details
     const scopeSeries = [...new Set(fixtureFacts.map((fact) => fact.territoire))].map((id) => {
       const territory = territoiresFixture.find((item) => item.territoire === id)!
       return { territory: { id, type: territory.type, name: territory.nom }, points: fixtureFacts
