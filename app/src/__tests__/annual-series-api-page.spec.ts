@@ -17,6 +17,40 @@ const rawMetadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pi
 const metadataMilieux = validerThemeMetadata(rawMetadataMilieux, 'theme_milieux.json')
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
+  it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
+    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
+    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
+    let publishMetadata!: (metadata: typeof metadataMilieux) => void
+    const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
+      if (file === 'theme_milieux') return metadata
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      dataset_id: 'ocsge_artif_etats', indicator_id: 'artif_par_habitant', points: [], scope_series: [],
+      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
+    }), { status: 200 }))
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { milieux: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(fetchMock).not.toHaveBeenCalled()
+      publishMetadata(metadataMilieux)
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
   it('preserves validated dataset bindings and rejects invalid publication identities', () => {
     expect(metadataMilieux.indicator_pages?.artif_par_habitant.series_dataset_id).toBe('ocsge_artif_etats')
     expect(metadataMilieux.indicator_pages?.artif_par_habitant.series_publication).toBe('owned')
