@@ -290,7 +290,7 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|series_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("ordered_series", "series_descriptor", "profile_observation_source",
@@ -301,6 +301,7 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
     "table_publication")
   functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_smoke_ramp()",
+    "reject_series_smoke_insert()",
     "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
     "assert_scalar_descriptor_sources()", "assert_scalar_levels()",
     "assert_scalar_descriptor_update()", "assert_scalar_territory_update()",
@@ -330,11 +331,18 @@ profile_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   serving_smoke_schema_cleanup_sql(quote_identifier, schema)
 }
 
+series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (length(schema) != 1L || !grepl("^series_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned series smoke schema", call. = FALSE)
+  serving_smoke_schema_cleanup_sql(quote_identifier, schema)
+}
+
 
 cleanup_serving_smoke_schema <- function(connection, schema, kind) {
   expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
     profile="^profile_it_[A-Za-z0-9_]+$",
-    building="^it_building_publisher_[A-Za-z0-9_]+$", NULL)
+    building="^it_building_publisher_[A-Za-z0-9_]+$",
+    series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
       length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
     stop("Cleanup requires an owned ", kind, " smoke schema", call. = FALSE)
