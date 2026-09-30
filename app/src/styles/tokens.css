@@ -166,7 +166,7 @@
   --font-subsection-title: var(--font-mozilla-headline);
   --font-narrative-lead: var(--font-mozilla-text);
   --font-body: var(--font-mozilla-text);
-  --font-body-emphasis: var(--font-fira-code);
+  --font-body-emphasis: var(--font-body);
   /* UI is for controls. Navigation surfaces and figure grammar have their
    * own family roles, even when their current family happens to match. */
   --font-ui: var(--font-mozilla-text);

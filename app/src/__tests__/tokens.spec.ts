@@ -146,6 +146,7 @@ describe('DESIGN.md §3 — Typography', () => {
       '--font-display-title': 'var(--font-mozilla-headline)',
       '--font-section-title': 'var(--font-sans)',
       '--font-body': 'var(--font-mozilla-text)',
+      '--font-body-emphasis': 'var(--font-body)',
       '--font-ui': 'var(--font-mozilla-text)',
     }
     for (const [role, family] of Object.entries(approvedAssignments)) {
