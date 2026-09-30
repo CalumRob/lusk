@@ -10,11 +10,34 @@ args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
                                                 "--scalar-fixture-check", "--scalar-fixture-publish",
                                                 "--series-fixture-check", "--series-fixture-publish",
-                                                "--series-check", "--series-publish")) {
-  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish|--series-check|--series-publish (from pipeline/)",
+                                                "--series-check", "--series-publish",
+                                                "--owned-series-check", "--owned-series-publish")) {
+  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish|--series-check|--series-publish|--owned-series-check|--owned-series-publish (from pipeline/)",
        call. = FALSE)
 }
-if (args[[1L]] %in% c("--series-check", "--series-publish")) {
+if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
+  mode <- if (args[[1L]]=="--owned-series-check") "check" else "publish"
+  projections <- read_owned_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
+  connect <- function() {
+    do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
+  }
+  result <- dispatch_owned_series_cli(mode,projections,connect)
+  for (name in names(projections)) {
+    p <- projections[[name]]; d <- p$descriptor
+    excluded <- attr(projections,"excluded")[[name]]
+    if (is.null(excluded)) excluded <- p$excluded
+    excluded_rows <- if (is.null(excluded)) "not reported" else excluded$region$row_count
+    cat("Owned series",d$dataset_id,":",nrow(p$points),"rows;",nrow(p$point_provenance),
+        "associations;",nrow(p$provenance),"revisions; version",result$versions[[name]],
+        "; comparison",d$comparison_point,"; excluded Région rows",excluded_rows)
+    if (mode=="publish") {
+      r <- result$results[[name]]
+      cat(";",if(r$changed || r$rebound) "updated" else "no-op")
+    }
+    cat("\n")
+  }
+  if (mode=="publish") cat("Each dataset commits independently; if one fails, retry the command to safely reconcile both.\n")
+} else if (args[[1L]] %in% c("--series-check", "--series-publish")) {
   if (args[[1L]] == "--series-publish") require_series_publish_opt_in()
   projection <- read_conso_enaf_series_projection(file.path("..", "public", "data"))
   version <- scalar_content_version(projection)

@@ -271,6 +271,65 @@ test_that("stable artifact reader detects replacement during the read window", {
   }), "changed while reading")
 })
 
+test_that("owned series CLI validates before connecting and enforces explicit publish guards", {
+  points <- data.frame(dataset_id="enaf",indicator_id="i",territory_id="t",
+    territory_type="commune",axis_value="2024",observation_period="2024",
+    value=1,status="measured")
+  hash <- series_revision_hash("s","v","n","d","v","2025-01-01","2025-01-02")
+  rid <- paste0("s-v-",substr(hash,1,16))
+  projection <- list(dataset_id="enaf",points=points,
+    descriptor=list(dataset_id="enaf",indicator_id="i",axis_kind="year",axis_values="2024",
+      completeness="may_be_missing",comparison_point="2024",label="i",unit="ha",direction="low",
+      allowed_levels="commune",descriptor_version="1"),
+    provenance=data.frame(provenance_revision_id=rid,source_id="s",vintage_id="v",source_name="n",
+      dataset_name="d",source_version="v",reference_date=as.Date("2025-01-01"),
+      publication_date=as.Date("2025-01-02"),revision_hash=hash),
+    point_provenance=data.frame(dataset_id="enaf",indicator_id="i",territory_id="t",
+      axis_value="2024",provenance_revision_id=rid))
+  connects <- 0L
+  connect <- function() { connects <<- connects+1L; stop("must not connect") }
+  expect_equal(length(dispatch_owned_series_cli("check",list(enaf=projection),connect)$versions),1L)
+  expect_equal(connects,0L)
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="0"),"LUSK_PUBLISH_OWNED_SERIES=1")
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="1",lusk_mode="cron"),"cron")
+  bad <- projection; bad$points$value <- Inf
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=bad),connect,opt_in="1"),"validate")
+  expect_equal(connects,0L)
+})
+
+test_that("production owned-series reader and check route project both canonical fixture units", {
+  payload <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  sortie <- tempfile("owned-series-canonical-"); dir.create(sortie)
+  on.exit(unlink(sortie,recursive=TRUE))
+  nanoparquet::write_parquet(payload$indicateurs,file.path(sortie,"indicateurs_milieux.parquet"))
+  nanoparquet::write_parquet(payload$histoires,file.path(sortie,"histoires_milieux.parquet"))
+  nanoparquet::write_parquet(vintages_milieux(),file.path(sortie,"vintages.parquet"))
+  metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
+  projections <- read_owned_series_projections(sortie,metadata_path)
+  metadata <- jsonlite::read_json(metadata_path,simplifyVector=FALSE)
+  expect_setequal(vapply(projections,function(p) p$descriptor$dataset_id,character(1)),
+    vapply(list(metadata$indicator_pages$conso_enaf_annuel,
+      metadata$indicator_pages$artif_par_habitant),function(p) p$series_dataset_id,character(1)))
+  expect_equal(vapply(projections,function(p) nrow(p$points),integer(1)),
+    c(conso_enaf_annuel_owned=196L,artif_par_habitant_owned=28L))
+  producer <- project_conso_enaf_series_from_artifacts(payload$indicateurs,
+    vintages_milieux(),metadata)
+  canonical_files <- list(indicateurs=nanoparquet::read_parquet(file.path(sortie,"indicateurs_milieux.parquet")),
+    vintages=nanoparquet::read_parquet(file.path(sortie,"vintages.parquet")))
+  established <- owned_conso_enaf_projection(canonical_files,metadata)
+  expect_identical(scalar_content_version(projections$conso_enaf_annuel_owned),
+    scalar_content_version(established))
+  expect_equal(attr(projections,"excluded")$conso_enaf_annuel_owned$region$row_count,
+    producer$excluded$region$row_count)
+  connect <- function() stop("check route must not connect")
+  checked <- dispatch_owned_series_cli("check",projections,connect)
+  expect_identical(unlist(checked$versions),vapply(projections,scalar_content_version,character(1)))
+  script <- paste(readLines(testthat::test_path("../../scripts/publish-serving-tables.R"),warn=FALSE),collapse="\n")
+  expect_true(grepl("--owned-series-check",script,fixed=TRUE))
+  expect_true(grepl("--owned-series-publish",script,fixed=TRUE))
+  expect_true(grepl("dispatch_owned_series_cli(mode,projections,connect)",script,fixed=TRUE))
+})
+
 test_that("canonical annual rows outside descriptor axes or levels are rejected", {
   payload <- compute_payload(communes_fixture_milieux_ocsge(), theme=theme_milieux())
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)

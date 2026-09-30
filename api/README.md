@@ -1,5 +1,12 @@
 # Interactive data-serving spike (#569)
 
+Owned ENAF and OCS-GE series can be checked from fresh canonical Milieux
+Parquet with `Rscript scripts/publish-serving-tables.R --owned-series-check`
+(run from `pipeline/`). Explicit publication uses
+`LUSK_PUBLISH_OWNED_SERIES=1 Rscript scripts/publish-serving-tables.R --owned-series-publish`.
+The two datasets commit independently; if one fails, rerun the command to
+reconcile both safely. This command is unavailable in `LUSK_MODE=cron`.
+
 This slice does not replace the static site. The access-only API is deployed
 on the Pi as a bounded serving experiment. It tests one dataset's
 read contract with FastAPI + psycopg against PostgreSQL. R remains the computation
