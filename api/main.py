@@ -275,7 +275,88 @@ class ReadRepository:
                         "descriptor_version":descriptor[9],"comparison_point":descriptor[3],"points":points,
                         "availability": "complete" if all(point["status"] == "measured" for point in points) else "incomplete",
                          "comparison": comparison,
-                         "scope_series": list(grouped_scope.values())}
+                          "scope_series": list(grouped_scope.values())}
+
+    def read_owned_series(self, dataset_id: str, territory_type: str, territory_id: str,
+                          indicator_id: str) -> dict:
+        """Read one dataset-owned series and its immutable point provenance snapshot."""
+        with self.connections.connection() as connection:
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                publication = connection.execute(
+                    """SELECT content_version,reference_content_version,row_count,published_at
+                       FROM series_dataset_publication WHERE dataset_id=%s""", (dataset_id,)
+                ).fetchone()
+                reference = connection.execute(
+                    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
+                ).fetchone()
+                if not publication or not reference or publication[1] != reference[0]:
+                    raise HTTPException(503, "Owned series publication is unavailable")
+                descriptor = connection.execute(
+                    """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
+                              allowed_levels,descriptor_version
+                       FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s""",
+                    (dataset_id, indicator_id),
+                ).fetchone()
+                if not descriptor:
+                    raise HTTPException(404, "Owned series descriptor is unavailable")
+                if territory_type not in descriptor[7]:
+                    raise HTTPException(422, "Owned series is not declared for this territory level")
+                target = connection.execute(
+                    "SELECT name,territory_type FROM territory_reference WHERE territory_id=%s",
+                    (territory_id,),
+                ).fetchone()
+                if not target:
+                    raise HTTPException(404, "Territory not found")
+                if target[1] != territory_type:
+                    raise HTTPException(422, "Territory identity/type mismatch")
+                rows = connection.execute(
+                    """SELECT o.axis_value,o.observation_period,o.value,o.status,
+                              p.provenance_revision_id,p.source_id,p.vintage_id,p.source_name,p.dataset_name,
+                              p.source_version,p.reference_date,p.publication_date,p.revision_hash
+                       FROM series_dataset_observation o
+                       LEFT JOIN series_observation_provenance a USING(dataset_id,indicator_id,territory_id,axis_value)
+                       LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+                       WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=%s
+                       ORDER BY array_position(%s::text[],o.axis_value),p.provenance_revision_id""",
+                    (dataset_id,indicator_id,territory_id,list(descriptor[1])),
+                ).fetchall()
+                if not rows:
+                    raise HTTPException(404, "Owned series observations are unavailable")
+                grouped = {}
+                for row in rows:
+                    axis = row[0]
+                    point = grouped.setdefault(axis, {"axis":axis,"observation_period":row[1],
+                        "value":row[2],"status":row[3],"provenance":[]})
+                    if row[4] is None:
+                        raise HTTPException(503, "Owned series provenance is incomplete")
+                    point["provenance"].append({"revision_id":row[4],"source_id":row[5],
+                        "vintage_id":row[6],"source_name":row[7],"dataset_name":row[8],
+                        "version":row[9],"reference_date":row[10],"publication_date":row[11],
+                        "revision_hash":row[12]})
+                if any(axis not in descriptor[1] for axis in grouped):
+                    raise HTTPException(503,"Owned series contains an undeclared axis")
+                points=[]
+                for axis in descriptor[1]:
+                    point=grouped.get(axis)
+                    if point is None:
+                        if descriptor[2]=="dense_complete":
+                            raise HTTPException(503,"Owned series is incomplete")
+                        points.append({"axis":axis,"status":"missing","value":None,
+                            "observation_period":None,"provenance":[]})
+                    else:
+                        points.append(point)
+                no_comparison=descriptor[3] is None and descriptor[6]=="none"
+                if (descriptor[3] is None) != (descriptor[6]=="none"):
+                    raise HTTPException(503,"Owned series comparison descriptor is inconsistent")
+                return {"dataset_id":dataset_id,"publication_id":publication[0],
+                    "reference_content_version":publication[1],"published_at":publication[3],
+                    "territory":{"id":territory_id,"type":territory_type,"name":target[0]},
+                    "indicator_id":indicator_id,"axis_kind":descriptor[0],"completeness":descriptor[2],
+                    "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
+                    "descriptor_version":descriptor[8],"comparison_point":descriptor[3],
+                    "comparison":None if no_comparison else {"point":descriptor[3]},
+                    "points":points,"availability":"complete" if all(p["status"]=="measured" for p in points) else "incomplete"}
 
     def read_level(self, territory_type: str, territory_id: str) -> dict:
         return self._read(territory_type, territory_id, None)
@@ -907,6 +988,15 @@ def annual_series(territory_type: Literal["commune", "epci", "departement", "reg
                   repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_series(territory_type, territory_id, indicator_id, scope_level,
                                   department_id, epci_id)
+
+
+@app.get("/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}")
+def owned_series(dataset_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+                 territory_type: Literal["commune","epci","departement","region"] = Path(),
+                 territory_id: str = Path(min_length=1,max_length=32),
+                 indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+                 repository: ReadRepository = Depends(get_repository)) -> dict:
+    return repository.read_owned_series(dataset_id,territory_type,territory_id,indicator_id)
 
 
 @app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)

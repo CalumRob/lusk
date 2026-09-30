@@ -15,6 +15,45 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 const metadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
+  it('uses the separately gated, dataset-qualified M2/M3 reader and does not reuse ENAF state', async () => {
+    vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
+    vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '')
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_milieux') return indicateursMilieuxFixture
+      if (file === 'theme_milieux') return metadataMilieux
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    let apiAvailable=false
+    const fetchMock = vi.spyOn(globalThis,'fetch').mockImplementation(async () => {
+      if(!apiAvailable) throw new Error('owned API unavailable')
+      return new Response(JSON.stringify({
+      dataset_id:'ocsge_artif_etats',indicator_id:'artif_par_habitant',axis_kind:'state_role',unit:'m²/hab',
+      territory:{id:'22001',type:'commune',name:'Commune A1'},comparison:null,comparison_point:null,
+      points:[{axis:'M2',observation_period:'2021-2025',value:42,status:'measured',provenance:[]},
+        {axis:'M3',observation_period:'2021-2025',value:null,status:'missing',provenance:[]}],
+      }),{status:200,headers:{'Content-Type':'application/json'}})
+    })
+    const router=createRouter({history:createMemoryHistory(),routes})
+    await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty={type:'FeatureCollection' as const,features:[]}
+    const wrapper=mount(IndicateurView,{global:{plugins:[router],provide:{
+      [PAYLOAD_CHARGER_KEY]:loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]:async()=>({schemaVersion:'1' as const,routes:{milieux:[]}}),
+      [GEOMETRIE_CHARGER_KEY]:async()=>({communes:empty,epcis:empty,departements:empty}),
+    }}})
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant')
+    expect(wrapper.text()).toContain('momentanément indisponibles')
+    apiAvailable=true
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('momentanément indisponibles')
+    expect(wrapper.text()).toContain('42')
+  })
+
   it('preserves the page grammar and comparison scope, adapts API facts, and never falls back to static series on failure', async () => {
     vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')
     const calls: string[] = []

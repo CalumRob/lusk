@@ -102,6 +102,10 @@ export interface Indicateur extends VintageStamp {
   observation_period?: string | null
   source_id?: string | null
   vintage_id?: string | null
+  /** Observation-specific immutable provenance components from the owned series API. */
+  provenance_revisions?: Array<{ revision_id: string; source_id: string; vintage_id: string;
+    source_name: string; dataset_name: string; version: string; reference_date: string;
+    publication_date: string; revision_hash: string }>
   /**
    * The direction-aware ordinal position (ADR-0015): 1 = best, an integer ≥ 1,
    * ties share the rank and the next rank skips (1, 1, 3). null = no

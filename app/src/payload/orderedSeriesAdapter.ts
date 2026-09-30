@@ -5,11 +5,13 @@ export interface OrderedSeriesPoint {
   observation_period: string | null
   value: number | null
   status: 'measured' | 'missing'
-  source_id: string
-  vintage_id: string
+  source_id?: string
+  vintage_id?: string
   source_version?: string | null
   source_reference_date?: string | null
   source_publication_date?: string | null
+  provenance?: Array<{ revision_id: string; source_id: string; vintage_id: string; source_name: string;
+    dataset_name: string; version: string; reference_date: string; publication_date: string; revision_hash: string }>
 }
 
 export interface OrderedSeriesTerritory {
@@ -19,11 +21,12 @@ export interface OrderedSeriesTerritory {
 
 export interface OrderedSeriesRead {
   indicator_id: string
-  axis_kind: 'year'
+  axis_kind: 'year' | 'state_role'
   unit: string
   territory: { id: string; type: TerritoireType; name: string }
   points: OrderedSeriesPoint[]
-  scope_series: OrderedSeriesTerritory[]
+  dataset_id?: string
+  scope_series?: OrderedSeriesTerritory[]
   comparison: {
     point: string | null
     value: number | null
@@ -32,19 +35,21 @@ export interface OrderedSeriesRead {
     ties: number | null
     comparable_count: number
     scope: { kind: string; territory_type: string; department_id?: string | null; epci_id?: string | null }
-  }
+  } | null
 }
 
 export interface OrderedSeriesAdapter {
   theme: Theme
   indicator: string
   pathIndicator: string
+  datasetId?: string
 }
 
 // Adapter registration is a data seam, not page markup: the renderer continues
 // to use the existing indicator-page grammar and never knows about API shapes.
 const adapters: readonly OrderedSeriesAdapter[] = [
   { theme: 'milieux', indicator: 'conso_enaf_annuel', pathIndicator: 'conso_enaf_annuel' },
+  { theme: 'milieux', indicator: 'artif_par_habitant', pathIndicator: 'artif_par_habitant', datasetId: 'ocsge_artif_etats' },
 ]
 
 export function orderedSeriesAdapterFor(theme: string, indicator: string): OrderedSeriesAdapter | null {
@@ -58,7 +63,7 @@ export function orderedSeriesFacts(
   territories: readonly Territoire[],
 ): Indicateur[] {
   const refs = new Map(territories.map((territory) => [territory.territoire, territory] as const))
-  const groups = [...read.scope_series]
+  const groups = read.scope_series ? [...read.scope_series] : []
   if (!groups.some((group) => group.territory.id === read.territory.id)) {
     groups.push({ territory: read.territory, points: read.points })
   }
@@ -78,16 +83,17 @@ export function orderedSeriesFacts(
         detail: axis,
         value: point?.status === 'measured' ? point.value : null,
         unit: read.unit,
-        vintage_source: point?.source_id ?? '',
-        vintage_version: point?.source_version ?? point?.vintage_id ?? '',
-        vintage_date_reference: point?.source_reference_date ?? null,
-        vintage_date_publication: point?.source_publication_date ?? null,
+        vintage_source: point?.provenance?.map((lineage) => lineage.source_name).join(' · ') ?? point?.source_id ?? '',
+        vintage_version: point?.provenance?.map((lineage) => lineage.version).join(' · ') ?? point?.source_version ?? point?.vintage_id ?? '',
+        vintage_date_reference: point?.provenance?.map((lineage) => lineage.reference_date).join(' · ') ?? point?.source_reference_date ?? null,
+        vintage_date_publication: point?.provenance?.map((lineage) => lineage.publication_date).join(' · ') ?? point?.source_publication_date ?? null,
         rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null,
         rang_reg: null, rang_reg_n: null,
         observation_status: point?.status ?? 'missing',
         observation_period: point?.observation_period ?? null,
         source_id: point?.source_id ?? null,
         vintage_id: point?.vintage_id ?? null,
+        provenance_revisions: point?.provenance ?? [],
       })
     }
   }

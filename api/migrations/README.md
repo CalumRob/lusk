@@ -11,6 +11,26 @@ and future 008 applications use the same corrected predicate. On 2026-09-29,
 the two building source-vintage FKs were then validated. Migration 009 was not
 applied.
 
+# Migration 011: dataset-owned ordered-series publications
+
+Migration 011 is additive and limited to the ordered-series/state slice. It
+creates owner-scoped series markers, descriptors, observations, immutable
+provenance revisions and observation-to-revision associations. It does not alter
+or backfill the legacy `ordered_series`, `series_descriptor`, shared source
+tables, or `table_publication`; the ENAF legacy reader remains the compatibility
+path until a separate serial operator-approved API cutover. `schema.sql` carries
+the same objects for fresh installs. Apply/test order is after 007/008/010; 009
+is unrelated and must not be applied to this worktree/database by the worker.
+
+The focused `pipeline/scripts/smoke-series-postgres.R` rehearses both fresh-schema
+parity and migration 011 in a random owned schema in `lusk_it_contract` (the
+script splits the fresh schema at the owned-series boundary, applies 011, then
+publishes canonical ENAF and OCS-GE projections). It checks independent markers,
+facts, descriptors and provenance across updates, immutable provenance revision
+corrections, rollback, no-op, and reader write denial. It never touches `public`
+or a serving database. Production migration,
+API deployment and either Vite flag are separate serial operator gates.
+
 # Migration 009 operator procedure
 
 Migration 009 is reserved for issue #600 and is **not** part of fresh-install

@@ -293,7 +293,8 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
       !grepl("^(scalar_it|profile_it|series_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("ordered_series", "series_descriptor", "profile_observation_source",
+  tables <- c("series_observation_provenance", "series_dataset_observation", "series_dataset_descriptor",
+    "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
     "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
@@ -307,6 +308,9 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "assert_scalar_descriptor_update()", "assert_scalar_territory_update()",
     "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
     "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
+    "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
+    "validate_series_dataset_publication()", "validate_series_observation_provenance()",
+    "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
     "validate_ordered_series()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
