@@ -54,8 +54,9 @@ def test_declared_profile_postgres_api_contract():
             conn.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {role}')
             conn.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {role}')
             conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id)
-                VALUES (%s,'commune','Focal','29','E1'),(%s,'commune','Peer','29','E2')""", (territory, peer))
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',2)")
+                VALUES (%s,'commune','Focal','29','E1'),(%s,'commune','Peer','29','E1'),
+                       (%s,'commune','Other department','22','E2')""", (territory, peer, territory + 'x'))
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',3)")
             conn.execute("""INSERT INTO profile_descriptor VALUES
                 ('structure_age','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','15-29','F','high')""")
             conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES
@@ -100,6 +101,14 @@ def test_declared_profile_postgres_api_contract():
                     {"territory_id": peer, "name": "Peer", "value": .6, "status": "measured"}]}
             assert body["sources"] == [{"source_id":"age_detail","name":"INSEE fixture","version":"2023",
                 "reference_date":"2023-01-01","publication_date":None}]
+            for scope, valid_id, invalid_ids in (
+                ("departement", "29", ("22", "999")),
+                ("epci", "E1", ("E2", "missing")),
+            ):
+                assert client.get(base + f"?comparison_scope={scope}&comparison_scope_id={valid_id}").status_code == 200
+                for invalid_id in invalid_ids:
+                    invalid = client.get(base + f"?comparison_scope={scope}&comparison_scope_id={invalid_id}")
+                    assert invalid.status_code == 422, invalid.text
             with psycopg.connect(publisher_dsn, autocommit=True) as conn:
                 conn.execute(f'SET search_path TO "{schema}"')
                 conn.execute("UPDATE table_publication SET reference_content_version='stale' WHERE table_name='declared_profile'")

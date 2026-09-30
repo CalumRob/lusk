@@ -109,14 +109,15 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
         def fetchall(self): return self.rows
 
     class Conn:
-        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False):
+        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False, membership="29"):
             self.incomplete = incomplete; self.stale = stale; self.bad_facet = bad_facet
-            self.undeclared = undeclared; self.bad_direction = bad_direction; self.queries = []
+            self.undeclared = undeclared; self.bad_direction = bad_direction; self.membership = membership; self.queries = []
         @contextmanager
         def transaction(self): yield
         def execute(self, sql, params=None):
             self.queries.append(sql)
             if "table_publication" in sql: return Cursor([("profile-v1", 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
+            if "FROM territory_reference WHERE territory_id" in sql: return Cursor([(self.membership,)])
             if "profile_descriptor" in sql:
                 return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1",
                     "outside" if self.bad_facet else "<15", "F", "sideways" if self.bad_direction else "high")])
@@ -131,8 +132,8 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
             return Cursor(rows[:-1] if self.incomplete else rows)
 
     class Connections:
-        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False):
-            self.conn = Conn(incomplete, stale, bad_facet, undeclared, bad_direction)
+        def __init__(self, incomplete=False, stale=False, bad_facet=False, undeclared=False, bad_direction=False, membership="29"):
+            self.conn = Conn(incomplete, stale, bad_facet, undeclared, bad_direction, membership)
         @contextmanager
         def connection(self): yield self.conn
     repo = SimpleNamespace(connections=Connections())
@@ -143,6 +144,11 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
     assert result["comparison"]["detail"] == "<15"
     assert result["comparison"]["sex"] == "F"
     assert [row["value"] for row in result["comparison"]["values"]] == [.2, .1]
+    for scope, scope_id, membership in (("departement", "22", "29"), ("epci", "E2", "E1")):
+        with __import__("pytest").raises(HTTPException) as error:
+            declared_profile("commune", "22001", "structure_age", comparison_scope=scope,
+                comparison_scope_id=scope_id, repository=SimpleNamespace(connections=Connections(membership=membership)))
+        assert error.value.status_code == 422
     with __import__("pytest").raises(HTTPException) as error:
         declared_profile("commune", "22001", "structure_age", repository=SimpleNamespace(connections=Connections(True)))
     assert error.value.status_code == 503

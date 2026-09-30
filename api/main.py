@@ -913,6 +913,14 @@ def declared_profile(
             if (marker is None or not marker[0] or marker[1] < 1 or
                     not marker[2] or marker[2] != marker[3]):
                 raise HTTPException(503, "Profile publication is unavailable")
+            if comparison_scope in ("departement", "epci") and comparison_scope_id is not None:
+                membership_column = "department_id" if comparison_scope == "departement" else "epci_id"
+                membership = conn.execute(
+                    f"SELECT {membership_column} FROM territory_reference WHERE territory_id=%s AND territory_type='commune'",
+                    (territory_id,)).fetchone()
+                # A missing territory remains classified by the existing profile read below.
+                if membership is not None and membership[0] != comparison_scope_id:
+                    raise HTTPException(422, "Comparison scope identifier does not match the focal territory")
             descriptor = conn.execute(
                 "SELECT label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction FROM profile_descriptor WHERE indicator_id=%s",
                 (indicator_id,)).fetchone()
