@@ -24,7 +24,9 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   result <- dispatch_owned_series_cli(mode,projections,connect)
   for (name in names(projections)) {
     p <- projections[[name]]; d <- p$descriptor
-    excluded_rows <- p$excluded$region$row_count %||% 0L
+    excluded <- attr(projections,"excluded")[[name]]
+    if (is.null(excluded)) excluded <- p$excluded
+    excluded_rows <- if (is.null(excluded)) "not reported" else excluded$region$row_count
     cat("Owned series",d$dataset_id,":",nrow(p$points),"rows;",nrow(p$point_provenance),
         "associations;",nrow(p$provenance),"revisions; version",result$versions[[name]],
         "; comparison",d$comparison_point,"; excluded Région rows",excluded_rows)

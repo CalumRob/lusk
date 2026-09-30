@@ -143,8 +143,7 @@ owned_conso_enaf_projection <- function(canonical, metadata) {
   list(dataset_id=dataset_id, points=points, descriptor=d, provenance=provenance,
     point_provenance=unique(data.frame(dataset_id=dataset_id,indicator_id=points$indicator_id,
       territory_id=points$territory_id,axis_value=points$axis_value,
-      provenance_revision_id=revision_id,stringsAsFactors=FALSE)),
-    excluded=projection$excluded)
+      provenance_revision_id=revision_id,stringsAsFactors=FALSE)))
 }
 
 project_artif_m2m3_projection <- function(indicators, histories, vintages, metadata) {
@@ -455,6 +454,11 @@ read_owned_series_projections <- function(sortie="../public/data",
     registry <- register_owned_series_publishers(list(),metadata)
     projections <- lapply(registry,function(publisher) publisher$project(canonical))
     lapply(projections,validate_owned_series_projection)
+    # Reporting-only exclusion metadata belongs to the reader result, not the
+    # owned projection whose serialized identity is the publication version.
+    enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,
+      canonical$vintages,metadata)
+    attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
     projections
   })
 }

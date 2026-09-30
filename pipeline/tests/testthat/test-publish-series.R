@@ -312,10 +312,15 @@ test_that("production owned-series reader and check route project both canonical
       metadata$indicator_pages$artif_par_habitant),function(p) p$series_dataset_id,character(1)))
   expect_equal(vapply(projections,function(p) nrow(p$points),integer(1)),
     c(conso_enaf_annuel_owned=196L,artif_par_habitant_owned=28L))
-  annual <- payload$indicateurs[!is.na(payload$indicateurs$key) &
-    payload$indicateurs$key=="conso_enaf_annuel",,drop=FALSE]
-  expect_equal(projections$conso_enaf_annuel_owned$excluded$region$row_count,
-    sum(annual$type=="region"))
+  producer <- project_conso_enaf_series_from_artifacts(payload$indicateurs,
+    vintages_milieux(),metadata)
+  canonical_files <- list(indicateurs=nanoparquet::read_parquet(file.path(sortie,"indicateurs_milieux.parquet")),
+    vintages=nanoparquet::read_parquet(file.path(sortie,"vintages.parquet")))
+  established <- owned_conso_enaf_projection(canonical_files,metadata)
+  expect_identical(scalar_content_version(projections$conso_enaf_annuel_owned),
+    scalar_content_version(established))
+  expect_equal(attr(projections,"excluded")$conso_enaf_annuel_owned$region$row_count,
+    producer$excluded$region$row_count)
   connect <- function() stop("check route must not connect")
   checked <- dispatch_owned_series_cli("check",projections,connect)
   expect_identical(unlist(checked$versions),vapply(projections,scalar_content_version,character(1)))
