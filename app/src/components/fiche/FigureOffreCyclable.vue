@@ -145,7 +145,7 @@ const pucePartage = computed(() => pucePour(partage.value))
 }
 
 .valeur-numerique {
-  font-family: var(--font-sans);
+  font-family: var(--font-figure-value);
   font-size: 2rem;
   font-weight: var(--text-numeric-weight);
   font-variant-numeric: var(--text-numeric-variant);
@@ -156,6 +156,7 @@ const pucePartage = computed(() => pucePour(partage.value))
 
 .valeur-unite {
   font: var(--text-body-sm);
+  font-family: var(--font-figure-label);
   color: var(--text-secondary);
 }
 
@@ -195,12 +196,13 @@ const pucePartage = computed(() => pucePour(partage.value))
 
 .tranche-libelle {
   font: var(--text-caption);
+  font-family: var(--font-figure-label);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-secondary);
 }
 
 .tranche-valeur {
-  font-family: var(--font-sans);
+  font-family: var(--font-figure-value);
   font-weight: var(--text-numeric-weight);
   font-variant-numeric: var(--text-numeric-variant);
   color: var(--text-primary);
@@ -208,6 +210,7 @@ const pucePartage = computed(() => pucePour(partage.value))
 
 .tranche-unite {
   font: var(--text-caption);
+  font-family: var(--font-figure-comparison);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-tertiary);
 }

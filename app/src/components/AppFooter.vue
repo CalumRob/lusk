@@ -82,7 +82,7 @@ const ligneFraicheurAffichée = computed(() => {
 
 .pied-attribution {
   margin: 0;
-  font: 400 0.875rem/1.5 var(--font-serif);
+  font: 400 0.875rem/1.5 var(--font-body);
   color: var(--text-secondary);
 }
 

@@ -152,6 +152,34 @@
   --font-serif: 'Newsreader Variable', Georgia, 'Times New Roman', serif;
   --font-mono: ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace;
 
+  /* Additional self-hosted families used by the approved semantic mapping
+   * and the independently adjustable figure roles below. */
+  --font-mozilla-headline: 'Mozilla Headline Variable', sans-serif;
+  --font-mozilla-text: 'Mozilla Text Variable', sans-serif;
+  --font-fira-code: 'Fira Code Variable', ui-monospace, monospace;
+
+  /* Family roles describe why text is set this way, not its size. The family
+   * sources above remain independent so each role can be tuned on its own. */
+  --font-wordmark: var(--font-serif);
+  --font-display-title: var(--font-mozilla-headline);
+  --font-section-title: var(--font-sans);
+  --font-subsection-title: var(--font-mozilla-headline);
+  --font-narrative-lead: var(--font-mozilla-text);
+  --font-body: var(--font-mozilla-text);
+  --font-body-emphasis: var(--font-body);
+  /* UI is for controls. Navigation surfaces and figure grammar have their
+   * own family roles, even when their current family happens to match. */
+  --font-ui: var(--font-mozilla-text);
+  --font-global-header: var(--font-mozilla-text);
+  --font-theme-tabs: var(--font-mozilla-text);
+  --font-metadata: var(--font-fira-code);
+  --font-figure-title: var(--font-mozilla-text);
+  --font-figure-label: var(--font-mozilla-text);
+  --font-figure-mode: var(--font-mozilla-text);
+  --font-figure-value: var(--font-fira-code);
+  --font-figure-legend: var(--font-mozilla-text);
+  --font-figure-comparison: var(--font-fira-code);
+
   /* ------------------------------------------------------------------------
    * §3 Typography — scale
    * Each level carries a font shorthand (weight size/line-height family)
@@ -159,43 +187,43 @@
    * var(--text-h1-tracking)` composes the full style.
    * ---------------------------------------------------------------------- */
 
-  --text-display: 600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-serif); /* hero claim, fiche one-liner */
+  --text-display: 600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-display-title); /* hero claim, fiche one-liner */
   --text-display-tracking: -0.01em;
 
-  --text-h1: 700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-sans); /* page titles */
+  --text-h1: 700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-display-title); /* page titles */
   --text-h1-tracking: -0.015em;
 
-  --text-h2: 600 1.5rem/1.3 var(--font-sans); /* section headers */
+  --text-h2: 600 1.5rem/1.3 var(--font-section-title); /* section headers */
   --text-h2-tracking: -0.01em;
 
-  --text-h3: 600 1.1875rem/1.4 var(--font-sans); /* card titles, theme block titles */
+  --text-h3: 600 1.1875rem/1.4 var(--font-subsection-title); /* cards, panels, nested headings */
   --text-h3-tracking: 0;
 
-  --text-body-lg: 400 1.125rem/1.6 var(--font-sans); /* lead paragraphs */
+  --text-body-lg: 400 1.125rem/1.6 var(--font-body); /* lead paragraphs */
   --text-body-lg-tracking: 0;
 
-  --text-body: 400 1rem/1.6 var(--font-sans); /* default text */
+  --text-body: 400 1rem/1.6 var(--font-body); /* default text */
   --text-body-tracking: 0;
 
-  --text-body-sm: 400 0.875rem/1.5 var(--font-sans); /* secondary info */
+  --text-body-sm: 400 0.875rem/1.5 var(--font-body); /* compact body copy; size does not imply UI */
   --text-body-sm-tracking: 0;
 
-  --text-caption: 500 0.75rem/1.4 var(--font-sans); /* labels, metadata, vintage stamps */
+  --text-caption: 500 0.75rem/1.4 var(--font-metadata); /* source stamps and compact metadata */
   --text-caption-tracking: 0.02em;
 
-  --text-overline: 600 0.6875rem/1.3 var(--font-sans); /* section labels, uppercase */
+  --text-overline: 600 0.6875rem/1.3 var(--font-metadata); /* category labels, uppercase */
   --text-overline-tracking: 0.08em;
 
   /* Shared figure role: labels and axes use the same compact editorial face. */
-  --type-figure-label: 400 0.75rem/1.2 var(--font-sans);
+  --type-figure-label: 400 0.75rem/1.2 var(--font-figure-label);
   --type-figure-label-tracking: 0.08em;
   /* Backwards-compatible alias for existing figure-column consumers. */
   --type-figure-column: var(--type-figure-label);
   --type-figure-column-tracking: var(--type-figure-label-tracking);
-  --type-figure-mode: 400 0.875rem/1.35 var(--font-sans);
-  --type-figure-value: 700 1rem/1 var(--font-sans);
-  --type-figure-legend: 500 0.8125rem/1.35 var(--font-sans);
-  --type-figure-comparison: 500 0.6875rem/1.25 var(--font-sans);
+  --type-figure-mode: 400 0.875rem/1.35 var(--font-figure-mode);
+  --type-figure-value: 700 1rem/1 var(--font-figure-value);
+  --type-figure-legend: 500 0.8125rem/1.35 var(--font-figure-legend);
+  --type-figure-comparison: 500 0.6875rem/1.25 var(--font-figure-comparison);
   --type-figure-lecture-size: 0.8125rem;
 
   /* Numeric — matches body sizes; digits never jitter */

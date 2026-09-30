@@ -2,6 +2,9 @@ import { createApp } from 'vue'
 
 import '@fontsource-variable/manrope/index.css'
 import '@fontsource-variable/newsreader/index.css'
+import '@fontsource-variable/mozilla-headline/index.css'
+import '@fontsource-variable/mozilla-text/index.css'
+import '@fontsource-variable/fira-code/index.css'
 
 import App from './App.vue'
 import router from './router'

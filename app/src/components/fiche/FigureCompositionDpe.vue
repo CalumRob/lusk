@@ -124,7 +124,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
   width: 1.4em;
   text-align: center;
   border-radius: var(--radius-sm);
-  font-family: var(--font-sans);
+  font-family: var(--font-figure-label);
   font-weight: 700;
   font-size: 0.75rem;
   line-height: 1.4;
@@ -136,13 +136,14 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
 .dpe-libelle {
   font: var(--text-caption);
+  font-family: var(--font-figure-label);
   letter-spacing: var(--text-caption-tracking);
   color: var(--text-secondary);
 }
 
 .dpe-valeur {
   margin-left: auto;
-  font-family: var(--font-sans);
+  font-family: var(--font-figure-value);
   font-weight: var(--text-numeric-weight);
   font-variant-numeric: var(--text-numeric-variant);
   color: var(--text-primary);

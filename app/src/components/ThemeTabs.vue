@@ -206,6 +206,7 @@ function surTouche(ev: KeyboardEvent): void {
   background: transparent;
   color: var(--text-secondary);
   font: var(--text-body-sm);
+  font-family: var(--font-theme-tabs);
   cursor: pointer;
   white-space: nowrap;
   transition:

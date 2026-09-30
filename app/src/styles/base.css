@@ -25,7 +25,7 @@ body {
 
 body {
   margin: 0;
-  font-family: var(--font-sans);
+  font-family: var(--font-body);
   font-size: 1rem;
   line-height: 1.6;
   background-color: var(--surface-secondary);
@@ -48,6 +48,13 @@ h5,
 h6 {
   margin-top: 0;
   color: var(--text-primary);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-ui);
 }
 
 a {
@@ -108,14 +115,10 @@ html.tiroir-verrouille {
   }
 }
 
-/* --------------------------------------------------------------------------
-   Voix de lecture — la voix récit (serif, Newsreader) de la fiche, opposée à
-   la voix corps (Manrope). La lecture narrative (le « one-liner » de fiche,
-   DESIGN.md §9) la porte ; jamais la voix corps. Utilitaire global pour que
-   la voix soit testable sans dépendre du CSS scoped.
-   -------------------------------------------------------------------------- */
+/* Narrative reading copy uses the body role; prominent claims use the
+   display-title token through --text-display. */
 .voix-recit {
-  font-family: var(--font-serif);
+  font-family: var(--font-body);
 }
 
 /* --------------------------------------------------------------------------

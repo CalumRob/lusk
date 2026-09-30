@@ -140,6 +140,42 @@ describe('DESIGN.md §2 — Status', () => {
 })
 
 describe('DESIGN.md §3 — Typography', () => {
+  it('exposes independently assignable semantic font roles', () => {
+    const approvedAssignments: Record<string, string> = {
+      '--font-wordmark': 'var(--font-serif)',
+      '--font-display-title': 'var(--font-mozilla-headline)',
+      '--font-section-title': 'var(--font-sans)',
+      '--font-body': 'var(--font-mozilla-text)',
+      '--font-body-emphasis': 'var(--font-body)',
+      '--font-ui': 'var(--font-mozilla-text)',
+    }
+    for (const [role, family] of Object.entries(approvedAssignments)) {
+      expectToken(role, family)
+    }
+
+    for (const role of [
+      '--font-wordmark',
+      '--font-display-title',
+      '--font-section-title',
+      '--font-subsection-title',
+      '--font-narrative-lead',
+      '--font-body',
+      '--font-body-emphasis',
+      '--font-ui',
+      '--font-metadata',
+      '--font-global-header',
+      '--font-theme-tabs',
+      '--font-figure-title',
+      '--font-figure-label',
+      '--font-figure-mode',
+      '--font-figure-value',
+      '--font-figure-legend',
+      '--font-figure-comparison',
+    ]) {
+      expect(tokens.has(role), `expected ${role} to be declared`).toBe(true)
+    }
+  })
+
   it('declares the three font stacks (Fontsource self-hosted)', () => {
     expectToken("--font-sans", "'Manrope Variable', system-ui, -apple-system, sans-serif")
     expectToken(
@@ -150,35 +186,44 @@ describe('DESIGN.md §3 — Typography', () => {
       '--font-mono',
       "ui-monospace, 'Cascadia Code', 'SF Mono', Menlo, monospace",
     )
+    expectToken('--font-mozilla-headline', "'Mozilla Headline Variable', sans-serif")
+    expectToken('--font-mozilla-text', "'Mozilla Text Variable', sans-serif")
+    expectToken('--font-fira-code', "'Fira Code Variable', ui-monospace, monospace")
   })
 
   it('encodes the type scale (size, weight, line-height, tracking)', () => {
-    expectToken('--text-display', "600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-serif)")
+    expectToken('--text-display', "600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-display-title)")
     expectToken('--text-display-tracking', '-0.01em')
 
-    expectToken('--text-h1', "700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-sans)")
+    expectToken('--text-h1', "700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-display-title)")
     expectToken('--text-h1-tracking', '-0.015em')
 
-    expectToken('--text-h2', "600 1.5rem/1.3 var(--font-sans)")
+    expectToken('--text-h2', "600 1.5rem/1.3 var(--font-section-title)")
     expectToken('--text-h2-tracking', '-0.01em')
 
-    expectToken('--text-h3', "600 1.1875rem/1.4 var(--font-sans)")
+    expectToken('--text-h3', "600 1.1875rem/1.4 var(--font-subsection-title)")
     expectToken('--text-h3-tracking', '0')
 
-    expectToken('--text-body-lg', "400 1.125rem/1.6 var(--font-sans)")
+    expectToken('--text-body-lg', "400 1.125rem/1.6 var(--font-body)")
     expectToken('--text-body-lg-tracking', '0')
 
-    expectToken('--text-body', "400 1rem/1.6 var(--font-sans)")
+    expectToken('--text-body', "400 1rem/1.6 var(--font-body)")
     expectToken('--text-body-tracking', '0')
 
-    expectToken('--text-body-sm', "400 0.875rem/1.5 var(--font-sans)")
+    expectToken('--text-body-sm', "400 0.875rem/1.5 var(--font-body)")
     expectToken('--text-body-sm-tracking', '0')
 
-    expectToken('--text-caption', "500 0.75rem/1.4 var(--font-sans)")
+    expectToken('--text-caption', "500 0.75rem/1.4 var(--font-metadata)")
     expectToken('--text-caption-tracking', '0.02em')
 
-    expectToken('--text-overline', "600 0.6875rem/1.3 var(--font-sans)")
+    expectToken('--text-overline', "600 0.6875rem/1.3 var(--font-metadata)")
     expectToken('--text-overline-tracking', '0.08em')
+
+    expectToken('--type-figure-label', '400 0.75rem/1.2 var(--font-figure-label)')
+    expectToken('--type-figure-mode', '400 0.875rem/1.35 var(--font-figure-mode)')
+    expectToken('--type-figure-value', '700 1rem/1 var(--font-figure-value)')
+    expectToken('--type-figure-legend', '500 0.8125rem/1.35 var(--font-figure-legend)')
+    expectToken('--type-figure-comparison', '500 0.6875rem/1.25 var(--font-figure-comparison)')
   })
 
   it('tokenizes the numeric style (Manrope 600, tabular-nums)', () => {
