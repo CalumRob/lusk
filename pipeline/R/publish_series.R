@@ -143,7 +143,8 @@ owned_conso_enaf_projection <- function(canonical, metadata) {
   list(dataset_id=dataset_id, points=points, descriptor=d, provenance=provenance,
     point_provenance=unique(data.frame(dataset_id=dataset_id,indicator_id=points$indicator_id,
       territory_id=points$territory_id,axis_value=points$axis_value,
-      provenance_revision_id=revision_id,stringsAsFactors=FALSE)))
+      provenance_revision_id=revision_id,stringsAsFactors=FALSE)),
+    excluded=projection$excluded)
 }
 
 project_artif_m2m3_projection <- function(indicators, histories, vintages, metadata) {
