@@ -43,7 +43,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       }),{status:200,headers:{'Content-Type':'application/json'}})
     })
     const router=createRouter({history:createMemoryHistory(),routes})
-    await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
+    await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22&detail=2021')
     await router.isReady()
     const empty={type:'FeatureCollection' as const,features:[]}
     const wrapper=mount(IndicateurView,{global:{plugins:[router],provide:{
@@ -52,7 +52,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]:async()=>({communes:empty,epcis:empty,departements:empty}),
     }}})
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22&comparison_detail=2025')
+    expect(fetchMock).toHaveBeenCalledWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
     expect(wrapper.text()).toContain('momentanément indisponibles')
     apiAvailable=true
     await wrapper.get('[role="alert"] button').trigger('click')

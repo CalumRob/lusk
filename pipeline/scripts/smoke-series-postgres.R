@@ -347,10 +347,13 @@ tryCatch({
   if(nrow(http_target)!=1L) stop("Canonical owned projection has no selected 2025 commune facet for HTTP parity",call.=FALSE)
   http_dsn <- sprintf("postgresql://%s@%s:%s/%s?options=-csearch_path%%3D%s",
     config$READER,config$HOST,config$PORT,config$DATABASE,schema)
-  old_env <- Sys.getenv(c("DATABASE_URL","LUSK_SERIES_HTTP_DATABASE_URL","LUSK_SERIES_HTTP_DATASET",
+  writer_dsn <- sprintf("postgresql://%s@%s:%s/%s?options=-csearch_path%%3D%s",
+    config$USER,config$HOST,config$PORT,config$DATABASE,schema)
+  old_env <- Sys.getenv(c("DATABASE_URL","LUSK_SERIES_HTTP_DATABASE_URL","LUSK_SERIES_HTTP_WRITER_DATABASE_URL","LUSK_SERIES_HTTP_DATASET",
     "LUSK_SERIES_HTTP_INDICATOR","LUSK_SERIES_HTTP_TERRITORY","LUSK_SERIES_HTTP_DETAIL",
     "LUSK_SERIES_HTTP_SCOPE","LUSK_SERIES_HTTP_EPCI","PYTHONPATH"),unset=NA_character_)
   Sys.setenv(DATABASE_URL=http_dsn,LUSK_SERIES_HTTP_DATABASE_URL=http_dsn,
+    LUSK_SERIES_HTTP_WRITER_DATABASE_URL=writer_dsn,
     LUSK_SERIES_HTTP_DATASET="ocsge_artif_etats",LUSK_SERIES_HTTP_INDICATOR="artif_par_habitant",
     LUSK_SERIES_HTTP_TERRITORY=http_target$territory_id[[1L]],LUSK_SERIES_HTTP_DETAIL="2025",
     LUSK_SERIES_HTTP_SCOPE="commune",LUSK_SERIES_HTTP_EPCI=http_target$epci_id[[1L]],

@@ -279,7 +279,7 @@ class ReadRepository:
 
     def read_owned_series(self, dataset_id: str, territory_type: str, territory_id: str,
                           indicator_id: str, scope_level: str, department_id: str | None,
-                          epci_id: str | None, comparison_detail: str) -> dict:
+                          epci_id: str | None, comparison_detail: str | None = None) -> dict:
         """Read an owned focal series and its declared peer cohort in one snapshot."""
         with self.connections.connection() as connection:
             with connection.transaction():
@@ -321,8 +321,9 @@ class ReadRepository:
                     raise HTTPException(422, "Department filter does not contain the focal territory")
                 if epci_id and (territory_type != "commune" or target[3] != epci_id):
                     raise HTTPException(422, "EPCI filter does not contain the focal territory")
-                if comparison_detail not in descriptor[1]:
-                    raise HTTPException(422, "Comparison detail is not declared by this dataset")
+                if comparison_detail is not None and comparison_detail != descriptor[3]:
+                    raise HTTPException(422, "Comparison detail must match the dataset descriptor comparison point")
+                comparison_point = descriptor[3]
                 axis_limit = len(descriptor[1])
                 territory_limit = min(5_000, max(1, 100_000 // axis_limit))
                 scoped_ids = connection.execute(
@@ -383,13 +384,13 @@ class ReadRepository:
                     cohort = []
                     for peer_id in peer_ids:
                         peer = grouped.get(peer_id)
-                        facet = next((p for p in peer["points"] if p["axis"] == comparison_detail), None) if peer else None
+                        facet = next((p for p in peer["points"] if p["axis"] == comparison_point), None) if peer else None
                         if facet and facet["status"] == "measured":
                             cohort.append((peer_id, facet["value"]))
-                    focal_facet = next((p for p in focal["points"] if p["axis"] == comparison_detail), None)
+                    focal_facet = next((p for p in focal["points"] if p["axis"] == comparison_point), None)
                     focal_value = focal_facet["value"] if focal_facet and focal_facet["status"] == "measured" else None
                     summary = summarize_series_comparison(cohort, territory_id, focal_value, descriptor[6])
-                    comparison = {"point": comparison_detail, "direction": descriptor[6], **summary,
+                    comparison = {"point": comparison_point, "direction": descriptor[6], **summary,
                         "scope":{"kind":"level","territory_type":scope_level,
                         "department_id":department_id,"epci_id":epci_id,
                         "rank_field":("rang_epci" if territory_type == "commune" and epci_id else
@@ -397,7 +398,7 @@ class ReadRepository:
                             "rang_reg" if territory_type != "region" else None)}}
                     for peer_id in peer_ids:
                         peer = grouped.get(peer_id)
-                        facet = next((p for p in peer["points"] if p["axis"] == comparison_detail), None) if peer else None
+                        facet = next((p for p in peer["points"] if p["axis"] == comparison_point), None) if peer else None
                         if facet:
                             peer_summary = summarize_series_comparison(cohort, peer_id,
                                 facet["value"] if facet["status"] == "measured" else None, descriptor[6])
@@ -411,7 +412,7 @@ class ReadRepository:
                     "indicator_id":indicator_id,"axis_kind":descriptor[0],"completeness":descriptor[2],
                     "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
                     "descriptor_version":descriptor[8],"comparison_point":descriptor[3],
-                    "comparison":comparison,"comparison_point":comparison_detail,
+                    "comparison":comparison,"comparison_point":comparison_point,
                     "points":focal["points"],"scope_series":[grouped[peer_id] for peer_id in peer_ids if peer_id in grouped],
                     "availability":"complete" if all(p["status"]=="measured" for p in focal["points"]) else "incomplete"}
 
@@ -1055,7 +1056,7 @@ def owned_series(dataset_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
                  scope_level: Literal["commune","epci","departement","region"] = Query(default="commune"),
                  department_id: str | None = Query(default=None,min_length=1,max_length=8),
                  epci_id: str | None = Query(default=None,min_length=1,max_length=16),
-                 comparison_detail: str = Query(min_length=1,max_length=32),
+                 comparison_detail: str | None = Query(default=None,min_length=1,max_length=32),
                  repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_owned_series(dataset_id,territory_type,territory_id,indicator_id,
         scope_level,department_id,epci_id,comparison_detail)

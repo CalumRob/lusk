@@ -207,15 +207,9 @@ async function chargerSerie(force = false) {
   const focal = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire) ?? scopeTerritories[0]
   if (!focal) { serieErreur.value = false; serieLecture.value = null; return }
   const request = ++serieRequete
-  const comparison = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
-    ?.indicator_pages?.[indicator.value]?.comparison
-  const requestedDetail = typeof route.query.detail === 'string' ? route.query.detail : comparison?.detail
   const query = new URLSearchParams({ scope_level: niveauSerie.value })
   if (niveauSerie.value === 'commune' && department) query.set('department_id', department)
   if (niveauSerie.value === 'commune' && epci) query.set('epci_id', epci)
-  if (adapter.publicationMode === 'owned') {
-    query.set('comparison_detail', requestedDetail ?? '')
-  }
   const url = adapter.publicationMode === 'owned'
     ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
     : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`

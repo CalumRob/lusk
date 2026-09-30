@@ -1,6 +1,8 @@
 from pathlib import Path
 import json
 import re
+import pytest
+from fastapi import HTTPException
 
 from api.main import ReadRepository, app
 
@@ -95,16 +97,23 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
     connections=Connections()
     repository=ReadRepository(connections)
     epci=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune",None,"243500139","2025")
+        "commune",None,"243500139")
     department=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune","35",None,"2025")
+        "commune","35",None)
     bretagne=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune",None,None,"2025")
+        "commune",None,None)
+    assert epci["comparison_point"] == epci["comparison"]["point"] == "2025"
+    with pytest.raises(HTTPException,match="descriptor comparison point"):
+        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+            "commune",None,"243500139","2021")
     assert epci["comparison"]["comparable_count"] == 2
     assert epci["comparison"]["rank"] == 1 and epci["comparison"]["ties"] == 2
+    assert epci["comparison"]["median"] == 50.0
     assert department["comparison"]["comparable_count"] == 3
+    assert department["comparison"]["median"] == 50.0
     assert bretagne["comparison"]["comparable_count"] == 4
     assert bretagne["comparison"]["rank"] == 2 and bretagne["comparison"]["ties"] == 2
+    assert bretagne["comparison"]["median"] == 50.0
     assert epci["comparison"]["median"] != bretagne["comparison"]["median"] or epci["comparison"]["comparable_count"] != bretagne["comparison"]["comparable_count"]
     assert epci["publication_id"] == "ocsge_v1"
     assert epci["points"][0]["value"] == 0.0
@@ -116,7 +125,7 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
     assert missing["status"] == "missing" and missing["comparison_rank"] is None
     connections.connection_value.no_comparison=True
     no_comparison=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune","35",None,"2025")
+        "commune","35",None)
     assert no_comparison["comparison"] is None
     assert all("comparison_rank" not in point for territory in no_comparison["scope_series"] for point in territory["points"])
     sql=" ".join(q for q,_ in connections.connection_value.queries)
