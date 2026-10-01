@@ -91,48 +91,24 @@ register_scalar_publisher <- function(registry, name, project, publish) {
 project_fixture_scalar <- function(payload, descriptor, completeness, indicator_id = "densite") {
   if (length(completeness) != 1L || !completeness %in% c("dense_complete", "sparse"))
     stop("Fixture completeness must be explicitly declared", call. = FALSE)
-  page <- descriptor$indicator_pages[[indicator_id]]
-  if (is.null(page)) stop("Fixture indicator is not declared", call. = FALSE)
-  facts <- payload$indicateurs
-  facts <- facts[facts$key == indicator_id & facts$type %in% page$levels, , drop=FALSE]
-  if (!nrow(facts)) stop("Canonical fixture has no declared scalar facts", call. = FALSE)
-  source_ids <- unlist(page$sources, use.names=FALSE)
-  if (!length(source_ids)) stop("Fixture descriptor has no declared source", call. = FALSE)
+  ids <- as.character(indicator_id)
+  rows <- payload$indicateurs[payload$indicateurs$key %in% ids, , drop=FALSE]
+  names(rows)[match(c("territoire", "type", "key", "vintage_source", "vintage_version",
+    "vintage_date_reference", "vintage_date_publication"), names(rows))] <-
+    c("territory_id", "territory_type", "indicator_id", "source_name", "source_version",
+      "reference_date", "publication_date")
+  page <- descriptor$indicator_pages[[ids[[1L]]]]
+  if (is.null(page)) stop("Fixture indicator is not declared", call.=FALSE)
+  eligible <- payload$territoires[payload$territoires$type %in% unlist(page$levels), c("territoire", "type"), drop=FALSE]
+  eligible <- stats::setNames(eligible, c("territory_id", "territory_type"))
+  source_ids <- as.character(unlist(page$sources, use.names=FALSE))
   if (length(source_ids) != 1L)
-    stop("Canonical fixture projection requires exactly one declared source with fixture-backed provenance", call. = FALSE)
-  source_id <- source_ids[[1L]]
-  version <- as.character(facts$vintage_version)
-  vintage_id <- paste(version, facts$vintage_date_reference, sep="/")
-  scalar_facts <- data.frame(
-    indicator_id=indicator_id, territory_id=facts$territoire,
-    territory_type=facts$type, value=facts$value,
-    status=ifelse(is.na(facts$value), "not_available", "measured"),
-    support_count=NA_integer_, denominator_count=NA_integer_,
-    stringsAsFactors=FALSE
-  )
-  descriptor_row <- data.frame(
-    indicator_id=indicator_id, allowed_sources=I(list(source_ids)), label=page$label,
-    unit=page$unit, direction=page$direction,
-    comparison_facet=NA_character_, allowed_levels=I(list(unlist(page$levels))),
-    denominator_semantics=page$calculation, completeness=completeness,
-    descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE
-  )
-  provenance <- unique(data.frame(indicator_id=indicator_id,
-    territory_id=scalar_facts$territory_id, source_id=source_id,
-    vintage_id=vintage_id, stringsAsFactors=FALSE))
-  vintages <- unique(data.frame(
-    source_id=source_id, vintage_id=vintage_id, version=version,
-    reference_date=as.Date(facts$vintage_date_reference),
-    publication_date=as.Date(facts$vintage_date_publication),
-    stringsAsFactors=FALSE
-  ))
-  list(facts=scalar_facts, descriptors=descriptor_row,
-       provenance=provenance,
-        datasets=data.frame(source_id=source_id, name=unique(as.character(facts$vintage_source))[[1L]]),
-       vintages=vintages,
-       eligible_territories=payload$territoires[payload$territoires$type %in% page$levels,
-         c("territoire", "type"), drop=FALSE] |>
-         stats::setNames(c("territory_id", "territory_type")))
+    stop("Canonical fixture projection requires exactly one declared source with fixture-backed provenance", call.=FALSE)
+  rows$unit <- as.character(page$unit)
+  fixture_policy <- list(completeness=completeness, missing_status="not_available",
+    allowed_levels=unlist(page$levels, use.names=FALSE), comparison_facet=NA_character_,
+    counts_available=FALSE)
+  project_scalar_canonical_rows(rows, descriptor, ids, eligible, fixture_policy)
 }
 
 # Project the canonical service-share relation into the shared scalar grain.
@@ -228,22 +204,25 @@ publish_service_share_scalars <- function(con, access, metadata, eligible_territ
   if (!is.list(additional_projections)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
   project <- publisher$services_essentiels_scalar$project
   publisher$services_essentiels_scalar$project <- function(canonical) {
-    combine_scalar_projections(project(canonical), additional_projections)
+    assemble_scalar_snapshot(project(canonical), additional_projections)
   }
   db <- scalar_postgres_adapter(con)
   publish_registered_scalar(publisher, "services_essentiels_scalar",
     canonical=list(access=access, eligible_territories=eligible_territories), db=db)
 }
 
-# Project scalar indicators from the canonical indicator Parquet and their
-# metadata-owned descriptors. The caller supplies each indicator's canonical
-# completeness policy; it is never inferred from the observed rows.
-project_scalar_indicator_rows <- function(rows, metadata, indicator_ids,
-    eligible_territories, completeness="sparse") {
-  if (!is.data.frame(rows) || !all(c("territoire", "type", "key", "value", "unit",
-      "vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication") %in% names(rows)) ||
+# Shared canonical fact-to-serving projection. Fixture-only completeness is
+# explicitly passed by the fixture adapter; production uses metadata's
+# producer-owned scalar_contract for eligible levels, completeness, facet and
+# null status.
+project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
+    eligible_territories, fixture_policy=NULL) {
+  required <- c("territory_id", "territory_type", "indicator_id", "value", "unit",
+    "source_name", "source_version", "reference_date", "publication_date")
+  if (!is.data.frame(rows) || !all(required %in% names(rows)) ||
       !is.list(metadata$indicator_pages) || !length(indicator_ids) ||
-      length(completeness) != 1L || !completeness %in% c("sparse", "dense_complete"))
+      !is.data.frame(eligible_territories) ||
+      !setequal(names(eligible_territories), c("territory_id", "territory_type")))
     stop("Canonical scalar indicator projection is missing contract fields", call.=FALSE)
   facts_out <- descriptors_out <- provenance_out <- datasets_out <- vintages_out <- list()
   for (id in indicator_ids) {
@@ -251,43 +230,66 @@ project_scalar_indicator_rows <- function(rows, metadata, indicator_ids,
     if (is.null(page) || !identical(as.character(page$indicator), id))
       stop("Scalar indicator is not declared by canonical metadata: ", id, call.=FALSE)
     source_ids <- as.character(unlist(page$sources, use.names=FALSE))
-    selected <- rows[rows$key == id & rows$type %in% unlist(page$levels), , drop=FALSE]
+    policy <- metadata$scalar_contracts[[id]]
+    if (is.null(policy)) policy <- fixture_policy
+    if (!is.list(policy) || !all(c("allowed_levels", "completeness", "comparison_facet", "missing_status", "counts_available") %in% names(policy)))
+      stop("Producer scalar contract is missing for indicator: ", id, call.=FALSE)
+    levels <- as.character(unlist(policy$allowed_levels, use.names=FALSE))
+    completeness <- as.character(policy$completeness)
+    missing_status <- as.character(policy$missing_status)
+    if (length(completeness) != 1L || !completeness %in% c("sparse", "dense_complete") ||
+        length(missing_status) != 1L || !missing_status %in% c("suppressed", "unsupported", "not_available") ||
+        length(levels) == 0L || any(!levels %in% c("commune", "epci", "departement", "region")) ||
+        !identical(policy$counts_available, FALSE) || length(policy$comparison_facet) != 1L ||
+        (!is.na(policy$comparison_facet) && !nzchar(policy$comparison_facet)))
+      stop("Producer scalar contract is invalid for indicator: ", id, call.=FALSE)
+    selected <- rows[rows$indicator_id == id & rows$territory_type %in% levels, , drop=FALSE]
     if (!nrow(selected) || length(source_ids) != 1L)
       stop("Canonical indicator facts or single-source provenance are unavailable: ", id, call.=FALSE)
     if (anyNA(selected$unit) || any(unique(as.character(selected$unit)) != as.character(page$unit)))
       stop("Canonical scalar unit disagrees with declared metadata: ", id, call.=FALSE)
-    selected <- selected[order(selected$type, selected$territoire), , drop=FALSE]
-    facts_out[[id]] <- data.frame(indicator_id=id, territory_id=as.character(selected$territoire),
-      territory_type=as.character(selected$type), value=as.numeric(selected$value),
-      status=ifelse(is.na(selected$value), "not_available", "measured"),
+    selected <- selected[order(selected$territory_type, selected$territory_id), , drop=FALSE]
+    facts_out[[id]] <- data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
+      territory_type=as.character(selected$territory_type), value=as.numeric(selected$value),
+      status=ifelse(is.na(selected$value), missing_status, "measured"),
       support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
     descriptors_out[[id]] <- data.frame(indicator_id=id, allowed_sources=I(list(source_ids)),
       label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
-      comparison_facet=id, allowed_levels=I(list(as.character(unlist(page$levels)))),
+      comparison_facet=as.character(policy$comparison_facet), allowed_levels=I(list(levels)),
       denominator_semantics=as.character(page$calculation), completeness=completeness,
-      descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE)
-    provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territoire),
-      source_id=source_ids[[1L]], vintage_id=paste(selected$vintage_version, selected$vintage_date_reference, sep="/"),
+      descriptor_version=scalar_content_version(list(page=page, scalar_contract=policy)), stringsAsFactors=FALSE)
+    provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
+      source_id=source_ids[[1L]], vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
       stringsAsFactors=FALSE))
-    datasets_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]], name=as.character(selected$vintage_source),
+    datasets_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]], name=as.character(selected$source_name),
       stringsAsFactors=FALSE))
     vintages_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]],
-      vintage_id=paste(selected$vintage_version, selected$vintage_date_reference, sep="/"),
-      version=as.character(selected$vintage_version), reference_date=as.Date(selected$vintage_date_reference),
-      publication_date=as.Date(selected$vintage_date_publication), stringsAsFactors=FALSE))
+      vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
+      version=as.character(selected$source_version), reference_date=as.Date(selected$reference_date),
+      publication_date=as.Date(selected$publication_date), stringsAsFactors=FALSE))
   }
   projection <- list(facts=do.call(rbind, facts_out), descriptors=do.call(rbind, descriptors_out),
     provenance=do.call(rbind, provenance_out), datasets=unique(do.call(rbind, datasets_out)),
     vintages=unique(do.call(rbind, vintages_out)),
-    eligible_territories=eligible_territories[c("territory_id", "territory_type")])
+     eligible_territories=eligible_territories[c("territory_id", "territory_type")])
+  for (field in names(projection)) rownames(projection[[field]]) <- NULL
   validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
   projection
 }
 
-# Assemble the complete table-owned scalar snapshot from independently registered
-# canonical projections.  The physical table and marker are shared, so a caller
-# may not publish a cohort that omits any indicator already present in the
-# committed snapshot.
+# Build one canonical table-owned scalar snapshot from the projections of
+# registered publishers. It remains neutral: no cohort owns another publisher.
+assemble_scalar_snapshot <- function(base_projection, additional_projections=list()) {
+  if (!is.list(additional_projections)) stop("Additional scalar cohorts must be a list of registered projections", call.=FALSE)
+  flatten <- function(x) {
+    if (is.list(x) && all(c("facts", "descriptors", "provenance", "datasets", "vintages",
+        "eligible_territories") %in% names(x))) return(list(x))
+    if (!is.list(x)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
+    unlist(lapply(x, flatten), recursive=FALSE)
+  }
+  do.call(combine_scalar_projections, c(list(base_projection), flatten(additional_projections)))
+}
+
 combine_scalar_projections <- function(...) {
   projections <- list(...)
   if (!length(projections) || !all(vapply(projections, is.list, logical(1))))

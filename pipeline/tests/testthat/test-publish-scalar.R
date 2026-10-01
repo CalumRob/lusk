@@ -161,6 +161,9 @@ test_that("complete scalar snapshots combine service and economy cohorts determi
   economy$eligible_territories <- service$eligible_territories
 
   combined <- combine_scalar_projections(service, economy)
+  expect_identical(assemble_scalar_snapshot(service), service)
+  expect_identical(assemble_scalar_snapshot(service, list(economy)), combined)
+  expect_identical(assemble_scalar_snapshot(service, list(list(economy))), combined)
   expect_equal(nrow(combined$descriptors), 17L)
   expect_true(all(keys %in% combined$descriptors$indicator_id))
   expect_true(all(c("effectifs_salaries", "chomage") %in% combined$descriptors$indicator_id))
@@ -180,27 +183,32 @@ test_that("complete scalar snapshots combine service and economy cohorts determi
 
 test_that("economy scalar projector retains canonical units, levels, and source vintages", {
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_economie.json"), simplifyVector=FALSE)
-  rows <- data.frame(territoire=c("29001","29","29001","29"),
-    type=c("commune","departement","commune","departement"),
-    key=rep(c("effectifs_salaries","chomage"), each=2),
-    value=c(120,9000,5.2,7.1), unit=rep(c("salariés","%"), each=2),
-    vintage_source=rep(c("Flores A88","RP chômage"), each=2),
-    vintage_version=rep(c("2024","2023"), each=2),
-    vintage_date_reference=rep(c("2024-12-31","2023-01-01"), each=2),
-    vintage_date_publication=rep(c("2026-03-31","2026-06-30"), each=2),
-    stringsAsFactors=FALSE)
-  eligible <- data.frame(territory_id=c("29001","29"), territory_type=c("commune","departement"))
-  projection <- project_scalar_indicator_rows(rows, metadata,
-    c("effectifs_salaries","chomage"), eligible)
+  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_economie.parquet"))
+  ids <- names(metadata$scalar_contracts)
+  eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
+    territory_type=as.character(canonical$type)))
+  rows <- data.frame(territory_id=as.character(canonical$territoire),
+    territory_type=as.character(canonical$type), indicator_id=as.character(canonical$key),
+    value=as.numeric(canonical$value), unit=as.character(canonical$unit),
+    source_name=as.character(canonical$vintage_source), source_version=as.character(canonical$vintage_version),
+    reference_date=as.character(canonical$vintage_date_reference),
+    publication_date=as.character(canonical$vintage_date_publication))
+  projection <- project_scalar_canonical_rows(rows, metadata, ids, eligible)
   expect_setequal(projection$descriptors$indicator_id, c("effectifs_salaries","chomage"))
-  expect_equal(projection$descriptors$unit[match(c("effectifs_salaries","chomage"), projection$descriptors$indicator_id)],
-    c("salariés","%"))
+  expect_equal(projection$descriptors$unit[match(ids, projection$descriptors$indicator_id)],
+    unname(vapply(ids, function(id) metadata$indicator_pages[[id]]$unit, character(1))))
   expect_equal(projection$descriptors$direction[match(c("effectifs_salaries","chomage"), projection$descriptors$indicator_id)],
     c("high","low"))
-  expect_equal(projection$provenance$vintage_id[projection$provenance$indicator_id == "chomage"],
-    rep("2023/2023-01-01", 2))
-  expect_error(project_scalar_indicator_rows(transform(rows, unit="wrong"), metadata,
-    c("effectifs_salaries","chomage"), eligible), "unit disagrees")
+  expect_true(all(projection$provenance$vintage_id %in% paste(canonical$vintage_version,
+    canonical$vintage_date_reference, sep="/")))
+  bad <- rows; bad$unit <- "wrong"
+  expect_error(project_scalar_canonical_rows(bad, metadata, ids, eligible), "unit disagrees")
+  expect_true(all(c("commune", "epci", "departement", "region") %in%
+    unique(projection$facts$territory_type)))
+  expect_true(all(vapply(ids, function(id) identical(
+    projection$descriptors$allowed_levels[[match(id, projection$descriptors$indicator_id)]],
+    unlist(metadata$scalar_contracts[[id]]$allowed_levels)), logical(1))))
+  expect_false("region" %in% unlist(metadata$indicator_pages$effectifs_salaries$levels))
 })
 
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {
@@ -303,6 +311,7 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
                                  simplifyVector=FALSE)
   expected <- payload$indicateurs[payload$indicateurs$key == "densite" &
     payload$indicateurs$type %in% metadata$indicator_pages$densite$levels, , drop=FALSE]
+  expected <- expected[order(expected$type, expected$territoire), , drop=FALSE]
   # Explicit fixture-only policy: these fixture facts cover every declared
   # level/territory. Completeness is not present in product metadata, so the
   # projection API requires the caller to state it.

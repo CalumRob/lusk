@@ -167,14 +167,14 @@ configuration_service_postgres <- function() {
 publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
   config <- configuration_service_postgres()
   donnees <- preparer_tables_service(sortie)
-  economie <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
+  snapshot <- project_service_scalar_snapshot(donnees, sortie)
   conn <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
   tryCatch({
     access <- publier_tables_postgres(conn, donnees$tables, donnees$versions,
       donnees$access_scope, donnees$building_contract, donnees$building_sources)
     scalar <- publish_service_share_scalars(conn, donnees$scalar_access,
       donnees$scalar_metadata, donnees$scalar_eligible_territories,
-      additional_projections=list(economie))
+      additional_projections=snapshot$additional_projections)
     list(access=access, scalar=scalar)
   },
            finally = DBI::dbDisconnect(conn))
@@ -187,13 +187,22 @@ project_economy_scalar_cohort <- function(sortie, eligible_territories) {
   if (!file.exists(metadata_path)) stop("Économie indicator metadata is unavailable: ", metadata_path, call.=FALSE)
   metadata <- jsonlite::fromJSON(metadata_path, simplifyVector=FALSE)
   rows <- nanoparquet::read_parquet(path)
-  project_scalar_indicator_rows(rows, metadata,
-    c("effectifs_salaries", "chomage"), eligible_territories, completeness="sparse")
+  ids <- names(metadata$scalar_contracts)
+  if (!length(ids)) stop("Economy producer has no declared scalar serving contracts", call.=FALSE)
+  rows <- data.frame(territory_id=as.character(rows$territoire),
+    territory_type=as.character(rows$type), indicator_id=as.character(rows$key),
+    value=as.numeric(rows$value), unit=as.character(rows$unit),
+    source_name=as.character(rows$vintage_source), source_version=as.character(rows$vintage_version),
+    reference_date=as.character(rows$vintage_date_reference),
+    publication_date=as.character(rows$vintage_date_publication), stringsAsFactors=FALSE)
+  project_scalar_canonical_rows(rows, metadata, ids, eligible_territories)
 }
 
 project_service_scalar_snapshot <- function(donnees, sortie) {
   service <- project_service_share_scalars(donnees$scalar_access,
     donnees$scalar_metadata, donnees$scalar_eligible_territories)
   economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  combine_scalar_projections(service, economy)
+  additional <- list(economy)
+  list(projection=assemble_scalar_snapshot(service, additional),
+    additional_projections=additional)
 }

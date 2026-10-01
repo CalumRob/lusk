@@ -9,20 +9,26 @@ canonical projections are combined before the same transaction/retry/version
 path.
 
 The service Parquet refresh path now requires and projects the canonical
-`indicateurs_economie.parquet` facts for `effectifs_salaries` and `chomage`.
-The explicit `--check` command validates and reports the complete snapshot;
-`--publish` uses the existing `publier_tables_service_depuis_parquet()` path.
+`indicateurs_economie.parquet` facts for every indicator named in the
+producer-owned `scalar_contracts` metadata. Those declarations distinguish
+fact eligibility (including Région rows) from indicator-page comparison
+levels; they also state sparse completeness, missing-value status, and that
+support/denominator counts are unavailable from this producer. The explicit
+`--check` command and `publier_tables_service_depuis_parquet()` now call the
+same table-level `project_service_scalar_snapshot()` assembly seam; publishing
+passes its cohort list through the existing scalar publisher wrapper.
 The fixture-only scalar command remains separate and guarded to disposable DBs.
 When a committed scalar descriptor is omitted, the adapter rejects the
 replacement inside the transaction before deleting facts, preserving the prior
 snapshot and marker. Service reads are restricted to IDs generated from
 `service_registry` and the declared three service modes, not every scalar key.
 
-Canonical read-only parity check against `E:/Lusk/public/data/indicateurs_economie.parquet`
-validated 2,534 rows for these two indicators: 1,202 communes, 61 EPCIs and 4
-departments per indicator. The canonical file also has Région rows; the
-metadata's declared levels exclude Région for these indicators, so those rows
-are not projected. This check did not write to the artifact or any database.
+Canonical read-only projection against `public/data/indicateurs_economie.parquet`
+validated 2,534 economy facts plus the existing service cohort (21,556 total
+facts, 17 descriptors) across communes, EPCIs, departments, and Région. It did
+not write to a database or modify the canonical fact artifact. The generated
+`public/data/theme_economie.json` is refreshed from the metadata producer so
+the checked-in copy remains byte-identical to its source.
 
 ## Deliberately not migrated by this batch
 
