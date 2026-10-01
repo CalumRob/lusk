@@ -60,4 +60,7 @@ Services+economy snapshot through `project_service_scalar_snapshot()` and
 `publish_service_share_scalars()` in its isolated schema. It checks full facts
 and descriptors, SQL service-key membership, no-op marker timestamp stability,
 partial-cohort rejection, and transaction rollback following an injected
-write failure. Cleanup is limited to the script-owned schema with `RESTRICT`.
+write failure. It also calls the actual FastAPI scalar route using the distinct
+read role and checks an economy fact's value, source lineage, and content
+version against the same isolated schema. Cleanup is limited to the script-owned
+schema with `RESTRICT`.

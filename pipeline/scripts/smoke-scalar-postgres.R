@@ -12,6 +12,11 @@ stopifnot(all(vapply(config, nzchar, logical(1))),
           grepl("^[0-9]+$", config$PORT))
 if (!requireNamespace("RPostgres", quietly=TRUE) || !requireNamespace("DBI", quietly=TRUE))
   stop("DBI and RPostgres are required")
+passfile <- Sys.getenv("PGPASSFILE", unset="")
+if (!nzchar(passfile) || !file.exists(passfile) ||
+    startsWith(tolower(normalizePath(passfile, winslash="/")),
+      tolower(normalizePath("..", winslash="/"))))
+  stop("PGPASSFILE must point to the existing private libpq file outside the repository", call.=FALSE)
 
 connection <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
@@ -181,6 +186,38 @@ tryCatch({
     service_data$scalar_metadata$indicator_keys %in% service_ids]),
     setequal(service_fact_ids, service_ids),
     !any(c("effectifs_salaries", "chomage") %in% service_fact_ids))
+
+  # Run the actual FastAPI scalar route against this same owned schema using the
+  # separate read-only rehearsal role, rather than merely checking SQL text.
+  DBI::dbExecute(connection, paste0("GRANT USAGE ON SCHEMA ",
+    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
+  DBI::dbExecute(connection, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
+    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
+  economy_fact <- snapshot$projection$facts[
+    snapshot$projection$facts$indicator_id == "effectifs_salaries" &
+      snapshot$projection$facts$territory_type == "commune" &
+      snapshot$projection$facts$status == "measured", , drop=FALSE][1L, , drop=FALSE]
+  Sys.setenv(LUSK_SCALAR_API_TEST_TERRITORY=economy_fact$territory_id[[1L]],
+    LUSK_SCALAR_API_TEST_INDICATOR=economy_fact$indicator_id[[1L]],
+    LUSK_SCALAR_API_TEST_VALUE=as.character(economy_fact$value[[1L]]),
+    LUSK_SCALAR_API_TEST_SCHEMA=schema,
+    PGPASSFILE=passfile,
+    DATABASE_URL="postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract")
+  api_code <- paste(c(
+    "import os, sys; sys.path.insert(0, '..')",
+    "from fastapi.testclient import TestClient",
+    "from api.main import app",
+    "schema=os.environ['LUSK_SCALAR_API_TEST_SCHEMA']",
+    "os.environ['PGOPTIONS']='-c search_path='+schema",
+    "with TestClient(app) as client:",
+    " r=client.get('/api/territories/commune/'+os.environ['LUSK_SCALAR_API_TEST_TERRITORY']+'/indicators/'+os.environ['LUSK_SCALAR_API_TEST_INDICATOR'])",
+    " assert r.status_code==200, r.text",
+    " d=r.json(); assert d['indicator_id']==os.environ['LUSK_SCALAR_API_TEST_INDICATOR']",
+    " assert d['value']==float(os.environ['LUSK_SCALAR_API_TEST_VALUE'])",
+    " assert d['sources'] and d['content_version']"
+  ), collapse="\n")
+  api_status <- system2("python", c("-c", shQuote(api_code, type="cmd")))
+  stopifnot(identical(api_status, 0L))
   cat("Scalar PostgreSQL and combined snapshot smoke passed; schema:", schema, "\n")
 }, error=function(e) {
   smoke_failure <<- conditionMessage(e)
