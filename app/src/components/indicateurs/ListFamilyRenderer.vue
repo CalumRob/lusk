@@ -16,9 +16,9 @@ const lignesVisibles = computed(() => (props.profil?.lignes ?? []).filter((ligne
 const categoriesManquantes = computed(() => props.profil?.etat === 'incomplet' ? props.profil.lignes.filter((ligne) => ligne.valeur === null).map((ligne) => ligne.label) : [])
 </script>
 <template>
-  <figure class="family-renderer list-renderer" data-renderer="list" :data-state="dispatch.status" aria-label="Repères en liste">
+  <figure class="family-renderer list-renderer editorial-figure" data-renderer="list" :data-state="dispatch.status" aria-label="Repères en liste">
     <div class="profil-bloc" data-testid="profil-liste">
-      <h2>Le profil complet du territoire sélectionné</h2>
+      <h2 class="editorial-section-heading">Le profil complet du territoire sélectionné</h2>
       <div v-if="afficheLignes && lignesVisibles.length" class="profil-lignes" role="img" :aria-label="`Profil de ${profil!.nom} sur ${profil!.lignes.length} catégories déclarées`">
         <div v-for="ligne in lignesVisibles" :key="ligne.detail" class="profil-ligne" :class="{ active: ligne.detail === dispatch.facet.detail }" :data-ligne-profil="ligne.detail">
           <span class="profil-libelle">{{ ligne.label }}</span>
@@ -29,18 +29,17 @@ const categoriesManquantes = computed(() => props.profil?.etat === 'incomplet' ?
       <p v-else-if="profil && profil.etat === 'absent'" role="status">{{ profil.message }}</p>
       <p v-else-if="!profil || profil.etat === null" role="status">Sélectionnez un territoire pour voir son profil complet.</p>
     </div>
-    <figcaption>La comparaison entre territoires ci-dessous est pilotée par la catégorie « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la médiane, la carte, les extrêmes et le tableau ; le profil complet du territoire reste visible ci-dessus, jamais réduit à un score.</figcaption>
+     <figcaption class="editorial-provenance">La comparaison entre territoires ci-dessous est pilotée par la catégorie « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la médiane, la carte, les extrêmes et le tableau ; le profil complet du territoire reste visible ci-dessus, jamais réduit à un score.</figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>
 <style scoped>
-.list-renderer{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px}
-.profil-bloc h2{font:var(--text-h3);margin:0 0 12px}
+.list-renderer{margin:0}
 .profil-lignes{display:flex;flex-direction:column}
 .profil-ligne{display:flex;justify-content:space-between;gap:16px;padding:8px 4px;border-bottom:1px solid var(--border-subtle)}
 .profil-ligne.active{background:var(--indicateur-soft);font-weight:600}
-.profil-libelle{color:var(--text-secondary)}
-.profil-valeur{font-weight:600;white-space:nowrap}
+.profil-libelle{color:var(--editorial-muted)}
+.profil-valeur{font:var(--text-numeric);white-space:nowrap}
 .profil-valeur small{font-weight:400;color:var(--text-secondary)}
 .profil-note{margin:12px 0 0;padding:8px 12px;border-top:2px solid var(--indicateur-accent);background:var(--indicateur-soft);color:var(--text-secondary)}
 .list-renderer figcaption{margin-top:12px;color:var(--text-secondary)}

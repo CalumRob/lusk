@@ -34,7 +34,7 @@ function barStyle(partie: PartieComposition): Record<string, string> {
 }
 </script>
 <template>
-  <figure class="family-renderer composition-renderer" data-renderer="composition" :data-state="dispatch.status" aria-label="Repères de composition">
+  <figure class="family-renderer composition-renderer editorial-figure" data-renderer="composition" :data-state="dispatch.status" aria-label="Repères de composition">
     <div class="composition-bloc" data-testid="composition-contextualisee">
       <h2 class="composition-titre" data-testid="composition-provenance"><template v-if="composition?.nom">Votre territoire : {{ composition.nom }}</template><template v-else>Aucun territoire mis en avant</template></h2>
       <p v-if="!composition || composition.etat === null" class="composition-vide">Sélectionnez un territoire pour lire sa composition face au périmètre comparé.</p>
@@ -49,12 +49,11 @@ function barStyle(partie: PartieComposition): Record<string, string> {
         <p v-if="manquantes.length" class="composition-note" role="note">Composition incomplète — sans valeur publiée à ce niveau : {{ manquantes.join(', ') }}.</p>
       </template>
     </div>
-    <figcaption><template v-if="composition?.nom">Les segments portent la composition de {{ composition.nom }} — votre territoire, mis en avant depuis l’URL.</template> Chaque segment se lit face à la médiane du périmètre comparé ({{ composition?.univers ?? '' }}). La comparaison entre territoires reste pilotée par « {{ dispatch.facet.label }} »<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span>.</figcaption>
+     <figcaption class="editorial-provenance"><template v-if="composition?.nom">Les segments portent la composition de {{ composition.nom }} — votre territoire, mis en avant depuis l’URL.</template> Chaque segment se lit face à la médiane du périmètre comparé ({{ composition?.univers ?? '' }}). La comparaison entre territoires reste pilotée par « {{ dispatch.facet.label }} »<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span>.</figcaption>
   </figure>
 </template>
 <style scoped>
-.composition-renderer{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px}
-.composition-titre{font:var(--text-h3);margin:0 0 12px}
+.composition-renderer{margin:0}
 .composition-bar{display:flex;height:20px;overflow:hidden;border-radius:999px;background:var(--surface-tertiary)}
 .composition-bar span{min-width:1px;opacity:.55;border-right:1px solid var(--surface-primary);background:var(--indicateur-accent)}
 .composition-bar span.active{opacity:1;outline:3px solid var(--text-primary);outline-offset:-3px}
@@ -62,7 +61,7 @@ function barStyle(partie: PartieComposition): Record<string, string> {
 .composition-legend li{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-left:3px solid transparent}
 .composition-legend li.active{border-left-color:var(--indicateur-accent);background:var(--indicateur-soft)}
 .composition-legend li small{color:var(--text-secondary);font-size:.78rem;font-weight:400}
-.composition-note,.composition-vide{margin:12px 0 0;color:var(--text-secondary)}
+.composition-note,.composition-vide{margin:var(--space-3) 0 0;color:var(--editorial-muted)}
 .composition-note{padding:8px 12px;border-top:2px solid var(--indicateur-accent);background:var(--indicateur-soft)}
 figcaption{margin-top:16px;color:var(--text-secondary);font-weight:400}
 </style>

@@ -31,9 +31,9 @@ function styleBarre(detail: string, valeur: number | null): Record<string, strin
 }
 </script>
 <template>
-  <figure class="family-renderer distribution-renderer" data-renderer="distribution" :data-state="dispatch.status" aria-label="Repères de distribution">
+  <figure class="family-renderer distribution-renderer editorial-figure" data-renderer="distribution" :data-state="dispatch.status" aria-label="Repères de distribution">
     <div class="signature-bloc" data-testid="signature-distribution">
-      <h2>La signature du territoire sélectionné</h2>
+      <h2 class="editorial-section-heading">La signature du territoire sélectionné</h2>
       <div v-if="signature && signature.etat === 'complet'" class="signature-barres" role="img" :aria-label="`Distribution complète de ${signature.nom} sur ${signature.barres.length} détails déclarés`">
         <div v-for="barre in signature.barres" :key="barre.detail" class="signature-barre" :data-detail="barre.detail">
           <span class="signature-valeur">{{ formaterValeur({ value: barre.valeur!, unit: signature.unite }) }}{{ signature.unite ? ` ${signature.unite}` : '' }}</span>
@@ -48,7 +48,7 @@ function styleBarre(detail: string, valeur: number | null): Record<string, strin
          face auquel la signature se lit. Une vue d'ensemble étiquetée — JAMAIS
          un autre territoire : pas de nom, pas de lien-fiche, pas de rang. -->
     <div v-if="ensemble" class="ensemble-bloc" data-testid="ensemble-comparaison" :data-portee="ensemble.porteeLabel" :data-avec-donnees="ensemble.nTerritoires" :data-sans-donnees="ensemble.nSansDonnee">
-      <h2>L’ensemble de comparaison</h2>
+      <h2 class="editorial-section-heading">L’ensemble de comparaison</h2>
       <p class="ensemble-portee">{{ ensemble.porteeLabel }} · moyenne des parts publiées de {{ ensemble.nTerritoires }} territoires sur {{ ensemble.nTerritoires + ensemble.nSansDonnee }} à ce niveau{{ ensemble.nSansDonnee > 0 ? ` (${ensemble.nSansDonnee} sans données)` : '' }}</p>
       <div v-if="ensemble.nTerritoires > 0" class="signature-barres" role="img" :aria-label="`Profil agrégé de l’ensemble de comparaison (${ensemble.porteeLabel}) sur ${ensemble.barres.length} détails déclarés`">
         <div v-for="barre in ensemble.barres" :key="barre.detail" class="signature-barre" :data-detail="barre.detail">
@@ -59,22 +59,21 @@ function styleBarre(detail: string, valeur: number | null): Record<string, strin
       </div>
       <p v-else role="status">Aucune donnée publiée dans cet ensemble à ce niveau.</p>
     </div>
-    <figcaption>La comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la carte, les extrêmes et le tableau ; l’ensemble de comparaison est une vue d’ensemble du périmètre actif, jamais un autre territoire ; la signature n’est jamais comparée détail par détail.</figcaption>
+     <figcaption class="editorial-provenance">La comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la carte, les extrêmes et le tableau ; l’ensemble de comparaison est une vue d’ensemble du périmètre actif, jamais un autre territoire ; la signature n’est jamais comparée détail par détail.</figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>
 <style scoped>
-.distribution-renderer{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px}
-.signature-bloc h2,.ensemble-bloc h2{font:var(--text-h3);margin:0 0 12px}
+.distribution-renderer{margin:0}
 .signature-barres{display:flex;align-items:end;gap:12px;border-bottom:2px solid var(--indicateur-line);padding-bottom:0}
 .signature-barre{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
-.signature-valeur{font-size:.8rem;color:var(--text-secondary)}
+.signature-valeur{font:var(--text-caption);color:var(--editorial-muted)}
 .signature-hauteur{display:flex;align-items:end;height:120px;width:100%}
 .barre{width:100%;background:var(--indicateur-accent);border-radius:4px 4px 0 0}
 .barre--ensemble{opacity:.55}
-.signature-libelle{font-size:.85rem;color:var(--text-secondary);margin-bottom:6px}
+.signature-libelle{font:var(--text-body-sm);color:var(--editorial-muted);margin-bottom:6px}
 .ensemble-bloc{margin-top:20px;padding-top:16px;border-top:1px solid var(--border-subtle)}
-.ensemble-portee{margin:-6px 0 12px;color:var(--text-secondary)}
+.ensemble-portee{margin:-6px 0 12px;color:var(--editorial-muted)}
 .distribution-renderer figcaption{margin-top:12px;color:var(--text-secondary)}
 @media(max-width:700px){.signature-barres{gap:6px}}
 </style>

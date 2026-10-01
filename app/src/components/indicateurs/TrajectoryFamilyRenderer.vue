@@ -86,7 +86,7 @@ const ariaDescription = computed(() => {
 })
 </script>
 <template>
-  <figure class="family-renderer trajectory-renderer" data-renderer="trajectory" :data-state="dispatch.status" aria-label="Repères de trajectoire">
+  <figure class="family-renderer trajectory-renderer editorial-figure" data-renderer="trajectory" :data-state="dispatch.status" aria-label="Repères de trajectoire">
     <svg v-if="modele && modele.etapes.length" viewBox="0 0 600 160" role="img" :aria-label="ariaDescription">
       <title>Trajectoire complète</title>
       <desc>{{ ariaDescription }}</desc>
@@ -124,7 +124,7 @@ const ariaDescription = computed(() => {
       </span>
     </div>
     <p v-if="marqueur" class="visually-hidden">Repère : {{ marqueur.label }} à {{ marqueur.detailLabel }}.</p>
-    <figcaption>Détail (actif) : {{ libelleActif }} · le détail pilote la carte, les extrêmes et le tableau ; le chemin complet reste visible.<span v-if="modele?.referenceLabel"> · Référence : {{ modele.referenceLabel }}</span><span v-if="sansValeur.length"> · {{ sansValeur.map((etape) => etape.label).join(', ') }} : aucune valeur à ce niveau.</span></figcaption>
+     <figcaption class="editorial-provenance">Détail (actif) : {{ libelleActif }} · le détail pilote la carte, les extrêmes et le tableau ; le chemin complet reste visible.<span v-if="modele?.referenceLabel"> · Référence : {{ modele.referenceLabel }}</span><span v-if="sansValeur.length"> · {{ sansValeur.map((etape) => etape.label).join(', ') }} : aucune valeur à ce niveau.</span></figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>
@@ -133,9 +133,7 @@ const ariaDescription = computed(() => {
   box-sizing: border-box;
   margin: 0;
   padding: var(--space-2) 0 0;
-  background: var(--surface-primary);
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
+  background: transparent;
 }
 
 .trajectory-renderer svg {
@@ -158,14 +156,14 @@ const ariaDescription = computed(() => {
 
 .trajectory-renderer text {
   font-size: 12px;
-  fill: var(--text-secondary);
+  fill: var(--editorial-muted);
 }
 
 .trajectoire-axe-y-label,
 .trajectoire-axe-y-tick,
 .trajectoire-axe-x-tick,
 .trajectoire-axe-x-label {
-  fill: var(--text-secondary);
+  fill: var(--editorial-muted);
 }
 
 .trajectoire-axe-y-label,
@@ -217,8 +215,8 @@ const ariaDescription = computed(() => {
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
   margin: 0 0 var(--space-1);
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--editorial-muted);
+  font: var(--text-caption);
 }
 
 .trajectoire-legende-item {
@@ -248,7 +246,7 @@ const ariaDescription = computed(() => {
 
 .trajectory-renderer figcaption {
   margin-top: var(--space-1);
-  color: var(--text-secondary);
+  color: var(--editorial-muted);
 }
 
 .trajectory-renderer .visually-hidden {
