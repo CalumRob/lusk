@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
+import { formaterMontant } from '../fiche/programmesAffichage'
 import {
   indicateursProgrammesFixture,
   metadonneesThemesFixtures,
@@ -56,6 +57,23 @@ function montage(payload: Payload, territoire: string) {
 }
 
 describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
+  it.each(['22001', '200000001', '22', '53'])('rend les faits publiés propres au niveau %s', (territoire) => {
+    const wrapper = montage(payloadPlein, territoire)
+    const total = indicateursProgrammesFixture.find(
+      (row) => row.territoire === territoire && row.key === 'subventions_annuelles',
+    )
+    const subventions = wrapper.find('.subvention-total')
+
+    if (!total) {
+      expect(subventions.exists()).toBe(false)
+      return
+    }
+    expect(subventions.exists()).toBe(true)
+    expect(subventions.text()).toContain(formaterMontant(total.value!))
+    expect(subventions.text()).toContain(total.dimension)
+    expect(wrapper.find('.subvention-vintage').text()).toContain(total.vintage_source)
+  })
+
   it('porte l\u2019overline publiée et les sous-groupes du canon (jamais un vocabulaire app-side)', () => {
     const wrapper = montage(payloadPlein, '22001')
 

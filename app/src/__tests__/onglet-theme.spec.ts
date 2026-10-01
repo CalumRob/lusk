@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
+import FigureCompacte from '../components/fiche/FigureCompacte.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   apercuAvecNAFixture,
@@ -132,9 +133,24 @@ describe('OngletTheme — editorial evidence across published themes and territo
       if (groups.length > 0) {
         expect(wrapper.findAll('.editorial-evidence').length + wrapper.findAll('.editorial-figure').length).toBeGreaterThan(0)
       }
-      for (const figure of wrapper.findAll('.figure-indicateur')) {
-        expect(figure.attributes('data-clef')).toBeTruthy()
-        expect(figure.text()).not.toContain('undefined')
+      const figures = wrapper.findAllComponents(FigureCompacte)
+      for (const figure of figures) {
+        const key = figure.props('clef')
+        const expectedRows = indicateurs.filter((row) => row.territoire === territoire && row.key === key)
+        expect(figure.props('lignes')).toEqual(expectedRows)
+        expect(figure.element.parentElement?.textContent).not.toContain('undefined')
+      }
+      for (const group of metadonneesThemesFixtures[theme].subgroups) {
+        const renderedGroup = wrapper.find(`[data-groupe="${group.key}"]`)
+        const hasFact = indicateurs.some((row) => row.territoire === territoire && group.indicators.includes(row.key))
+        const hasStory = histoires.some((row) => row.territoire === territoire && row.groupe === group.key)
+        if (!hasFact && !hasStory) expect(renderedGroup.exists()).toBe(false)
+        if (renderedGroup.exists()) {
+          const sourceRow = histoires.find((row) => row.territoire === territoire && row.groupe === group.key && 'vintage_source' in row)
+          if (sourceRow && 'vintage_source' in sourceRow && renderedGroup.find('.lecture-source').exists()) {
+            expect(renderedGroup.find('.lecture-source').text()).toContain(sourceRow.vintage_source)
+          }
+        }
       }
       wrapper.unmount()
     }
