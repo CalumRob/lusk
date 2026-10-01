@@ -79,12 +79,13 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
 
     expect(wrapper.find('article').classes()).toContain('presentation-editorial')
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Programmes et subventions')
-    const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text())
+    const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text().replace(/^\d+/, ''))
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
     expect(wrapper.findAll('.editorial-sheet')).toHaveLength(2)
     expect(wrapper.findAll('.editorial-section-heading')).toHaveLength(2)
+    expect(wrapper.findAll('.editorial-section-index').map((index) => index.text())).toEqual(['01', '02'])
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {
@@ -223,7 +224,7 @@ describe('BlocProgrammes — l\u2019absence honnête', () => {
     const wrapper = montage(payloadVide, '22001')
 
     expect(wrapper.text()).toContain('Aucun programme référencé.')
-    expect(wrapper.findAll('.sous-groupe-titre').map((t) => t.text())).toEqual([
+    expect(wrapper.findAll('.sous-groupe-titre').map((t) => t.text().replace(/^\d+/, ''))).toEqual([
       'Programmes et contrats',
     ])
   })

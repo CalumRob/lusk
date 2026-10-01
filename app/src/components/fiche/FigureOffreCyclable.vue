@@ -38,6 +38,7 @@ const props = defineProps<{
   labelsDetail?: Record<string, string>
   /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
   theme: Theme
+  editorial?: boolean
 }>()
 
 /** Le headline — le ratio total ÷ réseau c, app-side depuis les lignes du payload. */
@@ -89,9 +90,9 @@ const pucePartage = computed(() => pucePour(partage.value))
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-offre-cyclable carte-figure" :data-clef="clef">
+  <figure class="figure-indicateur figure-offre-cyclable" :class="editorial ? 'editorial-figure' : 'carte-figure'" :data-clef="clef">
     <div class="figure-offre-cyclable-tete">
-      <span class="valeur-numerique">{{ pourcentage ?? '—' }}</span>
+      <span class="valeur-numerique editorial-value">{{ pourcentage ?? '—' }}</span>
       <span class="valeur-unite">de l’infrastructure routière</span>
     </div>
 
@@ -128,8 +129,8 @@ const pucePartage = computed(() => pucePour(partage.value))
       </li>
     </ul>
 
-    <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
-    <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
+    <figcaption class="figure-indicateur-libelle editorial-label">{{ libelle }}</figcaption>
+    <p v-if="vintage" class="estampille-vintage editorial-provenance">{{ vintage }}</p>
   </figure>
 </template>
 

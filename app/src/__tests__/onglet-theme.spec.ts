@@ -73,7 +73,7 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
 
     const sousGroupe = wrapper.find('.sous-groupe[data-groupe="trajectoire-demographique"]')
     expect(sousGroupe.exists()).toBe(true)
-    expect(wrapper.find('.sous-groupe-titre').text()).toBe(
+    expect(wrapper.find('.sous-groupe-titre').text().replace(/^\d+/, '')).toBe(
       'État et dynamique de la population',
     )
     expect(wrapper.find('.sous-groupe-cadrage').text()).toContain('sa densité')
@@ -130,10 +130,17 @@ describe('OngletTheme — editorial evidence across published themes and territo
       expect(groups.map((group) => group.attributes('data-groupe')), `${theme} ${territoire}`).toEqual(
         subgroupsWithRows.map((group) => group.key),
       )
+      expect(groups.map((group) => group.find('.editorial-section-index').text())).toEqual(
+        groups.map((_, index) => String(index + 1).padStart(2, '0')),
+      )
       if (groups.length > 0) {
         expect(wrapper.findAll('.editorial-evidence').length + wrapper.findAll('.editorial-figure').length).toBeGreaterThan(0)
       }
       const figures = wrapper.findAllComponents(FigureCompacte)
+      for (const figure of wrapper.findAll('.figure-indicateur')) {
+        expect(figure.classes()).toContain('editorial-figure')
+        expect(figure.classes()).not.toContain('carte-figure')
+      }
       for (const figure of figures) {
         const key = figure.props('clef')
         const expectedRows = indicateurs.filter((row) => row.territoire === territoire && row.key === key)

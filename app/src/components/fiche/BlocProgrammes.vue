@@ -50,6 +50,11 @@ const props = defineProps<{
 // la forme ; un thème rendu implique sa métadonnée, #313).
 const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 
+function indexGroupe(key: string): string {
+  const index = metadata.value?.subgroups.findIndex((sousGroupe) => sousGroupe.key === key) ?? -1
+  return index < 0 ? '' : String(index + 1).padStart(2, '0')
+}
+
 function groupe(key: string): { label: string; framing: string } {
   const g = metadata.value?.subgroups.find((sousGroupe) => sousGroupe.key === key)
   if (!g) throw new Error(`Sous-groupe « ${key} » absent des métadonnées « programmes »`)
@@ -118,7 +123,7 @@ const lienProvenance = computed(() => {
 
     <template v-if="elementVide">
       <section class="sous-groupe editorial-sheet" data-groupe="couverture">
-        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('couverture').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ indexGroupe('couverture') }}</span>{{ groupe('couverture').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
         <p class="programmes-vide">Aucun programme référencé.</p>
       </section>
@@ -133,7 +138,7 @@ const lienProvenance = computed(() => {
         class="sous-groupe editorial-sheet"
         data-groupe="couverture"
       >
-        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('couverture').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ indexGroupe('couverture') }}</span>{{ groupe('couverture').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
 
         <ul class="programmes-badges">
@@ -166,7 +171,7 @@ const lienProvenance = computed(() => {
         class="sous-groupe editorial-sheet"
         data-groupe="subventions"
       >
-        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('subventions').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ indexGroupe('subventions') }}</span>{{ groupe('subventions').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
 
         <div class="programme-subventions editorial-evidence">

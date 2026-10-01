@@ -15,6 +15,7 @@ const props = defineProps<{
   libelle: string
   labelsDetail?: Record<string, string>
   theme: Theme
+  editorial?: boolean
   trajectory?: TrajectoryMetadata
   reference?: Indicateur[]
   referenceLabel?: string
@@ -213,7 +214,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-trajectoire carte-figure" :data-clef="clef">
+  <figure class="figure-indicateur figure-trajectoire" :class="editorial ? 'editorial-figure' : 'carte-figure'" :data-clef="clef">
     <div v-if="disponible" class="trajectoire-legende" aria-label="Légende de la trajectoire">
       <span class="trajectoire-legende-item">
         <span class="trajectoire-legende-trait trajectoire-legende-trait--courant" aria-hidden="true" />
@@ -273,8 +274,8 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
       La trajectoire est indisponible pour {{ nomAffiche }} : aucune valeur mesurable n’est publiée.
     </p>
 
-    <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
-    <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
+    <figcaption class="figure-indicateur-libelle editorial-label">{{ libelle }}</figcaption>
+    <p v-if="vintage" class="estampille-vintage editorial-provenance">{{ vintage }}</p>
   </figure>
 </template>
 

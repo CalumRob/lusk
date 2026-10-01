@@ -195,13 +195,13 @@ const lignesReseaux = computed(
          reading linkage drive the anatomy of all five themes, identically. A
          subgroup with neither figures nor reading stays silent (the honest
          absent-data state — never an empty shell). -->
-    <template v-for="groupe in sousGroupes" :key="groupe.key">
+    <template v-for="(groupe, index) in sousGroupes" :key="groupe.key">
       <section
         v-if="groupe.figures.length > 0 || groupe.lecture || groupe.lectureIndisponible"
         class="sous-groupe editorial-sheet"
         :data-groupe="groupe.key"
       >
-        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe.label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>{{ groupe.label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe.framing }}</p>
 
         <!-- The reading slot — the metadata template rendered with the
@@ -341,6 +341,7 @@ const lignesReseaux = computed(
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
+              editorial
             />
             <!-- #409/#468 : la passarelle compacte partagée vers la Page
                  d'indicateur publiée — nouvelle fenêtre, vraie ancre. -->
@@ -367,6 +368,7 @@ const lignesReseaux = computed(
               :large="figureLarge(figure.key)"
               :signe="figureSigne(figure.key)"
               :theme="theme"
+              editorial
             />
             <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />
           </div>
