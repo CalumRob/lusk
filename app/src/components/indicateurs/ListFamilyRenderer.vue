@@ -21,8 +21,8 @@ const categoriesManquantes = computed(() => props.profil?.etat === 'incomplet' ?
       <h2 class="editorial-section-heading">Le profil complet du territoire sélectionné</h2>
       <div v-if="afficheLignes && lignesVisibles.length" class="profil-lignes" role="img" :aria-label="`Profil de ${profil!.nom} sur ${profil!.lignes.length} catégories déclarées`">
         <div v-for="ligne in lignesVisibles" :key="ligne.detail" class="profil-ligne" :class="{ active: ligne.detail === dispatch.facet.detail }" :data-ligne-profil="ligne.detail">
-          <span class="profil-libelle">{{ ligne.label }}</span>
-          <span class="profil-valeur">{{ formaterValeur({ value: ligne.valeur!, unit: ligne.unite }) }} <small>{{ ligne.unite }}</small></span>
+          <span class="profil-libelle" data-editorial-label>{{ ligne.label }}</span>
+          <span class="profil-valeur" data-editorial-value>{{ formaterValeur({ value: ligne.valeur!, unit: ligne.unite }) }} <small>{{ ligne.unite }}</small></span>
         </div>
       </div>
       <p v-if="categoriesManquantes.length" class="profil-note" role="note">Profil incomplet — sans valeur publiée à ce niveau : {{ categoriesManquantes.join(', ') }}.</p>

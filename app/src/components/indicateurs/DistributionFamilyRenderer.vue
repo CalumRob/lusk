@@ -36,9 +36,9 @@ function styleBarre(detail: string, valeur: number | null): Record<string, strin
       <h2 class="editorial-section-heading">La signature du territoire sélectionné</h2>
       <div v-if="signature && signature.etat === 'complet'" class="signature-barres" role="img" :aria-label="`Distribution complète de ${signature.nom} sur ${signature.barres.length} détails déclarés`">
         <div v-for="barre in signature.barres" :key="barre.detail" class="signature-barre" :data-detail="barre.detail">
-          <span class="signature-valeur">{{ formaterValeur({ value: barre.valeur!, unit: signature.unite }) }}{{ signature.unite ? ` ${signature.unite}` : '' }}</span>
+          <span class="signature-valeur" data-editorial-value>{{ formaterValeur({ value: barre.valeur!, unit: signature.unite }) }}{{ signature.unite ? ` ${signature.unite}` : '' }}</span>
           <span class="signature-hauteur"><span class="barre" :style="styleBarre(barre.detail, barre.valeur)" /></span>
-          <span class="signature-libelle">{{ barre.label }}</span>
+          <span class="signature-libelle" data-editorial-label>{{ barre.label }}</span>
         </div>
       </div>
       <p v-else-if="signature && signature.message" role="status">{{ signature.message }}</p>
@@ -52,14 +52,14 @@ function styleBarre(detail: string, valeur: number | null): Record<string, strin
       <p class="ensemble-portee">{{ ensemble.porteeLabel }} · moyenne des parts publiées de {{ ensemble.nTerritoires }} territoires sur {{ ensemble.nTerritoires + ensemble.nSansDonnee }} à ce niveau{{ ensemble.nSansDonnee > 0 ? ` (${ensemble.nSansDonnee} sans données)` : '' }}</p>
       <div v-if="ensemble.nTerritoires > 0" class="signature-barres" role="img" :aria-label="`Profil agrégé de l’ensemble de comparaison (${ensemble.porteeLabel}) sur ${ensemble.barres.length} détails déclarés`">
         <div v-for="barre in ensemble.barres" :key="barre.detail" class="signature-barre" :data-detail="barre.detail">
-          <span class="signature-valeur">{{ formaterValeur({ value: barre.valeur, unit: ensemble.unite }) }}{{ ensemble.unite ? ` ${ensemble.unite}` : '' }}</span>
+          <span class="signature-valeur" data-editorial-value>{{ formaterValeur({ value: barre.valeur, unit: ensemble.unite }) }}{{ ensemble.unite ? ` ${ensemble.unite}` : '' }}</span>
           <span class="signature-hauteur"><span class="barre barre--ensemble" :style="styleBarre(barre.detail, barre.valeur)" /></span>
-          <span class="signature-libelle">{{ barre.label }}</span>
+          <span class="signature-libelle" data-editorial-label>{{ barre.label }}</span>
         </div>
       </div>
       <p v-else role="status">Aucune donnée publiée dans cet ensemble à ce niveau.</p>
     </div>
-     <figcaption class="editorial-provenance">La comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la carte, les extrêmes et le tableau ; l’ensemble de comparaison est une vue d’ensemble du périmètre actif, jamais un autre territoire ; la signature n’est jamais comparée détail par détail.</figcaption>
+     <figcaption class="editorial-provenance" data-editorial-label>La comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — elle pilote la carte, les extrêmes et le tableau ; l’ensemble de comparaison est une vue d’ensemble du périmètre actif, jamais un autre territoire ; la signature n’est jamais comparée détail par détail.</figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>

@@ -36,7 +36,7 @@ function barStyle(partie: PartieComposition): Record<string, string> {
 <template>
   <figure class="family-renderer composition-renderer editorial-figure" data-renderer="composition" :data-state="dispatch.status" aria-label="Repères de composition">
     <div class="composition-bloc" data-testid="composition-contextualisee">
-      <h2 class="composition-titre" data-testid="composition-provenance"><template v-if="composition?.nom">Votre territoire : {{ composition.nom }}</template><template v-else>Aucun territoire mis en avant</template></h2>
+      <h2 class="composition-titre editorial-section-heading" data-testid="composition-provenance"><template v-if="composition?.nom">Votre territoire : {{ composition.nom }}</template><template v-else>Aucun territoire mis en avant</template></h2>
       <p v-if="!composition || composition.etat === null" class="composition-vide">Sélectionnez un territoire pour lire sa composition face au périmètre comparé.</p>
       <p v-else-if="composition.etat === 'absent'" role="status">{{ composition.message }}</p>
       <template v-else>
@@ -44,12 +44,12 @@ function barStyle(partie: PartieComposition): Record<string, string> {
           <span v-for="partie in partiesAffichees" :key="partie.detail" :class="{ active: partie.detail === dispatch.facet.detail }" :style="barStyle(partie)" :title="`${label(partie.detail)} : ${value(partie.valeur)}`" />
         </div>
         <ul v-if="partiesAffichees.length" class="composition-legend">
-          <li v-for="partie in partiesAffichees" :key="`legend-${partie.detail}`" :class="{ active: partie.detail === dispatch.facet.detail }"><span>{{ label(partie.detail) }} <small v-if="partie.reference !== null">médiane : {{ value(partie.reference) }}</small></span><strong>{{ value(partie.valeur) }}</strong></li>
+          <li v-for="partie in partiesAffichees" :key="`legend-${partie.detail}`" :class="{ active: partie.detail === dispatch.facet.detail }"><span data-editorial-label>{{ label(partie.detail) }} <small v-if="partie.reference !== null">médiane : {{ value(partie.reference) }}</small></span><strong data-editorial-value>{{ value(partie.valeur) }}</strong></li>
         </ul>
         <p v-if="manquantes.length" class="composition-note" role="note">Composition incomplète — sans valeur publiée à ce niveau : {{ manquantes.join(', ') }}.</p>
       </template>
     </div>
-     <figcaption class="editorial-provenance"><template v-if="composition?.nom">Les segments portent la composition de {{ composition.nom }} — votre territoire, mis en avant depuis l’URL.</template> Chaque segment se lit face à la médiane du périmètre comparé ({{ composition?.univers ?? '' }}). La comparaison entre territoires reste pilotée par « {{ dispatch.facet.label }} »<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span>.</figcaption>
+     <figcaption class="editorial-provenance" data-editorial-label><template v-if="composition?.nom">Les segments portent la composition de {{ composition.nom }} — votre territoire, mis en avant depuis l’URL.</template> Chaque segment se lit face à la médiane du périmètre comparé ({{ composition?.univers ?? '' }}). La comparaison entre territoires reste pilotée par « {{ dispatch.facet.label }} »<span v-if="dispatch.facet.detail"> · détail {{ label(dispatch.facet.detail) }}</span>.</figcaption>
   </figure>
 </template>
 <style scoped>

@@ -15,9 +15,9 @@ function value(part: { value: number | null; unit: string }) { return part.value
 <template>
   <figure class="family-renderer pyramid-renderer editorial-figure" data-renderer="pyramid" :data-state="dispatch.status" aria-label="Repères en pyramide des âges">
     <div class="pyramid" role="img" :aria-label="details.map((detail) => `${labels[detail] ?? detail} : ${parts.filter((part) => part.detail === detail).map((part) => `${part.sex ?? ''} ${value(part)}`).join(', ')}`).join(' · ')">
-      <div v-for="detail in details" :key="detail" class="pyramid-row"><span>{{ labels[detail] ?? detail }}</span><i v-for="sex in ['F', 'M']" :key="sex" :class="{ selected: detail === dispatch.facet.detail && sex === dispatch.facet.sex }">{{ value(parts.find((part) => part.detail === detail && part.sex === sex) ?? { value: null, unit: dispatch.facet.unit }) }}</i></div>
+      <div v-for="detail in details" :key="detail" class="pyramid-row"><span data-editorial-label>{{ labels[detail] ?? detail }}</span><i v-for="sex in ['F', 'M']" :key="sex" data-editorial-value :class="{ selected: detail === dispatch.facet.detail && sex === dispatch.facet.sex }">{{ value(parts.find((part) => part.detail === detail && part.sex === sex) ?? { value: null, unit: dispatch.facet.unit }) }}</i></div>
     </div>
-    <figcaption class="editorial-provenance">{{ dispatch.facet.label }} · {{ dispatch.facet.sex === 'F' ? 'Femmes' : 'Hommes' }}</figcaption>
+    <figcaption class="editorial-provenance" data-editorial-label>{{ dispatch.facet.label }} · {{ dispatch.facet.sex === 'F' ? 'Femmes' : 'Hommes' }}</figcaption>
   </figure>
 </template>
 <style scoped>

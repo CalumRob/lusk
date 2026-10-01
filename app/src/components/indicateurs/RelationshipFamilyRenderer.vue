@@ -37,14 +37,14 @@ const nomsIncomplets = computed(() => (props.relation?.incomplets ?? []).map((po
       <svg v-if="traces.length" class="relation-nuage" viewBox="0 0 100 100" role="img" :aria-label="libelleNuage">
         <line class="relation-axe" x1="2" y1="98" x2="98" y2="98" />
         <line class="relation-axe" x1="2" y1="2" x2="2" y2="98" />
-        <circle v-for="point in traces" :key="point.id" class="relation-point" :class="{ selection: point.selection }" :data-point-relation="point.id" :cx="point.cx" :cy="point.cy" r="3"><title>{{ point.titre }}</title></circle>
+        <circle v-for="point in traces" :key="point.id" class="relation-point" :class="{ selection: point.selection }" :data-point-relation="point.id" :cx="point.cx" :cy="point.cy" r="3"><title data-editorial-value>{{ point.titre }}</title></circle>
       </svg>
       <p v-if="relation && relation.etat === 'incomplet'" class="relation-note" role="note">{{ relation.message }}</p>
       <p v-else-if="relation && relation.etat === 'absent'" role="status">{{ relation.message }}</p>
       <p v-else-if="!relation || relation.etat === null" role="status">Sélectionnez un territoire pour le situer dans la relation.</p>
       <p v-if="nomsIncomplets" role="note">Territoires sans coordonnée complète — non tracés : {{ nomsIncomplets }}.</p>
     </div>
-     <figcaption class="editorial-provenance">Le nuage croise « {{ relation?.axeX.label ?? '' }} » ({{ relation?.axeX.unit ?? '' }}) et « {{ relation?.axeY.label ?? '' }} » ({{ relation?.axeY.unit ?? '' }}) ; la comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — la relation n’est jamais réduite à un score unique.</figcaption>
+     <figcaption class="editorial-provenance" data-editorial-label>Le nuage croise « {{ relation?.axeX.label ?? '' }} » ({{ relation?.axeX.unit ?? '' }}) et « {{ relation?.axeY.label ?? '' }} » ({{ relation?.axeY.unit ?? '' }}) ; la comparaison entre territoires ci-dessous est pilotée par « {{ dispatch.facet.label }} » ({{ dispatch.facet.unit }}) — la relation n’est jamais réduite à un score unique.</figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>

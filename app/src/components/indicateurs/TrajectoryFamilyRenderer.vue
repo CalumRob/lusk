@@ -94,15 +94,15 @@ const ariaDescription = computed(() => {
         <line v-for="tick in ticksY" :key="`grid-${tick.label}`" :x1="X_GAUCHE" :x2="X_DROITE" :y1="yDe(tick.value)" :y2="yDe(tick.value)" />
       </g>
       <g class="trajectoire-axes" aria-hidden="true">
-        <text class="trajectoire-axe-y-label" :x="X_GAUCHE" y="14">{{ axisLabels.y }}</text>
-        <text v-for="tick in ticksY" :key="`y-label-${tick.label}`" class="trajectoire-axe-y-tick" :x="X_GAUCHE - 8" :y="yDe(tick.value) + 4" text-anchor="end">{{ tick.label }}</text>
+        <text class="trajectoire-axe-y-label" data-editorial-label :x="X_GAUCHE" y="14">{{ axisLabels.y }}</text>
+        <text v-for="tick in ticksY" :key="`y-label-${tick.label}`" class="trajectoire-axe-y-tick" data-editorial-value :x="X_GAUCHE - 8" :y="yDe(tick.value) + 4" text-anchor="end">{{ tick.label }}</text>
         <line class="trajectoire-axe-vertical" :x1="X_GAUCHE" :x2="X_GAUCHE" :y1="Y_HAUT" :y2="Y_BAS" />
         <line class="trajectoire-axe-base" :x1="X_GAUCHE" :x2="X_DROITE" :y1="Y_BAS" :y2="Y_BAS" />
         <g v-for="tick in ticks" :key="tick.detail" class="trajectoire-tick" :class="{ 'trajectoire-tick--wide': tick.mobile === false }" :data-detail="tick.detail">
           <line class="trajectoire-tick-marque" :x1="xDuDetail(tick.detail) ?? 0" :x2="xDuDetail(tick.detail) ?? 0" :y1="Y_BAS" :y2="Y_BAS + 5" />
-          <text class="trajectoire-axe-x-tick" :x="xDuDetail(tick.detail) ?? 0" y="130" text-anchor="middle">{{ tick.label }}</text>
+          <text class="trajectoire-axe-x-tick" data-editorial-label :x="xDuDetail(tick.detail) ?? 0" y="130" text-anchor="middle">{{ tick.label }}</text>
         </g>
-        <text class="trajectoire-axe-x-label" :x="(X_GAUCHE + X_DROITE) / 2" y="151" text-anchor="middle">{{ axisLabels.x }}</text>
+        <text class="trajectoire-axe-x-label" data-editorial-label :x="(X_GAUCHE + X_DROITE) / 2" y="151" text-anchor="middle">{{ axisLabels.x }}</text>
       </g>
       <g v-for="etape in modele.etapes" :key="etape.detail" :data-etape="etape.detail" :data-etat="etape.mediane === null ? 'sans-valeur' : 'valeurs'">
         <line v-if="etape.min !== null && etape.max !== null" class="trajectoire-etalement" :x1="xDe(etape.x)" :x2="xDe(etape.x)" :y1="yDe(etape.max)" :y2="yDe(etape.min)" /><circle v-if="etape.mediane !== null" class="trajectoire-mediane-point" :cx="xDe(etape.x)" :cy="yDe(etape.mediane)" r="4"><title>{{ `${etape.label} · médiane ${formaterValeur({ value: etape.mediane, unit: dispatch.facet.unit })} ${dispatch.facet.unit}` }}</title></circle>
