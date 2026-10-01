@@ -452,6 +452,23 @@
       }
     }
   },
+  "scalar_contracts": {
+    "part_passoires": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "part_passoires",
+      "missing_status": "suppressed",
+      "counts_available": true,
+      "support_count_field": "support",
+      "suppressed_below": 30,
+      "zero_support_status": "not_available"
+    }
+  },
   "source_records": {
     "logements": {
       "dataset": "INSEE — Logements (dossier complet)",

@@ -241,7 +241,13 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
     if (length(completeness) != 1L || !completeness %in% c("sparse", "dense_complete") ||
         length(missing_status) != 1L || !missing_status %in% c("suppressed", "unsupported", "not_available") ||
         length(levels) == 0L || any(!levels %in% c("commune", "epci", "departement", "region")) ||
-        !identical(policy$counts_available, FALSE) || length(policy$comparison_facet) != 1L ||
+        !is.logical(policy$counts_available) || length(policy$counts_available) != 1L ||
+        (!identical(policy$counts_available, FALSE) &&
+          (!is.character(policy$support_count_field) || length(policy$support_count_field) != 1L ||
+            !policy$support_count_field %in% names(rows))) || length(policy$comparison_facet) != 1L ||
+        (!is.null(policy$zero_support_status) && !policy$zero_support_status %in% c("unsupported", "not_available")) ||
+        (!is.null(policy$suppressed_below) && (!is.numeric(policy$suppressed_below) ||
+          length(policy$suppressed_below) != 1L || policy$suppressed_below <= 0)) ||
         (!is.na(policy$comparison_facet) && !nzchar(policy$comparison_facet)))
       stop("Producer scalar contract is invalid for indicator: ", id, call.=FALSE)
     selected <- rows[rows$indicator_id == id & rows$territory_type %in% levels, , drop=FALSE]
@@ -250,10 +256,21 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
     if (anyNA(selected$unit) || any(unique(as.character(selected$unit)) != as.character(page$unit)))
       stop("Canonical scalar unit disagrees with declared metadata: ", id, call.=FALSE)
     selected <- selected[order(selected$territory_type, selected$territory_id), , drop=FALSE]
+    support <- if (isTRUE(policy$counts_available)) as.integer(selected[[policy$support_count_field]]) else NA_integer_
+    if (isTRUE(policy$counts_available) && (anyNA(support) || any(support < 0L)))
+      stop("Canonical scalar support count is invalid for indicator: ", id, call.=FALSE)
+    missing <- rep(missing_status, nrow(selected))
+    if (isTRUE(policy$counts_available)) {
+      if (!is.null(policy$zero_support_status) && length(policy$zero_support_status) == 1L)
+        missing[is.na(selected$value) & support == 0L] <- policy$zero_support_status
+      if (!is.null(policy$suppressed_below) && length(policy$suppressed_below) == 1L &&
+          is.numeric(policy$suppressed_below))
+        missing[is.na(selected$value) & support > 0L & support < policy$suppressed_below] <- "suppressed"
+    }
     facts_out[[id]] <- data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
       territory_type=as.character(selected$territory_type), value=as.numeric(selected$value),
-      status=ifelse(is.na(selected$value), missing_status, "measured"),
-      support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
+      status=ifelse(is.na(selected$value), missing, "measured"),
+      support_count=support, denominator_count=support, stringsAsFactors=FALSE)
     descriptors_out[[id]] <- data.frame(indicator_id=id, allowed_sources=I(list(source_ids)),
       label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
       comparison_facet=as.character(policy$comparison_facet), allowed_levels=I(list(levels)),
