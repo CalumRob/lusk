@@ -655,7 +655,7 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       theme.metadata.indicator_pages = canonicalMetadata.indicator_pages
       if (catalogue && typeof catalogue === 'object' && 'scalar_contracts' in catalogue) {
         theme.metadata.scalar_contracts = catalogue.scalar_contracts
-      }
+      } else delete theme.metadata.scalar_contracts
     }))
     const referenceUrl = '/data/territoires.json'
     let referenceResponse: Response

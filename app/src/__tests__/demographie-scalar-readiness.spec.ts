@@ -15,6 +15,43 @@ const targetId = '35236'
 describe('Démographie scalar readiness on the territory fiche', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('removes stale embedded registrations when the canonical catalogue omits scalar_contracts', async () => {
+    const model = readData(`modeles-lecture/territoires/commune/${targetId}.json`)
+    model.themes.demographie.theme_metadata.scalar_contracts = readData('theme_demographie.json').scalar_contracts
+    const calls: string[] = []
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.startsWith('/data/')) {
+        const file = url.slice('/data/'.length)
+        const payload = readData(file)
+        if (file === 'theme_demographie.json') delete payload.scalar_contracts
+        if (file === `modeles-lecture/territoires/commune/${targetId}.json`) return new Response(JSON.stringify(model), { status: 200 })
+        return new Response(JSON.stringify(payload), { status: 200 })
+      }
+      throw new Error(`A scalar API request should not be made: ${url}`)
+    }))
+
+    const loadedModel = await chargerModeleTerritoire('commune', targetId)
+    expect(loadedModel.themes.demographie?.metadata).not.toHaveProperty('scalar_contracts')
+
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push(`/territoire/commune/${targetId}?theme=demographie`)
+    await router.isReady()
+    const wrapper = mount(TerritoireView, { global: { plugins: [router], provide: {
+      [TERRITORY_READ_MODEL_CHARGER_KEY]: async () => loadedModel,
+    } } })
+    await flushPromises()
+
+    expect(calls.some((url) => url.includes('/indicator-cohorts/'))).toBe(false)
+    const density = model.themes.demographie.indicateurs.find((row: any) => row.key === 'densite' && row.territoire === targetId)
+    const staticFigure = wrapper.find('[data-clef="densite"]')
+    expect(staticFigure.exists()).toBe(true)
+    expect(staticFigure.find('.valeur-numerique').text()).toBe(formaterValeur(density))
+    wrapper.unmount()
+  })
+
   it('reconciles the published indicator-page contract before acquiring registered scalars', async () => {
     const model = readData(`modeles-lecture/territoires/commune/${targetId}.json`)
     const territory = model.territory
