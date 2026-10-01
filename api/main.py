@@ -1103,22 +1103,64 @@ def scalar_indicator_cohort(
                     raise HTTPException(422, "Unknown EPCI scope")
             if (department_id and focal[2] != department_id) or (epci_id and focal[3] != epci_id):
                 raise HTTPException(422, "Focal territory is outside the declared cohort scope")
+            # Preserve the published rank universes (compute_ranks/groups_comparaison):
+            # communes with an EPCI rank only against their EPCI; communes without one
+            # fall back to the regional commune group; EPCIs/departments rank regionally;
+            # department ranks for communes and ranks for a region are deliberately null.
+            # The URL cohort predicates stay outside this materialized ranking snapshot.
             rows = conn.execute(
-                """SELECT t.territory_id,t.name,o.value,o.status,o.support_count,o.denominator_count,
+                """WITH ranked AS MATERIALIZED (
+                   SELECT t.territory_id,t.territory_type,t.name,t.department_id,t.epci_id,
+                          o.indicator_id,o.value,o.status,o.support_count,o.denominator_count,
+                          CASE WHEN t.territory_type='commune' AND t.epci_id IS NOT NULL AND o.status='measured'
+                               THEN RANK() OVER (PARTITION BY t.epci_id ORDER BY
+                                    CASE WHEN d.direction='high' THEN o.value END DESC NULLS LAST,
+                                    CASE WHEN d.direction='low' THEN o.value END ASC NULLS LAST) END AS rang_epci,
+                          CASE WHEN t.territory_type='commune' AND t.epci_id IS NOT NULL AND o.status='measured'
+                               THEN COUNT(o.value) OVER (PARTITION BY t.epci_id) END AS rang_epci_n,
+                          NULL::bigint AS rang_dep,
+                          NULL::bigint AS rang_dep_n,
+                          CASE WHEN o.status='measured' AND
+                                    (t.territory_type IN ('epci','departement') OR
+                                     (t.territory_type='commune' AND t.epci_id IS NULL))
+                               THEN RANK() OVER (PARTITION BY t.territory_type ORDER BY
+                                    CASE WHEN d.direction='high' AND
+                                      (t.territory_type <> 'commune' OR t.epci_id IS NULL) THEN o.value END DESC NULLS LAST,
+                                    CASE WHEN d.direction='low' AND
+                                      (t.territory_type <> 'commune' OR t.epci_id IS NULL) THEN o.value END ASC NULLS LAST) END AS rang_reg,
+                          CASE WHEN o.status='measured' AND
+                                    (t.territory_type IN ('epci','departement') OR
+                                     (t.territory_type='commune' AND t.epci_id IS NULL))
+                               THEN COUNT(CASE WHEN t.territory_type <> 'commune' OR t.epci_id IS NULL
+                                               THEN o.value END) OVER (PARTITION BY t.territory_type) END AS rang_reg_n,
+                          d.direction
+                   FROM territory_reference t
+                   CROSS JOIN scalar_descriptor d
+                   LEFT JOIN scalar_observation o
+                     ON o.territory_id=t.territory_id AND o.territory_type=t.territory_type
+                    AND o.indicator_id=d.indicator_id
+                   WHERE d.indicator_id=%s AND t.territory_type=%s
+                   ), cohort AS (
+                   SELECT territory_id,name,value,status,support_count,denominator_count,
+                          rang_epci,rang_epci_n,rang_dep,rang_dep_n,rang_reg,rang_reg_n,
                           COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,
                             'name',sd.name,'vintage_id',os.vintage_id,'version',sv.version,
                             'reference_date',sv.reference_date,'publication_date',sv.publication_date)
                             ORDER BY os.source_id,os.vintage_id)
-                            FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+                           FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
                             JOIN source_vintage sv USING(source_id,vintage_id)
-                           WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
-                   FROM territory_reference t LEFT JOIN scalar_observation o
-                     ON o.territory_id=t.territory_id AND o.territory_type=t.territory_type
-                    AND o.indicator_id=%s
-                   WHERE t.territory_type=%s
-                     AND (%s::text IS NULL OR t.department_id=%s)
-                     AND (%s::text IS NULL OR t.epci_id=%s)
-                   ORDER BY t.name,t.territory_id LIMIT %s""",
+                           WHERE os.indicator_id=cohort_source.indicator_id
+                             AND os.territory_id=cohort_source.territory_id),'[]'::json) AS sources
+                   FROM ranked cohort_source
+                   )
+                   SELECT territory_id,name,value,status,support_count,denominator_count,sources,
+                          rang_epci,rang_epci_n,rang_dep,rang_dep_n,rang_reg,rang_reg_n
+                   FROM cohort
+                   WHERE (%s::text IS NULL OR EXISTS (SELECT 1 FROM territory_reference t
+                          WHERE t.territory_id=cohort.territory_id AND t.department_id=%s))
+                     AND (%s::text IS NULL OR EXISTS (SELECT 1 FROM territory_reference t
+                          WHERE t.territory_id=cohort.territory_id AND t.epci_id=%s))
+                   ORDER BY name,territory_id LIMIT %s""",
                 (indicator_id, scope_level, department_id, department_id, epci_id, epci_id,
                  MAX_TERRITORY_SEARCH_SCAN + 1)).fetchall()
             if len(rows) > MAX_TERRITORY_SEARCH_SCAN:
@@ -1136,8 +1178,12 @@ def scalar_indicator_cohort(
             "content_version": marker[0],
             "observations": [{"territory_id": tid,"name": name,"value": value,
                               "status": status or "not_published", "support_count": support,
-                              "denominator_count": denominator,"sources": sources}
-                             for tid,name,value,status,support,denominator,sources in rows]}
+                              "denominator_count": denominator,"sources": sources,
+                              "rang_epci": rang_epci,"rang_epci_n": rang_epci_n,
+                              "rang_dep": rang_dep,"rang_dep_n": rang_dep_n,
+                              "rang_reg": rang_reg,"rang_reg_n": rang_reg_n}
+                             for tid,name,value,status,support,denominator,sources,
+                                 rang_epci,rang_epci_n,rang_dep,rang_dep_n,rang_reg,rang_reg_n in rows]}
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/series/{indicator_id}")

@@ -8,21 +8,31 @@ import { indicateursDemographieFixture, indicateursEconomieFixture, territoiresF
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { validerThemeMetadata } from '../payload/validate'
 import { chargerCohorteScalaire } from '../payload/scalarCohort'
+import { formaterRang } from '../payload/selectors'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 
 const economyMetadata = { ...JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_economie.json'), 'utf8')),
   scalar_contracts: ['effectifs_salaries', 'chomage'] }
 const demographyMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8'))
+// Rank parity reference only: API-selected page tests never load this static fact payload as a fallback.
+const canonicalEconomyFacts = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'indicateurs_economie.json'), 'utf8')) as Array<Record<string, unknown>>
+const canonicalRank = (indicator: string, territoryId: string) => canonicalEconomyFacts.find((fact) =>
+  fact.key === indicator && fact.type === 'commune' && fact.territoire === territoryId)
 beforeEach(() => { localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '1') })
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 function response(indicator = 'effectifs_salaries') {
   const page = economyMetadata.indicator_pages[indicator]
+  const publishedRank = canonicalRank(indicator, '22001')
   return { indicator_id: indicator, territory_type: 'commune', label: page.label, unit: page.unit,
     direction: page.direction, comparison_facet: indicator, completeness: 'sparse', content_version: 'scalar-v1',
     observations: [
-      { territory_id: '22001', name: 'Commune A1', value: 9, status: 'measured', rang_epci: 1, rang_epci_n: 2, rang_dep: 3, rang_dep_n: 8, rang_reg: 3, rang_reg_n: 8, sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] },
+      { territory_id: '22001', name: 'Commune A1', value: 9, status: 'measured',
+        rang_epci: publishedRank?.rang_epci ?? null, rang_epci_n: publishedRank?.rang_epci_n ?? null,
+        rang_dep: publishedRank?.rang_dep ?? null, rang_dep_n: publishedRank?.rang_dep_n ?? null,
+        rang_reg: publishedRank?.rang_reg ?? null, rang_reg_n: publishedRank?.rang_reg_n ?? null,
+        sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] },
       { territory_id: '22002', name: 'Commune D', value: null, status: 'not_published', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, sources: [] },
     ] }
 }
@@ -55,7 +65,12 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     const facts = await chargerCohorteScalaire('effectifs_salaries', 'economie', page, territoiresFixture[0]!, 'commune',
       territoiresFixture, {})
     expect(facts.find((fact) => fact.territoire === '22001')).toMatchObject({
-      rang_epci: 1, rang_epci_n: 2, rang_dep: 3, rang_dep_n: 8, rang_reg: 3, rang_reg_n: 8,
+      rang_epci: canonicalRank('effectifs_salaries', '22001')?.rang_epci,
+      rang_epci_n: canonicalRank('effectifs_salaries', '22001')?.rang_epci_n,
+      rang_dep: canonicalRank('effectifs_salaries', '22001')?.rang_dep,
+      rang_dep_n: canonicalRank('effectifs_salaries', '22001')?.rang_dep_n,
+      rang_reg: canonicalRank('effectifs_salaries', '22001')?.rang_reg,
+      rang_reg_n: canonicalRank('effectifs_salaries', '22001')?.rang_reg_n,
     })
     expect(facts.find((fact) => fact.territoire === '22002')).toMatchObject({
       value: null, observation_status: 'missing', rang_epci: null, rang_reg: null,
@@ -67,6 +82,7 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     ['unknown status', (body: ReturnType<typeof response>) => { body.observations[0]!.status = 'zero' }],
     ['undeclared source', (body: ReturnType<typeof response>) => { body.observations[0]!.sources[0]!.source_id = 'other_source' }],
     ['invalid rank', (body: ReturnType<typeof response>) => { body.observations[0]!.rang_reg = 0 }],
+    ['unranked old API contract', (body: ReturnType<typeof response>) => { Reflect.deleteProperty(body.observations[0], 'rang_reg_n') }],
     ['missing focal row', (body: ReturnType<typeof response>) => { body.observations = [body.observations[1]!] }],
   ])('rejects a cohort containing %s', async (_label, mutate) => {
     const body = response()
@@ -90,6 +106,8 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/territories/commune/22001/indicator-cohorts/effectifs_salaries?scope_level=commune')
     expect(wrapper.text()).toContain('Effectifs salariés (lieu de travail)')
     expect(wrapper.text()).toContain('9')
+    const expectedRank = canonicalRank('effectifs_salaries', '22001')!
+    expect(wrapper.text()).toContain(formaterRang(expectedRank.rang_epci as number, expectedRank.rang_epci_n as number))
     await wrapper.get('.vues button:nth-child(2)').trigger('click')
     await flushPromises()
     expect(wrapper.find('.carte-indicateur').exists()).toBe(true)
