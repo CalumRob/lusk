@@ -44,4 +44,5 @@
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —
 # est l'artefact de décision versionné, comme les rapports d'audit des
 # PRs #451/#452/#455/#491.
-!/docs/prototypes/
+# Prototypes are local exploration artifacts, not repository documentation.
+/docs/prototypes/

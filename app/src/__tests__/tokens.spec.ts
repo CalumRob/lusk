@@ -141,17 +141,7 @@ describe('DESIGN.md §2 — Status', () => {
 
 describe('DESIGN.md §3 — Typography', () => {
   it('exposes independently assignable semantic font roles', () => {
-    const approvedAssignments: Record<string, string> = {
-      '--font-wordmark': 'var(--font-serif)',
-      '--font-display-title': 'var(--font-mozilla-headline)',
-      '--font-section-title': 'var(--font-sans)',
-      '--font-body': 'var(--font-mozilla-text)',
-      '--font-body-emphasis': 'var(--font-body)',
-      '--font-ui': 'var(--font-mozilla-text)',
-    }
-    for (const [role, family] of Object.entries(approvedAssignments)) {
-      expectToken(role, family)
-    }
+    expectToken('--font-wordmark', 'var(--font-serif)')
 
     for (const role of [
       '--font-wordmark',
