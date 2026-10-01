@@ -25,7 +25,7 @@ import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } fro
 import { PayloadError, validerThemeMetadata } from '@/payload/validate'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
-import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, scalarCohortEnabled } from '@/payload/scalarCohort'
+import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
@@ -183,10 +183,14 @@ let cleRequeteEconomieApi = ''
 async function chargerMetadataEconomieApi(): Promise<ThemeMetadata> {
   const response = await fetch('/data/theme_economie.json')
   if (!response.ok) throw new PayloadError('fetch', 'theme_economie.json', `Métadonnées Économie indisponibles (HTTP ${response.status}).`)
-  const raw: unknown = await response.json()
-  indicateursEconomieEnregistres.value = indicateursScalairesEnregistres(raw)
+  let raw: unknown
+  try { raw = await response.json() }
+  catch { throw new PayloadError('validation', 'theme_economie.json', 'Métadonnées Économie illisibles.') }
+  const registered = indicateursScalairesEnregistres(raw)
   const metadata = validerThemeMetadata(raw, 'theme_economie.json')
   if (metadata.theme !== 'economie') throw new PayloadError('validation', 'theme_economie.json', 'Métadonnées du thème incompatibles.')
+  validerEnregistrementScalaires(metadata, registered)
+  indicateursEconomieEnregistres.value = registered
   return metadata
 }
 watch(() => [economieApiOptionnelle.value, theme.value, indicator.value, porte.value.territoire,
@@ -213,9 +217,11 @@ async ([active, currentTheme, currentIndicator, selectedId, routeLevel, departme
     if (!page || page.indicator !== currentIndicator || page.family && page.family !== 'scalar') {
       throw new PayloadError('validation', 'theme_economie.json', 'Cette page ne déclare pas un indicateur scalaire compatible.')
     }
-    const level = resoudreNiveau(routeLevel, niveauMemorise.value, page.levels)
-    const dept = typeof department === 'string' ? department : undefined
-    const codeEpci = typeof epci === 'string' ? epci : undefined
+    const normalized = resoudreEtatUrl({ query: route.query, territoires: payloadLegacy.value.territoires,
+      niveauxPublies: page.levels, niveauMemorise: niveauMemorise.value })
+    const level = normalized.niveau ?? resoudreNiveau(routeLevel, niveauMemorise.value, page.levels)
+    const dept = level === 'commune' ? normalized.scopeValide?.departement : undefined
+    const codeEpci = level === 'commune' ? normalized.scopeValide?.epci : undefined
     const focal = choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
       level === 'commune' ? { department: dept, epci: codeEpci } : {})
     if (!focal) throw new PayloadError('validation', currentIndicator, 'Aucun territoire admissible dans ce périmètre.')
@@ -327,7 +333,7 @@ const erreur = computed(() => {
 })
 const chargement = computed(() =>
   chargementManifesteModeles.value ||
-  (economieApiOptionnelle.value && (!metadataEconomieApi.value || (economieScalaireApi.value && chargementEconomieApi.value))) ||
+  (economieApiOptionnelle.value && chargementEconomieApi.value) ||
   (profilAgeApi && chargementProfilAge.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
