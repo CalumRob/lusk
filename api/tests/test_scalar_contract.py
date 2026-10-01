@@ -19,6 +19,21 @@ def test_scalar_endpoint_is_named_bounded_and_registered():
     assert "actual_territories" not in marker_sql
 
 
+def test_scalar_cohort_route_is_snapshot_consistent_and_fails_instead_of_truncating():
+    route = next(r for r in app.routes if r.path ==
+        "/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}")
+    assert route.methods == {"GET"}
+    assert route.endpoint.__name__ == "scalar_indicator_cohort"
+    sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
+    assert "REPEATABLE READ, READ ONLY" in sql
+    assert "LIMIT %s" in sql and "MAX_TERRITORY_SEARCH_SCAN" in route.endpoint.__code__.co_names
+    assert "comparison_facet" in sql
+    import inspect
+    source = inspect.getsource(route.endpoint)
+    assert "Declared scalar cohort exceeds the bounded read" in source
+    assert "department_id" in sql and "epci_id" in sql
+
+
 def test_service_scalar_projection_filters_to_registered_service_indicator_ids():
     from api.main import ReadRepository
     import inspect
