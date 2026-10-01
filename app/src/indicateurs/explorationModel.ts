@@ -13,7 +13,7 @@ export type TriExploration = 'nom' | 'valeur' | 'rang'
 export type OrdreExploration = 'asc' | 'desc'
 export interface EtatExploration { niveau?: NiveauIndicateur; departement?: string; epci?: string; territoire?: string; recherche?: string; tri?: TriExploration; ordre?: OrdreExploration }
 export interface DensitePoint { x: number; density: number; y: number }
-export interface LigneExploration { territoire: Territoire; value: number; rang: number; rangTaille: number; fiche: string; highlighted: boolean }
+export interface LigneExploration { territoire: Territoire; value: number; rang: number | null; rangTaille: number | null; fiche: string; highlighted: boolean }
 export interface Extreme { count: number; rows: LigneExploration[] }
 export interface ModeleExploration { state: Required<Pick<EtatExploration, 'niveau'>> & EtatExploration; rows: LigneExploration[]; median: number | null; distribution: number[]; density: DensitePoint[]; high: Extreme; low: Extreme; scopeLabel: string; direction: DirectionIndicateur; markerX: number | null; markerY: number | null }
 
@@ -172,29 +172,40 @@ export function hauteurDensite(density: readonly DensitePoint[], value: number |
   return before.y + (after.y - before.y) * fraction
 }
 
-export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string): ModeleExploration {
+export function modeleExploration(facts: readonly Indicateur[], facet: ComparisonFacet, territoires: readonly Territoire[], requested: EtatExploration = {}, remembered?: string, usePublishedRanks = false): ModeleExploration {
   // La cascade explicite → mémorisé → repli est l'unique règle de la machine
   // URL (#508), partagée avec l'applier de la Page d'indicateur.
   const niveau = resoudreNiveau(requested.niveau, remembered, facet.levels)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
   // La population facet-comparable : LE prédicat unique (#507), configuré
   // strict — la même jointure que le statut de famille, par construction.
-  const all = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, sexe: facet.sex, dimension: facet.dimension, niveau, avecValeur: true }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
+  const all = filtrerFaits(facts, { theme: facet.theme, cle: facet.indicator, detail: facet.detail, sexe: facet.sex, dimension: facet.dimension, niveau, avecValeur: true }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number, fact })).filter((row): row is { territoire: Territoire; value: number; fact: Indicateur } => Boolean(row.territoire && dansScope(row.territoire, niveau, requested.departement, requested.epci)))
   const values = all.map((row) => row.value)
   // La série triée du modèle (la comparaison inter-territoires de Repères) :
   // la médiane et la densité lisent la même série triée que avant #437.
   const distribution = [...values].sort((a, b) => a - b)
   const median = mediane(distribution)
-  const rangsCalcules = rangsExAequo(values, facet.direction)
-  const ranks = new Map(all.map((row, index) => [row.territoire.territoire, rangsCalcules[index]] as const))
-  const project = (row: { territoire: Territoire; value: number }): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire)!, rangTaille: all.length, fiche: lienFiche(row.territoire, facet.theme), highlighted: row.territoire.territoire === requested.territoire })
+  const rangsCalcules = usePublishedRanks ? null : rangsExAequo(values, facet.direction)
+  const publishedRank = (row: typeof all[number]) => {
+    const field = row.territoire.type === 'commune'
+      ? row.territoire.epci ? 'rang_epci' : 'rang_reg'
+      : row.territoire.type === 'epci' || row.territoire.type === 'departement' ? 'rang_reg' : null
+    return field ? { rank: row.fact[field], size: row.fact[`${field}_n`] } : { rank: null, size: null }
+  }
+  const ranks = new Map(all.map((row, index) => [row.territoire.territoire, usePublishedRanks
+    ? publishedRank(row).rank
+    : rangsCalcules![index]] as const))
+  const rankSizes = new Map(all.map((row) => [row.territoire.territoire, usePublishedRanks
+    ? publishedRank(row).size
+    : all.length] as const))
+  const project = (row: typeof all[number]): LigneExploration => ({ territoire: row.territoire, value: row.value, rang: ranks.get(row.territoire.territoire) ?? null, rangTaille: rankSizes.get(row.territoire.territoire) ?? null, fiche: lienFiche(row.territoire, facet.theme), highlighted: row.territoire.territoire === requested.territoire })
   const filtered = all.filter((row) => !requested.recherche || row.territoire.nom.toLocaleLowerCase('fr').includes(requested.recherche.toLocaleLowerCase('fr')))
   const tri = requested.tri ?? 'nom'
   const ordre = requested.ordre ?? 'asc'
   const factor = ordre === 'asc' ? 1 : -1
   const rows = [...filtered].sort((a, b) => {
     if (tri === 'nom') return factor * a.territoire.nom.localeCompare(b.territoire.nom, 'fr')
-    if (tri === 'rang') return factor * (ranks.get(a.territoire.territoire)! - ranks.get(b.territoire.territoire)!)
+    if (tri === 'rang') return factor * ((ranks.get(a.territoire.territoire) ?? Number.MAX_SAFE_INTEGER) - (ranks.get(b.territoire.territoire) ?? Number.MAX_SAFE_INTEGER))
     return factor * (a.value - b.value)
   }).map(project)
   const highRows = all.filter((row) => row.value === Math.max(...all.map((item) => item.value))).map(project)
@@ -357,7 +368,7 @@ export function modeleTrajectoire(
  * rang directionnel ex-aequo (#437), même surlignage, même passarelle fiche —
  * par construction, jamais deux listes qui divergent.
  */
-export interface PointRelation { territoire: Territoire; valeur: number | null; rang: number | null; rangTaille: number; fiche: string; highlighted: boolean; /** Les coordonnées publiées du nuage — null quand un axe manque. */ x: number | null; y: number | null }
+export interface PointRelation { territoire: Territoire; valeur: number | null; rang: number | null; rangTaille: number | null; fiche: string; highlighted: boolean; /** Les coordonnées publiées du nuage — null quand un axe manque. */ x: number | null; y: number | null }
 export interface AxeRelation { label: string; unit: string; /** Le domaine RÉEL des valeurs tracées — jamais une plage fixe. */ min: number | null; max: number | null }
 export interface ModeleRelation {
   // Les quatre états honnêtes — le contrat commun des modèles Repères,

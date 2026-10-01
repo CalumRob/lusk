@@ -471,7 +471,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_secondary','Secondary source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_secondary','v2025','2025')")
         with connection.transaction():
-            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high','fixture_scalar',ARRAY['commune'],'buildings','sparse','d1')")
             connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture'),('fixture_scalar','fixture_secondary')")
         with connection.transaction():
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('fixture_scalar','29001','commune',0,'measured',0,0)")
@@ -527,6 +527,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
     try:
         with TestClient(main.app) as client:
             response = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+            cohort = client.get("/api/territories/commune/29001/indicator-cohorts/fixture_scalar?scope_level=commune")
             unavailable = client.get("/api/territories/epci/29001/indicators/fixture_scalar")
         assert response.status_code == 200, response.text
         body = response.json()
@@ -535,6 +536,12 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert body["content_version"] == "fixture-v1"
         assert "source_id" not in body and "source_name" not in body
         assert [source["version"] for source in body["sources"]] == ["2026", "2025"]
+        assert cohort.status_code == 200, cohort.text
+        cohort_rows = cohort.json()["observations"]
+        assert [(row["territory_id"], row["value"], row["status"]) for row in cohort_rows] == [
+            ("29001", 0, "measured"), ("29002", None, "not_published")]
+        assert {source["version"] for source in cohort_rows[0]["sources"]} == {"2026", "2025"}
+        assert cohort_rows[1]["sources"] == []
         assert unavailable.status_code == 404
         absent_fact = client.get("/api/territories/commune/29002/indicators/fixture_scalar")
         assert absent_fact.status_code == 404

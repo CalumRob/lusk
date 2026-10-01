@@ -19,6 +19,130 @@ def test_scalar_endpoint_is_named_bounded_and_registered():
     assert "actual_territories" not in marker_sql
 
 
+def test_scalar_cohort_route_returns_sparse_absence_and_peer_specific_lineage():
+    from api.main import ReadRepository, scalar_indicator_cohort
+    from contextlib import contextmanager
+
+    lineage = [{"source_id": "flores", "name": "Flores", "vintage_id": "2024",
+                "version": "2024", "reference_date": None, "publication_date": None}]
+    class Cursor:
+        def __init__(self, row=None, rows=None): self.row, self.rows = row, rows or []
+        def fetchone(self): return self.row
+        def fetchall(self): return self.rows
+    class Connection:
+        def execute(self, sql, params=None):
+            if sql.startswith("SET TRANSACTION"): return Cursor()
+            if "SELECT scalar.content_version" in sql: return Cursor(("scalar-v1", "territories-v1", "territories-v1", 2))
+            if "WITH ranked AS MATERIALIZED" in sql:
+                return Cursor(rows=[("c1", "A", 3, "measured", None, None, lineage, 1, 2, None, None, None, None),
+                                    ("c2", "B", None, None, None, None, [], None, None, None, None, None, None)])
+            if "FROM scalar_descriptor" in sql: return Cursor(("Effectifs", "salariés", "high", "employment", ["commune"], "sparse"))
+            if "SELECT territory_id,territory_type,department_id,epci_id" in sql: return Cursor(("c1", "commune", "d1", "e1"))
+            if "SELECT 1 FROM territory_reference" in sql: return Cursor((1,))
+            raise AssertionError(sql)
+        def transaction(self): return null_context()
+    @contextmanager
+    def null_context(): yield
+    class Connections:
+        def connection(self): return null_context_value(Connection())
+    @contextmanager
+    def null_context_value(value): yield value
+    result = scalar_indicator_cohort("commune", "c1", "employment", "commune", None, None,
+                                     ReadRepository(Connections()))
+    assert result["content_version"] == "scalar-v1"
+    assert result["observations"] == [
+        {"territory_id": "c1", "name": "A", "value": 3, "status": "measured",
+         "support_count": None, "denominator_count": None, "sources": lineage,
+         "rang_epci": 1, "rang_epci_n": 2, "rang_dep": None, "rang_dep_n": None,
+         "rang_reg": None, "rang_reg_n": None},
+        {"territory_id": "c2", "name": "B", "value": None, "status": "not_published",
+         "support_count": None, "denominator_count": None, "sources": [],
+         "rang_epci": None, "rang_epci_n": None, "rang_dep": None, "rang_dep_n": None,
+         "rang_reg": None, "rang_reg_n": None},
+    ]
+
+
+def test_scalar_cohort_sql_ranks_natural_universes_before_url_scoped_cohort_filter():
+    import inspect
+    from api.main import scalar_indicator_cohort
+
+    source = inspect.getsource(scalar_indicator_cohort)
+    rank_query = source.split('"""WITH ranked AS MATERIALIZED (', 1)[1].split('"""', 1)[0]
+    assert "PARTITION BY t.epci_id ORDER BY" in rank_query
+    assert "PARTITION BY t.territory_type ORDER BY" in rank_query
+    assert "NULL::bigint AS rang_dep" in rank_query
+    assert "t.epci_id IS NULL" in rank_query
+    assert "d.direction='high' THEN o.value END DESC" in rank_query
+    assert "d.direction='low' THEN o.value END ASC" in rank_query
+    assert "RANK() OVER" in rank_query and "COUNT(o.value) OVER" in rank_query
+    assert "WHERE d.indicator_id=%s AND t.territory_type=%s" in rank_query
+    assert rank_query.index("FROM ranked cohort_source") < rank_query.index("WHERE (%s::text IS NULL OR EXISTS")
+    assert rank_query.count("rang_epci") >= 2 and rank_query.count("rang_dep") >= 2 and rank_query.count("rang_reg") >= 2
+
+
+def test_scalar_cohort_rejects_wrong_comparison_facet_without_computing_wrong_statistics():
+    import pytest
+    from fastapi import HTTPException
+    from api.main import ReadRepository, scalar_indicator_cohort
+    from contextlib import contextmanager
+    class Cursor:
+        def __init__(self,row=None): self.row=row
+        def fetchone(self): return self.row
+    class Connection:
+        def execute(self,sql,params=None):
+            if sql.startswith("SET TRANSACTION"): return Cursor(None)
+            if "SELECT scalar.content_version" in sql: return Cursor(("v1","r1","r1",1))
+            if "FROM scalar_descriptor" in sql: return Cursor(("label","unit","high","different_facet",["commune"],"sparse"))
+            raise AssertionError("reader must fail before fetching wrong-facet values")
+        def transaction(self): return contextmanager(lambda: (yield))()
+    class Connections:
+        def connection(self): return contextmanager(lambda: (yield Connection()))()
+    with pytest.raises(HTTPException) as error:
+        scalar_indicator_cohort("commune","c1","page_indicator","commune",None,None,ReadRepository(Connections()))
+    assert error.value.status_code == 503
+
+
+def test_scalar_cohort_rejects_unknown_scope_stale_reference_and_overflow():
+    import pytest
+    from contextlib import contextmanager
+    from fastapi import HTTPException
+    from api.main import ReadRepository, scalar_indicator_cohort
+
+    def call(case, scope_level="commune", department=None):
+        class Cursor:
+            def __init__(self,row=None,rows=None): self.row,self.rows=row,rows or []
+            def fetchone(self): return self.row
+            def fetchall(self): return self.rows
+        class Connection:
+            def execute(self,sql,params=None):
+                if sql.startswith("SET TRANSACTION"): return Cursor()
+                if "SELECT scalar.content_version" in sql:
+                    return Cursor(("v1","old-reference" if case == "stale" else "r1","r1",1))
+                if "WITH ranked AS MATERIALIZED" in sql:
+                    if case == "overflow": return Cursor(rows=[("c%d" % i,"Peer",None,None,None,None,[],None,None,None,None,None,None) for i in range(1501)])
+                    return Cursor(rows=[] if case == "outside" else [("c1","A",1,"measured",None,None,[{"source_id":"s"}],1,1,1,1,1,1)])
+                if "FROM scalar_descriptor" in sql:
+                    return Cursor(("label","unit","high","indicator",["commune"],"sparse"))
+                if "SELECT territory_id,territory_type,department_id,epci_id" in sql:
+                    return Cursor(("c1","commune","d1","e1"))
+                if "SELECT 1 FROM territory_reference" in sql:
+                    return Cursor(None if case == "unknown_scope" else (1,))
+                raise AssertionError(sql)
+            def transaction(self): return contextmanager(lambda: (yield))()
+        class Connections:
+            def connection(self): return contextmanager(lambda: (yield Connection()))()
+        return scalar_indicator_cohort("commune","c1","indicator",scope_level,department,None,ReadRepository(Connections()))
+
+    for case,level,dept,status in [
+        ("unsupported","epci",None,422), ("unknown_scope","commune","missing",422),
+        ("outside","commune","d2",422), ("stale","commune",None,503),
+        ("overflow","commune",None,503),
+    ]:
+        with pytest.raises(HTTPException) as error:
+            call(case,level,dept)
+        assert error.value.status_code == status
+
+
 def test_service_scalar_projection_filters_to_registered_service_indicator_ids():
     from api.main import ReadRepository
     import inspect
