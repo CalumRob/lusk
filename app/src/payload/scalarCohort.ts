@@ -18,21 +18,21 @@ export function scalarCohortEnabled(env: Record<string, string | undefined>): bo
 /** Registration is producer-owned; a declared page alone does not opt into scalar serving. */
 export function indicateursScalairesEnregistres(raw: unknown): string[] {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw) || !('scalar_contracts' in raw)) {
-    throw new PayloadError('validation', 'theme_economie.json', 'Le registre producer-owned scalar_contracts est absent ou mal formé.')
+    throw new PayloadError('validation', 'theme metadata', 'Le registre producer-owned scalar_contracts est absent ou mal formé.')
   }
   const declarations = (raw as { scalar_contracts: unknown }).scalar_contracts
   if (Array.isArray(declarations) && declarations.every((item) => typeof item === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(item)) &&
       new Set(declarations).size === declarations.length) return declarations
   if (typeof declarations === 'object' && declarations !== null && !Array.isArray(declarations) &&
       Object.entries(declarations).every(([key, value]) => /^[a-z][a-z0-9_]{0,95}$/.test(key) && value !== null && value !== false)) return Object.keys(declarations)
-  throw new PayloadError('validation', 'theme_economie.json', 'Le registre producer-owned scalar_contracts est mal formé.')
+  throw new PayloadError('validation', 'theme metadata', 'Le registre producer-owned scalar_contracts est mal formé.')
 }
 
 export function validerEnregistrementScalaires(metadata: ThemeMetadata, registered: string[]): void {
   for (const id of registered) {
     const page = metadata.indicator_pages?.[id]
     if (!page || page.indicator !== id || page.family !== 'scalar') {
-      throw new PayloadError('validation', 'theme_economie.json', `Le contrat scalaire « ${id} » n’a pas de page scalaire correspondante.`)
+      throw new PayloadError('validation', 'theme metadata', `Le contrat scalaire « ${id} » n’a pas de page scalaire correspondante.`)
     }
   }
 }

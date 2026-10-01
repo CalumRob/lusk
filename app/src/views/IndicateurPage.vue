@@ -67,8 +67,8 @@ const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).incl
 const selectedTheme = theme.value as Theme
 const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
   structureAgeProfileEnabled(import.meta.env as Record<string, string | undefined>)
-const economieApiAuMontage = theme.value === 'economie' && scalarCohortEnabled(import.meta.env as Record<string, string | undefined>)
-const attendreLegacy: Fichier[] = economieApiAuMontage
+const scalaireApiAuMontage = scalarCohortEnabled(import.meta.env as Record<string, string | undefined>)
+const attendreLegacy: Fichier[] = scalaireApiAuMontage
   ? ['territoires']
   : profilAgeApi
   ? ['territoires', 'indicateurs_demographie', 'theme_demographie']
@@ -78,7 +78,7 @@ const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY
 const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
 // Production resolves this from the generated manifest. Tests that inject only
 // the legacy file seam keep the historical page contract without network work.
-const utiliseManifeste = !profilAgeApi && !economieApiAuMontage && themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
+const utiliseManifeste = !profilAgeApi && !scalaireApiAuMontage && themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
 const attendrePage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const demarrerPage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
@@ -170,50 +170,53 @@ watch(
   }, { immediate: true },
 )
 
-const economieApiOptionnelle = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>) && theme.value === 'economie')
-const indicateursEconomieEnregistres = ref<string[]>([])
-const economieScalaireApi = computed(() => economieApiOptionnelle.value && indicateursEconomieEnregistres.value.includes(indicator.value))
-const metadataEconomieApi = ref<ThemeMetadata | null>(null)
-const faitsEconomieApi = ref<Indicateur[]>([])
-const erreurEconomieApi = ref<PayloadError | null>(null)
-const chargementEconomieApi = ref(false)
-const retryEconomieApi = ref(0)
-let sequenceEconomieApi = 0
-let cleRequeteEconomieApi = ''
-async function chargerMetadataEconomieApi(): Promise<ThemeMetadata> {
-  const response = await fetch('/data/theme_economie.json')
-  if (!response.ok) throw new PayloadError('fetch', 'theme_economie.json', `Métadonnées Économie indisponibles (HTTP ${response.status}).`)
+const scalaireApiOptionnelle = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
+const indicateursScalairesCourants = ref<string[]>([])
+const scalaireApi = computed(() => scalaireApiOptionnelle.value && metadataScalaireApi.value?.theme === theme.value &&
+  indicateursScalairesCourants.value.includes(indicator.value))
+const metadataScalaireApi = ref<ThemeMetadata | null>(null)
+const faitsScalaireApi = ref<Indicateur[]>([])
+const erreurScalaireApi = ref<PayloadError | null>(null)
+const chargementScalaireApi = ref(false)
+const retryScalaireApi = ref(0)
+let sequenceScalaireApi = 0
+let cleRequeteScalaireApi = ''
+async function chargerMetadataScalaireApi(currentTheme: string): Promise<ThemeMetadata> {
+  const file = `theme_${currentTheme}.json`
+  const response = await fetch(`/data/${file}`)
+  if (!response.ok) throw new PayloadError('fetch', file, `Métadonnées ${currentTheme} indisponibles (HTTP ${response.status}).`)
   let raw: unknown
   try { raw = await response.json() }
-  catch { throw new PayloadError('validation', 'theme_economie.json', 'Métadonnées Économie illisibles.') }
+  catch { throw new PayloadError('validation', file, `Métadonnées ${currentTheme} illisibles.`) }
   const registered = indicateursScalairesEnregistres(raw)
-  const metadata = validerThemeMetadata(raw, 'theme_economie.json')
-  if (metadata.theme !== 'economie') throw new PayloadError('validation', 'theme_economie.json', 'Métadonnées du thème incompatibles.')
+  const metadata = validerThemeMetadata(raw, file)
+  if (metadata.theme !== currentTheme) throw new PayloadError('validation', file, 'Métadonnées du thème incompatibles.')
   validerEnregistrementScalaires(metadata, registered)
-  indicateursEconomieEnregistres.value = registered
+  indicateursScalairesCourants.value = registered
   return metadata
 }
-watch(() => [economieApiOptionnelle.value, theme.value, indicator.value, porte.value.territoire,
+watch(() => [scalaireApiOptionnelle.value, theme.value, indicator.value, porte.value.territoire,
   porte.value.niveau, route.query.departement, route.query.epci,
-  payloadLegacy.value.territoires.length, retryEconomieApi.value] as const,
+  payloadLegacy.value.territoires.length, retryScalaireApi.value] as const,
 async ([active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount]) => {
-  const key = JSON.stringify([active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount, retryEconomieApi.value])
-  if (active && key === cleRequeteEconomieApi) return
-  cleRequeteEconomieApi = key
-  const sequence = ++sequenceEconomieApi
-  faitsEconomieApi.value = []; erreurEconomieApi.value = null
+  const key = JSON.stringify([active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount, retryScalaireApi.value])
+  if (active && key === cleRequeteScalaireApi) return
+  cleRequeteScalaireApi = key
+  const sequence = ++sequenceScalaireApi
+  faitsScalaireApi.value = []; erreurScalaireApi.value = null
   if (!active || !territoryCount) return
-  chargementEconomieApi.value = true
+  chargementScalaireApi.value = true
   try {
-    if (!metadataEconomieApi.value) metadataEconomieApi.value = await chargerMetadataEconomieApi()
-    if (sequence !== sequenceEconomieApi) return
-    if (!indicateursEconomieEnregistres.value.includes(currentIndicator)) {
-      attendrePage.value = ['territoires', 'indicateurs_economie', 'theme_economie']
-      demarrerPage.value = ['territoires', 'indicateurs_economie', 'theme_economie']
-      chargementEconomieApi.value = false
+    if (!metadataScalaireApi.value || metadataScalaireApi.value.theme !== currentTheme) metadataScalaireApi.value = await chargerMetadataScalaireApi(currentTheme)
+    if (sequence !== sequenceScalaireApi) return
+    if (!indicateursScalairesCourants.value.includes(currentIndicator)) {
+      const legacyFiles = ['territoires', `indicateurs_${currentTheme}`, `theme_${currentTheme}`] as Fichier[]
+      attendrePage.value = legacyFiles
+      demarrerPage.value = legacyFiles
+      chargementScalaireApi.value = false
       return
     }
-    const page = metadataEconomieApi.value.indicator_pages?.[currentIndicator]
+    const page = metadataScalaireApi.value.indicator_pages?.[currentIndicator]
     if (!page || page.indicator !== currentIndicator || page.family && page.family !== 'scalar') {
       throw new PayloadError('validation', 'theme_economie.json', 'Cette page ne déclare pas un indicateur scalaire compatible.')
     }
@@ -225,12 +228,12 @@ async ([active, currentTheme, currentIndicator, selectedId, routeLevel, departme
     const focal = choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
       level === 'commune' ? { department: dept, epci: codeEpci } : {})
     if (!focal) throw new PayloadError('validation', currentIndicator, 'Aucun territoire admissible dans ce périmètre.')
-    const rows = await chargerCohorteScalaire(currentIndicator, 'economie', page, focal, level,
+    const rows = await chargerCohorteScalaire(currentIndicator, currentTheme as Theme, page, focal, level,
       payloadLegacy.value.territoires, level === 'commune' ? { department: dept, epci: codeEpci } : {})
-    if (sequence === sequenceEconomieApi) faitsEconomieApi.value = rows
+    if (sequence === sequenceScalaireApi) faitsScalaireApi.value = rows
   } catch (cause) {
-    if (sequence === sequenceEconomieApi) erreurEconomieApi.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', currentIndicator, 'Impossible de charger le cohort scalaire.')
-  } finally { if (sequence === sequenceEconomieApi) chargementEconomieApi.value = false }
+    if (sequence === sequenceScalaireApi) erreurScalaireApi.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', currentIndicator, 'Impossible de charger le cohort scalaire.')
+  } finally { if (sequence === sequenceScalaireApi) chargementScalaireApi.value = false }
 }, { immediate: true })
 watch(
   () => [payloadLegacy.value.territoires.length, utiliseModeleIndicateur.value] as const,
@@ -311,11 +314,11 @@ const payload = computed(() => {
     : modeleIndicateur.value
       ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
       : payloadLegacy.value
-  const base = economieScalaireApi.value && metadataEconomieApi.value
-    ? { ...baseInitial, themeMetadata: { ...baseInitial.themeMetadata, economie: metadataEconomieApi.value } }
+  const base = scalaireApi.value && metadataScalaireApi.value
+    ? { ...baseInitial, themeMetadata: { ...baseInitial.themeMetadata, [theme.value]: metadataScalaireApi.value } }
     : baseInitial
-  if (economieScalaireApi.value) {
-    return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === 'economie' && fact.key === indicator.value)), ...faitsEconomieApi.value] }
+  if (scalaireApi.value) {
+    return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === theme.value && fact.key === indicator.value)), ...faitsScalaireApi.value] }
   }
   const adapter = orderedSeriesAdapter.value
   if (!adapter) return base
@@ -327,13 +330,13 @@ const payload = computed(() => {
 })
 const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
-  if (economieApiOptionnelle.value && (!metadataEconomieApi.value || economieScalaireApi.value)) return erreurEconomieApi.value
+  if (scalaireApiOptionnelle.value && (!metadataScalaireApi.value || scalaireApi.value)) return erreurScalaireApi.value
   if (profilAgeApi) return erreurProfilAge.value
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
 })
 const chargement = computed(() =>
   chargementManifesteModeles.value ||
-  (economieApiOptionnelle.value && chargementEconomieApi.value) ||
+  (scalaireApiOptionnelle.value && chargementScalaireApi.value) ||
   (profilAgeApi && chargementProfilAge.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
@@ -379,7 +382,7 @@ watch(() => [orderedSeriesAdapter.value?.indicator, porte.value.territoire, port
   () => { void chargerSerie() }, { immediate: true })
 const niveauRoute = computed(() => porte.value.niveau)
 const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value.scopeValide ?? {}), territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
-const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, niveauMemorise.value, economieScalaireApi.value) : null)
+const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, niveauMemorise.value, scalaireApi.value) : null)
 // Le chemin complet de la trajectoire (#438), dans le MÊME périmètre résolu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
 // sans replier la trajectoire.
@@ -487,7 +490,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
     <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
-    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button><button v-if="economieApiOptionnelle" type="button" @click="retryEconomieApi++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button><button v-if="scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
