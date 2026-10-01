@@ -640,8 +640,22 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       try { metadataResponse = await fetch(metadataUrl) }
       catch (cause) { throw new PayloadError('fetch', metadataUrl, `Impossible de charger les contrats scalaires : ${cause instanceof Error ? cause.message : String(cause)}`) }
       if (!metadataResponse.ok) throw new PayloadError('fetch', metadataUrl, `Réponse HTTP ${metadataResponse.status} pour ${metadataUrl}`)
-      const catalogue = await metadataResponse.json() as { scalar_contracts?: unknown }
-      if (catalogue.scalar_contracts !== undefined) theme.metadata.scalar_contracts = catalogue.scalar_contracts
+      let catalogue: unknown
+      try { catalogue = await metadataResponse.json() }
+      catch { throw new PayloadError('validation', metadataUrl, `JSON illisible dans ${metadataUrl}`) }
+      const canonicalMetadata = validerThemeMetadata(catalogue, metadataUrl)
+      if (canonicalMetadata.theme !== theme.theme) {
+        throw new PayloadError('validation', metadataUrl, `Le catalogue ${metadataUrl} ne correspond pas au thème ${theme.theme}.`)
+      }
+      // Subgroup/figure declarations, indicator-page contracts and scalar
+      // registrations are owned by the canonical theme catalogue. A
+      // per-territory model can lag this metadata even while its numeric facts
+      // remain current; reconcile contracts before API validation/rendering.
+      theme.metadata.subgroups = canonicalMetadata.subgroups
+      theme.metadata.indicator_pages = canonicalMetadata.indicator_pages
+      if (catalogue && typeof catalogue === 'object' && 'scalar_contracts' in catalogue) {
+        theme.metadata.scalar_contracts = catalogue.scalar_contracts
+      }
     }))
     const referenceUrl = '/data/territoires.json'
     let referenceResponse: Response

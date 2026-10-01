@@ -18,7 +18,7 @@
       "framing": "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.",
       "indicators": ["evolution_1968"],
       "figure": {
-        "family": "trajectory",
+        "family": "scalar",
         "indicator": "evolution_1968"
       },
       "reading": {
