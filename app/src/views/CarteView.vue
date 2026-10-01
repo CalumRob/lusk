@@ -246,7 +246,7 @@ watch(
 // The static payload remains the source for layer contracts; while its
 // registered value is being fetched (or has failed), that value is removed
 // from the map reader so the old number cannot masquerade as current data.
-const cohortEnabled = scalarCohortEnabled(import.meta.env as Record<string, string | undefined>)
+const cohortEnabled = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
 const cohortFacts = ref<Indicateur[] | null>(null)
 const cohortStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const registeredApiLayer = ref(false)
@@ -265,7 +265,7 @@ watch([selection, indicateurScalaireActif, niveauApi, payload, retryCohort], asy
   cohortFacts.value = null
   cohortStatus.value = 'idle'
   registeredApiLayer.value = false
-  if (!cohortEnabled || !theme || !indicator || !level || !currentPayload) return
+  if (!cohortEnabled.value || !theme || !indicator || !level || !currentPayload) return
   cohortStatus.value = 'loading'
   try {
     let metadata = cohortMetadata.get(theme)
@@ -300,7 +300,12 @@ const payloadCarte = computed(() => {
   const current = payload.value
   const indicator = indicateurScalaireActif.value
   const theme = selection.value
-  if (!current || !cohortEnabled || !theme || !indicator || !registeredApiLayer.value) return current
+  if (!current || !cohortEnabled.value || !theme || !indicator) return current
+  // Before the producer registry resolves, a scalar-looking selected layer is
+  // not proof that its static value is authoritative. Suppress it while the
+  // registration/read is pending or failed; restore the incumbent only after
+  // metadata proves this key is not registered for the active level.
+  if (!registeredApiLayer.value && cohortStatus.value === 'idle') return current
   const indicateurs = current.indicateurs.filter((row) => row.theme !== theme || row.key !== indicator)
   return { ...current, indicateurs: cohortStatus.value === 'ready' && cohortFacts.value
     ? [...indicateurs, ...cohortFacts.value]
@@ -490,10 +495,10 @@ const classesFond = computed(() =>
             :territoire-cible="demandeRecherche?.territoire ?? null"
             :requete-zoom="demandeRecherche?.requete ?? 0"
           />
-          <div v-if="registeredApiLayer && cohortStatus === 'loading' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte" role="status">
+          <div v-if="cohortEnabled && cohortStatus === 'loading' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte" role="status">
             <p class="carte-etat-texte">Chargement des valeurs de la couche…</p>
           </div>
-          <div v-else-if="registeredApiLayer && cohortStatus === 'error' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
+          <div v-else-if="cohortEnabled && cohortStatus === 'error' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
             <p class="carte-etat-texte">Impossible de charger les valeurs de la couche.</p>
             <button type="button" class="carte-etat-bouton" @click="retryCohort++">Réessayer</button>
           </div>

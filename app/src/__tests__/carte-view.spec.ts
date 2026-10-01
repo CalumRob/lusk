@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import CarteView from '../views/CarteView.vue'
 import { COULEUR_CONTOUR, COULEUR_NEUTRE } from '../carte/couleurs'
@@ -215,6 +215,38 @@ describe('CarteView — les états (chargement / erreur / fond indisponible)', (
 })
 
 describe('CarteView — la carte avec fond publié', () => {
+  it('masque le scalaire statique tant que le cohort est indisponible puis récupère via le retry', async () => {
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    const metadata = JSON.parse(await (await import('node:fs/promises')).readFile('../public/data/theme_demographie.json', 'utf8'))
+    let apiCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/data/')) return { ok: true, json: async () => metadata } as Response
+      apiCalls += 1
+      if (apiCalls === 1) return { ok: false, status: 503 } as Response
+      return { ok: true, json: async () => ({
+        indicator_id: 'densite', territory_type: 'commune', label: 'Densité de population', unit: 'hab/km²',
+        direction: 'high', comparison_facet: 'densite', completeness: 'dense_complete', content_version: 'v1',
+        territory_reference_version: 't1', observations: [{ territory_id: '22001', name: 'Commune A1', value: 9876,
+          status: 'measured', rang_epci: 1, rang_epci_n: 1, rang_dep: 1, rang_dep_n: 1, rang_reg: 1, rang_reg_n: 1,
+          sources: [{ source_id: metadata.indicator_pages.densite.sources[0], name: 'Source', vintage_id: 'v1', version: '2026', reference_date: null, publication_date: null }] }],
+      }) } as Response
+    }))
+    const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
+    await wrapper.findAll('button').find((button) => button.text().includes('Densité'))?.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').text()).toContain('Impossible de charger les valeurs')
+    expect(wrapper.find('[role="alert"]').text()).toContain('Réessayer')
+    const carte = maplibreMock.instancesCarteMaple.at(-1)
+    const joined = () => carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as { features: { properties: { territoire: string; valeur: number | null } }[] }
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).toBeNull()
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(apiCalls).toBe(2)
+    expect(joined().features.find((f) => f.properties.territoire === '22001')?.properties.valeur).toBe(9876)
+    expect(wrapper.find('.carte-legendes-titre').text()).toBe('Densité de population')
+    wrapper.unmount()
+  })
+
   it('renders the map + sidebar and the payload-driven ThemeTabs', async () => {
     const { wrapper } = await monter()
 
@@ -745,6 +777,8 @@ describe('CarteView — la carte neutre d’abord (T7, #303 — le wait-set de l
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   maplibreMock.instancesCarteMaple.length = 0
   maplibreMock.instancesPopups.length = 0
 })
