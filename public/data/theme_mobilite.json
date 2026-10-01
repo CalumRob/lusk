@@ -1022,6 +1022,44 @@
       }
     }
   },
+  "scalar_contracts": {
+    "surface_reseaux_routiers": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "surface_reseaux_routiers",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "offre_tc": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "offre_tc",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "bornes_recharge": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "bornes_recharge",
+      "missing_status": "not_available",
+      "counts_available": false
+    }
+  },
   "source_records": {
     "rp_logement_princ": {
       "dataset": "INSEE — Recensement de la population, logements (LOG T12)",

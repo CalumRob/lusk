@@ -237,6 +237,42 @@ test_that("demography scalars are projected from the canonical producer into ful
   expect_equal(retained_service, original_service$facts)
 })
 
+test_that("mobility scalar cohort preserves the three canonical scalar facts in complete snapshots", {
+  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_mobilite.parquet"))
+  ids <- c("surface_reseaux_routiers", "offre_tc", "bornes_recharge")
+  eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
+    territory_type=as.character(canonical$type)))
+  projection <- project_mobility_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
+  expect_setequal(projection$descriptors$indicator_id, ids)
+  for (id in ids) {
+    expected <- canonical[canonical$key == id, , drop=FALSE]
+    actual <- projection$facts[projection$facts$indicator_id == id, , drop=FALSE]
+    expect_equal(nrow(actual), nrow(expected))
+    expect_equal(actual$value[match(expected$territoire, actual$territory_id)], expected$value)
+    expect_equal(actual$status[match(expected$territoire, actual$territory_id)],
+      ifelse(is.na(expected$value), "not_available", "measured"))
+    expect_true(all(actual$support_count %in% NA_integer_))
+    expect_true(all(actual$denominator_count %in% NA_integer_))
+  }
+  source_by_id <- c(surface_reseaux_routiers="ocsge_reseaux_routiers", offre_tc="korrigo",
+    bornes_recharge="bornes-recharges")
+  for (id in ids) {
+    expected <- canonical[canonical$key == id, , drop=FALSE]
+    lineage <- projection$provenance[projection$provenance$indicator_id == id, , drop=FALSE]
+    expect_true(all(lineage$source_id == source_by_id[[id]]))
+    expect_true(all(lineage$vintage_id %in% paste(expected$vintage_version,
+      expected$vintage_date_reference, sep="/")))
+    expect_identical(projection$descriptors$unit[match(id, projection$descriptors$indicator_id)],
+      unique(expected$unit))
+  }
+  expect_true(all(c("region", "commune", "epci", "departement") %in% projection$facts$territory_type))
+  service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
+  snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
+  expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages") %in% snapshot$descriptors$indicator_id))
+  expect_equal(nrow(snapshot$descriptors), 22L)
+  expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
+})
+
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=0, status="measured", support_count=1L,

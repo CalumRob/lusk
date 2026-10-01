@@ -119,7 +119,7 @@ tryCatch({
     identical(DBI::dbGetQuery(connection, "SELECT value,status FROM scalar_observation WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1"), previous_fact),
     identical(DBI::dbGetQuery(connection, "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]], previous_marker))
 
-  # Exercise the real table-level Services + economy assembly against canonical
+  # Exercise the real table-level Services + economy + demography + mobility assembly against canonical
   # producer Parquet, then the existing publisher wrapper and PostgreSQL adapter.
   DBI::dbExecute(connection, "DROP TRIGGER reject_smoke_value ON scalar_observation")
   DBI::dbExecute(connection, "DROP FUNCTION reject_smoke_value()")
@@ -146,6 +146,9 @@ tryCatch({
       snapshot$projection$descriptors$indicator_id),
     DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] ==
       nrow(snapshot$projection$facts))
+  stopifnot(all(c("surface_reseaux_routiers", "offre_tc", "bornes_recharge",
+    "densite", "taille_menages", "effectifs_salaries", "chomage") %in%
+    snapshot$projection$descriptors$indicator_id))
 
   snapshot_sql <- function() list(
     facts=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id"),

@@ -15,6 +15,7 @@ test_that("le leaf SQL attend les faits, la référence finale et les vintages",
   expect_match(command, "publie_milieux", fixed = TRUE)
   expect_match(command, "publie_demographie", fixed = TRUE)
   expect_match(command, "publie_economie", fixed = TRUE)
+  expect_match(command, "publie_mobilite", fixed = TRUE)
   expect_match(command, "metadata_mobilite", fixed = TRUE)
   expect_match(command, "fusion_vintages", fixed = TRUE)
   expect_match(command, "publier_tables_service_depuis_parquet", fixed = TRUE)
@@ -27,4 +28,12 @@ test_that("un graphe sans Démographie ou en mode cron refuse l'opt-in DB", {
   expect_error(targets::tar_manifest(), "incluant les thèmes Mobilité, Économie/Emploi et Démographie")
   Sys.setenv(LUSK_THEMES = "mobilite", LUSK_MODE = "cron")
   expect_error(targets::tar_manifest(), "run local")
+})
+
+test_that("le leaf SQL refuse séparément un run sans faits canonique Mobilité", {
+  withr::local_dir(pkgload::pkg_path())
+  withr::local_envvar(LUSK_PUBLISH_DB = "1", LUSK_THEMES = "economie,demographie",
+                     LUSK_MODE = "full")
+  expect_error(targets::tar_manifest(),
+    "incluant les thèmes Mobilité, Économie/Emploi et Démographie")
 })
