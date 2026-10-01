@@ -237,9 +237,13 @@ test_that("demography scalars are projected from the canonical producer into ful
   expect_equal(retained_service, original_service$facts)
 })
 
-test_that("mobility scalar cohort preserves the three canonical scalar facts in complete snapshots", {
+test_that("mobility scalar cohort preserves all declared ordinary canonical scalar facts in complete snapshots", {
   canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_mobilite.parquet"))
-  ids <- c("surface_reseaux_routiers", "offre_tc", "bornes_recharge")
+  ids <- c("surface_reseaux_routiers", "offre_tc", "bornes_recharge",
+    "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
+    "tot_loss_t", "tot_loss_b", "avg_tot_car", "avg_tot_b", "avg_tot_t",
+    "avg_div_car", "avg_div_b", "avg_div_t", "iso_alimentation", "iso_sante",
+    "iso_administration", "iso_ecole", "iso_banque", "raccordement_tc")
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
   projection <- project_mobility_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
@@ -255,7 +259,13 @@ test_that("mobility scalar cohort preserves the three canonical scalar facts in 
     expect_true(all(actual$denominator_count %in% NA_integer_))
   }
   source_by_id <- c(surface_reseaux_routiers="ocsge_reseaux_routiers", offre_tc="korrigo",
-    bornes_recharge="bornes-recharges")
+    bornes_recharge="bornes-recharges", places_stationnement_velo_1000="stationnement-velo",
+    places_stationnement_voiture_1000="osm_reseaux", tot_loss_t="mobilite_snapshot",
+    tot_loss_b="mobilite_snapshot", avg_tot_car="mobilite_snapshot", avg_tot_b="mobilite_snapshot",
+    avg_tot_t="mobilite_snapshot", avg_div_car="mobilite_snapshot", avg_div_b="mobilite_snapshot",
+    avg_div_t="mobilite_snapshot", iso_alimentation="mobilite_snapshot", iso_sante="mobilite_snapshot",
+    iso_administration="mobilite_snapshot", iso_ecole="mobilite_snapshot", iso_banque="mobilite_snapshot",
+    raccordement_tc="matrice_temps_mairies")
   for (id in ids) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
     lineage <- projection$provenance[projection$provenance$indicator_id == id, , drop=FALSE]
@@ -269,7 +279,7 @@ test_that("mobility scalar cohort preserves the three canonical scalar facts in 
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
   expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages") %in% snapshot$descriptors$indicator_id))
-  expect_equal(nrow(snapshot$descriptors), 22L)
+  expect_equal(nrow(snapshot$descriptors), 38L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
 })
 
