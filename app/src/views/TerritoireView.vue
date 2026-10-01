@@ -70,6 +70,8 @@ const payloadModele = computed(() =>
 )
 const ficheScalaires = ref<import('@/payload/types').Indicateur[] | null>(null)
 const ficheScalairesStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const ficheScalairesEnregistres = ref<string[]>([])
+const ficheScalairesRegistrePresent = ref(false)
 const retryFicheScalaires = ref(0)
 let sequenceFicheScalaires = 0
 const payloadPourRendu = computed<Payload | null>(() => {
@@ -77,15 +79,12 @@ const payloadPourRendu = computed<Payload | null>(() => {
   if (!payload || !scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
   if (!theme || ficheScalairesStatus.value !== 'ready' || ficheScalaires.value === null) {
-    const metadata = theme ? payload.themeMetadata?.[theme] : undefined
-    const level = payload.territoires.find((territory) => territory.territoire === idRoute.value)?.type
-    const registered = metadata && level && 'scalar_contracts' in metadata ? indicateursScalairesPourNiveau(metadata, level) : []
+    const registered = ficheScalairesRegistrePresent.value && ficheScalairesEnregistres.value.length === 0
+      ? payload.indicateurs.filter((row) => row.theme === theme).map((row) => row.key)
+      : ficheScalairesEnregistres.value
     return registered.length ? { ...payload, indicateurs: payload.indicateurs.filter((row) => row.theme !== theme || !registered.includes(row.key)) } : payload
   }
-  const metadata = payload.themeMetadata?.[theme]
-  const level = payload.territoires.find((territory) => territory.territoire === idRoute.value)?.type
-  const registered = metadata && level && 'scalar_contracts' in metadata ? indicateursScalairesPourNiveau(metadata, level) : []
-  return { ...payload, indicateurs: remplacerFaitsScalaires(payload.indicateurs, ficheScalaires.value, registered) }
+  return { ...payload, indicateurs: remplacerFaitsScalaires(payload.indicateurs, ficheScalaires.value, ficheScalairesEnregistres.value) }
 })
 const erreurFiche = modeleTerritoire.erreur
 const chargementFiche = modeleTerritoire.chargement
@@ -156,6 +155,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
   async ([model, theme, code], _old, onCleanup) => {
     const request = ++sequenceFicheScalaires
     ficheScalaires.value = null
+    ficheScalairesEnregistres.value = []
+    ficheScalairesRegistrePresent.value = false
     ficheScalairesStatus.value = 'loading'
     if (!scalarCohortEnabled(import.meta.env) || !model || !theme) { ficheScalairesStatus.value = 'ready'; return }
     const data = model.themes[theme]
@@ -166,10 +167,13 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       const focal = model.territories.find((territory) => territory.territoire === code)
       if (!focal) throw new Error('Territoire focal absent')
       if (!('scalar_contracts' in data.metadata)) { ficheScalairesStatus.value = 'ready'; return }
+      ficheScalairesRegistrePresent.value = true
       const registered = indicateursScalairesPourNiveau(data.metadata, focal.type)
+      ficheScalairesEnregistres.value = registered
       if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
+      const scope = resolutionComparaison.value?.contexte?.scope
       const facts = await chargerCohortesScalaires(registered, theme, data.metadata, focal, focal.type, model.territories,
-        { department: focal.departement ?? undefined, epci: focal.epci ?? undefined })
+        { epci: scope?.kind === 'communes-epci' ? focal.epci ?? undefined : undefined })
       if (!cancelled && request === sequenceFicheScalaires) { ficheScalaires.value = facts; ficheScalairesStatus.value = 'ready' }
     } catch {
       if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'

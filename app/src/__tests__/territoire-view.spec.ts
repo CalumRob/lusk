@@ -275,7 +275,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
     const realModel = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => realModel))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', vi.fn(async () => realModel))
     expect(pending).toHaveLength(registered.length)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('0,92')
@@ -283,6 +283,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     const text = wrapper.get('[role="tabpanel"]').text()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/indicator-cohorts/'))).toHaveLength(registered.length)
+    const cohortUrls = fetchApi.mock.calls.map(([url]) => new URL(String(url), 'http://localhost'))
+      .filter((url) => url.pathname.includes('/indicator-cohorts/'))
+    expect(cohortUrls.every((url) => url.searchParams.get('epci_id') === published.territory.epci &&
+      !url.searchParams.has('department_id'))).toBe(true)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(text).toContain('987')
     expect(text).toContain('98 765 432')
@@ -311,6 +315,43 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     expect(disabled.text()).toContain('0,92')
     disabled.unmount()
+  })
+
+  it('renders a retryable error for malformed registration and recovers without showing static facts', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    published.themes.mobilite.theme_metadata.scalar_contracts = { avg_tot_t: { allowed_levels: 'commune' } }
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const indicator = String(input).split('/').at(-1)!.split('?')[0]!
+      const page = metadata.indicator_pages[indicator]
+      return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
+        unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
+        completeness: 'sparse', content_version: 'retry-v1', territory_reference_version: 'territories-v1',
+        observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
+          rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
+          sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
+            reference_date: null, publication_date: null }] }] }), { status: 200 })
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(wrapper.find('[role="alert"]').text()).toContain('pas disponibles')
+    expect(wrapper.text()).not.toContain('0,92')
+    expect(fetchApi).not.toHaveBeenCalled()
+
+    model.themes.mobilite!.metadata.scalar_contracts = metadata.scalar_contracts
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(fetchApi).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('987 654 321')
+    expect(wrapper.text()).not.toContain('0,92')
+    wrapper.unmount()
   })
 
   it.each([
