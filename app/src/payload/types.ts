@@ -837,6 +837,8 @@ export interface ThemeMetadata {
   indicator_caveats?: Record<string, string>
   /** Optional map-layer eligibility, keyed by indicator; omitted entries stay eligible. */
   map_layers?: Record<string, boolean>
+  /** Producer-owned eligibility for scalar cohort serving; absent means incumbent static facts. */
+  scalar_contracts?: unknown
 }
 
 export interface SourceRecord {

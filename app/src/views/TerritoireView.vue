@@ -42,6 +42,7 @@ import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApiFacts'
+import { chargerCohortesScalaires, indicateursScalairesPourNiveau, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { MobiliteAccessFacts, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
@@ -67,10 +68,29 @@ const modeleTerritoire = useTerritoryReadModel(typeRoute, idRoute, computed(() =
 const payloadModele = computed(() =>
   modeleTerritoire.model.value ? payloadDepuisModeleTerritoire(modeleTerritoire.model.value) : null,
 )
-const payloadPourRendu = computed<Payload | null>(() => payloadModele.value)
+const ficheScalaires = ref<import('@/payload/types').Indicateur[] | null>(null)
+const ficheScalairesStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const retryFicheScalaires = ref(0)
+let sequenceFicheScalaires = 0
+const payloadPourRendu = computed<Payload | null>(() => {
+  const payload = payloadModele.value
+  if (!payload || !scalarCohortEnabled(import.meta.env)) return payload
+  const theme = selection.value
+  if (!theme || ficheScalairesStatus.value !== 'ready' || ficheScalaires.value === null) {
+    const metadata = theme ? payload.themeMetadata?.[theme] : undefined
+    const level = payload.territoires.find((territory) => territory.territoire === idRoute.value)?.type
+    const registered = metadata && level && 'scalar_contracts' in metadata ? indicateursScalairesPourNiveau(metadata, level) : []
+    return registered.length ? { ...payload, indicateurs: payload.indicateurs.filter((row) => row.theme !== theme || !registered.includes(row.key)) } : payload
+  }
+  const metadata = payload.themeMetadata?.[theme]
+  const level = payload.territoires.find((territory) => territory.territoire === idRoute.value)?.type
+  const registered = metadata && level && 'scalar_contracts' in metadata ? indicateursScalairesPourNiveau(metadata, level) : []
+  return { ...payload, indicateurs: remplacerFaitsScalaires(payload.indicateurs, ficheScalaires.value, registered) }
+})
 const erreurFiche = modeleTerritoire.erreur
 const chargementFiche = modeleTerritoire.chargement
 const rechargerFiche = modeleTerritoire.recharger
+
 
 const territoire = computed(() =>
   payloadPourRendu.value ? trouverTerritoire(payloadPourRendu.value, idRoute.value) : null,
@@ -132,6 +152,31 @@ const selection = computed<Theme | null>(() => {
   return THEME_DEFAUT
 })
 
+watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires],
+  async ([model, theme, code], _old, onCleanup) => {
+    const request = ++sequenceFicheScalaires
+    ficheScalaires.value = null
+    ficheScalairesStatus.value = 'loading'
+    if (!scalarCohortEnabled(import.meta.env) || !model || !theme) { ficheScalairesStatus.value = 'ready'; return }
+    const data = model.themes[theme]
+    if (!data) { ficheScalairesStatus.value = 'ready'; return }
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    try {
+      const focal = model.territories.find((territory) => territory.territoire === code)
+      if (!focal) throw new Error('Territoire focal absent')
+      if (!('scalar_contracts' in data.metadata)) { ficheScalairesStatus.value = 'ready'; return }
+      const registered = indicateursScalairesPourNiveau(data.metadata, focal.type)
+      if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
+      const facts = await chargerCohortesScalaires(registered, theme, data.metadata, focal, focal.type, model.territories,
+        { department: focal.departement ?? undefined, epci: focal.epci ?? undefined })
+      if (!cancelled && request === sequenceFicheScalaires) { ficheScalaires.value = facts; ficheScalairesStatus.value = 'ready' }
+    } catch {
+      if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'
+    }
+  }, { immediate: true })
+function retryScalaires(): void { retryFicheScalaires.value++ }
+
 const echelons = computed(() =>
   payloadPourRendu.value ? echelleContexte(payloadPourRendu.value, idRoute.value) : [],
 )
@@ -158,6 +203,7 @@ const classesFond = computed(() =>
  */
 const variante = computed(() => varianteDeUrl(route.query.variant))
 const prototypeActif = import.meta.env.DEV
+const scalarCohortActif = scalarCohortEnabled(import.meta.env)
 /** [PROTOTYPE #531/#552] Cahier variants own the editorial Mobilité surface. */
 const prototypeCahierMobilite = computed(
   () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
@@ -368,6 +414,10 @@ watch(
     </div>
 
     <template v-if="typeValide && !erreurFiche">
+      <div v-if="scalarCohortActif && ficheScalairesStatus === 'error'" class="etat-erreur" role="alert">
+        <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="retryScalaires">Réessayer</button>
+      </div>
       <div class="fiche-corps">
         <!-- Le contenu attend l'unique modèle atomique de la fiche : aucun
              panneau ne prétend avoir ses données pendant que la réponse pend. -->

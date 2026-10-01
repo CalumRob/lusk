@@ -4,6 +4,7 @@ import { PayloadError } from './validate'
 export interface ScalarCohort {
   indicator_id: string; territory_type: TerritoireType; label: string; unit: string
   direction: 'high' | 'low'; comparison_facet: string; completeness: string; content_version: string
+  territory_reference_version: string
   observations: Array<{ territory_id: string; name: string; value: number | null; status: string;
     rang_epci: number | null; rang_epci_n: number | null; rang_dep: number | null; rang_dep_n: number | null;
     rang_reg: number | null; rang_reg_n: number | null;
@@ -46,6 +47,7 @@ export function choisirFocalCohorte(territories: Territoire[], level: Territoire
 
 export async function chargerCohorteScalaire(indicator: string, theme: Theme, page: IndicatorPageMetadata,
   focal: Territoire, level: TerritoireType, territories: Territoire[], scope: { department?: string; epci?: string },
+  identity?: { contentVersion?: string; territoryReferenceVersion?: string },
 ): Promise<Indicateur[]> {
   const query = new URLSearchParams({ scope_level: level })
   if (level === 'commune' && scope.department) query.set('department_id', scope.department)
@@ -60,10 +62,15 @@ export async function chargerCohorteScalaire(indicator: string, theme: Theme, pa
   catch { throw new PayloadError('validation', path, 'Réponse illisible de l’API de l’indicateur.') }
   if (!read || typeof read !== 'object' || read.indicator_id !== indicator || read.territory_type !== level ||
       typeof read.content_version !== 'string' || !read.content_version ||
+      typeof read.territory_reference_version !== 'string' || !read.territory_reference_version ||
       read.label !== page.label || read.unit !== page.unit || read.direction !== page.direction ||
       read.comparison_facet !== (page.comparison?.indicator ?? indicator) ||
       !['sparse', 'dense_complete'].includes(read.completeness) || !Array.isArray(read.observations)) {
     throw new PayloadError('validation', path, 'Le contrat du cohort scalaire est incompatible avec la page déclarée.')
+  }
+  if (identity) {
+    identity.contentVersion = read.content_version
+    identity.territoryReferenceVersion = read.territory_reference_version
   }
   const refs = new Map(territories.filter((t) => t.type === level).map((t) => [t.territoire, t]))
   const seen = new Set<string>()
@@ -108,4 +115,50 @@ export async function chargerCohorteScalaire(indicator: string, theme: Theme, pa
   })
   if (!seen.has(focal.territoire)) throw new PayloadError('validation', path, 'Le territoire focal est absent du cohort annoncé.')
   return facts
+}
+
+/** Producer registration may be level-specific; unsupported levels stay on the incumbent path. */
+export function indicateursScalairesPourNiveau(raw: unknown, level: TerritoireType): string[] {
+  const registered = indicateursScalairesEnregistres(raw)
+  const declarations = (raw as { scalar_contracts: unknown }).scalar_contracts
+  if (Array.isArray(declarations)) return registered
+  return registered.filter((indicator) => {
+    const contract = (declarations as Record<string, unknown>)[indicator]
+    if (typeof contract !== 'object' || contract === null || !('allowed_levels' in contract) ||
+        !Array.isArray(contract.allowed_levels) || !contract.allowed_levels.every((value) =>
+          value === 'commune' || value === 'epci' || value === 'departement' || value === 'region')) {
+      throw new PayloadError('validation', 'theme metadata', `Les niveaux autorisés de « ${indicator} » sont mal formés.`)
+    }
+    return contract.allowed_levels.includes(level)
+  })
+}
+
+/** Acquire the producer-registered scalar facts for one selected theme together.
+ * Requests are deduplicated by the caller's registration contract and run in
+ * parallel; this deliberately remains one bounded cohort request per key. */
+export async function chargerCohortesScalaires(
+  indicators: string[], theme: Theme, metadata: ThemeMetadata, focal: Territoire,
+  level: TerritoireType, territories: Territoire[], scope: { department?: string; epci?: string },
+): Promise<Indicateur[]> {
+  validerEnregistrementScalaires(metadata, indicators)
+  const identities: Array<{ contentVersion?: string; territoryReferenceVersion?: string }> = []
+  const cohorts = await Promise.all(indicators.map((indicator) => {
+    const page = metadata.indicator_pages?.[indicator]
+    if (!page) throw new PayloadError('validation', 'theme metadata', `Page scalaire « ${indicator} » absente.`)
+    const identity: { contentVersion?: string; territoryReferenceVersion?: string } = {}
+    identities.push(identity)
+    return chargerCohorteScalaire(indicator, theme, page, focal, level, territories, scope, identity)
+  }))
+  const versions = new Set(identities.map((identity) => identity.contentVersion ?? ''))
+  const territoryVersions = new Set(identities.map((identity) => identity.territoryReferenceVersion ?? ''))
+  if (versions.size > 1 || versions.has('') || territoryVersions.size > 1 || territoryVersions.has('')) {
+    throw new PayloadError('validation', 'indicator cohorts', 'Les cohortes ne partagent pas la même version de publication et de référentiel territorial.')
+  }
+  return cohorts.flat()
+}
+
+/** Replace only registered facts in a selected theme; all other payload data is untouched. */
+export function remplacerFaitsScalaires(themeRows: Indicateur[], replacement: Indicateur[], registered: string[]): Indicateur[] {
+  const keys = new Set(registered)
+  return [...themeRows.filter((row) => !(row.theme === replacement[0]?.theme && keys.has(row.key))), ...replacement]
 }
