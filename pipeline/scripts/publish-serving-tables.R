@@ -128,6 +128,10 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   }
 } else if (args[[1L]] == "--check") {
   tables <- preparer_tables_service(file.path("..", "public", "data"))
+  scalar_projection <- project_service_scalar_snapshot(tables, file.path("..", "public", "data"))$projection
+  cat("Validated complete scalar snapshot:", nrow(scalar_projection$facts), "facts across",
+      nrow(scalar_projection$descriptors), "registered indicators; version",
+      scalar_content_version(scalar_projection), "\n")
   print(data.frame(table_name = names(tables$tables),
                    rows = vapply(tables$tables, nrow, integer(1)),
                    content_version = unname(tables$versions)))

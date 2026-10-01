@@ -156,6 +156,32 @@
       ]
     }
   },
+  "scalar_contracts": {
+    "effectifs_salaries": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "effectifs_salaries",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "chomage": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "chomage",
+      "missing_status": "not_available",
+      "counts_available": false
+    }
+  },
   "source_records": {
     "flores_a88": {
       "dataset": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",

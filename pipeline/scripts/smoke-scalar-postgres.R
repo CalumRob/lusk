@@ -12,6 +12,11 @@ stopifnot(all(vapply(config, nzchar, logical(1))),
           grepl("^[0-9]+$", config$PORT))
 if (!requireNamespace("RPostgres", quietly=TRUE) || !requireNamespace("DBI", quietly=TRUE))
   stop("DBI and RPostgres are required")
+passfile <- Sys.getenv("PGPASSFILE", unset="")
+if (!nzchar(passfile) || !file.exists(passfile) ||
+    startsWith(tolower(normalizePath(passfile, winslash="/")),
+      tolower(normalizePath("..", winslash="/"))))
+  stop("PGPASSFILE must point to the existing private libpq file outside the repository", call.=FALSE)
 
 connection <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
@@ -113,7 +118,107 @@ tryCatch({
     DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] == previous_rows,
     identical(DBI::dbGetQuery(connection, "SELECT value,status FROM scalar_observation WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1"), previous_fact),
     identical(DBI::dbGetQuery(connection, "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]], previous_marker))
-  cat("Scalar PostgreSQL smoke passed; schema:", schema, "\n")
+
+  # Exercise the real table-level Services + economy assembly against canonical
+  # producer Parquet, then the existing publisher wrapper and PostgreSQL adapter.
+  DBI::dbExecute(connection, "DROP TRIGGER reject_smoke_value ON scalar_observation")
+  DBI::dbExecute(connection, "DROP FUNCTION reject_smoke_value()")
+  DBI::dbExecute(connection, "DELETE FROM scalar_observation_source")
+  DBI::dbExecute(connection, "DELETE FROM scalar_observation")
+  DBI::dbExecute(connection, "DELETE FROM scalar_descriptor_source")
+  DBI::dbExecute(connection, "DELETE FROM scalar_descriptor")
+  DBI::dbExecute(connection, "DELETE FROM table_publication WHERE table_name='scalar_observation'")
+  DBI::dbExecute(connection, "DELETE FROM territory_reference")
+  service_data <- preparer_tables_service(file.path("..", "public", "data"))
+  snapshot <- project_service_scalar_snapshot(service_data, file.path("..", "public", "data"))
+  DBI::dbWriteTable(connection, "service_registry", service_data$tables$service_registry,
+    append=TRUE, row.names=FALSE)
+  refs <- service_data$tables$territory_reference
+  DBI::dbWriteTable(connection, "territory_reference", refs, append=TRUE, row.names=FALSE)
+  reference_version <- service_data$versions[["territory_reference"]]
+  DBI::dbExecute(connection, "INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,$2) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,published_at=now()",
+    params=list(reference_version, nrow(refs)))
+  published <- publish_service_share_scalars(connection, service_data$scalar_access,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories,
+    additional_projections=snapshot$additional_projections)
+  stopifnot(published$changed,
+    setequal(DBI::dbGetQuery(connection, "SELECT indicator_id FROM scalar_descriptor")$indicator_id,
+      snapshot$projection$descriptors$indicator_id),
+    DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] ==
+      nrow(snapshot$projection$facts))
+
+  snapshot_sql <- function() list(
+    facts=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id"),
+    descriptors=DBI::dbGetQuery(connection, "SELECT * FROM scalar_descriptor ORDER BY indicator_id"),
+    sources=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation_source ORDER BY indicator_id,territory_id,source_id,vintage_id"),
+    marker=DBI::dbGetQuery(connection, "SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='scalar_observation'"))
+  committed <- snapshot_sql()
+  # The old service-only projection must fail closed and leave both cohorts and
+  # their marker untouched; the complete unchanged retry is a no-op.
+  partial <- try(publish_service_share_scalars(connection, service_data$scalar_access,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories), silent=TRUE)
+  stopifnot(inherits(partial, "try-error"), identical(snapshot_sql(), committed))
+  no_op <- publish_service_share_scalars(connection, service_data$scalar_access,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories,
+    additional_projections=snapshot$additional_projections)
+  stopifnot(!no_op$changed, identical(snapshot_sql(), committed))
+
+  # Inject failure after DELETE/reinsert begins; PostgreSQL transaction rollback
+  # must preserve facts, descriptors, provenance, content version, and timestamp.
+  DBI::dbExecute(connection, "CREATE FUNCTION reject_combined_smoke_value() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.value=-999999 THEN RAISE EXCEPTION 'injected combined scalar smoke failure'; END IF; RETURN NEW; END $$")
+  DBI::dbExecute(connection, "CREATE TRIGGER reject_combined_smoke_value BEFORE INSERT ON scalar_observation FOR EACH ROW EXECUTE FUNCTION reject_combined_smoke_value()")
+  changed <- service_data$scalar_access
+  changed$value[[1L]] <- -999999
+  failed_combined <- try(publish_service_share_scalars(connection, changed,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories,
+    additional_projections=snapshot$additional_projections), silent=TRUE)
+  stopifnot(inherits(failed_combined, "try-error"), identical(snapshot_sql(), committed))
+  DBI::dbExecute(connection, "DROP TRIGGER reject_combined_smoke_value ON scalar_observation")
+  DBI::dbExecute(connection, "DROP FUNCTION reject_combined_smoke_value()")
+
+  # Execute the same registered-service ID membership shape used by the API;
+  # economy keys coexist in the table but cannot leak into service decoding.
+  service_ids <- DBI::dbGetQuery(connection,
+    "SELECT DISTINCT 'share_' || service || '_' || mode AS indicator_id FROM service_registry CROSS JOIN unnest(ARRAY['t','b','c']::text[]) AS mode")$indicator_id
+  service_fact_ids <- DBI::dbGetQuery(connection,
+    "SELECT DISTINCT o.indicator_id FROM scalar_observation o WHERE o.indicator_id=ANY(SELECT 'share_' || service || '_' || mode FROM service_registry CROSS JOIN unnest(ARRAY['t','b','c']::text[]) AS mode)")$indicator_id
+  stopifnot(setequal(service_ids, service_data$scalar_metadata$indicator_keys[
+    service_data$scalar_metadata$indicator_keys %in% service_ids]),
+    setequal(service_fact_ids, service_ids),
+    !any(c("effectifs_salaries", "chomage") %in% service_fact_ids))
+
+  # Run the actual FastAPI scalar route against this same owned schema using the
+  # separate read-only rehearsal role, rather than merely checking SQL text.
+  DBI::dbExecute(connection, paste0("GRANT USAGE ON SCHEMA ",
+    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
+  DBI::dbExecute(connection, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
+    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
+  economy_fact <- snapshot$projection$facts[
+    snapshot$projection$facts$indicator_id == "effectifs_salaries" &
+      snapshot$projection$facts$territory_type == "commune" &
+      snapshot$projection$facts$status == "measured", , drop=FALSE][1L, , drop=FALSE]
+  Sys.setenv(LUSK_SCALAR_API_TEST_TERRITORY=economy_fact$territory_id[[1L]],
+    LUSK_SCALAR_API_TEST_INDICATOR=economy_fact$indicator_id[[1L]],
+    LUSK_SCALAR_API_TEST_VALUE=as.character(economy_fact$value[[1L]]),
+    LUSK_SCALAR_API_TEST_SCHEMA=schema,
+    PGPASSFILE=passfile,
+    DATABASE_URL="postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract")
+  api_code <- paste(c(
+    "import os, sys; sys.path.insert(0, '..')",
+    "from fastapi.testclient import TestClient",
+    "from api.main import app",
+    "schema=os.environ['LUSK_SCALAR_API_TEST_SCHEMA']",
+    "os.environ['PGOPTIONS']='-c search_path='+schema",
+    "with TestClient(app) as client:",
+    " r=client.get('/api/territories/commune/'+os.environ['LUSK_SCALAR_API_TEST_TERRITORY']+'/indicators/'+os.environ['LUSK_SCALAR_API_TEST_INDICATOR'])",
+    " assert r.status_code==200, r.text",
+    " d=r.json(); assert d['indicator_id']==os.environ['LUSK_SCALAR_API_TEST_INDICATOR']",
+    " assert d['value']==float(os.environ['LUSK_SCALAR_API_TEST_VALUE'])",
+    " assert d['sources'] and d['content_version']"
+  ), collapse="\n")
+  api_status <- system2("python", c("-c", shQuote(api_code, type="cmd")))
+  stopifnot(identical(api_status, 0L))
+  cat("Scalar PostgreSQL and combined snapshot smoke passed; schema:", schema, "\n")
 }, error=function(e) {
   smoke_failure <<- conditionMessage(e)
   stop(e)

@@ -204,6 +204,10 @@ def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypat
             service, code = indicator.removeprefix("share_").rsplit("_", 1)
             source_rows.append((indicator, territory_id, value, "measured", indicator,
                 "high", "snapshot", "Snapshot", "2024", None, None))
+    # The shared scalar table also contains non-service members of the batch.
+    source_rows.extend((indicator, "22001", value, "measured", indicator, "low",
+        "economy", "Economy source", "2023", None, None)
+        for indicator, value in (("effectifs_salaries", 123.0), ("chomage", .07)))
 
     class Result:
         def __init__(self, row=None, rows=None): self.row, self.rows = row, rows or []
@@ -224,7 +228,10 @@ def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypat
                 return Result(("22001", "Example", "commune", "EPCI-1", "D", "Dense"))
             if "scalar.reference_content_version" in query:
                 return Result(("scalar-v1", "territory-v1", "territory-v1") if self.current else None)
-            if "FROM scalar_observation o" in query: return Result(rows=source_rows)
+            if "FROM scalar_observation o" in query:
+                # Model the registered service-id subquery in the SQL above.
+                allowed = set(keys)
+                return Result(rows=[row for row in source_rows if row[0] in allowed])
             raise AssertionError(query)
 
     class Connections:
@@ -236,12 +243,14 @@ def test_scalar_services_reader_preserves_legacy_rows_and_fails_closed(monkeypat
     scalar_response = compare(new_repo.read("22001", "bretagne"))
     scalar_sql = next(query for query in new_repo.connections.conn.queries
                       if "FROM scalar_observation o" in query)
-    # psycopg parameter style requires doubled percent signs in a query string
-    # even when the percent is part of a SQL LIKE literal.
-    assert "LIKE 'share!_%%' ESCAPE '!'" in scalar_sql
+    # Only metadata-registered service indicator IDs are parsed as service/mode.
+    assert "'share_' || service || '_' || mode" in scalar_sql
+    assert "FROM service_registry" in scalar_sql
     assert "ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id" in scalar_sql
     legacy_rows = []
     for row in source_rows:
+        if row[0] not in keys:
+            continue
         service, mode_code = row[0].removeprefix("share_").rsplit("_", 1)
         legacy_rows.append({"territory_id": row[1], "service": service,
             "mode": {"t": "walk_transit", "b": "bike", "c": "car"}[mode_code],

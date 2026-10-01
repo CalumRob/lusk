@@ -1218,8 +1218,9 @@ themes_fusion <- if (!nzchar(selection)) {
 # seul ce LEAF a cue=always, pas les calculs coûteux en amont.
 publication_service <- list()
 if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
-  if (identical(MODE_RUN, "cron") || !"mobilite" %in% names(THEMES_RUN)) {
-    stop("LUSK_PUBLISH_DB exige un run local incluant le thème Mobilité.",
+  if (identical(MODE_RUN, "cron") ||
+      !all(c("mobilite", "economie") %in% names(THEMES_RUN))) {
+    stop("LUSK_PUBLISH_DB exige un run local incluant les thèmes Mobilité et Économie/Emploi; cron interdit.",
          call. = FALSE)
   }
   derniere_publication <- as.name(paste0(
@@ -1229,6 +1230,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
     "publie_tables_service",
     bquote({
       .(derniere_publication)
+      publie_economie
       metadata_mobilite
       fusion_vintages
       publier_tables_service_depuis_parquet(.(SORTIE_RUN))
