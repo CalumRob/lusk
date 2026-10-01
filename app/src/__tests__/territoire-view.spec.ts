@@ -113,7 +113,7 @@ async function monter(
 
 describe('TerritoireView — modèle atomique par territoire', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
   it('keeps the building figures without exposing an interactive peer selector', async () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
@@ -551,6 +551,23 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E',
     )
     expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', variant: 'E' })
+  })
+
+  it('removes only the obsolete variant query in production and preserves comparison and unrelated URL state', async () => {
+    vi.stubEnv('DEV', false)
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci&lecture=partage',
+      vi.fn(async () => modeleAvecContextesComparaison()),
+    )
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({
+      theme: 'mobilite',
+      comparaison: 'epci',
+      lecture: 'partage',
+    })
+    expect(wrapper.find('.presentation-editorial').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it.each(['densite', 'epci', 'bretagne'] as const)(

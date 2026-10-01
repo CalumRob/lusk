@@ -23,7 +23,6 @@
   --editorial-margin: #a44f51;
   --editorial-margin-soft: rgb(164 79 81 / 58%);
   --editorial-margin-offset: 104px;
-  --editorial-reading-width: 76ch;
   --editorial-page-inset: clamp(1.125rem, 5vw, 4rem);
   --editorial-section-gap: var(--space-8);
   --editorial-rule: color-mix(in srgb, var(--editorial-margin) 58%, transparent);
