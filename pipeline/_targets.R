@@ -1232,6 +1232,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
     "publie_tables_service",
     bquote({
       .(derniere_publication)
+      publie_mobilite
       publie_economie
       publie_demographie
       metadata_mobilite

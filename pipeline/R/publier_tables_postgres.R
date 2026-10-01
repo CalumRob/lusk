@@ -207,12 +207,17 @@ project_demography_scalar_cohort <- function(sortie, eligible_territories) {
   project_theme_scalar_cohort(sortie, eligible_territories, "demographie")
 }
 
+project_mobility_scalar_cohort <- function(sortie, eligible_territories) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "mobilite")
+}
+
 project_service_scalar_snapshot <- function(donnees, sortie) {
   service <- project_service_share_scalars(donnees$scalar_access,
     donnees$scalar_metadata, donnees$scalar_eligible_territories)
   economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   demography <- project_demography_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  additional <- list(economy, demography)
+  mobility <- project_mobility_scalar_cohort(sortie, donnees$scalar_eligible_territories)
+  additional <- list(economy, demography, mobility)
   list(projection=assemble_scalar_snapshot(service, additional),
     additional_projections=additional)
 }

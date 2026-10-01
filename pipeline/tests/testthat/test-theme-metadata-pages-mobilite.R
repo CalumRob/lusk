@@ -133,6 +133,9 @@ test_that("publier_theme_metadata : les vingt pages passent le seam et survivent
     expect_identical(page$family, "scalar", info = cle)
     expect_true(page$direction %in% c("high", "low"), info = cle)
   }
+  for (id in c("surface_reseaux_routiers", "offre_tc", "bornes_recharge")) {
+    expect_identical(relu$scalar_contracts[[id]], meta$scalar_contracts[[id]])
+  }
 })
 
 test_that("parité pages scalaires ↔ faits committés : niveaux publiés, unité honnête, direction du calcul (#461)", {
