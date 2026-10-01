@@ -5,7 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import MapExplorer from '../components/carte/MapExplorer.vue'
 import { COULEUR_NEUTRE, LARGEUR_CONTOUR } from '../carte/couleurs'
@@ -20,6 +20,7 @@ import {
   vintagesFixture,
 } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
+import { chargerCohorteScalaire } from '../payload/scalarCohort'
 import { routes } from '../router'
 import { maplibreMock } from './setup'
 import type { Masques } from '../geo/types'
@@ -227,6 +228,40 @@ describe('MapExplorer — the GeoJSON mask layers', () => {
 })
 
 describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
+  it('reads a scalar cohort row through the production GeoJSON join and keeps that value for hover and popup', async () => {
+    const original = indicateursDemographieFixture.find((row) => row.territoire === '22001' && row.key === 'densite' && row.detail === null)!
+    const page = { indicator: 'densite', label: 'Densité de population', unit: original.unit,
+      direction: 'high', comparison: { indicator: 'densite' }, sources: ['src'], levels: ['commune'] } as never
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      indicator_id: 'densite', territory_type: 'commune', label: 'Densité de population', unit: original.unit,
+      direction: 'high', comparison_facet: 'densite', completeness: 'dense_complete', content_version: 'v1',
+      territory_reference_version: 't1', observations: [{ territory_id: '22001', name: 'Commune A1', value: 9876,
+        status: 'measured', rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null,
+        rang_reg: null, rang_reg_n: null, sources: [{ source_id: 'src', name: 'Source API', vintage_id: 'v1', version: '2026',
+          reference_date: null, publication_date: null }] }],
+    }) }))
+    const facts = await chargerCohorteScalaire('densite', 'demographie', page,
+      territoiresFixture.find((territory) => territory.territoire === '22001')!, 'commune', territoiresFixture, {})
+    const { carte } = await monter({
+      theme: 'demographie',
+      couche: coucheDensite,
+      payload: { ...payload, indicateurs: facts },
+    })
+    const data = carte?.sourcesSetData['masques-communes']?.mock.calls.at(-1)?.[0] as {
+      features: { properties: { territoire: string; valeur: number | null } }[]
+    }
+    expect(data.features.find((item) => item.properties.territoire === '22001')?.properties.valeur).toBe(9876)
+
+    vi.spyOn(carte!, 'queryRenderedFeatures').mockReturnValue([{
+      properties: { territoire: '22001', valeur: 9876 },
+    }] as never)
+    carte?.fire('mousemove', { point: {}, lngLat: { lng: 0, lat: 0 } })
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('9 876')
+    carte?.fire('click', { point: {}, lngLat: { lng: 0, lat: 0 } })
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('9 876')
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('1er/2')
+  })
+
   it('paints the neutral mask fill in Aperçu (no theme, no layer)', async () => {
     const { carte } = await monter()
 
