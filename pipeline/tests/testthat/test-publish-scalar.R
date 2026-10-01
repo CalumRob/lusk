@@ -211,6 +211,32 @@ test_that("economy scalar projector retains canonical units, levels, and source 
   expect_false("region" %in% unlist(metadata$indicator_pages$effectifs_salaries$levels))
 })
 
+test_that("demography scalars are projected from the canonical producer into full snapshots", {
+  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_demographie.parquet"))
+  eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
+    territory_type=as.character(canonical$type)))
+  projection <- project_demography_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
+  expect_setequal(projection$descriptors$indicator_id, c("densite", "taille_menages"))
+  for (id in projection$descriptors$indicator_id) {
+    expected <- canonical[canonical$key == id, , drop=FALSE]
+    actual <- projection$facts[projection$facts$indicator_id == id, , drop=FALSE]
+    expect_setequal(paste(actual$territory_id, actual$territory_type), paste(expected$territoire, expected$type))
+    expect_equal(actual$value[match(expected$territoire, actual$territory_id)], expected$value)
+    expect_true(all(is.na(actual$support_count) & is.na(actual$denominator_count)))
+  }
+  expect_false(any(projection$descriptors$indicator_id %in% c("structure_age", "evolution_1968")))
+  service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
+  snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))
+  original_service <- project_service_share_scalars(service_inputs$scalar_access,
+    service_inputs$scalar_metadata, service_inputs$scalar_eligible_territories)
+  expect_equal(sum(snapshot$projection$facts$indicator_id %in% c("densite", "taille_menages")), nrow(projection$facts))
+  expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages") %in%
+    snapshot$projection$descriptors$indicator_id))
+  retained_service <- snapshot$projection$facts[snapshot$projection$facts$indicator_id %in% original_service$descriptors$indicator_id, , drop=FALSE]
+  rownames(retained_service) <- NULL
+  expect_equal(retained_service, original_service$facts)
+})
+
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=0, status="measured", support_count=1L,

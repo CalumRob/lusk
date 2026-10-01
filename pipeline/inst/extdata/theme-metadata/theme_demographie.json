@@ -86,7 +86,7 @@
     "indicator": "densite",
     "label": "Densité de population",
     "definition": "Nombre d’habitants par kilomètre carré.",
-    "unit": "hab./km²",
+    "unit": "hab/km²",
     "calculation": "Population municipale divisée par la superficie.",
     "direction": "high",
     "caveats": "La superficie est celle du territoire.",
@@ -129,6 +129,10 @@
     "levels": ["commune", "epci", "departement"],
     "sources": ["menages"]
   }},
+  "scalar_contracts": {
+    "densite": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "densite", "missing_status": "not_available", "counts_available": false },
+    "taille_menages": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "taille_menages", "missing_status": "not_available", "counts_available": false }
+  },
   "source_records": {
     "serie_historique": {
       "dataset": "INSEE — Série historique du recensement",

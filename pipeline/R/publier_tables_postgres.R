@@ -180,15 +180,16 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
            finally = DBI::dbDisconnect(conn))
 }
 
-project_economy_scalar_cohort <- function(sortie, eligible_territories) {
-  path <- file.path(sortie, "indicateurs_economie.parquet")
-  if (!file.exists(path)) stop("Scalar snapshot incomplet : Parquet canonique économie absent : ", path, call.=FALSE)
-  metadata_path <- file.path("inst", "extdata", "theme-metadata", "theme_economie.json")
-  if (!file.exists(metadata_path)) stop("Économie indicator metadata is unavailable: ", metadata_path, call.=FALSE)
+project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
+  path <- file.path(sortie, paste0("indicateurs_", theme, ".parquet"))
+  if (!file.exists(path)) stop("Scalar snapshot incomplet : Parquet canonique ", theme, " absent : ", path, call.=FALSE)
+  metadata_path <- file.path("inst", "extdata", "theme-metadata", paste0("theme_", theme, ".json"))
+  if (!file.exists(metadata_path)) metadata_path <- file.path(pkgload::pkg_path(), metadata_path)
+  if (!file.exists(metadata_path)) stop("Theme indicator metadata is unavailable: ", metadata_path, call.=FALSE)
   metadata <- jsonlite::fromJSON(metadata_path, simplifyVector=FALSE)
   rows <- nanoparquet::read_parquet(path)
   ids <- names(metadata$scalar_contracts)
-  if (!length(ids)) stop("Economy producer has no declared scalar serving contracts", call.=FALSE)
+  if (!length(ids)) stop("Theme producer has no declared scalar serving contracts: ", theme, call.=FALSE)
   rows <- data.frame(territory_id=as.character(rows$territoire),
     territory_type=as.character(rows$type), indicator_id=as.character(rows$key),
     value=as.numeric(rows$value), unit=as.character(rows$unit),
@@ -198,11 +199,20 @@ project_economy_scalar_cohort <- function(sortie, eligible_territories) {
   project_scalar_canonical_rows(rows, metadata, ids, eligible_territories)
 }
 
+project_economy_scalar_cohort <- function(sortie, eligible_territories) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "economie")
+}
+
+project_demography_scalar_cohort <- function(sortie, eligible_territories) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "demographie")
+}
+
 project_service_scalar_snapshot <- function(donnees, sortie) {
   service <- project_service_share_scalars(donnees$scalar_access,
     donnees$scalar_metadata, donnees$scalar_eligible_territories)
   economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  additional <- list(economy)
+  demography <- project_demography_scalar_cohort(sortie, donnees$scalar_eligible_territories)
+  additional <- list(economy, demography)
   list(projection=assemble_scalar_snapshot(service, additional),
     additional_projections=additional)
 }
