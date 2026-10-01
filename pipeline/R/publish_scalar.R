@@ -230,8 +230,9 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
     if (is.null(page) || !identical(as.character(page$indicator), id))
       stop("Scalar indicator is not declared by canonical metadata: ", id, call.=FALSE)
     source_ids <- as.character(unlist(page$sources, use.names=FALSE))
-    policy <- metadata$scalar_contracts[[id]]
-    if (is.null(policy)) policy <- fixture_policy
+    # An explicit fixture policy is intentionally authoritative for fixtures;
+    # production projections pass no override and always use producer metadata.
+    policy <- if (!is.null(fixture_policy)) fixture_policy else metadata$scalar_contracts[[id]]
     if (!is.list(policy) || !all(c("allowed_levels", "completeness", "comparison_facet", "missing_status", "counts_available") %in% names(policy)))
       stop("Producer scalar contract is missing for indicator: ", id, call.=FALSE)
     levels <- as.character(unlist(policy$allowed_levels, use.names=FALSE))
