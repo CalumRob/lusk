@@ -246,6 +246,178 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
   })
 
+  it('renders registered scalar API values in the mounted fiche instead of the static model value', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const registered = Object.keys(metadata.scalar_contracts) as string[]
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const pending: Array<() => void> = []
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('/api/territories/commune/22001/indicator-cohorts/')) {
+        const indicator = url.split('/').at(-1)!.split('?')[0]!
+        const page = published.themes.mobilite.theme_metadata.indicator_pages[indicator]
+        const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
+          label: page.label, unit: page.unit, direction: page.direction,
+          comparison_facet: page.comparison?.indicator ?? indicator, completeness: 'sparse', content_version: 'fiche-v1',
+          territory_reference_version: 'territories-v1',
+          observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
+            rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
+            sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
+              reference_date: null, publication_date: null }] }] }), { status: 200 })
+        return new Promise<Response>((resolve) => pending.push(() => resolve(response)))
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
+    const realModel = validerModeleTerritoire(published, 'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', vi.fn(async () => realModel))
+    expect(pending).toHaveLength(registered.length)
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('0,92')
+    pending.forEach((resolve) => resolve())
+    await flushPromises()
+    const text = wrapper.get('[role="tabpanel"]').text()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/indicator-cohorts/'))).toHaveLength(registered.length)
+    const cohortUrls = fetchApi.mock.calls.map(([url]) => new URL(String(url), 'http://localhost'))
+      .filter((url) => url.pathname.includes('/indicator-cohorts/'))
+    expect(cohortUrls.every((url) => url.searchParams.get('epci_id') === published.territory.epci &&
+      !url.searchParams.has('department_id'))).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(text).toContain('987')
+    expect(text).toContain('98 765 432')
+    expect(text).not.toContain('0,92')
+    wrapper.unmount()
+  })
+
+  it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', requests)
+    const { wrapper: unregistered } = await monter('/territoire/commune/29002?theme=demographie')
+    expect(unregistered.text()).toContain('Densité de population')
+    expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
+    unregistered.unmount()
+
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    const { wrapper: disabled } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
+    expect(disabled.text()).toContain('0,92')
+    disabled.unmount()
+  })
+
+  it('keeps unregistered facts when a valid registration has no eligible pages at this level', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    published.themes.mobilite.theme_metadata.scalar_contracts = Object.fromEntries(
+      Object.keys(metadata.scalar_contracts).map((key) => [key, { allowed_levels: ['epci'] }]),
+    )
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    const fetchApi = vi.fn()
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    expect(fetchApi).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('0,92')
+    wrapper.unmount()
+  })
+
+  it('reloads scalar facts when comparison scope changes and ignores the previous response', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    const oldResponses: Array<() => void> = []
+    const newResponses: Array<() => void> = []
+    const fetchApi = vi.fn((input: RequestInfo | URL) => {
+      const url = new URL(String(input), 'http://localhost')
+      const indicator = url.pathname.split('/').at(-1)!
+      const page = metadata.indicator_pages[indicator]
+      const value = url.searchParams.has('epci_id') ? 111111111 : 222222222
+      const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
+        label: page.label, unit: page.unit, direction: page.direction,
+        comparison_facet: page.comparison?.indicator ?? indicator, completeness: 'sparse',
+        content_version: url.searchParams.has('epci_id') ? 'epci-v1' : 'bretagne-v1',
+        territory_reference_version: 'territories-v1',
+        observations: [{ territory_id: '22001', name: published.territory.nom, value, status: 'measured',
+          rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
+          sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
+            reference_date: null, publication_date: null }] }] }), { status: 200 })
+      return new Promise<Response>((resolve) => (url.searchParams.has('epci_id') ? oldResponses : newResponses).push(() => resolve(response)))
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', vi.fn(async () => model))
+    expect(oldResponses).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+    await router.push('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=bretagne')
+    await flushPromises()
+    expect(newResponses).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+    expect(new URL(String(fetchApi.mock.calls.at(-1)![0]), 'http://localhost').searchParams.has('epci_id')).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
+    newResponses.forEach((resolve) => resolve())
+    await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('222 222 222')
+    oldResponses.forEach((resolve) => resolve())
+    await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('222 222 222')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
+    wrapper.unmount()
+  })
+
+  it('renders a retryable error for malformed registration and recovers without showing static facts', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    published.themes.mobilite.theme_metadata.scalar_contracts = { avg_tot_t: { allowed_levels: 'commune' } }
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
+      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const indicator = String(input).split('/').at(-1)!.split('?')[0]!
+      const page = metadata.indicator_pages[indicator]
+      return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
+        unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
+        completeness: 'sparse', content_version: 'retry-v1', territory_reference_version: 'territories-v1',
+        observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
+          rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
+          sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
+            reference_date: null, publication_date: null }] }] }), { status: 200 })
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(wrapper.find('[role="alert"]').text()).toContain('pas disponibles')
+    expect(wrapper.text()).not.toContain('0,92')
+    expect(fetchApi).not.toHaveBeenCalled()
+
+    model.themes.mobilite!.metadata.scalar_contracts = metadata.scalar_contracts
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(fetchApi).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('987 654 321')
+    expect(wrapper.text()).not.toContain('0,92')
+    wrapper.unmount()
+  })
+
   it.each([
     ['epci', '242200715', 'epcis-bretagne'],
     ['departement', '22', 'departements-bretagne'],

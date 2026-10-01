@@ -2955,6 +2955,7 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
     source_records: meta['source_records'] as ThemeMetadata['source_records'],
     indicator_caveats,
     map_layers,
+    ...(meta['scalar_contracts'] === undefined ? {} : { scalar_contracts: meta['scalar_contracts'] }),
   }
 }
 

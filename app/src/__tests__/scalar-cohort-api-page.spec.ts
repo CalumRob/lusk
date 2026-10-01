@@ -7,7 +7,7 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { indicateursDemographieFixture, indicateursEconomieFixture, territoiresFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { validerThemeMetadata } from '../payload/validate'
-import { chargerCohorteScalaire, indicateursScalairesEnregistres } from '../payload/scalarCohort'
+import { chargerCohorteScalaire, chargerCohortesScalaires, indicateursScalairesEnregistres, remplacerFaitsScalaires } from '../payload/scalarCohort'
 import { formaterRang } from '../payload/selectors'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
@@ -28,7 +28,7 @@ function response(indicator = 'effectifs_salaries') {
   const page = economyMetadata.indicator_pages[indicator]
   const publishedRank = canonicalRank(indicator, '22001')
   return { indicator_id: indicator, territory_type: 'commune', label: page.label, unit: page.unit,
-    direction: page.direction, comparison_facet: indicator, completeness: 'sparse', content_version: 'scalar-v1',
+    direction: page.direction, comparison_facet: indicator, completeness: 'sparse', content_version: 'scalar-v1', territory_reference_version: 'territories-v1',
     observations: [
       { territory_id: '22001', name: 'Commune A1', value: 9, status: 'measured',
         rang_epci: publishedRank?.rang_epci ?? null, rang_epci_n: publishedRank?.rang_epci_n ?? null,
@@ -61,6 +61,55 @@ async function mountEconomy(initial = '/indicateurs/economie/effectifs_salaries?
 }
 
 describe('Page indicateur économie - cohorte scalaire API', () => {
+  it('acquires registered facts concurrently and replaces only those theme rows', async () => {
+    const metadata = validerThemeMetadata(economyMetadata, 'theme_economie.json')
+    const registered = indicateursScalairesEnregistres(economyMetadata)
+    const focal = territoiresFixture.find((territory) => territory.type === 'commune')!
+    const active: string[] = []
+    let peak = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      active.push(url); peak = Math.max(peak, active.length)
+      await Promise.resolve()
+      active.pop()
+      const indicator = decodeURIComponent(url.split('/').at(-1)!.split('?')[0]!)
+      const page = metadata.indicator_pages![indicator]!
+      return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
+        unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
+        completeness: 'sparse', content_version: 'batch-v1', territory_reference_version: 'territories-v1', observations: [{ territory_id: focal.territoire,
+          name: focal.nom, value: 2, status: 'measured', rang_epci: 1, rang_epci_n: 3, rang_dep: null,
+          rang_dep_n: null, rang_reg: null, rang_reg_n: null, sources: [{ source_id: page.sources[0],
+            name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] }] }), { status: 200 })
+    }))
+    const facts = await chargerCohortesScalaires(registered, 'economie', metadata, focal, 'commune', territoiresFixture, {})
+    expect(facts.map((fact) => fact.key).sort()).toEqual([...registered].sort())
+    expect(peak).toBeGreaterThan(1)
+    const old = [...indicateursEconomieFixture]
+    const untouched = old.find((row) => !registered.includes(row.key))!
+    const merged = remplacerFaitsScalaires(old, facts, registered)
+    expect(merged.filter((row) => registered.includes(row.key))).toHaveLength(facts.length)
+    expect(merged).toContain(untouched)
+  })
+  it.each(['content_version', 'territory_reference_version'] as const)(
+    'rejects registered batches with mixed %s identities', async (identity) => {
+      const metadata = validerThemeMetadata(economyMetadata, 'theme_economie.json')
+      const registered = indicateursScalairesEnregistres(economyMetadata)
+      const focal = territoiresFixture.find((territory) => territory.type === 'commune')!
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const indicator = decodeURIComponent(url.split('/').at(-1)!.split('?')[0]!)
+        const page = metadata.indicator_pages![indicator]!
+        return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
+          unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
+          completeness: 'sparse', content_version: identity === 'content_version' && indicator === 'chomage' ? 'other' : 'batch-v1',
+          territory_reference_version: identity === 'territory_reference_version' && indicator === 'chomage' ? 'other' : 'territories-v1',
+          observations: [{ territory_id: focal.territoire, name: focal.nom, value: 2, status: 'measured',
+            rang_epci: 1, rang_epci_n: 3, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024',
+              reference_date: null, publication_date: null }] }] }), { status: 200 })
+      }))
+      await expect(chargerCohortesScalaires(registered, 'economie', metadata, focal, 'commune', territoiresFixture, {}))
+        .rejects.toThrow('même version de publication et de référentiel territorial')
+    },
+  )
   it('loads each producer-registered scalar page from all current themes through the production cohort adapter', async () => {
     let pageCount = 0
     for (const theme of ['economie', 'demographie', 'mobilite'] as const) {
@@ -77,7 +126,7 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
         vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
           indicator_id: id, territory_type: 'commune', label: page.label, unit: page.unit,
           direction: page.direction, comparison_facet: page.comparison?.indicator ?? id,
-          completeness: 'sparse', content_version: 'test', observations: [{
+          completeness: 'sparse', content_version: 'test', territory_reference_version: 'territories-v1', observations: [{
             territory_id: focal.territoire, name: focal.nom, value: 1, status: 'measured',
             rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
             sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }],
