@@ -18,6 +18,7 @@ import {
 } from '../payload/fixtures'
 import type { Histoire, Indicateur, Theme } from '../payload/types'
 import {
+  chargerModeleTerritoire,
   TERRITORY_READ_MODEL_CHARGER_KEY,
   validerModeleTerritoire,
 } from '../payload/territoryReadModel'
@@ -250,20 +251,34 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
     const registered = Object.keys(metadata.scalar_contracts) as string[]
+    const referenceTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const peer = referenceTerritories.find((territory: any) => territory.type === 'commune' &&
+      territory.epci === published.territory.epci && territory.territoire !== published.territory.territoire)
+    expect(published.themes.mobilite.theme_metadata.scalar_contracts).toBeUndefined()
     const pending: Array<() => void> = []
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url === '/data/modeles-lecture/territoires/commune/22001.json') return new Response(JSON.stringify(published), { status: 200 })
+      if (url === '/data/territoires.json') return new Response(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'), { status: 200 })
+      if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
+        const themeMetadata = url === '/data/theme_mobilite.json' ? metadata : JSON.parse(readFileSync(
+          resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
+        return new Response(JSON.stringify(themeMetadata), { status: 200 })
+      }
       if (url.startsWith('/api/territories/commune/22001/indicator-cohorts/')) {
         const indicator = url.split('/').at(-1)!.split('?')[0]!
         const page = published.themes.mobilite.theme_metadata.indicator_pages[indicator]
         const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
           label: page.label, unit: page.unit, direction: page.direction,
           comparison_facet: page.comparison?.indicator ?? indicator, completeness: 'sparse', content_version: 'fiche-v1',
-          territory_reference_version: 'territories-v1',
           observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
             rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
+            sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
+              reference_date: null, publication_date: null }] },
+          { territory_id: peer.territoire, name: peer.nom, value: 123, status: 'measured',
+            rang_epci: 2, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
             sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
               reference_date: null, publication_date: null }] }] }), { status: 200 })
         return new Promise<Response>((resolve) => pending.push(() => resolve(response)))
@@ -272,10 +287,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
-    const realModel = validerModeleTerritoire(published, 'territoires/commune/22001.json',
-      { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', vi.fn(async () => realModel))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', chargerModeleTerritoire)
     expect(pending).toHaveLength(registered.length)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('0,92')
@@ -283,6 +295,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     const text = wrapper.get('[role="tabpanel"]').text()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/indicator-cohorts/'))).toHaveLength(registered.length)
+    expect(fetchApi).toHaveBeenCalledWith('/data/theme_mobilite.json')
     const cohortUrls = fetchApi.mock.calls.map(([url]) => new URL(String(url), 'http://localhost'))
       .filter((url) => url.pathname.includes('/indicator-cohorts/'))
     expect(cohortUrls.every((url) => url.searchParams.get('epci_id') === published.territory.epci &&

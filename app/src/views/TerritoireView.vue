@@ -179,7 +179,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       ficheScalairesEnregistres.value = registered
       if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
       const scope = String(scopeKey).startsWith('epci:') ? { epci: focal.epci ?? undefined } : {}
-      const facts = await chargerCohortesScalaires(registered, theme, data.metadata, focal, focal.type, model.territories,
+      const facts = await chargerCohortesScalaires(registered, theme, data.metadata, focal, focal.type,
+        model.cohortTerritories ?? model.territories,
         scope)
       if (!cancelled && request === sequenceFicheScalaires) { ficheScalaires.value = facts; ficheScalairesStatus.value = 'ready' }
     } catch {

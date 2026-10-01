@@ -13,6 +13,7 @@ import type {
   ThemeMetadata,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
+import { scalarCohortEnabled } from './scalarCohort'
 import {
   PayloadError,
   validerDistributionAccesBatiments,
@@ -101,6 +102,8 @@ export interface TerritoryReadModel {
   snapshotId: string
   territory: Territoire
   territories: Territoire[]
+  /** Full validated reference required only for bounded API cohorts, whose peer sets may outgrow the fiche model's four local references. */
+  cohortTerritories?: Territoire[]
   themes: Partial<Record<Theme, TerritoryThemeReadModel>>
 }
 
@@ -627,5 +630,28 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
   } catch {
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
-  return validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
+  const model = validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
+  // Registrations are owned by the canonical theme catalogue, and may postdate
+  // the atomic territory snapshot. Reconcile only this readiness metadata here.
+  if (scalarCohortEnabled(import.meta.env)) {
+    await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
+      const metadataUrl = `/data/theme_${theme.theme}.json`
+      let metadataResponse: Response
+      try { metadataResponse = await fetch(metadataUrl) }
+      catch (cause) { throw new PayloadError('fetch', metadataUrl, `Impossible de charger les contrats scalaires : ${cause instanceof Error ? cause.message : String(cause)}`) }
+      if (!metadataResponse.ok) throw new PayloadError('fetch', metadataUrl, `Réponse HTTP ${metadataResponse.status} pour ${metadataUrl}`)
+      const catalogue = await metadataResponse.json() as { scalar_contracts?: unknown }
+      if (catalogue.scalar_contracts !== undefined) theme.metadata.scalar_contracts = catalogue.scalar_contracts
+    }))
+    const referenceUrl = '/data/territoires.json'
+    let referenceResponse: Response
+    try { referenceResponse = await fetch(referenceUrl) }
+    catch (cause) { throw new PayloadError('fetch', referenceUrl, `Impossible de charger le référentiel des cohortes : ${cause instanceof Error ? cause.message : String(cause)}`) }
+    if (!referenceResponse.ok) throw new PayloadError('fetch', referenceUrl, `Réponse HTTP ${referenceResponse.status} pour ${referenceUrl}`)
+    let rawTerritories: unknown
+    try { rawTerritories = await referenceResponse.json() }
+    catch { throw new PayloadError('validation', referenceUrl, 'Référentiel des cohortes illisible.') }
+    model.cohortTerritories = validerTerritoires(rawTerritories, referenceUrl)
+  }
+  return model
 }

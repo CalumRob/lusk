@@ -62,7 +62,8 @@ export async function chargerCohorteScalaire(indicator: string, theme: Theme, pa
   catch { throw new PayloadError('validation', path, 'Réponse illisible de l’API de l’indicateur.') }
   if (!read || typeof read !== 'object' || read.indicator_id !== indicator || read.territory_type !== level ||
       typeof read.content_version !== 'string' || !read.content_version ||
-      typeof read.territory_reference_version !== 'string' || !read.territory_reference_version ||
+      (read.territory_reference_version !== undefined &&
+        (typeof read.territory_reference_version !== 'string' || !read.territory_reference_version)) ||
       read.label !== page.label || read.unit !== page.unit || read.direction !== page.direction ||
       read.comparison_facet !== (page.comparison?.indicator ?? indicator) ||
       !['sparse', 'dense_complete'].includes(read.completeness) || !Array.isArray(read.observations)) {
@@ -70,7 +71,11 @@ export async function chargerCohorteScalaire(indicator: string, theme: Theme, pa
   }
   if (identity) {
     identity.contentVersion = read.content_version
-    identity.territoryReferenceVersion = read.territory_reference_version
+    // The bounded API enforces scalar.reference_content_version === the
+    // territory_reference marker in the same read-only snapshot, but its
+    // response currently exposes only the scalar content token. That token
+    // therefore identifies the server-validated reference dependency too.
+    identity.territoryReferenceVersion = read.territory_reference_version ?? `scalar:${read.content_version}`
   }
   const refs = new Map(territories.filter((t) => t.type === level).map((t) => [t.territoire, t]))
   const seen = new Set<string>()
