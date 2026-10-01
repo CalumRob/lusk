@@ -75,6 +75,7 @@ THEMES_RUN <- list(
   milieux = theme_milieux()
 )
 selection <- Sys.getenv("LUSK_THEMES", unset = "")
+selection_complete <- !nzchar(selection)
 if (nzchar(selection)) {
   selection <- strsplit(selection, ",")[[1L]]
   inconnus <- setdiff(selection, names(THEMES_RUN))
@@ -1051,7 +1052,7 @@ for (t in THEMES_RUN) {
 # actifs et écrit chaque adresse de territoire, ce qui évite les courses entre
 # cinq écrivains qui se remplaceraient mutuellement.
 targets_modeles_territoire <- list()
-if (!nzchar(selection) && length(THEMES_RUN) > 0L &&
+if (selection_complete && length(THEMES_RUN) > 0L &&
     all(vapply(THEMES_RUN, function(t) "metadata" %in% names(t), logical(1)))) {
   noms_themes <- vapply(THEMES_RUN, function(t) t$theme, character(1))
   directions_modeles <- stats::setNames(
@@ -1092,7 +1093,7 @@ if (!nzchar(selection) && length(THEMES_RUN) > 0L &&
     list(as.name("list")),
     vintage_symbols
   ))
-  snapshot_expr <- if (!nzchar(selection)) {
+  snapshot_expr <- if (selection_complete) {
     bquote(identifiant_snapshot(vintages[["programmes"]]))
   } else {
     bquote(identifiant_snapshot(vintages[[length(vintages)]]))
@@ -1129,7 +1130,7 @@ if (length(THEMES_RUN) > 0L && all(vapply(
   metadata_manifeste <- lapply(noms_manifeste, function(nom) {
     as.name(paste0("metadata_", nom))
   })
-  if (!nzchar(selection)) {
+  if (selection_complete) {
     noms_manifeste <- c("programmes", noms_manifeste)
     metadata_manifeste <- c(list(as.name("metadata_programmes")), metadata_manifeste)
   }
@@ -1153,7 +1154,7 @@ for (t in THEMES_RUN) {
 # Le run COMPLET (le cron, #343) : le rapport de run du thème Programmes,
 # chaîné DERNIER — le rapport final porte les statuts du thème Programmes,
 # exactement comme six run_pipeline séquentiels (le dernier thème gagne).
-if (!nzchar(selection)) {
+if (selection_complete) {
   rapports <- c(rapports, list(rapport_theme(theme_programmes(),
                                              precedent = precedent)))
 }
@@ -1177,7 +1178,7 @@ for (t in THEMES_RUN) {
   if (!is.null(t$raccordement)) besoin_epci <- TRUE
 }
 publication_programmes <- list()
-if (!nzchar(selection)) {
+if (selection_complete) {
   # le manifeste COMPLET du thème Programmes (les six sources ANCT/DGALN +
   # SCDL) : la variable du script que les commandes du bloc résolvent (la
   # même convention que les manifeste_<thème> du graphe)
@@ -1205,7 +1206,7 @@ if (besoin_epci) {
 # COMPLET (le cron, #343), le thème Programmes : la table partagée porte
 # aussi les SIX sources du module, SCDL comprise (issue #178 — l'upsert par
 # id, le même rang que six run_pipeline séquentiels).
-themes_fusion <- if (!nzchar(selection)) {
+themes_fusion <- if (selection_complete) {
   c(THEMES_RUN, list(programmes = theme_programmes()))
 } else {
   THEMES_RUN

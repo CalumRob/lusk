@@ -22,7 +22,7 @@ test_that("le leaf SQL attend les faits, la référence finale et les vintages",
 
 test_that("un graphe sans Démographie ou en mode cron refuse l'opt-in DB", {
   withr::local_dir(pkgload::pkg_path())
-  withr::local_envvar(LUSK_PUBLISH_DB = "1", LUSK_THEMES = "economie",
+  withr::local_envvar(LUSK_PUBLISH_DB = "1", LUSK_THEMES = "mobilite,economie",
                      LUSK_MODE = "full")
   expect_error(targets::tar_manifest(), "incluant les thèmes Mobilité, Économie/Emploi et Démographie")
   Sys.setenv(LUSK_THEMES = "mobilite", LUSK_MODE = "cron")
