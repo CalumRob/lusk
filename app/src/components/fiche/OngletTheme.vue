@@ -180,7 +180,7 @@ const lignesReseaux = computed(
 
 <template>
   <article
-    class="onglet-theme"
+    class="onglet-theme presentation-editorial"
     :class="`onglet-theme--${theme}`"
     :style="{
       '--couleur-strong': `var(--theme-${theme}-strong)`,
