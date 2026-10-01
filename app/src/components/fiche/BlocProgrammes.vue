@@ -113,12 +113,12 @@ const lienProvenance = computed(() => {
        pour un thème présent, #313 ; dans le chargement progressif du magasin,
        les faits peuvent atterrir un instant avant elle — on attend, jamais un
        titre inventé ni un crash de rendu). -->
-  <article v-if="metadata" class="onglet-theme onglet-theme--programmes bloc-programmes">
+  <article v-if="metadata" class="onglet-theme presentation-editorial onglet-theme--programmes bloc-programmes">
     <p class="onglet-theme-overline">{{ metadata?.label ?? '' }}</p>
 
     <template v-if="elementVide">
-      <section class="sous-groupe" data-groupe="couverture">
-        <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
+      <section class="sous-groupe editorial-sheet" data-groupe="couverture">
+        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('couverture').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
         <p class="programmes-vide">Aucun programme référencé.</p>
       </section>
@@ -130,10 +130,10 @@ const lienProvenance = computed(() => {
            source par badge. -->
       <section
         v-if="element.badges.length > 0"
-        class="sous-groupe"
+        class="sous-groupe editorial-sheet"
         data-groupe="couverture"
       >
-        <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('couverture').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
 
         <ul class="programmes-badges">
@@ -163,10 +163,10 @@ const lienProvenance = computed(() => {
            zéro inventé, jamais une figure vide. -->
       <section
         v-if="element.subventions"
-        class="sous-groupe"
+        class="sous-groupe editorial-sheet"
         data-groupe="subventions"
       >
-        <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('subventions').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
 
         <div class="programme-subventions">
@@ -334,7 +334,6 @@ const lienProvenance = computed(() => {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--theme-programmes-line);
   background: var(--theme-programmes-soft);
 }
 

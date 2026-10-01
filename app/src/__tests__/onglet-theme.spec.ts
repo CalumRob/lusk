@@ -53,7 +53,10 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
   it('renders the theme overline from the metadata label', async () => {
     const wrapper = await monter('22001')
 
+    expect(wrapper.classes()).toContain('presentation-editorial')
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
+    expect(wrapper.find('.sous-groupe').classes()).toContain('editorial-sheet')
+    expect(wrapper.find('.sous-groupe-titre').classes()).toContain('editorial-section-heading')
   })
 
   it('renders the metadata subgroup — label and framing', async () => {

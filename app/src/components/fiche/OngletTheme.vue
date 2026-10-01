@@ -198,10 +198,10 @@ const lignesReseaux = computed(
     <template v-for="groupe in sousGroupes" :key="groupe.key">
       <section
         v-if="groupe.figures.length > 0 || groupe.lecture || groupe.lectureIndisponible"
-        class="sous-groupe"
+        class="sous-groupe editorial-sheet"
         :data-groupe="groupe.key"
       >
-        <h3 class="sous-groupe-titre">{{ groupe.label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe.label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe.framing }}</p>
 
         <!-- The reading slot — the metadata template rendered with the
@@ -506,7 +506,6 @@ const lignesReseaux = computed(
   margin: 0;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--couleur-line);
   border-radius: var(--radius-sm);
   background: var(--surface-tertiary);
   font: var(--text-body-sm);

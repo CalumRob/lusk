@@ -59,11 +59,14 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
   it('porte l\u2019overline publiée et les sous-groupes du canon (jamais un vocabulaire app-side)', () => {
     const wrapper = montage(payloadPlein, '22001')
 
+    expect(wrapper.find('article').classes()).toContain('presentation-editorial')
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Programmes et subventions')
     const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text())
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
+    expect(wrapper.findAll('.editorial-sheet')).toHaveLength(2)
+    expect(wrapper.findAll('.editorial-section-heading')).toHaveLength(2)
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {
