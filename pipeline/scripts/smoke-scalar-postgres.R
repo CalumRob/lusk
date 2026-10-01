@@ -113,7 +113,75 @@ tryCatch({
     DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] == previous_rows,
     identical(DBI::dbGetQuery(connection, "SELECT value,status FROM scalar_observation WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1"), previous_fact),
     identical(DBI::dbGetQuery(connection, "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]], previous_marker))
-  cat("Scalar PostgreSQL smoke passed; schema:", schema, "\n")
+
+  # Exercise the real table-level Services + economy assembly against canonical
+  # producer Parquet, then the existing publisher wrapper and PostgreSQL adapter.
+  DBI::dbExecute(connection, "DROP TRIGGER reject_smoke_value ON scalar_observation")
+  DBI::dbExecute(connection, "DROP FUNCTION reject_smoke_value()")
+  DBI::dbExecute(connection, "DELETE FROM scalar_observation_source")
+  DBI::dbExecute(connection, "DELETE FROM scalar_observation")
+  DBI::dbExecute(connection, "DELETE FROM scalar_descriptor_source")
+  DBI::dbExecute(connection, "DELETE FROM scalar_descriptor")
+  DBI::dbExecute(connection, "DELETE FROM table_publication WHERE table_name='scalar_observation'")
+  DBI::dbExecute(connection, "DELETE FROM territory_reference")
+  service_data <- preparer_tables_service(file.path("..", "public", "data"))
+  snapshot <- project_service_scalar_snapshot(service_data, file.path("..", "public", "data"))
+  DBI::dbWriteTable(connection, "service_registry", service_data$tables$service_registry,
+    append=TRUE, row.names=FALSE)
+  refs <- service_data$tables$territory_reference
+  DBI::dbWriteTable(connection, "territory_reference", refs, append=TRUE, row.names=FALSE)
+  reference_version <- service_data$versions[["territory_reference"]]
+  DBI::dbExecute(connection, "INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,$2) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,published_at=now()",
+    params=list(reference_version, nrow(refs)))
+  published <- publish_service_share_scalars(connection, service_data$scalar_access,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories,
+    additional_projections=snapshot$additional_projections)
+  stopifnot(published$changed,
+    setequal(DBI::dbGetQuery(connection, "SELECT indicator_id FROM scalar_descriptor")$indicator_id,
+      snapshot$projection$descriptors$indicator_id),
+    DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] ==
+      nrow(snapshot$projection$facts))
+
+  snapshot_sql <- function() list(
+    facts=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id"),
+    descriptors=DBI::dbGetQuery(connection, "SELECT * FROM scalar_descriptor ORDER BY indicator_id"),
+    sources=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation_source ORDER BY indicator_id,territory_id,source_id,vintage_id"),
+    marker=DBI::dbGetQuery(connection, "SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='scalar_observation'"))
+  committed <- snapshot_sql()
+  # The old service-only projection must fail closed and leave both cohorts and
+  # their marker untouched; the complete unchanged retry is a no-op.
+  partial <- try(publish_service_share_scalars(connection, service_data$scalar_access,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories), silent=TRUE)
+  stopifnot(inherits(partial, "try-error"), identical(snapshot_sql(), committed))
+  no_op <- publish_service_share_scalars(connection, service_data$scalar_access,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories,
+    additional_projections=snapshot$additional_projections)
+  stopifnot(!no_op$changed, identical(snapshot_sql(), committed))
+
+  # Inject failure after DELETE/reinsert begins; PostgreSQL transaction rollback
+  # must preserve facts, descriptors, provenance, content version, and timestamp.
+  DBI::dbExecute(connection, "CREATE FUNCTION reject_combined_smoke_value() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.value=-999999 THEN RAISE EXCEPTION 'injected combined scalar smoke failure'; END IF; RETURN NEW; END $$")
+  DBI::dbExecute(connection, "CREATE TRIGGER reject_combined_smoke_value BEFORE INSERT ON scalar_observation FOR EACH ROW EXECUTE FUNCTION reject_combined_smoke_value()")
+  changed <- service_data$scalar_access
+  changed$value[[1L]] <- -999999
+  failed_combined <- try(publish_service_share_scalars(connection, changed,
+    service_data$scalar_metadata, service_data$scalar_eligible_territories,
+    additional_projections=snapshot$additional_projections), silent=TRUE)
+  stopifnot(inherits(failed_combined, "try-error"), identical(snapshot_sql(), committed))
+  DBI::dbExecute(connection, "DROP TRIGGER reject_combined_smoke_value ON scalar_observation")
+  DBI::dbExecute(connection, "DROP FUNCTION reject_combined_smoke_value()")
+
+  # Execute the same registered-service ID membership shape used by the API;
+  # economy keys coexist in the table but cannot leak into service decoding.
+  service_ids <- DBI::dbGetQuery(connection,
+    "SELECT DISTINCT 'share_' || service || '_' || mode AS indicator_id FROM service_registry CROSS JOIN unnest(ARRAY['t','b','c']::text[]) AS mode")$indicator_id
+  service_fact_ids <- DBI::dbGetQuery(connection,
+    "SELECT DISTINCT o.indicator_id FROM scalar_observation o WHERE o.indicator_id=ANY(SELECT 'share_' || service || '_' || mode FROM service_registry CROSS JOIN unnest(ARRAY['t','b','c']::text[]) AS mode)")$indicator_id
+  stopifnot(setequal(service_ids, service_data$scalar_metadata$indicator_keys[
+    service_data$scalar_metadata$indicator_keys %in% service_ids]),
+    setequal(service_fact_ids, service_ids),
+    !any(c("effectifs_salaries", "chomage") %in% service_fact_ids))
+  cat("Scalar PostgreSQL and combined snapshot smoke passed; schema:", schema, "\n")
 }, error=function(e) {
   smoke_failure <<- conditionMessage(e)
   stop(e)

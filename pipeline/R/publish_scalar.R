@@ -403,7 +403,7 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "building_evidence_descriptor", "essential_service_access", "service_registry",
     "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
     "table_publication")
-  functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_smoke_ramp()",
+  functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
     "reject_series_smoke_insert()",
     "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
     "assert_scalar_descriptor_sources()", "assert_scalar_levels()",

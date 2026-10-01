@@ -53,3 +53,11 @@ the checked-in copy remains byte-identical to its source.
 
 This is an intermediate PR referencing #627 only; it does not close the parent
 migration issue or authorize production publication/deployment.
+
+The opt-in `pipeline/scripts/smoke-scalar-postgres.R` rehearsal now uses the
+approved `lusk_it_contract` database/private passfile to run the real canonical
+Services+economy snapshot through `project_service_scalar_snapshot()` and
+`publish_service_share_scalars()` in its isolated schema. It checks full facts
+and descriptors, SQL service-key membership, no-op marker timestamp stability,
+partial-cohort rejection, and transaction rollback following an injected
+write failure. Cleanup is limited to the script-owned schema with `RESTRICT`.
