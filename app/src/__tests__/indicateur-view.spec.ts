@@ -51,6 +51,13 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
 beforeEach(() => localStorage.clear())
 
 describe('IndicateurView — routed URL seam', () => {
+  it('renders its notebook sheet inside the site ground rather than painting the whole route with paper', async () => {
+    const { wrapper } = await monter('/indicateurs/demographie/densite?territoire=22001')
+    expect(wrapper.find('.indicateur-page').classes()).not.toContain('editorial-sheet')
+    expect(wrapper.find('.indicateur-page > .indicateur-sheet.editorial-sheet').exists()).toBe(true)
+    expect(wrapper.find('.indicateur-sheet .repere-family-outlet').exists()).toBe(true)
+    expect(wrapper.find('.indicateur-sheet').text()).toContain('Densité de population')
+  })
   it('defaults to Repères and switches real URL-backed views; invalid vue is cleared by selecting Repères', async () => { const { wrapper, router } = await monter('/indicateurs/demographie/densite?vue=wat'); expect(wrapper.find('main').exists()).toBe(true); await wrapper.findAll('.vues button')[0].trigger('click'); await flushPromises(); expect(router.currentRoute.value.query.vue).toBeUndefined(); await router.push({ query: { vue: 'carte' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('carte'); await router.push({ query: { vue: 'indicateur' } }); await flushPromises(); expect(router.currentRoute.value.query.vue).toBe('indicateur') })
   it('renders unknown indicator honestly', async () => { const { wrapper } = await monter('/indicateurs/demographie/not-published'); expect(wrapper.text()).toContain('Indicateur introuvable') })
   it('renders an unknown theme as a finite honest error state', async () => { const { wrapper } = await monter('/indicateurs/inconnu/densite'); expect(wrapper.text()).toContain('Indicateur introuvable'); expect(wrapper.text()).not.toContain('Chargement de l’indicateur') })
