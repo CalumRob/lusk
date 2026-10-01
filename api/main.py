@@ -1059,8 +1059,6 @@ def scalar_indicator_cohort(
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Read one declared scalar's focal value and bounded, versioned peer cohort."""
-    if scope_level != territory_type:
-        raise HTTPException(422, "Cohort level must match the selected territory level")
     if scope_level != "commune" and (department_id is not None or epci_id is not None):
         raise HTTPException(422, "Commune filters are not valid for this cohort level")
     with repository.connections.connection() as conn:
@@ -1068,21 +1066,56 @@ def scalar_indicator_cohort(
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             marker = conn.execute(
                 """SELECT scalar.content_version, scalar.reference_content_version,
-                          territory.content_version FROM table_publication scalar
+                          territory.content_version, scalar.row_count FROM table_publication scalar
                    LEFT JOIN table_publication territory ON territory.table_name='territory_reference'
                    WHERE scalar.table_name='scalar_observation'""").fetchone()
-            if marker is None or not marker[0] or marker[1] is None or marker[1] != marker[2]:
+            if (marker is None or not marker[0] or marker[3] < 1 or not marker[1]
+                    or marker[1] != marker[2]):
                 raise HTTPException(503, "Scalar publication is unavailable or incompatible")
             descriptor = conn.execute(
-                """SELECT label,unit,direction,comparison_facet FROM scalar_descriptor
-                   WHERE indicator_id=%s AND %s=ANY(allowed_levels)""",
-                (indicator_id, scope_level)).fetchone()
-            if descriptor is None or descriptor[3] is None:
+                """SELECT label,unit,direction,comparison_facet,allowed_levels,completeness
+                   FROM scalar_descriptor WHERE indicator_id=%s""", (indicator_id,)).fetchone()
+            if descriptor is None:
                 raise HTTPException(404, "Declared scalar comparison is unavailable")
+            if scope_level not in descriptor[4]:
+                raise HTTPException(422, "Cohort level is not declared for this scalar")
+            if not descriptor[3] or descriptor[3] != indicator_id:
+                raise HTTPException(503, "Scalar comparison facet is not served by this cohort")
+            # Validate focal identity and explicit commune filters against the published
+            # reference before reading facts. A valid territory outside the requested
+            # cohort is a scope error, not a missing-fact 404.
+            focal = conn.execute(
+                """SELECT territory_id,territory_type,department_id,epci_id
+                   FROM territory_reference WHERE territory_id=%s""", (territory_id,)).fetchone()
+            if focal is None:
+                raise HTTPException(404, "Focal territory is unknown")
+            if focal[1] != territory_type:
+                raise HTTPException(422, "Focal territory type does not match the route")
+            if territory_type != scope_level:
+                raise HTTPException(422, "Focal territory type must match the cohort level")
+            if department_id:
+                exists = conn.execute("SELECT 1 FROM territory_reference WHERE territory_id=%s AND territory_type='departement'", (department_id,)).fetchone()
+                if not exists:
+                    raise HTTPException(422, "Unknown department scope")
+            if epci_id:
+                exists = conn.execute("SELECT 1 FROM territory_reference WHERE territory_id=%s AND territory_type='epci'", (epci_id,)).fetchone()
+                if not exists:
+                    raise HTTPException(422, "Unknown EPCI scope")
+            if (department_id and focal[2] != department_id) or (epci_id and focal[3] != epci_id):
+                raise HTTPException(422, "Focal territory is outside the declared cohort scope")
             rows = conn.execute(
-                """SELECT t.territory_id,t.name,o.value,o.status,o.support_count,o.denominator_count
-                   FROM scalar_observation o JOIN territory_reference t USING(territory_id)
-                   WHERE o.indicator_id=%s AND o.territory_type=%s
+                """SELECT t.territory_id,t.name,o.value,o.status,o.support_count,o.denominator_count,
+                          COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,
+                            'name',sd.name,'vintage_id',os.vintage_id,'version',sv.version,
+                            'reference_date',sv.reference_date,'publication_date',sv.publication_date)
+                            ORDER BY os.source_id,os.vintage_id)
+                            FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+                            JOIN source_vintage sv USING(source_id,vintage_id)
+                           WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
+                   FROM territory_reference t LEFT JOIN scalar_observation o
+                     ON o.territory_id=t.territory_id AND o.territory_type=t.territory_type
+                    AND o.indicator_id=%s
+                   WHERE t.territory_type=%s
                      AND (%s::text IS NULL OR t.department_id=%s)
                      AND (%s::text IS NULL OR t.epci_id=%s)
                    ORDER BY t.name,t.territory_id LIMIT %s""",
@@ -1090,26 +1123,21 @@ def scalar_indicator_cohort(
                  MAX_TERRITORY_SEARCH_SCAN + 1)).fetchall()
             if len(rows) > MAX_TERRITORY_SEARCH_SCAN:
                 raise HTTPException(503, "Declared scalar cohort exceeds the bounded read")
-            focal = next((row for row in rows if row[0] == territory_id), None)
-            if focal is None:
+            focal_row = next((row for row in rows if row[0] == territory_id), None)
+            if focal_row is None:
                 raise HTTPException(404, "Focal scalar observation is unavailable in this cohort")
-            source_rows = conn.execute(
-                """SELECT DISTINCT sd.source_id,sd.name,sv.version,sv.reference_date,sv.publication_date
-                   FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
-                   JOIN source_vintage sv USING(source_id,vintage_id)
-                   WHERE os.indicator_id=%s AND os.territory_id=%s ORDER BY sd.source_id""",
-                (indicator_id, territory_id)).fetchall()
-            if not source_rows:
-                raise HTTPException(503, "Scalar provenance is unavailable")
+            if focal_row[3] is not None and not focal_row[6]:
+                raise HTTPException(503, "Focal scalar provenance is unavailable")
+            if any(row[3] is not None and not row[6] for row in rows):
+                raise HTTPException(503, "Peer scalar provenance is unavailable")
     return {"indicator_id": indicator_id, "territory_type": scope_level,
             "label": descriptor[0], "unit": descriptor[1], "direction": descriptor[2],
-            "comparison_facet": descriptor[3], "content_version": marker[0],
-            "sources": [{"source_id": s, "name": n, "version": v,
-                         "reference_date": str(rd) if rd else None,
-                         "publication_date": str(pd) if pd else None} for s,n,v,rd,pd in source_rows],
-            "observations": [{"territory_id": tid,"name": name,"value": value,"status": status,
-                              "support_count": support,"denominator_count": denominator}
-                             for tid,name,value,status,support,denominator in rows]}
+            "comparison_facet": descriptor[3], "completeness": descriptor[5],
+            "content_version": marker[0],
+            "observations": [{"territory_id": tid,"name": name,"value": value,
+                              "status": status or "not_published", "support_count": support,
+                              "denominator_count": denominator,"sources": sources}
+                             for tid,name,value,status,support,denominator,sources in rows]}
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/series/{indicator_id}")

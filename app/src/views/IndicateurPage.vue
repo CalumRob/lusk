@@ -22,9 +22,10 @@ import RepereFamilyOutlet from '@/components/indicateurs/RepereFamilyOutlet.vue'
 import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicateur.vue'
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
-import { PayloadError } from '@/payload/validate'
+import { PayloadError, validerThemeMetadata } from '@/payload/validate'
 import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
+import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, scalarCohortEnabled } from '@/payload/scalarCohort'
 import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
@@ -66,7 +67,10 @@ const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).incl
 const selectedTheme = theme.value as Theme
 const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
   structureAgeProfileEnabled(import.meta.env as Record<string, string | undefined>)
-const attendreLegacy: Fichier[] = profilAgeApi
+const economieApiAuMontage = theme.value === 'economie' && scalarCohortEnabled(import.meta.env as Record<string, string | undefined>)
+const attendreLegacy: Fichier[] = economieApiAuMontage
+  ? ['territoires']
+  : profilAgeApi
   ? ['territoires', 'indicateurs_demographie', 'theme_demographie']
   : themeValide.value ? ['territoires', `indicateurs_${selectedTheme}`, `theme_${selectedTheme}`] : ['territoires']
 const payloadChargerInjecte = inject(PAYLOAD_CHARGER_KEY, null)
@@ -74,7 +78,7 @@ const manifesteChargerInjecte = inject(INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY
 const modeleChargerInjecte = inject(INDICATOR_READ_MODEL_CHARGER_KEY, null)
 // Production resolves this from the generated manifest. Tests that inject only
 // the legacy file seam keep the historical page contract without network work.
-const utiliseManifeste = !profilAgeApi && themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
+const utiliseManifeste = !profilAgeApi && !economieApiAuMontage && themeValide.value && (manifesteChargerInjecte !== null || payloadChargerInjecte === null)
 const attendrePage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const demarrerPage = ref<Fichier[]>(utiliseManifeste ? ['territoires'] : attendreLegacy)
 const { payload: payloadLegacy, erreur: erreurLegacy, chargement: chargementLegacy } = usePayload({
@@ -165,6 +169,63 @@ watch(
     } finally { if (sequence === sequenceProfilAge) chargementProfilAge.value = false }
   }, { immediate: true },
 )
+
+const economieApiOptionnelle = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>) && theme.value === 'economie')
+const indicateursEconomieEnregistres = ref<string[]>([])
+const economieScalaireApi = computed(() => economieApiOptionnelle.value && indicateursEconomieEnregistres.value.includes(indicator.value))
+const metadataEconomieApi = ref<ThemeMetadata | null>(null)
+const faitsEconomieApi = ref<Indicateur[]>([])
+const erreurEconomieApi = ref<PayloadError | null>(null)
+const chargementEconomieApi = ref(false)
+const retryEconomieApi = ref(0)
+let sequenceEconomieApi = 0
+let cleRequeteEconomieApi = ''
+async function chargerMetadataEconomieApi(): Promise<ThemeMetadata> {
+  const response = await fetch('/data/theme_economie.json')
+  if (!response.ok) throw new PayloadError('fetch', 'theme_economie.json', `Métadonnées Économie indisponibles (HTTP ${response.status}).`)
+  const raw: unknown = await response.json()
+  indicateursEconomieEnregistres.value = indicateursScalairesEnregistres(raw)
+  const metadata = validerThemeMetadata(raw, 'theme_economie.json')
+  if (metadata.theme !== 'economie') throw new PayloadError('validation', 'theme_economie.json', 'Métadonnées du thème incompatibles.')
+  return metadata
+}
+watch(() => [economieApiOptionnelle.value, theme.value, indicator.value, porte.value.territoire,
+  porte.value.niveau, route.query.departement, route.query.epci,
+  payloadLegacy.value.territoires.length, retryEconomieApi.value] as const,
+async ([active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount]) => {
+  const key = JSON.stringify([active, currentTheme, currentIndicator, selectedId, routeLevel, department, epci, territoryCount, retryEconomieApi.value])
+  if (active && key === cleRequeteEconomieApi) return
+  cleRequeteEconomieApi = key
+  const sequence = ++sequenceEconomieApi
+  faitsEconomieApi.value = []; erreurEconomieApi.value = null
+  if (!active || !territoryCount) return
+  chargementEconomieApi.value = true
+  try {
+    if (!metadataEconomieApi.value) metadataEconomieApi.value = await chargerMetadataEconomieApi()
+    if (sequence !== sequenceEconomieApi) return
+    if (!indicateursEconomieEnregistres.value.includes(currentIndicator)) {
+      attendrePage.value = ['territoires', 'indicateurs_economie', 'theme_economie']
+      demarrerPage.value = ['territoires', 'indicateurs_economie', 'theme_economie']
+      chargementEconomieApi.value = false
+      return
+    }
+    const page = metadataEconomieApi.value.indicator_pages?.[currentIndicator]
+    if (!page || page.indicator !== currentIndicator || page.family && page.family !== 'scalar') {
+      throw new PayloadError('validation', 'theme_economie.json', 'Cette page ne déclare pas un indicateur scalaire compatible.')
+    }
+    const level = resoudreNiveau(routeLevel, niveauMemorise.value, page.levels)
+    const dept = typeof department === 'string' ? department : undefined
+    const codeEpci = typeof epci === 'string' ? epci : undefined
+    const focal = choisirFocalCohorte(payloadLegacy.value.territoires, level, selectedId,
+      level === 'commune' ? { department: dept, epci: codeEpci } : {})
+    if (!focal) throw new PayloadError('validation', currentIndicator, 'Aucun territoire admissible dans ce périmètre.')
+    const rows = await chargerCohorteScalaire(currentIndicator, 'economie', page, focal, level,
+      payloadLegacy.value.territoires, level === 'commune' ? { department: dept, epci: codeEpci } : {})
+    if (sequence === sequenceEconomieApi) faitsEconomieApi.value = rows
+  } catch (cause) {
+    if (sequence === sequenceEconomieApi) erreurEconomieApi.value = cause instanceof PayloadError ? cause : new PayloadError('fetch', currentIndicator, 'Impossible de charger le cohort scalaire.')
+  } finally { if (sequence === sequenceEconomieApi) chargementEconomieApi.value = false }
+}, { immediate: true })
 watch(
   () => [payloadLegacy.value.territoires.length, utiliseModeleIndicateur.value] as const,
   ([nombreTerritoires, doitChargerModele]) => {
@@ -235,7 +296,7 @@ async function chargerSerie(force = false) {
   }
 }
 const payload = computed(() => {
-  const base = profilAgeApi
+  const baseInitial = profilAgeApi
     ? { ...payloadLegacy.value,
         indicateurs: remplacerStructureAgeStatique(payloadLegacy.value.indicateurs, faitsProfilAge.value),
         themeMetadata: metadataStructureAgeApi.value
@@ -244,6 +305,12 @@ const payload = computed(() => {
     : modeleIndicateur.value
       ? payloadDepuisModeleIndicateur(modeleIndicateur.value, payloadLegacy.value.territoires)
       : payloadLegacy.value
+  const base = economieScalaireApi.value && metadataEconomieApi.value
+    ? { ...baseInitial, themeMetadata: { ...baseInitial.themeMetadata, economie: metadataEconomieApi.value } }
+    : baseInitial
+  if (economieScalaireApi.value) {
+    return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === 'economie' && fact.key === indicator.value)), ...faitsEconomieApi.value] }
+  }
   const adapter = orderedSeriesAdapter.value
   if (!adapter) return base
   const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
@@ -254,11 +321,13 @@ const payload = computed(() => {
 })
 const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
+  if (economieApiOptionnelle.value && (!metadataEconomieApi.value || economieScalaireApi.value)) return erreurEconomieApi.value
   if (profilAgeApi) return erreurProfilAge.value
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
 })
 const chargement = computed(() =>
   chargementManifesteModeles.value ||
+  (economieApiOptionnelle.value && (!metadataEconomieApi.value || (economieScalaireApi.value && chargementEconomieApi.value))) ||
   (profilAgeApi && chargementProfilAge.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
@@ -412,7 +481,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
     <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
-    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button><button v-if="economieApiOptionnelle" type="button" @click="retryEconomieApi++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
