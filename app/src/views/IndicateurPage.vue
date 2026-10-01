@@ -487,7 +487,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
 }, { immediate: true })
 </script>
 <template>
-  <section class="indicateur-page" :class="`theme-${theme}`" :style="themeVars">
+  <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
     <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
     <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button><button v-if="scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>

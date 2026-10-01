@@ -463,7 +463,7 @@ onBeforeUnmount(() => {
 <template>
   <article
     ref="rootRef"
-    class="cahier"
+    class="cahier presentation-editorial"
     :class="{ 'cahier--sans-grille': props.presentation === 'plain' }"
     :style="{
       '--cahier-theme': 'var(--theme-mobilite-line)',
@@ -1000,15 +1000,15 @@ onBeforeUnmount(() => {
   --z-page-header: calc(var(--z-sticky) - 1);
   /* ThemeTabs is bounded to .fiche-en-tete-surface; only AppHeader stays pinned over the reading surface. */
   --cahier-sticky-top: var(--header-height);
-  --paper: #f1f2ec;
-  --paper-deep: #dfe5df;
-  --ink: #232a2a;
-  --muted: #62706c;
-  --red: #a44f51;
-  --red-soft: rgb(164 79 81 / 58%);
+  --paper: var(--editorial-paper);
+  --paper-deep: var(--editorial-paper-deep);
+  --ink: var(--editorial-ink);
+  --muted: var(--editorial-muted);
+  --red: var(--editorial-margin);
+  --red-soft: var(--editorial-margin-soft);
   --cahier-default: var(--muted);
   --cahier-profile-inaccessible: color-mix(in srgb, var(--cahier-default) 42%, var(--paper));
-  --margin-line: 104px;
+  --margin-line: var(--editorial-reading-width);
   --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
   --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
   min-height: 0;
