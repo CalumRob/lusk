@@ -345,7 +345,9 @@
     "iso_administration": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "iso_administration", "missing_status": "not_available", "counts_available": false },
     "iso_ecole": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "iso_ecole", "missing_status": "not_available", "counts_available": false },
     "iso_banque": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "iso_banque", "missing_status": "not_available", "counts_available": false },
-    "raccordement_tc": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "raccordement_tc", "missing_status": "not_available", "counts_available": false }
+    "raccordement_tc": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "raccordement_tc", "missing_status": "not_available", "counts_available": false },
+    "bornes_ev_par_station_service": { "allowed_levels": ["commune", "epci", "departement"], "completeness": "sparse", "comparison_facet": "bornes_ev_par_station_service", "missing_status": "not_available", "counts_available": false },
+    "stationnement_velo_par_voiture": { "allowed_levels": ["commune", "epci", "departement"], "completeness": "sparse", "comparison_facet": "stationnement_velo_par_voiture", "missing_status": "not_available", "counts_available": false }
   },
   "source_records": {
     "rp_logement_princ": { "dataset": "INSEE — Recensement de la population, logements (LOG T12)", "publisher": "INSEE", "url": "https://api.insee.fr/melodi/file/DS_RP_LOGEMENT_PRINC/DS_RP_LOGEMENT_PRINC_2023_CSV_FR", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "rp_logement_princ", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }] },

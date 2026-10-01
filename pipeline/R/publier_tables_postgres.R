@@ -197,7 +197,10 @@ project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
     reference_date=as.character(rows$vintage_date_reference),
     publication_date=as.character(rows$vintage_date_publication),
     support=if ("n" %in% names(rows)) as.integer(rows$n) else NA_integer_, stringsAsFactors=FALSE)
-  project_scalar_canonical_rows(rows, metadata, ids, eligible_territories)
+  vintages_path <- file.path(sortie, "vintages.parquet")
+  source_vintages <- if (file.exists(vintages_path)) nanoparquet::read_parquet(vintages_path) else NULL
+  project_scalar_canonical_rows(rows, metadata, ids, eligible_territories,
+    source_vintages=source_vintages)
 }
 
 project_economy_scalar_cohort <- function(sortie, eligible_territories) {
