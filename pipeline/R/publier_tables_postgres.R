@@ -208,12 +208,7 @@ project_demography_scalar_cohort <- function(sortie, eligible_territories) {
 }
 
 project_mobility_scalar_cohort <- function(sortie, eligible_territories) {
-  projection <- project_theme_scalar_cohort(sortie, eligible_territories, "mobilite")
-  service_ids <- paste0("share_", rep(c("food", "health", "admin", "school", "bank"), each=3),
-    "_", rep(c("t", "b", "c"), 5))
-  if (any(projection$descriptors$indicator_id %in% service_ids))
-    stop("Mobility scalar cohort cannot own service-share indicators", call.=FALSE)
-  projection
+  project_theme_scalar_cohort(sortie, eligible_territories, "mobilite")
 }
 
 project_service_scalar_snapshot <- function(donnees, sortie) {
