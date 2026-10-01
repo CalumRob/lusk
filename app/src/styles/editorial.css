@@ -1,6 +1,5 @@
 /* Shared E editorial foundation: visual grammar only, no content semantics. */
 .presentation-editorial {
-  --surface-primary: var(--editorial-paper);
   background-color: var(--editorial-paper);
   color: var(--editorial-ink);
 }

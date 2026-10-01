@@ -17,7 +17,7 @@ describe('shared E editorial foundation', () => {
     const css = read('src/styles/editorial.css')
     const sharedSurface = css.match(/\.presentation-editorial\s*\{([^}]*)\}/)?.[1] ?? ''
     expect(sharedSurface).toContain('background-color: var(--editorial-paper)')
-    expect(sharedSurface).toContain('--surface-primary: var(--editorial-paper)')
+    expect(sharedSurface).not.toContain('--surface-primary')
     expect(sharedSurface).not.toContain('border-inline-start')
     for (const path of ['src/fiche/prototype/VarianteCahierLibre.vue', 'src/components/fiche/OngletTheme.vue', 'src/views/IndicateurPage.vue']) {
       expect(read(path)).toMatch(/class="[^"]*presentation-editorial/)
