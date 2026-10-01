@@ -75,7 +75,7 @@ describe('IndicateurView — routed URL seam', () => {
      expect(wrapper.find('.editorial-section-heading').exists()).toBe(true)
      expect(wrapper.find('.repere-family-outlet').attributes('data-family')).toBe(family)
      expect(wrapper.find('.repere-family-outlet.editorial-figure').exists()).toBe(true)
-     expect(wrapper.find(`[data-renderer="${family}"]`).exists()).toBe(true)
+     expect(wrapper.find(`[data-renderer="${family}"].editorial-figure`).exists()).toBe(true)
      await router.push({ query: { ...router.currentRoute.value.query, vue: 'carte' } }); await flushPromises()
      expect(wrapper.find('.editorial-sheet .carte-indicateur.editorial-spread').exists()).toBe(true)
      await router.push({ query: { ...router.currentRoute.value.query, vue: 'indicateur' } }); await flushPromises()
