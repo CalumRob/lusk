@@ -79,7 +79,8 @@ const payloadPourRendu = computed<Payload | null>(() => {
   if (!payload || !scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
   if (!theme || ficheScalairesStatus.value !== 'ready' || ficheScalaires.value === null) {
-    const registered = ficheScalairesRegistrePresent.value && ficheScalairesEnregistres.value.length === 0
+    const registered = ficheScalairesStatus.value === 'error' && ficheScalairesRegistrePresent.value &&
+      ficheScalairesEnregistres.value.length === 0
       ? payload.indicateurs.filter((row) => row.theme === theme).map((row) => row.key)
       : ficheScalairesEnregistres.value
     return registered.length ? { ...payload, indicateurs: payload.indicateurs.filter((row) => row.theme !== theme || !registered.includes(row.key)) } : payload
@@ -118,6 +119,12 @@ const optionsComparaison = computed(() => optionsContexteComparaison({
   contextes: modeleTerritoire.model.value?.themes.mobilite?.comparisons ?? {},
 }))
 
+const scalarCohortScopeKey = computed(() => {
+  const scope = resolutionComparaison.value?.contexte?.scope
+  if (scope?.kind === 'communes-epci') return `epci:${territoire.value?.epci ?? ''}`
+  return `all:${scope?.kind ?? ''}`
+})
+
 /**
  * L'identité et le contenu franchissent ensemble la frontière atomique du
  * modèle de territoire. Une erreur compte comme « prête » afin de remplacer
@@ -151,8 +158,8 @@ const selection = computed<Theme | null>(() => {
   return THEME_DEFAUT
 })
 
-watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires],
-  async ([model, theme, code], _old, onCleanup) => {
+watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires, scalarCohortScopeKey],
+  async ([model, theme, code, _retry, scopeKey], _old, onCleanup) => {
     const request = ++sequenceFicheScalaires
     ficheScalaires.value = null
     ficheScalairesEnregistres.value = []
@@ -171,9 +178,9 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       const registered = indicateursScalairesPourNiveau(data.metadata, focal.type)
       ficheScalairesEnregistres.value = registered
       if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
-      const scope = resolutionComparaison.value?.contexte?.scope
+      const scope = String(scopeKey).startsWith('epci:') ? { epci: focal.epci ?? undefined } : {}
       const facts = await chargerCohortesScalaires(registered, theme, data.metadata, focal, focal.type, model.territories,
-        { epci: scope?.kind === 'communes-epci' ? focal.epci ?? undefined : undefined })
+        scope)
       if (!cancelled && request === sequenceFicheScalaires) { ficheScalaires.value = facts; ficheScalairesStatus.value = 'ready' }
     } catch {
       if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'
