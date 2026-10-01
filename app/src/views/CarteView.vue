@@ -64,6 +64,9 @@ import { themesPresent } from '@/payload/selectors'
 import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from '@/payload/types'
 import type { SigleProgramme, Territoire, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
+import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesPourNiveau, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+import { validerThemeMetadata } from '@/payload/validate'
+import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -239,6 +242,76 @@ watch(
   { immediate: true },
 )
 
+// Optional scalar serving is deliberately bounded to the one selected layer.
+// The static payload remains the source for layer contracts; while its
+// registered value is being fetched (or has failed), that value is removed
+// from the map reader so the old number cannot masquerade as current data.
+const cohortEnabled = computed(() => scalarCohortEnabled(import.meta.env as Record<string, string | undefined>))
+const cohortFacts = ref<Indicateur[] | null>(null)
+const cohortStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
+const registeredApiLayer = ref(false)
+const retryCohort = ref(0)
+const cohortMetadata = new Map<Theme, ThemeMetadata>()
+const cohortRegistries = new Map<Theme, unknown>()
+let cohortSequence = 0
+const indicateurScalaireActif = computed(() => {
+  const layer = coucheActive.value
+  return selection.value && layer?.source === 'indicateur' && layer.detail === null ? layer.clef : null
+})
+const niveauApi = computed(() => ({ communes: 'commune', epcis: 'epci', departements: 'departement' } as const)[niveau.value])
+
+watch([selection, indicateurScalaireActif, niveauApi, payload, retryCohort], async ([theme, indicator, level, currentPayload]) => {
+  const sequence = ++cohortSequence
+  cohortFacts.value = null
+  cohortStatus.value = 'idle'
+  registeredApiLayer.value = false
+  if (!cohortEnabled.value || !theme || !indicator || !level || !currentPayload) return
+  cohortStatus.value = 'loading'
+  try {
+    let metadata = cohortMetadata.get(theme)
+    if (!metadata) {
+      const file = `theme_${theme}.json`
+      const response = await fetch(`/data/${file}`)
+      if (!response.ok) throw new Error(`Métadonnées indisponibles (HTTP ${response.status}).`)
+      const raw: unknown = await response.json()
+      const registered = indicateursScalairesPourNiveau(raw, level)
+      metadata = validerThemeMetadata(raw, file)
+      if (metadata.theme !== theme) throw new Error('Métadonnées du thème incompatibles.')
+      validerEnregistrementScalaires(metadata, registered)
+      cohortMetadata.set(theme, metadata)
+      cohortRegistries.set(theme, raw)
+    }
+    if (sequence !== cohortSequence) return
+    const registeredForLevel = indicateursScalairesPourNiveau(cohortRegistries.get(theme), level)
+    if (!registeredForLevel.includes(indicator)) { cohortStatus.value = 'idle'; return }
+    registeredApiLayer.value = true
+    const page = metadata.indicator_pages?.[indicator]
+    if (!page || page.family !== 'scalar' || !page.levels.includes(level)) { cohortStatus.value = 'idle'; return }
+    const focal = choisirFocalCohorte(currentPayload.territoires, level, undefined, {})
+    if (!focal) { cohortStatus.value = 'idle'; return }
+    const facts = await chargerCohorteScalaire(indicator, theme, page, focal, level, currentPayload.territoires, {})
+    if (sequence === cohortSequence) { cohortFacts.value = facts; cohortStatus.value = 'ready' }
+  } catch {
+    if (sequence === cohortSequence) cohortStatus.value = 'error'
+  }
+}, { immediate: true })
+
+const payloadCarte = computed(() => {
+  const current = payload.value
+  const indicator = indicateurScalaireActif.value
+  const theme = selection.value
+  if (!current || !cohortEnabled.value || !theme || !indicator) return current
+  // Before the producer registry resolves, a scalar-looking selected layer is
+  // not proof that its static value is authoritative. Suppress it while the
+  // registration/read is pending or failed; restore the incumbent only after
+  // metadata proves this key is not registered for the active level.
+  if (!registeredApiLayer.value && cohortStatus.value === 'idle') return current
+  const indicateurs = current.indicateurs.filter((row) => row.theme !== theme || row.key !== indicator)
+  return { ...current, indicateurs: cohortStatus.value === 'ready' && cohortFacts.value
+    ? [...indicateurs, ...cohortFacts.value]
+    : indicateurs }
+})
+
 /** Le jeu de couches de l'onglet programmes au niveau courant (level-native —
  *  l'adhésion n'existe qu'à son ancrage, les subventions à chaque niveau). */
 const couchesProgrammesDuNiveau = computed<CoucheProgramme[]>(() =>
@@ -293,9 +366,10 @@ function choisirCouche(couche: CoucheCarte): void {
  *  detail) or the histoire scalar, per the couche's source. */
 function valeursDeLaCouche(couche: Couche): ReadonlyMap<string, { value: number | null; unit: string }> {
   const theme = selection.value as Theme
+  const mapPayload = payloadCarte.value ?? payload.value!
   return couche.source === 'indicateur'
-    ? indicateurParTerritoire(payload.value!.indicateurs, theme, couche.clef, couche.detail)
-    : valeurHistoireParTerritoire(payload.value!, theme, couche.clef)
+    ? indicateurParTerritoire(mapPayload.indicateurs, theme, couche.clef, couche.detail)
+    : valeurHistoireParTerritoire(mapPayload, theme, couche.clef)
 }
 
 const legende = computed(() => {
@@ -414,13 +488,20 @@ const classesFond = computed(() =>
         <template v-else>
           <MapExplorer
             :masques="masques!"
-            :payload="payload"
+            :payload="payloadCarte ?? payload"
             :theme="selection"
             :couche="coucheActiveCarte"
             :niveau="niveau"
             :territoire-cible="demandeRecherche?.territoire ?? null"
             :requete-zoom="demandeRecherche?.requete ?? 0"
           />
+          <div v-if="cohortEnabled && cohortStatus === 'loading' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte" role="status">
+            <p class="carte-etat-texte">Chargement des valeurs de la couche…</p>
+          </div>
+          <div v-else-if="cohortEnabled && cohortStatus === 'error' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
+            <p class="carte-etat-texte">Impossible de charger les valeurs de la couche.</p>
+            <button type="button" class="carte-etat-bouton" @click="retryCohort++">Réessayer</button>
+          </div>
           <MapSidebar
             :territoires="payload.territoires"
             :niveau="niveau"
