@@ -102,6 +102,8 @@ export interface TerritoryReadModel {
   snapshotId: string
   territory: Territoire
   territories: Territoire[]
+  /** Full validated reference required only for bounded API cohorts, whose peer sets may outgrow the fiche model's four local references. */
+  cohortTerritories?: Territoire[]
   themes: Partial<Record<Theme, TerritoryThemeReadModel>>
 }
 
@@ -641,6 +643,15 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       const catalogue = await metadataResponse.json() as { scalar_contracts?: unknown }
       if (catalogue.scalar_contracts !== undefined) theme.metadata.scalar_contracts = catalogue.scalar_contracts
     }))
+    const referenceUrl = '/data/territoires.json'
+    let referenceResponse: Response
+    try { referenceResponse = await fetch(referenceUrl) }
+    catch (cause) { throw new PayloadError('fetch', referenceUrl, `Impossible de charger le référentiel des cohortes : ${cause instanceof Error ? cause.message : String(cause)}`) }
+    if (!referenceResponse.ok) throw new PayloadError('fetch', referenceUrl, `Réponse HTTP ${referenceResponse.status} pour ${referenceUrl}`)
+    let rawTerritories: unknown
+    try { rawTerritories = await referenceResponse.json() }
+    catch { throw new PayloadError('validation', referenceUrl, 'Référentiel des cohortes illisible.') }
+    model.cohortTerritories = validerTerritoires(rawTerritories, referenceUrl)
   }
   return model
 }

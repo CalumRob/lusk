@@ -28,7 +28,7 @@ function response(indicator = 'effectifs_salaries') {
   const page = economyMetadata.indicator_pages[indicator]
   const publishedRank = canonicalRank(indicator, '22001')
   return { indicator_id: indicator, territory_type: 'commune', label: page.label, unit: page.unit,
-    direction: page.direction, comparison_facet: indicator, completeness: 'sparse', content_version: 'scalar-v1', territory_reference_version: 'territories-v1',
+    direction: page.direction, comparison_facet: indicator, completeness: 'sparse', content_version: 'scalar-v1',
     observations: [
       { territory_id: '22001', name: 'Commune A1', value: 9, status: 'measured',
         rang_epci: publishedRank?.rang_epci ?? null, rang_epci_n: publishedRank?.rang_epci_n ?? null,
@@ -164,6 +164,7 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     ['undeclared source', (body: ReturnType<typeof response>) => { body.observations[0]!.sources[0]!.source_id = 'other_source' }],
     ['invalid rank', (body: ReturnType<typeof response>) => { body.observations[0]!.rang_reg = 0 }],
     ['unranked old API contract', (body: ReturnType<typeof response>) => { Reflect.deleteProperty(body.observations[0], 'rang_reg_n') }],
+    ['empty explicit territory reference version', (body: ReturnType<typeof response>) => { Object.assign(body, { territory_reference_version: '' }) }],
     ['missing focal row', (body: ReturnType<typeof response>) => { body.observations = [body.observations[1]!] }],
   ])('rejects a cohort containing %s', async (_label, mutate) => {
     const body = response()

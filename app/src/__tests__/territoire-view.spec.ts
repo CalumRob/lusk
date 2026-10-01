@@ -251,13 +251,17 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
     const registered = Object.keys(metadata.scalar_contracts) as string[]
+    const referenceTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const peer = referenceTerritories.find((territory: any) => territory.type === 'commune' &&
+      territory.epci === published.territory.epci && territory.territoire !== published.territory.territoire)
     expect(published.themes.mobilite.theme_metadata.scalar_contracts).toBeUndefined()
     const pending: Array<() => void> = []
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/data/modeles-lecture/territoires/commune/22001.json') return new Response(JSON.stringify(published), { status: 200 })
+      if (url === '/data/territoires.json') return new Response(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'), { status: 200 })
       if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
         const themeMetadata = url === '/data/theme_mobilite.json' ? metadata : JSON.parse(readFileSync(
           resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
@@ -269,9 +273,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
           label: page.label, unit: page.unit, direction: page.direction,
           comparison_facet: page.comparison?.indicator ?? indicator, completeness: 'sparse', content_version: 'fiche-v1',
-          territory_reference_version: 'territories-v1',
           observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
             rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
+            sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
+              reference_date: null, publication_date: null }] },
+          { territory_id: peer.territoire, name: peer.nom, value: 123, status: 'measured',
+            rang_epci: 2, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
             sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
               reference_date: null, publication_date: null }] }] }), { status: 200 })
         return new Promise<Response>((resolve) => pending.push(() => resolve(response)))
